@@ -11,7 +11,10 @@ pub mod forward;
 pub use connect::{handle_connect, http_connect, ConnectRequest};
 pub use detect::HttpDetector;
 pub use error::HttpError;
-pub use forward::{forward_request, ForwardRequest};
+pub use forward::{
+    build_origin_request, filter_hop_by_hop, forward_request, forward_response, ForwardRequest,
+    ForwardResponse,
+};
 
 #[cfg(test)]
 mod tests {

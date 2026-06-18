@@ -1,4 +1,4 @@
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::error::HttpError;
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
@@ -6,8 +6,260 @@ use eggress_core::{BoxStream, TargetAddr, TargetHost};
 /// Maximum size for the HTTP request head (request line + headers).
 const MAX_HEAD_SIZE: usize = 32 * 1024;
 
+/// Maximum size for the HTTP response head.
+const MAX_RESPONSE_HEAD_SIZE: usize = 32 * 1024;
+
 /// Maximum number of header lines.
 const MAX_HEADER_LINES: usize = 128;
+
+/// Headers that must not be forwarded across a proxy (RFC 2616 §13.5.1).
+fn is_hop_by_hop_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailers"
+            | "transfer-encoding"
+            | "upgrade"
+            | "proxy-connection"
+    )
+}
+
+/// Filter hop-by-hop headers from a header list, returning only end-to-end headers.
+pub fn filter_hop_by_hop(headers: &[(String, String)]) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter(|(name, _)| !is_hop_by_hop_header(name))
+        .cloned()
+        .collect()
+}
+
+/// Build an origin-form HTTP request to send to the upstream server.
+///
+/// Converts the parsed absolute-form request into origin-form by:
+/// - Using only the path component as the request target
+/// - Filtering out hop-by-hop headers
+/// - Adding `Connection: close` to avoid keep-alive complications
+pub fn build_origin_request(request: &ForwardRequest) -> String {
+    let filtered = filter_hop_by_hop(&request.headers);
+
+    let mut req = format!(
+        "{} {} {}\r\n",
+        request.method, request.path, request.version
+    );
+
+    for (name, value) in &filtered {
+        req.push_str(&format!("{}: {}\r\n", name, value));
+    }
+
+    // Ensure Connection: close for Phase 1 (no persistent forwarding)
+    if !filtered
+        .iter()
+        .any(|(n, _)| n.eq_ignore_ascii_case("Connection"))
+    {
+        req.push_str("Connection: close\r\n");
+    }
+
+    req.push_str("\r\n");
+    req
+}
+
+/// Parsed HTTP response from an upstream server.
+#[derive(Debug)]
+pub struct ForwardResponse {
+    pub status: u16,
+    pub reason: String,
+    pub headers: Vec<(String, String)>,
+    pub content_length: Option<u64>,
+    pub is_chunked: bool,
+}
+
+/// Read and parse an HTTP response head from the upstream.
+async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, HttpError> {
+    let mut head_buf = Vec::with_capacity(1024);
+    let mut temp = [0u8; 1];
+
+    loop {
+        if head_buf.len() >= MAX_RESPONSE_HEAD_SIZE {
+            return Err(HttpError::HeaderTooLarge);
+        }
+
+        let n = stream.read(&mut temp).await?;
+        if n == 0 {
+            return Err(HttpError::MalformedResponse(
+                "unexpected EOF reading response".into(),
+            ));
+        }
+
+        head_buf.push(temp[0]);
+
+        if head_buf.len() >= 4 {
+            let len = head_buf.len();
+            if &head_buf[len - 4..] == b"\r\n\r\n" {
+                break;
+            }
+        }
+    }
+
+    let head_str = String::from_utf8_lossy(&head_buf);
+    let mut lines = head_str.split("\r\n");
+
+    // Parse status line
+    let status_line = lines
+        .next()
+        .ok_or_else(|| HttpError::MalformedResponse("empty response".into()))?;
+
+    let parts: Vec<&str> = status_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return Err(HttpError::MalformedResponse(format!(
+            "invalid status line: {}",
+            status_line
+        )));
+    }
+
+    let status: u16 = parts[1]
+        .parse()
+        .map_err(|e| HttpError::MalformedResponse(format!("invalid status code: {}", e)))?;
+    let reason = parts.get(2).unwrap_or(&"").to_string();
+
+    // Parse response headers
+    let mut headers = Vec::new();
+    let mut content_length = None;
+    let mut is_chunked = false;
+
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = parse_header_line(line) {
+            if name.eq_ignore_ascii_case("Content-Length") {
+                content_length = value.parse::<u64>().ok();
+            } else if name.eq_ignore_ascii_case("Transfer-Encoding")
+                && value.eq_ignore_ascii_case("chunked")
+            {
+                is_chunked = true;
+            }
+            headers.push((name, value));
+        }
+    }
+
+    Ok(ForwardResponse {
+        status,
+        reason,
+        headers,
+        content_length,
+        is_chunked,
+    })
+}
+
+/// Forward the upstream response back to the client stream.
+///
+/// Writes the response status line and filtered headers to the client,
+/// then relays the body (if any) using content-length or chunked framing.
+pub async fn forward_response(
+    upstream: &mut BoxStream,
+    client: &mut BoxStream,
+) -> Result<(), HttpError> {
+    let response = read_response_head(upstream).await?;
+
+    // Build response head with filtered headers
+    let filtered = filter_hop_by_hop(&response.headers);
+    let mut head = format!("HTTP/1.1 {} {}\r\n", response.status, response.reason);
+
+    for (name, value) in &filtered {
+        head.push_str(&format!("{}: {}\r\n", name, value));
+    }
+
+    // Ensure Connection: close
+    if !filtered
+        .iter()
+        .any(|(n, _)| n.eq_ignore_ascii_case("Connection"))
+    {
+        head.push_str("Connection: close\r\n");
+    }
+
+    head.push_str("\r\n");
+    client.write_all(head.as_bytes()).await?;
+
+    // Relay body based on framing
+    match (response.content_length, response.is_chunked) {
+        (Some(len), _) => {
+            let mut remaining = len;
+            let mut buf = [0u8; 8192];
+            while remaining > 0 {
+                let to_read = (remaining as usize).min(buf.len());
+                let n = upstream.read(&mut buf[..to_read]).await?;
+                if n == 0 {
+                    break;
+                }
+                client.write_all(&buf[..n]).await?;
+                remaining -= n as u64;
+            }
+        }
+        (None, true) => {
+            // Chunked transfer encoding: relay chunks until size 0
+            loop {
+                // Read chunk size line
+                let mut size_line = Vec::new();
+                let mut temp = [0u8; 1];
+                loop {
+                    let n = upstream.read(&mut temp).await?;
+                    if n == 0 {
+                        return Ok(());
+                    }
+                    size_line.push(temp[0]);
+                    if size_line.len() >= 2 && &size_line[size_line.len() - 2..] == b"\r\n" {
+                        break;
+                    }
+                }
+                let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
+                let chunk_size = usize::from_str_radix(size_str.trim(), 16).map_err(|e| {
+                    HttpError::MalformedResponse(format!("invalid chunk size: {}", e))
+                })?;
+
+                // Forward the chunk size line
+                client.write_all(&size_line).await?;
+
+                if chunk_size == 0 {
+                    // Read trailing \r\n after final chunk
+                    let mut trail = [0u8; 2];
+                    upstream.read_exact(&mut trail).await?;
+                    client.write_all(&trail).await?;
+                    break;
+                }
+
+                // Read and forward chunk data + trailing \r\n
+                let mut remaining = chunk_size + 2; // +2 for trailing \r\n
+                let mut buf = [0u8; 8192];
+                while remaining > 0 {
+                    let to_read = remaining.min(buf.len());
+                    let n = upstream.read(&mut buf[..to_read]).await?;
+                    if n == 0 {
+                        return Ok(());
+                    }
+                    client.write_all(&buf[..n]).await?;
+                    remaining -= n;
+                }
+            }
+        }
+        (None, false) => {
+            // No content-length and not chunked: read until connection close
+            let mut buf = [0u8; 8192];
+            loop {
+                let n = upstream.read(&mut buf).await?;
+                if n == 0 {
+                    break;
+                }
+                client.write_all(&buf[..n]).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
 
 /// A parsed HTTP request ready for forwarding.
 #[derive(Debug, Clone)]

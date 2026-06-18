@@ -1,7 +1,8 @@
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use eggress_core::chain::{ChainExecutor, HopHandler};
@@ -11,8 +12,12 @@ use eggress_core::relay::relay;
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
 use eggress_uri::{parse_proxy_chain, CredentialSpec, ProxyChainSpec};
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::{fmt, EnvFilter};
+
+/// Global connection counter for logging.
+static CONNECTION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 type HandshakeFuture<'a> = Pin<
     Box<
@@ -181,15 +186,150 @@ async fn run_listener(
         };
 
         let chain = upstream_chain.clone();
+        let peer = conn.peer_addr;
+        let listener = local_addr;
+        let conn_id = CONNECTION_COUNTER.fetch_add(1, Ordering::Relaxed);
 
         tokio::spawn(async move {
+            let started = Instant::now();
+            let _span = tracing::info_span!(
+                "conn",
+                id = conn_id,
+                peer = %peer,
+                listener = %listener,
+            );
+            let _guard = _span.enter();
+
             if let Err(e) = handle_connection(conn.stream, chain).await {
                 tracing::debug!("connection error: {e}");
             }
+
+            tracing::debug!(
+                duration_ms = started.elapsed().as_millis() as u64,
+                "connection closed"
+            );
         });
     }
 
     Ok(())
+}
+
+/// Handle an inbound HTTP request, distinguishing CONNECT from forward proxy.
+///
+/// Peeks at the method to determine whether this is a CONNECT tunnel
+/// or an ordinary forward-proxy request.
+async fn handle_http_request(
+    client_stream: BoxStream,
+) -> Result<(TargetAddr, BoxStream), Box<dyn std::error::Error + Send + Sync>> {
+    // Read the request line to determine method
+    let mut stream = client_stream;
+    let mut head_buf = Vec::with_capacity(256);
+    let mut temp = [0u8; 1];
+
+    loop {
+        if head_buf.len() >= 32 * 1024 {
+            return Err(eggress_protocol_http::HttpError::HeaderTooLarge.into());
+        }
+        let n = stream.read(&mut temp).await?;
+        if n == 0 {
+            return Err(eggress_protocol_http::HttpError::MalformedRequest(
+                "unexpected EOF".into(),
+            )
+            .into());
+        }
+        head_buf.push(temp[0]);
+        if head_buf.len() >= 2 && &head_buf[head_buf.len() - 2..] == b"\r\n" {
+            break;
+        }
+    }
+
+    // Extract method before moving head_buf
+    let method = {
+        let request_line = String::from_utf8_lossy(&head_buf);
+        request_line
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    };
+
+    // Reconstruct stream with the request line bytes prepended
+    let stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
+
+    if method == "connect" {
+        // CONNECT tunnel: handshake returns the raw stream after 200
+        let (request, stream) =
+            eggress_protocol_http::connect::server::handle_connect(stream, false, None).await?;
+        Ok((request.target, stream))
+    } else {
+        // Forward proxy: parse absolute-form request, connect upstream, forward
+        let (request, mut client_stream) = eggress_protocol_http::forward_request(stream).await?;
+
+        let target = request.target.clone();
+
+        // Connect to the upstream target
+        let connector = eggress_core::connector::DirectConnector;
+        let mut upstream = connector
+            .connect(&target)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        // Build origin-form request and send to upstream
+        let origin_req = eggress_protocol_http::build_origin_request(&request);
+        upstream.write_all(origin_req.as_bytes()).await?;
+        upstream.flush().await?;
+
+        // If there's a body, relay it from client to upstream
+        if request.has_body {
+            match (request.content_length, request.is_chunked) {
+                (Some(len), _) => {
+                    let mut remaining = len;
+                    let mut buf = [0u8; 8192];
+                    while remaining > 0 {
+                        let to_read = (remaining as usize).min(buf.len());
+                        let n = client_stream.read(&mut buf[..to_read]).await?;
+                        if n == 0 {
+                            break;
+                        }
+                        upstream.write_all(&buf[..n]).await?;
+                        remaining -= n as u64;
+                    }
+                }
+                (None, true) => {
+                    // Chunked: relay chunks from client to upstream
+                    // The body is already in the stream after the request head
+                    // We need to relay it through
+                    let mut buf = [0u8; 8192];
+                    loop {
+                        let n = client_stream.read(&mut buf).await?;
+                        if n == 0 {
+                            break;
+                        }
+                        upstream.write_all(&buf[..n]).await?;
+                    }
+                }
+                (None, false) => {
+                    // No body info, relay until client closes
+                    let mut buf = [0u8; 8192];
+                    loop {
+                        let n = client_stream.read(&mut buf).await?;
+                        if n == 0 {
+                            break;
+                        }
+                        upstream.write_all(&buf[..n]).await?;
+                    }
+                }
+            }
+        }
+
+        // Forward the upstream response back to the client
+        eggress_protocol_http::forward_response(&mut upstream, &mut client_stream).await?;
+
+        // Return a dummy target and a stream that will EOF (response already forwarded)
+        // The relay phase is skipped for forward proxy responses
+        // We use a special pattern: return the client stream wrapped so relay sees EOF
+        Ok((target, Box::new(tokio::io::empty())))
+    }
 }
 
 /// A stream that returns `prefix` bytes first, then delegates to `inner`.
@@ -275,12 +415,7 @@ async fn handle_connection(
     let client_stream: BoxStream = Box::new(PrefixedStream::new(first_byte.to_vec(), stream));
 
     let (target, client_stream) = match proto {
-        "http" => {
-            let (request, stream) =
-                eggress_protocol_http::connect::server::handle_connect(client_stream, false, None)
-                    .await?;
-            (request.target, stream)
-        }
+        "http" => handle_http_request(client_stream).await?,
         "socks5" => {
             use eggress_protocol_socks::socks5::server::{
                 read_connect_request, read_method_negotiation, send_connect_reply,
