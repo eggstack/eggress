@@ -179,16 +179,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6184e33543162437515c2e2b48714794e37845ec9851711914eec9d308f6ebe8"
 
 [[package]]
-name = "eggproxy-cli"
+name = "eggress-cli"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "clap",
- "eggproxy-core",
- "eggproxy-protocol-http",
- "eggproxy-protocol-socks",
- "eggproxy-testkit",
- "eggproxy-uri",
+ "eggress-core",
+ "eggress-protocol-http",
+ "eggress-protocol-socks",
+ "eggress-testkit",
+ "eggress-uri",
  "predicates",
  "tokio",
  "tokio-util",
@@ -197,11 +197,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "eggproxy-core"
+name = "eggress-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "eggproxy-uri",
+ "eggress-uri",
  "pin-project-lite",
  "thiserror",
  "tokio",
@@ -211,12 +211,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "eggproxy-protocol-http"
+name = "eggress-protocol-http"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "eggproxy-core",
- "eggproxy-testkit",
+ "eggress-core",
+ "eggress-testkit",
  "http",
  "httparse",
  "thiserror",
@@ -224,28 +224,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "eggproxy-protocol-socks"
+name = "eggress-protocol-socks"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "eggproxy-core",
- "eggproxy-testkit",
+ "eggress-core",
+ "eggress-testkit",
  "thiserror",
  "tokio",
 ]
 
 [[package]]
-name = "eggproxy-routing"
+name = "eggress-routing"
 version = "0.1.0"
 dependencies = [
- "eggproxy-core",
- "eggproxy-uri",
+ "eggress-core",
+ "eggress-uri",
  "regex",
  "thiserror",
 ]
 
 [[package]]
-name = "eggproxy-testkit"
+name = "eggress-testkit"
 version = "0.1.0"
 dependencies = [
  "tempfile",
@@ -254,7 +254,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "eggproxy-uri"
+name = "eggress-uri"
 version = "0.1.0"
 dependencies = [
  "proptest",

@@ -1,0 +1,29 @@
+[package]
+name = "eggress-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "eggress"
+path = "src/main.rs"
+
+[dependencies]
+eggress-core.workspace = true
+eggress-uri.workspace = true
+eggress-protocol-http.workspace = true
+eggress-protocol-socks.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[dev-dependencies]
+eggress-testkit.workspace = true
+assert_cmd.workspace = true
+predicates.workspace = true
+
+[lints]
+workspace = true

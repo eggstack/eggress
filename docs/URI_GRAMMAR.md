@@ -1,4 +1,4 @@
-# EggProxy URI Grammar
+# Eggress URI Grammar
 
 > Status: Implemented in Phase 1, Milestone 1.2.
 

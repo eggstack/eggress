@@ -1,12 +1,12 @@
-# EggProxy Architecture
+# Eggress Architecture
 
 ## Overview
 
-EggProxy is a multi-protocol TCP proxy framework built on Tokio. It supports mixed-protocol listeners (HTTP CONNECT, SOCKS4/4a, SOCKS5) with direct or chained upstream connections.
+Eggress is a multi-protocol TCP proxy framework built on Tokio. It supports mixed-protocol listeners (HTTP CONNECT, SOCKS4/4a, SOCKS5) with direct or chained upstream connections.
 
 ## Crate Structure
 
-### eggproxy-core
+### eggress-core
 Core types, traits, and infrastructure:
 - `TargetAddr`, `TargetHost` — typed destination addresses preserving domain names
 - `ClientIdentity` — anonymous or authenticated client identity
@@ -19,36 +19,36 @@ Core types, traits, and infrastructure:
 - `ProtocolDispatcher` — ordered protocol detection and dispatch
 - `ChainExecutor` — multi-hop proxy chain execution
 
-### eggproxy-cli
+### eggress-cli
 CLI binary with `clap`-derived arguments:
 - `-l` / `--listen` — listener URIs (multiple allowed)
 - `-r` / `--remote` — upstream proxy URIs (chains with `__`)
 - Default: mixed HTTP listener on 127.0.0.1:8080
 
-### eggproxy-uri
+### eggress-uri
 URI parser with typed AST:
 - `ProxyChainSpec` → `ProxyHopSpec` → `ProtocolSpec`, `EndpointSpec`, `CredentialSpec`
 - `+` separates protocols within a hop
 - `__` separates proxy hops
 - Redacted Display implementation for secret-safe logging
 
-### eggproxy-routing
+### eggress-routing
 Route resolution (first-available scheduling, direct fallback).
 
-### eggproxy-protocol-http
+### eggress-protocol-http
 HTTP/1 protocol implementation:
 - CONNECT server and client with Basic auth
 - Absolute-form forwarding with origin-form conversion
 - Bounded header parsing via httparse
 
-### eggproxy-protocol-socks
+### eggress-protocol-socks
 SOCKS4/4a and SOCKS5 protocol implementations:
 - Server and client for both protocol versions
 - SOCKS4a domain preservation for remote DNS
 - SOCKS5 method negotiation, no-auth and username/password auth
 - Bounded credentials (255 bytes)
 
-### eggproxy-testkit
+### eggress-testkit
 Test utilities:
 - Echo server, half-close server
 - Temporary port allocator

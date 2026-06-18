@@ -1,6 +1,6 @@
-# EggProxy Roadmap
+# Eggress Roadmap
 
-This document references the main roadmap in [EGGPROXY_ROADMAP.md](../EGGPROXY_ROADMAP.md).
+This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROADMAP.md).
 
 ## Current Phase
 

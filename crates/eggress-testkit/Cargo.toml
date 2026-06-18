@@ -1,0 +1,16 @@
+[package]
+name = "eggress-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
+
+[lints]
+workspace = true

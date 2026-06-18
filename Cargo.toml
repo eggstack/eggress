@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/eggproxy-cli",
-    "crates/eggproxy-core",
-    "crates/eggproxy-uri",
-    "crates/eggproxy-routing",
-    "crates/eggproxy-protocol-http",
-    "crates/eggproxy-protocol-socks",
-    "crates/eggproxy-testkit",
+    "crates/eggress-cli",
+    "crates/eggress-core",
+    "crates/eggress-uri",
+    "crates/eggress-routing",
+    "crates/eggress-protocol-http",
+    "crates/eggress-protocol-socks",
+    "crates/eggress-testkit",
 ]
 
 [workspace.package]
@@ -15,7 +15,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/eggstack/eggproxy"
+repository = "https://github.com/eggstack/eggress"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -42,13 +42,13 @@ insta = "1"
 trait-variant = "0.1"
 
 # Internal crates
-eggproxy-core = { path = "crates/eggproxy-core" }
-eggproxy-uri = { path = "crates/eggproxy-uri" }
-eggproxy-routing = { path = "crates/eggproxy-routing" }
-eggproxy-protocol-http = { path = "crates/eggproxy-protocol-http" }
-eggproxy-protocol-socks = { path = "crates/eggproxy-protocol-socks" }
-eggproxy-testkit = { path = "crates/eggproxy-testkit" }
-eggproxy-cli = { path = "crates/eggproxy-cli" }
+eggress-core = { path = "crates/eggress-core" }
+eggress-uri = { path = "crates/eggress-uri" }
+eggress-routing = { path = "crates/eggress-routing" }
+eggress-protocol-http = { path = "crates/eggress-protocol-http" }
+eggress-protocol-socks = { path = "crates/eggress-protocol-socks" }
+eggress-testkit = { path = "crates/eggress-testkit" }
+eggress-cli = { path = "crates/eggress-cli" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

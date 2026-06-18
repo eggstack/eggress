@@ -1,0 +1,20 @@
+[package]
+name = "eggress-protocol-http"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+eggress-core.workspace = true
+http.workspace = true
+httparse.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+eggress-testkit.workspace = true
+
+[lints]
+workspace = true

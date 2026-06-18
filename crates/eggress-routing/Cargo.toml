@@ -1,0 +1,15 @@
+[package]
+name = "eggress-routing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+eggress-core.workspace = true
+eggress-uri.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+
+[lints]
+workspace = true

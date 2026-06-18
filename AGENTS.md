@@ -22,23 +22,23 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
 
 # Run the CLI
-cargo run --bin eggproxy -- --help
-cargo run --bin eggproxy -- -l http://:8080
+cargo run --bin eggress -- --help
+cargo run --bin eggress -- -l http://:8080
 ```
 
 ## Project Structure
 
 ```text
-eggproxy/
+eggress/
 ├── Cargo.toml              # Workspace root
 ├── crates/
-│   ├── eggproxy-core/      # Core types, traits, relay, listener, connector, chain
-│   ├── eggproxy-cli/       # CLI binary
-│   ├── eggproxy-uri/       # URI parser and AST
-│   ├── eggproxy-routing/   # Routing logic
-│   ├── eggproxy-protocol-http/   # HTTP CONNECT and forwarding
-│   ├── eggproxy-protocol-socks/  # SOCKS4/4a and SOCKS5
-│   └── eggproxy-testkit/   # Test utilities
+│   ├── eggress-core/      # Core types, traits, relay, listener, connector, chain
+│   ├── eggress-cli/       # CLI binary
+│   ├── eggress-uri/       # URI parser and AST
+│   ├── eggress-routing/   # Routing logic
+│   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
+│   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
+│   └── eggress-testkit/   # Test utilities
 ├── tests/
 │   ├── interoperability/   # Cross-implementation tests
 │   └── fixtures/           # Test fixtures

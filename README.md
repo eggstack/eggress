@@ -1,10 +1,10 @@
-# eggproxy
+# eggress
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
 > Status: Phase 1 complete — core TCP proxy with mixed HTTP/SOCKS listeners and chaining.
 
-eggproxy will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
+eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
 ## Design goals
 
@@ -22,15 +22,15 @@ eggproxy will preserve the compact URI-driven workflow of `pproxy` while using e
 ## Usage
 
 ```text
-eggproxy
-eggproxy -l http://:8080
-eggproxy -l socks4://:1080
-eggproxy -l socks5://:1080
-eggproxy -l http+socks4+socks5://:8080
-eggproxy -l http+socks5://user:pass@:8080
-eggproxy -r http://proxy.example:8080
-eggproxy -r socks5://proxy.example:1080
-eggproxy -r socks5://hop1:1080__http://hop2:8080
+eggress
+eggress -l http://:8080
+eggress -l socks4://:1080
+eggress -l socks5://:1080
+eggress -l http+socks4+socks5://:8080
+eggress -l http+socks5://user:pass@:8080
+eggress -r http://proxy.example:8080
+eggress -r socks5://proxy.example:1080
+eggress -r socks5://hop1:1080__http://hop2:8080
 ```
 
 ## Capability status
@@ -333,7 +333,7 @@ Legend:
 
 ## Dependency policy
 
-eggproxy prefers pure Rust dependencies where mature implementations exist.
+eggress prefers pure Rust dependencies where mature implementations exist.
 
 Preferred foundations include:
 
