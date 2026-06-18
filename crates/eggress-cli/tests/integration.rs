@@ -120,7 +120,7 @@ async fn test_http_connect_to_echo() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["http"],
+        protocols: vec![eggress_core::ProtocolId::Http],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -152,8 +152,6 @@ async fn test_http_connect_to_echo() {
             });
         }
     });
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -182,7 +180,7 @@ async fn test_http_connect_domain_target() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["http"],
+        protocols: vec![eggress_core::ProtocolId::Http],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -214,8 +212,6 @@ async fn test_http_connect_domain_target() {
             });
         }
     });
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -248,7 +244,7 @@ async fn test_socks5_connect_to_echo() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks5"],
+        protocols: vec![eggress_core::ProtocolId::Socks5],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -260,8 +256,6 @@ async fn test_socks5_connect_to_echo() {
     let proxy_addr = proxy_listener.local_addr().unwrap();
 
     let proxy_jh = spawn_socks5_server_task(proxy_listener);
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -289,7 +283,7 @@ async fn test_socks5_connect_domain() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks5"],
+        protocols: vec![eggress_core::ProtocolId::Socks5],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -301,8 +295,6 @@ async fn test_socks5_connect_domain() {
     let proxy_addr = proxy_listener.local_addr().unwrap();
 
     let proxy_jh = spawn_socks5_server_task(proxy_listener);
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -332,7 +324,7 @@ async fn test_socks5_connect_ipv6() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks5"],
+        protocols: vec![eggress_core::ProtocolId::Socks5],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -344,8 +336,6 @@ async fn test_socks5_connect_ipv6() {
     let proxy_addr = proxy_listener.local_addr().unwrap();
 
     let proxy_jh = spawn_socks5_server_task(proxy_listener);
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -425,7 +415,7 @@ async fn test_socks4_connect_to_echo() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks4"],
+        protocols: vec![eggress_core::ProtocolId::Socks4],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -437,8 +427,6 @@ async fn test_socks4_connect_to_echo() {
     let proxy_addr = proxy_listener.local_addr().unwrap();
 
     let proxy_jh = spawn_socks4_server_task(proxy_listener);
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -513,7 +501,7 @@ async fn test_http_to_socks5_chain() {
     // Start SOCKS5 server as hop 2
     let socks5_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks5"],
+        protocols: vec![eggress_core::ProtocolId::Socks5],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -528,7 +516,7 @@ async fn test_http_to_socks5_chain() {
     // Start HTTP server as hop 1, forwarding through SOCKS5
     let http_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["http"],
+        protocols: vec![eggress_core::ProtocolId::Http],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -570,8 +558,6 @@ async fn test_http_to_socks5_chain() {
         }
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
     // Connect through HTTP proxy, which chains through SOCKS5
     let stream = tokio::net::TcpStream::connect(http_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -601,7 +587,7 @@ async fn test_socks5_to_http_chain() {
     // Start HTTP server as hop 2
     let http_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["http"],
+        protocols: vec![eggress_core::ProtocolId::Http],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -637,7 +623,7 @@ async fn test_socks5_to_http_chain() {
     // Start SOCKS5 server as hop 1, forwarding through HTTP
     let socks5_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks5"],
+        protocols: vec![eggress_core::ProtocolId::Socks5],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -705,8 +691,6 @@ async fn test_socks5_to_http_chain() {
         }
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
     // Connect through SOCKS5 proxy, which chains through HTTP
     let stream = tokio::net::TcpStream::connect(socks5_addr).await.unwrap();
     let boxed: BoxStream = Box::new(stream);
@@ -737,7 +721,7 @@ async fn test_http_forward_proxy() {
 
     let proxy_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["http"],
+        protocols: vec![eggress_core::ProtocolId::Http],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -785,8 +769,6 @@ async fn test_http_forward_proxy() {
             });
         }
     });
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Send an HTTP forward proxy request
     let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();

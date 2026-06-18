@@ -84,4 +84,8 @@ jobs:
           python-version: "3.12"
       - run: pip install "pproxy==2.7.9"
       - run: cargo test --test interoperability_pproxy
+        env:
+          EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
       - run: cargo test --test interoperability_curl
+        env:
+          EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"

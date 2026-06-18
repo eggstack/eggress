@@ -2,7 +2,7 @@ use eggress_core::detect::{DetectResult, ProtocolDetector};
 use eggress_core::ProtocolId;
 
 /// Protocol identifier for SOCKS4.
-pub const SOCKS4_PROTOCOL_ID: ProtocolId = "socks4";
+pub const SOCKS4_PROTOCOL_ID: ProtocolId = ProtocolId::Socks4;
 
 /// Detector for SOCKS4/4a protocol.
 ///
@@ -64,6 +64,6 @@ mod tests {
     #[test]
     fn test_detector_id() {
         let detector = Socks4Detector;
-        assert_eq!(detector.id(), "socks4");
+        assert_eq!(detector.id(), ProtocolId::Socks4);
     }
 }

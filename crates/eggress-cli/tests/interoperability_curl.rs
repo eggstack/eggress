@@ -20,7 +20,7 @@ fn curl_available() -> bool {
 }
 
 async fn start_eggress_server(
-    protocols: Vec<&'static str>,
+    protocols: Vec<eggress_core::ProtocolId>,
 ) -> (
     std::net::SocketAddr,
     CancellationToken,
@@ -37,6 +37,8 @@ async fn start_eggress_server(
     let listener = TcpListener::new(&config, cancel.clone()).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
+    let conn_protocols: std::sync::Arc<[eggress_core::ProtocolId]> =
+        config.protocols.clone().into();
     let jh = tokio::spawn(async move {
         loop {
             let conn = match listener.accept().await {
@@ -46,6 +48,8 @@ async fn start_eggress_server(
             let config = ConnectionConfig {
                 route: RouteConfig::Direct,
                 handshake_timeout: Duration::from_secs(5),
+                protocols: conn_protocols.clone(),
+                authentication: eggress_server::accept::InboundAuthentication::None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;
@@ -64,7 +68,8 @@ async fn test_curl_http_connect() {
     }
 
     let (origin_addr, origin_jh) = eggress_testkit::start_http_origin_server().await;
-    let (proxy_addr, cancel, proxy_jh) = start_eggress_server(vec!["http"]).await;
+    let (proxy_addr, cancel, proxy_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -108,7 +113,8 @@ async fn test_curl_socks5() {
     }
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
-    let (proxy_addr, cancel, proxy_jh) = start_eggress_server(vec!["socks5"]).await;
+    let (proxy_addr, cancel, proxy_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -159,7 +165,8 @@ async fn test_curl_socks4a() {
     }
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
-    let (proxy_addr, cancel, proxy_jh) = start_eggress_server(vec!["socks4"]).await;
+    let (proxy_addr, cancel, proxy_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks4]).await;
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 

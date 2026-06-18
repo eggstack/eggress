@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_prefix_detector_match() {
-        let detector = PrefixDetector::new("http", b"GET ".to_vec());
+        let detector = PrefixDetector::new(ProtocolId::Http, b"GET ".to_vec());
         assert_eq!(
             detector.detect(b"GET / HTTP/1.1"),
             DetectResult::Match { confidence: 100 }
@@ -84,13 +84,13 @@ mod tests {
 
     #[test]
     fn test_prefix_detector_no_match() {
-        let detector = PrefixDetector::new("http", b"GET ".to_vec());
+        let detector = PrefixDetector::new(ProtocolId::Http, b"GET ".to_vec());
         assert_eq!(detector.detect(b"POST /"), DetectResult::NoMatch);
     }
 
     #[test]
     fn test_prefix_detector_need_more() {
-        let detector = PrefixDetector::new("http", b"GET ".to_vec());
+        let detector = PrefixDetector::new(ProtocolId::Http, b"GET ".to_vec());
         assert_eq!(
             detector.detect(b"GE"),
             DetectResult::NeedMore { minimum: 4 }
@@ -99,13 +99,13 @@ mod tests {
 
     #[test]
     fn test_prefix_detector_empty_input() {
-        let detector = PrefixDetector::new("http", b"GET ".to_vec());
+        let detector = PrefixDetector::new(ProtocolId::Http, b"GET ".to_vec());
         assert_eq!(detector.detect(b""), DetectResult::NeedMore { minimum: 4 });
     }
 
     #[test]
     fn test_prefix_detector_exact_match() {
-        let detector = PrefixDetector::new("socks5", b"\x05".to_vec());
+        let detector = PrefixDetector::new(ProtocolId::Socks5, b"\x05".to_vec());
         assert_eq!(
             detector.detect(b"\x05"),
             DetectResult::Match { confidence: 100 }
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_prefix_detector_with_min_length() {
-        let detector = PrefixDetector::with_min_length("http", b"GET ".to_vec(), 8);
+        let detector = PrefixDetector::with_min_length(ProtocolId::Http, b"GET ".to_vec(), 8);
         // Have 4 bytes which is the prefix length but min_length is 8
         assert_eq!(
             detector.detect(b"GET /"),

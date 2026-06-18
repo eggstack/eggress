@@ -106,17 +106,24 @@ async fn main() {
             .protocols
             .iter()
             .map(|p| match p {
-                eggress_uri::ProtocolSpec::Http => "http",
-                eggress_uri::ProtocolSpec::Socks4 => "socks4",
-                eggress_uri::ProtocolSpec::Socks5 => "socks5",
+                eggress_uri::ProtocolSpec::Http => eggress_core::ProtocolId::Http,
+                eggress_uri::ProtocolSpec::Socks4 => eggress_core::ProtocolId::Socks4,
+                eggress_uri::ProtocolSpec::Socks5 => eggress_core::ProtocolId::Socks5,
             })
             .collect();
 
         let cancel = cancel_token.clone();
         let chain = upstream_chain.clone();
+        let auth = match &first_hop.credentials {
+            Some(credentials) => eggress_server::accept::InboundAuthentication::UsernamePassword {
+                username: credentials.username.clone(),
+                password: credentials.password.clone(),
+            },
+            None => eggress_server::accept::InboundAuthentication::None,
+        };
 
         let handle = tokio::spawn(async move {
-            if let Err(e) = run_listener(bind_addr, protocols, chain, cancel).await {
+            if let Err(e) = run_listener(bind_addr, protocols, chain, auth, cancel).await {
                 tracing::error!("listener error: {e}");
             }
         });
@@ -141,6 +148,7 @@ async fn run_listener(
     bind_addr: SocketAddr,
     protocols: Vec<eggress_core::ProtocolId>,
     upstream_chain: Option<eggress_uri::ProxyChainSpec>,
+    authentication: eggress_server::accept::InboundAuthentication,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = TcpListenerConfig {
@@ -154,6 +162,8 @@ async fn run_listener(
     let listener = TcpListener::new(&config, cancel_token.clone()).await?;
     let local_addr = listener.local_addr()?;
     tracing::info!("listening on {local_addr}");
+
+    let protocols: std::sync::Arc<[eggress_core::ProtocolId]> = config.protocols.clone().into();
 
     loop {
         let conn = match listener.accept().await {
@@ -171,6 +181,8 @@ async fn run_listener(
         let peer = conn.peer_addr;
         let listener = local_addr;
         let conn_id = CONNECTION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let conn_protocols = protocols.clone();
+        let conn_auth = authentication.clone();
 
         tokio::spawn(async move {
             let started = std::time::Instant::now();
@@ -181,6 +193,8 @@ async fn run_listener(
             let config = ConnectionConfig {
                 route,
                 handshake_timeout: Duration::from_secs(30),
+                protocols: conn_protocols,
+                authentication: conn_auth,
             };
 
             let report = eggress_server::serve_connection(conn.stream, config)
@@ -226,7 +240,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let config = TcpListenerConfig {
             bind_addr: proxy_addr,
-            protocols: vec!["http"],
+            protocols: vec![eggress_core::ProtocolId::Http],
             auth_required: false,
             handshake_timeout: Duration::from_secs(5),
             connection_limit: 10,
@@ -243,14 +257,14 @@ mod tests {
                 let config = ConnectionConfig {
                     route,
                     handshake_timeout: Duration::from_secs(5),
+                    protocols: std::sync::Arc::from([eggress_core::ProtocolId::Http]),
+                    authentication: eggress_server::accept::InboundAuthentication::None,
                 };
                 tokio::spawn(async move {
                     let _ = eggress_server::serve_connection(conn.stream, config).await;
                 });
             }
         });
-
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
         let connect_req = format!(

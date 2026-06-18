@@ -12,7 +12,22 @@ pub mod relay;
 pub mod replay;
 
 /// A unique identifier for a protocol handler.
-pub type ProtocolId = &'static str;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProtocolId {
+    Http,
+    Socks4,
+    Socks5,
+}
+
+impl fmt::Display for ProtocolId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProtocolId::Http => write!(f, "http"),
+            ProtocolId::Socks4 => write!(f, "socks4"),
+            ProtocolId::Socks5 => write!(f, "socks5"),
+        }
+    }
+}
 
 /// A unique identifier for a listener.
 pub type ListenerId = u64;

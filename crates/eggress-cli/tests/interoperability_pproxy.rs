@@ -251,7 +251,7 @@ async fn test_eggress_server_pproxy_socks5_client() {
     // Start eggress SOCKS5 server
     let eggress_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["socks5"],
+        protocols: vec![eggress_core::ProtocolId::Socks5],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -262,6 +262,8 @@ async fn test_eggress_server_pproxy_socks5_client() {
         .unwrap();
     let eggress_addr = eggress_listener.local_addr().unwrap();
 
+    let conn_protocols: std::sync::Arc<[eggress_core::ProtocolId]> =
+        eggress_config.protocols.clone().into();
     let eggress_jh = tokio::spawn(async move {
         loop {
             let conn = match eggress_listener.accept().await {
@@ -271,6 +273,8 @@ async fn test_eggress_server_pproxy_socks5_client() {
             let config = eggress_server::ConnectionConfig {
                 route: eggress_server::RouteConfig::Direct,
                 handshake_timeout: Duration::from_secs(5),
+                protocols: conn_protocols.clone(),
+                authentication: eggress_server::accept::InboundAuthentication::None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;
@@ -329,7 +333,7 @@ async fn test_eggress_server_pproxy_http_client() {
     // Start eggress HTTP server
     let eggress_config = TcpListenerConfig {
         bind_addr: "127.0.0.1:0".parse().unwrap(),
-        protocols: vec!["http"],
+        protocols: vec![eggress_core::ProtocolId::Http],
         auth_required: false,
         handshake_timeout: Duration::from_secs(5),
         connection_limit: 10,
@@ -340,6 +344,8 @@ async fn test_eggress_server_pproxy_http_client() {
         .unwrap();
     let eggress_addr = eggress_listener.local_addr().unwrap();
 
+    let conn_protocols: std::sync::Arc<[eggress_core::ProtocolId]> =
+        eggress_config.protocols.clone().into();
     let eggress_jh = tokio::spawn(async move {
         loop {
             let conn = match eggress_listener.accept().await {
@@ -349,6 +355,8 @@ async fn test_eggress_server_pproxy_http_client() {
             let config = eggress_server::ConnectionConfig {
                 route: eggress_server::RouteConfig::Direct,
                 handshake_timeout: Duration::from_secs(5),
+                protocols: conn_protocols.clone(),
+                authentication: eggress_server::accept::InboundAuthentication::None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;

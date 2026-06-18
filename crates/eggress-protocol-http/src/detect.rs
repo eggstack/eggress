@@ -20,7 +20,7 @@ const HTTP_METHODS: &[&[u8]] = &[
 
 impl ProtocolDetector for HttpDetector {
     fn id(&self) -> ProtocolId {
-        "http"
+        ProtocolId::Http
     }
 
     fn detect(&self, prefix: &[u8]) -> DetectResult {

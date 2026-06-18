@@ -12,8 +12,9 @@ pub use connect::{handle_connect, http_connect, ConnectRequest};
 pub use detect::HttpDetector;
 pub use error::HttpError;
 pub use forward::{
-    build_origin_request, filter_hop_by_hop, forward_request, forward_response, ForwardRequest,
-    ForwardResponse,
+    build_origin_request, copy_request_body, determine_request_body_kind, filter_hop_by_hop,
+    forward_request, forward_response, BodyCopyLimits, BodyCopyReport, ForwardRequest,
+    ForwardResponse, ForwardResponseReport, RequestBodyKind,
 };
 
 #[cfg(test)]
@@ -26,7 +27,7 @@ mod tests {
     #[test]
     fn test_http_detector_identifies_http() {
         let detector = HttpDetector;
-        assert_eq!(detector.id(), "http");
+        assert_eq!(detector.id(), eggress_core::ProtocolId::Http);
         assert_eq!(
             detector.detect(b"GET / HTTP/1.1\r\n"),
             DetectResult::Match { confidence: 100 }
@@ -288,7 +289,6 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server_jh.await.unwrap();
     }
 
@@ -315,7 +315,6 @@ mod tests {
         request.extend_from_slice(b"\r\n");
         stream.write_all(&request).await.unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server_jh.await.unwrap();
     }
 
@@ -347,7 +346,6 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server_jh.await.unwrap();
     }
 
@@ -384,7 +382,6 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server_jh.await.unwrap();
     }
 
@@ -418,7 +415,6 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server_jh.await.unwrap();
     }
 
@@ -448,7 +444,6 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         server_jh.await.unwrap();
     }
 }

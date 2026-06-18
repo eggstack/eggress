@@ -290,7 +290,7 @@ Legend:
 - [x] Human-readable structured logs
 - [ ] JSON logs
 - [x] Secret redaction for URIs, authentication, and runtime logs
-- [x] Traffic counters for TCP relay sessions
+- [x] Traffic counters for TCP relay and HTTP forward sessions
 - [ ] Per-upstream metrics
 - [ ] Prometheus endpoint
 - [ ] Local admin API
@@ -333,6 +333,13 @@ Legend:
 - [ ] SBOM
 - [ ] Crates.io packages
 - [ ] Migration guide from Python `pproxy`
+
+### Phase 1 limitations
+
+- One ordinary HTTP request is processed per client connection.
+- Persistent proxy connections and pipelining are not yet supported.
+- Unsupported transfer codings are rejected.
+- TLS interception is not supported; HTTPS uses CONNECT tunneling.
 
 ## Dependency policy
 

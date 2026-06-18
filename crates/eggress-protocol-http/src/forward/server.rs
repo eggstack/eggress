@@ -1,7 +1,309 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::error::HttpError;
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
+
+/// Limits for body copying.
+pub struct BodyCopyLimits {
+    pub max_chunk_size_line: usize,
+    pub max_chunk_size: u64,
+    pub max_decoded_body: u64,
+    pub max_trailer_line: usize,
+    pub max_trailer_bytes: usize,
+}
+
+impl Default for BodyCopyLimits {
+    fn default() -> Self {
+        Self {
+            max_chunk_size_line: 1024,
+            max_chunk_size: 64 * 1024 * 1024,
+            max_decoded_body: 1024 * 1024 * 1024,
+            max_trailer_line: 8192,
+            max_trailer_bytes: 32 * 1024,
+        }
+    }
+}
+
+/// Report from body copying.
+#[derive(Debug, Default)]
+pub struct BodyCopyReport {
+    pub wire_bytes: u64,
+    pub decoded_bytes: u64,
+}
+
+/// Report from forwarding a response.
+#[derive(Debug, Default)]
+pub struct ForwardResponseReport {
+    pub bytes_forwarded: u64,
+}
+
+/// Copy a request body from reader to writer.
+///
+/// For Content-Length bodies, copies exactly `len` bytes.
+/// For chunked bodies, parses and forwards chunks with proper bounds.
+/// Returns byte counts for accounting.
+pub async fn copy_request_body<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    kind: RequestBodyKind,
+    limits: &BodyCopyLimits,
+) -> Result<BodyCopyReport, HttpError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    match kind {
+        RequestBodyKind::None => Ok(BodyCopyReport::default()),
+        RequestBodyKind::ContentLength(len) => copy_content_length_body(reader, writer, len).await,
+        RequestBodyKind::Chunked => copy_chunked_body(reader, writer, limits).await,
+    }
+}
+
+async fn copy_content_length_body<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    len: u64,
+) -> Result<BodyCopyReport, HttpError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut remaining = len;
+    let mut buf = [0u8; 8192];
+    while remaining > 0 {
+        let to_read = (remaining as usize).min(buf.len());
+        let n = reader.read(&mut buf[..to_read]).await?;
+        if n == 0 {
+            return Err(HttpError::MalformedRequest("unexpected EOF in body".into()));
+        }
+        writer.write_all(&buf[..n]).await?;
+        remaining -= n as u64;
+    }
+    Ok(BodyCopyReport {
+        wire_bytes: len,
+        decoded_bytes: len,
+    })
+}
+
+async fn copy_chunked_body<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    limits: &BodyCopyLimits,
+) -> Result<BodyCopyReport, HttpError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut wire_bytes: u64 = 0;
+    let mut decoded_bytes: u64 = 0;
+
+    loop {
+        // Read chunk size line
+        let size_line = read_bounded_line(reader, limits.max_chunk_size_line).await?;
+        wire_bytes += size_line.len() as u64;
+
+        // Parse chunk size (ignore extensions after ';')
+        let chunk_size = parse_chunk_size(&size_line)?;
+
+        // Forward the size line
+        writer.write_all(&size_line).await?;
+
+        if chunk_size == 0 {
+            // Read and forward trailers
+            let mut trailer_bytes: u64 = 0;
+            loop {
+                let trailer = read_bounded_line(reader, limits.max_trailer_line).await?;
+                wire_bytes += trailer.len() as u64;
+                trailer_bytes += trailer.len() as u64;
+
+                if trailer_bytes > limits.max_trailer_bytes as u64 {
+                    return Err(HttpError::MalformedRequest("trailers too large".into()));
+                }
+
+                writer.write_all(&trailer).await?;
+
+                if trailer == b"\r\n" {
+                    break;
+                }
+            }
+            break;
+        }
+
+        // Validate chunk size against limit
+        if chunk_size > limits.max_chunk_size {
+            return Err(HttpError::MalformedRequest("chunk too large".into()));
+        }
+
+        // Validate decoded body limit
+        decoded_bytes = decoded_bytes
+            .checked_add(chunk_size)
+            .ok_or_else(|| HttpError::MalformedRequest("decoded body too large".into()))?;
+        if decoded_bytes > limits.max_decoded_body {
+            return Err(HttpError::MalformedRequest("decoded body too large".into()));
+        }
+
+        // Read exactly chunk_size data bytes
+        let mut remaining = chunk_size;
+        let mut buf = [0u8; 8192];
+        while remaining > 0 {
+            let to_read = (remaining as usize).min(buf.len());
+            let n = reader.read(&mut buf[..to_read]).await?;
+            if n == 0 {
+                return Err(HttpError::MalformedRequest(
+                    "unexpected EOF in chunk data".into(),
+                ));
+            }
+            writer.write_all(&buf[..n]).await?;
+            remaining -= n as u64;
+            wire_bytes += n as u64;
+        }
+
+        // Read and verify CRLF after chunk data
+        let mut crlf = [0u8; 2];
+        reader.read_exact(&mut crlf).await?;
+        wire_bytes += 2;
+        if crlf != *b"\r\n" {
+            return Err(HttpError::MalformedRequest(
+                "missing CRLF after chunk data".into(),
+            ));
+        }
+        writer.write_all(&crlf).await?;
+    }
+
+    Ok(BodyCopyReport {
+        wire_bytes,
+        decoded_bytes,
+    })
+}
+
+/// Read a bounded line terminated by \r\n.
+async fn read_bounded_line<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    max_len: usize,
+) -> Result<Vec<u8>, HttpError> {
+    let mut line = Vec::new();
+    let mut temp = [0u8; 1];
+    loop {
+        if line.len() >= max_len {
+            return Err(HttpError::MalformedRequest("line too long".into()));
+        }
+        let n = reader.read(&mut temp).await?;
+        if n == 0 {
+            if line.is_empty() {
+                return Err(HttpError::MalformedRequest("unexpected EOF".into()));
+            }
+            return Err(HttpError::MalformedRequest("incomplete line".into()));
+        }
+        line.push(temp[0]);
+        if line.len() >= 2 && &line[line.len() - 2..] == b"\r\n" {
+            break;
+        }
+    }
+    Ok(line)
+}
+
+/// Parse a chunk size from a line (without trailing CRLF).
+/// Supports hex with optional extensions (after ';').
+fn parse_chunk_size(line_without_crlf: &[u8]) -> Result<u64, HttpError> {
+    let size_field = line_without_crlf
+        .split(|b| *b == b';')
+        .next()
+        .ok_or_else(|| HttpError::MalformedRequest("empty chunk size".into()))?;
+
+    if size_field.is_empty() {
+        return Err(HttpError::MalformedRequest("empty chunk size".into()));
+    }
+
+    let size_str = std::str::from_utf8(size_field)
+        .map_err(|_| HttpError::MalformedRequest("invalid chunk size encoding".into()))?;
+    let size_str = size_str.trim();
+
+    u64::from_str_radix(size_str, 16)
+        .map_err(|_| HttpError::MalformedRequest("invalid chunk size".into()))
+}
+
+/// Describes how the request body is framed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestBodyKind {
+    None,
+    ContentLength(u64),
+    Chunked,
+}
+
+/// Determine the request body framing from parsed headers.
+///
+/// Validates:
+/// - Content-Length values (reject conflicting, accept equal duplicates)
+/// - Transfer-Encoding (reject TE + CL, require chunked to be final)
+/// - Only "chunked" transfer coding is supported in Phase 1
+pub fn determine_request_body_kind(
+    headers: &[(String, String)],
+) -> Result<RequestBodyKind, HttpError> {
+    let mut content_lengths: Vec<u64> = Vec::new();
+    let mut transfer_encodings: Vec<String> = Vec::new();
+
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("Content-Length") {
+            // Parse each Content-Length value
+            let len = value
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| HttpError::InvalidContentLength)?;
+            content_lengths.push(len);
+        } else if name.eq_ignore_ascii_case("Transfer-Encoding") {
+            // Split comma-separated transfer codings
+            for coding in value.split(',') {
+                let coding = coding.trim().to_string();
+                if !coding.is_empty() {
+                    transfer_encodings.push(coding);
+                }
+            }
+        }
+    }
+
+    // Validate Content-Length
+    if !content_lengths.is_empty() {
+        // All values must be identical
+        let first = content_lengths[0];
+        if content_lengths.iter().any(|&cl| cl != first) {
+            return Err(HttpError::ConflictingContentLength);
+        }
+    }
+
+    // Validate Transfer-Encoding
+    if !transfer_encodings.is_empty() {
+        // TE + CL is rejected in Phase 1
+        if !content_lengths.is_empty() {
+            return Err(HttpError::TransferEncodingWithContentLength);
+        }
+
+        // Check if chunked is present but not the final coding
+        let has_chunked = transfer_encodings
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case("chunked"));
+        if has_chunked {
+            let last = transfer_encodings.last().unwrap();
+            if !last.eq_ignore_ascii_case("chunked") {
+                return Err(HttpError::ChunkedNotFinal);
+            }
+        }
+
+        // Only "chunked" is supported in Phase 1
+        for coding in &transfer_encodings {
+            if !coding.eq_ignore_ascii_case("chunked") {
+                return Err(HttpError::UnsupportedTransferEncoding(coding.clone()));
+            }
+        }
+
+        return Ok(RequestBodyKind::Chunked);
+    }
+
+    if let Some(len) = content_lengths.first() {
+        Ok(RequestBodyKind::ContentLength(*len))
+    } else {
+        Ok(RequestBodyKind::None)
+    }
+}
 
 /// Maximum size for the HTTP request head (request line + headers).
 const MAX_HEAD_SIZE: usize = 32 * 1024;
@@ -189,8 +491,9 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
 pub async fn forward_response(
     upstream: &mut BoxStream,
     client: &mut BoxStream,
-) -> Result<(), HttpError> {
+) -> Result<ForwardResponseReport, HttpError> {
     let response = read_response_head(upstream).await?;
+    let mut bytes_forwarded: u64 = 0;
 
     // Build response head with filtered headers
     let filtered = filter_hop_by_hop(&response.headers);
@@ -210,6 +513,7 @@ pub async fn forward_response(
 
     head.push_str("\r\n");
     client.write_all(head.as_bytes()).await?;
+    bytes_forwarded += head.len() as u64;
 
     // Relay body based on framing
     match (response.content_length, response.is_chunked) {
@@ -223,57 +527,52 @@ pub async fn forward_response(
                     break;
                 }
                 client.write_all(&buf[..n]).await?;
+                bytes_forwarded += n as u64;
                 remaining -= n as u64;
             }
         }
-        (None, true) => {
-            // Chunked transfer encoding: relay chunks until size 0
+        (None, true) => loop {
+            let mut size_line = Vec::new();
+            let mut temp = [0u8; 1];
             loop {
-                // Read chunk size line
-                let mut size_line = Vec::new();
-                let mut temp = [0u8; 1];
-                loop {
-                    let n = upstream.read(&mut temp).await?;
-                    if n == 0 {
-                        return Ok(());
-                    }
-                    size_line.push(temp[0]);
-                    if size_line.len() >= 2 && &size_line[size_line.len() - 2..] == b"\r\n" {
-                        break;
-                    }
+                let n = upstream.read(&mut temp).await?;
+                if n == 0 {
+                    return Ok(ForwardResponseReport { bytes_forwarded });
                 }
-                let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
-                let chunk_size = usize::from_str_radix(size_str.trim(), 16).map_err(|e| {
-                    HttpError::MalformedResponse(format!("invalid chunk size: {}", e))
-                })?;
-
-                // Forward the chunk size line
-                client.write_all(&size_line).await?;
-
-                if chunk_size == 0 {
-                    // Read trailing \r\n after final chunk
-                    let mut trail = [0u8; 2];
-                    upstream.read_exact(&mut trail).await?;
-                    client.write_all(&trail).await?;
+                size_line.push(temp[0]);
+                if size_line.len() >= 2 && &size_line[size_line.len() - 2..] == b"\r\n" {
                     break;
                 }
-
-                // Read and forward chunk data + trailing \r\n
-                let mut remaining = chunk_size + 2; // +2 for trailing \r\n
-                let mut buf = [0u8; 8192];
-                while remaining > 0 {
-                    let to_read = remaining.min(buf.len());
-                    let n = upstream.read(&mut buf[..to_read]).await?;
-                    if n == 0 {
-                        return Ok(());
-                    }
-                    client.write_all(&buf[..n]).await?;
-                    remaining -= n;
-                }
             }
-        }
+            let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
+            let chunk_size = usize::from_str_radix(size_str.trim(), 16)
+                .map_err(|e| HttpError::MalformedResponse(format!("invalid chunk size: {}", e)))?;
+
+            client.write_all(&size_line).await?;
+            bytes_forwarded += size_line.len() as u64;
+
+            if chunk_size == 0 {
+                let mut trail = [0u8; 2];
+                upstream.read_exact(&mut trail).await?;
+                client.write_all(&trail).await?;
+                bytes_forwarded += 2;
+                break;
+            }
+
+            let mut remaining = chunk_size + 2;
+            let mut buf = [0u8; 8192];
+            while remaining > 0 {
+                let to_read = remaining.min(buf.len());
+                let n = upstream.read(&mut buf[..to_read]).await?;
+                if n == 0 {
+                    return Ok(ForwardResponseReport { bytes_forwarded });
+                }
+                client.write_all(&buf[..n]).await?;
+                bytes_forwarded += n as u64;
+                remaining -= n;
+            }
+        },
         (None, false) => {
-            // No content-length and not chunked: read until connection close
             let mut buf = [0u8; 8192];
             loop {
                 let n = upstream.read(&mut buf).await?;
@@ -281,11 +580,12 @@ pub async fn forward_response(
                     break;
                 }
                 client.write_all(&buf[..n]).await?;
+                bytes_forwarded += n as u64;
             }
         }
     }
 
-    Ok(())
+    Ok(ForwardResponseReport { bytes_forwarded })
 }
 
 /// A parsed HTTP request ready for forwarding.
@@ -378,9 +678,6 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
 
     // Parse headers
     let mut headers = Vec::new();
-    let mut has_body = false;
-    let mut content_length = None;
-    let mut is_chunked = false;
 
     for line in lines {
         if line.is_empty() {
@@ -392,29 +689,17 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
                 continue;
             }
 
-            if name.eq_ignore_ascii_case("Content-Length") {
-                content_length = value.parse::<u64>().ok();
-                has_body = true;
-            } else if name.eq_ignore_ascii_case("Transfer-Encoding")
-                && value.eq_ignore_ascii_case("chunked")
-            {
-                is_chunked = true;
-                has_body = true;
-            }
-
             headers.push((name, value));
         }
     }
 
-    // Determine if there's a body based on method
-    if method != "GET"
-        && method != "HEAD"
-        && method != "DELETE"
-        && method != "OPTIONS"
-        && (content_length.is_some() || is_chunked)
-    {
-        has_body = true;
-    }
+    // Determine body framing from headers
+    let body_kind = determine_request_body_kind(&headers)?;
+    let (has_body, content_length, is_chunked) = match body_kind {
+        RequestBodyKind::None => (false, None, false),
+        RequestBodyKind::ContentLength(len) => (len > 0, Some(len), false),
+        RequestBodyKind::Chunked => (true, None, true),
+    };
 
     Ok(ForwardRequest {
         method,
@@ -649,5 +934,260 @@ mod tests {
         let tokens = connection_tokens(&headers);
         assert!(tokens.contains("close"));
         assert!(tokens.contains("upgrade"));
+    }
+
+    #[test]
+    fn test_determine_body_none() {
+        let headers = vec![("Host".into(), "example.com".into())];
+        assert_eq!(
+            determine_request_body_kind(&headers).unwrap(),
+            RequestBodyKind::None
+        );
+    }
+
+    #[test]
+    fn test_determine_body_content_length() {
+        let headers = vec![("Content-Length".into(), "42".into())];
+        assert_eq!(
+            determine_request_body_kind(&headers).unwrap(),
+            RequestBodyKind::ContentLength(42)
+        );
+    }
+
+    #[test]
+    fn test_determine_body_duplicate_equal_cl() {
+        let headers = vec![
+            ("Content-Length".into(), "42".into()),
+            ("Content-Length".into(), "42".into()),
+        ];
+        assert_eq!(
+            determine_request_body_kind(&headers).unwrap(),
+            RequestBodyKind::ContentLength(42)
+        );
+    }
+
+    #[test]
+    fn test_determine_body_conflicting_cl() {
+        let headers = vec![
+            ("Content-Length".into(), "42".into()),
+            ("Content-Length".into(), "100".into()),
+        ];
+        assert!(matches!(
+            determine_request_body_kind(&headers),
+            Err(HttpError::ConflictingContentLength)
+        ));
+    }
+
+    #[test]
+    fn test_determine_body_invalid_cl() {
+        let headers = vec![("Content-Length".into(), "abc".into())];
+        assert!(matches!(
+            determine_request_body_kind(&headers),
+            Err(HttpError::InvalidContentLength)
+        ));
+    }
+
+    #[test]
+    fn test_determine_body_chunked() {
+        let headers = vec![("Transfer-Encoding".into(), "chunked".into())];
+        assert_eq!(
+            determine_request_body_kind(&headers).unwrap(),
+            RequestBodyKind::Chunked
+        );
+    }
+
+    #[test]
+    fn test_determine_body_te_plus_cl() {
+        let headers = vec![
+            ("Transfer-Encoding".into(), "chunked".into()),
+            ("Content-Length".into(), "42".into()),
+        ];
+        assert!(matches!(
+            determine_request_body_kind(&headers),
+            Err(HttpError::TransferEncodingWithContentLength)
+        ));
+    }
+
+    #[test]
+    fn test_determine_body_unsupported_te() {
+        let headers = vec![("Transfer-Encoding".into(), "gzip".into())];
+        assert!(matches!(
+            determine_request_body_kind(&headers),
+            Err(HttpError::UnsupportedTransferEncoding(_))
+        ));
+    }
+
+    #[test]
+    fn test_determine_body_chunked_not_final() {
+        let headers = vec![("Transfer-Encoding".into(), "chunked, gzip".into())];
+        assert!(matches!(
+            determine_request_body_kind(&headers),
+            Err(HttpError::ChunkedNotFinal)
+        ));
+    }
+
+    #[test]
+    fn test_determine_body_mixed_header_casing() {
+        let headers = vec![
+            ("content-length".into(), "42".into()),
+            ("CONTENT-LENGTH".into(), "42".into()),
+        ];
+        assert_eq!(
+            determine_request_body_kind(&headers).unwrap(),
+            RequestBodyKind::ContentLength(42)
+        );
+    }
+
+    // ===== Body copy tests =====
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_simple() {
+        let input = b"5\r\nhello\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits)
+            .await
+            .unwrap();
+        assert_eq!(report.decoded_bytes, 5);
+        assert_eq!(writer, input);
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_multiple_chunks() {
+        let input = b"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits)
+            .await
+            .unwrap();
+        assert_eq!(report.decoded_bytes, 11);
+        assert_eq!(writer, input);
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_uppercase_hex() {
+        let input = b"5\r\nhello\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits)
+            .await
+            .unwrap();
+        assert_eq!(report.decoded_bytes, 5);
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_with_extension() {
+        let input = b"5;ext=value\r\nhello\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits)
+            .await
+            .unwrap();
+        assert_eq!(report.decoded_bytes, 5);
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_with_trailer() {
+        let input = b"5\r\nhello\r\n0\r\nTrailer: value\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits)
+            .await
+            .unwrap();
+        assert_eq!(report.decoded_bytes, 5);
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_malformed_hex() {
+        let input = b"ZZ\r\nhello\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let result =
+            copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_empty_size() {
+        let input = b"\r\nhello\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let result =
+            copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_missing_crlf() {
+        let input = b"5\r\nhelloX\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let result =
+            copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_oversized_chunk() {
+        let input = b"FFFFFFFFFFFFFFFF\r\nhello\r\n0\r\n\r\n";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits {
+            max_chunk_size: 1024,
+            ..Default::default()
+        };
+
+        let result =
+            copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_copy_content_length_body() {
+        let input = b"hello world";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(
+            &mut reader,
+            &mut writer,
+            RequestBodyKind::ContentLength(11),
+            &limits,
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.wire_bytes, 11);
+        assert_eq!(report.decoded_bytes, 11);
+        assert_eq!(writer, input);
+    }
+
+    #[tokio::test]
+    async fn test_copy_none_body() {
+        let mut reader = &b""[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(&mut reader, &mut writer, RequestBodyKind::None, &limits)
+            .await
+            .unwrap();
+        assert_eq!(report.wire_bytes, 0);
+        assert_eq!(report.decoded_bytes, 0);
     }
 }

@@ -148,9 +148,9 @@ mod tests {
 
     fn make_dispatcher(handshake_timeout: Duration) -> ProtocolDispatcher {
         let detectors: Vec<Box<dyn ProtocolDetector>> = vec![
-            Box::new(PrefixDetector::new("http", b"GET ".to_vec())),
-            Box::new(PrefixDetector::new("socks5", b"\x05".to_vec())),
-            Box::new(PrefixDetector::new("ssh", b"SSH-".to_vec())),
+            Box::new(PrefixDetector::new(ProtocolId::Http, b"GET ".to_vec())),
+            Box::new(PrefixDetector::new(ProtocolId::Socks5, b"\x05".to_vec())),
+            Box::new(PrefixDetector::new(ProtocolId::Http, b"SSH-".to_vec())),
         ];
         ProtocolDispatcher::with_defaults(detectors, handshake_timeout)
     }
@@ -165,7 +165,7 @@ mod tests {
             .unwrap();
 
         let (proto, mut replay) = dispatcher.dispatch(Box::new(rx)).await.unwrap();
-        assert_eq!(proto, "http");
+        assert_eq!(proto, ProtocolId::Http);
 
         // The replay stream should contain the full sniffed data
         assert_eq!(
@@ -190,7 +190,7 @@ mod tests {
         tx.write_all(b"\x05\x01\x00").await.unwrap();
 
         let (proto, _) = dispatcher.dispatch(Box::new(rx)).await.unwrap();
-        assert_eq!(proto, "socks5");
+        assert_eq!(proto, ProtocolId::Socks5);
     }
 
     #[tokio::test]
@@ -201,7 +201,7 @@ mod tests {
         tx.write_all(b"SSH-2.0-OpenSSH_8.9\r\n").await.unwrap();
 
         let (proto, _) = dispatcher.dispatch(Box::new(rx)).await.unwrap();
-        assert_eq!(proto, "ssh");
+        assert_eq!(proto, ProtocolId::Http);
     }
 
     #[tokio::test]
@@ -237,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn test_dispatch_buffer_overflow() {
         let detectors: Vec<Box<dyn ProtocolDetector>> = vec![Box::new(PrefixDetector::new(
-            "never",
+            ProtocolId::Http,
             b"NEVER_MATCH_ANYTHING_HERE_FOREVER".to_vec(),
         ))];
         let dispatcher = ProtocolDispatcher::new(
@@ -263,8 +263,8 @@ mod tests {
     async fn test_dispatch_ordered_detection() {
         // Both detectors would match \x05, but HTTP is listed first
         let detectors: Vec<Box<dyn ProtocolDetector>> = vec![
-            Box::new(PrefixDetector::new("http", b"\x05".to_vec())),
-            Box::new(PrefixDetector::new("socks5", b"\x05".to_vec())),
+            Box::new(PrefixDetector::new(ProtocolId::Http, b"\x05".to_vec())),
+            Box::new(PrefixDetector::new(ProtocolId::Socks5, b"\x05".to_vec())),
         ];
         let dispatcher = ProtocolDispatcher::with_defaults(detectors, Duration::from_secs(5));
 
@@ -273,7 +273,7 @@ mod tests {
 
         let (proto, _) = dispatcher.dispatch(Box::new(rx)).await.unwrap();
         // First detector wins
-        assert_eq!(proto, "http");
+        assert_eq!(proto, ProtocolId::Http);
     }
 
     #[tokio::test]
@@ -290,7 +290,7 @@ mod tests {
         });
 
         let (proto, _) = dispatcher.dispatch(Box::new(rx)).await.unwrap();
-        assert_eq!(proto, "http");
+        assert_eq!(proto, ProtocolId::Http);
 
         jh.await.unwrap();
     }
@@ -325,6 +325,9 @@ mod tests {
     async fn test_dispatch_protocol_ids() {
         let dispatcher = make_dispatcher(Duration::from_secs(5));
         let ids = dispatcher.protocol_ids();
-        assert_eq!(ids, vec!["http", "socks5", "ssh"]);
+        assert_eq!(
+            ids,
+            vec![ProtocolId::Http, ProtocolId::Socks5, ProtocolId::Http]
+        );
     }
 }

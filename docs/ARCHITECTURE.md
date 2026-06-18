@@ -17,6 +17,7 @@ Core types, traits, and infrastructure:
 - `relay()` — bidirectional half-close-aware data relay
 - `ReplayStream` — bounded sniff buffer for protocol detection
 - `ProtocolDispatcher` — ordered protocol detection and dispatch
+- `ProtocolId` — typed protocol identifier enum (Http, Socks4, Socks5)
 - `ChainExecutor` — multi-hop proxy chain execution
 
 ### eggress-server
@@ -24,11 +25,16 @@ Server orchestration library providing the reusable connection-handling API:
 - `AcceptedSession` — typed inbound session (tunnel or HTTP forward)
 - `PendingTunnel` / `PendingHttpForward` — parsed requests before route opening
 - `RequestBodyKind` — explicit body framing type
-- `serve_connection()` — main entry point: detect → accept → route → reply → relay
+- `InboundAuthentication` — listener authentication policy (none or username/password)
+- `AcceptError` — accept-phase error types including authentication failure
+- `serve_connection()` — main entry point: detect → accept (with timeout) → route → reply → relay
 - `SessionReport` — structured connection outcome with protocol, target, route, byte counts
+- `SessionOutcome` — normalized outcomes: Completed, ClientProtocolError, AuthenticationFailed, HandshakeTimedOut, RouteFailed, RelayFailed, Cancelled
 - `SessionOpenError` — normalized route failure types with protocol-specific reply mapping
 - Deferred success replies — success is sent only after outbound route is established
 - Common route opening — both tunnel and HTTP forward use the same `open_route()` function
+- Protocol enforcement — listener configuration restricts which protocols are accepted
+- Handshake timeout — configurable timeout for inbound protocol establishment
 
 ### eggress-cli
 CLI binary with `clap`-derived arguments:
@@ -50,7 +56,10 @@ Route resolution (first-available scheduling, direct fallback).
 HTTP/1 protocol implementation:
 - CONNECT server and client with Basic auth
 - Absolute-form forwarding with origin-form conversion
-- Bounded header parsing via httparse
+- Bounded header parsing
+- Request body framing validation (Content-Length, Transfer-Encoding)
+- Bounded chunked body copying with extensions, CRLF validation, and limits
+- Byte-counting response forwarding
 
 ### eggress-protocol-socks
 SOCKS4/4a and SOCKS5 protocol implementations:
@@ -68,11 +77,11 @@ Test utilities:
 
 ```
 Client → TcpListener → serve_connection()
-    → accept() — protocol detection and parsing (no replies sent)
+    → accept() — protocol detection with timeout and authentication
     → open_route() — direct or chain to target
     → send success/failure reply
-    → relay() or HTTP forward exchange
-    → SessionReport
+    → relay() or HTTP forward exchange (with byte counting)
+    → SessionReport (with normalized outcome and byte counts)
 ```
 
 ## Design Principles
@@ -83,3 +92,5 @@ Client → TcpListener → serve_connection()
 4. **No unsafe in core crates** — `unsafe_code = "forbid"`
 5. **Credentials never logged** — redacted Display implementations
 6. **Bounded everything** — sniff buffers, headers, credentials, handshake timeouts
+7. **Normalized failure categories** — structured outcomes for metrics and diagnostics
+8. **Configured protocol sets** — listeners accept only configured protocols

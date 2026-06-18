@@ -22,7 +22,7 @@ pub struct Socks5Detector;
 
 impl ProtocolDetector for Socks5Detector {
     fn id(&self) -> ProtocolId {
-        "socks5"
+        ProtocolId::Socks5
     }
 
     fn detect(&self, prefix: &[u8]) -> DetectResult {
@@ -45,7 +45,7 @@ mod tests {
     #[tokio::test]
     async fn test_detector_identifies_socks4() {
         let detector = Socks4Detector;
-        assert_eq!(detector.id(), "socks4");
+        assert_eq!(detector.id(), ProtocolId::Socks4);
         assert_eq!(
             detector.detect(b"\x04"),
             DetectResult::Match { confidence: 100 }
@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn test_socks5_detector_match() {
         let detector = Socks5Detector;
-        assert_eq!(detector.id(), "socks5");
+        assert_eq!(detector.id(), ProtocolId::Socks5);
         assert_eq!(
             detector.detect(&[0x05]),
             DetectResult::Match { confidence: 100 }

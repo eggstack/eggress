@@ -1,4 +1,4 @@
-use crate::accept::{AcceptedSession, PendingHttpForward, PendingTunnel, RequestBodyKind};
+use crate::accept::{AcceptedSession, PendingHttpForward, PendingTunnel};
 use crate::error::SessionOpenError;
 use crate::reply;
 use crate::{ConnectionConfig, RouteConfig};
@@ -7,7 +7,7 @@ use eggress_core::connector::{Connector, DirectConnector};
 use eggress_core::relay::relay;
 use eggress_core::BoxStream;
 use eggress_core::{TargetAddr, TargetHost};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 /// Report from a completed session.
 pub struct SessionReport {
@@ -24,8 +24,11 @@ pub struct SessionReport {
 pub enum SessionOutcome {
     Completed,
     ClientProtocolError,
+    AuthenticationFailed,
+    HandshakeTimedOut,
     RouteFailed,
     RelayFailed,
+    Cancelled,
 }
 
 impl SessionReport {
@@ -149,6 +152,8 @@ async fn execute_http_forward(
         Ok(mut upstream) => {
             // Build origin-form request and send to upstream
             let origin_req = eggress_protocol_http::build_origin_request(&pending.request);
+            let head_bytes = origin_req.len() as u64;
+
             if let Err(e) = upstream.write_all(origin_req.as_bytes()).await {
                 let _ = reply::send_http_forward_failure(
                     &mut pending.client,
@@ -177,219 +182,53 @@ async fn execute_http_forward(
             }
 
             // Forward body if present
-            match pending.body_kind {
-                RequestBodyKind::ContentLength(len) => {
-                    let mut remaining = len;
-                    let mut buf = [0u8; 8192];
-                    while remaining > 0 {
-                        let to_read = (remaining as usize).min(buf.len());
-                        let n = match pending.client.read(&mut buf[..to_read]).await {
-                            Ok(n) => n,
-                            Err(_e) => {
-                                return SessionReport {
-                                    protocol: None,
-                                    target,
-                                    route,
-                                    bytes_upstream: 0,
-                                    bytes_downstream: 0,
-                                    outcome: SessionOutcome::RelayFailed,
-                                };
-                            }
-                        };
-                        if n == 0 {
-                            return SessionReport {
-                                protocol: None,
-                                target,
-                                route,
-                                bytes_upstream: 0,
-                                bytes_downstream: 0,
-                                outcome: SessionOutcome::ClientProtocolError,
-                            };
-                        }
-                        if upstream.write_all(&buf[..n]).await.is_err() {
-                            return SessionReport {
-                                protocol: None,
-                                target,
-                                route,
-                                bytes_upstream: 0,
-                                bytes_downstream: 0,
-                                outcome: SessionOutcome::RelayFailed,
-                            };
-                        }
-                        remaining -= n as u64;
-                    }
+            let body_report = match eggress_protocol_http::copy_request_body(
+                &mut pending.client,
+                &mut upstream,
+                pending.body_kind,
+                &eggress_protocol_http::BodyCopyLimits::default(),
+            )
+            .await
+            {
+                Ok(report) => report,
+                Err(_e) => {
+                    return SessionReport {
+                        protocol: None,
+                        target,
+                        route,
+                        bytes_upstream: 0,
+                        bytes_downstream: 0,
+                        outcome: SessionOutcome::ClientProtocolError,
+                    };
                 }
-                RequestBodyKind::Chunked => loop {
-                    let mut size_line = Vec::new();
-                    let mut temp = [0u8; 1];
-                    loop {
-                        let n = match pending.client.read(&mut temp).await {
-                            Ok(n) => n,
-                            Err(_) => {
-                                return SessionReport {
-                                    protocol: None,
-                                    target,
-                                    route,
-                                    bytes_upstream: 0,
-                                    bytes_downstream: 0,
-                                    outcome: SessionOutcome::RelayFailed,
-                                };
-                            }
-                        };
-                        if n == 0 {
-                            return SessionReport {
-                                protocol: None,
-                                target,
-                                route,
-                                bytes_upstream: 0,
-                                bytes_downstream: 0,
-                                outcome: SessionOutcome::ClientProtocolError,
-                            };
-                        }
-                        size_line.push(temp[0]);
-                        if size_line.len() >= 2 && &size_line[size_line.len() - 2..] == b"\r\n" {
-                            break;
-                        }
-                    }
+            };
 
-                    if upstream.write_all(&size_line).await.is_err() {
+            let bytes_upstream = head_bytes + body_report.wire_bytes;
+
+            // Forward the upstream response back to the client
+            let response_report =
+                match eggress_protocol_http::forward_response(&mut upstream, &mut pending.client)
+                    .await
+                {
+                    Ok(report) => report,
+                    Err(_e) => {
                         return SessionReport {
                             protocol: None,
                             target,
                             route,
-                            bytes_upstream: 0,
+                            bytes_upstream,
                             bytes_downstream: 0,
                             outcome: SessionOutcome::RelayFailed,
                         };
                     }
-
-                    let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
-                    let chunk_size = match usize::from_str_radix(size_str.trim(), 16) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            return SessionReport {
-                                protocol: None,
-                                target,
-                                route,
-                                bytes_upstream: 0,
-                                bytes_downstream: 0,
-                                outcome: SessionOutcome::ClientProtocolError,
-                            };
-                        }
-                    };
-
-                    if chunk_size == 0 {
-                        loop {
-                            let mut trailer = Vec::new();
-                            loop {
-                                let n = match pending.client.read(&mut temp).await {
-                                    Ok(n) => n,
-                                    Err(_) => {
-                                        return SessionReport {
-                                            protocol: None,
-                                            target,
-                                            route,
-                                            bytes_upstream: 0,
-                                            bytes_downstream: 0,
-                                            outcome: SessionOutcome::RelayFailed,
-                                        };
-                                    }
-                                };
-                                if n == 0 {
-                                    return SessionReport {
-                                        protocol: None,
-                                        target,
-                                        route,
-                                        bytes_upstream: 0,
-                                        bytes_downstream: 0,
-                                        outcome: SessionOutcome::ClientProtocolError,
-                                    };
-                                }
-                                trailer.push(temp[0]);
-                                if trailer.len() >= 2 && &trailer[trailer.len() - 2..] == b"\r\n" {
-                                    break;
-                                }
-                            }
-                            if upstream.write_all(&trailer).await.is_err() {
-                                return SessionReport {
-                                    protocol: None,
-                                    target,
-                                    route,
-                                    bytes_upstream: 0,
-                                    bytes_downstream: 0,
-                                    outcome: SessionOutcome::RelayFailed,
-                                };
-                            }
-                            if trailer == b"\r\n" {
-                                break;
-                            }
-                        }
-                        break;
-                    }
-
-                    let mut remaining = chunk_size + 2;
-                    let mut buf = [0u8; 8192];
-                    while remaining > 0 {
-                        let to_read = remaining.min(buf.len());
-                        let n = match pending.client.read(&mut buf[..to_read]).await {
-                            Ok(n) => n,
-                            Err(_) => {
-                                return SessionReport {
-                                    protocol: None,
-                                    target,
-                                    route,
-                                    bytes_upstream: 0,
-                                    bytes_downstream: 0,
-                                    outcome: SessionOutcome::RelayFailed,
-                                };
-                            }
-                        };
-                        if n == 0 {
-                            return SessionReport {
-                                protocol: None,
-                                target,
-                                route,
-                                bytes_upstream: 0,
-                                bytes_downstream: 0,
-                                outcome: SessionOutcome::ClientProtocolError,
-                            };
-                        }
-                        if upstream.write_all(&buf[..n]).await.is_err() {
-                            return SessionReport {
-                                protocol: None,
-                                target,
-                                route,
-                                bytes_upstream: 0,
-                                bytes_downstream: 0,
-                                outcome: SessionOutcome::RelayFailed,
-                            };
-                        }
-                        remaining -= n;
-                    }
-                },
-                RequestBodyKind::None => {}
-            }
-
-            // Forward the upstream response back to the client
-            if let Err(_e) =
-                eggress_protocol_http::forward_response(&mut upstream, &mut pending.client).await
-            {
-                return SessionReport {
-                    protocol: None,
-                    target,
-                    route,
-                    bytes_upstream: 0,
-                    bytes_downstream: 0,
-                    outcome: SessionOutcome::RelayFailed,
                 };
-            }
 
             SessionReport {
                 protocol: None,
                 target,
                 route,
-                bytes_upstream: 0,
-                bytes_downstream: 0,
+                bytes_upstream,
+                bytes_downstream: response_report.bytes_forwarded,
                 outcome: SessionOutcome::Completed,
             }
         }

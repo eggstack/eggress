@@ -48,6 +48,21 @@ pub enum HttpError {
 
     #[error("upstream error: {0}")]
     Upstream(String),
+
+    #[error("invalid Content-Length header")]
+    InvalidContentLength,
+
+    #[error("conflicting Content-Length values")]
+    ConflictingContentLength,
+
+    #[error("Transfer-Encoding with Content-Length is not allowed")]
+    TransferEncodingWithContentLength,
+
+    #[error("unsupported transfer encoding: {0}")]
+    UnsupportedTransferEncoding(String),
+
+    #[error("chunked transfer encoding must be the final coding")]
+    ChunkedNotFinal,
 }
 
 impl HttpError {
@@ -62,6 +77,11 @@ impl HttpError {
             HttpError::GatewayTimeout => 504,
             HttpError::HeaderTooLarge => 431,
             HttpError::TooManyHeaders => 431,
+            HttpError::InvalidContentLength => 400,
+            HttpError::ConflictingContentLength => 400,
+            HttpError::TransferEncodingWithContentLength => 400,
+            HttpError::UnsupportedTransferEncoding(_) => 400,
+            HttpError::ChunkedNotFinal => 400,
             _ => 500,
         }
     }
