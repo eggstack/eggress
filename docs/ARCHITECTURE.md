@@ -28,8 +28,9 @@ Server orchestration library providing the reusable connection-handling API:
 - `InboundAuthentication` — listener authentication policy (none or username/password)
 - `AcceptError` — accept-phase error types including authentication failure
 - `serve_connection()` — main entry point: detect → accept (with timeout) → route → reply → relay
-- `SessionReport` — structured connection outcome with protocol, target, route, byte counts
+- `SessionReport` — structured connection outcome with protocol, target, route, byte counts, and failure category
 - `SessionOutcome` — normalized outcomes: Completed, ClientProtocolError, AuthenticationFailed, HandshakeTimedOut, RouteFailed, RelayFailed, Cancelled
+- `FailureCategory` — detailed failure diagnostics: Protocol, Authentication, HandshakeTimeout, Dns, ConnectionRefused, NetworkUnreachable, HostUnreachable, RouteTimeout, UpstreamAuthentication, Relay, Internal
 - `SessionOpenError` — normalized route failure types with protocol-specific reply mapping
 - Deferred success replies — success is sent only after outbound route is established
 - Common route opening — both tunnel and HTTP forward use the same `open_route()` function

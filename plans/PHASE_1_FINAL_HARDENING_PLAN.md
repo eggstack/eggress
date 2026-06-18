@@ -1173,6 +1173,8 @@ Implemented by Phase 1 final hardening pass:
 - Handshake timeout and outcome reporting
 - HTTP framing classification and chunked body hardening
 - HTTP byte accounting
+- `FailureCategory` enum for structured session outcome reporting
+- Updated `SessionReport` with `failure` field for detailed diagnostics
 - Test synchronization cleanup
 - CI and documentation closure
 

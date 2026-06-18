@@ -17,6 +17,7 @@ pub struct SessionReport {
     pub bytes_upstream: u64,
     pub bytes_downstream: u64,
     pub outcome: SessionOutcome,
+    pub failure: Option<FailureCategory>,
 }
 
 /// Outcome of a session.
@@ -31,9 +32,25 @@ pub enum SessionOutcome {
     Cancelled,
 }
 
+/// Specific failure category for structured diagnostics and metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureCategory {
+    Protocol,
+    Authentication,
+    HandshakeTimeout,
+    Dns,
+    ConnectionRefused,
+    NetworkUnreachable,
+    HostUnreachable,
+    RouteTimeout,
+    UpstreamAuthentication,
+    Relay,
+    Internal,
+}
+
 impl SessionReport {
     pub fn open_failed(
-        _error: SessionOpenError,
+        error: SessionOpenError,
         protocol: Option<String>,
         target: Option<String>,
         route: String,
@@ -45,6 +62,64 @@ impl SessionReport {
             bytes_upstream: 0,
             bytes_downstream: 0,
             outcome: SessionOutcome::RouteFailed,
+            failure: Some(FailureCategory::from(&error)),
+        }
+    }
+
+    pub fn completed(
+        protocol: Option<String>,
+        target: Option<String>,
+        route: String,
+        bytes_upstream: u64,
+        bytes_downstream: u64,
+    ) -> Self {
+        SessionReport {
+            protocol,
+            target,
+            route,
+            bytes_upstream,
+            bytes_downstream,
+            outcome: SessionOutcome::Completed,
+            failure: None,
+        }
+    }
+
+    pub fn cancelled(protocol: Option<String>, target: Option<String>, route: String) -> Self {
+        SessionReport {
+            protocol,
+            target,
+            route,
+            bytes_upstream: 0,
+            bytes_downstream: 0,
+            outcome: SessionOutcome::Cancelled,
+            failure: None,
+        }
+    }
+}
+
+impl From<&SessionOpenError> for FailureCategory {
+    fn from(error: &SessionOpenError) -> Self {
+        match error {
+            SessionOpenError::Dns => FailureCategory::Dns,
+            SessionOpenError::Refused => FailureCategory::ConnectionRefused,
+            SessionOpenError::NetworkUnreachable => FailureCategory::NetworkUnreachable,
+            SessionOpenError::HostUnreachable => FailureCategory::HostUnreachable,
+            SessionOpenError::Timeout => FailureCategory::RouteTimeout,
+            SessionOpenError::UpstreamAuthentication => FailureCategory::UpstreamAuthentication,
+            SessionOpenError::Hop { .. } => FailureCategory::Relay,
+            SessionOpenError::PolicyDenied => FailureCategory::Internal,
+            SessionOpenError::Other(_) => FailureCategory::Relay,
+        }
+    }
+}
+
+impl FailureCategory {
+    pub fn from_io_error(error: &std::io::Error) -> Self {
+        match error.kind() {
+            std::io::ErrorKind::ConnectionRefused => FailureCategory::ConnectionRefused,
+            std::io::ErrorKind::ConnectionReset => FailureCategory::Relay,
+            std::io::ErrorKind::TimedOut => FailureCategory::Relay,
+            _ => FailureCategory::Relay,
         }
     }
 }
@@ -111,6 +186,7 @@ async fn execute_tunnel(
                     bytes_upstream: 0,
                     bytes_downstream: 0,
                     outcome: SessionOutcome::ClientProtocolError,
+                    failure: Some(FailureCategory::Protocol),
                 };
             }
             let result = relay(pending.client, upstream).await;
@@ -120,15 +196,24 @@ async fn execute_tunnel(
                 result.bytes_downstream,
                 result.termination_reason
             );
-            SessionReport {
-                protocol,
-                target,
-                route,
-                bytes_upstream: result.bytes_upstream,
-                bytes_downstream: result.bytes_downstream,
-                outcome: match result.termination_reason {
-                    eggress_core::relay::TerminationReason::Error => SessionOutcome::RelayFailed,
-                    _ => SessionOutcome::Completed,
+            match result.termination_reason {
+                eggress_core::relay::TerminationReason::Error => SessionReport {
+                    protocol,
+                    target,
+                    route,
+                    bytes_upstream: result.bytes_upstream,
+                    bytes_downstream: result.bytes_downstream,
+                    outcome: SessionOutcome::RelayFailed,
+                    failure: Some(FailureCategory::Relay),
+                },
+                _ => SessionReport {
+                    protocol,
+                    target,
+                    route,
+                    bytes_upstream: result.bytes_upstream,
+                    bytes_downstream: result.bytes_downstream,
+                    outcome: SessionOutcome::Completed,
+                    failure: None,
                 },
             }
         }
@@ -199,6 +284,7 @@ async fn execute_http_forward(
                         bytes_upstream: 0,
                         bytes_downstream: 0,
                         outcome: SessionOutcome::ClientProtocolError,
+                        failure: Some(FailureCategory::Protocol),
                     };
                 }
             };
@@ -219,6 +305,7 @@ async fn execute_http_forward(
                             bytes_upstream,
                             bytes_downstream: 0,
                             outcome: SessionOutcome::RelayFailed,
+                            failure: Some(FailureCategory::Relay),
                         };
                     }
                 };
@@ -230,6 +317,7 @@ async fn execute_http_forward(
                 bytes_upstream,
                 bytes_downstream: response_report.bytes_forwarded,
                 outcome: SessionOutcome::Completed,
+                failure: None,
             }
         }
         Err(error) => {

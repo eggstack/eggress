@@ -7,7 +7,7 @@ use std::time::Duration;
 
 pub use accept::AcceptedSession;
 pub use error::SessionOpenError;
-pub use execute::SessionReport;
+pub use execute::{FailureCategory, SessionReport};
 
 /// Configuration for a single connection.
 pub struct ConnectionConfig {
@@ -57,6 +57,7 @@ pub async fn serve_connection(
                 bytes_upstream: 0,
                 bytes_downstream: 0,
                 outcome: execute::SessionOutcome::AuthenticationFailed,
+                failure: Some(execute::FailureCategory::Authentication),
             };
         }
         Ok(Err(_)) => {
@@ -67,6 +68,7 @@ pub async fn serve_connection(
                 bytes_upstream: 0,
                 bytes_downstream: 0,
                 outcome: execute::SessionOutcome::ClientProtocolError,
+                failure: Some(execute::FailureCategory::Protocol),
             };
         }
         Err(_) => {
@@ -77,11 +79,25 @@ pub async fn serve_connection(
                 bytes_upstream: 0,
                 bytes_downstream: 0,
                 outcome: execute::SessionOutcome::HandshakeTimedOut,
+                failure: Some(execute::FailureCategory::HandshakeTimeout),
             };
         }
     };
 
-    execute::execute(session, &config).await
+    let report = execute::execute(session, &config).await;
+
+    tracing::info!(
+        outcome = ?report.outcome,
+        failure = ?report.failure,
+        protocol = ?report.protocol,
+        target = ?report.target,
+        route = %report.route,
+        bytes_upstream = report.bytes_upstream,
+        bytes_downstream = report.bytes_downstream,
+        "connection completed",
+    );
+
+    report
 }
 
 #[cfg(test)]
@@ -692,5 +708,264 @@ mod tests {
         assert!(report.bytes_downstream > 0);
 
         origin_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_successful_session_has_no_failure() {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let config = ConnectionConfig {
+                route: RouteConfig::Direct,
+                handshake_timeout: Duration::from_secs(5),
+                protocols: all_protocols(),
+                authentication: accept::InboundAuthentication::None,
+            };
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+        match echo_addr.ip() {
+            std::net::IpAddr::V4(ip) => {
+                stream.write_all(&ip.octets()).await.unwrap();
+            }
+            std::net::IpAddr::V6(ip) => {
+                stream.write_all(&ip.octets()).await.unwrap();
+            }
+        }
+        stream
+            .write_all(&echo_addr.port().to_be_bytes())
+            .await
+            .unwrap();
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[0], 0x05);
+        assert_eq!(reply[1], 0x00);
+
+        stream.write_all(b"hello").await.unwrap();
+        stream.shutdown().await.unwrap();
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"hello");
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
+        assert_eq!(report.failure, None);
+
+        echo_jh.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_handshake_timeout_maps_to_failure_category() {
+        let (_client_stream, server_stream) = tokio::io::duplex(1024);
+        let boxed: eggress_core::BoxStream = Box::new(server_stream);
+        let config = ConnectionConfig {
+            route: RouteConfig::Direct,
+            handshake_timeout: Duration::from_secs(5),
+            protocols: all_protocols(),
+            authentication: accept::InboundAuthentication::None,
+        };
+
+        let task = tokio::spawn(serve_connection(boxed, config));
+
+        tokio::time::advance(Duration::from_secs(6)).await;
+
+        let report = task.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::HandshakeTimedOut
+        ));
+        assert_eq!(
+            report.failure,
+            Some(execute::FailureCategory::HandshakeTimeout)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_session_open_error_dns() {
+        let error = SessionOpenError::Dns;
+        let category = execute::FailureCategory::from(&error);
+        assert_eq!(category, execute::FailureCategory::Dns);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_session_open_error_refused() {
+        let error = SessionOpenError::Refused;
+        let category = execute::FailureCategory::from(&error);
+        assert_eq!(category, execute::FailureCategory::ConnectionRefused);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_session_open_error_network_unreachable() {
+        let error = SessionOpenError::NetworkUnreachable;
+        let category = execute::FailureCategory::from(&error);
+        assert_eq!(category, execute::FailureCategory::NetworkUnreachable);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_session_open_error_host_unreachable() {
+        let error = SessionOpenError::HostUnreachable;
+        let category = execute::FailureCategory::from(&error);
+        assert_eq!(category, execute::FailureCategory::HostUnreachable);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_session_open_error_timeout() {
+        let error = SessionOpenError::Timeout;
+        let category = execute::FailureCategory::from(&error);
+        assert_eq!(category, execute::FailureCategory::RouteTimeout);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_session_open_error_upstream_auth() {
+        let error = SessionOpenError::UpstreamAuthentication;
+        let category = execute::FailureCategory::from(&error);
+        assert_eq!(category, execute::FailureCategory::UpstreamAuthentication);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_io_error_connection_refused() {
+        let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+        let category = execute::FailureCategory::from_io_error(&error);
+        assert_eq!(category, execute::FailureCategory::ConnectionRefused);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_io_error_connection_reset() {
+        let error = std::io::Error::new(std::io::ErrorKind::ConnectionReset, "reset");
+        let category = execute::FailureCategory::from_io_error(&error);
+        assert_eq!(category, execute::FailureCategory::Relay);
+    }
+
+    #[tokio::test]
+    async fn test_failure_category_from_io_error_timeout() {
+        let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout");
+        let category = execute::FailureCategory::from_io_error(&error);
+        assert_eq!(category, execute::FailureCategory::Relay);
+    }
+
+    #[tokio::test]
+    async fn test_route_failure_maps_to_dns_category() {
+        let report = execute::SessionReport::open_failed(
+            SessionOpenError::Dns,
+            Some("socks5".to_string()),
+            Some("example.com:443".to_string()),
+            "direct".to_string(),
+        );
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::RouteFailed
+        ));
+        assert_eq!(report.failure, Some(execute::FailureCategory::Dns));
+    }
+
+    #[tokio::test]
+    async fn test_route_failure_maps_to_connection_refused_category() {
+        let report = execute::SessionReport::open_failed(
+            SessionOpenError::Refused,
+            Some("http".to_string()),
+            Some("10.0.0.1:80".to_string()),
+            "chain(2)".to_string(),
+        );
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::RouteFailed
+        ));
+        assert_eq!(
+            report.failure,
+            Some(execute::FailureCategory::ConnectionRefused)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_completed_session_has_no_failure() {
+        let report = execute::SessionReport::completed(
+            Some("socks5".to_string()),
+            Some("example.com:443".to_string()),
+            "direct".to_string(),
+            1024,
+            2048,
+        );
+        assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
+        assert_eq!(report.failure, None);
+        assert_eq!(report.bytes_upstream, 1024);
+        assert_eq!(report.bytes_downstream, 2048);
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_session_has_no_failure() {
+        let report = execute::SessionReport::cancelled(
+            Some("http".to_string()),
+            Some("example.com:80".to_string()),
+            "direct".to_string(),
+        );
+        assert!(matches!(report.outcome, execute::SessionOutcome::Cancelled));
+        assert_eq!(report.failure, None);
+    }
+
+    #[tokio::test]
+    async fn test_authentication_failure_maps_to_failure_category() {
+        let auth = accept::InboundAuthentication::UsernamePassword {
+            username: "user".to_string(),
+            password: "secret".to_string(),
+        };
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let config = ConnectionConfig {
+                route: RouteConfig::Direct,
+                handshake_timeout: Duration::from_secs(5),
+                protocols: all_protocols(),
+                authentication: auth,
+            };
+            serve_connection(boxed, config).await
+        });
+
+        // Connect with SOCKS5 and offer username/password auth
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(&[0x05, 0x02, 0x00, 0x02]).await.unwrap();
+        // Server should select method 0x02 (username/password)
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x02]);
+
+        // Send auth with wrong password
+        // Auth version (0x01) + username len (0x04) + "user" + password len (0x05) + "wrong"
+        stream
+            .write_all(&[0x01, 0x04, b'u', b's', b'e', b'r', 0x05])
+            .await
+            .unwrap();
+        stream.write_all(b"wrong").await.unwrap();
+        // Read auth response (failure)
+        let mut auth_resp = [0u8; 2];
+        stream.read_exact(&mut auth_resp).await.unwrap();
+        assert_eq!(auth_resp, [0x01, 0x01]);
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::AuthenticationFailed
+        ));
+        assert_eq!(
+            report.failure,
+            Some(execute::FailureCategory::Authentication)
+        );
     }
 }
