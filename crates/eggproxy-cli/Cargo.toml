@@ -1,0 +1,29 @@
+[package]
+name = "eggproxy-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "eggproxy"
+path = "src/main.rs"
+
+[dependencies]
+eggproxy-core.workspace = true
+eggproxy-uri.workspace = true
+eggproxy-protocol-http.workspace = true
+eggproxy-protocol-socks.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[dev-dependencies]
+eggproxy-testkit.workspace = true
+assert_cmd.workspace = true
+predicates.workspace = true
+
+[lints]
+workspace = true

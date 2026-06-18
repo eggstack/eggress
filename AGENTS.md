@@ -1,0 +1,69 @@
+# AGENTS.md
+
+## Build and Test Commands
+
+```bash
+# Check workspace compiles
+cargo check --workspace
+
+# Run all tests
+cargo test --workspace
+
+# Format code
+cargo fmt --all
+
+# Check formatting
+cargo fmt --all -- --check
+
+# Lint
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Security audit
+cargo deny check
+
+# Run the CLI
+cargo run --bin eggproxy -- --help
+cargo run --bin eggproxy -- -l http://:8080
+```
+
+## Project Structure
+
+```text
+eggproxy/
+├── Cargo.toml              # Workspace root
+├── crates/
+│   ├── eggproxy-core/      # Core types, traits, relay, listener, connector, chain
+│   ├── eggproxy-cli/       # CLI binary
+│   ├── eggproxy-uri/       # URI parser and AST
+│   ├── eggproxy-routing/   # Routing logic
+│   ├── eggproxy-protocol-http/   # HTTP CONNECT and forwarding
+│   ├── eggproxy-protocol-socks/  # SOCKS4/4a and SOCKS5
+│   └── eggproxy-testkit/   # Test utilities
+├── tests/
+│   ├── interoperability/   # Cross-implementation tests
+│   └── fixtures/           # Test fixtures
+└── docs/
+    ├── ARCHITECTURE.md
+    ├── URI_GRAMMAR.md
+    └── ROADMAP.md
+```
+
+## Code Conventions
+
+- Edition: 2021
+- MSRV: 1.75
+- `unsafe_code = "forbid"` in all workspace crates
+- `clippy::all` warnings denied
+- Async runtime: Tokio
+- Errors: `thiserror`
+- CLI: `clap` with derive
+- Logging: `tracing` + `tracing-subscriber`
+- No C dependencies, no OpenSSL
+
+## Architecture
+
+- Streams are boxed at protocol/transport boundaries (`BoxStream`)
+- Protocol detection uses ordered `ProtocolDetector` implementations
+- Chain executor folds over hop list with protocol-specific handlers
+- Relay uses `tokio::io::split` + `tokio::io::copy` for bidirectional forwarding
+- Credentials are never logged; URI display uses redacted format

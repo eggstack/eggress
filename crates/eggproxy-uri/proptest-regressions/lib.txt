@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 92e59274ad1e9a3305f72264090dbc83034df8f98b103735a46b54801d0a6083 # shrinks to spec = ProxyChainSpec { hops: [ProxyHopSpec { protocols: [Http], endpoint: EndpointSpec { host: "[a::a]", port: 1 }, credentials: None, rule: None, local_bind: None }] }
+cc 6560e971297e4d396d0062e164c1ca3405014367af9cd9ee0e798e9934370e16 # shrinks to input = "http://a:100000"
+cc 9e7830610423c09385bf2eafccbd8d7bc27ba8a12713ce7f3885601029c51278 # shrinks to input = "http://a:0"
+cc eecd5900aa432bb781b686929d086ba3a3c05a703a85088fa55b1a5d85c62934 # shrinks to input = "http://a:70000"

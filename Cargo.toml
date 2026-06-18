@@ -1,0 +1,57 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/eggproxy-cli",
+    "crates/eggproxy-core",
+    "crates/eggproxy-uri",
+    "crates/eggproxy-routing",
+    "crates/eggproxy-protocol-http",
+    "crates/eggproxy-protocol-socks",
+    "crates/eggproxy-testkit",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/eggstack/eggproxy"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+bytes = "1"
+http = "1"
+httparse = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+socket2 = "0.5"
+pin-project-lite = "0.2"
+proptest = "1"
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+tokio-test = "0.4"
+insta = "1"
+trait-variant = "0.1"
+
+# Internal crates
+eggproxy-core = { path = "crates/eggproxy-core" }
+eggproxy-uri = { path = "crates/eggproxy-uri" }
+eggproxy-routing = { path = "crates/eggproxy-routing" }
+eggproxy-protocol-http = { path = "crates/eggproxy-protocol-http" }
+eggproxy-protocol-socks = { path = "crates/eggproxy-protocol-socks" }
+eggproxy-testkit = { path = "crates/eggproxy-testkit" }
+eggproxy-cli = { path = "crates/eggproxy-cli" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

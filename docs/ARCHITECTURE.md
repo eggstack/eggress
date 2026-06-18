@@ -1,0 +1,72 @@
+# EggProxy Architecture
+
+## Overview
+
+EggProxy is a multi-protocol TCP proxy framework built on Tokio. It supports mixed-protocol listeners (HTTP CONNECT, SOCKS4/4a, SOCKS5) with direct or chained upstream connections.
+
+## Crate Structure
+
+### eggproxy-core
+Core types, traits, and infrastructure:
+- `TargetAddr`, `TargetHost` — typed destination addresses preserving domain names
+- `ClientIdentity` — anonymous or authenticated client identity
+- `SessionContext` — per-connection metadata
+- `BoxStream` — boxed async byte stream trait alias
+- `TcpListener` — connection-accepting listener with semaphore limits
+- `DirectConnector` — TCP connector with DNS resolution
+- `relay()` — bidirectional half-close-aware data relay
+- `ReplayStream` — bounded sniff buffer for protocol detection
+- `ProtocolDispatcher` — ordered protocol detection and dispatch
+- `ChainExecutor` — multi-hop proxy chain execution
+
+### eggproxy-cli
+CLI binary with `clap`-derived arguments:
+- `-l` / `--listen` — listener URIs (multiple allowed)
+- `-r` / `--remote` — upstream proxy URIs (chains with `__`)
+- Default: mixed HTTP listener on 127.0.0.1:8080
+
+### eggproxy-uri
+URI parser with typed AST:
+- `ProxyChainSpec` → `ProxyHopSpec` → `ProtocolSpec`, `EndpointSpec`, `CredentialSpec`
+- `+` separates protocols within a hop
+- `__` separates proxy hops
+- Redacted Display implementation for secret-safe logging
+
+### eggproxy-routing
+Route resolution (first-available scheduling, direct fallback).
+
+### eggproxy-protocol-http
+HTTP/1 protocol implementation:
+- CONNECT server and client with Basic auth
+- Absolute-form forwarding with origin-form conversion
+- Bounded header parsing via httparse
+
+### eggproxy-protocol-socks
+SOCKS4/4a and SOCKS5 protocol implementations:
+- Server and client for both protocol versions
+- SOCKS4a domain preservation for remote DNS
+- SOCKS5 method negotiation, no-auth and username/password auth
+- Bounded credentials (255 bytes)
+
+### eggproxy-testkit
+Test utilities:
+- Echo server, half-close server
+- Temporary port allocator
+
+## Data Flow
+
+```
+Client → TcpListener → ProtocolDispatcher → Protocol Handshake
+    → ChainExecutor (optional upstream hops)
+    → DirectConnector → Target
+    → relay(BoxStream, BoxStream)
+```
+
+## Design Principles
+
+1. **Separate protocol from transport** — protocols run over arbitrary streams
+2. **Preserve unresolved targets** — domain names stay as domains until resolution is required
+3. **Box streams at boundaries** — avoid propagating generic stream types
+4. **No unsafe in core crates** — `unsafe_code = "forbid"`
+5. **Credentials never logged** — redacted Display implementations
+6. **Bounded everything** — sniff buffers, headers, credentials, handshake timeouts

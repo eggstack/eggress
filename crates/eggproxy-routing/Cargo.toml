@@ -1,0 +1,15 @@
+[package]
+name = "eggproxy-routing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+eggproxy-core.workspace = true
+eggproxy-uri.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+
+[lints]
+workspace = true
