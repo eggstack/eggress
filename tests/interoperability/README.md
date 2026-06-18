@@ -5,7 +5,7 @@ These tests verify eggress's compatibility with external implementations.
 ## Dependencies
 
 - **curl**: Required for curl-based tests. Install via system package manager.
-- **Python pproxy** (optional): For pproxy-based cross-implementation tests.
+- **Python pproxy** (optional): For pproxy-based cross-implementation tests. CI pins version `2.7.9`.
 
 ## Running
 
