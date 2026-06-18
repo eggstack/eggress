@@ -34,17 +34,17 @@ eggress/
 ├── crates/
 │   ├── eggress-core/      # Core types, traits, relay, listener, connector, chain
 │   ├── eggress-cli/       # CLI binary
+│   ├── eggress-server/    # Server orchestration: accept, execute, reply, error
 │   ├── eggress-uri/       # URI parser and AST
 │   ├── eggress-routing/   # Routing logic
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
 │   └── eggress-testkit/   # Test utilities
 ├── tests/
-│   ├── interoperability/   # Cross-implementation tests
-│   └── fixtures/           # Test fixtures
+│   ├── integration/       # Internal eggress-to-eggress tests
+│   └── interoperability/  # Cross-implementation tests (curl, pproxy)
 └── docs/
     ├── ARCHITECTURE.md
-    ├── URI_GRAMMAR.md
     └── ROADMAP.md
 ```
 

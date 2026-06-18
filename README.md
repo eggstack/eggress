@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 1 complete — core TCP proxy with mixed HTTP/SOCKS listeners and chaining.
+> Status: Phase 1 complete — externally interoperable core TCP proxy with mixed HTTP/SOCKS listeners, ordinary HTTP forwarding, and HTTP/SOCKS chaining.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -46,7 +46,7 @@ Legend:
 ### Core
 
 - [x] Rust workspace and CI
-- [ ] Embeddable library API
+- [x] Embeddable library API (eggress-server crate)
 - [x] `pproxy`-compatible CLI shell
 - [x] Typed URI parser
 - [x] Multi-hop chain parser
@@ -65,12 +65,15 @@ Legend:
 
 - [x] HTTP CONNECT server
 - [x] HTTP CONNECT client
-- [x] Ordinary HTTP forward-proxy server — partial: one request per connection
+- [x] Single-exchange ordinary HTTP forward-proxy server
 - [x] Absolute-form to origin-form rewriting
 - [x] HTTP proxy Basic authentication
 - [ ] Persistent HTTP forwarding
-- [ ] Hop-by-hop header filtering
-- [ ] HTTP upstream chaining
+- [x] Hop-by-hop request-header filtering
+- [x] HTTP upstream chaining
+- [x] Content-Length request bodies
+- [x] Chunked request bodies
+- [x] Deferred CONNECT success reply
 
 ### SOCKS4
 
@@ -284,10 +287,10 @@ Legend:
 - [ ] TOML configuration
 - [ ] Configuration validation
 - [ ] Configuration reload
-- [ ] Human-readable logs
+- [x] Human-readable structured logs
 - [ ] JSON logs
-- [ ] Secret redaction
-- [ ] Traffic counters
+- [x] Secret redaction for URIs, authentication, and runtime logs
+- [x] Traffic counters for TCP relay sessions
 - [ ] Per-upstream metrics
 - [ ] Prometheus endpoint
 - [ ] Local admin API
@@ -312,7 +315,7 @@ Legend:
 - [ ] DNS rebinding-aware routing
 - [ ] Secret zeroization where practical
 - [ ] Unsafe-code audit
-- [ ] Dependency audit
+- [x] Dependency audit in CI
 - [ ] Fuzzing corpus
 - [ ] Long-running soak tests
 - [ ] Resource-exhaustion tests

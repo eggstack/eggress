@@ -19,6 +19,17 @@ Core types, traits, and infrastructure:
 - `ProtocolDispatcher` — ordered protocol detection and dispatch
 - `ChainExecutor` — multi-hop proxy chain execution
 
+### eggress-server
+Server orchestration library providing the reusable connection-handling API:
+- `AcceptedSession` — typed inbound session (tunnel or HTTP forward)
+- `PendingTunnel` / `PendingHttpForward` — parsed requests before route opening
+- `RequestBodyKind` — explicit body framing type
+- `serve_connection()` — main entry point: detect → accept → route → reply → relay
+- `SessionReport` — structured connection outcome with protocol, target, route, byte counts
+- `SessionOpenError` — normalized route failure types with protocol-specific reply mapping
+- Deferred success replies — success is sent only after outbound route is established
+- Common route opening — both tunnel and HTTP forward use the same `open_route()` function
+
 ### eggress-cli
 CLI binary with `clap`-derived arguments:
 - `-l` / `--listen` — listener URIs (multiple allowed)
@@ -56,10 +67,12 @@ Test utilities:
 ## Data Flow
 
 ```
-Client → TcpListener → ProtocolDispatcher → Protocol Handshake
-    → ChainExecutor (optional upstream hops)
-    → DirectConnector → Target
-    → relay(BoxStream, BoxStream)
+Client → TcpListener → serve_connection()
+    → accept() — protocol detection and parsing (no replies sent)
+    → open_route() — direct or chain to target
+    → send success/failure reply
+    → relay() or HTTP forward exchange
+    → SessionReport
 ```
 
 ## Design Principles

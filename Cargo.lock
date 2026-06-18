@@ -187,6 +187,7 @@ dependencies = [
  "eggress-core",
  "eggress-protocol-http",
  "eggress-protocol-socks",
+ "eggress-server",
  "eggress-testkit",
  "eggress-uri",
  "predicates",
@@ -242,6 +243,21 @@ dependencies = [
  "eggress-uri",
  "regex",
  "thiserror",
+]
+
+[[package]]
+name = "eggress-server"
+version = "0.1.0"
+dependencies = [
+ "eggress-core",
+ "eggress-protocol-http",
+ "eggress-protocol-socks",
+ "eggress-testkit",
+ "eggress-uri",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

@@ -826,10 +826,11 @@ fn test_filter_hop_by_hop_headers() {
     ];
 
     let filtered = filter_hop_by_hop(&headers);
-    assert_eq!(filtered.len(), 3);
+    assert_eq!(filtered.len(), 4);
     assert_eq!(filtered[0].0, "Host");
     assert_eq!(filtered[1].0, "Content-Type");
-    assert_eq!(filtered[2].0, "Authorization");
+    assert_eq!(filtered[2].0, "Transfer-Encoding");
+    assert_eq!(filtered[3].0, "Authorization");
 }
 
 #[test]

@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 1: Core TCP proxy foundation — COMPLETE
+Phase 1: Core TCP proxy foundation — COMPLETE (corrective closure applied)
 
 ## Completed Milestones
 
@@ -15,9 +15,10 @@ Phase 1: Core TCP proxy foundation — COMPLETE
 - [x] 1.5: SOCKS4/SOCKS4a
 - [x] 1.6: SOCKS5 CONNECT
 - [x] 1.7: HTTP CONNECT
-- [x] 1.8: Basic ordinary HTTP forwarding
+- [x] 1.8: Ordinary HTTP forwarding
 - [x] 1.9: Chain executor
-- [x] 1.10: CLI integration and phase closure
+- [x] 1.10: CLI integration
+- [x] 1.11: Corrective closure — session model, deferred replies, body framing, header filtering, external interop
 
 ## Next Phase
 

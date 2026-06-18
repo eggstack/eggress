@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/eggress-cli",
     "crates/eggress-core",
+    "crates/eggress-server",
     "crates/eggress-uri",
     "crates/eggress-routing",
     "crates/eggress-protocol-http",
@@ -48,6 +49,7 @@ eggress-routing = { path = "crates/eggress-routing" }
 eggress-protocol-http = { path = "crates/eggress-protocol-http" }
 eggress-protocol-socks = { path = "crates/eggress-protocol-socks" }
 eggress-testkit = { path = "crates/eggress-testkit" }
+eggress-server = { path = "crates/eggress-server" }
 eggress-cli = { path = "crates/eggress-cli" }
 
 [workspace.lints.rust]

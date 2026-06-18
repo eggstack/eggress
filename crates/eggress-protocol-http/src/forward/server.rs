@@ -13,26 +13,53 @@ const MAX_RESPONSE_HEAD_SIZE: usize = 32 * 1024;
 const MAX_HEADER_LINES: usize = 128;
 
 /// Headers that must not be forwarded across a proxy (RFC 2616 §13.5.1).
-fn is_hop_by_hop_header(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "connection"
-            | "keep-alive"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "te"
-            | "trailers"
-            | "transfer-encoding"
-            | "upgrade"
-            | "proxy-connection"
-    )
+///
+/// `Transfer-Encoding: chunked` is preserved because the chunked body is
+/// forwarded unchanged.
+fn is_hop_by_hop_header(name: &str, value: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    match lower.as_str() {
+        "transfer-encoding" => !value.eq_ignore_ascii_case("chunked"),
+        _ => matches!(
+            lower.as_str(),
+            "connection"
+                | "keep-alive"
+                | "proxy-authenticate"
+                | "proxy-authorization"
+                | "te"
+                | "trailers"
+                | "upgrade"
+                | "proxy-connection"
+        ),
+    }
+}
+
+/// Extract tokens from the `Connection` header value.
+///
+/// Per RFC 7230 §6.1, each token names a header that must be removed before
+/// forwarding.
+fn connection_tokens(headers: &[(String, String)]) -> std::collections::HashSet<String> {
+    headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("connection"))
+        .flat_map(|(_, value)| value.split(','))
+        .map(|token| token.trim().to_ascii_lowercase())
+        .filter(|token| !token.is_empty())
+        .collect()
 }
 
 /// Filter hop-by-hop headers from a header list, returning only end-to-end headers.
+///
+/// Removes standard hop-by-hop headers plus any headers nominated by
+/// `Connection` tokens.  Preserves `Transfer-Encoding: chunked`.
 pub fn filter_hop_by_hop(headers: &[(String, String)]) -> Vec<(String, String)> {
+    let nominated = connection_tokens(headers);
     headers
         .iter()
-        .filter(|(name, _)| !is_hop_by_hop_header(name))
+        .filter(|(name, value)| {
+            let lower = name.to_ascii_lowercase();
+            !is_hop_by_hop_header(&lower, value) && !nominated.contains(&lower)
+        })
         .cloned()
         .collect()
 }
@@ -570,5 +597,57 @@ mod tests {
     #[test]
     fn test_parse_header_line_no_colon() {
         assert!(parse_header_line("NoColon").is_none());
+    }
+
+    #[test]
+    fn test_filter_hop_by_hop_connection_nominated() {
+        let headers = vec![
+            ("Connection".into(), "X-Custom, Keep-Alive".into()),
+            ("X-Custom".into(), "value".into()),
+            ("Keep-Alive".into(), "timeout=5".into()),
+            ("Content-Type".into(), "text/html".into()),
+        ];
+        let filtered = filter_hop_by_hop(&headers);
+        // X-Custom and Keep-Alive should be removed (nominated by Connection),
+        // plus connection itself is always removed.
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "Content-Type");
+    }
+
+    #[test]
+    fn test_filter_hop_by_hop_preserves_transfer_encoding_chunked() {
+        let headers = vec![
+            ("Transfer-Encoding".into(), "chunked".into()),
+            ("Content-Type".into(), "application/json".into()),
+        ];
+        let filtered = filter_hop_by_hop(&headers);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|(n, _)| n == "Transfer-Encoding"));
+    }
+
+    #[test]
+    fn test_filter_hop_by_hop_removes_transfer_encoding_non_chunked() {
+        let headers = vec![
+            ("Transfer-Encoding".into(), "gzip".into()),
+            ("Content-Type".into(), "text/html".into()),
+        ];
+        let filtered = filter_hop_by_hop(&headers);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "Content-Type");
+    }
+
+    #[test]
+    fn test_filter_connection_tokens_empty() {
+        let headers = vec![("Content-Type".into(), "text/html".into())];
+        let tokens = connection_tokens(&headers);
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn test_filter_connection_tokens_multiple() {
+        let headers = vec![("Connection".into(), "close, Upgrade".into())];
+        let tokens = connection_tokens(&headers);
+        assert!(tokens.contains("close"));
+        assert!(tokens.contains("upgrade"));
     }
 }
