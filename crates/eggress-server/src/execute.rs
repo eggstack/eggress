@@ -1,15 +1,15 @@
 use crate::accept::{AcceptedSession, PendingHttpForward, PendingTunnel};
 use crate::error::SessionOpenError;
 use crate::reply;
-use crate::{ConnectionConfig, RouteConfig};
+use crate::ConnectionConfig;
 use eggress_core::chain::{ChainExecutor, HopHandler};
 use eggress_core::connector::{Connector, DirectConnector};
 use eggress_core::relay::relay;
 use eggress_core::BoxStream;
 use eggress_core::{TargetAddr, TargetHost};
+use eggress_routing::{RouteRequest, SelectedRoute};
 use tokio::io::AsyncWriteExt;
 
-/// Report from a completed session.
 pub struct SessionReport {
     pub protocol: Option<String>,
     pub target: Option<String>,
@@ -18,6 +18,9 @@ pub struct SessionReport {
     pub bytes_downstream: u64,
     pub outcome: SessionOutcome,
     pub failure: Option<FailureCategory>,
+    pub rule_id: Option<String>,
+    pub upstream_group: Option<String>,
+    pub upstream_id: Option<String>,
 }
 
 /// Outcome of a session.
@@ -44,6 +47,7 @@ pub enum FailureCategory {
     HostUnreachable,
     RouteTimeout,
     UpstreamAuthentication,
+    PolicyDenied,
     Relay,
     Internal,
 }
@@ -63,6 +67,9 @@ impl SessionReport {
             bytes_downstream: 0,
             outcome: SessionOutcome::RouteFailed,
             failure: Some(FailureCategory::from(&error)),
+            rule_id: None,
+            upstream_group: None,
+            upstream_id: None,
         }
     }
 
@@ -81,6 +88,9 @@ impl SessionReport {
             bytes_downstream,
             outcome: SessionOutcome::Completed,
             failure: None,
+            rule_id: None,
+            upstream_group: None,
+            upstream_id: None,
         }
     }
 
@@ -93,6 +103,24 @@ impl SessionReport {
             bytes_downstream: 0,
             outcome: SessionOutcome::Cancelled,
             failure: None,
+            rule_id: None,
+            upstream_group: None,
+            upstream_id: None,
+        }
+    }
+
+    pub fn rejected(protocol: Option<String>, target: Option<String>, rule_id: String) -> Self {
+        SessionReport {
+            protocol,
+            target,
+            route: "reject".to_string(),
+            bytes_upstream: 0,
+            bytes_downstream: 0,
+            outcome: SessionOutcome::RouteFailed,
+            failure: Some(FailureCategory::PolicyDenied),
+            rule_id: Some(rule_id),
+            upstream_group: None,
+            upstream_id: None,
         }
     }
 }
@@ -107,7 +135,7 @@ impl From<&SessionOpenError> for FailureCategory {
             SessionOpenError::Timeout => FailureCategory::RouteTimeout,
             SessionOpenError::UpstreamAuthentication => FailureCategory::UpstreamAuthentication,
             SessionOpenError::Hop { .. } => FailureCategory::Relay,
-            SessionOpenError::PolicyDenied => FailureCategory::Internal,
+            SessionOpenError::PolicyDenied => FailureCategory::PolicyDenied,
             SessionOpenError::Other(_) => FailureCategory::Relay,
         }
     }
@@ -126,11 +154,6 @@ impl FailureCategory {
 
 /// Execute a session from an accepted connection.
 pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> SessionReport {
-    let route_str = match &config.route {
-        RouteConfig::Direct => "direct".to_string(),
-        RouteConfig::Chain(spec) => format!("chain({})", spec.hops.len()),
-    };
-
     match session {
         AcceptedSession::Tunnel(pending) => {
             let protocol = Some(match pending.protocol {
@@ -139,28 +162,83 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
                 crate::accept::TunnelProtocol::Socks5 => "socks5".to_string(),
             });
             let target = Some(pending.target.to_string());
-            execute_tunnel(pending, config, protocol, target, route_str).await
+            execute_tunnel(pending, config, protocol, target).await
         }
         AcceptedSession::HttpForward(pending) => {
             let target = Some(pending.target.to_string());
-            execute_http_forward(pending, config, target, route_str).await
+            execute_http_forward(pending, config, target).await
         }
     }
 }
 
-/// Open a route to the target using the configured route.
+fn route_description(selected: &SelectedRoute) -> String {
+    match selected {
+        SelectedRoute::Direct { .. } => "direct".to_string(),
+        SelectedRoute::Upstream {
+            upstream, group, ..
+        } => format!("upstream({}/{})", group.0, upstream),
+    }
+}
+
+fn route_metadata(selected: &SelectedRoute) -> (Option<String>, Option<String>, Option<String>) {
+    match selected {
+        SelectedRoute::Direct { decision } => {
+            let rule_id = match decision {
+                eggress_routing::RouteDecision::Direct { rule, .. }
+                | eggress_routing::RouteDecision::UpstreamGroup { rule, .. }
+                | eggress_routing::RouteDecision::Reject { rule, .. } => rule.0.to_string(),
+            };
+            (Some(rule_id), None, None)
+        }
+        SelectedRoute::Upstream {
+            decision,
+            group,
+            upstream,
+            ..
+        } => {
+            let rule_id = match decision {
+                eggress_routing::RouteDecision::Direct { rule, .. }
+                | eggress_routing::RouteDecision::UpstreamGroup { rule, .. }
+                | eggress_routing::RouteDecision::Reject { rule, .. } => rule.0.to_string(),
+            };
+            (
+                Some(rule_id),
+                Some(group.0.to_string()),
+                Some(upstream.to_string()),
+            )
+        }
+    }
+}
+
 async fn open_route(
-    route: &RouteConfig,
-    target: &TargetAddr,
-) -> Result<BoxStream, SessionOpenError> {
-    match route {
-        RouteConfig::Direct => DirectConnector.connect(target).await.map_err(Into::into),
-        RouteConfig::Chain(spec) => {
-            let executor = build_chain_executor();
-            executor
-                .execute(&spec.hops, target)
+    config: &ConnectionConfig,
+    request: &RouteRequest<'_>,
+) -> Result<(BoxStream, SelectedRoute), SessionOpenError> {
+    let decision = config.routing.decide(request);
+    let selected = config
+        .routing
+        .select(&decision, request)
+        .map_err(|e| match e {
+            eggress_routing::RouteError::Rejected { .. } => SessionOpenError::PolicyDenied,
+            eggress_routing::RouteError::NoEligibleUpstream(_)
+            | eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
+        })?;
+
+    match &selected {
+        SelectedRoute::Direct { .. } => {
+            let stream = DirectConnector
+                .connect(request.target)
                 .await
-                .map_err(Into::into)
+                .map_err(|e| -> SessionOpenError { e.into() })?;
+            Ok((stream, selected))
+        }
+        SelectedRoute::Upstream { chain, .. } => {
+            let executor = build_chain_executor();
+            let stream = executor
+                .execute(&chain.hops, request.target)
+                .await
+                .map_err(|e| -> SessionOpenError { e.into() })?;
+            Ok((stream, selected))
         }
     }
 }
@@ -171,12 +249,25 @@ async fn execute_tunnel(
     config: &ConnectionConfig,
     protocol: Option<String>,
     target: Option<String>,
-    route: String,
 ) -> SessionReport {
     tracing::info!("connecting to {}", pending.target);
 
-    match open_route(&config.route, &pending.target).await {
-        Ok(upstream) => {
+    let request = RouteRequest {
+        target: &pending.target,
+        source: None,
+        listener: "",
+        inbound_protocol: match pending.protocol {
+            crate::accept::TunnelProtocol::HttpConnect => eggress_core::ProtocolId::Http,
+            crate::accept::TunnelProtocol::Socks4 => eggress_core::ProtocolId::Socks4,
+            crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
+        },
+        identity: &eggress_core::ClientIdentity::Anonymous,
+    };
+
+    match open_route(config, &request).await {
+        Ok((upstream, selected)) => {
+            let route = route_description(&selected);
+            let (rule_id, upstream_group, upstream_id) = route_metadata(&selected);
             if let Err(e) = reply::send_tunnel_success(&mut pending, None).await {
                 tracing::debug!("failed to send success reply: {e}");
                 return SessionReport {
@@ -187,6 +278,9 @@ async fn execute_tunnel(
                     bytes_downstream: 0,
                     outcome: SessionOutcome::ClientProtocolError,
                     failure: Some(FailureCategory::Protocol),
+                    rule_id,
+                    upstream_group,
+                    upstream_id,
                 };
             }
             let result = relay(pending.client, upstream).await;
@@ -205,6 +299,9 @@ async fn execute_tunnel(
                     bytes_downstream: result.bytes_downstream,
                     outcome: SessionOutcome::RelayFailed,
                     failure: Some(FailureCategory::Relay),
+                    rule_id,
+                    upstream_group,
+                    upstream_id,
                 },
                 _ => SessionReport {
                     protocol,
@@ -214,12 +311,19 @@ async fn execute_tunnel(
                     bytes_downstream: result.bytes_downstream,
                     outcome: SessionOutcome::Completed,
                     failure: None,
+                    rule_id,
+                    upstream_group,
+                    upstream_id,
                 },
             }
         }
+        Err(SessionOpenError::PolicyDenied) => {
+            let _ = reply::send_tunnel_failure(&mut pending, &SessionOpenError::PolicyDenied).await;
+            SessionReport::rejected(protocol, target, "reject".to_string())
+        }
         Err(error) => {
             let _ = reply::send_tunnel_failure(&mut pending, &error).await;
-            SessionReport::open_failed(error, protocol, target, route)
+            SessionReport::open_failed(error, protocol, target, "error".to_string())
         }
     }
 }
@@ -229,13 +333,21 @@ async fn execute_http_forward(
     mut pending: PendingHttpForward,
     config: &ConnectionConfig,
     target: Option<String>,
-    route: String,
 ) -> SessionReport {
     tracing::info!("forward proxy to {}", pending.target);
 
-    match open_route(&config.route, &pending.target).await {
-        Ok(mut upstream) => {
-            // Build origin-form request and send to upstream
+    let request = RouteRequest {
+        target: &pending.target,
+        source: None,
+        listener: "",
+        inbound_protocol: eggress_core::ProtocolId::Http,
+        identity: &eggress_core::ClientIdentity::Anonymous,
+    };
+
+    match open_route(config, &request).await {
+        Ok((mut upstream, selected)) => {
+            let route = route_description(&selected);
+            let (rule_id, upstream_group, upstream_id) = route_metadata(&selected);
             let origin_req = eggress_protocol_http::build_origin_request(&pending.request);
             let head_bytes = origin_req.len() as u64;
 
@@ -266,7 +378,6 @@ async fn execute_http_forward(
                 );
             }
 
-            // Forward body if present
             let body_report = match eggress_protocol_http::copy_request_body(
                 &mut pending.client,
                 &mut upstream,
@@ -285,13 +396,15 @@ async fn execute_http_forward(
                         bytes_downstream: 0,
                         outcome: SessionOutcome::ClientProtocolError,
                         failure: Some(FailureCategory::Protocol),
+                        rule_id,
+                        upstream_group,
+                        upstream_id,
                     };
                 }
             };
 
             let bytes_upstream = head_bytes + body_report.wire_bytes;
 
-            // Forward the upstream response back to the client
             let response_report =
                 match eggress_protocol_http::forward_response(&mut upstream, &mut pending.client)
                     .await
@@ -306,6 +419,9 @@ async fn execute_http_forward(
                             bytes_downstream: 0,
                             outcome: SessionOutcome::RelayFailed,
                             failure: Some(FailureCategory::Relay),
+                            rule_id,
+                            upstream_group,
+                            upstream_id,
                         };
                     }
                 };
@@ -318,11 +434,22 @@ async fn execute_http_forward(
                 bytes_downstream: response_report.bytes_forwarded,
                 outcome: SessionOutcome::Completed,
                 failure: None,
+                rule_id,
+                upstream_group,
+                upstream_id,
             }
+        }
+        Err(SessionOpenError::PolicyDenied) => {
+            let _ = reply::send_http_forward_failure(
+                &mut pending.client,
+                &SessionOpenError::PolicyDenied,
+            )
+            .await;
+            SessionReport::rejected(None, target, "reject".to_string())
         }
         Err(error) => {
             let _ = reply::send_http_forward_failure(&mut pending.client, &error).await;
-            SessionReport::open_failed(error, None, target, route)
+            SessionReport::open_failed(error, None, target, "error".to_string())
         }
     }
 }

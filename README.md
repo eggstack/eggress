@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 1 complete — externally interoperable core TCP proxy with mixed HTTP/SOCKS listeners, ordinary HTTP forwarding, and HTTP/SOCKS chaining.
+> Status: Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC serving, graceful reload, and route explanation.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -100,20 +100,20 @@ Legend:
 
 - [x] Direct routes
 - [x] Ordered upstream routes
-- [ ] Regex compatibility rules (and all other rule types)
-- [ ] Exact-host rules
-- [ ] Domain-suffix rules
-- [ ] CIDR rules
-- [ ] Port rules
-- [ ] Reject rules
+- [x] Regex compatibility rules
+- [x] Exact-host rules
+- [x] Domain-suffix rules
+- [x] CIDR rules
+- [x] Port rules
+- [x] Reject rules
 - [x] First-available scheduling
-- [ ] Round-robin scheduling
-- [ ] Random scheduling
-- [ ] Least-connections scheduling
-- [ ] Active health checking
-- [ ] Health hysteresis
+- [x] Round-robin scheduling
+- [x] Random scheduling
+- [x] Least-connections scheduling
+- [x] Active health checking
+- [x] Health hysteresis
 - [x] Direct fallback
-- [ ] Route explanation command
+- [x] Route explanation command
 
 ### Proxy chaining
 
@@ -284,19 +284,19 @@ Legend:
 
 ### Administration and operations
 
-- [ ] TOML configuration
-- [ ] Configuration validation
-- [ ] Configuration reload
+- [x] TOML configuration
+- [x] Configuration validation
+- [x] Configuration reload
 - [x] Human-readable structured logs
-- [ ] JSON logs
+- [x] JSON logs
 - [x] Secret redaction for URIs, authentication, and runtime logs
 - [x] Traffic counters for TCP relay and HTTP forward sessions
-- [ ] Per-upstream metrics
-- [ ] Prometheus endpoint
-- [ ] Local admin API
-- [ ] PAC generation
-- [ ] PAC serving
-- [ ] Static HTTP endpoint
+- [x] Per-upstream metrics
+- [x] Prometheus endpoint
+- [x] Local admin API
+- [x] PAC generation
+- [x] PAC serving
+- [x] Static HTTP endpoint
 - [ ] Upstream test command
 - [ ] System-proxy configuration on macOS
 - [ ] System-proxy configuration on Windows

@@ -3,6 +3,7 @@
 //! These tests verify that eggress works correctly with pproxy.
 //! Tests skip gracefully if Python or pproxy is not available.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use eggress_core::chain::{ChainExecutor, HopHandler};
@@ -11,6 +12,7 @@ use eggress_core::{BoxStream, TargetAddr, TargetHost};
 use eggress_protocol_http::connect::client::http_connect;
 use eggress_protocol_socks::socks5::client::socks5_connect;
 use eggress_protocol_socks::socks5::server::SocksAddr;
+use eggress_routing::{RouteActionSpec, RouteService, Router};
 use eggress_uri::{CredentialSpec, EndpointSpec, ProtocolSpec, ProxyHopSpec};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -271,8 +273,10 @@ async fn test_eggress_server_pproxy_socks5_client() {
                 Err(_) => break,
             };
             let config = eggress_server::ConnectionConfig {
-                route: eggress_server::RouteConfig::Direct,
+                routing: Arc::new(Router::new(vec![], RouteActionSpec::Direct))
+                    as Arc<dyn RouteService>,
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: conn_protocols.clone(),
                 authentication: eggress_server::accept::InboundAuthentication::None,
             };
@@ -353,8 +357,10 @@ async fn test_eggress_server_pproxy_http_client() {
                 Err(_) => break,
             };
             let config = eggress_server::ConnectionConfig {
-                route: eggress_server::RouteConfig::Direct,
+                routing: Arc::new(Router::new(vec![], RouteActionSpec::Direct))
+                    as Arc<dyn RouteService>,
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: conn_protocols.clone(),
                 authentication: eggress_server::accept::InboundAuthentication::None,
             };

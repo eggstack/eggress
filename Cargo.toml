@@ -1,8 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/eggress-admin",
     "crates/eggress-cli",
+    "crates/eggress-config",
     "crates/eggress-core",
+    "crates/eggress-metrics",
     "crates/eggress-server",
     "crates/eggress-uri",
     "crates/eggress-routing",
@@ -41,14 +44,24 @@ tempfile = "3"
 tokio-test = "0.4"
 insta = "1"
 trait-variant = "0.1"
+ipnet = "2"
+fastrand = "2"
+arc-swap = "1"
+prometheus-client = "0.22"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 
 # Internal crates
+eggress-admin = { path = "crates/eggress-admin" }
 eggress-core = { path = "crates/eggress-core" }
+eggress-metrics = { path = "crates/eggress-metrics" }
 eggress-uri = { path = "crates/eggress-uri" }
 eggress-routing = { path = "crates/eggress-routing" }
 eggress-protocol-http = { path = "crates/eggress-protocol-http" }
 eggress-protocol-socks = { path = "crates/eggress-protocol-socks" }
 eggress-testkit = { path = "crates/eggress-testkit" }
+eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server" }
 eggress-cli = { path = "crates/eggress-cli" }
 

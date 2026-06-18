@@ -36,7 +36,10 @@ eggress/
 │   ├── eggress-cli/       # CLI binary
 │   ├── eggress-server/    # Server orchestration: accept, execute, reply, error
 │   ├── eggress-uri/       # URI parser and AST
-│   ├── eggress-routing/   # Routing logic
+│   ├── eggress-routing/   # Rule engine, schedulers, health, leases, route explanation
+│   ├── eggress-config/    # TOML configuration, validation, secret sources
+│   ├── eggress-metrics/   # Prometheus-compatible metrics registry
+│   ├── eggress-admin/     # Admin HTTP server, PAC, static content
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
 │   └── eggress-testkit/   # Test utilities
@@ -67,3 +70,9 @@ eggress/
 - Chain executor folds over hop list with protocol-specific handlers
 - Relay uses `tokio::io::split` + `tokio::io::copy` for bidirectional forwarding
 - Credentials are never logged; URI display uses redacted format
+- Routing uses compiled rule AST with first-match-wins evaluation
+- Upstream selection via pluggable schedulers (first, round-robin, random, least-connections)
+- Health state machine with hysteresis and active TCP probes
+- Atomic config reload via `ArcSwap<Router>` for lock-free reads
+- Active connection accounting via `PendingLease`/`ActiveLease` drop guards
+- Route explanation for operator debugging without debug logs

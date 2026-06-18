@@ -3,44 +3,29 @@ pub mod error;
 pub mod execute;
 pub mod reply;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 pub use accept::AcceptedSession;
 pub use error::SessionOpenError;
 pub use execute::{FailureCategory, SessionReport};
 
+use eggress_routing::RouteService;
+
 /// Configuration for a single connection.
 pub struct ConnectionConfig {
-    pub route: RouteConfig,
+    pub routing: Arc<dyn RouteService>,
     pub handshake_timeout: Duration,
-    pub protocols: std::sync::Arc<[eggress_core::ProtocolId]>,
+    pub connect_timeout: Duration,
+    pub protocols: Arc<[eggress_core::ProtocolId]>,
     pub authentication: accept::InboundAuthentication,
 }
 
-/// How to route to the target.
-pub enum RouteConfig {
-    Direct,
-    Chain(eggress_uri::ProxyChainSpec),
-}
-
 /// Handle a single inbound connection.
-///
-/// This is the main entry point. It:
-/// 1. Detects the protocol
-/// 2. Parses the inbound request (without sending replies)
-/// 3. Opens the outbound route
-/// 4. Sends protocol-specific success or failure
-/// 5. Relays or forwards data
-/// 6. Returns a session report
 pub async fn serve_connection(
     client: eggress_core::BoxStream,
     config: ConnectionConfig,
 ) -> SessionReport {
-    let route = match &config.route {
-        RouteConfig::Direct => "direct".to_string(),
-        RouteConfig::Chain(spec) => format!("chain({})", spec.hops.len()),
-    };
-
     let accepted = tokio::time::timeout(
         config.handshake_timeout,
         accept::accept(client, &config.protocols, &config.authentication),
@@ -53,33 +38,42 @@ pub async fn serve_connection(
             return SessionReport {
                 protocol: None,
                 target: None,
-                route,
+                route: "unknown".to_string(),
                 bytes_upstream: 0,
                 bytes_downstream: 0,
                 outcome: execute::SessionOutcome::AuthenticationFailed,
                 failure: Some(execute::FailureCategory::Authentication),
+                rule_id: None,
+                upstream_group: None,
+                upstream_id: None,
             };
         }
         Ok(Err(_)) => {
             return SessionReport {
                 protocol: None,
                 target: None,
-                route,
+                route: "unknown".to_string(),
                 bytes_upstream: 0,
                 bytes_downstream: 0,
                 outcome: execute::SessionOutcome::ClientProtocolError,
                 failure: Some(execute::FailureCategory::Protocol),
+                rule_id: None,
+                upstream_group: None,
+                upstream_id: None,
             };
         }
         Err(_) => {
             return SessionReport {
                 protocol: None,
                 target: None,
-                route,
+                route: "unknown".to_string(),
                 bytes_upstream: 0,
                 bytes_downstream: 0,
                 outcome: execute::SessionOutcome::HandshakeTimedOut,
                 failure: Some(execute::FailureCategory::HandshakeTimeout),
+                rule_id: None,
+                upstream_group: None,
+                upstream_id: None,
             };
         }
     };
@@ -92,6 +86,9 @@ pub async fn serve_connection(
         protocol = ?report.protocol,
         target = ?report.target,
         route = %report.route,
+        rule = ?report.rule_id,
+        upstream_group = ?report.upstream_group,
+        upstream = ?report.upstream_id,
         bytes_upstream = report.bytes_upstream,
         bytes_downstream = report.bytes_downstream,
         "connection completed",
@@ -103,14 +100,19 @@ pub async fn serve_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eggress_routing::{RouteActionSpec, Router};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    fn all_protocols() -> std::sync::Arc<[eggress_core::ProtocolId]> {
-        std::sync::Arc::from([
+    fn all_protocols() -> Arc<[eggress_core::ProtocolId]> {
+        Arc::from([
             eggress_core::ProtocolId::Http,
             eggress_core::ProtocolId::Socks4,
             eggress_core::ProtocolId::Socks5,
         ])
+    }
+
+    fn direct_routing() -> Arc<dyn RouteService> {
+        Arc::new(Router::new(vec![], RouteActionSpec::Direct))
     }
 
     #[tokio::test]
@@ -124,8 +126,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -133,13 +136,11 @@ mod tests {
         });
 
         let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
-        // Method negotiation
         stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
         let mut response = [0u8; 2];
         stream.read_exact(&mut response).await.unwrap();
         assert_eq!(response, [0x05, 0x00]);
 
-        // CONNECT request
         stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
         match echo_addr.ip() {
             std::net::IpAddr::V4(ip) => {
@@ -154,13 +155,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Read connect reply
         let mut reply = [0u8; 10];
         stream.read_exact(&mut reply).await.unwrap();
         assert_eq!(reply[0], 0x05);
         assert_eq!(reply[1], 0x00);
 
-        // Send data and verify echo
         stream.write_all(b"hello").await.unwrap();
         stream.shutdown().await.unwrap();
 
@@ -185,8 +184,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -227,8 +227,6 @@ mod tests {
         echo_jh.abort();
     }
 
-    /// Start a simple HTTP origin server that reads the full request (headers + body)
-    /// and echoes the body back in the response.
     async fn start_echo_origin() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -243,7 +241,6 @@ mod tests {
                     use tokio::io::AsyncReadExt;
                     use tokio::io::AsyncWriteExt;
 
-                    // Read headers
                     let mut head = Vec::new();
                     let mut tmp = [0u8; 1];
                     loop {
@@ -271,7 +268,6 @@ mod tests {
                         }
                     }
 
-                    // Read body
                     let body = match (content_length, is_chunked) {
                         (Some(len), _) => {
                             let mut body = vec![0u8; len as usize];
@@ -306,7 +302,6 @@ mod tests {
                                 let chunk_size =
                                     usize::from_str_radix(size_str.trim(), 16).unwrap_or(0);
                                 if chunk_size == 0 {
-                                    // Read trailing \r\n
                                     let mut trail = [0u8; 2];
                                     let _ = stream.read_exact(&mut trail).await;
                                     break;
@@ -321,7 +316,6 @@ mod tests {
                                     off += n;
                                 }
                                 body.extend_from_slice(&chunk);
-                                // Read trailing \r\n after chunk data
                                 let mut trail = [0u8; 2];
                                 let _ = stream.read_exact(&mut trail).await;
                             }
@@ -355,8 +349,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -401,8 +396,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -419,14 +415,12 @@ mod tests {
             origin_addr.port()
         );
         stream.write_all(request.as_bytes()).await.unwrap();
-        // Send one chunk
         stream
             .write_all(format!("{:x}\r\n", body.len()).as_bytes())
             .await
             .unwrap();
         stream.write_all(body).await.unwrap();
         stream.write_all(b"\r\n").await.unwrap();
-        // Send zero chunk
         stream.write_all(b"0\r\n\r\n").await.unwrap();
 
         let mut response = Vec::new();
@@ -454,8 +448,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -479,7 +474,6 @@ mod tests {
             response_str.contains("200 OK"),
             "expected 200, got: {response_str}"
         );
-        // GET response body should be empty (origin echoes empty body)
         let body_start = response_str.find("\r\n\r\n").unwrap() + 4;
         let body = &response_str[body_start..];
         assert!(body.is_empty(), "expected empty body for GET, got: {body}");
@@ -495,8 +489,9 @@ mod tests {
         let (_client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
-            route: RouteConfig::Direct,
+            routing: direct_routing(),
             handshake_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
         };
@@ -517,8 +512,9 @@ mod tests {
         let (mut client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
-            route: RouteConfig::Direct,
+            routing: direct_routing(),
             handshake_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
         };
@@ -540,8 +536,9 @@ mod tests {
         let (mut client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
-            route: RouteConfig::Direct,
+            routing: direct_routing(),
             handshake_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
         };
@@ -569,8 +566,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -626,8 +624,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -672,8 +671,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -698,7 +698,6 @@ mod tests {
 
         let report = proxy_jh.await.unwrap();
         assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
-        // Upstream should include head + body
         assert!(
             report.bytes_upstream > body.len() as u64,
             "upstream bytes ({}) should exceed body length ({})",
@@ -721,8 +720,9 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
             };
@@ -773,8 +773,9 @@ mod tests {
         let (_client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
-            route: RouteConfig::Direct,
+            routing: direct_routing(),
             handshake_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
         };
@@ -930,30 +931,26 @@ mod tests {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: direct_routing(),
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: auth,
             };
             serve_connection(boxed, config).await
         });
 
-        // Connect with SOCKS5 and offer username/password auth
         let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
         stream.write_all(&[0x05, 0x02, 0x00, 0x02]).await.unwrap();
-        // Server should select method 0x02 (username/password)
         let mut response = [0u8; 2];
         stream.read_exact(&mut response).await.unwrap();
         assert_eq!(response, [0x05, 0x02]);
 
-        // Send auth with wrong password
-        // Auth version (0x01) + username len (0x04) + "user" + password len (0x05) + "wrong"
         stream
             .write_all(&[0x01, 0x04, b'u', b's', b'e', b'r', 0x05])
             .await
             .unwrap();
         stream.write_all(b"wrong").await.unwrap();
-        // Read auth response (failure)
         let mut auth_resp = [0u8; 2];
         stream.read_exact(&mut auth_resp).await.unwrap();
         assert_eq!(auth_resp, [0x01, 0x01]);
@@ -966,6 +963,47 @@ mod tests {
         assert_eq!(
             report.failure,
             Some(execute::FailureCategory::Authentication)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reject_route_returns_403_for_http() {
+        let rules = vec![eggress_routing::CompiledRule {
+            id: eggress_routing::RuleId(std::sync::Arc::from("block")),
+            matcher: eggress_routing::MatchExpr::Any,
+            action: eggress_routing::RouteActionSpec::Reject(
+                eggress_core::RejectReason::AccessDenied,
+            ),
+        }];
+        let routing: Arc<dyn RouteService> =
+            Arc::new(Router::new(rules, eggress_routing::RouteActionSpec::Direct));
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let _proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let config = ConnectionConfig {
+                routing,
+                handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
+                protocols: all_protocols(),
+                authentication: accept::InboundAuthentication::None,
+            };
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        let request = "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        stream.write_all(request.as_bytes()).await.unwrap();
+
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+        let response_str = String::from_utf8_lossy(&response);
+        assert!(
+            response_str.contains("403"),
+            "expected 403, got: {response_str}"
         );
     }
 }

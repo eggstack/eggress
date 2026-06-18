@@ -64,6 +64,28 @@ impl fmt::Display for TargetAddr {
     }
 }
 
+impl std::str::FromStr for TargetAddr {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(idx) = s.rfind(':') {
+            let host_part = &s[..idx];
+            let port_part = &s[idx + 1..];
+            let port: u16 = port_part
+                .parse()
+                .map_err(|e| format!("invalid port '{port_part}': {e}"))?;
+            let host = if let Ok(ip) = host_part.parse::<IpAddr>() {
+                TargetHost::Ip(ip)
+            } else {
+                TargetHost::Domain(host_part.to_string())
+            };
+            Ok(TargetAddr { host, port })
+        } else {
+            Err(format!("invalid target format: {s}"))
+        }
+    }
+}
+
 /// Client identity information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientIdentity {

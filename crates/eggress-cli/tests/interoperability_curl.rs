@@ -3,10 +3,12 @@
 //! These tests verify that eggress works correctly with real-world tools.
 //! Tests skip gracefully if curl is not available.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
-use eggress_server::{ConnectionConfig, RouteConfig};
+use eggress_routing::{RouteActionSpec, RouteService, Router};
+use eggress_server::ConnectionConfig;
 use tokio_util::sync::CancellationToken;
 
 fn curl_available() -> bool {
@@ -46,8 +48,10 @@ async fn start_eggress_server(
                 Err(_) => break,
             };
             let config = ConnectionConfig {
-                route: RouteConfig::Direct,
+                routing: Arc::new(Router::new(vec![], RouteActionSpec::Direct))
+                    as Arc<dyn RouteService>,
                 handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
                 protocols: conn_protocols.clone(),
                 authentication: eggress_server::accept::InboundAuthentication::None,
             };

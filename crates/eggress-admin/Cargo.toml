@@ -1,0 +1,25 @@
+[package]
+name = "eggress-admin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+eggress-core = { workspace = true }
+eggress-routing = { workspace = true }
+eggress-metrics = { workspace = true }
+
+[lints]
+workspace = true

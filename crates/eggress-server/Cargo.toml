@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["full", "test-util"] }
 [dependencies]
 eggress-core.workspace = true
 eggress-uri.workspace = true
+eggress-routing.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
 tokio.workspace = true

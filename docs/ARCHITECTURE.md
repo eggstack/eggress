@@ -51,7 +51,39 @@ URI parser with typed AST:
 - Redacted Display implementation for secret-safe logging
 
 ### eggress-routing
-Route resolution (first-available scheduling, direct fallback).
+Policy-driven routing and upstream selection:
+- Rule AST: `CompiledRule`, `MatchExpr` (host exact/suffix/regex, CIDR, port, source, listener, protocol, identity)
+- First-match-wins rule evaluation with configurable default action
+- Upstream groups with scheduler selection (first-available, round-robin, random, least-connections)
+- Active connection accounting with `PendingLease`/`ActiveLease`
+- Health state machine with hysteresis (Unknown, Healthy, Suspect, Unhealthy, Recovering, Disabled)
+- Active TCP health probes with configurable intervals and jitter
+- `RouteService` trait for pluggable routing backends
+- `SharedRoutingService` with `ArcSwap` for atomic config reload
+- Route explanation tooling for operator debugging
+- Compatibility regex parser for pproxy-style rule files
+
+### eggress-config
+TOML configuration with validation:
+- Versioned schema with typed runtime model
+- Validation: duplicate IDs, unknown references, invalid URIs, duration parsing
+- Secret sources (inline, environment variable, file)
+- CLI compatibility compilation
+
+### eggress-metrics
+Prometheus-compatible metrics:
+- Connection counters, byte counters, route decision labels
+- Upstream health gauges, config generation tracking
+- Reload success/failure counters
+- Bounded label cardinality
+
+### eggress-admin
+Local admin HTTP server:
+- Health/readiness endpoints
+- Status, routes, upstreams, config JSON endpoints
+- Prometheus metrics endpoint
+- PAC generation and serving
+- Static content serving
 
 ### eggress-protocol-http
 HTTP/1 protocol implementation:
@@ -79,10 +111,13 @@ Test utilities:
 ```
 Client → TcpListener → serve_connection()
     → accept() — protocol detection with timeout and authentication
-    → open_route() — direct or chain to target
+    → RouteRequest — build from session metadata
+    → Router.decide() — evaluate rules, return RouteDecision
+    → Router.select() — scheduler picks upstream, returns SelectedRoute with ActiveLease
+    → open_route() — direct or chain via SelectedRoute
     → send success/failure reply
     → relay() or HTTP forward exchange (with byte counting)
-    → SessionReport (with normalized outcome and byte counts)
+    → SessionReport (with rule ID, upstream group, byte counts, failure category)
 ```
 
 ## Design Principles
@@ -95,3 +130,7 @@ Client → TcpListener → serve_connection()
 6. **Bounded everything** — sniff buffers, headers, credentials, handshake timeouts
 7. **Normalized failure categories** — structured outcomes for metrics and diagnostics
 8. **Configured protocol sets** — listeners accept only configured protocols
+9. **Immutable routing snapshots** — atomic swap via `ArcSwap` for lock-free reads
+10. **Health-aware scheduling** — upstream eligibility based on health state
+11. **Lease accounting** — `PendingLease`/`ActiveLease` track in-flight connections
+12. **Operator explainability** — route explanation without debug logs
