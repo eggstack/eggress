@@ -565,7 +565,6 @@ impl RouteService for Router {
 
 pub struct RoutingServiceInner {
     pub router: std::sync::Arc<Router>,
-    pub generation: std::sync::atomic::AtomicU64,
 }
 
 pub struct SharedRoutingService {
@@ -577,25 +576,14 @@ impl SharedRoutingService {
         Self {
             inner: arc_swap::ArcSwap::from_pointee(RoutingServiceInner {
                 router: std::sync::Arc::new(router),
-                generation: std::sync::atomic::AtomicU64::new(0),
             }),
         }
     }
 
     pub fn new_arc(router: std::sync::Arc<Router>) -> Self {
         Self {
-            inner: arc_swap::ArcSwap::from_pointee(RoutingServiceInner {
-                router,
-                generation: std::sync::atomic::AtomicU64::new(0),
-            }),
+            inner: arc_swap::ArcSwap::from_pointee(RoutingServiceInner { router }),
         }
-    }
-
-    pub fn generation(&self) -> u64 {
-        self.inner
-            .load()
-            .generation
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn router(&self) -> std::sync::Arc<Router> {
@@ -603,30 +591,14 @@ impl SharedRoutingService {
     }
 
     pub fn swap(&self, router: Router) {
-        let gen = self
-            .inner
-            .load()
-            .generation
-            .load(std::sync::atomic::Ordering::Relaxed)
-            + 1;
         let new_inner = RoutingServiceInner {
             router: std::sync::Arc::new(router),
-            generation: std::sync::atomic::AtomicU64::new(gen),
         };
         self.inner.store(std::sync::Arc::new(new_inner));
     }
 
     pub fn swap_arc(&self, router: std::sync::Arc<Router>) {
-        let gen = self
-            .inner
-            .load()
-            .generation
-            .load(std::sync::atomic::Ordering::Relaxed)
-            + 1;
-        let new_inner = RoutingServiceInner {
-            router,
-            generation: std::sync::atomic::AtomicU64::new(gen),
-        };
+        let new_inner = RoutingServiceInner { router };
         self.inner.store(std::sync::Arc::new(new_inner));
     }
 }
@@ -1612,28 +1584,6 @@ mod tests {
         }
         assert_eq!(u.active.load(Ordering::Relaxed), 0);
         assert_eq!(u.in_flight.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn shared_routing_service_generation_starts_at_zero() {
-        let router = Router::new(vec![], RouteActionSpec::Direct);
-        let service = super::SharedRoutingService::new(router);
-        assert_eq!(service.generation(), 0);
-    }
-
-    #[test]
-    fn shared_routing_service_swap_increments_generation() {
-        let router = Router::new(vec![], RouteActionSpec::Direct);
-        let service = super::SharedRoutingService::new(router);
-        assert_eq!(service.generation(), 0);
-
-        let router2 = Router::new(vec![], RouteActionSpec::Direct);
-        service.swap(router2);
-        assert_eq!(service.generation(), 1);
-
-        let router3 = Router::new(vec![], RouteActionSpec::Direct);
-        service.swap(router3);
-        assert_eq!(service.generation(), 2);
     }
 
     #[test]
