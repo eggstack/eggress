@@ -297,7 +297,7 @@ Legend:
 - [x] PAC generation
 - [x] PAC serving
 - [x] Static HTTP endpoint
-- [ ] Upstream test command
+- [x] Upstream test command
 - [ ] System-proxy configuration on macOS
 - [ ] System-proxy configuration on Windows
 - [ ] System-proxy state restoration

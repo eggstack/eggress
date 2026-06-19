@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
+use eggress_core::TargetHost;
 use eggress_routing::{RouteActionSpec, RouteService, Router, SharedRoutingService};
 use eggress_server::ConnectionConfig;
 use tokio_util::sync::CancellationToken;
@@ -35,6 +36,36 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum SubCommand {
     Route(RouteExplain),
+    Upstream(UpstreamCommand),
+}
+
+#[derive(Parser, Debug)]
+struct UpstreamCommand {
+    #[command(subcommand)]
+    action: UpstreamAction,
+}
+
+#[derive(Subcommand, Debug)]
+enum UpstreamAction {
+    Test(UpstreamTest),
+}
+
+#[derive(Parser, Debug)]
+struct UpstreamTest {
+    #[arg(short, long, value_name = "ID")]
+    id: Option<String>,
+
+    #[arg(short, long, value_name = "HOST:PORT")]
+    target: Option<String>,
+
+    #[arg(short, long)]
+    config: Option<String>,
+
+    #[arg(long, default_value = "5")]
+    timeout: u64,
+
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -126,6 +157,154 @@ fn handle_route_explain(args: &RouteExplain) {
     } else {
         print_explanation(&explanation);
     }
+}
+
+fn handle_upstream_test(args: &UpstreamTest) {
+    let rt = match &args.config {
+        Some(path) => match eggress_config::compile::load_and_compile(path) {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("failed to load config: {e}");
+                std::process::exit(1);
+            }
+        },
+        None => {
+            eprintln!("--config is required for upstream test");
+            std::process::exit(1);
+        }
+    };
+
+    let upstreams: Vec<_> = if let Some(ref id) = args.id {
+        rt.upstreams.iter().filter(|u| &u.id == id).collect()
+    } else {
+        rt.upstreams.iter().collect()
+    };
+
+    if upstreams.is_empty() {
+        eprintln!("no upstreams found matching criteria");
+        std::process::exit(1);
+    }
+
+    let target = match &args.target {
+        Some(t) => match t.parse::<eggress_core::TargetAddr>() {
+            Ok(addr) => addr,
+            Err(e) => {
+                eprintln!("invalid target: {e}");
+                std::process::exit(1);
+            }
+        },
+        None => eggress_core::TargetAddr {
+            host: TargetHost::Domain("example.com".to_string()),
+            port: 443,
+        },
+    };
+
+    let timeout = Duration::from_secs(args.timeout);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let mut results = Vec::new();
+
+    for upstream in &upstreams {
+        let chain = &upstream.chain;
+        let first_hop = &chain.hops[0];
+        let host = &first_hop.endpoint.host;
+        let port = first_hop.endpoint.port;
+
+        let result = runtime.block_on(test_upstream(host, port, timeout));
+        results.push(UpstreamTestResult {
+            id: upstream.id.clone(),
+            host: host.clone(),
+            port,
+            target: target.to_string(),
+            ..result
+        });
+    }
+
+    if args.json {
+        match serde_json::to_string_pretty(&results) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("failed to serialize results: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        for result in &results {
+            print_upstream_test_result(result);
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct UpstreamTestResult {
+    id: String,
+    host: String,
+    port: u16,
+    target: String,
+    reachable: bool,
+    latency_ms: Option<u64>,
+    error: Option<String>,
+}
+
+async fn test_upstream(host: &str, port: u16, timeout: Duration) -> UpstreamTestResult {
+    let addr = format!("{}:{}", host, port);
+    let start = Instant::now();
+
+    let result = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await;
+
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    match result {
+        Ok(Ok(_stream)) => UpstreamTestResult {
+            id: String::new(),
+            host: host.to_string(),
+            port,
+            target: String::new(),
+            reachable: true,
+            latency_ms: Some(elapsed),
+            error: None,
+        },
+        Ok(Err(e)) => UpstreamTestResult {
+            id: String::new(),
+            host: host.to_string(),
+            port,
+            target: String::new(),
+            reachable: false,
+            latency_ms: None,
+            error: Some(e.to_string()),
+        },
+        Err(_) => UpstreamTestResult {
+            id: String::new(),
+            host: host.to_string(),
+            port,
+            target: String::new(),
+            reachable: false,
+            latency_ms: None,
+            error: Some("connection timed out".to_string()),
+        },
+    }
+}
+
+fn print_upstream_test_result(result: &UpstreamTestResult) {
+    let status = if result.reachable {
+        "reachable"
+    } else {
+        "unreachable"
+    };
+    let latency = result
+        .latency_ms
+        .map(|ms| format!("{}ms", ms))
+        .unwrap_or_else(|| "n/a".to_string());
+    let error = result
+        .error
+        .as_deref()
+        .map(|e| format!(" ({e})"))
+        .unwrap_or_default();
+
+    println!(
+        "{} {}:{} [{}] latency={}{}",
+        result.id, result.host, result.port, status, latency, error
+    );
 }
 
 fn print_explanation(explanation: &eggress_routing::RouteExplanation) {
@@ -238,6 +417,15 @@ async fn main() {
     if let Some(SubCommand::Route(explain_args)) = args.command {
         handle_route_explain(&explain_args);
         return;
+    }
+
+    if let Some(SubCommand::Upstream(upstream_cmd)) = args.command {
+        match upstream_cmd.action {
+            UpstreamAction::Test(test_args) => {
+                handle_upstream_test(&test_args);
+                return;
+            }
+        }
     }
 
     init_logging(&args.log_format);
@@ -664,5 +852,50 @@ mod tests {
         cancel.cancel();
         let _ = proxy_jh.await;
         echo_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_upstream_test_reachable() {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+
+        let result = test_upstream(
+            &echo_addr.ip().to_string(),
+            echo_addr.port(),
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(result.reachable);
+        assert!(result.latency_ms.is_some());
+        assert!(result.error.is_none());
+
+        echo_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_upstream_test_unreachable() {
+        let result = test_upstream("127.0.0.1", 1, Duration::from_secs(1)).await;
+
+        assert!(!result.reachable);
+        assert!(result.latency_ms.is_none());
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn test_upstream_test_json_output() {
+        let result = UpstreamTestResult {
+            id: "test-upstream".to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 1080,
+            target: "example.com:443".to_string(),
+            reachable: true,
+            latency_ms: Some(15),
+            error: None,
+        };
+
+        let json = serde_json::to_string_pretty(&result).unwrap();
+        assert!(json.contains("\"reachable\": true"));
+        assert!(json.contains("\"latency_ms\": 15"));
+        assert!(!json.contains("secret"));
     }
 }
