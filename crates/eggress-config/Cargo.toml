@@ -9,6 +9,7 @@ license.workspace = true
 eggress-core.workspace = true
 eggress-uri.workspace = true
 eggress-routing.workspace = true
+eggress-admin.workspace = true
 serde = { workspace = true, features = ["derive"] }
 toml.workspace = true
 thiserror.workspace = true

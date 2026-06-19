@@ -645,4 +645,392 @@ host_regex = "[invalid"
         let result = load_and_validate(path);
         assert!(result.is_err(), "invalid regex should fail validation");
     }
+
+    #[test]
+    fn health_config_all_fields_compiles() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "15s"
+timeout = "3s"
+failures_to_unhealthy = 5
+successes_to_healthy = 3
+initial_state = "healthy"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "health config with all fields should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        assert_eq!(rt.upstreams.len(), 1);
+        let health = &rt.upstreams[0].health;
+        assert_eq!(health.interval, std::time::Duration::from_secs(15));
+        assert_eq!(health.timeout, std::time::Duration::from_secs(3));
+        assert_eq!(health.failures_to_unhealthy, 5);
+        assert_eq!(health.successes_to_healthy, 3);
+        assert_eq!(
+            health.initial_state,
+            eggress_routing::health::HealthState::Healthy
+        );
+    }
+
+    #[test]
+    fn health_config_missing_uses_defaults() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "missing health config should use defaults: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let health = &rt.upstreams[0].health;
+        assert_eq!(health.interval, std::time::Duration::from_secs(30));
+        assert_eq!(health.timeout, std::time::Duration::from_secs(5));
+        assert_eq!(health.failures_to_unhealthy, 3);
+        assert_eq!(health.successes_to_healthy, 2);
+        assert_eq!(
+            health.initial_state,
+            eggress_routing::health::HealthState::Unknown
+        );
+    }
+
+    #[test]
+    fn health_config_partial_fields_use_defaults() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+interval = "10s"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "partial health config should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let health = &rt.upstreams[0].health;
+        assert_eq!(health.interval, std::time::Duration::from_secs(10));
+        assert_eq!(health.timeout, std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn health_config_invalid_interval_rejected() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+interval = "not-a-duration"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid health interval should fail");
+    }
+
+    #[test]
+    fn health_config_invalid_timeout_rejected() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+timeout = "abc"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid health timeout should fail");
+    }
+
+    #[test]
+    fn health_config_zero_failures_rejected() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+failures_to_unhealthy = 0
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "zero failures_to_unhealthy should fail");
+    }
+
+    #[test]
+    fn health_config_zero_successes_rejected() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+successes_to_healthy = 0
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "zero successes_to_healthy should fail");
+    }
+
+    #[test]
+    fn health_config_invalid_initial_state_rejected() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+initial_state = "bogus"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid initial_state should fail");
+    }
+
+    #[test]
+    fn health_config_invalid_mode_rejected() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+mode = "http_get"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid health mode should fail");
+    }
+
+    #[test]
+    fn health_config_disabled_initial_state() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "proxy1"
+uri = "socks5://proxy1:1080"
+
+[upstreams.health]
+initial_state = "disabled"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "disabled initial_state should be valid: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        assert_eq!(
+            rt.upstreams[0].health.initial_state,
+            eggress_routing::health::HealthState::Disabled
+        );
+    }
+
+    #[test]
+    fn pac_config_compiles() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[admin]
+enabled = true
+
+[admin.pac]
+path = "/proxy.pac"
+proxy = "127.0.0.1:8080"
+direct_fallback = true
+direct_hosts = ["localhost"]
+direct_suffixes = ["local"]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "PAC config should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let admin = rt.admin.unwrap();
+        let pac = admin.pac.unwrap();
+        assert_eq!(pac.path, "/proxy.pac");
+        assert_eq!(pac.proxy_directive, "127.0.0.1:8080");
+        assert!(pac.direct_fallback);
+        assert_eq!(pac.direct_hosts, vec!["localhost".to_string()]);
+        assert_eq!(pac.direct_suffixes, vec!["local".to_string()]);
+    }
+
+    #[test]
+    fn static_content_config_compiles() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[admin]
+enabled = true
+
+[[admin.static_content]]
+path = "/status"
+content_type = "text/html"
+body = "<h1>OK</h1>"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "static content config should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let admin = rt.admin.unwrap();
+        assert_eq!(admin.static_content.len(), 1);
+        assert_eq!(admin.static_content[0].path, "/status");
+        assert_eq!(admin.static_content[0].content_type, "text/html");
+        assert_eq!(admin.static_content[0].body, "<h1>OK</h1>");
+    }
+
+    #[test]
+    fn duplicate_static_paths_rejected() {
+        let config = r#"
+version = 1
+
+[[admin.static_content]]
+path = "/foo"
+body = "a"
+
+[[admin.static_content]]
+path = "/foo"
+body = "b"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "duplicate static paths should be rejected");
+    }
+
+    #[test]
+    fn reserved_path_collision_rejected() {
+        let config = r#"
+version = 1
+
+[[admin.static_content]]
+path = "/metrics"
+body = "override"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "reserved path collision should be rejected"
+        );
+    }
+
+    #[test]
+    fn pac_path_must_start_with_slash() {
+        let config = r#"
+version = 1
+
+[admin.pac]
+path = "proxy.pac"
+proxy = "127.0.0.1:8080"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "PAC path not starting with / should be rejected"
+        );
+    }
+
+    #[test]
+    fn static_path_must_start_with_slash() {
+        let config = r#"
+version = 1
+
+[[admin.static_content]]
+path = "status"
+body = "ok"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "static path not starting with / should be rejected"
+        );
+    }
+
+    #[test]
+    fn static_empty_body_rejected() {
+        let config = r#"
+version = 1
+
+[[admin.static_content]]
+path = "/status"
+body = ""
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "empty body should be rejected");
+    }
 }

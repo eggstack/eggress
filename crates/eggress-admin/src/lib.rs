@@ -45,8 +45,10 @@ mod tests {
                 direct_suffixes: vec!["local".to_string()],
             })),
             router: None,
+            routing: None,
             listeners: Arc::new(vec![]),
             active_connections: None,
+            readiness: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         }
     }
 
@@ -58,8 +60,10 @@ mod tests {
             static_routes: Arc::new(vec![]),
             pac_config: Arc::new(None),
             router: None,
+            routing: None,
             listeners: Arc::new(vec![]),
             active_connections: None,
+            readiness: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         }
     }
 
@@ -264,5 +268,32 @@ mod tests {
         let a_pos = pac.find("a.com").unwrap();
         let z_pos = pac.find("z.com").unwrap();
         assert!(a_pos < z_pos, "hosts should be sorted");
+    }
+
+    #[tokio::test]
+    async fn ready_returns_503_when_not_ready() {
+        let mut state = test_state();
+        state.readiness = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let addr = start_server(state).await;
+        let (status, body) = http_get(&addr, "/-/ready").await;
+        assert_eq!(status, 503);
+        assert_eq!(body, "not ready");
+    }
+
+    #[tokio::test]
+    async fn readiness_becomes_false_before_drain() {
+        let mut state = test_state();
+        state.readiness = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let addr = start_server(state.clone()).await;
+        let (status, body) = http_get(&addr, "/-/ready").await;
+        assert_eq!(status, 200);
+        assert_eq!(body, "ready");
+
+        state
+            .readiness
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let (status, body) = http_get(&addr, "/-/ready").await;
+        assert_eq!(status, 503);
+        assert_eq!(body, "not ready");
     }
 }

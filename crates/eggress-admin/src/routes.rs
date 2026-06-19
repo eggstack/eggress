@@ -7,6 +7,8 @@ use crate::server::{
 };
 use crate::static_content::serve_static;
 
+const MAX_ADMIN_BODY: usize = 16 * 1024;
+
 pub async fn handle_request(
     req: http::Request<hyper::body::Incoming>,
     state: &AdminState,
@@ -16,7 +18,13 @@ pub async fn handle_request(
 
     match path {
         "/-/health" => build_text_response(200, "ok"),
-        "/-/ready" => build_text_response(200, "ready"),
+        "/-/ready" => {
+            if state.readiness.load(Ordering::Relaxed) {
+                build_text_response(200, "ready")
+            } else {
+                build_text_response(503, "not ready")
+            }
+        }
         "/-/status" => {
             let uptime = state.start_time.elapsed().as_secs();
             let generation = state.generation.load(Ordering::Relaxed);
@@ -46,7 +54,9 @@ pub async fn handle_request(
             build_json_response(200, status.to_string())
         }
         "/-/routes" => {
-            if let Some(router) = &state.router {
+            let router = state.routing.as_ref().map(|r| r.router());
+            let router = router.as_ref();
+            if let Some(router) = router {
                 let default_action = format!("{:?}", router.default_action());
                 let rules: Vec<serde_json::Value> = router
                     .rules()
@@ -80,7 +90,9 @@ pub async fn handle_request(
             }
         }
         "/-/upstreams" => {
-            if let Some(router) = &state.router {
+            let router = state.routing.as_ref().map(|r| r.router());
+            let router = router.as_ref();
+            if let Some(router) = router {
                 let groups: Vec<serde_json::Value> = router
                     .groups()
                     .iter()
@@ -127,11 +139,11 @@ pub async fn handle_request(
         "/-/config" => {
             let generation = state.generation.load(Ordering::Relaxed);
             let uptime = state.start_time.elapsed().as_secs();
-            let rule_count = state.router.as_ref().map(|r| r.rules().len()).unwrap_or(0);
-            let upstream_group_count = state.router.as_ref().map(|r| r.groups().len()).unwrap_or(0);
-            let default_action = state
-                .router
-                .as_ref()
+            let router = state.routing.as_ref().map(|r| r.router());
+            let router = router.as_ref();
+            let rule_count = router.map(|r| r.rules().len()).unwrap_or(0);
+            let upstream_group_count = router.map(|r| r.groups().len()).unwrap_or(0);
+            let default_action = router
                 .map(|r| format!("{:?}", r.default_action()))
                 .unwrap_or_else(|| "none".to_string());
             let listener_names: Vec<&str> =
@@ -139,7 +151,7 @@ pub async fn handle_request(
             let config_summary = serde_json::json!({
                 "generation": generation,
                 "uptime_seconds": uptime,
-                "has_router": state.router.is_some(),
+                "has_router": router.is_some(),
                 "rule_count": rule_count,
                 "upstream_group_count": upstream_group_count,
                 "default_action": default_action,
@@ -154,7 +166,9 @@ pub async fn handle_request(
             if method != http::Method::POST {
                 return build_text_response(405, "method not allowed");
             }
-            let Some(router) = &state.router else {
+            let router = state.routing.as_ref().map(|r| r.router());
+            let router = router.as_ref();
+            let Some(router) = router else {
                 return build_json_response(
                     503,
                     serde_json::json!({"error": "no router configured"}).to_string(),
@@ -169,6 +183,12 @@ pub async fn handle_request(
                     );
                 }
             };
+            if body_bytes.len() > MAX_ADMIN_BODY {
+                return build_json_response(
+                    413,
+                    serde_json::json!({"error": "request body too large"}).to_string(),
+                );
+            }
             let body: serde_json::Value = match serde_json::from_slice(&body_bytes) {
                 Ok(v) => v,
                 Err(_) => {

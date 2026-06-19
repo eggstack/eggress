@@ -80,3 +80,8 @@ eggress/
 - Recursive TOML matcher expressions (all, any_of, not) with leaf matchers
 - Session metrics via `SessionMetrics` trait for pluggable backends
 - Service supervisor pattern with graceful shutdown and signal handling
+- Shared runtime snapshot via `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
+- Separate cancellation tokens for shutdown phases (listeners, connections, health, admin)
+- Pre-bind listeners before readiness to avoid race conditions
+- Health config per upstream from TOML
+- PAC/static content from TOML config

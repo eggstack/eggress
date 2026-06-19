@@ -30,7 +30,7 @@ Server orchestration library providing the reusable connection-handling API:
 - `serve_connection()` — main entry point: detect → accept (with timeout) → route → reply → relay
 - `SessionReport` — structured connection outcome with protocol, target, route, byte counts, and failure category
 - `SessionOutcome` — normalized outcomes: Completed, ClientProtocolError, AuthenticationFailed, HandshakeTimedOut, RouteFailed, RelayFailed, Cancelled
-- `FailureCategory` — detailed failure diagnostics: Protocol, Authentication, HandshakeTimeout, Dns, ConnectionRefused, NetworkUnreachable, HostUnreachable, RouteTimeout, UpstreamAuthentication, Relay, Internal
+- `FailureCategory` — detailed failure diagnostics: Protocol, Authentication, HandshakeTimeout, Dns, ConnectionRefused, NetworkUnreachable, HostUnreachable, RouteTimeout, UpstreamAuthentication, RouteHop, Cancelled, Relay, Internal
 - `SessionOpenError` — normalized route failure types with protocol-specific reply mapping
 - `SessionMetrics` — trait for recording session metrics (latency, bytes, outcome)
 - Deferred success replies — success is sent only after outbound route is established
@@ -40,11 +40,13 @@ Server orchestration library providing the reusable connection-handling API:
 
 ### eggress-runtime
 Service supervisor and composition layer:
-- `ServiceSupervisor` — manages listener tasks, admin server, health manager, metrics
-- `RuntimeState` — shared state with readiness flag and cancellation token
-- `build_router_from_config` — strict config compilation with validation
+- `CompiledRuntimeSnapshot` — single authoritative runtime snapshot
+- `compile_runtime_snapshot()` — builds shared upstream registry, router, and health plan
+- `RuntimeState` — shared state with snapshot, readiness, and generation
+- Pre-bind listeners before readiness
+- Separate cancellation tokens for listeners, connections, health, admin
+- Shutdown sequence: readiness false → stop listeners → drain → force-cancel → stop admin
 - Signal handling — SIGHUP for reload, SIGTERM/SIGINT for graceful shutdown
-- Graceful shutdown — readiness flag, drain timeout, task joining
 - Health manager integration — background health probes
 - Metrics integration — session metrics recording via `SessionMetrics` trait
 
@@ -76,7 +78,8 @@ Policy-driven routing and upstream selection:
 - `RouteService` trait for pluggable routing backends
 - `SharedRoutingService` with `ArcSwap` for atomic config reload
 - Route explanation tooling for operator debugging
-- `SelectionReason` for fallback diagnostics
+- `SelectionReason` variants: Normal, DirectFallback, UnhealthyFallback
+- Health configuration per upstream
 - Compatibility regex parser for pproxy-style rule files
 
 ### eggress-config
@@ -86,6 +89,8 @@ TOML configuration with validation:
 - Expanded leaf matchers (host, port range, port set, CIDR, listener, protocol, identity)
 - Validation: duplicate IDs, unknown references, invalid URIs, duration parsing, regex validation, CIDR validation
 - Secret sources (inline, environment variable, file)
+- Health configuration per upstream
+- PAC/static content configuration
 - CLI compatibility compilation
 
 ### eggress-metrics
@@ -98,11 +103,14 @@ Prometheus-compatible metrics:
 
 ### eggress-admin
 Local admin HTTP server:
+- Live routing state via SharedRoutingService
+- Readiness reflects runtime state
 - Health/readiness endpoints
 - Status, routes, upstreams, config JSON endpoints
 - Prometheus metrics endpoint
 - PAC generation and serving
 - Static content serving
+- Body size limits for route explanation
 
 ### eggress-protocol-http
 HTTP/1 protocol implementation:
@@ -153,3 +161,6 @@ Client → TcpListener → serve_connection()
 10. **Health-aware scheduling** — upstream eligibility based on health state
 11. **Lease accounting** — `PendingLease`/`ActiveLease` track in-flight connections
 12. **Operator explainability** — route explanation without debug logs
+13. **Shared runtime snapshot** — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
+14. **Graceful shutdown ordering** — drain first, cancel second
+15. **Atomic reload** — compile candidate before swap, reject unsupported changes

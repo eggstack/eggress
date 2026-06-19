@@ -21,6 +21,13 @@ arc-swap.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+eggress-admin.workspace = true
+eggress-routing.workspace = true
+eggress-core.workspace = true
+eggress-uri.workspace = true
 
 [lints]
 workspace = true

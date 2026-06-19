@@ -415,6 +415,7 @@ impl std::fmt::Display for SelectionReason {
 pub enum SelectedRoute {
     Direct {
         decision: RouteDecision,
+        selection_reason: SelectionReason,
     },
     Upstream {
         decision: RouteDecision,
@@ -429,9 +430,13 @@ pub enum SelectedRoute {
 impl std::fmt::Debug for SelectedRoute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SelectedRoute::Direct { decision } => f
+            SelectedRoute::Direct {
+                decision,
+                selection_reason,
+            } => f
                 .debug_struct("SelectedRoute::Direct")
                 .field("decision", decision)
+                .field("selection_reason", selection_reason)
                 .finish(),
             SelectedRoute::Upstream {
                 decision,
@@ -490,6 +495,7 @@ impl RouteService for Router {
         match decision {
             RouteDecision::Direct { rule: _ } => Ok(SelectedRoute::Direct {
                 decision: decision.clone(),
+                selection_reason: SelectionReason::Normal,
             }),
             RouteDecision::Reject { rule, reason } => Err(RouteError::Rejected {
                 rule: rule.clone(),
@@ -522,6 +528,7 @@ impl RouteService for Router {
                         upstream::GroupFallback::Direct => {
                             return Ok(SelectedRoute::Direct {
                                 decision: decision.clone(),
+                                selection_reason: SelectionReason::DirectFallback,
                             });
                         }
                         upstream::GroupFallback::UseUnhealthy => {
@@ -575,6 +582,15 @@ impl SharedRoutingService {
         }
     }
 
+    pub fn new_arc(router: std::sync::Arc<Router>) -> Self {
+        Self {
+            inner: arc_swap::ArcSwap::from_pointee(RoutingServiceInner {
+                router,
+                generation: std::sync::atomic::AtomicU64::new(0),
+            }),
+        }
+    }
+
     pub fn generation(&self) -> u64 {
         self.inner
             .load()
@@ -595,6 +611,20 @@ impl SharedRoutingService {
             + 1;
         let new_inner = RoutingServiceInner {
             router: std::sync::Arc::new(router),
+            generation: std::sync::atomic::AtomicU64::new(gen),
+        };
+        self.inner.store(std::sync::Arc::new(new_inner));
+    }
+
+    pub fn swap_arc(&self, router: std::sync::Arc<Router>) {
+        let gen = self
+            .inner
+            .load()
+            .generation
+            .load(std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let new_inner = RoutingServiceInner {
+            router,
             generation: std::sync::atomic::AtomicU64::new(gen),
         };
         self.inner.store(std::sync::Arc::new(new_inner));

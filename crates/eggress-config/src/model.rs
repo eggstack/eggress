@@ -84,6 +84,18 @@ pub struct AuthConfig {
 pub struct UpstreamConfig {
     pub id: String,
     pub uri: String,
+    #[serde(default)]
+    pub health: Option<HealthConfigToml>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HealthConfigToml {
+    pub mode: Option<String>,
+    pub interval: Option<String>,
+    pub timeout: Option<String>,
+    pub failures_to_unhealthy: Option<u32>,
+    pub successes_to_healthy: Option<u32>,
+    pub initial_state: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,4 +132,22 @@ pub struct AdminConfig {
     pub bind: Option<String>,
     pub enabled: Option<bool>,
     pub metrics: Option<bool>,
+    pub pac: Option<PacConfigToml>,
+    pub static_content: Option<Vec<StaticContentToml>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PacConfigToml {
+    pub path: Option<String>,
+    pub proxy: String,
+    pub direct_fallback: Option<bool>,
+    pub direct_hosts: Option<Vec<String>>,
+    pub direct_suffixes: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StaticContentToml {
+    pub path: String,
+    pub content_type: Option<String>,
+    pub body: Option<String>,
 }

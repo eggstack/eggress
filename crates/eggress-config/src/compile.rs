@@ -5,7 +5,7 @@ use eggress_routing::scheduler::SchedulerKind;
 use eggress_routing::UpstreamGroupId;
 
 use crate::error::ConfigError;
-use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig, RuleConfig};
+use crate::model::{ConfigFile, HealthConfigToml, LeafMatcher, MatchExprConfig, RuleConfig};
 use crate::validate::validate_duration;
 
 #[derive(Debug, Clone)]
@@ -65,6 +65,7 @@ pub struct ListenerConfig {
 pub struct UpstreamConfig {
     pub id: String,
     pub chain: eggress_uri::ProxyChainSpec,
+    pub health: eggress_routing::health::HealthConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,8 @@ pub struct AdminConfig {
     pub bind: String,
     pub enabled: bool,
     pub metrics: bool,
+    pub pac: Option<eggress_admin::PacConfig>,
+    pub static_content: Vec<eggress_admin::StaticRoute>,
 }
 
 fn compile_reject_reason(s: &str) -> Result<RejectReason, ConfigError> {
@@ -455,6 +458,73 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
         .collect()
 }
 
+fn compile_health_config(
+    health: Option<&HealthConfigToml>,
+) -> Result<eggress_routing::health::HealthConfig, ConfigError> {
+    let defaults = eggress_routing::health::HealthConfig::default();
+    let Some(h) = health else {
+        return Ok(defaults);
+    };
+
+    let interval = h
+        .interval
+        .as_deref()
+        .map(validate_duration)
+        .transpose()?
+        .unwrap_or(defaults.interval);
+
+    let timeout = h
+        .timeout
+        .as_deref()
+        .map(validate_duration)
+        .transpose()?
+        .unwrap_or(defaults.timeout);
+
+    let failures_to_unhealthy = h
+        .failures_to_unhealthy
+        .unwrap_or(defaults.failures_to_unhealthy);
+    if failures_to_unhealthy == 0 {
+        return Err(ConfigError::validation(
+            "health.failures_to_unhealthy",
+            "must be greater than 0",
+        ));
+    }
+
+    let successes_to_healthy = h
+        .successes_to_healthy
+        .unwrap_or(defaults.successes_to_healthy);
+    if successes_to_healthy == 0 {
+        return Err(ConfigError::validation(
+            "health.successes_to_healthy",
+            "must be greater than 0",
+        ));
+    }
+
+    let initial_state = match h.initial_state.as_deref() {
+        Some("unknown") | None => defaults.initial_state,
+        Some("healthy") => eggress_routing::health::HealthState::Healthy,
+        Some("unhealthy") => eggress_routing::health::HealthState::Unhealthy,
+        Some("disabled") => eggress_routing::health::HealthState::Disabled,
+        Some(other) => {
+            return Err(ConfigError::validation(
+                "health.initial_state",
+                &format!(
+                    "unknown state '{}', must be one of: unknown, healthy, unhealthy, disabled",
+                    other
+                ),
+            ));
+        }
+    };
+
+    Ok(eggress_routing::health::HealthConfig {
+        interval,
+        timeout,
+        failures_to_unhealthy,
+        successes_to_healthy,
+        initial_state,
+    })
+}
+
 fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigError> {
     let upstreams = match &config.upstreams {
         Some(u) => u,
@@ -474,9 +544,17 @@ fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigE
                 )
             })?;
 
+            let health = compile_health_config(u.health.as_ref()).map_err(|e| match e {
+                ConfigError::Validation { path, message } => {
+                    ConfigError::validation(&format!("upstream {}.{}", u.id, path), &message)
+                }
+                other => other,
+            })?;
+
             Ok(UpstreamConfig {
                 id: u.id.clone(),
                 chain,
+                health,
             })
         })
         .collect()
@@ -597,6 +675,35 @@ fn compile_default_action(config: &ConfigFile) -> eggress_routing::RouteActionSp
 fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
     let admin = config.admin.as_ref()?;
 
+    let pac = admin.pac.as_ref().map(|pac_toml| {
+        let path = pac_toml.path.clone().unwrap_or_else(|| "/pac".to_string());
+        eggress_admin::PacConfig {
+            path,
+            proxy_directive: pac_toml.proxy.clone(),
+            direct_fallback: pac_toml.direct_fallback.unwrap_or(true),
+            direct_hosts: pac_toml.direct_hosts.clone().unwrap_or_default(),
+            direct_suffixes: pac_toml.direct_suffixes.clone().unwrap_or_default(),
+        }
+    });
+
+    let static_content = admin
+        .static_content
+        .as_ref()
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| eggress_admin::StaticRoute {
+                    path: entry.path.clone(),
+                    content_type: entry
+                        .content_type
+                        .clone()
+                        .unwrap_or_else(|| "text/plain".to_string()),
+                    body: entry.body.clone().unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(AdminConfig {
         bind: admin
             .bind
@@ -604,6 +711,8 @@ fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
             .unwrap_or_else(|| "127.0.0.1:9090".to_string()),
         enabled: admin.enabled.unwrap_or(true),
         metrics: admin.metrics.unwrap_or(true),
+        pac,
+        static_content,
     })
 }
 

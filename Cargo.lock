@@ -248,6 +248,7 @@ dependencies = [
 name = "eggress-config"
 version = "0.1.0"
 dependencies = [
+ "eggress-admin",
  "eggress-core",
  "eggress-routing",
  "eggress-uri",
@@ -337,6 +338,7 @@ dependencies = [
  "eggress-routing",
  "eggress-server",
  "eggress-uri",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",

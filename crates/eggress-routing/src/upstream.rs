@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use eggress_core::UpstreamId;
 
-use crate::health::{HealthCell, HealthProbe, HealthState};
+use crate::health::{HealthCell, HealthConfig, HealthProbe, HealthState};
 use crate::scheduler::{resolve_scheduler, Scheduler, SchedulerKind};
 use crate::UpstreamGroupId;
 
@@ -28,22 +28,26 @@ pub struct UpstreamRuntime {
     pub in_flight: AtomicU64,
     pub health: HealthCell,
     pub health_probe: Option<HealthProbe>,
+    pub health_config: HealthConfig,
 }
 
 impl UpstreamRuntime {
     pub fn new(id: UpstreamId, chain: ProxyChainSpec) -> Self {
+        let health_config = HealthConfig::default();
         Self {
             id,
             chain: Arc::new(chain),
             enabled: AtomicBool::new(true),
             active: AtomicU64::new(0),
             in_flight: AtomicU64::new(0),
-            health: HealthCell::new(HealthState::Unknown),
+            health: HealthCell::new(health_config.initial_state),
             health_probe: None,
+            health_config,
         }
     }
 
     pub fn new_with_health(id: UpstreamId, chain: ProxyChainSpec, state: HealthState) -> Self {
+        let health_config = HealthConfig::default();
         Self {
             id,
             chain: Arc::new(chain),
@@ -52,11 +56,18 @@ impl UpstreamRuntime {
             in_flight: AtomicU64::new(0),
             health: HealthCell::new(state),
             health_probe: None,
+            health_config,
         }
     }
 
     pub fn with_health_probe(mut self, probe: HealthProbe) -> Self {
         self.health_probe = Some(probe);
+        self
+    }
+
+    pub fn with_health_config(mut self, config: HealthConfig) -> Self {
+        self.health = HealthCell::new(config.initial_state);
+        self.health_config = config;
         self
     }
 

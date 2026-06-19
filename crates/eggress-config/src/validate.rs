@@ -24,6 +24,9 @@ const VALID_REJECT_REASONS: &[&str] = &[
     "internal-error",
 ];
 
+const VALID_HEALTH_MODES: &[&str] = &["tcp_connect"];
+const VALID_HEALTH_INITIAL_STATES: &[&str] = &["unknown", "healthy", "unhealthy", "disabled"];
+
 pub fn validate_config(config: &ConfigFile) -> Result<(), Vec<ConfigError>> {
     let mut errors = Vec::new();
 
@@ -136,6 +139,73 @@ fn validate_upstreams(upstreams: &[crate::model::UpstreamConfig], errors: &mut V
             errors.push(ConfigError::validation(
                 &path,
                 &format!("invalid upstream URI: {}", upstream.uri),
+            ));
+        }
+
+        if let Some(ref health) = upstream.health {
+            validate_health_config(health, &path, errors);
+        }
+    }
+}
+
+fn validate_health_config(
+    health: &crate::model::HealthConfigToml,
+    parent_path: &str,
+    errors: &mut Vec<ConfigError>,
+) {
+    if let Some(ref mode) = health.mode {
+        if !VALID_HEALTH_MODES.contains(&mode.as_str()) {
+            errors.push(ConfigError::validation(
+                &format!("{}.health.mode", parent_path),
+                &format!(
+                    "unknown health mode '{}', must be one of: {}",
+                    mode,
+                    VALID_HEALTH_MODES.join(", ")
+                ),
+            ));
+        }
+    }
+    if let Some(ref interval) = health.interval {
+        if parse_duration(interval).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.health.interval", parent_path),
+                &format!("invalid duration: {}", interval),
+            ));
+        }
+    }
+    if let Some(ref timeout) = health.timeout {
+        if parse_duration(timeout).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.health.timeout", parent_path),
+                &format!("invalid duration: {}", timeout),
+            ));
+        }
+    }
+    if let Some(failures) = health.failures_to_unhealthy {
+        if failures == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.health.failures_to_unhealthy", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(successes) = health.successes_to_healthy {
+        if successes == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.health.successes_to_healthy", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(ref initial_state) = health.initial_state {
+        if !VALID_HEALTH_INITIAL_STATES.contains(&initial_state.as_str()) {
+            errors.push(ConfigError::validation(
+                &format!("{}.health.initial_state", parent_path),
+                &format!(
+                    "unknown state '{}', must be one of: {}",
+                    initial_state,
+                    VALID_HEALTH_INITIAL_STATES.join(", ")
+                ),
             ));
         }
     }
@@ -446,6 +516,69 @@ fn validate_admin(admin: &crate::model::AdminConfig, errors: &mut Vec<ConfigErro
                 "admin.bind",
                 &format!("invalid bind address: {}", bind),
             ));
+        }
+    }
+
+    if let Some(ref pac) = admin.pac {
+        if let Some(ref path) = pac.path {
+            if !path.starts_with('/') {
+                errors.push(ConfigError::validation(
+                    "admin.pac.path",
+                    &format!("PAC path must start with '/': {}", path),
+                ));
+            }
+        }
+    }
+
+    if let Some(ref static_content) = admin.static_content {
+        let reserved_paths = [
+            "/-/health",
+            "/-/ready",
+            "/-/status",
+            "/-/routes",
+            "/-/upstreams",
+            "/-/config",
+            "/-/route-explain",
+            "/metrics",
+            "/pac",
+        ];
+        let mut seen_paths = HashSet::new();
+
+        for (i, entry) in static_content.iter().enumerate() {
+            let path = format!("admin.static_content[{}]", i);
+
+            if !entry.path.starts_with('/') {
+                errors.push(ConfigError::validation(
+                    &path,
+                    &format!("static path must start with '/': {}", entry.path),
+                ));
+            }
+
+            if !seen_paths.insert(&entry.path) {
+                errors.push(ConfigError::validation(
+                    &path,
+                    &format!("duplicate static path: {}", entry.path),
+                ));
+            }
+
+            if reserved_paths.contains(&entry.path.as_str()) {
+                errors.push(ConfigError::validation(
+                    &path,
+                    &format!(
+                        "static path collides with reserved admin endpoint: {}",
+                        entry.path
+                    ),
+                ));
+            }
+
+            if let Some(ref body) = entry.body {
+                if body.is_empty() {
+                    errors.push(ConfigError::validation(
+                        &path,
+                        "static body must be non-empty if provided",
+                    ));
+                }
+            }
         }
     }
 }

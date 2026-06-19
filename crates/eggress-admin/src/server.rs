@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -21,6 +21,10 @@ impl AdminServer {
     pub async fn new(bind: &str, cancel: CancellationToken) -> Result<Self, AdminError> {
         let listener = TcpListener::bind(bind).await?;
         Ok(Self { listener, cancel })
+    }
+
+    pub fn local_addr(&self) -> Result<std::net::SocketAddr, std::io::Error> {
+        self.listener.local_addr()
     }
 
     pub async fn run(self, state: AdminState) -> Result<(), AdminError> {
@@ -59,8 +63,10 @@ pub struct AdminState {
     pub static_routes: Arc<Vec<StaticRoute>>,
     pub pac_config: Arc<Option<PacConfig>>,
     pub router: Option<Arc<eggress_routing::Router>>,
+    pub routing: Option<Arc<eggress_routing::SharedRoutingService>>,
     pub listeners: Arc<Vec<ListenerInfo>>,
     pub active_connections: Option<Arc<std::sync::atomic::AtomicU64>>,
+    pub readiness: Arc<AtomicBool>,
 }
 
 pub type AdminResponse = http::Response<Full<Bytes>>;
@@ -85,6 +91,7 @@ pub struct PacConfig {
 pub struct ListenerInfo {
     pub name: String,
     pub bind: String,
+    pub local_addr: String,
     pub protocols: Vec<String>,
 }
 

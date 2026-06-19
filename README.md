@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 2 corrective integration complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC serving, graceful reload, route explanation, and runtime supervisor. Integration tests still needed.
+> Status: Phase 2 final integration pass complete — shared runtime snapshot, health-aware scheduling, graceful shutdown with drain, atomic reload with topology validation, PAC/static content configuration, end-to-end integration tests.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -57,7 +57,7 @@ Legend:
 - [x] Replayable protocol sniff buffer
 - [x] Mixed inbound protocol autodetection
 - [x] Half-close-aware bidirectional relay
-- [x] Graceful shutdown
+- [x] Graceful shutdown (drain-first, cancel-after-deadline)
 - [x] Connection limits
 - [x] Handshake limits and timeouts
 
@@ -110,9 +110,9 @@ Legend:
 - [x] Round-robin scheduling
 - [x] Random scheduling
 - [x] Least-connections scheduling
-- [x] Active health checking
+- [x] Active health checking (with health config from TOML)
 - [x] Health hysteresis
-- [x] Direct fallback
+- [x] Direct fallback (with SelectionReason::DirectFallback)
 - [x] Route explanation command
 
 ### Proxy chaining
@@ -286,7 +286,7 @@ Legend:
 
 - [x] TOML configuration
 - [x] Configuration validation
-- [x] Configuration reload
+- [x] Configuration reload (with explicit scope: routing/upstreams/groups, not listener topology)
 - [x] Human-readable structured logs
 - [x] JSON logs
 - [x] Secret redaction for URIs, authentication, and runtime logs

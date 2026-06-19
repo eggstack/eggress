@@ -22,7 +22,7 @@ Phase 3: Advanced features (planned)
 - [x] 1.10: CLI integration
 - [x] 1.11: Corrective closure — session model, deferred replies, body framing, header filtering, external interop
 
-### Phase 2: Routing, health, and operations — corrective integration complete
+### Phase 2: Routing, health, and operations — complete
 
 - [x] 2.1: Routing rule engine (matchers, first-match-wins, route explanation)
 - [x] 2.2: Upstream groups and schedulers (first-available, round-robin, random, least-connections)
@@ -35,10 +35,19 @@ Phase 3: Advanced features (planned)
 - [x] 2.9: Route explanation and upstream test command (human/JSON output, reachability testing)
 - [x] 2.10: Phase closure (README, ARCHITECTURE, AGENTS.md updates)
 - [x] 2.11: Corrective integration — scheduler persistence, lease lifecycle, group fallback, connect timeout, context propagation, stable IDs, runtime supervisor, metrics trait, expanded TOML matchers
+- [x] 2.12: Shared runtime snapshot and upstream registry
+- [x] 2.13: Health configuration from TOML
+- [x] 2.14: Pre-bind listeners before readiness
+- [x] 2.15: Unified generation and live admin state
+- [x] 2.16: Correct graceful shutdown sequencing
+- [x] 2.17: Atomic reload with topology validation
+- [x] 2.18: PAC/static content TOML configuration
+- [x] 2.19: Direct fallback metadata and failure categories
+- [x] 2.20: End-to-end integration tests
 
 ## Remaining Work
 
-- Integration tests for Phase 2 features are still needed (binary-level tests for routing, health, metrics, reload, etc.).
+None — Phase 2 is complete.
 
 ## Next Phase
 

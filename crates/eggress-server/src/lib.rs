@@ -961,14 +961,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cancelled_session_has_no_failure() {
+    async fn test_cancelled_session_has_cancelled_failure() {
         let report = execute::SessionReport::cancelled(
             Some("http".to_string()),
             Some("example.com:80".to_string()),
             "direct".to_string(),
         );
         assert!(matches!(report.outcome, execute::SessionOutcome::Cancelled));
-        assert_eq!(report.failure, None);
+        assert_eq!(report.failure, Some(execute::FailureCategory::Cancelled));
     }
 
     #[tokio::test]

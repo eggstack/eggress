@@ -29,7 +29,7 @@ pub struct HealthSnapshot {
     pub last_error: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HealthConfig {
     pub interval: Duration,
     pub timeout: Duration,

@@ -47,9 +47,11 @@ pub enum FailureCategory {
     NetworkUnreachable,
     HostUnreachable,
     RouteTimeout,
+    RouteHop,
     UpstreamAuthentication,
     PolicyDenied,
     Relay,
+    Cancelled,
     Internal,
 }
 
@@ -105,7 +107,7 @@ impl SessionReport {
             bytes_upstream: 0,
             bytes_downstream: 0,
             outcome: SessionOutcome::Cancelled,
-            failure: None,
+            failure: Some(FailureCategory::Cancelled),
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
@@ -139,7 +141,7 @@ impl From<&SessionOpenError> for FailureCategory {
             SessionOpenError::HostUnreachable => FailureCategory::HostUnreachable,
             SessionOpenError::Timeout => FailureCategory::RouteTimeout,
             SessionOpenError::UpstreamAuthentication => FailureCategory::UpstreamAuthentication,
-            SessionOpenError::Hop { .. } => FailureCategory::Relay,
+            SessionOpenError::Hop { .. } => FailureCategory::RouteHop,
             SessionOpenError::PolicyDenied => FailureCategory::PolicyDenied,
             SessionOpenError::Other(_) => FailureCategory::Relay,
         }
@@ -178,7 +180,12 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
 
 fn route_description(selected: &SelectedRoute) -> String {
     match selected {
-        SelectedRoute::Direct { .. } => "direct".to_string(),
+        SelectedRoute::Direct {
+            selection_reason, ..
+        } => match selection_reason {
+            eggress_routing::SelectionReason::DirectFallback => "direct(fallback)".to_string(),
+            _ => "direct".to_string(),
+        },
         SelectedRoute::Upstream {
             upstream, group, ..
         } => format!("upstream({}/{})", group.0, upstream),
@@ -194,13 +201,16 @@ fn route_metadata(
     Option<eggress_routing::SelectionReason>,
 ) {
     match selected {
-        SelectedRoute::Direct { decision } => {
+        SelectedRoute::Direct {
+            decision,
+            selection_reason,
+        } => {
             let rule_id = match decision {
                 eggress_routing::RouteDecision::Direct { rule, .. }
                 | eggress_routing::RouteDecision::UpstreamGroup { rule, .. }
                 | eggress_routing::RouteDecision::Reject { rule, .. } => rule.0.to_string(),
             };
-            (Some(rule_id), None, None, None)
+            (Some(rule_id), None, None, Some(*selection_reason))
         }
         SelectedRoute::Upstream {
             decision,
