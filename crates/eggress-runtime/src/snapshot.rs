@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use eggress_config::compile::{GroupFallback, RuntimeConfig, UpstreamConfig};
+use eggress_config::compile::{
+    AdminConfig, GroupFallback, ListenerConfig, RuntimeConfig, UpstreamConfig,
+};
 use eggress_routing::upstream::{UpstreamGroup, UpstreamRuntime};
 use eggress_routing::{RouteActionSpec, Router};
 
@@ -10,6 +12,8 @@ pub struct CompiledRuntimeSnapshot {
     pub upstreams: HashMap<String, Arc<UpstreamRuntime>>,
     pub router: Arc<Router>,
     pub health_config: eggress_routing::health::HealthConfig,
+    pub listeners: Vec<ListenerConfig>,
+    pub admin: Option<AdminConfig>,
 }
 
 /// Check whether an existing `UpstreamRuntime` is compatible with a new config,
@@ -100,6 +104,8 @@ pub fn compile_runtime_snapshot(
         upstreams,
         router: Arc::new(router),
         health_config: eggress_routing::health::HealthConfig::default(),
+        listeners: rt.listeners.clone(),
+        admin: rt.admin.clone(),
     })
 }
 

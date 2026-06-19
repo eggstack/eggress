@@ -32,11 +32,11 @@ pub enum ReloadResult {
 /// - Upstream chains and health config (with Arc reuse for unchanged upstreams)
 /// - Upstream groups, schedulers, and fallback policies
 /// - Routing rules and default action
+/// - Listener configuration metadata (name, bind, protocols, auth)
 /// - Admin PAC and static content configuration
 ///
 /// **NOT reloaded (requires full restart):**
-/// - Listener bind addresses or names (these are the process's socket bindings)
-/// - Listener protocols
+/// - Listener socket bindings (bound before readiness)
 /// - Process-level settings (log format, log level, shutdown grace)
 /// - Timeout configuration
 /// - Admin bind address
@@ -266,12 +266,17 @@ impl ServiceSupervisor {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            if rt_config.listeners.is_empty() {
+            let current_snapshot = snapshot.load();
+            let listener_configs = current_snapshot.listeners.clone();
+            let admin_config = current_snapshot.admin.clone();
+            drop(current_snapshot);
+
+            if listener_configs.is_empty() {
                 tracing::warn!("no listeners configured; the proxy will not accept connections");
             }
 
             let mut prepared = Vec::new();
-            for lcfg in &rt_config.listeners {
+            for lcfg in &listener_configs {
                 let bind_addr: std::net::SocketAddr =
                     lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
                         addr: lcfg.bind.clone(),
@@ -426,7 +431,7 @@ impl ServiceSupervisor {
                 });
             }
 
-            if let Some(ref admin_cfg) = rt_config.admin {
+            if let Some(ref admin_cfg) = admin_config {
                 if admin_cfg.enabled {
                     let bind = admin_cfg.bind.clone();
                     let admin_cancel = admin_cancel.clone();
@@ -493,7 +498,7 @@ impl ServiceSupervisor {
                             match eggress_config::compile::load_and_compile(&config_path) {
                                 Ok(new_rt_config) => {
                                     // Classify unsupported changes: reject if listener topology changed
-                                    let old_listeners = &rt_config.listeners;
+                                    let old_listeners = &snapshot.load().listeners;
                                     let new_listeners = &new_rt_config.listeners;
                                     let mut rejected = false;
                                     if old_listeners.len() != new_listeners.len() {
