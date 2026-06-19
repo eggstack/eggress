@@ -1705,3 +1705,9 @@ Implemented across multiple commits:
 - validate_upstream_id enforced at config compilation time
 - Mixed CLI/config mode rejection
 - Documentation updates (README, ROADMAP, ARCHITECTURE, AGENTS.md)
+
+## Gap fixes (post-audit)
+
+- G5 (High): Connection tasks now tracked in TaskTracker (conn_tasks.spawn) instead of detached tokio::spawn
+- G2 (Medium): Health probes reconciled on SIGHUP reload — old probes cancelled, new upstream runtimes created with probes
+- G3 (Low): Cancelled — no PAC/static content config exists in TOML model, nothing to reload

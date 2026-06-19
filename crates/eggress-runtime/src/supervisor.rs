@@ -72,27 +72,7 @@ impl ServiceSupervisor {
 
         {
             let rt = &rt_config;
-            let mut upstream_runtimes: Vec<Arc<UpstreamRuntime>> = Vec::new();
-
-            for u in &rt.upstreams {
-                let id = eggress_core::UpstreamId::new(u.id.clone());
-                let mut runtime = UpstreamRuntime::new(id, u.chain.clone());
-
-                if let Some(first_hop) = u.chain.hops.first() {
-                    let addr: Result<std::net::SocketAddr, _> =
-                        format!("{}:{}", first_hop.endpoint.host, first_hop.endpoint.port).parse();
-                    if let Ok(addr) = addr {
-                        runtime = runtime.with_health_probe(
-                            eggress_routing::health::HealthProbe::TcpConnect {
-                                target: addr,
-                                timeout: std::time::Duration::from_secs(5),
-                            },
-                        );
-                    }
-                }
-
-                upstream_runtimes.push(Arc::new(runtime));
-            }
+            let upstream_runtimes = build_upstream_runtimes(&rt.upstreams);
 
             if !upstream_runtimes.is_empty() {
                 let mut hm = HealthManager::new(cancel.clone());
@@ -136,6 +116,7 @@ impl ServiceSupervisor {
             let routing = routing.clone();
             let listener_name = lcfg.name.clone();
             let state = state.clone();
+            let conn_tasks = tasks.clone();
 
             tasks.spawn(async move {
                 let config = TcpListenerConfig {
@@ -188,7 +169,7 @@ impl ServiceSupervisor {
 
                     let conn_cancel = cancel.child_token();
 
-                    tokio::spawn(async move {
+                    conn_tasks.spawn(async move {
                         let started = std::time::Instant::now();
                         let config = eggress_server::ConnectionConfig {
                             routing: routing as Arc<dyn RouteService>,
@@ -291,6 +272,8 @@ impl ServiceSupervisor {
         let active_connections = self.state.active_connections.clone();
         let shutdown_grace = self.shutdown_grace;
         let tasks = self.tasks.clone();
+        let health = std::sync::Arc::new(std::sync::Mutex::new(self.health.take()));
+        let health_clone = health.clone();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
@@ -322,8 +305,24 @@ impl ServiceSupervisor {
                                         let gen = routing.generation();
                                         metrics.set_config_generation(gen);
                                         metrics.record_reload(true);
+
+                                        if let Ok(mut guard) = health_clone.lock() {
+                                            if let Some(ref mut hm) = *guard {
+                                                hm.stop_all();
+                                            }
+                                            let upstream_runtimes = build_upstream_runtimes(&rt_config.upstreams);
+                                            if !upstream_runtimes.is_empty() {
+                                                let mut hm = HealthManager::new(cancel.clone());
+                                                hm.start_probes(&upstream_runtimes, &HealthConfig::default());
+                                                *guard = Some(hm);
+                                            } else {
+                                                *guard = None;
+                                            }
+                                        }
+
                                         tracing::info!(
                                             generation = gen,
+                                            upstreams = rt_config.upstreams.len(),
                                             "config reloaded successfully"
                                         );
                                     }
@@ -373,8 +372,38 @@ impl ServiceSupervisor {
             tasks.wait().await;
         });
 
+        self.health = std::sync::Arc::try_unwrap(health)
+            .ok()
+            .and_then(|m| m.into_inner().ok())
+            .flatten();
+
         tracing::info!("eggress stopped");
     }
+}
+
+fn build_upstream_runtimes(
+    upstreams: &[eggress_config::compile::UpstreamConfig],
+) -> Vec<Arc<UpstreamRuntime>> {
+    let mut runtimes = Vec::new();
+    for u in upstreams {
+        let id = eggress_core::UpstreamId::new(u.id.clone());
+        let mut runtime = UpstreamRuntime::new(id, u.chain.clone());
+
+        if let Some(first_hop) = u.chain.hops.first() {
+            let addr: Result<std::net::SocketAddr, _> =
+                format!("{}:{}", first_hop.endpoint.host, first_hop.endpoint.port).parse();
+            if let Ok(addr) = addr {
+                runtime =
+                    runtime.with_health_probe(eggress_routing::health::HealthProbe::TcpConnect {
+                        target: addr,
+                        timeout: std::time::Duration::from_secs(5),
+                    });
+            }
+        }
+
+        runtimes.push(Arc::new(runtime));
+    }
+    runtimes
 }
 
 fn build_router_from_config(
