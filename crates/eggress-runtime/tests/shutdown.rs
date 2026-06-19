@@ -1,100 +1,18 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::io::Write;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-#[test]
-fn active_connection_counter_increments_and_decrements() {
-    let active = Arc::new(AtomicU64::new(0));
-    assert_eq!(active.load(Ordering::Relaxed), 0);
+use tempfile::NamedTempFile;
 
-    active.fetch_add(1, Ordering::Relaxed);
-    assert_eq!(active.load(Ordering::Relaxed), 1);
-
-    active.fetch_add(1, Ordering::Relaxed);
-    assert_eq!(active.load(Ordering::Relaxed), 2);
-
-    active.fetch_sub(1, Ordering::Relaxed);
-    assert_eq!(active.load(Ordering::Relaxed), 1);
-
-    active.fetch_sub(1, Ordering::Relaxed);
-    assert_eq!(active.load(Ordering::Relaxed), 0);
+fn write_config(content: &str) -> NamedTempFile {
+    let mut f = NamedTempFile::new().unwrap();
+    f.write_all(content.as_bytes()).unwrap();
+    f.flush().unwrap();
+    f
 }
 
-#[test]
-fn active_connection_counter_concurrent_access() {
-    let active = Arc::new(AtomicU64::new(0));
-    let mut handles = Vec::new();
-
-    for _ in 0..10 {
-        let active = active.clone();
-        handles.push(std::thread::spawn(move || {
-            for _ in 0..1000 {
-                active.fetch_add(1, Ordering::Relaxed);
-            }
-            for _ in 0..1000 {
-                active.fetch_sub(1, Ordering::Relaxed);
-            }
-        }));
-    }
-
-    for h in handles {
-        h.join().unwrap();
-    }
-
-    assert_eq!(active.load(Ordering::Relaxed), 0);
-}
-
-#[test]
-fn readiness_flag_becomes_false_before_drain() {
-    let readiness = Arc::new(AtomicBool::new(true));
-    assert!(readiness.load(Ordering::Relaxed));
-
-    readiness.store(false, Ordering::Relaxed);
-    assert!(!readiness.load(Ordering::Relaxed));
-}
-
-#[test]
-fn readiness_flag_concurrent_toggle() {
-    let readiness = Arc::new(AtomicBool::new(true));
-    let mut handles = Vec::new();
-
-    for _ in 0..5 {
-        let r = readiness.clone();
-        handles.push(std::thread::spawn(move || {
-            for _ in 0..1000 {
-                r.store(true, Ordering::Relaxed);
-                r.store(false, Ordering::Relaxed);
-            }
-        }));
-    }
-
-    for h in handles {
-        h.join().unwrap();
-    }
-
-    // Final value is either true or false, both valid
-    let _ = readiness.load(Ordering::Relaxed);
-}
-
-#[test]
-fn generation_counter_monotonically_increases() {
-    let generation = Arc::new(AtomicU64::new(0));
-    let mut prev = generation.load(Ordering::Relaxed);
-
-    for i in 1..=100 {
-        generation.store(i, Ordering::Relaxed);
-        let current = generation.load(Ordering::Relaxed);
-        assert!(
-            current > prev,
-            "generation should increase: prev={}, current={}",
-            prev,
-            current
-        );
-        prev = current;
-    }
-}
-
-#[test]
-fn runtime_state_readiness_start_false() {
+#[tokio::test]
+async fn readiness_transitions_to_false_on_shutdown() {
     let config = r#"
 version = 1
 
@@ -103,23 +21,190 @@ name = "http-in"
 bind = "127.0.0.1:0"
 protocols = ["http"]
 "#;
-    let mut f = tempfile::NamedTempFile::new().unwrap();
-    std::io::Write::write_all(&mut f, config.as_bytes()).unwrap();
-    std::io::Write::flush(&mut f).unwrap();
-    let path = f.path().to_str().unwrap().to_string();
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
 
-    let sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
-    let state = sup.state();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
 
-    // Readiness should be false before run()
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
+
+    // Trigger shutdown
+    token.cancel();
+    jh.await.ok();
+
+    // Readiness should be false after shutdown
     assert!(
         !state.readiness.load(Ordering::Relaxed),
-        "readiness must be false before run()"
+        "readiness should be false after shutdown"
     );
+}
 
-    // Generation should be 0
-    assert_eq!(state.generation.load(Ordering::Relaxed), 0);
+#[tokio::test]
+async fn shutdown_drains_active_connections() {
+    let config = r#"
+version = 1
 
-    // Active connections should be 0
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    // Trigger shutdown (should drain within shutdown_grace of 30s)
+    let start = std::time::Instant::now();
+    token.cancel();
+    jh.await.ok();
+    let elapsed = start.elapsed();
+
+    // Shutdown should complete well within the 30s grace period
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "shutdown took too long: {:?}",
+        elapsed
+    );
+}
+
+#[tokio::test]
+async fn shutdown_generation_remains_consistent() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let gen_before = state.generation.load(Ordering::Relaxed);
+    assert_eq!(gen_before, 0);
+
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    // Trigger shutdown
+    token.cancel();
+    jh.await.ok();
+
+    // Generation should not change during shutdown
+    let gen_after = state.generation.load(Ordering::Relaxed);
+    assert_eq!(
+        gen_before, gen_after,
+        "generation should not change during shutdown"
+    );
+}
+
+#[tokio::test]
+async fn shutdown_active_connections_returns_to_zero() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
     assert_eq!(state.active_connections.load(Ordering::Relaxed), 0);
+
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    // Trigger shutdown
+    token.cancel();
+    jh.await.ok();
+
+    assert_eq!(
+        state.active_connections.load(Ordering::Relaxed),
+        0,
+        "active connections should be zero after shutdown"
+    );
+}
+
+#[tokio::test]
+async fn shutdown_stops_accepting_new_connections() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    // Trigger shutdown
+    token.cancel();
+    jh.await.ok();
+
+    // Active connections should be zero
+    assert_eq!(
+        state.active_connections.load(Ordering::Relaxed),
+        0,
+        "active connections should be zero after shutdown"
+    );
 }

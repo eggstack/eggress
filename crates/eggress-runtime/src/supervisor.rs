@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
@@ -59,6 +59,7 @@ pub struct RuntimeState {
     pub generation: Arc<AtomicU64>,
     pub active_connections: Arc<AtomicU64>,
     pub connection_counter: Arc<AtomicU64>,
+    pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
 }
 
 #[allow(dead_code)]
@@ -73,6 +74,7 @@ pub struct ServiceSupervisor {
     health: Option<HealthManager>,
     tasks: TaskTracker,
     connection_tasks: TaskTracker,
+    admin_tasks: TaskTracker,
     shutdown_grace: Duration,
     rt_config: eggress_config::compile::RuntimeConfig,
 }
@@ -114,6 +116,7 @@ impl ServiceSupervisor {
             generation: generation.clone(),
             active_connections,
             connection_counter,
+            admin_local_addr: Arc::new(Mutex::new(None)),
         });
 
         let cancel = CancellationToken::new();
@@ -132,8 +135,7 @@ impl ServiceSupervisor {
                 snapshot.load().upstreams.values().cloned().collect();
 
             if !upstream_runtimes.is_empty() {
-                let mut hm = HealthManager::new(health_cancel.clone());
-                hm.start_probes(&upstream_runtimes, &HealthConfig::default());
+                let hm = HealthManager::new(health_cancel.clone());
                 health = Some(hm);
             }
         }
@@ -151,6 +153,7 @@ impl ServiceSupervisor {
             health,
             tasks,
             connection_tasks,
+            admin_tasks: TaskTracker::new(),
             shutdown_grace,
             rt_config,
         })
@@ -158,6 +161,10 @@ impl ServiceSupervisor {
 
     pub fn state(&self) -> &Arc<RuntimeState> {
         &self.state
+    }
+
+    pub fn shutdown_token(&self) -> CancellationToken {
+        self.cancel.clone()
     }
 
     /// Classify whether a reload is supported given old and new listener configs.
@@ -249,14 +256,17 @@ impl ServiceSupervisor {
         let connection_cancel = self.connection_cancel.clone();
         let health_cancel = self.health_cancel.clone();
         let admin_cancel = self.admin_cancel.clone();
+        let cancel = self.cancel.clone();
         let metrics = self.state.metrics.clone();
         let readiness = self.state.readiness.clone();
         let active_connections = self.state.active_connections.clone();
         let shutdown_grace = self.shutdown_grace;
         let tasks = self.tasks.clone();
         let connection_tasks = self.connection_tasks.clone();
+        let admin_tasks = self.admin_tasks.clone();
         let health = std::sync::Arc::new(std::sync::Mutex::new(self.health.take()));
         let health_clone = health.clone();
+        let health_for_run = health.clone();
         let snapshot = self.state.snapshot.clone();
         let state_ref = self.state.clone();
         let rt_config = self.rt_config.clone();
@@ -266,6 +276,18 @@ impl ServiceSupervisor {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
+            // Start health probes inside the runtime context
+            {
+                let mut guard = health_for_run.lock().unwrap();
+                if let Some(ref mut hm) = *guard {
+                    let upstream_runtimes: Vec<Arc<UpstreamRuntime>> =
+                        snapshot.load().upstreams.values().cloned().collect();
+                    if !upstream_runtimes.is_empty() {
+                        hm.start_probes(&upstream_runtimes, &HealthConfig::default());
+                    }
+                }
+            }
+
             let current_snapshot = snapshot.load();
             let listener_configs = current_snapshot.listeners.clone();
             let admin_config = current_snapshot.admin.clone();
@@ -439,7 +461,7 @@ impl ServiceSupervisor {
                     let listener_infos = listener_infos.clone();
                     let pac_config = Arc::new(admin_cfg.pac.clone());
                     let static_routes = Arc::new(admin_cfg.static_content.clone());
-                    tasks.spawn(async move {
+                    admin_tasks.spawn(async move {
                         let server =
                             match eggress_admin::AdminServer::new(&bind, admin_cancel).await {
                                 Ok(s) => s,
@@ -448,6 +470,9 @@ impl ServiceSupervisor {
                                     return;
                                 }
                             };
+                        if let Ok(addr) = server.local_addr() {
+                            *state_ref.admin_local_addr.lock().unwrap() = Some(addr);
+                        }
                         let admin_state = eggress_admin::AdminState {
                             metrics: state_ref.metrics.clone(),
                             generation: state_ref.generation.clone(),
@@ -480,6 +505,10 @@ impl ServiceSupervisor {
 
                 loop {
                     tokio::select! {
+                        _ = cancel.cancelled() => {
+                            tracing::info!("shutdown requested via cancel token");
+                            break;
+                        }
                         _ = tokio::signal::ctrl_c() => {
                             tracing::info!("shutdown signal received");
                             break;
@@ -602,11 +631,16 @@ impl ServiceSupervisor {
             // 3. Stop health
             health_cancel.cancel();
 
-            // 4. Wait for listener tasks to finish
-            tasks.close();
-            tasks.wait().await;
+            // 4. Stop admin
+            admin_cancel.cancel();
 
-            // 5. Wait for connections to drain
+            // 5. Wait for listener and admin tasks to finish
+            tasks.close();
+            admin_tasks.close();
+            tasks.wait().await;
+            admin_tasks.wait().await;
+
+            // 6. Wait for connections to drain
             tracing::info!("draining active connections");
 
             let deadline = tokio::time::Instant::now() + shutdown_grace;
@@ -624,12 +658,9 @@ impl ServiceSupervisor {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
 
-            // 6. Wait for connection tasks
+            // 7. Wait for connection tasks
             connection_tasks.close();
             connection_tasks.wait().await;
-
-            // 7. Stop admin
-            admin_cancel.cancel();
 
             Ok::<_, RuntimeError>(())
         })
