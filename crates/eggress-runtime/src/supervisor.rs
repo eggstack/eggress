@@ -60,6 +60,7 @@ pub struct RuntimeState {
     pub active_connections: Arc<AtomicU64>,
     pub connection_counter: Arc<AtomicU64>,
     pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
+    pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
 }
 
 #[allow(dead_code)]
@@ -117,6 +118,7 @@ impl ServiceSupervisor {
             active_connections,
             connection_counter,
             admin_local_addr: Arc::new(Mutex::new(None)),
+            listener_addrs: Arc::new(Mutex::new(Vec::new())),
         });
 
         let cancel = CancellationToken::new();
@@ -367,6 +369,13 @@ impl ServiceSupervisor {
                     protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
                 })
                 .collect();
+
+            // Store listener addresses for test discovery
+            {
+                let addrs: Vec<std::net::SocketAddr> =
+                    prepared.iter().map(|p| p.local_addr).collect();
+                *state_ref.listener_addrs.lock().unwrap() = addrs;
+            }
 
             for prepared_listener in prepared {
                 let routing = routing.clone();

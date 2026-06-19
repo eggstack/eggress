@@ -337,6 +337,7 @@ dependencies = [
  "eggress-metrics",
  "eggress-routing",
  "eggress-server",
+ "eggress-testkit",
  "eggress-uri",
  "serde_json",
  "tempfile",

@@ -28,6 +28,7 @@ eggress-admin.workspace = true
 eggress-routing.workspace = true
 eggress-core.workspace = true
 eggress-uri.workspace = true
+eggress-testkit.workspace = true
 
 [lints]
 workspace = true
