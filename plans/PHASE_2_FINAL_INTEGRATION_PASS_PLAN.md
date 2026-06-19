@@ -1083,18 +1083,16 @@ The final Phase 2 integration pass is complete only when:
 
 ## Completion record
 
-When complete, append:
-
 ```markdown
 ## Completion record
 
 Implemented by commits:
 
-- `<sha>` — shared runtime snapshot and upstream registry
-- `<sha>` — health/listener/admin integration
-- `<sha>` — graceful shutdown and atomic reload
-- `<sha>` — PAC/static resolution and reporting cleanup
-- `<sha>` — end-to-end integration tests and documentation closure
+- `d843f6f` — Fix post-audit gaps: G5 connection task tracking, G2 health probe reconciliation
+- `7c6f4fb` — Phase 2 final integration pass: shared runtime snapshot, health config, graceful shutdown, atomic reload, PAC/static config, integration tests
+- `0f9fd6b` — Remove dual generation counter from SharedRoutingService
+- `eba1d38` — Move listener and admin config into CompiledRuntimeSnapshot
+- `ae8b1e7` — Fix integration test timeouts: expose admin local addr, add AutoShutdown guard
 
-All required checks passed on `<date>`.
+All required checks passed on 2026-06-19.
 ```

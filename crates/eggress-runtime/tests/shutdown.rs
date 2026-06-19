@@ -208,3 +208,44 @@ protocols = ["http"]
         "active connections should be zero after shutdown"
     );
 }
+
+#[tokio::test]
+async fn shutdown_completes_within_grace_period() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    // Trigger shutdown — with zero active connections it should finish instantly
+    let start = std::time::Instant::now();
+    token.cancel();
+    jh.await.ok();
+    let elapsed = start.elapsed();
+
+    // With no connections to drain, shutdown should complete in under 2s
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "empty shutdown took too long: {:?}",
+        elapsed
+    );
+    assert!(!state.readiness.load(Ordering::Relaxed));
+}

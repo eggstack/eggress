@@ -215,13 +215,13 @@ impl HealthManager {
     pub fn start_probes(
         &mut self,
         upstreams: &[std::sync::Arc<UpstreamRuntime>],
-        config: &HealthConfig,
+        _config: &HealthConfig,
     ) {
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
 
         for upstream in upstreams {
             let upstream = upstream.clone();
-            let config = config.clone();
+            let config = upstream.health_config.clone();
             let cancel = self.cancel.clone();
             let semaphore = semaphore.clone();
 
@@ -281,7 +281,7 @@ impl HealthManager {
     }
 
     pub fn stop_all(&mut self) {
-        self.cancel.cancel();
+        self.tasks.abort_all();
     }
 }
 
@@ -564,7 +564,7 @@ mod tests {
         let mut mgr = HealthManager::new(cancel.clone());
         assert!(!cancel.is_cancelled());
         mgr.stop_all();
-        assert!(cancel.is_cancelled());
+        assert!(!cancel.is_cancelled());
     }
 
     #[test]
@@ -597,6 +597,6 @@ mod tests {
         mgr.start_probes(&upstreams, &config);
         tokio::time::sleep(Duration::from_millis(100)).await;
         mgr.stop_all();
-        assert!(cancel.is_cancelled());
+        assert!(!cancel.is_cancelled());
     }
 }

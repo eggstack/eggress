@@ -241,3 +241,163 @@ fallback = "reject"
     token.cancel();
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn health_affects_routing() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[upstreams]]
+id = "upstream1"
+uri = "http://127.0.0.1:1"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "200ms"
+timeout = "100ms"
+failures_to_unhealthy = 1
+successes_to_healthy = 1
+
+[[upstream_groups]]
+id = "main"
+scheduler = "round-robin"
+members = ["upstream1"]
+fallback = "reject"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let token = sup.shutdown_token();
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        state.readiness.load(Ordering::Relaxed),
+        "service should be ready"
+    );
+
+    // Wait for health probes to fail (127.0.0.1:1 is unreachable)
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound");
+    let admin_str = admin_addr.to_string();
+
+    // Verify upstream is unhealthy and not eligible
+    let (status, body) = http_get(&admin_str, "/-/upstreams").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let groups = json.as_array().unwrap();
+    let members = groups[0]["members"].as_array().unwrap();
+    assert_eq!(members[0]["id"], "upstream1");
+    assert_eq!(members[0]["health"], "Unhealthy");
+    assert_eq!(members[0]["eligible"], false);
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn reload_preserves_health_state() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[upstreams]]
+id = "upstream1"
+uri = "http://127.0.0.1:1"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "200ms"
+timeout = "100ms"
+failures_to_unhealthy = 1
+successes_to_healthy = 1
+
+[[upstream_groups]]
+id = "main"
+scheduler = "round-robin"
+members = ["upstream1"]
+fallback = "reject"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let token = sup.shutdown_token();
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    // Wait for health probes to fail
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound");
+    let admin_str = admin_addr.to_string();
+
+    // Verify unhealthy before reload
+    let (_, body) = http_get(&admin_str, "/-/upstreams").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let members = json[0]["members"].as_array().unwrap();
+    assert_eq!(members[0]["health"], "Unhealthy");
+
+    // Reload with same config
+    std::process::Command::new("kill")
+        .arg("-HUP")
+        .arg(std::process::id().to_string())
+        .output()
+        .ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Verify health state preserved after reload
+    let (_, body) = http_get(&admin_str, "/-/upstreams").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let members = json[0]["members"].as_array().unwrap();
+    assert_eq!(
+        members[0]["health"], "Unhealthy",
+        "health state should be preserved after reload"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
