@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
+use eggress_core::chain::{ChainExecutor, HopHandler};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
-use eggress_core::TargetHost;
+use eggress_core::{BoxStream, TargetAddr, TargetHost};
 use eggress_routing::{RouteActionSpec, RouteService, Router, SharedRoutingService};
 use eggress_server::ConnectionConfig;
 use tokio_util::sync::CancellationToken;
@@ -64,6 +65,9 @@ struct UpstreamTest {
     #[arg(long, default_value = "5")]
     timeout: u64,
 
+    #[arg(long, default_value = "proxy")]
+    mode: String,
+
     #[arg(long)]
     json: bool,
 }
@@ -83,6 +87,9 @@ struct RouteExplain {
 
     #[arg(long)]
     json: bool,
+
+    #[arg(long, value_name = "URL")]
+    admin: Option<String>,
 }
 
 fn init_logging(format: &str) {
@@ -98,6 +105,11 @@ fn init_logging(format: &str) {
 }
 
 fn handle_route_explain(args: &RouteExplain) {
+    if let Some(ref admin_url) = args.admin {
+        handle_route_explain_remote(args, admin_url);
+        return;
+    }
+
     let router = match &args.config {
         Some(path) => match eggress_config::compile::load_and_compile(path) {
             Ok(rt) => match build_router_from_config(&rt) {
@@ -159,6 +171,122 @@ fn handle_route_explain(args: &RouteExplain) {
     }
 }
 
+fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
+    let target: eggress_core::TargetAddr = match args.target.parse() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
+
+    let protocol = match args.protocol.as_deref() {
+        Some("http") => "http",
+        Some("socks4") => "socks4",
+        Some("socks5") => "socks5",
+        Some(p) => {
+            eprintln!("unknown protocol: {p}");
+            std::process::exit(1);
+        }
+        None => "http",
+    };
+
+    let listener = args.listener.as_deref().unwrap_or("default");
+
+    let body = serde_json::json!({
+        "target": target.to_string(),
+        "listener": listener,
+        "protocol": protocol,
+    });
+
+    let base = admin_url.trim_end_matches('/');
+    let url = format!("{base}/-/route-explain");
+
+    let (host, port, path) = parse_admin_url(&url);
+
+    let body_str = body.to_string();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_str}",
+        body_str.len(),
+    );
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let result = runtime.block_on(async {
+        let addr = format!("{host}:{port}");
+        let mut stream = match tokio::net::TcpStream::connect(&addr).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("failed to connect to admin at {addr}: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        if let Err(e) = stream.write_all(request.as_bytes()).await {
+            eprintln!("failed to send request: {e}");
+            std::process::exit(1);
+        }
+        let _ = stream.shutdown().await;
+
+        let mut response = Vec::new();
+        loop {
+            let mut buf = [0u8; 4096];
+            match stream.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => response.extend_from_slice(&buf[..n]),
+                Err(_) => break,
+            }
+        }
+        String::from_utf8_lossy(&response).to_string()
+    });
+
+    let body_start = result.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
+    let body = &result[body_start..];
+
+    let status_line = result.lines().next().unwrap_or("");
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(0);
+
+    if status != 200 {
+        eprintln!("admin returned {status}: {body}");
+        std::process::exit(1);
+    }
+
+    if args.json {
+        println!("{body}");
+    } else {
+        match serde_json::from_str::<eggress_routing::RouteExplanation>(body) {
+            Ok(explanation) => print_explanation(&explanation),
+            Err(e) => {
+                eprintln!("failed to parse response: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn parse_admin_url(url: &str) -> (String, u16, String) {
+    let without_proto = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    let (host_port, path) = match without_proto.find('/') {
+        Some(i) => (&without_proto[..i], &without_proto[i..]),
+        None => (without_proto, "/"),
+    };
+    let (host, port) = match host_port.rfind(':') {
+        Some(i) => (
+            host_port[..i].to_string(),
+            host_port[i + 1..].parse::<u16>().unwrap_or(9090),
+        ),
+        None => (host_port.to_string(), 9090),
+    };
+    (host, port, path.to_string())
+}
+
 fn handle_upstream_test(args: &UpstreamTest) {
     let rt = match &args.config {
         Some(path) => match eggress_config::compile::load_and_compile(path) {
@@ -201,6 +329,7 @@ fn handle_upstream_test(args: &UpstreamTest) {
 
     let timeout = Duration::from_secs(args.timeout);
     let runtime = tokio::runtime::Runtime::new().unwrap();
+    let is_proxy_mode = args.mode == "proxy";
 
     let mut results = Vec::new();
 
@@ -210,14 +339,34 @@ fn handle_upstream_test(args: &UpstreamTest) {
         let host = &first_hop.endpoint.host;
         let port = first_hop.endpoint.port;
 
-        let result = runtime.block_on(test_upstream(host, port, timeout));
-        results.push(UpstreamTestResult {
-            id: upstream.id.clone(),
-            host: host.clone(),
-            port,
-            target: target.to_string(),
-            ..result
-        });
+        let result = if is_proxy_mode {
+            let executor = build_test_chain_executor();
+            let (reachable, latency_ms, error) = runtime.block_on(test_upstream_proxy(
+                &executor,
+                &chain.hops,
+                &target,
+                timeout,
+            ));
+            UpstreamTestResult {
+                id: upstream.id.clone(),
+                host: host.clone(),
+                port,
+                target: target.to_string(),
+                reachable,
+                latency_ms,
+                error,
+            }
+        } else {
+            let result = runtime.block_on(test_upstream(host, port, timeout));
+            UpstreamTestResult {
+                id: upstream.id.clone(),
+                host: host.clone(),
+                port,
+                target: target.to_string(),
+                ..result
+            }
+        };
+        results.push(result);
     }
 
     if args.json {
@@ -244,6 +393,130 @@ struct UpstreamTestResult {
     reachable: bool,
     latency_ms: Option<u64>,
     error: Option<String>,
+}
+
+fn build_test_chain_executor() -> ChainExecutor {
+    struct HttpHopHandler;
+
+    impl HopHandler for HttpHopHandler {
+        fn protocol(&self) -> eggress_uri::ProtocolSpec {
+            eggress_uri::ProtocolSpec::Http
+        }
+
+        fn handshake<'a>(
+            &'a self,
+            stream: BoxStream,
+            target: &'a TargetAddr,
+            credentials: Option<&'a eggress_uri::CredentialSpec>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+            Box::pin(async move {
+                eggress_protocol_http::http_connect(stream, target, auth)
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+            })
+        }
+    }
+
+    struct Socks5HopHandler;
+
+    impl HopHandler for Socks5HopHandler {
+        fn protocol(&self) -> eggress_uri::ProtocolSpec {
+            eggress_uri::ProtocolSpec::Socks5
+        }
+
+        fn handshake<'a>(
+            &'a self,
+            stream: BoxStream,
+            target: &'a TargetAddr,
+            credentials: Option<&'a eggress_uri::CredentialSpec>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            let socks_addr = target_to_socks_addr(target);
+            let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+            Box::pin(async move {
+                eggress_protocol_socks::socks5::client::socks5_connect(stream, &socks_addr, auth)
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+            })
+        }
+    }
+
+    struct Socks4HopHandler;
+
+    impl HopHandler for Socks4HopHandler {
+        fn protocol(&self) -> eggress_uri::ProtocolSpec {
+            eggress_uri::ProtocolSpec::Socks4
+        }
+
+        fn handshake<'a>(
+            &'a self,
+            stream: BoxStream,
+            target: &'a TargetAddr,
+            credentials: Option<&'a eggress_uri::CredentialSpec>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            let user_id = credentials.map(|c| c.username.as_str());
+            Box::pin(async move {
+                eggress_protocol_socks::socks4_connect(stream, target, user_id)
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+            })
+        }
+    }
+
+    let handlers: Vec<Box<dyn HopHandler>> = vec![
+        Box::new(HttpHopHandler),
+        Box::new(Socks5HopHandler),
+        Box::new(Socks4HopHandler),
+    ];
+    ChainExecutor::new(handlers)
+}
+
+fn target_to_socks_addr(target: &TargetAddr) -> eggress_protocol_socks::socks5::server::SocksAddr {
+    use eggress_protocol_socks::socks5::server::SocksAddr;
+    match &target.host {
+        TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),
+        TargetHost::Ip(std::net::IpAddr::V6(ip)) => SocksAddr::IPv6(ip.octets(), target.port),
+        TargetHost::Domain(d) => SocksAddr::Domain(d.clone(), target.port),
+    }
+}
+
+async fn test_upstream_proxy(
+    executor: &ChainExecutor,
+    chain: &[eggress_uri::ProxyHopSpec],
+    target: &TargetAddr,
+    timeout: Duration,
+) -> (bool, Option<u64>, Option<String>) {
+    let start = Instant::now();
+
+    match tokio::time::timeout(timeout, executor.execute(chain, target)).await {
+        Ok(Ok(_stream)) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            (true, Some(elapsed), None)
+        }
+        Ok(Err(e)) => (false, None, Some(e.to_string())),
+        Err(_) => (false, None, Some("connection timed out".to_string())),
+    }
 }
 
 async fn test_upstream(host: &str, port: u16, timeout: Duration) -> UpstreamTestResult {
@@ -353,16 +626,16 @@ fn build_router_from_cli(args: &Cli) -> Result<Router, Box<dyn std::error::Error
     Ok(match &upstream_chain {
         Some(spec) => {
             let upstream = Arc::new(eggress_routing::upstream::UpstreamRuntime::new(
-                1u64,
+                eggress_core::UpstreamId::new("cli-upstream"),
                 spec.clone(),
             ));
             let group_id = eggress_routing::UpstreamGroupId(Arc::from("cli-group"));
-            let group = eggress_routing::upstream::UpstreamGroup {
-                id: group_id.clone(),
-                scheduler: eggress_routing::scheduler::SchedulerKind::FirstAvailable,
-                members: Arc::from([upstream]),
-                fallback: eggress_routing::upstream::GroupFallback::Direct,
-            };
+            let group = eggress_routing::upstream::UpstreamGroup::new(
+                group_id.clone(),
+                eggress_routing::scheduler::SchedulerKind::FirstAvailable,
+                Arc::from([upstream]),
+                eggress_routing::upstream::GroupFallback::Direct,
+            );
             Router::with_groups(
                 vec![],
                 RouteActionSpec::UpstreamGroup(group_id.clone()),
@@ -428,35 +701,32 @@ async fn main() {
         }
     }
 
+    if let Some(ref config_path) = args.config {
+        init_logging(&args.log_format);
+        match eggress_runtime::ServiceSupervisor::start(config_path) {
+            Ok(mut supervisor) => supervisor.run(),
+            Err(e) => {
+                eprintln!("runtime error: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     init_logging(&args.log_format);
     let cancel_token = CancellationToken::new();
 
-    let config_path = args.config.clone();
-
-    let router = match &config_path {
-        Some(path) => match eggress_config::compile::load_and_compile(path) {
-            Ok(rt) => match build_router_from_config(&rt) {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("failed to build router from config: {e}");
-                    std::process::exit(1);
-                }
-            },
-            Err(e) => {
-                eprintln!("failed to load config: {e}");
-                std::process::exit(1);
-            }
-        },
-        None => match build_router_from_cli(&args) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        },
+    let router = match build_router_from_cli(&args) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
     };
 
     let routing_service = Arc::new(SharedRoutingService::new(router));
+
+    let metrics = Arc::new(eggress_metrics::MetricsRegistry::new());
 
     let listener_uris: Vec<String> = if args.listeners.is_empty() {
         vec!["http://127.0.0.1:8080".to_string()]
@@ -480,13 +750,15 @@ async fn main() {
     for (uri, spec) in &listener_specs {
         let cancel = cancel_token.clone();
         let routing = routing_service.clone();
+        let metrics = metrics.clone();
         let bind_addr = spec.bind_addr;
         let protocols = spec.protocols.clone();
         let auth = spec.auth.clone();
         let uri = uri.clone();
 
         let handle = tokio::spawn(async move {
-            if let Err(e) = run_listener(bind_addr, protocols, routing, auth, cancel).await {
+            if let Err(e) = run_listener(bind_addr, protocols, routing, auth, metrics, cancel).await
+            {
                 tracing::error!("listener '{uri}' error: {e}");
             }
         });
@@ -499,8 +771,6 @@ async fn main() {
 
     {
         let token = cancel_token.clone();
-        let config_path = config_path.clone();
-        let routing_service = routing_service.clone();
 
         #[cfg(unix)]
         {
@@ -523,28 +793,7 @@ async fn main() {
                         break;
                     }
                     _ = sighup.recv() => {
-                        if let Some(ref path) = config_path {
-                            tracing::info!("reload signal received, reloading config from {path}");
-                            match eggress_config::compile::load_and_compile(path) {
-                                Ok(rt) => match build_router_from_config(&rt) {
-                                    Ok(new_router) => {
-                                        routing_service.swap(new_router);
-                                        tracing::info!(
-                                            generation = routing_service.generation(),
-                                            "config reloaded successfully"
-                                        );
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("reload failed (router build): {e}");
-                                    }
-                                },
-                                Err(e) => {
-                                    tracing::error!("reload failed (config load): {e}");
-                                }
-                            }
-                        } else {
-                            tracing::warn!("SIGHUP received but no config file specified, ignoring");
-                        }
+                        tracing::warn!("SIGHUP received but no config file specified in compatibility mode, ignoring");
                     }
                 }
             }
@@ -558,15 +807,9 @@ async fn main() {
         }
     }
 
-    let shutdown_grace = config_path
-        .as_ref()
-        .and_then(|path| eggress_config::compile::load_and_compile(path).ok())
-        .map(|rt| rt.process.shutdown_grace)
-        .unwrap_or(Duration::from_secs(30));
+    tracing::info!("draining active connections");
 
-    tracing::info!("draining active connections (timeout: {shutdown_grace:?})");
-
-    let deadline = tokio::time::Instant::now() + shutdown_grace;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
         if active == 0 {
@@ -590,19 +833,20 @@ async fn main() {
 fn build_router_from_config(
     rt: &eggress_config::RuntimeConfig,
 ) -> Result<Router, Box<dyn std::error::Error + Send + Sync>> {
-    let upstreams: Vec<(
-        eggress_routing::UpstreamGroupId,
-        eggress_routing::upstream::UpstreamRuntime,
-    )> = rt
-        .upstreams
-        .iter()
-        .map(|u| {
-            let id = eggress_routing::UpstreamGroupId(Arc::from(u.id.as_str()));
-            let runtime =
-                eggress_routing::upstream::UpstreamRuntime::new(u.id.len() as u64, u.chain.clone());
-            (id, runtime)
-        })
-        .collect();
+    let mut seen_upstream_ids = std::collections::HashSet::new();
+    let mut upstreams = Vec::new();
+
+    for u in &rt.upstreams {
+        if !seen_upstream_ids.insert(u.id.clone()) {
+            return Err(format!("duplicate upstream ID '{}'", u.id).into());
+        }
+        let id = eggress_routing::UpstreamGroupId(Arc::from(u.id.as_str()));
+        let runtime = eggress_routing::upstream::UpstreamRuntime::new(
+            eggress_core::UpstreamId::new(u.id.clone()),
+            u.chain.clone(),
+        );
+        upstreams.push((id, runtime));
+    }
 
     let upstream_map: std::collections::HashMap<
         String,
@@ -612,75 +856,71 @@ fn build_router_from_config(
         .map(|(id, runtime)| (id.0.to_string(), Arc::new(runtime)))
         .collect();
 
-    let groups: Vec<(
-        eggress_routing::UpstreamGroupId,
-        eggress_routing::upstream::UpstreamGroup,
-    )> = rt
-        .groups
-        .iter()
-        .filter_map(|g| {
-            let members: Vec<Arc<eggress_routing::upstream::UpstreamRuntime>> = g
-                .members
-                .iter()
-                .filter_map(|m| upstream_map.get(m).cloned())
-                .collect();
+    let mut seen_group_ids = std::collections::HashSet::new();
+    let mut groups = Vec::new();
 
-            if members.is_empty() {
-                return None;
+    for g in &rt.groups {
+        if !seen_group_ids.insert(g.id.clone()) {
+            return Err(format!("duplicate group ID '{}'", g.id).into());
+        }
+        let mut members = Vec::new();
+        for m in &g.members {
+            let member = upstream_map
+                .get(m)
+                .ok_or_else(|| format!("group '{}' references unknown upstream '{}'", g.id, m))?;
+            members.push(member.clone());
+        }
+        if members.is_empty() {
+            return Err(format!("group '{}' has no valid members", g.id).into());
+        }
+
+        let fallback = match g.fallback {
+            eggress_config::compile::GroupFallback::Reject => {
+                eggress_routing::upstream::GroupFallback::Reject
             }
+            eggress_config::compile::GroupFallback::Direct => {
+                eggress_routing::upstream::GroupFallback::Direct
+            }
+            eggress_config::compile::GroupFallback::UseUnhealthy => {
+                eggress_routing::upstream::GroupFallback::UseUnhealthy
+            }
+        };
 
-            let fallback = match g.fallback {
-                eggress_config::compile::GroupFallback::Reject => {
-                    eggress_routing::upstream::GroupFallback::Reject
-                }
-                eggress_config::compile::GroupFallback::Direct => {
-                    eggress_routing::upstream::GroupFallback::Direct
-                }
-                eggress_config::compile::GroupFallback::UseUnhealthy => {
-                    eggress_routing::upstream::GroupFallback::UseUnhealthy
-                }
-            };
-
-            Some((
+        groups.push((
+            g.id.clone(),
+            eggress_routing::upstream::UpstreamGroup::new(
                 g.id.clone(),
-                eggress_routing::upstream::UpstreamGroup {
-                    id: g.id.clone(),
-                    scheduler: g.scheduler,
-                    members: Arc::from(members),
-                    fallback,
-                },
-            ))
-        })
-        .collect();
+                g.scheduler,
+                Arc::from(members),
+                fallback,
+            ),
+        ));
+    }
 
     let group_ids: std::collections::HashSet<_> = groups.iter().map(|(id, _)| id.clone()).collect();
 
-    let rules: Vec<eggress_routing::CompiledRule> = rt
-        .rules
-        .iter()
-        .filter_map(|r| {
-            let action = match &r.action {
-                eggress_routing::RouteActionSpec::Direct => {
-                    eggress_routing::RouteActionSpec::Direct
+    let mut rules = Vec::new();
+    for r in &rt.rules {
+        let action = match &r.action {
+            eggress_routing::RouteActionSpec::Direct => eggress_routing::RouteActionSpec::Direct,
+            eggress_routing::RouteActionSpec::UpstreamGroup(gid) => {
+                if !group_ids.contains(gid) {
+                    return Err(
+                        format!("rule '{}' references unknown group '{}'", r.id, gid).into(),
+                    );
                 }
-                eggress_routing::RouteActionSpec::UpstreamGroup(gid) => {
-                    if group_ids.contains(gid) {
-                        eggress_routing::RouteActionSpec::UpstreamGroup(gid.clone())
-                    } else {
-                        return None;
-                    }
-                }
-                eggress_routing::RouteActionSpec::Reject(reason) => {
-                    eggress_routing::RouteActionSpec::Reject(reason.clone())
-                }
-            };
-            Some(eggress_routing::CompiledRule {
-                id: r.id.clone(),
-                matcher: r.matcher.clone(),
-                action,
-            })
-        })
-        .collect();
+                eggress_routing::RouteActionSpec::UpstreamGroup(gid.clone())
+            }
+            eggress_routing::RouteActionSpec::Reject(reason) => {
+                eggress_routing::RouteActionSpec::Reject(reason.clone())
+            }
+        };
+        rules.push(eggress_routing::CompiledRule {
+            id: r.id.clone(),
+            matcher: r.matcher.clone(),
+            action,
+        });
+    }
 
     Ok(Router::with_groups(
         rules,
@@ -694,6 +934,7 @@ async fn run_listener(
     protocols: Vec<eggress_core::ProtocolId>,
     routing: Arc<SharedRoutingService>,
     authentication: eggress_server::accept::InboundAuthentication,
+    metrics: Arc<dyn eggress_server::SessionMetrics>,
     cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = TcpListenerConfig {
@@ -728,6 +969,7 @@ async fn run_listener(
         let conn_id = CONNECTION_COUNTER.fetch_add(1, Ordering::Relaxed);
         let conn_protocols = proto_slice.clone();
         let conn_auth = authentication.clone();
+        let conn_metrics = metrics.clone();
 
         ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
 
@@ -735,10 +977,15 @@ async fn run_listener(
             let started = std::time::Instant::now();
             let config = ConnectionConfig {
                 routing: routing as Arc<dyn RouteService>,
+                context: eggress_server::ConnectionContext {
+                    source: Some(peer),
+                    listener: listener.to_string(),
+                },
                 handshake_timeout: Duration::from_secs(30),
                 connect_timeout: Duration::from_secs(30),
                 protocols: conn_protocols,
                 authentication: conn_auth,
+                metrics: Some(conn_metrics),
             };
 
             let report = eggress_server::serve_connection(conn.stream, config)
@@ -807,10 +1054,15 @@ mod tests {
                 let routing = routing.clone();
                 let config = ConnectionConfig {
                     routing: routing as Arc<dyn RouteService>,
+                    context: eggress_server::ConnectionContext {
+                        source: Some(conn.peer_addr),
+                        listener: String::new(),
+                    },
                     handshake_timeout: Duration::from_secs(5),
                     connect_timeout: Duration::from_secs(10),
                     protocols: Arc::from([eggress_core::ProtocolId::Http]),
                     authentication: eggress_server::accept::InboundAuthentication::None,
+                    metrics: None,
                 };
                 tokio::spawn(async move {
                     let _ = eggress_server::serve_connection(conn.stream, config).await;

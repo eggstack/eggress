@@ -5,7 +5,7 @@ use eggress_routing::scheduler::SchedulerKind;
 use eggress_routing::UpstreamGroupId;
 
 use crate::error::ConfigError;
-use crate::model::{ConfigFile, RuleConfig};
+use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig, RuleConfig};
 use crate::validate::validate_duration;
 
 #[derive(Debug, Clone)]
@@ -116,6 +116,10 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
 }
 
 fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, ConfigError> {
+    if let Some(ref match_expr) = rule.match_expr {
+        return compile_match_config(match_expr);
+    }
+
     if let Some(ref exact) = rule.host_exact {
         if rule.host_suffix.is_none()
             && rule.host_regex.is_none()
@@ -173,6 +177,138 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
         return Ok(eggress_routing::MatchExpr::Any);
     }
     Err(ConfigError::validation(&rule.id, "ambiguous matcher"))
+}
+
+fn compile_match_config(
+    config: &MatchExprConfig,
+) -> Result<eggress_routing::MatchExpr, ConfigError> {
+    match config {
+        MatchExprConfig::Composite(composite) => {
+            if let Some(ref all) = composite.all {
+                if all.is_empty() {
+                    return Err(ConfigError::validation("match.all", "must not be empty"));
+                }
+                let exprs: Vec<eggress_routing::MatchExpr> = all
+                    .iter()
+                    .map(compile_match_config)
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(eggress_routing::MatchExpr::All(exprs));
+            }
+            if let Some(ref any_of) = composite.any_of {
+                if any_of.is_empty() {
+                    return Err(ConfigError::validation("match.any_of", "must not be empty"));
+                }
+                let exprs: Vec<eggress_routing::MatchExpr> = any_of
+                    .iter()
+                    .map(compile_match_config)
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(eggress_routing::MatchExpr::AnyOf(exprs));
+            }
+            if let Some(ref not) = composite.not {
+                let inner = compile_match_config(not)?;
+                return Ok(eggress_routing::MatchExpr::Not(Box::new(inner)));
+            }
+            Err(ConfigError::validation(
+                "match",
+                "composite must have exactly one of: all, any_of, not",
+            ))
+        }
+        MatchExprConfig::Leaf(leaf) => compile_leaf_matcher(leaf),
+    }
+}
+
+fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr, ConfigError> {
+    let mut matchers = Vec::new();
+
+    if let Some(ref exact) = leaf.host_exact {
+        matchers.push(eggress_routing::MatchExpr::HostExact(Arc::from(
+            exact.as_str(),
+        )));
+    }
+    if let Some(ref suffix) = leaf.host_suffix {
+        matchers.push(eggress_routing::MatchExpr::HostSuffix(Arc::from(
+            suffix.as_str(),
+        )));
+    }
+    if let Some(ref regex_str) = leaf.host_regex {
+        let re = regex::Regex::new(regex_str).map_err(|e| {
+            ConfigError::validation(
+                "host_regex",
+                &format!("invalid regex '{}': {}", regex_str, e),
+            )
+        })?;
+        matchers.push(eggress_routing::MatchExpr::HostRegex(re));
+    }
+    if let Some(port) = leaf.destination_port {
+        matchers.push(eggress_routing::MatchExpr::DestinationPort(
+            eggress_routing::PortMatcher::Exact(port),
+        ));
+    }
+    if let Some(ref range) = leaf.destination_port_range {
+        if range.len() != 2 {
+            return Err(ConfigError::validation(
+                "destination_port_range",
+                "must have exactly 2 elements [start, end]",
+            ));
+        }
+        matchers.push(eggress_routing::MatchExpr::DestinationPort(
+            eggress_routing::PortMatcher::Range {
+                start: range[0],
+                end: range[1],
+            },
+        ));
+    }
+    if let Some(ref ports) = leaf.destination_port_set {
+        if ports.is_empty() {
+            return Err(ConfigError::validation(
+                "destination_port_set",
+                "must not be empty",
+            ));
+        }
+        matchers.push(eggress_routing::MatchExpr::DestinationPort(
+            eggress_routing::PortMatcher::Set(Arc::from(ports.as_slice())),
+        ));
+    }
+    if let Some(ref cidr) = leaf.destination_cidr {
+        let net: ipnet::IpNet = cidr.parse().map_err(|e: ipnet::AddrParseError| {
+            ConfigError::validation(
+                "destination_cidr",
+                &format!("invalid CIDR '{}': {}", cidr, e),
+            )
+        })?;
+        matchers.push(eggress_routing::MatchExpr::DestinationCidr(net));
+    }
+    if let Some(ref cidr) = leaf.source_cidr {
+        let net: ipnet::IpNet = cidr.parse().map_err(|e: ipnet::AddrParseError| {
+            ConfigError::validation("source_cidr", &format!("invalid CIDR '{}': {}", cidr, e))
+        })?;
+        matchers.push(eggress_routing::MatchExpr::SourceCidr(net));
+    }
+    if let Some(source_port) = leaf.source_port {
+        matchers.push(eggress_routing::MatchExpr::SourcePort(
+            eggress_routing::PortMatcher::Exact(source_port),
+        ));
+    }
+    if let Some(ref name) = leaf.listener {
+        matchers.push(eggress_routing::MatchExpr::Listener(Arc::from(
+            name.as_str(),
+        )));
+    }
+    if let Some(ref proto) = leaf.protocol {
+        let protocol_id = compile_protocol(proto)?;
+        matchers.push(eggress_routing::MatchExpr::Protocol(protocol_id));
+    }
+    if let Some(ref ident) = leaf.identity {
+        matchers.push(eggress_routing::MatchExpr::Identity(Arc::from(
+            ident.as_str(),
+        )));
+    }
+
+    match matchers.len() {
+        0 => Ok(eggress_routing::MatchExpr::Any),
+        1 => Ok(matchers.into_iter().next().unwrap()),
+        _ => Ok(eggress_routing::MatchExpr::All(matchers)),
+    }
 }
 
 fn compile_action(

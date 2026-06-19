@@ -210,36 +210,59 @@ fn route_metadata(selected: &SelectedRoute) -> (Option<String>, Option<String>, 
     }
 }
 
+struct OpenedRoute {
+    stream: BoxStream,
+    active_lease: Option<eggress_routing::lease::ActiveLease>,
+    route_description: String,
+    rule_id: Option<String>,
+    upstream_group: Option<String>,
+    upstream_id: Option<String>,
+}
+
 async fn open_route(
     config: &ConnectionConfig,
     request: &RouteRequest<'_>,
-) -> Result<(BoxStream, SelectedRoute), SessionOpenError> {
-    let decision = config.routing.decide(request);
-    let selected = config
-        .routing
-        .select(&decision, request)
-        .map_err(|e| match e {
-            eggress_routing::RouteError::Rejected { .. } => SessionOpenError::PolicyDenied,
-            eggress_routing::RouteError::NoEligibleUpstream(_)
-            | eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
-        })?;
+) -> Result<OpenedRoute, SessionOpenError> {
+    let selected = config.routing.route(request).map_err(|e| match e {
+        eggress_routing::RouteError::Rejected { .. } => SessionOpenError::PolicyDenied,
+        eggress_routing::RouteError::NoEligibleUpstream(_)
+        | eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
+    })?;
 
-    match &selected {
-        SelectedRoute::Direct { .. } => {
-            let stream = DirectConnector
-                .connect(request.target)
-                .await
-                .map_err(|e| -> SessionOpenError { e.into() })?;
-            Ok((stream, selected))
+    let route = route_description(&selected);
+    let (rule_id, upstream_group, upstream_id) = route_metadata(&selected);
+
+    let result = tokio::time::timeout(config.connect_timeout, async {
+        match selected {
+            SelectedRoute::Direct { .. } => {
+                let stream = DirectConnector.connect(request.target).await?;
+                Ok::<_, SessionOpenError>((stream, None))
+            }
+            SelectedRoute::Upstream {
+                chain,
+                pending_lease,
+                ..
+            } => {
+                let executor = build_chain_executor();
+                let stream = executor.execute(&chain.hops, request.target).await?;
+                let active_lease = pending_lease.established();
+                Ok::<_, SessionOpenError>((stream, Some(active_lease)))
+            }
         }
-        SelectedRoute::Upstream { chain, .. } => {
-            let executor = build_chain_executor();
-            let stream = executor
-                .execute(&chain.hops, request.target)
-                .await
-                .map_err(|e| -> SessionOpenError { e.into() })?;
-            Ok((stream, selected))
-        }
+    })
+    .await;
+
+    match result {
+        Ok(Ok((stream, active_lease))) => Ok(OpenedRoute {
+            stream,
+            active_lease,
+            route_description: route,
+            rule_id,
+            upstream_group,
+            upstream_id,
+        }),
+        Ok(Err(e)) => Err(e),
+        Err(_timeout) => Err(SessionOpenError::Timeout),
     }
 }
 
@@ -254,20 +277,23 @@ async fn execute_tunnel(
 
     let request = RouteRequest {
         target: &pending.target,
-        source: None,
-        listener: "",
+        source: config.context.source,
+        listener: &config.context.listener,
         inbound_protocol: match pending.protocol {
             crate::accept::TunnelProtocol::HttpConnect => eggress_core::ProtocolId::Http,
             crate::accept::TunnelProtocol::Socks4 => eggress_core::ProtocolId::Socks4,
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
         },
-        identity: &eggress_core::ClientIdentity::Anonymous,
+        identity: &pending.identity,
     };
 
     match open_route(config, &request).await {
-        Ok((upstream, selected)) => {
-            let route = route_description(&selected);
-            let (rule_id, upstream_group, upstream_id) = route_metadata(&selected);
+        Ok(opened) => {
+            let route = opened.route_description;
+            let rule_id = opened.rule_id;
+            let upstream_group = opened.upstream_group;
+            let upstream_id = opened.upstream_id;
+            let _active_lease = opened.active_lease;
             if let Err(e) = reply::send_tunnel_success(&mut pending, None).await {
                 tracing::debug!("failed to send success reply: {e}");
                 return SessionReport {
@@ -283,7 +309,7 @@ async fn execute_tunnel(
                     upstream_id,
                 };
             }
-            let result = relay(pending.client, upstream).await;
+            let result = relay(pending.client, opened.stream).await;
             tracing::debug!(
                 "relay complete: upstream={}B downstream={}B reason={:?}",
                 result.bytes_upstream,
@@ -338,20 +364,23 @@ async fn execute_http_forward(
 
     let request = RouteRequest {
         target: &pending.target,
-        source: None,
-        listener: "",
+        source: config.context.source,
+        listener: &config.context.listener,
         inbound_protocol: eggress_core::ProtocolId::Http,
-        identity: &eggress_core::ClientIdentity::Anonymous,
+        identity: &pending.identity,
     };
 
     match open_route(config, &request).await {
-        Ok((mut upstream, selected)) => {
-            let route = route_description(&selected);
-            let (rule_id, upstream_group, upstream_id) = route_metadata(&selected);
+        Ok(mut opened) => {
+            let route = opened.route_description;
+            let rule_id = opened.rule_id;
+            let upstream_group = opened.upstream_group;
+            let upstream_id = opened.upstream_id;
+            let _active_lease = opened.active_lease;
             let origin_req = eggress_protocol_http::build_origin_request(&pending.request);
             let head_bytes = origin_req.len() as u64;
 
-            if let Err(e) = upstream.write_all(origin_req.as_bytes()).await {
+            if let Err(e) = opened.stream.write_all(origin_req.as_bytes()).await {
                 let _ = reply::send_http_forward_failure(
                     &mut pending.client,
                     &SessionOpenError::Other(e.to_string()),
@@ -364,7 +393,7 @@ async fn execute_http_forward(
                     route,
                 );
             }
-            if let Err(e) = upstream.flush().await {
+            if let Err(e) = opened.stream.flush().await {
                 let _ = reply::send_http_forward_failure(
                     &mut pending.client,
                     &SessionOpenError::Other(e.to_string()),
@@ -380,7 +409,7 @@ async fn execute_http_forward(
 
             let body_report = match eggress_protocol_http::copy_request_body(
                 &mut pending.client,
-                &mut upstream,
+                &mut opened.stream,
                 pending.body_kind,
                 &eggress_protocol_http::BodyCopyLimits::default(),
             )
@@ -405,26 +434,28 @@ async fn execute_http_forward(
 
             let bytes_upstream = head_bytes + body_report.wire_bytes;
 
-            let response_report =
-                match eggress_protocol_http::forward_response(&mut upstream, &mut pending.client)
-                    .await
-                {
-                    Ok(report) => report,
-                    Err(_e) => {
-                        return SessionReport {
-                            protocol: None,
-                            target,
-                            route,
-                            bytes_upstream,
-                            bytes_downstream: 0,
-                            outcome: SessionOutcome::RelayFailed,
-                            failure: Some(FailureCategory::Relay),
-                            rule_id,
-                            upstream_group,
-                            upstream_id,
-                        };
-                    }
-                };
+            let response_report = match eggress_protocol_http::forward_response(
+                &mut opened.stream,
+                &mut pending.client,
+            )
+            .await
+            {
+                Ok(report) => report,
+                Err(_e) => {
+                    return SessionReport {
+                        protocol: None,
+                        target,
+                        route,
+                        bytes_upstream,
+                        bytes_downstream: 0,
+                        outcome: SessionOutcome::RelayFailed,
+                        failure: Some(FailureCategory::Relay),
+                        rule_id,
+                        upstream_group,
+                        upstream_id,
+                    };
+                }
+            };
 
             SessionReport {
                 protocol: None,

@@ -227,9 +227,11 @@ dependencies = [
  "clap",
  "eggress-config",
  "eggress-core",
+ "eggress-metrics",
  "eggress-protocol-http",
  "eggress-protocol-socks",
  "eggress-routing",
+ "eggress-runtime",
  "eggress-server",
  "eggress-testkit",
  "eggress-uri",
@@ -264,6 +266,7 @@ dependencies = [
  "bytes",
  "eggress-uri",
  "pin-project-lite",
+ "serde",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -320,6 +323,25 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "eggress-runtime"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "eggress-admin",
+ "eggress-config",
+ "eggress-core",
+ "eggress-metrics",
+ "eggress-routing",
+ "eggress-server",
+ "eggress-uri",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

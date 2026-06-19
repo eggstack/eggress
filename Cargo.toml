@@ -6,6 +6,7 @@ members = [
     "crates/eggress-config",
     "crates/eggress-core",
     "crates/eggress-metrics",
+    "crates/eggress-runtime",
     "crates/eggress-server",
     "crates/eggress-uri",
     "crates/eggress-routing",
@@ -64,6 +65,7 @@ eggress-testkit = { path = "crates/eggress-testkit" }
 eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server" }
 eggress-cli = { path = "crates/eggress-cli" }
+eggress-runtime = { path = "crates/eggress-runtime" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

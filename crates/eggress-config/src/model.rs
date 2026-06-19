@@ -1,6 +1,41 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum MatchExprConfig {
+    Composite(CompositeMatcher),
+    Leaf(LeafMatcher),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositeMatcher {
+    #[serde(default)]
+    pub all: Option<Vec<MatchExprConfig>>,
+    #[serde(default)]
+    pub any_of: Option<Vec<MatchExprConfig>>,
+    #[serde(default)]
+    pub not: Option<Box<MatchExprConfig>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct LeafMatcher {
+    pub host_exact: Option<String>,
+    pub host_suffix: Option<String>,
+    pub host_regex: Option<String>,
+    pub destination_port: Option<u16>,
+    pub destination_port_range: Option<Vec<u16>>,
+    pub destination_port_set: Option<Vec<u16>>,
+    pub destination_cidr: Option<String>,
+    pub source_cidr: Option<String>,
+    pub source_port: Option<u16>,
+    pub listener: Option<String>,
+    pub protocol: Option<String>,
+    pub identity: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ConfigFile {
     pub version: Option<u32>,
     pub process: Option<ProcessConfig>,
@@ -67,6 +102,8 @@ pub struct RuleConfig {
     pub destination_port: Option<u16>,
     #[serde(default)]
     pub any: Option<bool>,
+    #[serde(default, rename = "match")]
+    pub match_expr: Option<MatchExprConfig>,
     pub direct: Option<bool>,
     pub upstream_group: Option<String>,
     pub reject: Option<String>,

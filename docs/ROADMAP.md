@@ -34,6 +34,7 @@ Phase 3: Advanced features (planned)
 - [x] 2.8: Reload and graceful shutdown (ArcSwap, SIGHUP, drain timeout)
 - [x] 2.9: Route explanation and upstream test command (human/JSON output, reachability testing)
 - [x] 2.10: Phase closure (README, ARCHITECTURE, AGENTS.md updates)
+- [x] 2.11: Corrective integration — scheduler persistence, lease lifecycle, group fallback, connect timeout, context propagation, stable IDs, runtime supervisor, metrics trait, expanded TOML matchers
 
 ## Next Phase
 

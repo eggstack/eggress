@@ -294,9 +294,9 @@ mod tests {
     use eggress_core::UpstreamId;
     use eggress_uri::ProxyChainSpec;
 
-    fn make_upstream_with_health(id: UpstreamId, state: HealthState) -> Arc<UpstreamRuntime> {
+    fn make_upstream_with_health(id: &str, state: HealthState) -> Arc<UpstreamRuntime> {
         Arc::new(UpstreamRuntime::new_with_health(
-            id,
+            UpstreamId::new(id),
             ProxyChainSpec { hops: vec![] },
             state,
         ))
@@ -465,43 +465,43 @@ mod tests {
 
     #[test]
     fn eligible_upstream_healthy() {
-        let u = make_upstream_with_health(1, HealthState::Healthy);
+        let u = make_upstream_with_health("up-1", HealthState::Healthy);
         assert!(is_eligible(&u));
     }
 
     #[test]
     fn eligible_upstream_unknown() {
-        let u = make_upstream_with_health(1, HealthState::Unknown);
+        let u = make_upstream_with_health("up-1", HealthState::Unknown);
         assert!(is_eligible(&u));
     }
 
     #[test]
     fn eligible_upstream_suspect() {
-        let u = make_upstream_with_health(1, HealthState::Suspect);
+        let u = make_upstream_with_health("up-1", HealthState::Suspect);
         assert!(is_eligible(&u));
     }
 
     #[test]
     fn eligible_upstream_recovering() {
-        let u = make_upstream_with_health(1, HealthState::Recovering);
+        let u = make_upstream_with_health("up-1", HealthState::Recovering);
         assert!(is_eligible(&u));
     }
 
     #[test]
     fn not_eligible_upstream_unhealthy() {
-        let u = make_upstream_with_health(1, HealthState::Unhealthy);
+        let u = make_upstream_with_health("up-1", HealthState::Unhealthy);
         assert!(!is_eligible(&u));
     }
 
     #[test]
     fn not_eligible_upstream_disabled_health() {
-        let u = make_upstream_with_health(1, HealthState::Disabled);
+        let u = make_upstream_with_health("up-1", HealthState::Disabled);
         assert!(!is_eligible(&u));
     }
 
     #[test]
     fn not_eligible_upstream_disabled_flag() {
-        let u = make_upstream_with_health(1, HealthState::Healthy);
+        let u = make_upstream_with_health("up-1", HealthState::Healthy);
         u.set_enabled(false);
         assert!(!is_eligible(&u));
     }
@@ -590,7 +590,7 @@ mod tests {
         let mut mgr = HealthManager::new(cancel.clone());
 
         let upstreams: Vec<Arc<UpstreamRuntime>> = (0..3)
-            .map(|i| make_upstream_with_health(i, HealthState::Healthy))
+            .map(|i| make_upstream_with_health(&format!("up-{i}"), HealthState::Healthy))
             .collect();
 
         let config = HealthConfig::default();

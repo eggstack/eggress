@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use eggress_core::BoxStream;
-use eggress_core::{ProtocolId, TargetAddr, TargetHost};
+use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Authentication policy for inbound connections.
@@ -61,6 +61,7 @@ pub struct PendingTunnel {
     pub client: BoxStream,
     pub protocol: TunnelProtocol,
     pub reply_context: ReplyContext,
+    pub identity: ClientIdentity,
 }
 
 /// Re-export RequestBodyKind from the HTTP protocol crate.
@@ -72,6 +73,7 @@ pub struct PendingHttpForward {
     pub client: BoxStream,
     pub request: eggress_protocol_http::forward::ForwardRequest,
     pub body_kind: RequestBodyKind,
+    pub identity: ClientIdentity,
 }
 
 /// Which tunnel protocol was used.
@@ -335,6 +337,7 @@ async fn accept_socks5(
     }
 
     // Handle auth if required
+    let mut identity = ClientIdentity::Anonymous;
     if let InboundAuthentication::UsernamePassword { username, password } = auth {
         match read_auth_request(&mut reader, password).await {
             Ok(client_username) => {
@@ -342,6 +345,7 @@ async fn accept_socks5(
                     let _ = send_auth_response(&mut writer, false).await;
                     return Err(AcceptError::AuthenticationFailed);
                 }
+                identity = ClientIdentity::Username(client_username);
                 send_auth_response(&mut writer, true)
                     .await
                     .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
@@ -365,6 +369,7 @@ async fn accept_socks5(
         client: stream,
         protocol: TunnelProtocol::Socks5,
         reply_context: ReplyContext::Socks5,
+        identity,
     }))
 }
 
@@ -379,6 +384,11 @@ async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError
         host: TargetHost::Ip(request.addr.ip()),
         port: request.addr.port(),
     };
+    let identity = if request.user_id.is_empty() {
+        ClientIdentity::Anonymous
+    } else {
+        ClientIdentity::Opaque(request.user_id)
+    };
     let stream: BoxStream = Box::new(tokio::io::join(reader, writer));
 
     Ok(AcceptedSession::Tunnel(PendingTunnel {
@@ -386,6 +396,7 @@ async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError
         client: stream,
         protocol: TunnelProtocol::Socks4,
         reply_context: ReplyContext::Socks4,
+        identity,
     }))
 }
 
@@ -437,6 +448,7 @@ async fn accept_http(
             client: stream,
             protocol: TunnelProtocol::HttpConnect,
             reply_context: ReplyContext::Http,
+            identity: request.identity,
         }))
     } else {
         // Read the complete head to extract Proxy-Authorization before forward_request strips it
@@ -515,6 +527,10 @@ async fn accept_http(
         } else {
             None
         };
+        let identity = match &proxy_auth {
+            Some((user, _)) => ClientIdentity::Username(user.clone()),
+            None => ClientIdentity::Anonymous,
+        };
         let _ = proxy_auth; // Auth already validated above
 
         // Reconstruct stream for forward_request
@@ -537,12 +553,14 @@ async fn accept_http(
             client: client_stream,
             request,
             body_kind,
+            identity,
         }))
     }
 }
 
 struct ConnectRequest {
     target: TargetAddr,
+    identity: ClientIdentity,
 }
 
 async fn read_connect_request_from_stream(
@@ -616,6 +634,7 @@ async fn read_connect_request_from_stream(
 
     // Parse Proxy-Authorization header
     let mut proxy_auth = None;
+    let mut parsed_username: Option<String> = None;
     for line in lines {
         if line.is_empty() {
             break;
@@ -623,6 +642,9 @@ async fn read_connect_request_from_stream(
         if let Some((name, value)) = parse_header_line_str(line) {
             if name.eq_ignore_ascii_case("Proxy-Authorization") {
                 proxy_auth = parse_basic_auth(&value);
+                if let Some((user, _)) = &proxy_auth {
+                    parsed_username = Some(user.clone());
+                }
             }
         }
     }
@@ -643,7 +665,12 @@ async fn read_connect_request_from_stream(
         }
     }
 
-    Ok(ConnectRequest { target })
+    let identity = match parsed_username {
+        Some(user) => ClientIdentity::Username(user),
+        None => ClientIdentity::Anonymous,
+    };
+
+    Ok(ConnectRequest { target, identity })
 }
 
 fn parse_authority(

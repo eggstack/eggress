@@ -32,15 +32,30 @@ Server orchestration library providing the reusable connection-handling API:
 - `SessionOutcome` — normalized outcomes: Completed, ClientProtocolError, AuthenticationFailed, HandshakeTimedOut, RouteFailed, RelayFailed, Cancelled
 - `FailureCategory` — detailed failure diagnostics: Protocol, Authentication, HandshakeTimeout, Dns, ConnectionRefused, NetworkUnreachable, HostUnreachable, RouteTimeout, UpstreamAuthentication, Relay, Internal
 - `SessionOpenError` — normalized route failure types with protocol-specific reply mapping
+- `SessionMetrics` — trait for recording session metrics (latency, bytes, outcome)
 - Deferred success replies — success is sent only after outbound route is established
 - Common route opening — both tunnel and HTTP forward use the same `open_route()` function
 - Protocol enforcement — listener configuration restricts which protocols are accepted
 - Handshake timeout — configurable timeout for inbound protocol establishment
 
+### eggress-runtime
+Service supervisor and composition layer:
+- `ServiceSupervisor` — manages listener tasks, admin server, health manager, metrics
+- `RuntimeState` — shared state with readiness flag and cancellation token
+- `build_router_from_config` — strict config compilation with validation
+- Signal handling — SIGHUP for reload, SIGTERM/SIGINT for graceful shutdown
+- Graceful shutdown — readiness flag, drain timeout, task joining
+- Health manager integration — background health probes
+- Metrics integration — session metrics recording via `SessionMetrics` trait
+
 ### eggress-cli
 CLI binary with `clap`-derived arguments:
 - `-l` / `--listen` — listener URIs (multiple allowed)
 - `-r` / `--remote` — upstream proxy URIs (chains with `__`)
+- `--config` — TOML configuration file (runtime mode)
+- `--admin` — admin endpoint for route explanation
+- `upstream-test` — test upstream reachability (connect or proxy mode)
+- `route-explain` — explain routing decision for a target
 - Default: mixed HTTP listener on 127.0.0.1:8080
 
 ### eggress-uri
@@ -54,24 +69,28 @@ URI parser with typed AST:
 Policy-driven routing and upstream selection:
 - Rule AST: `CompiledRule`, `MatchExpr` (host exact/suffix/regex, CIDR, port, source, listener, protocol, identity)
 - First-match-wins rule evaluation with configurable default action
-- Upstream groups with scheduler selection (first-available, round-robin, random, least-connections)
+- Upstream groups with persistent scheduler instances (first-available, round-robin, random, least-connections)
 - Active connection accounting with `PendingLease`/`ActiveLease`
 - Health state machine with hysteresis (Unknown, Healthy, Suspect, Unhealthy, Recovering, Disabled)
 - Active TCP health probes with configurable intervals and jitter
 - `RouteService` trait for pluggable routing backends
 - `SharedRoutingService` with `ArcSwap` for atomic config reload
 - Route explanation tooling for operator debugging
+- `SelectionReason` for fallback diagnostics
 - Compatibility regex parser for pproxy-style rule files
 
 ### eggress-config
 TOML configuration with validation:
 - Versioned schema with typed runtime model
-- Validation: duplicate IDs, unknown references, invalid URIs, duration parsing
+- Recursive matcher expressions (`all`, `any_of`, `not`)
+- Expanded leaf matchers (host, port range, port set, CIDR, listener, protocol, identity)
+- Validation: duplicate IDs, unknown references, invalid URIs, duration parsing, regex validation, CIDR validation
 - Secret sources (inline, environment variable, file)
 - CLI compatibility compilation
 
 ### eggress-metrics
 Prometheus-compatible metrics:
+- `SessionMetrics` trait for recording session outcomes
 - Connection counters, byte counters, route decision labels
 - Upstream health gauges, config generation tracking
 - Reload success/failure counters

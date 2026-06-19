@@ -12,13 +12,27 @@ pub use execute::{FailureCategory, SessionReport};
 
 use eggress_routing::RouteService;
 
+/// Trait for recording session metrics. Implemented by external crates.
+pub trait SessionMetrics: Send + Sync {
+    fn record_session(&self, report: &SessionReport);
+}
+
+/// Context propagated from the listener into routing decisions.
+#[derive(Clone, Default)]
+pub struct ConnectionContext {
+    pub source: Option<std::net::SocketAddr>,
+    pub listener: String,
+}
+
 /// Configuration for a single connection.
 pub struct ConnectionConfig {
     pub routing: Arc<dyn RouteService>,
+    pub context: ConnectionContext,
     pub handshake_timeout: Duration,
     pub connect_timeout: Duration,
     pub protocols: Arc<[eggress_core::ProtocolId]>,
     pub authentication: accept::InboundAuthentication,
+    pub metrics: Option<Arc<dyn SessionMetrics>>,
 }
 
 /// Handle a single inbound connection.
@@ -80,6 +94,10 @@ pub async fn serve_connection(
 
     let report = execute::execute(session, &config).await;
 
+    if let Some(metrics) = &config.metrics {
+        metrics.record_session(&report);
+    }
+
     tracing::info!(
         outcome = ?report.outcome,
         failure = ?report.failure,
@@ -127,10 +145,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -185,10 +205,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -350,10 +372,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -397,10 +421,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -449,10 +475,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -490,10 +518,12 @@ mod tests {
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
             routing: direct_routing(),
+            context: ConnectionContext::default(),
             handshake_timeout: Duration::from_secs(5),
             connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
+            metrics: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -513,10 +543,12 @@ mod tests {
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
             routing: direct_routing(),
+            context: ConnectionContext::default(),
             handshake_timeout: Duration::from_secs(5),
             connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
+            metrics: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -537,10 +569,12 @@ mod tests {
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
             routing: direct_routing(),
+            context: ConnectionContext::default(),
             handshake_timeout: Duration::from_secs(5),
             connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
+            metrics: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -567,10 +601,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -625,10 +661,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -672,10 +710,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -721,10 +761,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -774,10 +816,12 @@ mod tests {
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
         let config = ConnectionConfig {
             routing: direct_routing(),
+            context: ConnectionContext::default(),
             handshake_timeout: Duration::from_secs(5),
             connect_timeout: Duration::from_secs(10),
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
+            metrics: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -932,10 +976,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing: direct_routing(),
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: auth,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -986,10 +1032,12 @@ mod tests {
             let boxed: eggress_core::BoxStream = Box::new(stream);
             let config = ConnectionConfig {
                 routing,
+                context: ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
+                metrics: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1005,5 +1053,76 @@ mod tests {
             response_str.contains("403"),
             "expected 403, got: {response_str}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_source_cidr_matching_with_real_peer() {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+
+        let rules = vec![eggress_routing::CompiledRule {
+            id: eggress_routing::RuleId(std::sync::Arc::from("allow-localhost")),
+            matcher: eggress_routing::MatchExpr::SourceCidr("127.0.0.0/8".parse().unwrap()),
+            action: eggress_routing::RouteActionSpec::Direct,
+        }];
+        let routing: Arc<dyn RouteService> =
+            Arc::new(Router::new(rules, eggress_routing::RouteActionSpec::Direct));
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, peer) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let config = ConnectionConfig {
+                routing: routing.clone(),
+                context: ConnectionContext {
+                    source: Some(peer),
+                    listener: "test-listener".to_string(),
+                },
+                handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
+                protocols: all_protocols(),
+                authentication: accept::InboundAuthentication::None,
+                metrics: None,
+            };
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+        match echo_addr.ip() {
+            std::net::IpAddr::V4(ip) => {
+                stream.write_all(&ip.octets()).await.unwrap();
+            }
+            std::net::IpAddr::V6(ip) => {
+                stream.write_all(&ip.octets()).await.unwrap();
+            }
+        }
+        stream
+            .write_all(&echo_addr.port().to_be_bytes())
+            .await
+            .unwrap();
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[0], 0x05);
+        assert_eq!(reply[1], 0x00);
+
+        stream.write_all(b"hello").await.unwrap();
+        stream.shutdown().await.unwrap();
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"hello");
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
+
+        echo_jh.abort();
     }
 }

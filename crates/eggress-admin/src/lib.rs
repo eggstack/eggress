@@ -4,7 +4,7 @@ pub mod server;
 pub mod static_content;
 
 pub use server::AdminServer;
-pub use server::{AdminState, PacConfig, StaticRoute};
+pub use server::{AdminState, ListenerInfo, PacConfig, StaticRoute};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AdminError {
@@ -44,6 +44,9 @@ mod tests {
                 direct_hosts: vec!["localhost".to_string()],
                 direct_suffixes: vec!["local".to_string()],
             })),
+            router: None,
+            listeners: Arc::new(vec![]),
+            active_connections: None,
         }
     }
 
@@ -54,6 +57,9 @@ mod tests {
             start_time: Instant::now(),
             static_routes: Arc::new(vec![]),
             pac_config: Arc::new(None),
+            router: None,
+            listeners: Arc::new(vec![]),
+            active_connections: None,
         }
     }
 

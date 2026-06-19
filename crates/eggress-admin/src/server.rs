@@ -58,6 +58,9 @@ pub struct AdminState {
     pub start_time: Instant,
     pub static_routes: Arc<Vec<StaticRoute>>,
     pub pac_config: Arc<Option<PacConfig>>,
+    pub router: Option<Arc<eggress_routing::Router>>,
+    pub listeners: Arc<Vec<ListenerInfo>>,
+    pub active_connections: Option<Arc<std::sync::atomic::AtomicU64>>,
 }
 
 pub type AdminResponse = http::Response<Full<Bytes>>;
@@ -76,6 +79,13 @@ pub struct PacConfig {
     pub direct_fallback: bool,
     pub direct_hosts: Vec<String>,
     pub direct_suffixes: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ListenerInfo {
+    pub name: String,
+    pub bind: String,
+    pub protocols: Vec<String>,
 }
 
 pub fn build_response(status: u16, body: impl Into<Bytes>, content_type: &str) -> AdminResponse {

@@ -1,5 +1,6 @@
 use std::fmt;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -33,7 +34,38 @@ impl fmt::Display for ProtocolId {
 pub type ListenerId = u64;
 
 /// A unique identifier for an upstream proxy.
-pub type UpstreamId = u64;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UpstreamId(Arc<str>);
+
+impl serde::Serialize for UpstreamId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl UpstreamId {
+    pub fn new(id: impl Into<Arc<str>>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for UpstreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for UpstreamId {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::new(s))
+    }
+}
 
 /// The host of a target server, either an IP address or a domain name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

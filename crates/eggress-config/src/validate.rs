@@ -209,31 +209,35 @@ fn validate_rules(
     for (i, rule) in rules.iter().enumerate() {
         let path = format!("rules[{}]", i);
 
-        let matcher_count = [
-            rule.host_exact.is_some(),
-            rule.host_suffix.is_some(),
-            rule.host_regex.is_some(),
-            rule.destination_port.is_some(),
-            rule.any.unwrap_or(false),
-        ]
-        .iter()
-        .filter(|&&b| b)
-        .count();
+        if rule.match_expr.is_none() {
+            let matcher_count = [
+                rule.host_exact.is_some(),
+                rule.host_suffix.is_some(),
+                rule.host_regex.is_some(),
+                rule.destination_port.is_some(),
+                rule.any.unwrap_or(false),
+            ]
+            .iter()
+            .filter(|&&b| b)
+            .count();
 
-        if matcher_count > 1 {
-            errors.push(ConfigError::validation(
-                &path,
-                "rule must have exactly one matcher field",
-            ));
-        }
-
-        if let Some(ref host_regex) = rule.host_regex {
-            if regex::Regex::new(host_regex).is_err() {
+            if matcher_count > 1 {
                 errors.push(ConfigError::validation(
                     &path,
-                    &format!("invalid host regex: {}", host_regex),
+                    "rule must have exactly one matcher field",
                 ));
             }
+
+            if let Some(ref host_regex) = rule.host_regex {
+                if regex::Regex::new(host_regex).is_err() {
+                    errors.push(ConfigError::validation(
+                        &path,
+                        &format!("invalid host regex: {}", host_regex),
+                    ));
+                }
+            }
+        } else if let Some(ref match_expr) = rule.match_expr {
+            validate_match_expr(match_expr, &path, errors);
         }
 
         let action_count = [
@@ -270,6 +274,92 @@ fn validate_rules(
                     &path,
                     &format!("unknown reject reason: {}", reject),
                 ));
+            }
+        }
+    }
+}
+
+fn validate_match_expr(
+    expr: &crate::model::MatchExprConfig,
+    path: &str,
+    errors: &mut Vec<ConfigError>,
+) {
+    match expr {
+        crate::model::MatchExprConfig::Composite(composite) => {
+            if let Some(ref all) = composite.all {
+                if all.is_empty() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.match.all", path),
+                        "must not be empty",
+                    ));
+                }
+                for (j, item) in all.iter().enumerate() {
+                    validate_match_expr(item, &format!("{}.match.all[{}]", path, j), errors);
+                }
+            }
+            if let Some(ref any_of) = composite.any_of {
+                if any_of.is_empty() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.match.any_of", path),
+                        "must not be empty",
+                    ));
+                }
+                for (j, item) in any_of.iter().enumerate() {
+                    validate_match_expr(item, &format!("{}.match.any_of[{}]", path, j), errors);
+                }
+            }
+            if let Some(ref not) = composite.not {
+                validate_match_expr(not, &format!("{}.match.not", path), errors);
+            }
+        }
+        crate::model::MatchExprConfig::Leaf(leaf) => {
+            if let Some(ref regex_str) = leaf.host_regex {
+                if regex::Regex::new(regex_str).is_err() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.host_regex", path),
+                        &format!("invalid regex: {}", regex_str),
+                    ));
+                }
+            }
+            if let Some(ref cidr) = leaf.destination_cidr {
+                if cidr.parse::<ipnet::IpNet>().is_err() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.destination_cidr", path),
+                        &format!("invalid CIDR: {}", cidr),
+                    ));
+                }
+            }
+            if let Some(ref cidr) = leaf.source_cidr {
+                if cidr.parse::<ipnet::IpNet>().is_err() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.source_cidr", path),
+                        &format!("invalid CIDR: {}", cidr),
+                    ));
+                }
+            }
+            if let Some(ref range) = leaf.destination_port_range {
+                if range.len() != 2 {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.destination_port_range", path),
+                        "must have exactly 2 elements [start, end]",
+                    ));
+                }
+            }
+            if let Some(ref ports) = leaf.destination_port_set {
+                if ports.is_empty() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.destination_port_set", path),
+                        "must not be empty",
+                    ));
+                }
+            }
+            if let Some(ref proto) = leaf.protocol {
+                if !VALID_PROTOCOLS.contains(&proto.as_str()) {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.protocol", path),
+                        &format!("unknown protocol: {}", proto),
+                    ));
+                }
             }
         }
     }

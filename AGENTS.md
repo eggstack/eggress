@@ -35,6 +35,7 @@ eggress/
 │   ├── eggress-core/      # Core types, traits, relay, listener, connector, chain
 │   ├── eggress-cli/       # CLI binary
 │   ├── eggress-server/    # Server orchestration: accept, execute, reply, error
+│   ├── eggress-runtime/   # Service supervisor, composition layer, signal handling
 │   ├── eggress-uri/       # URI parser and AST
 │   ├── eggress-routing/   # Rule engine, schedulers, health, leases, route explanation
 │   ├── eggress-config/    # TOML configuration, validation, secret sources
@@ -76,3 +77,6 @@ eggress/
 - Atomic config reload via `ArcSwap<Router>` for lock-free reads
 - Active connection accounting via `PendingLease`/`ActiveLease` drop guards
 - Route explanation for operator debugging without debug logs
+- Recursive TOML matcher expressions (all, any_of, not) with leaf matchers
+- Session metrics via `SessionMetrics` trait for pluggable backends
+- Service supervisor pattern with graceful shutdown and signal handling

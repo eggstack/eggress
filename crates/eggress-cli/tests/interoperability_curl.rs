@@ -50,10 +50,12 @@ async fn start_eggress_server(
             let config = ConnectionConfig {
                 routing: Arc::new(Router::new(vec![], RouteActionSpec::Direct))
                     as Arc<dyn RouteService>,
+                context: eggress_server::ConnectionContext::default(),
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: conn_protocols.clone(),
                 authentication: eggress_server::accept::InboundAuthentication::None,
+                metrics: None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;

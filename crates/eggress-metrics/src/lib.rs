@@ -6,6 +6,12 @@ use prometheus_client::registry::Registry;
 
 use eggress_server::execute::{SessionOutcome, SessionReport};
 
+impl eggress_server::SessionMetrics for MetricsRegistry {
+    fn record_session(&self, report: &SessionReport) {
+        MetricsRegistry::record_session(self, report);
+    }
+}
+
 #[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
 pub struct RouteLabels {
     pub rule: String,

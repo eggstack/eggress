@@ -124,6 +124,7 @@ mod tests {
             client: Box::new(client_stream),
             protocol,
             reply_context,
+            identity: eggress_core::ClientIdentity::Anonymous,
         };
         (pending, server_stream)
     }

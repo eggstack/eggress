@@ -20,6 +20,15 @@ pub trait Scheduler: Send + Sync {
         candidates: &[Arc<UpstreamRuntime>],
         request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>>;
+
+    fn preview(
+        &self,
+        group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        self.select(group, candidates, request)
+    }
 }
 
 pub struct FirstAvailableScheduler;
@@ -73,6 +82,26 @@ impl Scheduler for RoundRobinScheduler {
         }
         None
     }
+
+    fn preview(
+        &self,
+        _group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        _request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        if candidates.is_empty() {
+            return None;
+        }
+        let start = self.cursor.load(Ordering::Relaxed) as usize;
+        let len = candidates.len();
+        for i in 0..len {
+            let idx = (start + i) % len;
+            if is_eligible(&candidates[idx]) {
+                return Some(candidates[idx].clone());
+            }
+        }
+        None
+    }
 }
 
 pub struct RandomScheduler;
@@ -116,11 +145,11 @@ impl Scheduler for LeastConnectionsScheduler {
     }
 }
 
-pub fn resolve_scheduler(kind: SchedulerKind) -> Box<dyn Scheduler> {
+pub fn resolve_scheduler(kind: SchedulerKind) -> Arc<dyn Scheduler> {
     match kind {
-        SchedulerKind::FirstAvailable => Box::new(FirstAvailableScheduler),
-        SchedulerKind::RoundRobin => Box::new(RoundRobinScheduler::new()),
-        SchedulerKind::Random => Box::new(RandomScheduler),
-        SchedulerKind::LeastConnections => Box::new(LeastConnectionsScheduler),
+        SchedulerKind::FirstAvailable => Arc::new(FirstAvailableScheduler),
+        SchedulerKind::RoundRobin => Arc::new(RoundRobinScheduler::new()),
+        SchedulerKind::Random => Arc::new(RandomScheduler),
+        SchedulerKind::LeastConnections => Arc::new(LeastConnectionsScheduler),
     }
 }

@@ -92,6 +92,7 @@ pub enum MatchExpr {
     DestinationCidr(ipnet::IpNet),
     DestinationPort(PortMatcher),
     SourceCidr(ipnet::IpNet),
+    SourcePort(PortMatcher),
     Listener(Arc<str>),
     Protocol(ProtocolId),
     Identity(Arc<str>),
@@ -147,6 +148,13 @@ impl MatchExpr {
             MatchExpr::SourceCidr(cidr) => {
                 if let Some(addr) = request.source {
                     cidr.contains(&addr.ip())
+                } else {
+                    false
+                }
+            }
+            MatchExpr::SourcePort(matcher) => {
+                if let Some(addr) = request.source {
+                    matcher.matches(addr.port())
                 } else {
                     false
                 }
@@ -294,7 +302,7 @@ impl Router {
                     let group_id = group.to_string();
 
                     if let Some(upstream_group) = group_arc {
-                        let sched_name = match upstream_group.scheduler {
+                        let sched_name = match upstream_group.scheduler_kind {
                             scheduler::SchedulerKind::FirstAvailable => "first-available",
                             scheduler::SchedulerKind::RoundRobin => "round-robin",
                             scheduler::SchedulerKind::Random => "random",
@@ -327,24 +335,11 @@ impl Router {
                             .collect();
 
                         let (sel, sel_chain) = if !candidates.is_empty() {
-                            let scheduler_inst: Box<dyn scheduler::Scheduler> =
-                                match upstream_group.scheduler {
-                                    scheduler::SchedulerKind::FirstAvailable => {
-                                        Box::new(scheduler::FirstAvailableScheduler)
-                                    }
-                                    scheduler::SchedulerKind::RoundRobin => {
-                                        Box::new(scheduler::RoundRobinScheduler::new())
-                                    }
-                                    scheduler::SchedulerKind::Random => {
-                                        Box::new(scheduler::RandomScheduler)
-                                    }
-                                    scheduler::SchedulerKind::LeastConnections => {
-                                        Box::new(scheduler::LeastConnectionsScheduler)
-                                    }
-                                };
-                            if let Some(sel) =
-                                scheduler_inst.select(upstream_group, &candidates, request)
-                            {
+                            if let Some(sel) = upstream_group.scheduler.preview(
+                                upstream_group,
+                                &candidates,
+                                request,
+                            ) {
                                 let chain_str =
                                     format!("{}", eggress_uri::RedactedUri::new(&sel.chain));
                                 (Some(sel.id.to_string()), Some(chain_str))
@@ -394,6 +389,13 @@ impl Router {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SelectionReason {
+    Normal,
+    DirectFallback,
+    UnhealthyFallback,
+}
+
 pub enum SelectedRoute {
     Direct {
         decision: RouteDecision,
@@ -403,8 +405,35 @@ pub enum SelectedRoute {
         group: UpstreamGroupId,
         upstream: eggress_core::UpstreamId,
         chain: std::sync::Arc<eggress_uri::ProxyChainSpec>,
-        lease: lease::ActiveLease,
+        pending_lease: lease::PendingLease,
+        selection_reason: SelectionReason,
     },
+}
+
+impl std::fmt::Debug for SelectedRoute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectedRoute::Direct { decision } => f
+                .debug_struct("SelectedRoute::Direct")
+                .field("decision", decision)
+                .finish(),
+            SelectedRoute::Upstream {
+                decision,
+                group,
+                upstream,
+                chain,
+                selection_reason,
+                ..
+            } => f
+                .debug_struct("SelectedRoute::Upstream")
+                .field("decision", decision)
+                .field("group", group)
+                .field("upstream", upstream)
+                .field("chain", chain)
+                .field("selection_reason", selection_reason)
+                .finish(),
+        }
+    }
 }
 
 pub trait RouteService: Send + Sync {
@@ -414,6 +443,12 @@ pub trait RouteService: Send + Sync {
         decision: &RouteDecision,
         request: &RouteRequest<'_>,
     ) -> Result<SelectedRoute, RouteError>;
+
+    /// Atomically decide and select from a single snapshot.
+    fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError> {
+        let decision = self.decide(request);
+        self.select(&decision, request)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -457,37 +492,43 @@ impl RouteService for Router {
                     .cloned()
                     .collect();
 
-                if candidates.is_empty() {
-                    return Err(RouteError::NoEligibleUpstream(group.clone()));
-                }
-
-                use crate::scheduler::Scheduler;
-                let scheduler: Box<dyn Scheduler> = match upstream_group.scheduler {
-                    scheduler::SchedulerKind::FirstAvailable => {
-                        Box::new(scheduler::FirstAvailableScheduler)
-                    }
-                    scheduler::SchedulerKind::RoundRobin => {
-                        Box::new(scheduler::RoundRobinScheduler::new())
-                    }
-                    scheduler::SchedulerKind::Random => Box::new(scheduler::RandomScheduler),
-                    scheduler::SchedulerKind::LeastConnections => {
-                        Box::new(scheduler::LeastConnectionsScheduler)
+                let (selected, selection_reason) = if !candidates.is_empty() {
+                    let sel = upstream_group
+                        .scheduler
+                        .select(upstream_group, &candidates, request)
+                        .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
+                    (sel, SelectionReason::Normal)
+                } else {
+                    match &upstream_group.fallback {
+                        upstream::GroupFallback::Reject => {
+                            return Err(RouteError::NoEligibleUpstream(group.clone()));
+                        }
+                        upstream::GroupFallback::Direct => {
+                            return Ok(SelectedRoute::Direct {
+                                decision: decision.clone(),
+                            });
+                        }
+                        upstream::GroupFallback::UseUnhealthy => {
+                            let enabled_member = upstream_group
+                                .members
+                                .iter()
+                                .find(|m| m.is_enabled())
+                                .cloned()
+                                .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
+                            (enabled_member, SelectionReason::UnhealthyFallback)
+                        }
                     }
                 };
 
-                let selected = scheduler
-                    .select(upstream_group, &candidates, request)
-                    .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
-
-                let pending = lease::PendingLease::new(selected.clone());
-                let lease = pending.established();
+                let pending_lease = lease::PendingLease::new(selected.clone());
 
                 Ok(SelectedRoute::Upstream {
                     decision: decision.clone(),
                     group: group.clone(),
-                    upstream: selected.id,
+                    upstream: selected.id.clone(),
                     chain: selected.chain.clone(),
-                    lease,
+                    pending_lease,
+                    selection_reason,
                 })
             }
         }
@@ -520,6 +561,10 @@ impl SharedRoutingService {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    pub fn router(&self) -> std::sync::Arc<Router> {
+        self.inner.load().router.clone()
+    }
+
     pub fn swap(&self, router: Router) {
         let gen = self
             .inner
@@ -546,6 +591,12 @@ impl RouteService for SharedRoutingService {
         request: &RouteRequest<'_>,
     ) -> Result<SelectedRoute, RouteError> {
         self.inner.load().router.select(decision, request)
+    }
+
+    fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError> {
+        let inner = self.inner.load();
+        let decision = inner.router.decide(request);
+        inner.router.select(&decision, request)
     }
 }
 
@@ -1153,20 +1204,23 @@ mod tests {
     use eggress_uri::ProxyChainSpec;
     use std::sync::atomic::Ordering;
 
-    fn make_upstream(id: UpstreamId) -> Arc<UpstreamRuntime> {
-        Arc::new(UpstreamRuntime::new(id, ProxyChainSpec { hops: vec![] }))
+    fn make_upstream(id: &str) -> Arc<UpstreamRuntime> {
+        Arc::new(UpstreamRuntime::new(
+            UpstreamId::new(id),
+            ProxyChainSpec { hops: vec![] },
+        ))
     }
 
     fn make_group(
         members: Vec<Arc<UpstreamRuntime>>,
         scheduler: crate::scheduler::SchedulerKind,
     ) -> UpstreamGroup {
-        UpstreamGroup {
-            id: UpstreamGroupId(Arc::from("test-group")),
+        UpstreamGroup::new(
+            UpstreamGroupId(Arc::from("test-group")),
             scheduler,
-            members: Arc::from(members),
-            fallback: GroupFallback::Reject,
-        }
+            Arc::from(members),
+            GroupFallback::Reject,
+        )
     }
 
     fn dummy_request<'a>(target: &'a TargetAddr) -> RouteRequest<'a> {
@@ -1183,7 +1237,7 @@ mod tests {
 
     #[test]
     fn upstream_runtime_load_tracking() {
-        let u = make_upstream(1);
+        let u = make_upstream("up-1");
         assert_eq!(u.current_load(), 0);
         u.active.fetch_add(5, Ordering::Relaxed);
         assert_eq!(u.current_load(), 5);
@@ -1195,7 +1249,7 @@ mod tests {
 
     #[test]
     fn upstream_runtime_enabled_default() {
-        let u = make_upstream(1);
+        let u = make_upstream("up-1");
         assert!(u.is_enabled());
         u.set_enabled(false);
         assert!(!u.is_enabled());
@@ -1207,7 +1261,7 @@ mod tests {
 
     #[test]
     fn pending_lease_decrements_in_flight_on_drop() {
-        let u = make_upstream(1);
+        let u = make_upstream("up-1");
         {
             let _lease = PendingLease::new(u.clone());
             assert_eq!(u.in_flight.load(Ordering::Relaxed), 1);
@@ -1217,7 +1271,7 @@ mod tests {
 
     #[test]
     fn pending_lease_established_converts_to_active() {
-        let u = make_upstream(1);
+        let u = make_upstream("up-1");
         let pending = PendingLease::new(u.clone());
         assert_eq!(u.in_flight.load(Ordering::Relaxed), 1);
         assert_eq!(u.active.load(Ordering::Relaxed), 0);
@@ -1225,12 +1279,12 @@ mod tests {
         let active = pending.established();
         assert_eq!(u.in_flight.load(Ordering::Relaxed), 0);
         assert_eq!(u.active.load(Ordering::Relaxed), 1);
-        assert_eq!(active.upstream().id, 1);
+        assert_eq!(active.upstream().id, UpstreamId::new("up-1"));
     }
 
     #[test]
     fn active_lease_decrements_active_on_drop() {
-        let u = make_upstream(1);
+        let u = make_upstream("up-1");
         let pending = PendingLease::new(u.clone());
         let active = pending.established();
         assert_eq!(u.active.load(Ordering::Relaxed), 1);
@@ -1240,18 +1294,18 @@ mod tests {
 
     #[test]
     fn pending_lease_upstream_accessor() {
-        let u = make_upstream(42);
+        let u = make_upstream("up-42");
         let lease = PendingLease::new(u.clone());
-        assert_eq!(lease.upstream().id, 42);
+        assert_eq!(lease.upstream().id, UpstreamId::new("up-42"));
     }
 
     // --- FirstAvailableScheduler tests ---
 
     #[test]
     fn first_available_preserves_order() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
-        let u3 = make_upstream(3);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        let u3 = make_upstream("up-3");
         let group = make_group(
             vec![u1.clone(), u2.clone(), u3.clone()],
             SchedulerKind::FirstAvailable,
@@ -1260,15 +1314,15 @@ mod tests {
         let req = dummy_request(&target);
         let scheduler = FirstAvailableScheduler;
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
-        assert_eq!(selected.id, 1);
+        assert_eq!(selected.id, UpstreamId::new("up-1"));
     }
 
     #[test]
     fn first_available_skips_disabled() {
-        let u1 = make_upstream(1);
+        let u1 = make_upstream("up-1");
         u1.set_enabled(false);
-        let u2 = make_upstream(2);
-        let u3 = make_upstream(3);
+        let u2 = make_upstream("up-2");
+        let u3 = make_upstream("up-3");
         let group = make_group(
             vec![u1.clone(), u2.clone(), u3.clone()],
             SchedulerKind::FirstAvailable,
@@ -1277,16 +1331,16 @@ mod tests {
         let req = dummy_request(&target);
         let scheduler = FirstAvailableScheduler;
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
-        assert_eq!(selected.id, 2);
+        assert_eq!(selected.id, UpstreamId::new("up-2"));
     }
 
     // --- RoundRobinScheduler tests ---
 
     #[test]
     fn round_robin_cycles_deterministically() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
-        let u3 = make_upstream(3);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        let u3 = make_upstream("up-3");
         let group = make_group(
             vec![u1.clone(), u2.clone(), u3.clone()],
             SchedulerKind::RoundRobin,
@@ -1297,28 +1351,28 @@ mod tests {
 
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            1
+            UpstreamId::new("up-1")
         );
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            2
+            UpstreamId::new("up-2")
         );
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            3
+            UpstreamId::new("up-3")
         );
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            1
+            UpstreamId::new("up-1")
         );
     }
 
     #[test]
     fn round_robin_skips_disabled() {
-        let u1 = make_upstream(1);
+        let u1 = make_upstream("up-1");
         u1.set_enabled(false);
-        let u2 = make_upstream(2);
-        let u3 = make_upstream(3);
+        let u2 = make_upstream("up-2");
+        let u3 = make_upstream("up-3");
         let group = make_group(
             vec![u1.clone(), u2.clone(), u3.clone()],
             SchedulerKind::RoundRobin,
@@ -1330,22 +1384,22 @@ mod tests {
         // cursor 0: checks idx 0 (disabled), idx 1 (u2) -> returns u2
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            2
+            UpstreamId::new("up-2")
         );
         // cursor 1: checks idx 1 (u2) -> returns u2
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            2
+            UpstreamId::new("up-2")
         );
         // cursor 2: checks idx 2 (u3) -> returns u3
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            3
+            UpstreamId::new("up-3")
         );
         // cursor 3: wraps to idx 0 (disabled), idx 1 (u2) -> returns u2
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
-            2
+            UpstreamId::new("up-2")
         );
     }
 
@@ -1362,10 +1416,10 @@ mod tests {
 
     #[test]
     fn random_selects_enabled_member() {
-        let u1 = make_upstream(1);
+        let u1 = make_upstream("up-1");
         u1.set_enabled(false);
-        let u2 = make_upstream(2);
-        let u3 = make_upstream(3);
+        let u2 = make_upstream("up-2");
+        let u3 = make_upstream("up-3");
         let group = make_group(
             vec![u1.clone(), u2.clone(), u3.clone()],
             SchedulerKind::Random,
@@ -1393,9 +1447,9 @@ mod tests {
 
     #[test]
     fn least_connections_picks_minimum_load() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
-        let u3 = make_upstream(3);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        let u3 = make_upstream("up-3");
         u2.active.fetch_add(5, Ordering::Relaxed);
         u3.active.fetch_add(10, Ordering::Relaxed);
 
@@ -1407,13 +1461,13 @@ mod tests {
         let req = dummy_request(&target);
         let scheduler = LeastConnectionsScheduler;
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
-        assert_eq!(selected.id, 1);
+        assert_eq!(selected.id, UpstreamId::new("up-1"));
     }
 
     #[test]
     fn least_connections_tie_breaking_deterministic() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
         u1.active.fetch_add(5, Ordering::Relaxed);
         u2.active.fetch_add(5, Ordering::Relaxed);
 
@@ -1427,16 +1481,16 @@ mod tests {
 
         // min_by_key is stable, so earlier member wins on tie
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
-        assert_eq!(selected.id, 1);
+        assert_eq!(selected.id, UpstreamId::new("up-1"));
     }
 
     #[test]
     fn least_connections_skips_disabled() {
-        let u1 = make_upstream(1);
+        let u1 = make_upstream("up-1");
         u1.set_enabled(false);
-        let u2 = make_upstream(2);
+        let u2 = make_upstream("up-2");
         u2.active.fetch_add(5, Ordering::Relaxed);
-        let u3 = make_upstream(3);
+        let u3 = make_upstream("up-3");
 
         let group = make_group(
             vec![u1.clone(), u2.clone(), u3.clone()],
@@ -1446,45 +1500,45 @@ mod tests {
         let req = dummy_request(&target);
         let scheduler = LeastConnectionsScheduler;
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
-        assert_eq!(selected.id, 3);
+        assert_eq!(selected.id, UpstreamId::new("up-3"));
     }
 
     // --- Group validation tests ---
 
     #[test]
     fn validate_group_empty() {
-        let group = UpstreamGroup {
-            id: UpstreamGroupId(Arc::from("g")),
-            scheduler: SchedulerKind::FirstAvailable,
-            members: Arc::from([]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            UpstreamGroupId(Arc::from("g")),
+            SchedulerKind::FirstAvailable,
+            Arc::from([]),
+            GroupFallback::Reject,
+        );
         assert!(validate_group(&group).is_err());
     }
 
     #[test]
     fn validate_group_duplicate_ids() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(1);
-        let group = UpstreamGroup {
-            id: UpstreamGroupId(Arc::from("g")),
-            scheduler: SchedulerKind::FirstAvailable,
-            members: Arc::from([u1, u2]),
-            fallback: GroupFallback::Reject,
-        };
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-1");
+        let group = UpstreamGroup::new(
+            UpstreamGroupId(Arc::from("g")),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1, u2]),
+            GroupFallback::Reject,
+        );
         assert!(validate_group(&group).is_err());
     }
 
     #[test]
     fn validate_group_valid() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
-        let group = UpstreamGroup {
-            id: UpstreamGroupId(Arc::from("g")),
-            scheduler: SchedulerKind::FirstAvailable,
-            members: Arc::from([u1, u2]),
-            fallback: GroupFallback::Reject,
-        };
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        let group = UpstreamGroup::new(
+            UpstreamGroupId(Arc::from("g")),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1, u2]),
+            GroupFallback::Reject,
+        );
         assert!(validate_group(&group).is_ok());
     }
 
@@ -1492,7 +1546,7 @@ mod tests {
 
     #[test]
     fn concurrent_leases_no_underflow() {
-        let u = make_upstream(1);
+        let u = make_upstream("up-1");
         let handles: Vec<_> = (0..100)
             .map(|_| {
                 let u = u.clone();
@@ -1622,10 +1676,10 @@ mod tests {
 
     #[test]
     fn explain_lists_eligible_upstreams() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
         u2.set_enabled(false);
-        let u3 = make_upstream(3);
+        let u3 = make_upstream("up-3");
         u3.health.observe_failure(
             None,
             &crate::health::HealthConfig {
@@ -1635,12 +1689,12 @@ mod tests {
         );
 
         let group_id = UpstreamGroupId(Arc::from("my-group"));
-        let group = UpstreamGroup {
-            id: group_id.clone(),
-            scheduler: SchedulerKind::FirstAvailable,
-            members: Arc::from([u1.clone(), u2.clone(), u3.clone()]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone(), u2.clone(), u3.clone()]),
+            GroupFallback::Reject,
+        );
 
         let rule = CompiledRule {
             id: RuleId(Arc::from("proxy-rule")),
@@ -1661,16 +1715,16 @@ mod tests {
 
     #[test]
     fn explain_reports_selected_upstream() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
 
         let group_id = UpstreamGroupId(Arc::from("sel-group"));
-        let group = UpstreamGroup {
-            id: group_id.clone(),
-            scheduler: SchedulerKind::FirstAvailable,
-            members: Arc::from([u1.clone(), u2.clone()]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::Reject,
+        );
 
         let rule = CompiledRule {
             id: RuleId(Arc::from("r1")),
@@ -1683,21 +1737,21 @@ mod tests {
         let req = dummy_request(&target);
         let explanation = router.explain(&req, 0);
 
-        assert_eq!(explanation.selected_upstream.as_deref(), Some("1"));
+        assert_eq!(explanation.selected_upstream.as_deref(), Some("up-1"));
     }
 
     #[test]
     fn explain_does_not_mutate_scheduler_state() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
 
         let group_id = UpstreamGroupId(Arc::from("no-mut"));
-        let group = UpstreamGroup {
-            id: group_id.clone(),
-            scheduler: SchedulerKind::RoundRobin,
-            members: Arc::from([u1.clone(), u2.clone()]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::RoundRobin,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::Reject,
+        );
 
         let rule = CompiledRule {
             id: RuleId(Arc::from("r1")),
@@ -1741,14 +1795,14 @@ mod tests {
 
     #[test]
     fn explain_for_upstream_group_default_route() {
-        let u1 = make_upstream(1);
+        let u1 = make_upstream("up-1");
         let group_id = UpstreamGroupId(Arc::from("default-group"));
-        let group = UpstreamGroup {
-            id: group_id.clone(),
-            scheduler: SchedulerKind::FirstAvailable,
-            members: Arc::from([u1]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1]),
+            GroupFallback::Reject,
+        );
 
         let router = Router::with_groups(
             vec![],
@@ -1767,14 +1821,14 @@ mod tests {
 
     #[test]
     fn explain_json_output_is_valid_json() {
-        let u1 = make_upstream(1);
+        let u1 = make_upstream("up-1");
         let group_id = UpstreamGroupId(Arc::from("json-group"));
-        let group = UpstreamGroup {
-            id: group_id.clone(),
-            scheduler: SchedulerKind::LeastConnections,
-            members: Arc::from([u1]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::LeastConnections,
+            Arc::from([u1]),
+            GroupFallback::Reject,
+        );
 
         let rule = CompiledRule {
             id: RuleId(Arc::from("json-rule")),
@@ -1799,15 +1853,15 @@ mod tests {
 
     #[test]
     fn explain_human_readable_contains_expected_fields() {
-        let u1 = make_upstream(1);
-        let u2 = make_upstream(2);
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
         let group_id = UpstreamGroupId(Arc::from("hr-group"));
-        let group = UpstreamGroup {
-            id: group_id.clone(),
-            scheduler: SchedulerKind::RoundRobin,
-            members: Arc::from([u1, u2]),
-            fallback: GroupFallback::Reject,
-        };
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::RoundRobin,
+            Arc::from([u1, u2]),
+            GroupFallback::Reject,
+        );
 
         let rule = CompiledRule {
             id: RuleId(Arc::from("hr-rule")),
@@ -1833,5 +1887,433 @@ mod tests {
         assert!(json.contains("\"hr-rule\""));
         assert!(json.contains("\"round-robin\""));
         assert!(json.contains("\"hr-group\""));
+    }
+
+    #[test]
+    fn round_robin_persists_state_across_arc_clones() {
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+
+        let group_id = UpstreamGroupId(Arc::from("persist-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::RoundRobin,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::Reject,
+        );
+
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let router = Arc::new(router);
+
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let selected1 = router.select(&router.decide(&req), &req).unwrap();
+        let selected2 = router.select(&router.decide(&req), &req).unwrap();
+
+        match (&selected1, &selected2) {
+            (
+                SelectedRoute::Upstream { upstream: id1, .. },
+                SelectedRoute::Upstream { upstream: id2, .. },
+            ) => {
+                assert_ne!(id1, id2, "round-robin should alternate across calls");
+            }
+            _ => panic!("expected Upstream routes"),
+        }
+    }
+
+    #[test]
+    fn explain_does_not_advance_round_robin_cursor() {
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+
+        let group_id = UpstreamGroupId(Arc::from("preview-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::RoundRobin,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::Reject,
+        );
+
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let e1 = router.explain(&req, 0);
+        let e2 = router.explain(&req, 0);
+        let e3 = router.explain(&req, 0);
+
+        assert_eq!(e1.selected_upstream, e2.selected_upstream);
+        assert_eq!(e2.selected_upstream, e3.selected_upstream);
+
+        let selected = router.select(&router.decide(&req), &req).unwrap();
+        match &selected {
+            SelectedRoute::Upstream { upstream: id, .. } => {
+                let expected = id.to_string();
+                assert_eq!(
+                    e1.selected_upstream.as_deref(),
+                    Some(expected.as_str()),
+                    "explain preview should match first actual select"
+                );
+            }
+            _ => panic!("expected Upstream route"),
+        }
+    }
+
+    // --- Lease lifecycle tests ---
+
+    #[test]
+    fn in_flight_increments_immediately_after_selection() {
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        let group_id = UpstreamGroupId(Arc::from("lease-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::Reject,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let selected = router.select(&router.decide(&req), &req).unwrap();
+        match selected {
+            SelectedRoute::Upstream { pending_lease, .. } => {
+                assert_eq!(
+                    u1.in_flight.load(Ordering::Relaxed),
+                    1,
+                    "in_flight should be 1 after selection"
+                );
+                assert_eq!(
+                    u1.active.load(Ordering::Relaxed),
+                    0,
+                    "active should be 0 before establish()"
+                );
+                let _active = pending_lease.established();
+                assert_eq!(
+                    u1.in_flight.load(Ordering::Relaxed),
+                    0,
+                    "in_flight should be 0 after establish()"
+                );
+                assert_eq!(
+                    u1.active.load(Ordering::Relaxed),
+                    1,
+                    "active should be 1 after establish()"
+                );
+            }
+            _ => panic!("expected Upstream route"),
+        }
+    }
+
+    #[test]
+    fn failed_route_open_returns_in_flight_to_zero() {
+        let u1 = make_upstream("up-1");
+        let group_id = UpstreamGroupId(Arc::from("fail-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone()]),
+            GroupFallback::Reject,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let selected = router.select(&router.decide(&req), &req).unwrap();
+        assert_eq!(u1.in_flight.load(Ordering::Relaxed), 1);
+
+        // Simulate route open failure by dropping PendingLease without calling establish()
+        drop(selected);
+        assert_eq!(
+            u1.in_flight.load(Ordering::Relaxed),
+            0,
+            "in_flight should return to 0 on drop"
+        );
+        assert_eq!(
+            u1.active.load(Ordering::Relaxed),
+            0,
+            "active should remain 0"
+        );
+    }
+
+    #[test]
+    fn successful_open_moves_count_from_in_flight_to_active() {
+        let u1 = make_upstream("up-1");
+        let group_id = UpstreamGroupId(Arc::from("open-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone()]),
+            GroupFallback::Reject,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let selected = router.select(&router.decide(&req), &req).unwrap();
+        assert_eq!(u1.in_flight.load(Ordering::Relaxed), 1);
+        assert_eq!(u1.active.load(Ordering::Relaxed), 0);
+
+        let active_lease = match selected {
+            SelectedRoute::Upstream { pending_lease, .. } => pending_lease.established(),
+            _ => panic!("expected Upstream route"),
+        };
+
+        assert_eq!(u1.in_flight.load(Ordering::Relaxed), 0);
+        assert_eq!(u1.active.load(Ordering::Relaxed), 1);
+
+        drop(active_lease);
+        assert_eq!(u1.in_flight.load(Ordering::Relaxed), 0);
+        assert_eq!(u1.active.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn no_underflow_under_repeated_failure() {
+        let u = make_upstream("up-1");
+        for _ in 0..100 {
+            let pending = PendingLease::new(u.clone());
+            assert_eq!(u.in_flight.load(Ordering::Relaxed), 1);
+            drop(pending);
+            assert_eq!(u.in_flight.load(Ordering::Relaxed), 0);
+        }
+        assert_eq!(u.active.load(Ordering::Relaxed), 0);
+    }
+
+    // --- Group fallback tests ---
+
+    #[test]
+    fn reject_fallback_returns_error() {
+        let u1 = make_upstream("up-1");
+        u1.health.observe_failure(
+            None,
+            &crate::health::HealthConfig {
+                failures_to_unhealthy: 1,
+                ..Default::default()
+            },
+        );
+        let group_id = UpstreamGroupId(Arc::from("reject-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone()]),
+            GroupFallback::Reject,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let result = router.select(&router.decide(&req), &req);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            RouteError::NoEligibleUpstream(_)
+        ));
+    }
+
+    #[test]
+    fn direct_fallback_opens_directly() {
+        let u1 = make_upstream("up-1");
+        u1.health.observe_failure(
+            None,
+            &crate::health::HealthConfig {
+                failures_to_unhealthy: 1,
+                ..Default::default()
+            },
+        );
+        let group_id = UpstreamGroupId(Arc::from("direct-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone()]),
+            GroupFallback::Direct,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let result = router.select(&router.decide(&req), &req);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), SelectedRoute::Direct { .. }));
+    }
+
+    #[test]
+    fn unhealthy_fallback_selects_unhealthy_enabled_member() {
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        // Make both unhealthy
+        u1.health.observe_failure(
+            None,
+            &crate::health::HealthConfig {
+                failures_to_unhealthy: 1,
+                ..Default::default()
+            },
+        );
+        u2.health.observe_failure(
+            None,
+            &crate::health::HealthConfig {
+                failures_to_unhealthy: 1,
+                ..Default::default()
+            },
+        );
+
+        let group_id = UpstreamGroupId(Arc::from("unhealthy-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::UseUnhealthy,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let result = router.select(&router.decide(&req), &req);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SelectedRoute::Upstream {
+                upstream,
+                selection_reason,
+                ..
+            } => {
+                assert_eq!(
+                    upstream,
+                    UpstreamId::new("up-1"),
+                    "should select first enabled member"
+                );
+                assert_eq!(
+                    selection_reason,
+                    SelectionReason::UnhealthyFallback,
+                    "should indicate unhealthy fallback"
+                );
+            }
+            _ => panic!("expected Upstream route"),
+        }
+    }
+
+    #[test]
+    fn disabled_members_never_selected_through_unhealthy_fallback() {
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        // u1 is disabled (not just unhealthy), u2 is unhealthy but enabled
+        u1.set_enabled(false);
+        u2.health.observe_failure(
+            None,
+            &crate::health::HealthConfig {
+                failures_to_unhealthy: 1,
+                ..Default::default()
+            },
+        );
+
+        let group_id = UpstreamGroupId(Arc::from("disabled-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone(), u2.clone()]),
+            GroupFallback::UseUnhealthy,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let result = router.select(&router.decide(&req), &req);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SelectedRoute::Upstream { upstream, .. } => {
+                assert_eq!(
+                    upstream,
+                    UpstreamId::new("up-2"),
+                    "should skip disabled u1 and select unhealthy-enabled u2"
+                );
+            }
+            _ => panic!("expected Upstream route"),
+        }
+    }
+
+    #[test]
+    fn selection_reason_normal_for_healthy_candidates() {
+        let u1 = make_upstream("up-1");
+        let group_id = UpstreamGroupId(Arc::from("normal-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::FirstAvailable,
+            Arc::from([u1.clone()]),
+            GroupFallback::Reject,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let result = router.select(&router.decide(&req), &req);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SelectedRoute::Upstream {
+                selection_reason, ..
+            } => {
+                assert_eq!(selection_reason, SelectionReason::Normal);
+            }
+            _ => panic!("expected Upstream route"),
+        }
     }
 }

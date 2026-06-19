@@ -393,4 +393,254 @@ direct = true
         let result = load_and_validate(path);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn recursive_match_all() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "block-internal-https"
+direct = true
+
+[rules.match]
+all = [
+  { host_suffix = "corp.internal" },
+  { destination_port = 443 },
+]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "recursive match all should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        assert_eq!(rt.rules.len(), 1);
+    }
+
+    #[test]
+    fn recursive_match_any_of() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "http-or-socks"
+direct = true
+
+[rules.match]
+any_of = [
+  { protocol = "http" },
+  { protocol = "socks5" },
+]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "recursive match any_of should compile: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn recursive_match_not() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "not-internal"
+direct = true
+
+[rules.match]
+not = { source_cidr = "10.0.0.0/8" }
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "recursive match not should compile: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn leaf_matcher_port_range() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "high-ports"
+direct = true
+
+[rules.match]
+destination_port_range = [8000, 9000]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "port range should compile: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn leaf_matcher_port_set() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "specific-ports"
+direct = true
+
+[rules.match]
+destination_port_set = [80, 443, 8080]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "port set should compile: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn leaf_matcher_identity() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "admin-only"
+direct = true
+
+[rules.match]
+identity = "admin"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "identity matcher should compile: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn nested_composite_matchers() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "nested-example"
+direct = true
+
+[rules.match]
+all = [
+  { host_suffix = "example.com" },
+  { any_of = [
+      { destination_port = 443 },
+      { destination_port = 8443 },
+  ]},
+  { not = { source_cidr = "10.0.0.0/8" } }
+]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "nested composite matchers should compile: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn invalid_cidr_in_match_expr() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "bad-cidr"
+direct = true
+
+[rules.match]
+source_cidr = "not-a-cidr"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid CIDR should fail validation");
+    }
+
+    #[test]
+    fn invalid_regex_in_match_expr() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "bad-regex"
+direct = true
+
+[rules.match]
+host_regex = "[invalid"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid regex should fail validation");
+    }
 }
