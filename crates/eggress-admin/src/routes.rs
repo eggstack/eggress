@@ -7,11 +7,12 @@ use crate::server::{
 };
 use crate::static_content::serve_static;
 
-pub fn handle_request(
+pub async fn handle_request(
     req: http::Request<hyper::body::Incoming>,
     state: &AdminState,
 ) -> AdminResponse {
     let path = req.uri().path();
+    let method = req.method();
 
     match path {
         "/-/health" => build_text_response(200, "ok"),
@@ -46,6 +47,7 @@ pub fn handle_request(
         }
         "/-/routes" => {
             if let Some(router) = &state.router {
+                let default_action = format!("{:?}", router.default_action());
                 let rules: Vec<serde_json::Value> = router
                     .rules()
                     .iter()
@@ -56,7 +58,12 @@ pub fn handle_request(
                         })
                     })
                     .collect();
-                build_json_response(200, serde_json::to_string(&rules).unwrap())
+                let body = serde_json::json!({
+                    "rules": rules,
+                    "default_action": default_action,
+                    "rule_count": rules.len(),
+                });
+                build_json_response(200, body.to_string())
             } else {
                 let rules: Vec<serde_json::Value> = state
                     .static_routes
@@ -75,17 +82,41 @@ pub fn handle_request(
         "/-/upstreams" => {
             if let Some(router) = &state.router {
                 let groups: Vec<serde_json::Value> = router
-                    .rules()
+                    .groups()
                     .iter()
-                    .filter_map(|r| {
-                        if let eggress_routing::RouteActionSpec::UpstreamGroup(gid) = &r.action {
-                            Some(serde_json::json!({
-                                "group_id": gid.0.to_string(),
-                                "rule_id": r.id.0.to_string(),
-                            }))
-                        } else {
-                            None
-                        }
+                    .map(|(gid, group)| {
+                        let members: Vec<serde_json::Value> = group
+                            .members
+                            .iter()
+                            .map(|m| {
+                                let health_state = m.health.state();
+                                let eligible = eggress_routing::health::is_eligible(m);
+                                serde_json::json!({
+                                    "id": m.id.to_string(),
+                                    "health": format!("{:?}", health_state),
+                                    "eligible": eligible,
+                                    "enabled": m.is_enabled(),
+                                    "active": m.active.load(Ordering::Relaxed),
+                                    "in_flight": m.in_flight.load(Ordering::Relaxed),
+                                })
+                            })
+                            .collect();
+                        let sched_name = match group.scheduler_kind {
+                            eggress_routing::scheduler::SchedulerKind::FirstAvailable => {
+                                "first-available"
+                            }
+                            eggress_routing::scheduler::SchedulerKind::RoundRobin => "round-robin",
+                            eggress_routing::scheduler::SchedulerKind::Random => "random",
+                            eggress_routing::scheduler::SchedulerKind::LeastConnections => {
+                                "least-connections"
+                            }
+                        };
+                        serde_json::json!({
+                            "group_id": gid.0.to_string(),
+                            "scheduler": sched_name,
+                            "member_count": group.members.len(),
+                            "members": members,
+                        })
                     })
                     .collect();
                 build_json_response(200, serde_json::to_string(&groups).unwrap())
@@ -96,14 +127,116 @@ pub fn handle_request(
         "/-/config" => {
             let generation = state.generation.load(Ordering::Relaxed);
             let uptime = state.start_time.elapsed().as_secs();
+            let rule_count = state.router.as_ref().map(|r| r.rules().len()).unwrap_or(0);
+            let upstream_group_count = state.router.as_ref().map(|r| r.groups().len()).unwrap_or(0);
+            let default_action = state
+                .router
+                .as_ref()
+                .map(|r| format!("{:?}", r.default_action()))
+                .unwrap_or_else(|| "none".to_string());
+            let listener_names: Vec<&str> =
+                state.listeners.iter().map(|l| l.name.as_str()).collect();
             let config_summary = serde_json::json!({
                 "generation": generation,
                 "uptime_seconds": uptime,
                 "has_router": state.router.is_some(),
+                "rule_count": rule_count,
+                "upstream_group_count": upstream_group_count,
+                "default_action": default_action,
                 "static_routes_count": state.static_routes.len(),
                 "has_pac": state.pac_config.is_some(),
+                "listeners": listener_names,
+                "active_connections": state.active_connections.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0),
             });
             build_json_response(200, config_summary.to_string())
+        }
+        "/-/route-explain" => {
+            if method != http::Method::POST {
+                return build_text_response(405, "method not allowed");
+            }
+            let Some(router) = &state.router else {
+                return build_json_response(
+                    503,
+                    serde_json::json!({"error": "no router configured"}).to_string(),
+                );
+            };
+            let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
+                Ok(b) => b.to_bytes(),
+                Err(_) => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": "failed to read request body"}).to_string(),
+                    );
+                }
+            };
+            let body: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+                Ok(v) => v,
+                Err(_) => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": "invalid JSON body"}).to_string(),
+                    );
+                }
+            };
+            let target_str = match body.get("target").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": "missing 'target' field"}).to_string(),
+                    );
+                }
+            };
+            let listener_str = match body.get("listener").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": "missing 'listener' field"}).to_string(),
+                    );
+                }
+            };
+            let protocol_str = match body.get("protocol").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": "missing 'protocol' field"}).to_string(),
+                    );
+                }
+            };
+            let target: eggress_core::TargetAddr = match target_str.parse() {
+                Ok(t) => t,
+                Err(e) => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": format!("invalid target: {e}")}).to_string(),
+                    );
+                }
+            };
+            let protocol = match protocol_str {
+                "http" => eggress_core::ProtocolId::Http,
+                "socks4" => eggress_core::ProtocolId::Socks4,
+                "socks5" => eggress_core::ProtocolId::Socks5,
+                _ => {
+                    return build_json_response(
+                        400,
+                        serde_json::json!({"error": format!("unknown protocol: {protocol_str}")})
+                            .to_string(),
+                    );
+                }
+            };
+            let generation = state.generation.load(Ordering::Relaxed);
+            let identity = eggress_core::ClientIdentity::Anonymous;
+            let request = eggress_routing::RouteRequest {
+                target: &target,
+                source: None,
+                listener: listener_str,
+                inbound_protocol: protocol,
+                identity: &identity,
+            };
+            let explanation = router.explain(&request, generation);
+            build_json_response(200, serde_json::to_string(&explanation).unwrap())
         }
         "/metrics" => build_response(
             200,

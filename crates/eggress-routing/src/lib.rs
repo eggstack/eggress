@@ -271,6 +271,12 @@ impl Router {
         &self.default_action
     }
 
+    pub fn groups(
+        &self,
+    ) -> &std::collections::HashMap<UpstreamGroupId, std::sync::Arc<upstream::UpstreamGroup>> {
+        &self.groups
+    }
+
     pub fn explain(&self, request: &RouteRequest, generation: u64) -> RouteExplanation {
         let decision = self.decide(request);
         let target = request.target.to_string();
@@ -396,6 +402,16 @@ pub enum SelectionReason {
     UnhealthyFallback,
 }
 
+impl std::fmt::Display for SelectionReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectionReason::Normal => write!(f, "normal"),
+            SelectionReason::DirectFallback => write!(f, "direct-fallback"),
+            SelectionReason::UnhealthyFallback => write!(f, "unhealthy-fallback"),
+        }
+    }
+}
+
 pub enum SelectedRoute {
     Direct {
         decision: RouteDecision,
@@ -509,13 +525,18 @@ impl RouteService for Router {
                             });
                         }
                         upstream::GroupFallback::UseUnhealthy => {
-                            let enabled_member = upstream_group
+                            let enabled_members: Vec<_> = upstream_group
                                 .members
                                 .iter()
-                                .find(|m| m.is_enabled())
+                                .filter(|m| m.is_enabled())
                                 .cloned()
+                                .collect();
+                            let sel = upstream_group
+                                .scheduler
+                                .select(upstream_group, &enabled_members, request)
+                                .or_else(|| enabled_members.first().cloned())
                                 .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
-                            (enabled_member, SelectionReason::UnhealthyFallback)
+                            (sel, SelectionReason::UnhealthyFallback)
                         }
                     }
                 };
@@ -1426,7 +1447,7 @@ mod tests {
         );
         let target = target_domain("example.com", 80);
         let req = dummy_request(&target);
-        let scheduler = RandomScheduler;
+        let scheduler = RandomScheduler::new();
 
         for _ in 0..100 {
             let selected = scheduler.select(&group, &group.members, &req).unwrap();
@@ -1439,7 +1460,7 @@ mod tests {
         let group = make_group(vec![], SchedulerKind::Random);
         let target = target_domain("example.com", 80);
         let req = dummy_request(&target);
-        let scheduler = RandomScheduler;
+        let scheduler = RandomScheduler::new();
         assert!(scheduler.select(&group, &group.members, &req).is_none());
     }
 

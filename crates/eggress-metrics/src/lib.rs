@@ -10,6 +10,14 @@ impl eggress_server::SessionMetrics for MetricsRegistry {
     fn record_session(&self, report: &SessionReport) {
         MetricsRegistry::record_session(self, report);
     }
+
+    fn record_session_start(&self) {
+        MetricsRegistry::record_session_start(self);
+    }
+
+    fn record_route_decision(&self, rule: &str, action: &str, outcome: &str) {
+        MetricsRegistry::record_route_decision(self, rule, action, outcome);
+    }
 }
 
 #[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
@@ -128,8 +136,11 @@ impl MetricsRegistry {
         }
     }
 
-    pub fn record_session(&self, report: &SessionReport) {
+    pub fn record_session_start(&self) {
         self.connections_active.inc();
+    }
+
+    pub fn record_session(&self, report: &SessionReport) {
         self.connections_total.inc();
 
         if matches!(
@@ -247,6 +258,7 @@ mod tests {
             rule_id: Some("rule-1".to_string()),
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         };
         m.record_session(&report);
         let output = m.render_prometheus();
@@ -269,6 +281,7 @@ mod tests {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         });
         let output = m.render_prometheus();
         for line in output.lines() {
@@ -289,6 +302,7 @@ mod tests {
     #[test]
     fn session_recording_updates_all_metrics() {
         let m = MetricsRegistry::new();
+        m.record_session_start();
 
         m.record_session(&SessionReport {
             protocol: Some("socks5".to_string()),
@@ -301,6 +315,7 @@ mod tests {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         });
 
         let output = m.render_prometheus();
@@ -324,6 +339,7 @@ mod tests {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         });
 
         let output = m.render_prometheus();
@@ -352,6 +368,7 @@ mod tests {
     #[test]
     fn active_connections_returns_to_zero() {
         let m = MetricsRegistry::new();
+        m.record_session_start();
         m.record_session(&SessionReport {
             protocol: None,
             target: None,
@@ -363,6 +380,7 @@ mod tests {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         });
         let output = m.render_prometheus();
         for line in output.lines() {

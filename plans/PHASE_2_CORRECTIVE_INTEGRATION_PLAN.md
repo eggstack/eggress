@@ -1676,3 +1676,32 @@ Implemented by commits:
 
 All required checks passed on `<date>`.
 ```
+
+## Completion record
+
+Implemented across multiple commits:
+
+- Persistent schedulers in UpstreamGroup with Arc<dyn Scheduler>
+- Correct PendingLease→ActiveLease lifecycle after route open
+- Group fallback semantics (Reject, Direct, UseUnhealthy) with group scheduler
+- Route-open timeout enforcement with tokio::time::timeout
+- Real routing context propagation (source, listener, identity)
+- Stable UpstreamId as Arc<str> with validation
+- Strict router construction (no filter_map, error on unknown references)
+- eggress-runtime crate with ServiceSupervisor, TaskTracker, graceful shutdown
+- TOML-driven listeners, timeouts, authentication, connection limits
+- Active health probes attached to upstream runtimes
+- SessionMetrics trait with record_session_start/record_session/record_route_decision
+- Admin endpoints: /-/route-explain, /-/upstreams (live health), /-/config (redacted), /-/status (active connections)
+- Coherent reload with upstream runtime preservation and health reconciliation
+- Per-connection CancellationToken with forced cancellation after deadline
+- Upstream test with proxy mode, mode/failure/failed_hop fields
+- Route explanation with offline/online mode labeling
+- Recursive TOML match expressions (all, any_of, not) with expanded leaf matchers
+- Injectable RNG for deterministic random scheduler tests
+- UseUnhealthy fallback uses group scheduler
+- SelectionReason propagated to SessionReport
+- Config example file (example-config.toml)
+- validate_upstream_id enforced at config compilation time
+- Mixed CLI/config mode rejection
+- Documentation updates (README, ROADMAP, ARCHITECTURE, AGENTS.md)

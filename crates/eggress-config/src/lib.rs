@@ -315,6 +315,7 @@ protocols = ["http"]
             upstreams: None,
             upstream_groups: None,
             rules: None,
+            rules_file: None,
             routing: None,
             admin: None,
         };
@@ -337,6 +338,7 @@ protocols = ["http"]
             upstreams: None,
             upstream_groups: None,
             rules: None,
+            rules_file: None,
             routing: None,
             admin: None,
         };

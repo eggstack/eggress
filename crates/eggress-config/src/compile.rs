@@ -179,9 +179,38 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
     Err(ConfigError::validation(&rule.id, "ambiguous matcher"))
 }
 
+const MAX_EXPRESSION_DEPTH: usize = 10;
+const MAX_NODE_COUNT: usize = 100;
+
 fn compile_match_config(
     config: &MatchExprConfig,
 ) -> Result<eggress_routing::MatchExpr, ConfigError> {
+    let mut node_count = 0;
+    compile_match_config_limited(config, 0, &mut node_count)
+}
+
+fn compile_match_config_limited(
+    config: &MatchExprConfig,
+    depth: usize,
+    node_count: &mut usize,
+) -> Result<eggress_routing::MatchExpr, ConfigError> {
+    *node_count += 1;
+    if *node_count > MAX_NODE_COUNT {
+        return Err(ConfigError::validation(
+            "match",
+            &format!("expression exceeds maximum node count ({})", MAX_NODE_COUNT),
+        ));
+    }
+    if depth > MAX_EXPRESSION_DEPTH {
+        return Err(ConfigError::validation(
+            "match",
+            &format!(
+                "expression exceeds maximum depth ({})",
+                MAX_EXPRESSION_DEPTH
+            ),
+        ));
+    }
+
     match config {
         MatchExprConfig::Composite(composite) => {
             if let Some(ref all) = composite.all {
@@ -190,7 +219,7 @@ fn compile_match_config(
                 }
                 let exprs: Vec<eggress_routing::MatchExpr> = all
                     .iter()
-                    .map(compile_match_config)
+                    .map(|c| compile_match_config_limited(c, depth + 1, node_count))
                     .collect::<Result<Vec<_>, _>>()?;
                 return Ok(eggress_routing::MatchExpr::All(exprs));
             }
@@ -200,12 +229,12 @@ fn compile_match_config(
                 }
                 let exprs: Vec<eggress_routing::MatchExpr> = any_of
                     .iter()
-                    .map(compile_match_config)
+                    .map(|c| compile_match_config_limited(c, depth + 1, node_count))
                     .collect::<Result<Vec<_>, _>>()?;
                 return Ok(eggress_routing::MatchExpr::AnyOf(exprs));
             }
             if let Some(ref not) = composite.not {
-                let inner = compile_match_config(not)?;
+                let inner = compile_match_config_limited(not, depth + 1, node_count)?;
                 return Ok(eggress_routing::MatchExpr::Not(Box::new(inner)));
             }
             Err(ConfigError::validation(
@@ -435,6 +464,9 @@ fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigE
     upstreams
         .iter()
         .map(|u| {
+            eggress_routing::upstream::validate_upstream_id(&u.id)
+                .map_err(|e| ConfigError::validation(&format!("upstream {}", u.id), &e))?;
+
             let chain = eggress_uri::parse_proxy_chain(&u.uri).map_err(|e| {
                 ConfigError::validation(
                     &format!("upstream {}", u.id),
@@ -495,10 +527,7 @@ fn compile_groups(config: &ConfigFile) -> Result<Vec<UpstreamGroupConfig>, Confi
 }
 
 fn compile_rules(config: &ConfigFile) -> Result<Vec<eggress_routing::CompiledRule>, ConfigError> {
-    let rules = match &config.rules {
-        Some(r) => r,
-        None => return Ok(vec![]),
-    };
+    let mut compiled_rules = Vec::new();
 
     let group_ids: std::collections::HashSet<&str> = config
         .upstream_groups
@@ -506,19 +535,50 @@ fn compile_rules(config: &ConfigFile) -> Result<Vec<eggress_routing::CompiledRul
         .map(|gs| gs.iter().map(|g| g.id.as_str()).collect())
         .unwrap_or_default();
 
-    rules
-        .iter()
-        .map(|r| {
+    if let Some(ref rules) = config.rules {
+        for r in rules {
             let matcher = compile_matcher(r)?;
             let action = compile_action(r, &group_ids)?;
 
-            Ok(eggress_routing::CompiledRule {
+            compiled_rules.push(eggress_routing::CompiledRule {
                 id: eggress_routing::RuleId(Arc::from(r.id.as_str())),
                 matcher,
                 action,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+
+    if let Some(ref rules_file_path) = config.rules_file {
+        let content = std::fs::read_to_string(rules_file_path).map_err(|e| {
+            ConfigError::validation(
+                "rules_file",
+                &format!("failed to read '{}': {}", rules_file_path, e),
+            )
+        })?;
+        let compat_rules = eggress_routing::CompatRegexRule::parse_file(&content).map_err(|e| {
+            ConfigError::validation(
+                "rules_file",
+                &format!("failed to parse '{}': {}", rules_file_path, e),
+            )
+        })?;
+        for (idx, compat) in compat_rules.into_iter().enumerate() {
+            compiled_rules.push(eggress_routing::CompiledRule {
+                id: eggress_routing::RuleId(Arc::from(format!("rules-file-{}", idx + 1).as_str())),
+                matcher: eggress_routing::MatchExpr::HostRegex(compat.pattern),
+                action: group_ids
+                    .iter()
+                    .next()
+                    .map(|g| {
+                        eggress_routing::RouteActionSpec::UpstreamGroup(
+                            eggress_routing::UpstreamGroupId(Arc::from(*g)),
+                        )
+                    })
+                    .unwrap_or(eggress_routing::RouteActionSpec::Direct),
+            });
+        }
+    }
+
+    Ok(compiled_rules)
 }
 
 fn compile_default_action(config: &ConfigFile) -> eggress_routing::RouteActionSpec {

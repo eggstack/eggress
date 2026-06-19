@@ -32,7 +32,7 @@ impl AdminServer {
                     tokio::spawn(async move {
                         let service = service_fn(move |req| {
                             let state = state.clone();
-                            async move { Ok::<_, std::convert::Infallible>(handle_request(req, &state)) }
+                            async move { Ok::<_, std::convert::Infallible>(handle_request(req, &state).await) }
                         });
                         if let Err(e) = hyper::server::conn::http1::Builder::new()
                             .serve_connection(TokioIo::new(stream), service)

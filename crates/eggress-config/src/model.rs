@@ -44,6 +44,7 @@ pub struct ConfigFile {
     pub upstreams: Option<Vec<UpstreamConfig>>,
     pub upstream_groups: Option<Vec<UpstreamGroupConfig>>,
     pub rules: Option<Vec<RuleConfig>>,
+    pub rules_file: Option<String>,
     pub routing: Option<RoutingConfig>,
     pub admin: Option<AdminConfig>,
 }

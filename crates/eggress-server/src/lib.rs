@@ -14,7 +14,9 @@ use eggress_routing::RouteService;
 
 /// Trait for recording session metrics. Implemented by external crates.
 pub trait SessionMetrics: Send + Sync {
+    fn record_session_start(&self);
     fn record_session(&self, report: &SessionReport);
+    fn record_route_decision(&self, rule: &str, action: &str, outcome: &str);
 }
 
 /// Context propagated from the listener into routing decisions.
@@ -40,6 +42,10 @@ pub async fn serve_connection(
     client: eggress_core::BoxStream,
     config: ConnectionConfig,
 ) -> SessionReport {
+    if let Some(metrics) = &config.metrics {
+        metrics.record_session_start();
+    }
+
     let accepted = tokio::time::timeout(
         config.handshake_timeout,
         accept::accept(client, &config.protocols, &config.authentication),
@@ -60,6 +66,7 @@ pub async fn serve_connection(
                 rule_id: None,
                 upstream_group: None,
                 upstream_id: None,
+                selection_reason: None,
             };
         }
         Ok(Err(_)) => {
@@ -74,6 +81,7 @@ pub async fn serve_connection(
                 rule_id: None,
                 upstream_group: None,
                 upstream_id: None,
+                selection_reason: None,
             };
         }
         Err(_) => {
@@ -88,6 +96,7 @@ pub async fn serve_connection(
                 rule_id: None,
                 upstream_group: None,
                 upstream_id: None,
+                selection_reason: None,
             };
         }
     };
@@ -107,6 +116,7 @@ pub async fn serve_connection(
         rule = ?report.rule_id,
         upstream_group = ?report.upstream_group,
         upstream = ?report.upstream_id,
+        selection_reason = ?report.selection_reason,
         bytes_upstream = report.bytes_upstream,
         bytes_downstream = report.bytes_downstream,
         "connection completed",

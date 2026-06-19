@@ -1,0 +1,246 @@
+# eggress configuration example
+#
+# This file demonstrates all available configuration options and the
+# recursive matcher syntax.  Every section is optional; defaults are
+# applied when a key is omitted.
+
+version = 1
+
+# ── Process ────────────────────────────────────────────────────────────
+[process]
+log_format = "json"          # "text" | "json"
+log_level  = "info"          # trace | debug | info | warn | error
+shutdown_grace = "30s"       # time to drain in-flight connections
+
+# ── Timeouts ───────────────────────────────────────────────────────────
+[timeouts]
+handshake = "10s"            # protocol detection + auth
+connect   = "30s"            # upstream TCP connect
+
+# ── Listeners ──────────────────────────────────────────────────────────
+# Each listener binds a socket and advertises one or more protocols.
+
+[[listeners]]
+name     = "http-in"
+bind     = "0.0.0.0:8080"
+protocols = ["http"]
+# connection_limit = 1000
+
+[[listeners]]
+name     = "socks-in"
+bind     = "0.0.0.0:1080"
+protocols = ["socks4", "socks5"]
+connection_limit = 500
+
+  [[listeners.auth]]
+  type     = "password"
+  username = "admin"
+  password = "s3cret"
+
+# Listener with environment-sourced password
+[[listeners]]
+name     = "socks-secure"
+bind     = "0.0.0.0:1081"
+protocols = ["socks5"]
+
+  [[listeners.auth]]
+  type         = "password"
+  username     = "admin"
+  password_env = "EGGRESS_SOCKS_PASSWORD"
+
+# ── Upstreams ──────────────────────────────────────────────────────────
+# Each upstream defines a single proxy chain identified by a URI.
+
+[[upstreams]]
+id  = "proxy-us-east"
+uri = "socks5://user:pass@us-east.example.com:1080"
+
+[[upstreams]]
+id  = "proxy-eu-west"
+uri = "http://eu-west.example.com:8080"
+
+[[upstreams]]
+id  = "proxy-ap"
+uri = "socks4://ap.example.com:1080"
+
+[[upstreams]]
+id  = "direct-exit"
+uri = "direct://"
+
+# ── Upstream Groups ────────────────────────────────────────────────────
+# Groups collect upstreams and apply a scheduling strategy.
+
+[[upstream_groups]]
+id        = "default"
+scheduler = "round-robin"      # round-robin | first-available | random | least-connections
+members   = ["proxy-us-east", "proxy-eu-west"]
+fallback  = "reject"           # reject | direct | use-unhealthy
+
+[[upstream_groups]]
+id        = "asia-pacific"
+scheduler = "least-connections"
+members   = ["proxy-ap", "proxy-us-east"]
+fallback  = "direct"
+
+[[upstream_groups]]
+id        = "failover"
+scheduler = "first-available"
+members   = ["proxy-us-east", "proxy-eu-west", "proxy-ap"]
+fallback  = "use-unhealthy"
+
+# ── Rules ──────────────────────────────────────────────────────────────
+# First match wins.  Simple fields (host_exact, host_suffix, etc.) can be
+# used directly on the rule, or you can use the recursive `match` table
+# for full expressiveness.
+
+# Simple exact-host match
+[[rules]]
+id          = "block-ads"
+host_exact  = "ads.example.com"
+reject      = "blocked"
+
+# Simple suffix match
+[[rules]]
+id          = "Corporate-sites"
+host_suffix = ".corp.internal"
+upstream_group = "default"
+
+# Simple destination port
+[[rules]]
+id              = "ssh-bypass"
+destination_port = 22
+direct          = true
+
+# ── Recursive match expressions ────────────────────────────────────────
+
+# Match ALL conditions (logical AND)
+[[rules]]
+id = "us-corp-ssh"
+  [rules.match]
+    [[rules.match.all]]
+
+      [rules.match.all.0]
+      host_suffix = ".corp.internal"
+
+      [rules.match.all.1]
+      destination_port = 22
+
+      [rules.match.all.2]
+      source_cidr = "10.0.0.0/8"
+
+upstream_group = "default"
+
+# Match ANY of several conditions (logical OR)
+[[rules]]
+id = "high-priority-hosts"
+  [rules.match]
+    [[rules.match.any_of]]
+
+      [rules.match.any_of.0]
+      host_exact = "api.example.com"
+
+      [rules.match.any_of.1]
+      host_exact = "cdn.example.com"
+
+      [rules.match.any_of.2]
+      host_suffix = ".example.com"
+
+direct = true
+
+# Negate a matcher
+[[rules]]
+id = "everything-except-internal"
+  [rules.match]
+    [rules.match.not]
+      host_suffix = ".corp.internal"
+
+upstream_group = "default"
+
+# Nested composite: (host_suffix OR host_exact) AND destination_port
+[[rules]]
+id = "nested-combo"
+  [rules.match]
+    [[rules.match.all]]
+
+      [rules.match.all.0]
+        [[rules.match.all.0.any_of]]
+          [rules.match.all.0.any_of.0]
+          host_exact = "db.prod.internal"
+          [rules.match.all.0.any_of.1]
+          host_suffix = ".db.internal"
+
+      [rules.match.all.1]
+      destination_port_range = [3306, 3307]
+
+upstream_group = "default"
+
+# Port set matcher
+[[rules]]
+id = "common-web-ports"
+  [rules.match]
+    [rules.match]
+      destination_port_set = [80, 443, 8080, 8443]
+
+direct = true
+
+# Listener and protocol matchers
+[[rules]]
+id = "socks-only-rules"
+  [rules.match]
+    [[rules.match.all]]
+
+      [rules.match.all.0]
+      listener = "socks-in"
+
+      [rules.match.all.1]
+      protocol = "socks5"
+
+upstream_group = "asia-pacific"
+
+# Identity matcher (username from auth)
+[[rules]]
+id = "admin-user-direct"
+  [rules.match]
+    [rules.match]
+      identity = "admin"
+
+direct = true
+
+# Source CIDR matcher
+[[rules]]
+id = "internal-network"
+  [rules.match]
+    [[rules.match.all]]
+
+      [rules.match.all.0]
+      source_cidr = "192.168.0.0/16"
+
+      [rules.match.all.1]
+      source_port = 443
+
+upstream_group = "default"
+
+# Destination CIDR matcher
+[[rules]]
+id = "aws-metadata"
+  [rules.match]
+    [rules.match]
+      destination_cidr = "169.254.169.254/32"
+
+reject = "blocked"
+
+# Catch-all
+[[rules]]
+id     = "catch-all"
+any    = true
+direct = true
+
+# ── Routing ────────────────────────────────────────────────────────────
+[routing]
+default = "default"          # "direct" | "reject" | <upstream_group_id>
+
+# ── Admin ──────────────────────────────────────────────────────────────
+[admin]
+bind     = "127.0.0.1:9090"
+enabled  = true
+metrics  = true

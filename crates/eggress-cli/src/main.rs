@@ -30,6 +30,9 @@ struct Cli {
     #[arg(long = "config", value_name = "PATH")]
     config: Option<String>,
 
+    #[arg(long = "rules-file", value_name = "PATH")]
+    rules_file: Option<String>,
+
     #[command(subcommand)]
     command: Option<SubCommand>,
 }
@@ -110,10 +113,10 @@ fn handle_route_explain(args: &RouteExplain) {
         return;
     }
 
-    let router = match &args.config {
+    let (router, is_online) = match &args.config {
         Some(path) => match eggress_config::compile::load_and_compile(path) {
             Ok(rt) => match build_router_from_config(&rt) {
-                Ok(r) => r,
+                Ok(r) => (r, true),
                 Err(e) => {
                     eprintln!("failed to build router from config: {e}");
                     std::process::exit(1);
@@ -124,7 +127,7 @@ fn handle_route_explain(args: &RouteExplain) {
                 std::process::exit(1);
             }
         },
-        None => Router::new(vec![], RouteActionSpec::Direct),
+        None => (Router::new(vec![], RouteActionSpec::Direct), false),
     };
 
     let target: eggress_core::TargetAddr = match args.target.parse() {
@@ -167,7 +170,7 @@ fn handle_route_explain(args: &RouteExplain) {
             }
         }
     } else {
-        print_explanation(&explanation);
+        print_explanation(&explanation, is_online);
     }
 }
 
@@ -259,7 +262,7 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
         println!("{body}");
     } else {
         match serde_json::from_str::<eggress_routing::RouteExplanation>(body) {
-            Ok(explanation) => print_explanation(&explanation),
+            Ok(explanation) => print_explanation(&explanation, true),
             Err(e) => {
                 eprintln!("failed to parse response: {e}");
                 std::process::exit(1);
@@ -352,9 +355,12 @@ fn handle_upstream_test(args: &UpstreamTest) {
                 host: host.clone(),
                 port,
                 target: target.to_string(),
+                mode: "proxy".to_string(),
                 reachable,
                 latency_ms,
                 error,
+                failure: None,
+                failed_hop: None,
             }
         } else {
             let result = runtime.block_on(test_upstream(host, port, timeout));
@@ -390,9 +396,12 @@ struct UpstreamTestResult {
     host: String,
     port: u16,
     target: String,
+    mode: String,
     reachable: bool,
     latency_ms: Option<u64>,
     error: Option<String>,
+    failure: Option<String>,
+    failed_hop: Option<usize>,
 }
 
 fn build_test_chain_executor() -> ChainExecutor {
@@ -533,27 +542,36 @@ async fn test_upstream(host: &str, port: u16, timeout: Duration) -> UpstreamTest
             host: host.to_string(),
             port,
             target: String::new(),
+            mode: "tcp".to_string(),
             reachable: true,
             latency_ms: Some(elapsed),
             error: None,
+            failure: None,
+            failed_hop: None,
         },
         Ok(Err(e)) => UpstreamTestResult {
             id: String::new(),
             host: host.to_string(),
             port,
             target: String::new(),
+            mode: "tcp".to_string(),
             reachable: false,
             latency_ms: None,
             error: Some(e.to_string()),
+            failure: None,
+            failed_hop: None,
         },
         Err(_) => UpstreamTestResult {
             id: String::new(),
             host: host.to_string(),
             port,
             target: String::new(),
+            mode: "tcp".to_string(),
             reachable: false,
             latency_ms: None,
             error: Some("connection timed out".to_string()),
+            failure: None,
+            failed_hop: None,
         },
     }
 }
@@ -580,7 +598,7 @@ fn print_upstream_test_result(result: &UpstreamTestResult) {
     );
 }
 
-fn print_explanation(explanation: &eggress_routing::RouteExplanation) {
+fn print_explanation(explanation: &eggress_routing::RouteExplanation, is_online: bool) {
     println!("Target: {}", explanation.target);
     println!("Listener: {}", explanation.listener);
     println!("Protocol: {}", explanation.protocol);
@@ -609,7 +627,12 @@ fn print_explanation(explanation: &eggress_routing::RouteExplanation) {
     if let Some(ref chain) = explanation.chain {
         println!("Chain: {chain}");
     }
-    println!("Config generation: {}", explanation.generation);
+    if is_online {
+        println!("Config generation: {}", explanation.generation);
+    } else {
+        println!("Mode: offline");
+        println!("Generation: not-live");
+    }
 }
 
 fn build_router_from_cli(args: &Cli) -> Result<Router, Box<dyn std::error::Error + Send + Sync>> {
@@ -623,27 +646,41 @@ fn build_router_from_cli(args: &Cli) -> Result<Router, Box<dyn std::error::Error
         }
     };
 
-    Ok(match &upstream_chain {
-        Some(spec) => {
-            let upstream = Arc::new(eggress_routing::upstream::UpstreamRuntime::new(
-                eggress_core::UpstreamId::new("cli-upstream"),
-                spec.clone(),
-            ));
-            let group_id = eggress_routing::UpstreamGroupId(Arc::from("cli-group"));
-            let group = eggress_routing::upstream::UpstreamGroup::new(
-                group_id.clone(),
-                eggress_routing::scheduler::SchedulerKind::FirstAvailable,
-                Arc::from([upstream]),
-                eggress_routing::upstream::GroupFallback::Direct,
-            );
-            Router::with_groups(
-                vec![],
-                RouteActionSpec::UpstreamGroup(group_id.clone()),
-                vec![(group_id, group)],
-            )
+    let mut rules: Vec<eggress_routing::CompiledRule> = Vec::new();
+    let mut default_action = RouteActionSpec::Direct;
+    let mut groups = Vec::new();
+
+    if let Some(ref spec) = upstream_chain {
+        let upstream = Arc::new(eggress_routing::upstream::UpstreamRuntime::new(
+            eggress_core::UpstreamId::new("cli-upstream"),
+            spec.clone(),
+        ));
+        let group_id = eggress_routing::UpstreamGroupId(Arc::from("cli-group"));
+        let group = eggress_routing::upstream::UpstreamGroup::new(
+            group_id.clone(),
+            eggress_routing::scheduler::SchedulerKind::FirstAvailable,
+            Arc::from([upstream]),
+            eggress_routing::upstream::GroupFallback::Direct,
+        );
+        default_action = RouteActionSpec::UpstreamGroup(group_id.clone());
+        groups.push((group_id, group));
+    }
+
+    if let Some(ref rules_file_path) = args.rules_file {
+        let content = std::fs::read_to_string(rules_file_path)
+            .map_err(|e| format!("failed to read rules file '{}': {}", rules_file_path, e))?;
+        let compat_rules = eggress_routing::CompatRegexRule::parse_file(&content)
+            .map_err(|e| format!("failed to parse rules file '{}': {}", rules_file_path, e))?;
+        for (idx, compat) in compat_rules.into_iter().enumerate() {
+            rules.push(eggress_routing::CompiledRule {
+                id: eggress_routing::RuleId(Arc::from(format!("rules-file-{}", idx + 1).as_str())),
+                matcher: eggress_routing::MatchExpr::HostRegex(compat.pattern),
+                action: default_action.clone(),
+            });
         }
-        None => Router::new(vec![], RouteActionSpec::Direct),
-    })
+    }
+
+    Ok(Router::with_groups(rules, default_action, groups))
 }
 
 struct ListenerSpec {
@@ -699,6 +736,11 @@ async fn main() {
                 return;
             }
         }
+    }
+
+    if args.config.is_some() && (!args.listeners.is_empty() || !args.upstreams.is_empty()) {
+        eprintln!("--config mode is incompatible with -l and -r flags. Use one or the other.");
+        std::process::exit(1);
     }
 
     if let Some(ref config_path) = args.config {
@@ -1140,9 +1182,12 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 1080,
             target: "example.com:443".to_string(),
+            mode: "tcp".to_string(),
             reachable: true,
             latency_ms: Some(15),
             error: None,
+            failure: None,
+            failed_hop: None,
         };
 
         let json = serde_json::to_string_pretty(&result).unwrap();

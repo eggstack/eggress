@@ -21,6 +21,7 @@ pub struct SessionReport {
     pub rule_id: Option<String>,
     pub upstream_group: Option<String>,
     pub upstream_id: Option<String>,
+    pub selection_reason: Option<eggress_routing::SelectionReason>,
 }
 
 /// Outcome of a session.
@@ -70,6 +71,7 @@ impl SessionReport {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         }
     }
 
@@ -91,6 +93,7 @@ impl SessionReport {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         }
     }
 
@@ -106,6 +109,7 @@ impl SessionReport {
             rule_id: None,
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         }
     }
 
@@ -121,6 +125,7 @@ impl SessionReport {
             rule_id: Some(rule_id),
             upstream_group: None,
             upstream_id: None,
+            selection_reason: None,
         }
     }
 }
@@ -180,7 +185,14 @@ fn route_description(selected: &SelectedRoute) -> String {
     }
 }
 
-fn route_metadata(selected: &SelectedRoute) -> (Option<String>, Option<String>, Option<String>) {
+fn route_metadata(
+    selected: &SelectedRoute,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<eggress_routing::SelectionReason>,
+) {
     match selected {
         SelectedRoute::Direct { decision } => {
             let rule_id = match decision {
@@ -188,12 +200,13 @@ fn route_metadata(selected: &SelectedRoute) -> (Option<String>, Option<String>, 
                 | eggress_routing::RouteDecision::UpstreamGroup { rule, .. }
                 | eggress_routing::RouteDecision::Reject { rule, .. } => rule.0.to_string(),
             };
-            (Some(rule_id), None, None)
+            (Some(rule_id), None, None, None)
         }
         SelectedRoute::Upstream {
             decision,
             group,
             upstream,
+            selection_reason,
             ..
         } => {
             let rule_id = match decision {
@@ -205,6 +218,7 @@ fn route_metadata(selected: &SelectedRoute) -> (Option<String>, Option<String>, 
                 Some(rule_id),
                 Some(group.0.to_string()),
                 Some(upstream.to_string()),
+                Some(*selection_reason),
             )
         }
     }
@@ -217,6 +231,7 @@ struct OpenedRoute {
     rule_id: Option<String>,
     upstream_group: Option<String>,
     upstream_id: Option<String>,
+    selection_reason: Option<eggress_routing::SelectionReason>,
 }
 
 async fn open_route(
@@ -230,7 +245,16 @@ async fn open_route(
     })?;
 
     let route = route_description(&selected);
-    let (rule_id, upstream_group, upstream_id) = route_metadata(&selected);
+    let (rule_id, upstream_group, upstream_id, selection_reason) = route_metadata(&selected);
+
+    if let Some(metrics) = &config.metrics {
+        let rule_str = rule_id.as_deref().unwrap_or("default");
+        let action_str = match &selected {
+            SelectedRoute::Direct { .. } => "direct",
+            SelectedRoute::Upstream { .. } => "upstream",
+        };
+        metrics.record_route_decision(rule_str, action_str, "selected");
+    }
 
     let result = tokio::time::timeout(config.connect_timeout, async {
         match selected {
@@ -260,6 +284,7 @@ async fn open_route(
             rule_id,
             upstream_group,
             upstream_id,
+            selection_reason,
         }),
         Ok(Err(e)) => Err(e),
         Err(_timeout) => Err(SessionOpenError::Timeout),
@@ -293,6 +318,7 @@ async fn execute_tunnel(
             let rule_id = opened.rule_id;
             let upstream_group = opened.upstream_group;
             let upstream_id = opened.upstream_id;
+            let selection_reason = opened.selection_reason;
             let _active_lease = opened.active_lease;
             if let Err(e) = reply::send_tunnel_success(&mut pending, None).await {
                 tracing::debug!("failed to send success reply: {e}");
@@ -307,6 +333,7 @@ async fn execute_tunnel(
                     rule_id,
                     upstream_group,
                     upstream_id,
+                    selection_reason,
                 };
             }
             let result = relay(pending.client, opened.stream).await;
@@ -328,6 +355,7 @@ async fn execute_tunnel(
                     rule_id,
                     upstream_group,
                     upstream_id,
+                    selection_reason,
                 },
                 _ => SessionReport {
                     protocol,
@@ -340,6 +368,7 @@ async fn execute_tunnel(
                     rule_id,
                     upstream_group,
                     upstream_id,
+                    selection_reason,
                 },
             }
         }
@@ -376,6 +405,7 @@ async fn execute_http_forward(
             let rule_id = opened.rule_id;
             let upstream_group = opened.upstream_group;
             let upstream_id = opened.upstream_id;
+            let selection_reason = opened.selection_reason;
             let _active_lease = opened.active_lease;
             let origin_req = eggress_protocol_http::build_origin_request(&pending.request);
             let head_bytes = origin_req.len() as u64;
@@ -428,6 +458,7 @@ async fn execute_http_forward(
                         rule_id,
                         upstream_group,
                         upstream_id,
+                        selection_reason,
                     };
                 }
             };
@@ -453,6 +484,7 @@ async fn execute_http_forward(
                         rule_id,
                         upstream_group,
                         upstream_id,
+                        selection_reason,
                     };
                 }
             };
@@ -468,6 +500,7 @@ async fn execute_http_forward(
                 rule_id,
                 upstream_group,
                 upstream_id,
+                selection_reason,
             }
         }
         Err(SessionOpenError::PolicyDenied) => {

@@ -11,12 +11,10 @@ use eggress_routing::{
     RouteActionSpec, RouteService, Router, SharedRoutingService, UpstreamGroupId,
 };
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 
 use crate::error::RuntimeError;
-
-static ACTIVE_CONNECTIONS: AtomicU64 = AtomicU64::new(0);
-static CONNECTION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub struct RuntimeState {
     pub routing: Arc<SharedRoutingService>,
@@ -24,6 +22,8 @@ pub struct RuntimeState {
     pub readiness: Arc<AtomicBool>,
     pub start_time: Instant,
     pub generation: Arc<AtomicU64>,
+    pub active_connections: Arc<AtomicU64>,
+    pub connection_counter: Arc<AtomicU64>,
 }
 
 #[allow(dead_code)]
@@ -33,7 +33,8 @@ pub struct ServiceSupervisor {
     cancel: CancellationToken,
     health: Option<HealthManager>,
     admin_cancel: CancellationToken,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
+    tasks: TaskTracker,
+    shutdown_grace: Duration,
 }
 
 impl ServiceSupervisor {
@@ -49,18 +50,23 @@ impl ServiceSupervisor {
             .map_err(|e| RuntimeError::Config(e.to_string()))?;
         let routing = Arc::new(SharedRoutingService::new(router));
 
+        let active_connections = Arc::new(AtomicU64::new(0));
+        let connection_counter = Arc::new(AtomicU64::new(1));
+
         let state = Arc::new(RuntimeState {
             routing: routing.clone(),
             metrics,
             readiness,
             start_time: Instant::now(),
             generation: generation.clone(),
+            active_connections,
+            connection_counter,
         });
 
         let cancel = CancellationToken::new();
         let admin_cancel = CancellationToken::new();
 
-        let mut tasks = Vec::new();
+        let tasks = TaskTracker::new();
 
         let mut health: Option<HealthManager> = None;
 
@@ -70,8 +76,22 @@ impl ServiceSupervisor {
 
             for u in &rt.upstreams {
                 let id = eggress_core::UpstreamId::new(u.id.clone());
-                let runtime = Arc::new(UpstreamRuntime::new(id, u.chain.clone()));
-                upstream_runtimes.push(runtime);
+                let mut runtime = UpstreamRuntime::new(id, u.chain.clone());
+
+                if let Some(first_hop) = u.chain.hops.first() {
+                    let addr: Result<std::net::SocketAddr, _> =
+                        format!("{}:{}", first_hop.endpoint.host, first_hop.endpoint.port).parse();
+                    if let Ok(addr) = addr {
+                        runtime = runtime.with_health_probe(
+                            eggress_routing::health::HealthProbe::TcpConnect {
+                                target: addr,
+                                timeout: std::time::Duration::from_secs(5),
+                            },
+                        );
+                    }
+                }
+
+                upstream_runtimes.push(Arc::new(runtime));
             }
 
             if !upstream_runtimes.is_empty() {
@@ -80,6 +100,10 @@ impl ServiceSupervisor {
                 health = Some(hm);
             }
         }
+
+        let handshake_timeout = rt_config.timeouts.handshake;
+        let connect_timeout = rt_config.timeouts.connect;
+        let shutdown_grace = rt_config.process.shutdown_grace;
 
         for lcfg in &rt_config.listeners {
             let bind_addr: std::net::SocketAddr =
@@ -113,12 +137,12 @@ impl ServiceSupervisor {
             let listener_name = lcfg.name.clone();
             let state = state.clone();
 
-            let handle = tokio::spawn(async move {
+            tasks.spawn(async move {
                 let config = TcpListenerConfig {
                     bind_addr,
                     protocols: protocols.clone(),
                     auth_required: false,
-                    handshake_timeout: Duration::from_secs(30),
+                    handshake_timeout,
                     connection_limit,
                 };
 
@@ -154,12 +178,15 @@ impl ServiceSupervisor {
                     let routing = routing.clone();
                     let peer = conn.peer_addr;
                     let listener_str = local_addr.to_string();
-                    let conn_id = CONNECTION_COUNTER.fetch_add(1, Ordering::Relaxed);
+                    let conn_id = state.connection_counter.fetch_add(1, Ordering::Relaxed);
                     let conn_protocols = proto_slice.clone();
                     let conn_auth = auth.clone();
                     let conn_metrics = state.metrics.clone();
+                    let active = state.active_connections.clone();
 
-                    ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
+                    active.fetch_add(1, Ordering::Relaxed);
+
+                    let conn_cancel = cancel.child_token();
 
                     tokio::spawn(async move {
                         let started = std::time::Instant::now();
@@ -169,22 +196,32 @@ impl ServiceSupervisor {
                                 source: Some(peer),
                                 listener: listener_str,
                             },
-                            handshake_timeout: Duration::from_secs(30),
-                            connect_timeout: Duration::from_secs(30),
+                            handshake_timeout,
+                            connect_timeout,
                             protocols: conn_protocols,
                             authentication: conn_auth,
                             metrics: Some(conn_metrics),
                         };
 
-                        let report = eggress_server::serve_connection(conn.stream, config)
-                            .instrument(tracing::info_span!(
-                                "conn",
-                                id = conn_id,
-                                peer = %peer,
-                            ))
-                            .await;
+                        let report = tokio::select! {
+                            report = eggress_server::serve_connection(conn.stream, config)
+                                .instrument(tracing::info_span!(
+                                    "conn",
+                                    id = conn_id,
+                                    peer = %peer,
+                                )) => {
+                                report
+                            }
+                            _ = conn_cancel.cancelled() => {
+                                eggress_server::SessionReport::cancelled(
+                                    None,
+                                    None,
+                                    String::new(),
+                                )
+                            }
+                        };
 
-                        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+                        active.fetch_sub(1, Ordering::Relaxed);
 
                         tracing::info!(
                             protocol = ?report.protocol,
@@ -199,7 +236,6 @@ impl ServiceSupervisor {
                     });
                 }
             });
-            tasks.push(handle);
         }
 
         if let Some(ref admin_cfg) = rt_config.admin {
@@ -207,7 +243,7 @@ impl ServiceSupervisor {
                 let bind = admin_cfg.bind.clone();
                 let admin_cancel = admin_cancel.clone();
                 let state_ref = state.clone();
-                let handle = tokio::spawn(async move {
+                tasks.spawn(async move {
                     let server = match eggress_admin::AdminServer::new(&bind, admin_cancel).await {
                         Ok(s) => s,
                         Err(e) => {
@@ -223,13 +259,12 @@ impl ServiceSupervisor {
                         pac_config: Arc::new(None),
                         router: Some(state_ref.routing.router()),
                         listeners: Arc::new(vec![]),
-                        active_connections: None,
+                        active_connections: Some(state_ref.active_connections.clone()),
                     };
                     if let Err(e) = server.run(admin_state).await {
                         tracing::error!("admin server error: {e}");
                     }
                 });
-                tasks.push(handle);
             }
         }
 
@@ -242,6 +277,7 @@ impl ServiceSupervisor {
             health,
             admin_cancel,
             tasks,
+            shutdown_grace,
         })
     }
 
@@ -252,7 +288,9 @@ impl ServiceSupervisor {
         let cancel = self.cancel.clone();
         let metrics = self.state.metrics.clone();
         let readiness = self.state.readiness.clone();
-        let tasks = std::mem::take(&mut self.tasks);
+        let active_connections = self.state.active_connections.clone();
+        let shutdown_grace = self.shutdown_grace;
+        let tasks = self.tasks.clone();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
@@ -315,9 +353,9 @@ impl ServiceSupervisor {
 
             tracing::info!("draining active connections");
 
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            let deadline = tokio::time::Instant::now() + shutdown_grace;
             loop {
-                let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
+                let active = active_connections.load(Ordering::Relaxed);
                 if active == 0 {
                     tracing::info!("all connections drained");
                     break;
@@ -331,9 +369,8 @@ impl ServiceSupervisor {
 
             admin_cancel.cancel();
 
-            for h in tasks {
-                let _ = h.await;
-            }
+            tasks.close();
+            tasks.wait().await;
         });
 
         tracing::info!("eggress stopped");
