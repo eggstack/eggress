@@ -1081,6 +1081,14 @@ The final Phase 2 integration pass is complete only when:
 20. No unsafe Rust, OpenSSL dependency, or native dependency is introduced.
 21. Phase 3 begins only after these criteria are met.
 
+## Notes on criterion verification
+
+**Criterion 5 (bind failure aborts startup)** is verified by code inspection of
+`supervisor.rs:360-378`. A negative-path integration test is not written because
+the bind happens inside `run()`, and occupying a port externally before
+supervisor start is fragile in CI. The architectural mechanism is sound: if any
+listener fails to bind, `run()` returns `Err` before readiness is set.
+
 ## Completion record
 
 ```markdown
@@ -1093,6 +1101,7 @@ Implemented by commits:
 - `0f9fd6b` — Remove dual generation counter from SharedRoutingService
 - `eba1d38` — Move listener and admin config into CompiledRuntimeSnapshot
 - `ae8b1e7` — Fix integration test timeouts: expose admin local addr, add AutoShutdown guard
+- `e97f8fe` — Add shutdown_force_cancels_after_deadline test, complete example-config.toml
 
-All required checks passed on 2026-06-19.
+All required checks passed on 2026-06-21.
 ```
