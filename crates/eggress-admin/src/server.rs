@@ -93,6 +93,7 @@ pub struct AdminState {
     pub readiness: Arc<AtomicBool>,
     pub active_connections: Option<Arc<AtomicU64>>,
     pub provider: Arc<dyn AdminSnapshotProvider>,
+    pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
 }
 
 impl AdminState {
@@ -129,6 +130,7 @@ pub struct ListenerInfo {
     pub bind: String,
     pub local_addr: String,
     pub protocols: Vec<String>,
+    pub udp_enabled: bool,
 }
 
 pub fn build_response(status: u16, body: impl Into<Bytes>, content_type: &str) -> AdminResponse {

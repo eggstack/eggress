@@ -141,16 +141,19 @@ pub async fn handle_request(
         }
         "/-/udp" => {
             let snap = state.snapshot();
+            let mut listeners = Vec::with_capacity(snap.listeners.len());
+            for l in &snap.listeners {
+                let active = state.udp_registry.active_count_for_listener(&l.name).await;
+                listeners.push(serde_json::json!({
+                    "name": l.name,
+                    "udp_enabled": l.udp_enabled,
+                    "active_associations": active,
+                }));
+            }
             let udp = serde_json::json!({
                 "associations_active": state.metrics.udp_associations_active_gauge(),
-                "associations_total": state.metrics.udp_associations_total_count(),
                 "target_flows_active": state.metrics.udp_target_flows_active_gauge(),
-                "listeners": snap.listeners.iter().map(|l| {
-                    serde_json::json!({
-                        "name": l.name,
-                        "protocols": l.protocols,
-                    })
-                }).collect::<Vec<_>>(),
+                "listeners": listeners,
             });
             build_json_response(200, udp.to_string())
         }

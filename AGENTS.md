@@ -21,6 +21,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 # Security audit
 cargo deny check
 
+# Run UDP-focused tests
+cargo test -p eggress-udp
+cargo test -p eggress-runtime udp
+cargo test -p eggress-config udp
+
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
@@ -52,13 +57,16 @@ eggress/
     ├── ARCHITECTURE.md
     ├── ROADMAP.md
     ├── PHASE_2_COMPLETION.md
+    ├── PHASE_3_COMPLETION.md
     └── URI_GRAMMAR.md
 ```
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
-health, admin, reload, shutdown, pac_static). They exercise the supervisor end
+health, admin, reload, shutdown, pac_static, udp). They exercise the supervisor end
 to end and cover the negative-path behaviors (bind conflict, invalid source,
-oversized identity, reload-time failure).
+oversized identity, reload-time failure). UDP integration tests cover
+association lifecycle, TCP control close, echo relay, bind conflict, topology
+rejection, and config reload.
 
 ## Code Conventions
 

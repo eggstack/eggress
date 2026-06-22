@@ -49,6 +49,7 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
                 bind: lcfg.bind.clone(),
                 local_addr: addrs.get(idx).map(|a| a.to_string()).unwrap_or_default(),
                 protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
+                udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
             })
             .collect();
         AdminSnapshot {
@@ -93,14 +94,53 @@ struct PreparedListener {
     local_addr: std::net::SocketAddr,
     auth: eggress_server::accept::InboundAuthentication,
     handshake_timeout: Duration,
-    udp_enabled: bool,
+    udp: Option<eggress_config::compile::CompiledListenerUdpConfig>,
+}
+
+/// Compute the advertised IP for the SOCKS5 UDP ASSOCIATE reply.
+///
+/// Derivation rules:
+/// 1. If `advertise` is configured, use it.
+/// 2. Else if UDP bind IP is not unspecified, use UDP bind IP.
+/// 3. Else if TCP peer is loopback, use loopback matching address family.
+/// 4. Else return a config error requiring explicit `advertise`.
+fn compute_advertise_ip(
+    configured_advertise: Option<std::net::IpAddr>,
+    udp_bind_ip: std::net::IpAddr,
+    tcp_peer: std::net::SocketAddr,
+) -> Result<std::net::IpAddr, eggress_udp::error::UdpError> {
+    if let Some(ip) = configured_advertise {
+        return Ok(ip);
+    }
+
+    if !udp_bind_ip.is_unspecified() {
+        return Ok(udp_bind_ip);
+    }
+
+    if tcp_peer.ip().is_loopback() {
+        match tcp_peer {
+            std::net::SocketAddr::V4(_) => {
+                return Ok(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+            }
+            std::net::SocketAddr::V6(_) => {
+                return Ok(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
+            }
+        }
+    }
+
+    Err(eggress_udp::error::UdpError::Other(
+        "UDP relay requires explicit advertise address when bind is unspecified and client is not loopback".to_string()
+    ))
 }
 
 struct RuntimeUdpService {
+    _listener_name: String,
+    udp_config: eggress_config::compile::CompiledListenerUdpConfig,
     registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     metrics: Arc<eggress_metrics::MetricsRegistry>,
     udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
     routing: Arc<SharedRoutingService>,
+    udp_tasks: TaskTracker,
 }
 
 impl eggress_server::UdpService for RuntimeUdpService {
@@ -125,6 +165,8 @@ impl eggress_server::UdpService for RuntimeUdpService {
         let metrics = self.metrics.clone();
         let udp_metrics = self.udp_metrics.clone();
         let routing = self.routing.clone();
+        let udp_tasks = self.udp_tasks.clone();
+        let udp_config = self.udp_config.clone();
         let listener = listener.to_string();
         Box::pin(async move {
             let assoc = registry
@@ -133,29 +175,49 @@ impl eggress_server::UdpService for RuntimeUdpService {
             metrics.record_udp_association_created();
 
             let relay_socket =
-                std::sync::Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await?);
-            let relay_addr = relay_socket.local_addr()?;
+                std::sync::Arc::new(tokio::net::UdpSocket::bind(udp_config.bind).await?);
+            let local_addr = relay_socket.local_addr()?;
+
+            let advertised_ip =
+                compute_advertise_ip(udp_config.advertise, local_addr.ip(), client_tcp_peer)?;
+            let relay_addr = std::net::SocketAddr::new(advertised_ip, local_addr.port());
 
             let relay_config = eggress_udp::relay::RelayConfig {
                 routing: routing as Arc<dyn RouteService>,
                 udp_metrics: udp_metrics.clone(),
-                limits: registry.limits().clone(),
+                limits: eggress_udp::limits::UdpLimits::from_listener_config(
+                    udp_config.max_associations,
+                    udp_config.max_targets_per_association,
+                    udp_config.max_datagram_size,
+                    udp_config.idle_timeout,
+                    udp_config.client_pin,
+                    udp_config.target_idle_timeout,
+                ),
                 listener: listener.clone(),
                 generation,
                 identity: assoc.meta.identity.clone(),
                 client_tcp_peer,
+                registry: registry.clone(),
             };
 
             let relay_assoc = assoc.clone();
             let relay_cancel = assoc.cancel.clone();
-            tokio::spawn(async move {
-                let _ = eggress_udp::relay::udp_relay_loop(
+            let assoc_id = assoc.id;
+            udp_tasks.spawn(async move {
+                let result = eggress_udp::relay::udp_relay_loop(
                     relay_socket,
                     relay_assoc,
                     relay_config,
                     relay_cancel,
                 )
                 .await;
+                if let Err(error) = result {
+                    tracing::debug!(
+                        %error,
+                        association_id = ?assoc_id,
+                        "UDP relay ended with error"
+                    );
+                }
             });
 
             Ok(eggress_server::UdpAssociationHandle {
@@ -167,7 +229,7 @@ impl eggress_server::UdpService for RuntimeUdpService {
     }
 
     fn is_enabled(&self) -> bool {
-        true
+        self.udp_config.enabled
     }
 
     fn active_count(
@@ -190,6 +252,7 @@ pub struct RuntimeState {
     pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
+    pub udp_tasks: TaskTracker,
 }
 
 impl RuntimeState {
@@ -247,6 +310,9 @@ impl ServiceSupervisor {
         ));
 
         let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
+        let udp_tasks = TaskTracker::new();
+
+        metrics.set_udp_metrics(udp_metrics.clone());
 
         let state = Arc::new(RuntimeState {
             snapshot: snapshot.clone(),
@@ -260,6 +326,7 @@ impl ServiceSupervisor {
             listener_addrs: Arc::new(Mutex::new(Vec::new())),
             udp_registry,
             udp_metrics,
+            udp_tasks: udp_tasks.clone(),
         });
 
         let cancel = CancellationToken::new();
@@ -345,6 +412,29 @@ impl ServiceSupervisor {
                     "listener bind address changed for '{}': '{}' -> '{}'; restart required",
                     old.name, old.bind, new.bind
                 ));
+            }
+            // UDP bind changes require restart
+            match (&old.udp, &new.udp) {
+                (Some(old_udp), Some(new_udp)) => {
+                    if old_udp.bind != new_udp.bind {
+                        return Err(format!(
+                            "UDP bind address changed for '{}': '{}' -> '{}'; restart required",
+                            old.name, old_udp.bind, new_udp.bind
+                        ));
+                    }
+                }
+                (None, Some(new_udp)) => {
+                    if !new_udp.bind.ip().is_unspecified() {
+                        return Err(format!(
+                            "UDP bind address added for '{}': '{}'; restart required",
+                            new.name, new_udp.bind
+                        ));
+                    }
+                }
+                (Some(_old_udp), None) => {
+                    // UDP removed - no restart required, new associations just won't use UDP
+                }
+                (None, None) => {}
             }
         }
 
@@ -509,7 +599,7 @@ impl ServiceSupervisor {
                     local_addr,
                     auth,
                     handshake_timeout,
-                    udp_enabled: lcfg.udp_enabled,
+                    udp: lcfg.udp.clone(),
                 });
             }
 
@@ -520,6 +610,7 @@ impl ServiceSupervisor {
                     bind: p.bind.clone(),
                     local_addr: p.local_addr.to_string(),
                     protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
+                    udp_enabled: p.udp.as_ref().is_some_and(|u| u.enabled),
                 })
                 .collect();
             drop(listener_infos);
@@ -567,12 +658,15 @@ impl ServiceSupervisor {
 
                         active.fetch_add(1, Ordering::Relaxed);
 
-                        let udp_svc = if prepared_listener.udp_enabled {
+                        let udp_svc = if let Some(ref udp_config) = prepared_listener.udp {
                             Some(Arc::new(RuntimeUdpService {
+                                _listener_name: prepared_listener.name.clone(),
+                                udp_config: udp_config.clone(),
                                 registry: state.udp_registry.clone(),
                                 metrics: state.metrics.clone(),
                                 udp_metrics: state.udp_metrics.clone(),
                                 routing: routing.clone(),
+                                udp_tasks: state.udp_tasks.clone(),
                             }) as Arc<dyn eggress_server::UdpService>)
                         } else {
                             None
@@ -653,6 +747,7 @@ impl ServiceSupervisor {
                             readiness: state_ref.readiness.clone(),
                             active_connections: Some(state_ref.active_connections.clone()),
                             provider,
+                            udp_registry: state_ref.udp_registry.clone(),
                         };
                         if let Err(e) = server.run(admin_state).await {
                             tracing::error!("admin server error: {e}");
@@ -726,6 +821,32 @@ impl ServiceSupervisor {
                                                 metrics.record_reload(false);
                                                 rejected = true;
                                                 break;
+                                            }
+                                            // UDP bind changes require restart
+                                            match (&old.udp, &new.udp) {
+                                                (Some(old_udp), Some(new_udp)) => {
+                                                    if old_udp.bind != new_udp.bind {
+                                                        tracing::error!(
+                                                            "reload rejected: UDP bind changed for '{}': '{}' -> '{}'; restart required",
+                                                            old.name, old_udp.bind, new_udp.bind
+                                                        );
+                                                        metrics.record_reload(false);
+                                                        rejected = true;
+                                                        break;
+                                                    }
+                                                }
+                                                (None, Some(new_udp))
+                                                    if !new_udp.bind.ip().is_unspecified() =>
+                                                {
+                                                    tracing::error!(
+                                                        "reload rejected: UDP bind added for '{}': '{}'; restart required",
+                                                        new.name, new_udp.bind
+                                                    );
+                                                    metrics.record_reload(false);
+                                                    rejected = true;
+                                                    break;
+                                                }
+                                                _ => {}
                                             }
                                         }
                                     }
@@ -802,12 +923,20 @@ impl ServiceSupervisor {
             // 4. Close all UDP associations
             state_ref.udp_registry.close_all().await;
 
-            // 5. Wait for listener accept loops to exit so they cannot hand
+            // 5. Wait for UDP relay tasks to complete
+            state_ref.udp_tasks.close();
+            let _ = tokio::time::timeout(
+                shutdown_grace,
+                state_ref.udp_tasks.wait(),
+            )
+            .await;
+
+            // 6. Wait for listener accept loops to exit so they cannot hand
             //    new connections to the connection tracker.
             tasks.close();
             tasks.wait().await;
 
-            // 6. Drain active connections within the grace period; force-cancel
+            // 7. Drain active connections within the grace period; force-cancel
             //    afterwards. Admin stays up through this window so operators
             //    can observe drain progress via /-/ready, /-/status, /metrics.
             tracing::info!("draining active connections");
@@ -827,11 +956,11 @@ impl ServiceSupervisor {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
 
-            // 7. Wait for connection tasks (either drained naturally or force-cancelled)
+            // 8. Wait for connection tasks (either drained naturally or force-cancelled)
             connection_tasks.close();
             connection_tasks.wait().await;
 
-            // 8. Now that the proxy has fully stopped accepting and serving
+            // 9. Now that the proxy has fully stopped accepting and serving
             //    traffic, stop the admin server. /-/ready has been reporting
             //    503 since step 1.
             admin_cancel.cancel();

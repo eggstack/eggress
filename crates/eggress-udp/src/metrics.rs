@@ -59,6 +59,14 @@ impl UdpMetrics {
     pub fn record_decode_error(&self) {
         self.decode_errors.fetch_add(1, Ordering::Relaxed);
     }
+
+    pub fn record_association_timeout(&self) {
+        self.associations_active.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn record_target_flow_timeout(&self) {
+        self.target_flows_active.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[cfg(test)]
@@ -144,5 +152,23 @@ mod tests {
         let metrics = UdpMetrics::new();
         metrics.record_decode_error();
         assert_eq!(metrics.decode_errors.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn association_timeout_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_association_created();
+        assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 1);
+        metrics.record_association_timeout();
+        assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn target_flow_timeout_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_target_flow_created();
+        assert_eq!(metrics.target_flows_active.load(Ordering::Relaxed), 1);
+        metrics.record_target_flow_timeout();
+        assert_eq!(metrics.target_flows_active.load(Ordering::Relaxed), 0);
     }
 }

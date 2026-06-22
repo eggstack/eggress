@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
+> Status: Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -134,12 +134,17 @@ Legend:
 - [x] UDP association table
 - [x] Per-client association limits
 - [x] Global association limits
-- [x] Idle expiry
+- [x] Association idle timeout (enforced in relay loop)
+- [x] Target-flow idle cleanup (enforced in relay loop)
 - [x] Target-aware reply demultiplexing
-- [x] UDP upstream routing
+- [x] UDP routing with direct-fallback support
+- [x] UDP relay tasks tracked via TaskTracker
 - [ ] UDP chain validation
-- [x] UDP metrics
+- [x] UDP metrics (exposed via `/metrics`)
 - [x] Packet-size and amplification limits
+- [x] Per-listener TOML UDP configuration (`[listeners.udp]`)
+- [x] Configurable relay bind and advertise address per listener
+- [x] Association registry cleanup on close
 
 ### TLS
 
@@ -345,6 +350,17 @@ Legend:
 
 - Listener topology changes (count, names, bind addresses) require restart; only routing, upstreams, health config, and admin content are hot-reloadable.
 - All other runtime state — router, upstream groups, health probes, PAC, static content, route-explain generation — is reloaded atomically on SIGHUP without dropping connections.
+
+### Phase 3 UDP operational limitations
+
+- No UDP relay through upstream proxies (SOCKS5, HTTP, etc.); only direct forwarding is supported.
+- No QUIC, HTTP/3, MASQUE, or CONNECT-UDP transport.
+- No transparent UDP proxying.
+- No UDP fragmentation/reassembly (nonzero FRAG is rejected).
+- UDP bind address changes require a restart.
+- UDP limit changes apply only to new associations after reload.
+- UDP is only available on listeners with the `socks5` protocol.
+- No UDP chain validation (UDP cannot traverse multi-hop proxy chains).
 
 ## Dependency policy
 

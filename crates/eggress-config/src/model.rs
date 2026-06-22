@@ -63,6 +63,20 @@ pub struct TimeoutConfig {
     pub connect: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListenerUdpConfig {
+    pub enabled: Option<bool>,
+    pub bind: Option<String>,
+    pub advertise: Option<String>,
+    pub idle_timeout: Option<String>,
+    pub target_idle_timeout: Option<String>,
+    pub max_associations: Option<usize>,
+    pub max_targets_per_association: Option<usize>,
+    pub max_datagram_size: Option<usize>,
+    pub client_pin: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ListenerConfig {
     pub name: String,
@@ -72,6 +86,8 @@ pub struct ListenerConfig {
     pub auth: Option<AuthConfig>,
     #[serde(default)]
     pub udp_enabled: Option<bool>,
+    #[serde(default)]
+    pub udp: Option<ListenerUdpConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

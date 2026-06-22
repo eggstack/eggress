@@ -1033,4 +1033,402 @@ body = ""
         let result = load_and_validate(path);
         assert!(result.is_err(), "empty body should be rejected");
     }
+
+    // === Workstream 5: UDP listener config tests ===
+
+    #[test]
+    fn nested_udp_config_parses() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+bind = "127.0.0.1:0"
+advertise = "127.0.0.1"
+idle_timeout = "60s"
+target_idle_timeout = "30s"
+max_associations = 1024
+max_targets_per_association = 64
+max_datagram_size = 65535
+client_pin = true
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "nested UDP config should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        assert_eq!(rt.listeners.len(), 1);
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert!(udp.enabled);
+        assert_eq!(
+            udp.bind,
+            "127.0.0.1:0".parse::<std::net::SocketAddr>().unwrap()
+        );
+        assert_eq!(
+            udp.advertise,
+            Some("127.0.0.1".parse::<std::net::IpAddr>().unwrap())
+        );
+        assert_eq!(udp.idle_timeout, std::time::Duration::from_secs(60));
+        assert_eq!(udp.target_idle_timeout, std::time::Duration::from_secs(30));
+        assert_eq!(udp.max_associations, 1024);
+        assert_eq!(udp.max_targets_per_association, 64);
+        assert_eq!(udp.max_datagram_size, 65535);
+        assert!(udp.client_pin);
+    }
+
+    #[test]
+    fn udp_enabled_true_without_section_synthesizes_defaults() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "udp_enabled = true should synthesize defaults: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert!(udp.enabled);
+        assert_eq!(
+            udp.bind,
+            "127.0.0.1:0".parse::<std::net::SocketAddr>().unwrap()
+        );
+        assert_eq!(udp.idle_timeout, std::time::Duration::from_secs(60));
+        assert_eq!(udp.max_datagram_size, 65535);
+    }
+
+    #[test]
+    fn udp_enabled_true_with_section_uses_overrides() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[listeners.udp]
+idle_timeout = "120s"
+max_datagram_size = 4096
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "udp_enabled = true with section should override: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert!(udp.enabled);
+        assert_eq!(udp.idle_timeout, std::time::Duration::from_secs(120));
+        assert_eq!(udp.max_datagram_size, 4096);
+        // Defaults should be preserved for unset fields
+        assert_eq!(udp.target_idle_timeout, std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn udp_enabled_false_with_udp_section_rejects() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = false
+
+[listeners.udp]
+enabled = true
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "udp_enabled = false with udp.enabled = true should be rejected"
+        );
+    }
+
+    #[test]
+    fn udp_config_without_socks5_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[listeners.udp]
+enabled = true
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "UDP config on non-SOCKS5 listener should be rejected"
+        );
+    }
+
+    #[test]
+    fn udp_enabled_true_without_socks5_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+udp_enabled = true
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "udp_enabled = true without socks5 should be rejected"
+        );
+    }
+
+    #[test]
+    fn udp_invalid_bind_address_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+bind = "not-a-socket"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid UDP bind should be rejected");
+    }
+
+    #[test]
+    fn udp_invalid_advertise_address_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+advertise = "not-an-ip"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid UDP advertise should be rejected");
+    }
+
+    #[test]
+    fn udp_invalid_duration_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+idle_timeout = "not-a-duration"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid idle_timeout should be rejected");
+    }
+
+    #[test]
+    fn udp_zero_max_associations_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+max_associations = 0
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "zero max_associations should be rejected");
+    }
+
+    #[test]
+    fn udp_zero_max_targets_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+max_targets_per_association = 0
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "zero max_targets_per_association should be rejected"
+        );
+    }
+
+    #[test]
+    fn udp_datagram_size_too_small_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+max_datagram_size = 100
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "max_datagram_size < 257 should be rejected"
+        );
+    }
+
+    #[test]
+    fn udp_datagram_size_too_large_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+max_datagram_size = 70000
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "max_datagram_size > 65535 should be rejected"
+        );
+    }
+
+    #[test]
+    fn udp_no_section_no_legacy_no_udp() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "no UDP config should be fine: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        assert!(rt.listeners[0].udp.is_none(), "should have no UDP config");
+    }
+
+    #[test]
+    fn udp_disabled_section_compiles() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = false
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "disabled UDP section should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert!(!udp.enabled);
+    }
+
+    #[test]
+    fn udp_partial_overrides_preserve_defaults() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+client_pin = false
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "partial UDP config should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert!(!udp.client_pin);
+        // All defaults preserved
+        assert!(udp.enabled);
+        assert_eq!(udp.max_datagram_size, 65535);
+        assert_eq!(udp.max_associations, 1024);
+    }
 }

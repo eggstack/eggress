@@ -5,7 +5,9 @@ use eggress_routing::scheduler::SchedulerKind;
 use eggress_routing::UpstreamGroupId;
 
 use crate::error::ConfigError;
-use crate::model::{ConfigFile, HealthConfigToml, LeafMatcher, MatchExprConfig, RuleConfig};
+use crate::model::{
+    ConfigFile, HealthConfigToml, LeafMatcher, ListenerUdpConfig, MatchExprConfig, RuleConfig,
+};
 use crate::validate::validate_duration;
 
 #[derive(Debug, Clone)]
@@ -52,6 +54,36 @@ impl Default for TimeoutConfig {
     }
 }
 
+/// Compiled UDP listener configuration with resolved defaults.
+#[derive(Debug, Clone)]
+pub struct CompiledListenerUdpConfig {
+    pub enabled: bool,
+    pub bind: std::net::SocketAddr,
+    pub advertise: Option<std::net::IpAddr>,
+    pub idle_timeout: std::time::Duration,
+    pub target_idle_timeout: std::time::Duration,
+    pub max_associations: usize,
+    pub max_targets_per_association: usize,
+    pub max_datagram_size: usize,
+    pub client_pin: bool,
+}
+
+impl Default for CompiledListenerUdpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            bind: "127.0.0.1:0".parse().unwrap(),
+            advertise: None,
+            idle_timeout: std::time::Duration::from_secs(60),
+            target_idle_timeout: std::time::Duration::from_secs(30),
+            max_associations: 1024,
+            max_targets_per_association: 64,
+            max_datagram_size: 65535,
+            client_pin: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ListenerConfig {
     pub name: String,
@@ -59,7 +91,7 @@ pub struct ListenerConfig {
     pub protocols: Vec<ProtocolId>,
     pub connection_limit: Option<u32>,
     pub auth: Option<crate::model::AuthConfig>,
-    pub udp_enabled: bool,
+    pub udp: Option<CompiledListenerUdpConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -456,12 +488,36 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
 
     listeners
         .iter()
-        .map(|l| {
+        .enumerate()
+        .map(|(i, l)| {
+            let path = format!("listeners[{}]", i);
+
             let protocols: Vec<ProtocolId> = l
                 .protocols
                 .iter()
                 .map(|p| compile_protocol(p))
                 .collect::<Result<Vec<_>, _>>()?;
+
+            let udp = match (l.udp_enabled, l.udp.as_ref()) {
+                (None, None) => None,
+                (None, Some(udp_cfg)) => {
+                    Some(compile_listener_udp_config(udp_cfg, &protocols, &path)?)
+                }
+                (Some(true), None) => Some(compile_listener_udp_defaults(&protocols, &path)?),
+                (Some(true), Some(udp_cfg)) => {
+                    Some(compile_listener_udp_config(udp_cfg, &protocols, &path)?)
+                }
+                (Some(false), None) => None,
+                (Some(false), Some(udp_cfg)) => {
+                    if udp_cfg.enabled.unwrap_or(true) {
+                        return Err(ConfigError::validation(
+                            &path,
+                            "udp_enabled = false conflicts with [listeners.udp] enabled = true",
+                        ));
+                    }
+                    Some(compile_listener_udp_config(udp_cfg, &protocols, &path)?)
+                }
+            };
 
             Ok(ListenerConfig {
                 name: l.name.clone(),
@@ -469,10 +525,130 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 protocols,
                 connection_limit: l.connection_limit,
                 auth: l.auth.clone(),
-                udp_enabled: l.udp_enabled.unwrap_or(false),
+                udp,
             })
         })
         .collect()
+}
+
+/// Compile default UDP config when `udp_enabled = true` but no `[listeners.udp]` section.
+fn compile_listener_udp_defaults(
+    protocols: &[ProtocolId],
+    path: &str,
+) -> Result<CompiledListenerUdpConfig, ConfigError> {
+    if !protocols.contains(&ProtocolId::Socks5) {
+        return Err(ConfigError::validation(
+            path,
+            "udp_enabled = true requires socks5 protocol",
+        ));
+    }
+    Ok(CompiledListenerUdpConfig::default())
+}
+
+/// Compile a `[listeners.udp]` section into `CompiledListenerUdpConfig`.
+fn compile_listener_udp_config(
+    udp: &ListenerUdpConfig,
+    protocols: &[ProtocolId],
+    path: &str,
+) -> Result<CompiledListenerUdpConfig, ConfigError> {
+    if !protocols.contains(&ProtocolId::Socks5) {
+        return Err(ConfigError::validation(
+            path,
+            "UDP config requires socks5 protocol",
+        ));
+    }
+
+    let defaults = CompiledListenerUdpConfig::default();
+    let udp_path = format!("{}.udp", path);
+
+    let enabled = udp.enabled.unwrap_or(defaults.enabled);
+    if !enabled {
+        return Ok(CompiledListenerUdpConfig {
+            enabled: false,
+            ..defaults
+        });
+    }
+
+    let bind_str = udp.bind.as_deref().unwrap_or("127.0.0.1:0");
+    let bind: std::net::SocketAddr = bind_str.parse().map_err(|_| {
+        ConfigError::validation(
+            &format!("{}.bind", udp_path),
+            &format!("invalid socket address: {}", bind_str),
+        )
+    })?;
+
+    let advertise = match &udp.advertise {
+        Some(addr_str) => {
+            let ip: std::net::IpAddr = addr_str.parse().map_err(|_| {
+                ConfigError::validation(
+                    &format!("{}.advertise", udp_path),
+                    &format!("invalid IP address: {}", addr_str),
+                )
+            })?;
+            Some(ip)
+        }
+        None => None,
+    };
+
+    let idle_timeout = udp
+        .idle_timeout
+        .as_deref()
+        .map(validate_duration)
+        .transpose()
+        .map_err(|e| {
+            ConfigError::validation(&format!("{}.idle_timeout", udp_path), &e.to_string())
+        })?
+        .unwrap_or(defaults.idle_timeout);
+
+    let target_idle_timeout = udp
+        .target_idle_timeout
+        .as_deref()
+        .map(validate_duration)
+        .transpose()
+        .map_err(|e| {
+            ConfigError::validation(&format!("{}.target_idle_timeout", udp_path), &e.to_string())
+        })?
+        .unwrap_or(defaults.target_idle_timeout);
+
+    let max_associations = udp.max_associations.unwrap_or(defaults.max_associations);
+    if max_associations == 0 {
+        return Err(ConfigError::validation(
+            &format!("{}.max_associations", udp_path),
+            "must be greater than 0",
+        ));
+    }
+
+    let max_targets_per_association = udp
+        .max_targets_per_association
+        .unwrap_or(defaults.max_targets_per_association);
+    if max_targets_per_association == 0 {
+        return Err(ConfigError::validation(
+            &format!("{}.max_targets_per_association", udp_path),
+            "must be greater than 0",
+        ));
+    }
+
+    let max_datagram_size = udp.max_datagram_size.unwrap_or(defaults.max_datagram_size);
+    if !(257..=65535).contains(&max_datagram_size) {
+        return Err(ConfigError::validation(
+            &format!("{}.max_datagram_size", udp_path),
+            &format!("must be between 257 and 65535, got {}", max_datagram_size),
+        ));
+    }
+
+    let client_pin = udp.client_pin.unwrap_or(defaults.client_pin);
+
+    Ok(CompiledListenerUdpConfig {
+        enabled,
+        bind,
+        advertise,
+        idle_timeout,
+        target_idle_timeout,
+        max_associations,
+        max_targets_per_association,
+        max_datagram_size,
+        client_pin,
+    })
 }
 
 fn compile_health_config(

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
@@ -12,10 +13,13 @@ use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
+use crate::registry::UdpAssociationRegistry;
 use crate::security::validate_target;
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
 use eggress_protocol_socks::socks5::server::SocksAddr;
-use eggress_routing::{RouteDecision, RouteRequest, RouteService, TransportKind};
+use eggress_routing::{
+    RouteError, RouteRequest, RouteService, SelectedRoute, SelectionReason, TransportKind,
+};
 
 pub struct RelayConfig {
     pub routing: Arc<dyn RouteService>,
@@ -25,6 +29,7 @@ pub struct RelayConfig {
     pub generation: u64,
     pub identity: ClientIdentity,
     pub client_tcp_peer: SocketAddr,
+    pub registry: Arc<UdpAssociationRegistry>,
 }
 
 struct ResponseMsg {
@@ -34,11 +39,27 @@ struct ResponseMsg {
 
 struct TargetFlowEntry {
     flow: UdpTargetFlow,
-    _recv_task: tokio::task::JoinHandle<()>,
+    recv_task: tokio::task::JoinHandle<()>,
 }
 
 fn socks_addr_key(addr: &SocksAddr) -> String {
     format!("{}:{}", addr.host_str(), addr.port())
+}
+
+fn reap_idle_flows(
+    flows: &mut HashMap<String, TargetFlowEntry>,
+    now: Instant,
+    timeout: std::time::Duration,
+    metrics: &UdpMetrics,
+) {
+    flows.retain(|_, entry| {
+        let keep = now.duration_since(entry.flow.last_activity) < timeout;
+        if !keep {
+            entry.recv_task.abort();
+            metrics.record_target_flow_timeout();
+        }
+        keep
+    });
 }
 
 pub async fn udp_relay_loop(
@@ -52,18 +73,40 @@ pub async fn udp_relay_loop(
 
     let (response_tx, mut response_rx) = mpsc::unbounded_channel::<ResponseMsg>();
 
+    let mut idle_tick = tokio::time::interval(config.limits.idle_timeout);
+    idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut target_cleanup_tick = tokio::time::interval(config.limits.target_idle_timeout);
+    target_cleanup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     config.udp_metrics.record_association_created();
+
+    let assoc_id = association.id;
+    let registry = config.registry.clone();
 
     let result = (async {
         loop {
             tokio::select! {
+                _ = idle_tick.tick() => {
+                    if association.last_activity().elapsed() >= config.limits.idle_timeout {
+                        tracing::debug!(
+                            association_id = ?assoc_id,
+                            "UDP association idle timeout"
+                        );
+                        config.udp_metrics.record_association_timeout();
+                        break;
+                    }
+                }
+                _ = target_cleanup_tick.tick() => {
+                    let now = Instant::now();
+                    reap_idle_flows(&mut flows, now, config.limits.target_idle_timeout, &config.udp_metrics);
+                }
                 result = relay_socket.recv_from(&mut buf) => {
                     let (n, client_addr) = result?;
 
                     if config.limits.client_pin {
                         if let Err(e) = association.pin_client_addr(client_addr) {
                             tracing::trace!(
-                                association_id = ?association.id,
+                                association_id = ?assoc_id,
                                 client_addr = %client_addr,
                                 "rejecting packet from unpinned client: {e}"
                             );
@@ -79,7 +122,7 @@ pub async fn udp_relay_loop(
                         Ok(r) => r,
                         Err(e) => {
                             tracing::trace!(
-                                association_id = ?association.id,
+                                association_id = ?assoc_id,
                                 "decode error: {e}"
                             );
                             config.udp_metrics.record_decode_error();
@@ -89,7 +132,7 @@ pub async fn udp_relay_loop(
 
                     if let Err(e) = validate_target(&request.target) {
                         tracing::trace!(
-                            association_id = ?association.id,
+                            association_id = ?assoc_id,
                             target = %request.target.host_str(),
                             "target validation failed: {e}"
                         );
@@ -107,24 +150,44 @@ pub async fn udp_relay_loop(
                         transport: TransportKind::Udp,
                     };
 
-                    let route_decision = config.routing.decide(&route_request);
-
-                    match route_decision {
-                        RouteDecision::Direct { .. } => {}
-                        RouteDecision::Reject { .. } => {
+                    let selected = match config.routing.route(&route_request) {
+                        Ok(selected) => selected,
+                        Err(RouteError::Rejected { rule, .. }) => {
                             tracing::trace!(
-                                association_id = ?association.id,
+                                association_id = ?assoc_id,
                                 target = %request.target.host_str(),
+                                rule = %rule,
                                 "route rejected"
                             );
                             config.udp_metrics.record_dropped();
                             continue;
                         }
-                        RouteDecision::UpstreamGroup { .. } => {
+                        Err(_) => {
                             tracing::trace!(
-                                association_id = ?association.id,
+                                association_id = ?assoc_id,
                                 target = %request.target.host_str(),
-                                "unsupported upstream for UDP"
+                                "no eligible upstream for UDP"
+                            );
+                            config.udp_metrics.record_dropped();
+                            continue;
+                        }
+                    };
+
+                    match selected {
+                        SelectedRoute::Direct { selection_reason, .. } => {
+                            if selection_reason == SelectionReason::DirectFallback {
+                                tracing::debug!(
+                                    association_id = ?assoc_id,
+                                    target = %request.target.host_str(),
+                                    "UDP using direct fallback"
+                                );
+                            }
+                        }
+                        SelectedRoute::Upstream { .. } => {
+                            tracing::trace!(
+                                association_id = ?assoc_id,
+                                target = %request.target.host_str(),
+                                "unsupported upstream for UDP, dropping"
                             );
                             config.udp_metrics.record_dropped();
                             continue;
@@ -137,7 +200,7 @@ pub async fn udp_relay_loop(
                         && !flows.contains_key(&key)
                     {
                         tracing::trace!(
-                            association_id = ?association.id,
+                            association_id = ?assoc_id,
                             "target flow limit exceeded"
                         );
                         config.udp_metrics.record_dropped();
@@ -175,14 +238,14 @@ pub async fn udp_relay_loop(
 
                             e.insert(TargetFlowEntry {
                                 flow,
-                                _recv_task: recv_task,
+                                recv_task,
                             })
                         }
                     };
 
                     if let Err(e) = entry.flow.send(request.payload).await {
                         tracing::trace!(
-                            association_id = ?association.id,
+                            association_id = ?assoc_id,
                             target = %request.target.host_str(),
                             "send failed: {e}"
                         );
@@ -213,11 +276,12 @@ pub async fn udp_relay_loop(
     config.udp_metrics.record_association_closed();
 
     for entry in flows.values() {
-        entry._recv_task.abort();
+        entry.recv_task.abort();
         config.udp_metrics.record_target_flow_closed();
     }
 
     association.close();
+    registry.remove(assoc_id).await;
 
     result
 }
@@ -245,7 +309,13 @@ mod tests {
     use crate::assoc::UdpAssociationId;
     use crate::limits::UdpLimits;
     use crate::metrics::UdpMetrics;
-    use eggress_routing::{CompiledRule, RouteActionSpec, Router, RuleId};
+    use crate::registry::UdpAssociationRegistry;
+    use eggress_core::UpstreamId;
+    use eggress_routing::lease::PendingLease;
+    use eggress_routing::upstream::{GroupFallback, UpstreamGroup, UpstreamRuntime};
+    use eggress_routing::{
+        CompiledRule, MatchExpr, RouteActionSpec, Router, RuleId, UpstreamGroupId,
+    };
     use std::sync::atomic::Ordering;
 
     fn test_addr() -> SocketAddr {
@@ -260,6 +330,10 @@ mod tests {
             ClientIdentity::Anonymous,
             1,
         ))
+    }
+
+    fn test_registry() -> Arc<UdpAssociationRegistry> {
+        Arc::new(UdpAssociationRegistry::new(UdpLimits::default()))
     }
 
     fn direct_router() -> Arc<dyn RouteService> {
@@ -284,6 +358,7 @@ mod tests {
             generation: 1,
             identity: ClientIdentity::Anonymous,
             client_tcp_peer: test_addr(),
+            registry: test_registry(),
         }
     }
 
@@ -486,5 +561,171 @@ mod tests {
         let addr = socks_to_target_addr(&domain);
         assert_eq!(addr.port, 443);
         assert_eq!(addr.host, TargetHost::Domain("example.com".to_string()));
+    }
+
+    fn make_upstream(id: &str) -> std::sync::Arc<UpstreamRuntime> {
+        std::sync::Arc::new(UpstreamRuntime::new(
+            UpstreamId::new(id),
+            eggress_uri::ProxyChainSpec { hops: vec![] },
+        ))
+    }
+
+    fn upstream_group_router(fallback: GroupFallback) -> Arc<dyn RouteService> {
+        let upstream = make_upstream("up-udp-1");
+        upstream.set_enabled(false);
+        let group_id = UpstreamGroupId(std::sync::Arc::from("udp-proxy"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            eggress_routing::scheduler::SchedulerKind::FirstAvailable,
+            std::sync::Arc::from(vec![upstream]),
+            fallback,
+        );
+        let rules = vec![CompiledRule {
+            id: RuleId(std::sync::Arc::from("to-proxy")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        }];
+        Arc::new(Router::with_groups(
+            rules,
+            RouteActionSpec::Direct,
+            vec![(group_id, group)],
+        ))
+    }
+
+    #[tokio::test]
+    async fn relay_upstream_group_direct_fallback_forwards() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let config = relay_config(upstream_group_router(GroupFallback::Direct));
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"fallback test");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
+        assert_eq!(resp.payload, b"fallback test");
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_upstream_group_reject_fallback_drops() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let config = relay_config(upstream_group_router(GroupFallback::Reject));
+        let udp_metrics = config.udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"should drop");
+        client_socket.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 1);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_upstream_group_unsupported_drops_no_inflight_leak() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let config = relay_config(upstream_group_router(GroupFallback::Reject));
+        let udp_metrics = config.udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"drop me");
+        client_socket.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 1);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_upstream_group_unhealthy_fallback_drops() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let config = relay_config(upstream_group_router(GroupFallback::UseUnhealthy));
+        let udp_metrics = config.udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"unhealthy drop");
+        client_socket.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 1);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn upstream_lease_released_on_drop() {
+        let upstream = make_upstream("lease-check");
+        let lease = PendingLease::new(upstream.clone());
+        assert_eq!(upstream.in_flight.load(Ordering::Relaxed), 1);
+        drop(lease);
+        assert_eq!(upstream.in_flight.load(Ordering::Relaxed), 0);
     }
 }

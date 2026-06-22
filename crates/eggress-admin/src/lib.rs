@@ -60,6 +60,9 @@ mod tests {
             readiness: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             active_connections: None,
             provider: Arc::new(StaticAdminSnapshot { snapshot: snap }),
+            udp_registry: Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
+                eggress_udp::limits::UdpLimits::default(),
+            )),
         }
     }
 
@@ -81,6 +84,9 @@ mod tests {
             readiness: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             active_connections: None,
             provider: Arc::new(StaticAdminSnapshot { snapshot: snap }),
+            udp_registry: Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
+                eggress_udp::limits::UdpLimits::default(),
+            )),
         }
     }
 

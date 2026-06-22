@@ -28,4 +28,6 @@ pub enum UdpError {
     UnspecifiedTarget,
     #[error("port zero not allowed")]
     PortZero,
+    #[error("{0}")]
+    Other(String),
 }

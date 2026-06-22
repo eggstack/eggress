@@ -169,15 +169,106 @@ Client → TcpListener → serve_connection()
 
 ```
 TCP SOCKS5 client → UDP ASSOCIATE command → server creates UdpAssociation
-    → reply with UDP relay bind address
+    → reply with UDP relay bind address (computed per listener config)
     → client sends SOCKS5 UDP datagrams to relay address
     → association decodes datagram, validates client ownership
-    → route engine decides Direct/Reject/UnsupportedUpstream
-    → direct UDP socket sends payload to target (one connected socket per target flow)
+    → route engine evaluates full route() with fallback support
+    → direct: forward via direct UDP socket (one per target flow)
+    → reject: drop with policy metric
+    → unsupported upstream: drop (with direct fallback if configured)
     → response from target mapped back to client
     → SOCKS5 UDP response datagram sent to pinned client address
     → idle timeout or TCP control close tears down association
+    → relay task removes association from registry
 ```
+
+### UDP association lifecycle
+
+A UDP association is created when a SOCKS5 client issues a UDP ASSOCIATE command. The lifecycle is:
+
+1. **Create**: `UdpAssociationRegistry::create_association()` allocates a slot and returns an `Arc<UdpAssociation>`.
+2. **Relay**: `udp_relay_loop()` runs as a tracked task (`TaskTracker`), decoding client datagrams, routing through the rule engine, forwarding to targets via connected sockets, and relaying responses back.
+3. **Idle timeout**: A periodic tick checks `last_activity().elapsed()`. If the association exceeds `idle_timeout` without valid client or target activity, the relay loop breaks.
+4. **Close**: The relay loop closes the association, aborts all target-flow recv tasks, and removes the association from the registry via `registry.remove(id)`.
+5. **Registry cleanup**: Every close path (TCP control close, idle timeout, runtime shutdown) ensures the association is removed from the registry exactly once.
+
+Activity is updated (`touch()`) for:
+- Valid client datagrams after successful client-pin validation.
+- Target responses sent back to the client.
+
+Rejected packets from wrong client addresses do not update activity.
+
+### Target-flow model
+
+Each unique target address within an association gets its own `UdpTargetFlow` backed by a connected UDP socket. This design:
+
+- Simplifies response demultiplexing (replies arrive on the target-specific socket).
+- Makes client address pinning straightforward.
+- Bypasses the need for shared-socket peer mapping.
+
+Target flows are bounded by `max_targets_per_association`. Idle target flows are reaped periodically via `target_idle_timeout`, freeing slots for new targets. Each flow has a dedicated recv task tracked via `JoinHandle`.
+
+### Routing per datagram
+
+Every UDP datagram is routed through the Phase 2 rule engine using `RouteService::route()` (full route selection, not just `decide()`). This preserves upstream-group fallback semantics:
+
+- `SelectedRoute::Direct { selection_reason: Normal }` — forward to target via direct UDP socket.
+- `SelectedRoute::Direct { selection_reason: DirectFallback }` — forward via direct, with fallback metric recorded.
+- `SelectedRoute::Upstream { .. }` — drop with `unsupported_upstream` metric (no UDP-capable upstream relay).
+- `RouteError::Rejected { .. }` — drop with policy metric.
+
+Route rules can match on `transport` to distinguish UDP from TCP traffic. Route changes via SIGHUP take effect on subsequent datagrams without restarting the UDP listener.
+
+### Direct-only limitation
+
+Phase 3 supports only direct UDP forwarding. There is no relay through upstream SOCKS5, HTTP, or Shadowsocks proxies. If a rule selects an upstream group, the packet is dropped with an `unsupported_upstream` metric. This is the explicit, safe default for a connectionless protocol.
+
+### UDP task tracking
+
+UDP relay tasks are spawned via `TaskTracker` (in `RuntimeState` and `RuntimeUdpService`), not bare `tokio::spawn`. During shutdown:
+
+1. `udp_registry.close_all()` closes all associations.
+2. `udp_tasks.close()` prevents new task spawns.
+3. `tokio::time::timeout(grace, udp_tasks.wait())` waits for in-flight relay tasks to drain.
+
+### Metrics bridging
+
+UDP relay records into `eggress_udp::metrics::UdpMetrics`. The `MetricsRegistry` bridges these counters via `set_udp_metrics()`, so `/metrics` exposes live UDP counters (associations active/total, packets up/down, bytes, drops, decode errors, target flows). The bridged snapshot is refreshed on each Prometheus render.
+
+### TOML configuration
+
+UDP behavior is configurable per listener via `[listeners.udp]`:
+
+```toml
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+bind = "127.0.0.1:0"
+advertise = "127.0.0.1"
+idle_timeout = "60s"
+target_idle_timeout = "30s"
+max_associations = 1024
+max_targets_per_association = 64
+max_datagram_size = 65535
+client_pin = true
+```
+
+The legacy `udp_enabled = true` flag is still supported as compatibility sugar. If `udp_enabled = true` and no `[listeners.udp]` section exists, default UDP config is synthesized. If both are present and disagree, config validation rejects.
+
+### Advertise address derivation
+
+The SOCKS5 UDP ASSOCIATE reply contains a computed relay address:
+
+1. If `advertise` is configured, use it.
+2. Else if UDP bind IP is not unspecified (`0.0.0.0` / `::`), use the bind IP.
+3. Else if TCP peer is loopback, use the matching loopback address.
+4. Otherwise, config validation requires an explicit `advertise` value.
+
+This avoids advertising `0.0.0.0` to clients by default.
 
 ### UDP association ownership
 
@@ -188,7 +279,7 @@ A UDP association is owned by the TCP control connection that issued the SOCKS5 
 - Runtime shutdown begins.
 - Association or target-flow limits are exceeded.
 
-If the control connection closes, the association is torn down immediately. If the UDP association idles out, the TCP control connection is eventually closed by the server.
+Every close path removes the association from the `UdpAssociationRegistry`, ensuring `active_count()` returns to zero after the relay task completes.
 
 ### Datagram codec boundaries
 
@@ -210,15 +301,16 @@ Each unique target address within an association gets its own `UdpTargetFlow` ba
 - Makes client address pinning straightforward.
 - Bypasses the need for shared-socket peer mapping.
 
-The target flow count per association is bounded by `max_targets_per_association`. Flows are cleaned up by idle expiry or association close.
+The target flow count per association is bounded by `max_targets_per_association`. Idle flows are reaped by `target_idle_timeout`, so the limit bounds active flows, not lifetime history. Each flow entry holds a `JoinHandle` for its recv task, which is aborted on eviction or association close.
 
 ### Routing per datagram
 
-Every UDP datagram is routed through the Phase 2 rule engine using a `RouteRequest` with `TransportKind::Udp`. The route decision can be:
+Every UDP datagram is routed through the Phase 2 rule engine using `RouteService::route()` (full route selection with fallback semantics). The route decision can be:
 
-- `Direct` — forward to target via direct UDP socket.
-- `Reject` — drop the packet, increment drop metric.
-- `UnsupportedUpstream` — drop the packet because no UDP-capable upstream path exists.
+- `SelectedRoute::Direct { selection_reason: Normal }` — forward to target via direct UDP socket.
+- `SelectedRoute::Direct { selection_reason: DirectFallback }` — forward via direct with fallback metric.
+- `SelectedRoute::Upstream { .. }` — drop with `unsupported_upstream` metric.
+- `RouteError::Rejected { .. }` — drop with policy metric.
 
 Route rules can match on `transport` to distinguish UDP from TCP traffic. Route changes via SIGHUP take effect on subsequent datagrams without restarting the UDP listener.
 
@@ -238,8 +330,9 @@ Phase 3 supports only direct UDP forwarding. There is no relay through upstream 
 
 - UDP bind address changes require a restart.
 - UDP advertise address changes require a restart if the socket bind changes.
-- UDP limit changes apply only to new associations.
+- UDP limit changes (idle timeout, target idle timeout, max datagram size, client pin) apply only to new associations created after reload.
 - Route changes apply immediately to future UDP packets.
+- The legacy `udp_enabled = true` flag is retained for backward compatibility and synthesized to default UDP config when no `[listeners.udp]` section is present.
 
 ## Design Principles
 

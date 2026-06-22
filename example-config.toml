@@ -32,6 +32,17 @@ bind     = "0.0.0.0:1080"
 protocols = ["socks4", "socks5"]
 connection_limit = 500
 
+  [listeners.udp]
+  enabled    = true
+  # bind      = "127.0.0.1:0"       # UDP relay bind address
+  # advertise = "127.0.0.1"         # Advertised IP in SOCKS5 reply (derived if omitted)
+  # idle_timeout = "60s"            # Close association after this many seconds of inactivity
+  # target_idle_timeout = "30s"     # Evict idle target flows after this duration
+  # max_associations = 1024         # Global association limit
+  # max_targets_per_association = 64  # Per-association target flow limit
+  # max_datagram_size = 65535       # Max SOCKS5 UDP datagram size
+  # client_pin = true               # Pin association to first client address
+
   [[listeners.auth]]
   type     = "password"
   username = "admin"

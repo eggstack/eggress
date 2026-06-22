@@ -96,12 +96,14 @@ fn test_state_with_listeners() -> AdminState {
                 bind: "0.0.0.0:8080".to_string(),
                 local_addr: "0.0.0.0:8080".to_string(),
                 protocols: vec!["http".to_string()],
+                udp_enabled: false,
             },
             ListenerInfo {
                 name: "socks-in".to_string(),
                 bind: "0.0.0.0:1080".to_string(),
                 local_addr: "0.0.0.0:1080".to_string(),
                 protocols: vec!["socks5".to_string()],
+                udp_enabled: true,
             },
         ],
     };
@@ -111,6 +113,9 @@ fn test_state_with_listeners() -> AdminState {
         readiness: Arc::new(AtomicBool::new(true)),
         active_connections: Some(Arc::new(AtomicU64::new(5))),
         provider: Arc::new(StaticAdminSnapshot { snapshot: snap }),
+        udp_registry: Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
+            eggress_udp::limits::UdpLimits::default(),
+        )),
     }
 }
 

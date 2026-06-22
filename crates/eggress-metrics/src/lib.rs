@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
@@ -5,6 +7,7 @@ use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::Registry;
 
 use eggress_server::execute::{SessionOutcome, SessionReport};
+use eggress_udp::metrics::UdpMetrics;
 
 impl eggress_server::SessionMetrics for MetricsRegistry {
     fn record_session(&self, report: &SessionReport) {
@@ -62,6 +65,20 @@ pub struct MetricsRegistry {
     udp_target_flows_total: Counter,
     udp_decode_errors_total: Family<DecodeErrorLabels, Counter>,
     udp_unsupported_upstream_total: Counter,
+    bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
+}
+
+#[derive(Default)]
+struct BridgedUdpSnapshot {
+    associations_total: u64,
+    association_failures: u64,
+    packets_up: u64,
+    packets_down: u64,
+    bytes_up: u64,
+    bytes_down: u64,
+    dropped_packets: u64,
+    target_flows_total: u64,
+    decode_errors: u64,
 }
 
 impl MetricsRegistry {
@@ -246,7 +263,41 @@ impl MetricsRegistry {
             udp_target_flows_total,
             udp_decode_errors_total,
             udp_unsupported_upstream_total,
+            bridged_udp_metrics: Mutex::new(None),
         }
+    }
+
+    /// Bridge a shared `UdpMetrics` instance so that `render_prometheus()`
+    /// exposes live relay counters (packets, bytes, drops, decode errors, etc.).
+    pub fn set_udp_metrics(&self, metrics: Arc<UdpMetrics>) {
+        let snapshot = BridgedUdpSnapshot {
+            associations_total: metrics
+                .associations_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            association_failures: metrics
+                .association_failures
+                .load(std::sync::atomic::Ordering::Relaxed),
+            packets_up: metrics
+                .packets_up
+                .load(std::sync::atomic::Ordering::Relaxed),
+            packets_down: metrics
+                .packets_down
+                .load(std::sync::atomic::Ordering::Relaxed),
+            bytes_up: metrics.bytes_up.load(std::sync::atomic::Ordering::Relaxed),
+            bytes_down: metrics
+                .bytes_down
+                .load(std::sync::atomic::Ordering::Relaxed),
+            dropped_packets: metrics
+                .dropped_packets
+                .load(std::sync::atomic::Ordering::Relaxed),
+            target_flows_total: metrics
+                .target_flows_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            decode_errors: metrics
+                .decode_errors
+                .load(std::sync::atomic::Ordering::Relaxed),
+        };
+        *self.bridged_udp_metrics.lock().unwrap() = Some((metrics, snapshot));
     }
 
     pub fn record_session_start(&self) {
@@ -304,6 +355,86 @@ impl MetricsRegistry {
 
     pub fn render_prometheus(&self) -> String {
         use prometheus_client::encoding::text::encode;
+        use std::sync::atomic::Ordering;
+
+        // Sync live UDP relay counters from the bridged UdpMetrics into
+        // Prometheus gauges/counters before encoding.
+        if let Some((metrics, prev)) = self.bridged_udp_metrics.lock().unwrap().as_mut() {
+            // Gauges: set directly (active counts are current-state, not cumulative)
+            self.udp_associations_active
+                .set(metrics.associations_active.load(Ordering::Relaxed) as i64);
+            self.udp_target_flows_active
+                .set(metrics.target_flows_active.load(Ordering::Relaxed) as i64);
+
+            // Counters: increment by delta since last render
+            let cur_total = metrics.associations_total.load(Ordering::Relaxed);
+            let delta = cur_total.saturating_sub(prev.associations_total);
+            if delta > 0 {
+                self.udp_associations_total.inc_by(delta);
+            }
+            prev.associations_total = cur_total;
+
+            let cur = metrics.association_failures.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.association_failures);
+            if delta > 0 {
+                self.udp_association_failures.inc_by(delta);
+            }
+            prev.association_failures = cur;
+
+            let cur = metrics.packets_up.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.packets_up);
+            if delta > 0 {
+                self.udp_packets_up_total.inc_by(delta);
+            }
+            prev.packets_up = cur;
+
+            let cur = metrics.packets_down.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.packets_down);
+            if delta > 0 {
+                self.udp_packets_down_total.inc_by(delta);
+            }
+            prev.packets_down = cur;
+
+            let cur = metrics.bytes_up.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.bytes_up);
+            if delta > 0 {
+                self.udp_bytes_up_total.inc_by(delta);
+            }
+            prev.bytes_up = cur;
+
+            let cur = metrics.bytes_down.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.bytes_down);
+            if delta > 0 {
+                self.udp_bytes_down_total.inc_by(delta);
+            }
+            prev.bytes_down = cur;
+
+            let cur = metrics.dropped_packets.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.dropped_packets);
+            if delta > 0 {
+                self.udp_dropped_packets_total.inc_by(delta);
+            }
+            prev.dropped_packets = cur;
+
+            let cur = metrics.target_flows_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.target_flows_total);
+            if delta > 0 {
+                self.udp_target_flows_total.inc_by(delta);
+            }
+            prev.target_flows_total = cur;
+
+            let cur = metrics.decode_errors.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.decode_errors);
+            if delta > 0 {
+                // Total decode errors across all kinds
+                self.udp_decode_errors_total
+                    .get_or_create(&DecodeErrorLabels {
+                        kind: "total".to_string(),
+                    })
+                    .inc_by(delta);
+            }
+            prev.decode_errors = cur;
+        }
 
         let mut buf = String::new();
         encode(&mut buf, &self.registry).unwrap();
@@ -673,5 +804,183 @@ mod tests {
                 }
             }
         }
+    }
+
+    // --- Bridge tests: UdpMetrics -> MetricsRegistry -> /metrics ---
+
+    #[test]
+    fn bridge_packets_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_packet_up(100);
+        udp.record_packet_up(200);
+        udp.record_packet_down(50);
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_packets_up_total"),
+            "missing packets_up_total"
+        );
+        assert!(
+            output.contains("eggress_udp_bytes_up_total"),
+            "missing bytes_up_total"
+        );
+        assert!(
+            output.contains("eggress_udp_bytes_down_total"),
+            "missing bytes_down_total"
+        );
+        // Verify values appear (at least "3" for packets_up and "300" for bytes_up)
+        assert!(
+            output.contains("eggress_udp_packets_up_total") && output.contains("3"),
+            "packets_up should be 3"
+        );
+        assert!(
+            output.contains("eggress_udp_bytes_up_total") && output.contains("300"),
+            "bytes_up should be 300"
+        );
+    }
+
+    #[test]
+    fn bridge_drops_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_dropped();
+        udp.record_dropped();
+        udp.record_dropped();
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_dropped_packets_total"),
+            "missing dropped_packets_total"
+        );
+    }
+
+    #[test]
+    fn bridge_decode_errors_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_decode_error();
+        udp.record_decode_error();
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_decode_errors_total"),
+            "missing decode_errors_total"
+        );
+    }
+
+    #[test]
+    fn bridge_active_association_gauge_returns_to_zero() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_association_created();
+        udp.record_association_created();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_udp_associations_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 2.0, "should show 2 active associations");
+                    }
+                }
+            }
+        }
+
+        udp.record_association_closed();
+        udp.record_association_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_udp_associations_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 0.0, "active associations should return to 0");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_target_flows_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_target_flow_created();
+        udp.record_target_flow_created();
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_target_flows_active"),
+            "missing target_flows_active"
+        );
+
+        udp.record_target_flow_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_udp_target_flows_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 1.0, "target flows active should be 1");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_delta_tracking_across_renders() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        // First render: no deltas yet
+        let _output1 = m.render_prometheus();
+        // Second render after recording: deltas appear
+        udp.record_packet_up(50);
+        udp.record_dropped();
+        let output2 = m.render_prometheus();
+
+        // Both renders should produce valid output
+        assert!(output2.contains("eggress_udp_packets_up_total"));
+        assert!(output2.contains("eggress_udp_dropped_packets_total"));
+
+        // Third render: no new deltas, counters stay at previous value
+        let output3 = m.render_prometheus();
+        assert!(output3.contains("eggress_udp_packets_up_total"));
+        // Counters should still be at 1 (from the second render), not 2
+        for line in output3.lines() {
+            if line.contains("eggress_udp_packets_up_total") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 1.0, "counter should not double-count");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_no_privacy_leak() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_packet_up(100);
+
+        let output = m.render_prometheus();
+        assert!(!output.contains("127.0.0.1"), "no IP addresses in metrics");
+        assert!(!output.contains("192.168"), "no private IPs in metrics");
     }
 }

@@ -119,6 +119,10 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
                 ));
             }
         }
+
+        if let Some(ref udp) = listener.udp {
+            validate_listener_udp(udp, &path, errors);
+        }
     }
 }
 
@@ -579,6 +583,77 @@ fn validate_admin(admin: &crate::model::AdminConfig, errors: &mut Vec<ConfigErro
                     ));
                 }
             }
+        }
+    }
+}
+
+fn validate_listener_udp(
+    udp: &crate::model::ListenerUdpConfig,
+    parent_path: &str,
+    errors: &mut Vec<ConfigError>,
+) {
+    let udp_path = format!("{}.udp", parent_path);
+
+    if let Some(ref bind) = udp.bind {
+        if bind.parse::<std::net::SocketAddr>().is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.bind", udp_path),
+                &format!("invalid socket address: {}", bind),
+            ));
+        }
+    }
+
+    if let Some(ref advertise) = udp.advertise {
+        if advertise.parse::<std::net::IpAddr>().is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.advertise", udp_path),
+                &format!("invalid IP address: {}", advertise),
+            ));
+        }
+    }
+
+    if let Some(ref idle_timeout) = udp.idle_timeout {
+        if parse_duration(idle_timeout).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.idle_timeout", udp_path),
+                &format!("invalid duration: {}", idle_timeout),
+            ));
+        }
+    }
+
+    if let Some(ref target_idle_timeout) = udp.target_idle_timeout {
+        if parse_duration(target_idle_timeout).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.target_idle_timeout", udp_path),
+                &format!("invalid duration: {}", target_idle_timeout),
+            ));
+        }
+    }
+
+    if let Some(max_associations) = udp.max_associations {
+        if max_associations == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.max_associations", udp_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+
+    if let Some(max_targets) = udp.max_targets_per_association {
+        if max_targets == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.max_targets_per_association", udp_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+
+    if let Some(max_datagram_size) = udp.max_datagram_size {
+        if !(257..=65535).contains(&max_datagram_size) {
+            errors.push(ConfigError::validation(
+                &format!("{}.max_datagram_size", udp_path),
+                &format!("must be between 257 and 65535, got {}", max_datagram_size),
+            ));
         }
     }
 }
