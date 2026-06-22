@@ -61,7 +61,7 @@ impl UdpMetrics {
     }
 
     pub fn record_association_timeout(&self) {
-        self.associations_active.fetch_sub(1, Ordering::Relaxed);
+        self.association_failures.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_target_flow_timeout(&self) {
@@ -160,7 +160,8 @@ mod tests {
         metrics.record_association_created();
         assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 1);
         metrics.record_association_timeout();
-        assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.association_failures.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 1);
     }
 
     #[test]

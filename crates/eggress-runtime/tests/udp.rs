@@ -758,6 +758,64 @@ direct = true
 }
 
 #[tokio::test]
+async fn no_udp_task_leak_after_shutdown() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    for _ in 0..5 {
+        let mut stream = tokio::net::TcpStream::connect(listener_addr)
+            .await
+            .expect("connect");
+        let _reply = socks5_udp_associate(&mut stream)
+            .await
+            .expect("udp associate");
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    token.cancel();
+    jh.await.ok();
+
+    assert_eq!(
+        state.udp_tasks.len(),
+        0,
+        "no UDP tasks should remain after shutdown"
+    );
+}
+
+#[tokio::test]
 async fn configured_advertise_ip_appears_in_socks5_reply() {
     let config = r#"
 version = 1

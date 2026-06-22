@@ -293,31 +293,6 @@ The SOCKS5 UDP datagram codec is independent of socket I/O. It operates on byte 
 
 Encoding produces a SOCKS5 UDP response datagram with the same structure. The codec does not allocate per packet beyond the domain name representation.
 
-### Target-flow model
-
-Each unique target address within an association gets its own `UdpTargetFlow` backed by a connected UDP socket. This design:
-
-- Simplifies response demultiplexing (replies arrive on the target-specific socket).
-- Makes client address pinning straightforward.
-- Bypasses the need for shared-socket peer mapping.
-
-The target flow count per association is bounded by `max_targets_per_association`. Idle flows are reaped by `target_idle_timeout`, so the limit bounds active flows, not lifetime history. Each flow entry holds a `JoinHandle` for its recv task, which is aborted on eviction or association close.
-
-### Routing per datagram
-
-Every UDP datagram is routed through the Phase 2 rule engine using `RouteService::route()` (full route selection with fallback semantics). The route decision can be:
-
-- `SelectedRoute::Direct { selection_reason: Normal }` — forward to target via direct UDP socket.
-- `SelectedRoute::Direct { selection_reason: DirectFallback }` — forward via direct with fallback metric.
-- `SelectedRoute::Upstream { .. }` — drop with `unsupported_upstream` metric.
-- `RouteError::Rejected { .. }` — drop with policy metric.
-
-Route rules can match on `transport` to distinguish UDP from TCP traffic. Route changes via SIGHUP take effect on subsequent datagrams without restarting the UDP listener.
-
-### Direct-only limitation
-
-Phase 3 supports only direct UDP forwarding. There is no relay through upstream SOCKS5, HTTP, or Shadowsocks proxies. If a rule selects an upstream group, the packet is dropped with an `unsupported_upstream` metric. This is the explicit, safe default for a connectionless protocol.
-
 ### Security defaults
 
 - Client address pinning is enabled by default. The first valid UDP packet from a client pins the association to that address; subsequent packets from different addresses are dropped.
