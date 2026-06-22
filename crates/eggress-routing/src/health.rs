@@ -212,11 +212,7 @@ impl HealthManager {
         }
     }
 
-    pub fn start_probes(
-        &mut self,
-        upstreams: &[std::sync::Arc<UpstreamRuntime>],
-        _config: &HealthConfig,
-    ) {
+    pub fn start_probes(&mut self, upstreams: &[std::sync::Arc<UpstreamRuntime>]) {
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
 
         for upstream in upstreams {
@@ -593,8 +589,7 @@ mod tests {
             .map(|i| make_upstream_with_health(&format!("up-{i}"), HealthState::Healthy))
             .collect();
 
-        let config = HealthConfig::default();
-        mgr.start_probes(&upstreams, &config);
+        mgr.start_probes(&upstreams);
         tokio::time::sleep(Duration::from_millis(100)).await;
         mgr.stop_all();
         assert!(!cancel.is_cancelled());

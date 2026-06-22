@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use arc_swap::ArcSwap;
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
 use eggress_core::ProtocolId;
-use eggress_routing::health::{HealthConfig, HealthManager};
+use eggress_routing::health::HealthManager;
 use eggress_routing::upstream::UpstreamRuntime;
 use eggress_routing::{RouteService, SharedRoutingService};
 use tokio_util::sync::CancellationToken;
@@ -251,7 +251,7 @@ impl ServiceSupervisor {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), RuntimeError> {
         let config_path = self.config_path.clone();
         let routing = self.state.routing.clone();
         let listener_cancel = self.listener_cancel.clone();
@@ -276,8 +276,8 @@ impl ServiceSupervisor {
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
+        let rt = tokio::runtime::Runtime::new()?;
+        let result = rt.block_on(async move {
             // Start health probes inside the runtime context
             {
                 let mut guard = health_for_run.lock().unwrap();
@@ -285,7 +285,7 @@ impl ServiceSupervisor {
                     let upstream_runtimes: Vec<Arc<UpstreamRuntime>> =
                         snapshot.load().upstreams.values().cloned().collect();
                     if !upstream_runtimes.is_empty() {
-                        hm.start_probes(&upstream_runtimes, &HealthConfig::default());
+                        hm.start_probes(&upstream_runtimes);
                     }
                 }
             }
@@ -596,7 +596,7 @@ impl ServiceSupervisor {
                                                     .collect();
                                                 if !upstream_runtimes.is_empty() {
                                                     let mut hm = HealthManager::new(health_cancel.clone());
-                                                    hm.start_probes(&upstream_runtimes, &HealthConfig::default());
+                                                    hm.start_probes(&upstream_runtimes);
                                                     *guard = Some(hm);
                                                 } else {
                                                     *guard = None;
@@ -672,15 +672,19 @@ impl ServiceSupervisor {
             connection_tasks.wait().await;
 
             Ok::<_, RuntimeError>(())
-        })
-        .expect("runtime error during startup");
+        });
 
         self.health = std::sync::Arc::try_unwrap(health)
             .ok()
             .and_then(|m| m.into_inner().ok())
             .flatten();
 
-        tracing::info!("eggress stopped");
+        match &result {
+            Ok(()) => tracing::info!("eggress stopped"),
+            Err(e) => tracing::error!(error = %e, "eggress stopped with error"),
+        }
+
+        result
     }
 }
 

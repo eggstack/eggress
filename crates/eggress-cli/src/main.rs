@@ -746,7 +746,12 @@ async fn main() {
     if let Some(ref config_path) = args.config {
         init_logging(&args.log_format);
         match eggress_runtime::ServiceSupervisor::start(config_path) {
-            Ok(mut supervisor) => supervisor.run(),
+            Ok(mut supervisor) => {
+                if let Err(e) = supervisor.run() {
+                    eprintln!("runtime error: {e}");
+                    std::process::exit(1);
+                }
+            }
             Err(e) => {
                 eprintln!("runtime error: {e}");
                 std::process::exit(1);

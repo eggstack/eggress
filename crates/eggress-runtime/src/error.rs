@@ -12,6 +12,8 @@ pub enum RuntimeError {
         addr: String,
         source: std::io::Error,
     },
+    #[error("failed to initialize tokio runtime: {0}")]
+    RuntimeInit(#[from] std::io::Error),
     #[error("runtime error: {0}")]
     Other(String),
 }
