@@ -24,6 +24,7 @@ cargo deny check
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
+cargo run --bin eggress -- --config path/to/config.toml
 ```
 
 ## Project Structure
@@ -40,17 +41,23 @@ eggress/
 │   ├── eggress-routing/   # Rule engine, schedulers, health, leases, route explanation
 │   ├── eggress-config/    # TOML configuration, validation, secret sources
 │   ├── eggress-metrics/   # Prometheus-compatible metrics registry
-│   ├── eggress-admin/     # Admin HTTP server, PAC, static content
+│   ├── eggress-admin/     # Admin HTTP server, PAC, static content, snapshot provider trait
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
 │   └── eggress-testkit/   # Test utilities
 ├── tests/
-│   ├── integration/       # Internal eggress-to-eggress tests
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)
 └── docs/
     ├── ARCHITECTURE.md
-    └── ROADMAP.md
+    ├── ROADMAP.md
+    ├── PHASE_2_COMPLETION.md
+    └── URI_GRAMMAR.md
 ```
+
+Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
+health, admin, reload, shutdown, pac_static). They exercise the supervisor end
+to end and cover the negative-path behaviors (bind conflict, invalid source,
+oversized identity, reload-time failure).
 
 ## Code Conventions
 
@@ -76,12 +83,15 @@ eggress/
 - Health state machine with hysteresis and active TCP probes
 - Atomic config reload via `ArcSwap<Router>` for lock-free reads
 - Active connection accounting via `PendingLease`/`ActiveLease` drop guards
-- Route explanation for operator debugging without debug logs
+- Route explanation for operator debugging without debug logs (supports source, listener, protocol, identity)
 - Recursive TOML matcher expressions (all, any_of, not) with leaf matchers
 - Session metrics via `SessionMetrics` trait for pluggable backends
 - Service supervisor pattern with graceful shutdown and signal handling
+- `ServiceSupervisor::run()` returns `Result<(), RuntimeError>`; bind failures and runtime init errors are structured rather than panicking
 - Shared runtime snapshot via `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
 - Separate cancellation tokens for shutdown phases (listeners, connections, health, admin)
 - Pre-bind listeners before readiness to avoid race conditions
+- Shutdown ordering: readiness=false → stop listeners → drain connections (force-cancel after grace) → stop admin, so /-/ready, /metrics, /-/status remain queryable during drain
 - Health config per upstream from TOML
-- PAC/static content from TOML config
+- PAC/static content from TOML config; admin reads them live from current snapshot via `AdminSnapshotProvider`, so reloads are visible without restarting the admin server
+- Single generation source: `CompiledRuntimeSnapshot.generation`, exposed by `RuntimeState::generation()`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic

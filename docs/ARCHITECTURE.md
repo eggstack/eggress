@@ -42,12 +42,13 @@ Server orchestration library providing the reusable connection-handling API:
 Service supervisor and composition layer:
 - `CompiledRuntimeSnapshot` — single authoritative runtime snapshot
 - `compile_runtime_snapshot()` — builds shared upstream registry, router, and health plan
-- `RuntimeState` — shared state with snapshot, readiness, and generation
+- `RuntimeState` — shared state with snapshot, readiness, and snapshot-based generation
+- `ServiceSupervisor::run()` returns `Result<(), RuntimeError>`; bind conflicts and tokio runtime init errors are structured, not panics
 - Pre-bind listeners before readiness
 - Separate cancellation tokens for listeners, connections, health, admin
-- Shutdown sequence: readiness false → stop listeners → drain → force-cancel → stop admin
+- Shutdown sequence: readiness false → stop listeners → drain → force-cancel → stop admin (admin stays up through drain so /-/ready, /metrics, /-/status remain queryable)
 - Signal handling — SIGHUP for reload, SIGTERM/SIGINT for graceful shutdown
-- Health manager integration — background health probes
+- Health manager integration — background health probes use each upstream's compiled `HealthConfig`
 - Metrics integration — session metrics recording via `SessionMetrics` trait
 
 ### eggress-cli
@@ -103,7 +104,9 @@ Prometheus-compatible metrics:
 
 ### eggress-admin
 Local admin HTTP server:
-- Live routing state via SharedRoutingService
+- `AdminSnapshotProvider` trait with `AdminSnapshot` (generation, router, pac, static_routes, listeners)
+- Runtime implements the trait so admin handlers see live data from the current `CompiledRuntimeSnapshot` on every request; reloads take effect without restarting admin
+- `StaticAdminSnapshot` for tests that need a fixed view
 - Readiness reflects runtime state
 - Health/readiness endpoints
 - Status, routes, upstreams, config JSON endpoints
@@ -111,6 +114,9 @@ Local admin HTTP server:
 - PAC generation and serving
 - Static content serving
 - Body size limits for route explanation
+- Route explanation supports optional `source` (SocketAddr) and `identity` (Username, 1-256 bytes) fields
+- `RouteService` trait for pluggable routing backends
+- `SharedRoutingService` with `ArcSwap` for atomic config reload
 
 ### eggress-protocol-http
 HTTP/1 protocol implementation:
@@ -162,5 +168,8 @@ Client → TcpListener → serve_connection()
 11. **Lease accounting** — `PendingLease`/`ActiveLease` track in-flight connections
 12. **Operator explainability** — route explanation without debug logs
 13. **Shared runtime snapshot** — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
-14. **Graceful shutdown ordering** — drain first, cancel second
+14. **Graceful shutdown ordering** — drain first, cancel second; admin stays up through drain
 15. **Atomic reload** — compile candidate before swap, reject unsupported changes
+16. **Single generation source** — `CompiledRuntimeSnapshot.generation` is the only authoritative externally visible generation
+17. **Live admin reads** — admin handlers read PAC, static content, router, and listeners from the current snapshot per request via `AdminSnapshotProvider`
+18. **Fallible supervisor** — startup errors return `RuntimeError` instead of panicking

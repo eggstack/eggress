@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 2 final integration pass complete — shared runtime snapshot, health-aware scheduling, graceful shutdown with drain, atomic reload with topology validation, PAC/static content configuration, end-to-end integration tests.
+> Status: Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -340,6 +340,11 @@ Legend:
 - Persistent proxy connections and pipelining are not yet supported.
 - Unsupported transfer codings are rejected.
 - TLS interception is not supported; HTTPS uses CONNECT tunneling.
+
+### Phase 2 operational limitations
+
+- Listener topology changes (count, names, bind addresses) require restart; only routing, upstreams, health config, and admin content are hot-reloadable.
+- All other runtime state — router, upstream groups, health probes, PAC, static content, route-explain generation — is reloaded atomically on SIGHUP without dropping connections.
 
 ## Dependency policy
 
