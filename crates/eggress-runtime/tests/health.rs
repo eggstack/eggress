@@ -401,3 +401,210 @@ enabled = true
     token.cancel();
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn different_upstreams_use_different_health_thresholds() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[upstreams]]
+id = "fast-fail"
+uri = "http://127.0.0.1:1"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "200ms"
+timeout = "100ms"
+failures_to_unhealthy = 1
+successes_to_healthy = 1
+
+[[upstreams]]
+id = "slow-fail"
+uri = "http://127.0.0.1:2"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "200ms"
+timeout = "100ms"
+failures_to_unhealthy = 3
+successes_to_healthy = 1
+
+[[upstream_groups]]
+id = "main"
+scheduler = "round-robin"
+members = ["fast-fail", "slow-fail"]
+fallback = "reject"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let token = sup.shutdown_token();
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        state.readiness.load(Ordering::Relaxed),
+        "service should be ready"
+    );
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound");
+    let admin_str = admin_addr.to_string();
+
+    let (status, body) = http_get(&admin_str, "/-/upstreams").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let groups = json.as_array().unwrap();
+    let members = groups[0]["members"].as_array().unwrap();
+
+    let fast = members.iter().find(|m| m["id"] == "fast-fail").unwrap();
+    let slow = members.iter().find(|m| m["id"] == "slow-fail").unwrap();
+
+    assert_eq!(
+        fast["health"], "Unhealthy",
+        "fast-fail (threshold=1) should be Unhealthy after probe failures"
+    );
+    assert!(
+        slow["health"] != "Unhealthy",
+        "slow-fail (threshold=3) should not be Unhealthy yet"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn reload_changes_health_config_and_manager_uses_new_values() {
+    let config_threshold_1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[upstreams]]
+id = "upstream1"
+uri = "http://127.0.0.1:1"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "200ms"
+timeout = "100ms"
+failures_to_unhealthy = 1
+successes_to_healthy = 1
+
+[[upstream_groups]]
+id = "main"
+scheduler = "round-robin"
+members = ["upstream1"]
+fallback = "reject"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config_threshold_1);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let token = sup.shutdown_token();
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound");
+    let admin_str = admin_addr.to_string();
+
+    let (_, body) = http_get(&admin_str, "/-/upstreams").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let members = json[0]["members"].as_array().unwrap();
+    assert_eq!(
+        members[0]["health"], "Unhealthy",
+        "should be Unhealthy with threshold=1"
+    );
+
+    let config_threshold_3 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[upstreams]]
+id = "upstream1"
+uri = "http://127.0.0.1:1"
+
+[upstreams.health]
+mode = "tcp_connect"
+interval = "200ms"
+timeout = "100ms"
+failures_to_unhealthy = 3
+successes_to_healthy = 1
+
+[[upstream_groups]]
+id = "main"
+scheduler = "round-robin"
+members = ["upstream1"]
+fallback = "reject"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    std::fs::write(f.path(), config_threshold_3).unwrap();
+    std::process::Command::new("kill")
+        .arg("-HUP")
+        .arg(std::process::id().to_string())
+        .output()
+        .ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (_, body) = http_get(&admin_str, "/-/upstreams").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let members = json[0]["members"].as_array().unwrap();
+    assert_ne!(
+        members[0]["health"], "Unhealthy",
+        "after reload with threshold=3, upstream should not be Unhealthy yet"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}

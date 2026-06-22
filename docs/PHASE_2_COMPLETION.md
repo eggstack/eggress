@@ -8,7 +8,7 @@ follow-up final-closure cleanup pass then removed the last precision and
 runtime-semantics issues (fallible supervisor, single generation source, live
 admin reads, PAC/static reload freshness, route-explain context, admin-during-
 drain, and a documented list of Phase 2 operational limitations). The work
-spans 15+ commits and is validated by 583 unit and integration tests.
+spans 15+ commits and is validated by 593 unit and integration tests.
 
 ## Commits
 
@@ -144,7 +144,7 @@ oversized identity → 400. Identity is not echoed back as a credential secret.
 | 20 | Admin PAC, static content, and route-explain serve live data after reload | Pass | `tests/pac_static.rs:pac_reload_serves_new_content`, `static_content_reload_serves_new_body`, `tests/admin.rs:admin_routes_reflect_reload`, `admin_route_explain_reflects_reload` |
 | 21 | Route explanation supports source and identity matchers | Pass | `tests/admin.rs:route_explain_source_field_changes_decision`, `route_explain_identity_field_changes_decision`, `route_explain_invalid_source_returns_400` |
 | 22 | Admin stays available during connection drain | Pass | `tests/shutdown.rs:admin_responds_during_shutdown_drain`, `admin_metrics_visible_during_drain` |
-| 23 | All formatting, Clippy, unit, integration checks pass | Pass | clippy clean, fmt clean, 583 tests pass |
+| 23 | All formatting, Clippy, unit, integration checks pass | Pass | clippy clean, fmt clean, 593 tests pass |
 | 24 | No unsafe, no OpenSSL, no native dependency | Pass | `unsafe_code = "forbid"` workspace-wide |
 | 25 | Phase 3 blocked until criteria met | Pass | This document |
 
@@ -154,7 +154,7 @@ oversized identity → 400. Identity is not echoed back as a credential secret.
 |----------|------|-------|
 | Startup | `tests/startup.rs` | 6 |
 | Routing | `tests/routing.rs` | 7 |
-| Health | `tests/health.rs` | 5 |
+| Health | `tests/health.rs` | 7 |
 | Admin | `tests/admin.rs` | 15 |
 | Reload | `tests/reload.rs` | 6 |
 | Shutdown | `tests/shutdown.rs` | 9 |
@@ -162,7 +162,7 @@ oversized identity → 400. Identity is not echoed back as a credential secret.
 
 Plus the eggress-admin, eggress-routing, eggress-server, eggress-config,
 eggress-protocol-http, eggress-protocol-socks, eggress-testkit, and
-eggress-cli unit test suites. Total workspace: 583 tests.
+eggress-cli unit test suites. Total workspace: 593 tests.
 
 ## Notes
 

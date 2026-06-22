@@ -653,3 +653,18 @@ Implemented by commits:
 
 All required checks passed on `<date>`.
 ```
+
+---
+
+# Completion record
+
+Implemented by commits:
+
+- `0b44f31` — fallible supervisor run and bind-conflict test
+- `a91857c` — single generation source and admin live-state cleanup
+- `e650e06` — PAC/static reload semantics and route explanation context
+- `4a5265f` — health config verification and shutdown/docs closure
+- `a5e09ad` — documentation closure (README, AGENTS, ARCHITECTURE, PHASE_2_COMPLETION)
+- `25d173b` — WS7 required tests (different thresholds, reload changes config, health config ARC reuse)
+
+All required checks passed on 2026-06-22.

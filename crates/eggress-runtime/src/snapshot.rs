@@ -137,6 +137,7 @@ mod tests {
     use eggress_routing::scheduler::SchedulerKind;
     use eggress_routing::UpstreamGroupId;
     use eggress_uri::ProxyChainSpec;
+    use std::time::Duration;
 
     fn default_health() -> eggress_routing::health::HealthConfig {
         eggress_routing::health::HealthConfig::default()
@@ -353,6 +354,76 @@ mod tests {
             snap.upstreams.get("p2").unwrap(),
             &group.members[1]
         ));
+    }
+
+    #[test]
+    fn changed_health_config_gets_fresh_arc() {
+        let mut cfg1 = empty_config();
+        cfg1.upstreams = vec![UpstreamConfig {
+            id: "proxy1".to_string(),
+            chain: ProxyChainSpec { hops: vec![] },
+            health: eggress_routing::health::HealthConfig {
+                failures_to_unhealthy: 3,
+                ..default_health()
+            },
+        }];
+        let snap1 = compile_runtime_snapshot(&cfg1, None).unwrap();
+        let original_arc = snap1.upstreams.get("proxy1").unwrap().clone();
+
+        let mut cfg2 = empty_config();
+        cfg2.upstreams = vec![UpstreamConfig {
+            id: "proxy1".to_string(),
+            chain: ProxyChainSpec { hops: vec![] },
+            health: eggress_routing::health::HealthConfig {
+                failures_to_unhealthy: 1,
+                ..default_health()
+            },
+        }];
+        let snap2 = compile_runtime_snapshot(&cfg2, Some(&snap1)).unwrap();
+        let new_arc = snap2.upstreams.get("proxy1").unwrap().clone();
+
+        assert!(
+            !Arc::ptr_eq(&original_arc, &new_arc),
+            "changing health config should produce a fresh upstream runtime ARC"
+        );
+    }
+
+    #[test]
+    fn unchanged_health_config_retains_arc_identity() {
+        let mut cfg1 = empty_config();
+        cfg1.upstreams = vec![UpstreamConfig {
+            id: "proxy1".to_string(),
+            chain: ProxyChainSpec { hops: vec![] },
+            health: eggress_routing::health::HealthConfig {
+                failures_to_unhealthy: 2,
+                successes_to_healthy: 1,
+                interval: Duration::from_secs(10),
+                timeout: Duration::from_secs(2),
+                initial_state: eggress_routing::health::HealthState::Unknown,
+            },
+        }];
+        let snap1 = compile_runtime_snapshot(&cfg1, None).unwrap();
+        let original_arc = snap1.upstreams.get("proxy1").unwrap().clone();
+
+        let mut cfg2 = empty_config();
+        cfg2.upstreams = vec![UpstreamConfig {
+            id: "proxy1".to_string(),
+            chain: ProxyChainSpec { hops: vec![] },
+            health: eggress_routing::health::HealthConfig {
+                failures_to_unhealthy: 2,
+                successes_to_healthy: 1,
+                interval: Duration::from_secs(10),
+                timeout: Duration::from_secs(2),
+                initial_state: eggress_routing::health::HealthState::Unknown,
+            },
+        }];
+        let snap2 = compile_runtime_snapshot(&cfg2, Some(&snap1)).unwrap();
+        let reused_arc = snap2.upstreams.get("proxy1").unwrap().clone();
+
+        assert!(
+            Arc::ptr_eq(&original_arc, &reused_arc),
+            "identical health config should retain the upstream runtime ARC"
+        );
     }
 
     #[test]
