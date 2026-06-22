@@ -70,6 +70,8 @@ pub struct ListenerConfig {
     pub protocols: Vec<String>,
     pub connection_limit: Option<u32>,
     pub auth: Option<AuthConfig>,
+    #[serde(default)]
+    pub udp_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

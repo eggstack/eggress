@@ -33,6 +33,11 @@ pub struct UpstreamLabels {
     pub group_id: String,
 }
 
+#[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
+pub struct DecodeErrorLabels {
+    pub kind: String,
+}
+
 pub struct MetricsRegistry {
     registry: Registry,
     connections_active: Gauge,
@@ -55,7 +60,8 @@ pub struct MetricsRegistry {
     udp_dropped_packets_total: Counter,
     udp_target_flows_active: Gauge,
     udp_target_flows_total: Counter,
-    udp_decode_errors_total: Counter,
+    udp_decode_errors_total: Family<DecodeErrorLabels, Counter>,
+    udp_unsupported_upstream_total: Counter,
 }
 
 impl MetricsRegistry {
@@ -202,11 +208,18 @@ impl MetricsRegistry {
             udp_target_flows_total.clone(),
         );
 
-        let udp_decode_errors_total = Counter::default();
+        let udp_decode_errors_total = Family::<DecodeErrorLabels, Counter>::default();
         registry.register(
             "eggress_udp_decode_errors_total",
             "Total UDP datagram decode errors",
             udp_decode_errors_total.clone(),
+        );
+
+        let udp_unsupported_upstream_total = Counter::default();
+        registry.register(
+            "eggress_udp_unsupported_upstream_total",
+            "Total UDP packets routed to unsupported upstream groups",
+            udp_unsupported_upstream_total.clone(),
         );
 
         Self {
@@ -232,6 +245,7 @@ impl MetricsRegistry {
             udp_target_flows_active,
             udp_target_flows_total,
             udp_decode_errors_total,
+            udp_unsupported_upstream_total,
         }
     }
 
@@ -332,8 +346,16 @@ impl MetricsRegistry {
         self.udp_target_flows_active.dec();
     }
 
-    pub fn record_udp_decode_error(&self) {
-        self.udp_decode_errors_total.inc();
+    pub fn record_udp_decode_error(&self, kind: &str) {
+        self.udp_decode_errors_total
+            .get_or_create(&DecodeErrorLabels {
+                kind: kind.to_string(),
+            })
+            .inc();
+    }
+
+    pub fn record_udp_unsupported_upstream(&self) {
+        self.udp_unsupported_upstream_total.inc();
     }
 
     pub fn udp_associations_active_gauge(&self) -> i64 {
@@ -589,9 +611,18 @@ mod tests {
     #[test]
     fn udp_decode_error_metric() {
         let m = MetricsRegistry::new();
-        m.record_udp_decode_error();
+        m.record_udp_decode_error("too_short");
         let output = m.render_prometheus();
         assert!(output.contains("eggress_udp_decode_errors_total"));
+        assert!(output.contains("kind=\"too_short\""));
+    }
+
+    #[test]
+    fn udp_unsupported_upstream_metric() {
+        let m = MetricsRegistry::new();
+        m.record_udp_unsupported_upstream();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_unsupported_upstream_total"));
     }
 
     #[test]

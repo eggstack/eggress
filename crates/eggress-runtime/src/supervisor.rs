@@ -93,6 +93,59 @@ struct PreparedListener {
     local_addr: std::net::SocketAddr,
     auth: eggress_server::accept::InboundAuthentication,
     handshake_timeout: Duration,
+    udp_enabled: bool,
+}
+
+struct RuntimeUdpService {
+    registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
+    metrics: Arc<eggress_metrics::MetricsRegistry>,
+}
+
+impl eggress_server::UdpService for RuntimeUdpService {
+    fn create_association(
+        &self,
+        listener: &str,
+        client_tcp_peer: std::net::SocketAddr,
+        identity: eggress_core::ClientIdentity,
+        generation: u64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        eggress_server::UdpAssociationHandle,
+                        eggress_udp::error::UdpError,
+                    >,
+                > + Send
+                + 'static,
+        >,
+    > {
+        let registry = self.registry.clone();
+        let metrics = self.metrics.clone();
+        let listener = listener.to_string();
+        Box::pin(async move {
+            let assoc = registry
+                .create_association(&listener, client_tcp_peer, identity, generation)
+                .await?;
+            metrics.record_udp_association_created();
+            let relay_addr = "127.0.0.1:0".parse().unwrap();
+            Ok(eggress_server::UdpAssociationHandle {
+                id: assoc.id,
+                relay_addr,
+                cancel: assoc.cancel.clone(),
+            })
+        })
+    }
+
+    fn is_enabled(&self) -> bool {
+        true
+    }
+
+    fn active_count(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = usize> + Send + 'static>> {
+        let registry = self.registry.clone();
+        Box::pin(async move { registry.active_count().await })
+    }
 }
 
 pub struct RuntimeState {
@@ -422,6 +475,7 @@ impl ServiceSupervisor {
                     local_addr,
                     auth,
                     handshake_timeout,
+                    udp_enabled: lcfg.udp_enabled,
                 });
             }
 
@@ -479,6 +533,14 @@ impl ServiceSupervisor {
 
                         active.fetch_add(1, Ordering::Relaxed);
 
+                        let udp_svc = if prepared_listener.udp_enabled {
+                            Some(Arc::new(RuntimeUdpService {
+                                registry: state.udp_registry.clone(),
+                                metrics: state.metrics.clone(),
+                            }) as Arc<dyn eggress_server::UdpService>)
+                        } else {
+                            None
+                        };
                         conn_tasks.spawn(async move {
                             let started = std::time::Instant::now();
                             let config = eggress_server::ConnectionConfig {
@@ -493,7 +555,7 @@ impl ServiceSupervisor {
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
                                 metrics: Some(conn_metrics),
-                                udp: None,
+                                udp: udp_svc,
                             };
 
                             let report = tokio::select! {

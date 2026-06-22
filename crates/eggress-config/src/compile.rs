@@ -59,6 +59,7 @@ pub struct ListenerConfig {
     pub protocols: Vec<ProtocolId>,
     pub connection_limit: Option<u32>,
     pub auth: Option<crate::model::AuthConfig>,
+    pub udp_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -468,6 +469,7 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 protocols,
                 connection_limit: l.connection_limit,
                 auth: l.auth.clone(),
+                udp_enabled: l.udp_enabled.unwrap_or(false),
             })
         })
         .collect()
