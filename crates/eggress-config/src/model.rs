@@ -4,7 +4,7 @@ use serde::Deserialize;
 #[serde(untagged)]
 pub enum MatchExprConfig {
     Composite(CompositeMatcher),
-    Leaf(LeafMatcher),
+    Leaf(Box<LeafMatcher>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +33,7 @@ pub struct LeafMatcher {
     pub listener: Option<String>,
     pub protocol: Option<String>,
     pub identity: Option<String>,
+    pub transport: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -19,11 +19,41 @@ pub trait SessionMetrics: Send + Sync {
     fn record_route_decision(&self, rule: &str, action: &str, outcome: &str);
 }
 
+/// Handle returned by UdpService::create_association.
+pub struct UdpAssociationHandle {
+    pub id: eggress_udp::assoc::UdpAssociationId,
+    pub relay_addr: std::net::SocketAddr,
+    pub cancel: tokio_util::sync::CancellationToken,
+}
+
+/// Trait for UDP association services. Implemented by the runtime crate.
+pub trait UdpService: Send + Sync {
+    fn create_association(
+        &self,
+        listener: &str,
+        client_tcp_peer: std::net::SocketAddr,
+        identity: eggress_core::ClientIdentity,
+        generation: u64,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<UdpAssociationHandle, eggress_udp::error::UdpError>,
+                > + Send
+                + 'static,
+        >,
+    >;
+    fn is_enabled(&self) -> bool;
+    fn active_count(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = usize> + Send + 'static>>;
+}
+
 /// Context propagated from the listener into routing decisions.
 #[derive(Clone, Default)]
 pub struct ConnectionContext {
     pub source: Option<std::net::SocketAddr>,
     pub listener: String,
+    pub generation: u64,
 }
 
 /// Configuration for a single connection.
@@ -35,6 +65,7 @@ pub struct ConnectionConfig {
     pub protocols: Arc<[eggress_core::ProtocolId]>,
     pub authentication: accept::InboundAuthentication,
     pub metrics: Option<Arc<dyn SessionMetrics>>,
+    pub udp: Option<Arc<dyn UdpService>>,
 }
 
 /// Handle a single inbound connection.
@@ -161,6 +192,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -221,6 +253,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -388,6 +421,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -437,6 +471,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -491,6 +526,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -534,6 +570,7 @@ mod tests {
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
             metrics: None,
+            udp: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -559,6 +596,7 @@ mod tests {
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
             metrics: None,
+            udp: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -585,6 +623,7 @@ mod tests {
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
             metrics: None,
+            udp: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -617,6 +656,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -677,6 +717,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -726,6 +767,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -777,6 +819,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -832,6 +875,7 @@ mod tests {
             protocols: all_protocols(),
             authentication: accept::InboundAuthentication::None,
             metrics: None,
+            udp: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -992,6 +1036,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: auth,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1048,6 +1093,7 @@ mod tests {
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1088,12 +1134,14 @@ mod tests {
                 context: ConnectionContext {
                     source: Some(peer),
                     listener: "test-listener".to_string(),
+                    generation: 0,
                 },
                 handshake_timeout: Duration::from_secs(5),
                 connect_timeout: Duration::from_secs(10),
                 protocols: all_protocols(),
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
+                udp: None,
             };
             serve_connection(boxed, config).await
         });

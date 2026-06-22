@@ -118,6 +118,17 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
     }
 }
 
+fn compile_transport(s: &str) -> Result<eggress_routing::TransportKind, ConfigError> {
+    match s {
+        "tcp" => Ok(eggress_routing::TransportKind::Tcp),
+        "udp" => Ok(eggress_routing::TransportKind::Udp),
+        _ => Err(ConfigError::validation(
+            "transport",
+            &format!("unknown transport: {}", s),
+        )),
+    }
+}
+
 fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, ConfigError> {
     if let Some(ref match_expr) = rule.match_expr {
         return compile_match_config(match_expr);
@@ -334,6 +345,10 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
         matchers.push(eggress_routing::MatchExpr::Identity(Arc::from(
             ident.as_str(),
         )));
+    }
+    if let Some(ref transport_str) = leaf.transport {
+        let transport_kind = compile_transport(transport_str)?;
+        matchers.push(eggress_routing::MatchExpr::Transport(transport_kind));
     }
 
     match matchers.len() {

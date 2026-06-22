@@ -133,6 +133,18 @@ SOCKS4/4a and SOCKS5 protocol implementations:
 - SOCKS4a domain preservation for remote DNS
 - SOCKS5 method negotiation, no-auth and username/password auth
 - Bounded credentials (255 bytes)
+- SOCKS5 UDP ASSOCIATE command and reply
+- SOCKS5 UDP datagram codec (encode/decode with IPv4, IPv6, and domain targets)
+
+### eggress-udp
+UDP association management and direct forwarding:
+- `UdpAssociation` — association state machine with ownership by TCP control connection
+- `UdpAssociationRegistry` — bounded association tracking with global and per-listener limits
+- `UdpTargetFlow` — connected UDP socket per target for reliable response demux
+- `UdpLimits` — configurable association, datagram, and idle constraints
+- `UdpMetrics` — Prometheus-compatible counters and gauges for UDP operations
+- `validate_target` — security policy rejecting multicast, broadcast, unspecified, and port zero
+- `testkit` — UDP echo server helper for integration tests
 
 ### eggress-testkit
 Test utilities:
@@ -152,6 +164,82 @@ Client → TcpListener → serve_connection()
     → relay() or HTTP forward exchange (with byte counting)
     → SessionReport (with rule ID, upstream group, byte counts, failure category)
 ```
+
+## UDP Data Flow
+
+```
+TCP SOCKS5 client → UDP ASSOCIATE command → server creates UdpAssociation
+    → reply with UDP relay bind address
+    → client sends SOCKS5 UDP datagrams to relay address
+    → association decodes datagram, validates client ownership
+    → route engine decides Direct/Reject/UnsupportedUpstream
+    → direct UDP socket sends payload to target (one connected socket per target flow)
+    → response from target mapped back to client
+    → SOCKS5 UDP response datagram sent to pinned client address
+    → idle timeout or TCP control close tears down association
+```
+
+### UDP association ownership
+
+A UDP association is owned by the TCP control connection that issued the SOCKS5 UDP ASSOCIATE command. The association is closed when:
+
+- The TCP control connection closes.
+- The idle timeout expires.
+- Runtime shutdown begins.
+- Association or target-flow limits are exceeded.
+
+If the control connection closes, the association is torn down immediately. If the UDP association idles out, the TCP control connection is eventually closed by the server.
+
+### Datagram codec boundaries
+
+The SOCKS5 UDP datagram codec is independent of socket I/O. It operates on byte slices and produces `Socks5UdpRequest` values containing a target address and payload. The codec enforces:
+
+- RSV must be 0x0000.
+- FRAG must be 0x00 (fragmentation unsupported).
+- Maximum datagram size from configured limits.
+- Valid ATYP values (IPv4, IPv6, domain).
+- Nonzero domain length.
+
+Encoding produces a SOCKS5 UDP response datagram with the same structure. The codec does not allocate per packet beyond the domain name representation.
+
+### Target-flow model
+
+Each unique target address within an association gets its own `UdpTargetFlow` backed by a connected UDP socket. This design:
+
+- Simplifies response demultiplexing (replies arrive on the target-specific socket).
+- Makes client address pinning straightforward.
+- Bypasses the need for shared-socket peer mapping.
+
+The target flow count per association is bounded by `max_targets_per_association`. Flows are cleaned up by idle expiry or association close.
+
+### Routing per datagram
+
+Every UDP datagram is routed through the Phase 2 rule engine using a `RouteRequest` with `TransportKind::Udp`. The route decision can be:
+
+- `Direct` — forward to target via direct UDP socket.
+- `Reject` — drop the packet, increment drop metric.
+- `UnsupportedUpstream` — drop the packet because no UDP-capable upstream path exists.
+
+Route rules can match on `transport` to distinguish UDP from TCP traffic. Route changes via SIGHUP take effect on subsequent datagrams without restarting the UDP listener.
+
+### Direct-only limitation
+
+Phase 3 supports only direct UDP forwarding. There is no relay through upstream SOCKS5, HTTP, or Shadowsocks proxies. If a rule selects an upstream group, the packet is dropped with an `unsupported_upstream` metric. This is the explicit, safe default for a connectionless protocol.
+
+### Security defaults
+
+- Client address pinning is enabled by default. The first valid UDP packet from a client pins the association to that address; subsequent packets from different addresses are dropped.
+- Multicast, broadcast, unspecified targets, and port zero are rejected by default.
+- Datagram size is bounded by configuration.
+- Association and target-flow counts are bounded.
+- Bind to loopback by default for non-internet-facing deployments.
+
+### Reload limitations
+
+- UDP bind address changes require a restart.
+- UDP advertise address changes require a restart if the socket bind changes.
+- UDP limit changes apply only to new associations.
+- Route changes apply immediately to future UDP packets.
 
 ## Design Principles
 

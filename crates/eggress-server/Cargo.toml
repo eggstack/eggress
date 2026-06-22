@@ -15,6 +15,7 @@ eggress-uri.workspace = true
 eggress-routing.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
+eggress-udp.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

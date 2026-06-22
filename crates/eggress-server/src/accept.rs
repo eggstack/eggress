@@ -52,6 +52,7 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for AcceptError {
 pub enum AcceptedSession {
     Tunnel(PendingTunnel),
     HttpForward(PendingHttpForward),
+    UdpAssociate(PendingUdpAssociate),
 }
 
 /// A pending tunnel connection (HTTP CONNECT, SOCKS4, SOCKS5).
@@ -74,6 +75,14 @@ pub struct PendingHttpForward {
     pub request: eggress_protocol_http::forward::ForwardRequest,
     pub body_kind: RequestBodyKind,
     pub identity: ClientIdentity,
+}
+
+/// A pending SOCKS5 UDP ASSOCIATE session.
+pub struct PendingUdpAssociate {
+    pub client: BoxStream,
+    pub protocol: TunnelProtocol,
+    pub identity: ClientIdentity,
+    pub client_hint: Option<TargetAddr>,
 }
 
 /// Which tunnel protocol was used.
@@ -289,7 +298,8 @@ async fn accept_socks5(
     auth: &InboundAuthentication,
 ) -> Result<AcceptedSession, AcceptError> {
     use eggress_protocol_socks::socks5::server::{
-        read_auth_request, read_connect_request, read_method_negotiation, send_auth_response,
+        read_auth_request, read_method_negotiation, read_socks5_request, send_auth_response,
+        send_connect_reply, Socks5Command, CMD_BIND, REP_NOT_ALLOWED,
     };
 
     let (mut reader, mut writer) = tokio::io::split(stream);
@@ -357,20 +367,41 @@ async fn accept_socks5(
         }
     }
 
-    let socks_addr = read_connect_request(&mut reader)
+    let (command, socks_addr) = read_socks5_request(&mut reader)
         .await
         .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
 
-    let target = socks_addr_to_target(&socks_addr);
-    let stream: BoxStream = Box::new(tokio::io::join(reader, writer));
+    match command {
+        Socks5Command::Connect => {
+            let target = socks_addr_to_target(&socks_addr);
+            let stream: BoxStream = Box::new(tokio::io::join(reader, writer));
 
-    Ok(AcceptedSession::Tunnel(PendingTunnel {
-        target,
-        client: stream,
-        protocol: TunnelProtocol::Socks5,
-        reply_context: ReplyContext::Socks5,
-        identity,
-    }))
+            Ok(AcceptedSession::Tunnel(PendingTunnel {
+                target,
+                client: stream,
+                protocol: TunnelProtocol::Socks5,
+                reply_context: ReplyContext::Socks5,
+                identity,
+            }))
+        }
+        Socks5Command::UdpAssociate => {
+            let client_hint = Some(socks_addr_to_target(&socks_addr));
+            let stream: BoxStream = Box::new(tokio::io::join(reader, writer));
+
+            Ok(AcceptedSession::UdpAssociate(PendingUdpAssociate {
+                client: stream,
+                protocol: TunnelProtocol::Socks5,
+                identity,
+                client_hint,
+            }))
+        }
+        Socks5Command::Bind => {
+            let _ = send_connect_reply(&mut writer, REP_NOT_ALLOWED, &socks_addr).await;
+            Err(AcceptError::Protocol(Box::new(
+                eggress_protocol_socks::error::Socks5Error::UnsupportedCommand(CMD_BIND),
+            )))
+        }
+    }
 }
 
 async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError> {
@@ -1519,6 +1550,179 @@ mod tests {
             response_str.contains("407"),
             "expected 407, got: {response_str}"
         );
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_socks5_udp_associate_returns_pending() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let session = accept(boxed, &all_protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::UdpAssociate(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(
+                        pending.client_hint,
+                        Some(TargetAddr {
+                            host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                                0, 0, 0, 0
+                            ))),
+                            port: 0,
+                        })
+                    );
+                }
+                _ => panic!("expected UdpAssociate"),
+            }
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        // UDP ASSOCIATE (cmd=0x03), target 0.0.0.0:0
+        stream
+            .write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0])
+            .await
+            .unwrap();
+        stream.write_all(&0u16.to_be_bytes()).await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_socks5_bind_rejected() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let result = accept(boxed, &all_protocols, &InboundAuthentication::None).await;
+            assert!(result.is_err());
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        // BIND (cmd=0x02)
+        stream
+            .write_all(&[0x05, 0x02, 0x00, 0x01, 10, 0, 0, 1])
+            .await
+            .unwrap();
+        stream.write_all(&80u16.to_be_bytes()).await.unwrap();
+
+        // Server sends rejection reply
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[0], 0x05);
+        assert_eq!(reply[1], 0x02); // not allowed
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_socks5_connect_still_works() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let session = accept(boxed, &all_protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(pending.target.port, 443);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        // CONNECT request
+        stream
+            .write_all(&[0x05, 0x01, 0x00, 0x01, 10, 0, 0, 1])
+            .await
+            .unwrap();
+        stream.write_all(&443u16.to_be_bytes()).await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_socks5_udp_associate_with_auth() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let auth = InboundAuthentication::UsernamePassword {
+            username: "user".to_string(),
+            password: "secret".to_string(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let session = accept(boxed, &all_protocols, &auth).await.unwrap();
+            match session {
+                AcceptedSession::UdpAssociate(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(
+                        pending.identity,
+                        ClientIdentity::Username("user".to_string())
+                    );
+                }
+                _ => panic!("expected UdpAssociate"),
+            }
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream.write_all(&[0x05, 0x02, 0x00, 0x02]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x02]);
+
+        // Auth
+        stream
+            .write_all(&[0x01, 0x04, b'u', b's', b'e', b'r', 0x06])
+            .await
+            .unwrap();
+        stream.write_all(b"secret").await.unwrap();
+        let mut auth_resp = [0u8; 2];
+        stream.read_exact(&mut auth_resp).await.unwrap();
+        assert_eq!(auth_resp, [0x01, 0x00]);
+
+        // UDP ASSOCIATE
+        stream
+            .write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0])
+            .await
+            .unwrap();
+        stream.write_all(&0u16.to_be_bytes()).await.unwrap();
 
         server_jh.await.unwrap();
     }

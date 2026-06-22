@@ -8,14 +8,34 @@ pub const ATYP_DOMAIN: u8 = 0x03;
 pub const ATYP_IPV6: u8 = 0x04;
 
 /// SOCKS5 commands.
-const CMD_CONNECT: u8 = 0x01;
+pub const CMD_CONNECT: u8 = 0x01;
+pub const CMD_BIND: u8 = 0x02;
+pub const CMD_UDP_ASSOCIATE: u8 = 0x03;
+
+/// Parsed SOCKS5 command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Socks5Command {
+    Connect,
+    Bind,
+    UdpAssociate,
+}
+
+/// Parse a SOCKS5 command byte.
+pub fn parse_command(cmd: u8) -> Result<Socks5Command, Socks5Error> {
+    match cmd {
+        CMD_CONNECT => Ok(Socks5Command::Connect),
+        CMD_BIND => Ok(Socks5Command::Bind),
+        CMD_UDP_ASSOCIATE => Ok(Socks5Command::UdpAssociate),
+        _ => Err(Socks5Error::UnsupportedCommand(cmd)),
+    }
+}
 
 /// SOCKS5 reply codes.
-const REP_SUCCESS: u8 = 0x00;
-const REP_GENERAL_FAILURE: u8 = 0x01;
-const REP_NOT_ALLOWED: u8 = 0x02;
-const REP_COMMAND_NOT_SUPPORTED: u8 = 0x07;
-const REP_ADDRESS_TYPE_NOT_SUPPORTED: u8 = 0x08;
+pub const REP_SUCCESS: u8 = 0x00;
+pub const REP_GENERAL_FAILURE: u8 = 0x01;
+pub const REP_NOT_ALLOWED: u8 = 0x02;
+pub const REP_COMMAND_NOT_SUPPORTED: u8 = 0x07;
+pub const REP_ADDRESS_TYPE_NOT_SUPPORTED: u8 = 0x08;
 
 /// SOCKS5 authentication methods.
 const AUTH_NONE: u8 = 0x00;
@@ -227,6 +247,60 @@ pub async fn read_connect_request<R: AsyncRead + Unpin>(
     Ok(addr)
 }
 
+/// Read a SOCKS5 request from the client.
+///
+/// Returns the command and target address. Does not reject non-CONNECT commands.
+pub async fn read_socks5_request<R: AsyncRead + Unpin>(
+    reader: &mut R,
+) -> Result<(Socks5Command, SocksAddr), Socks5Error> {
+    let version = reader.read_u8().await?;
+    if version != 0x05 {
+        return Err(Socks5Error::UnsupportedVersion(version));
+    }
+
+    let cmd = reader.read_u8().await?;
+    let command = parse_command(cmd)?;
+
+    let _rsv = reader.read_u8().await?;
+
+    let atyp = reader.read_u8().await?;
+
+    let addr = match atyp {
+        ATYP_IPV4 => {
+            let mut buf = [0u8; 4];
+            reader.read_exact(&mut buf).await?;
+            let port = reader.read_u16().await?;
+            SocksAddr::IPv4(buf, port)
+        }
+        ATYP_DOMAIN => {
+            let len = reader.read_u8().await? as usize;
+            let mut domain = vec![0u8; len];
+            reader.read_exact(&mut domain).await?;
+            let domain = String::from_utf8(domain)
+                .map_err(|e| Socks5Error::MalformedMessage(format!("invalid domain: {e}")))?;
+            let port = reader.read_u16().await?;
+            SocksAddr::Domain(domain, port)
+        }
+        ATYP_IPV6 => {
+            let mut buf = [0u8; 16];
+            reader.read_exact(&mut buf).await?;
+            let port = reader.read_u16().await?;
+            SocksAddr::IPv6(buf, port)
+        }
+        _ => return Err(Socks5Error::UnsupportedAddressType(atyp)),
+    };
+
+    Ok((command, addr))
+}
+
+/// Send a UDP ASSOCIATE reply to the client with the relay bind address.
+pub async fn send_udp_associate_reply<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    bind_addr: &SocksAddr,
+) -> Result<(), Socks5Error> {
+    send_connect_reply(writer, REP_SUCCESS, bind_addr).await
+}
+
 /// Send a CONNECT reply to the client.
 pub async fn send_connect_reply<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -277,8 +351,8 @@ pub async fn reject_command<W: AsyncWrite + Unpin>(
     target: &SocksAddr,
 ) -> Result<(), Socks5Error> {
     match cmd {
-        // BIND and UDP ASSOCIATE are not supported
-        0x02 | 0x03 => {
+        // BIND is not supported
+        CMD_BIND => {
             send_connect_reply(writer, REP_NOT_ALLOWED, target).await?;
         }
         // Unknown command
@@ -517,16 +591,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reject_udp_associate_command() {
+    async fn test_reject_unknown_command() {
         let (mut client, mut server) = duplex(1024);
 
         let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
-        reject_command(&mut server, 0x03, &target).await.unwrap();
+        reject_command(&mut server, 0x04, &target).await.unwrap();
 
         let mut response = [0u8; 10];
         client.read_exact(&mut response).await.unwrap();
         assert_eq!(response[0], 0x05); // version
-        assert_eq!(response[1], 0x02); // not allowed
+        assert_eq!(response[1], 0x07); // command not supported
     }
 
     #[tokio::test]
@@ -687,5 +761,107 @@ mod tests {
         assert_eq!(encoded[1], 11); // "example.com" length
         assert_eq!(&encoded[2..13], b"example.com");
         assert_eq!(&encoded[13..15], &443u16.to_be_bytes());
+    }
+
+    #[test]
+    fn test_parse_command() {
+        assert_eq!(parse_command(0x01).unwrap(), Socks5Command::Connect);
+        assert_eq!(parse_command(0x02).unwrap(), Socks5Command::Bind);
+        assert_eq!(parse_command(0x03).unwrap(), Socks5Command::UdpAssociate);
+        assert!(parse_command(0x04).is_err());
+        assert!(parse_command(0xFF).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_udp_associate_ipv4() {
+        let (mut client, mut server) = duplex(1024);
+
+        // UDP ASSOCIATE request: version=5, cmd=3, rsv=0, atyp=1 (IPv4), addr=0.0.0.0, port=0
+        client
+            .write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0])
+            .await
+            .unwrap();
+        client.write_all(&0u16.to_be_bytes()).await.unwrap();
+
+        let (cmd, target) = read_socks5_request(&mut server).await.unwrap();
+        assert_eq!(cmd, Socks5Command::UdpAssociate);
+        assert_eq!(target, SocksAddr::IPv4([0, 0, 0, 0], 0));
+    }
+
+    #[tokio::test]
+    async fn test_udp_associate_ipv6() {
+        let (mut client, mut server) = duplex(1024);
+
+        let ipv6_addr = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        client.write_all(&[0x05, 0x03, 0x00, 0x04]).await.unwrap();
+        client.write_all(&ipv6_addr).await.unwrap();
+        client.write_all(&0u16.to_be_bytes()).await.unwrap();
+
+        let (cmd, target) = read_socks5_request(&mut server).await.unwrap();
+        assert_eq!(cmd, Socks5Command::UdpAssociate);
+        assert_eq!(target, SocksAddr::IPv6(ipv6_addr, 0));
+    }
+
+    #[tokio::test]
+    async fn test_udp_associate_domain() {
+        let (mut client, mut server) = duplex(1024);
+
+        let domain = "example.com";
+        client
+            .write_all(&[0x05, 0x03, 0x00, 0x03, domain.len() as u8])
+            .await
+            .unwrap();
+        client.write_all(domain.as_bytes()).await.unwrap();
+        client.write_all(&0u16.to_be_bytes()).await.unwrap();
+
+        let (cmd, target) = read_socks5_request(&mut server).await.unwrap();
+        assert_eq!(cmd, Socks5Command::UdpAssociate);
+        assert_eq!(target, SocksAddr::Domain("example.com".to_string(), 0));
+    }
+
+    #[tokio::test]
+    async fn test_connect_still_works_via_read_socks5_request() {
+        let (mut client, mut server) = duplex(1024);
+
+        client
+            .write_all(&[0x05, 0x01, 0x00, 0x01, 192, 168, 1, 1])
+            .await
+            .unwrap();
+        client.write_all(&8080u16.to_be_bytes()).await.unwrap();
+
+        let (cmd, target) = read_socks5_request(&mut server).await.unwrap();
+        assert_eq!(cmd, Socks5Command::Connect);
+        assert_eq!(target, SocksAddr::IPv4([192, 168, 1, 1], 8080));
+    }
+
+    #[tokio::test]
+    async fn test_reject_bind_only_not_udp_associate() {
+        let (mut client, mut server) = duplex(1024);
+
+        let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
+        reject_command(&mut server, 0x02, &target).await.unwrap();
+
+        let mut response = [0u8; 10];
+        client.read_exact(&mut response).await.unwrap();
+        assert_eq!(response[0], 0x05);
+        assert_eq!(response[1], 0x02); // not allowed for BIND
+    }
+
+    #[tokio::test]
+    async fn test_send_udp_associate_reply() {
+        let (mut client, mut server) = duplex(1024);
+
+        let bind_addr = SocksAddr::IPv4([127, 0, 0, 1], 1080);
+        send_udp_associate_reply(&mut server, &bind_addr)
+            .await
+            .unwrap();
+
+        let mut response = [0u8; 10];
+        client.read_exact(&mut response).await.unwrap();
+        assert_eq!(response[0], 0x05);
+        assert_eq!(response[1], 0x00); // success
+        assert_eq!(response[3], 0x01); // atyp IPv4
+        assert_eq!(&response[4..8], &[127, 0, 0, 1]);
+        assert_eq!(&response[8..10], &1080u16.to_be_bytes());
     }
 }

@@ -157,6 +157,7 @@ fn handle_route_explain(args: &RouteExplain) {
         listener,
         inbound_protocol: protocol,
         identity: &eggress_core::ClientIdentity::Anonymous,
+        transport: eggress_routing::TransportKind::Tcp,
     };
 
     let explanation = router.explain(&request, 0);
@@ -1027,12 +1028,14 @@ async fn run_listener(
                 context: eggress_server::ConnectionContext {
                     source: Some(peer),
                     listener: listener.to_string(),
+                    generation: 0,
                 },
                 handshake_timeout: Duration::from_secs(30),
                 connect_timeout: Duration::from_secs(30),
                 protocols: conn_protocols,
                 authentication: conn_auth,
                 metrics: Some(conn_metrics),
+                udp: None,
             };
 
             let report = eggress_server::serve_connection(conn.stream, config)
@@ -1104,12 +1107,14 @@ mod tests {
                     context: eggress_server::ConnectionContext {
                         source: Some(conn.peer_addr),
                         listener: String::new(),
+                        generation: 0,
                     },
                     handshake_timeout: Duration::from_secs(5),
                     connect_timeout: Duration::from_secs(10),
                     protocols: Arc::from([eggress_core::ProtocolId::Http]),
                     authentication: eggress_server::accept::InboundAuthentication::None,
                     metrics: None,
+                    udp: None,
                 };
                 tokio::spawn(async move {
                     let _ = eggress_server::serve_connection(conn.stream, config).await;

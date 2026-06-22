@@ -93,7 +93,7 @@ Legend:
 - [x] SOCKS5 IPv6 targets
 - [x] SOCKS5 domain targets
 - [ ] SOCKS5 BIND
-- [ ] SOCKS5 UDP ASSOCIATE server
+- [x] SOCKS5 UDP ASSOCIATE server
 - [ ] SOCKS5 UDP ASSOCIATE client
 
 ### Routing and scheduling
@@ -130,16 +130,16 @@ Legend:
 
 ### UDP
 
-- [ ] Direct UDP
-- [ ] UDP association table
-- [ ] Per-client association limits
-- [ ] Global association limits
-- [ ] Idle expiry
-- [ ] Target-aware reply demultiplexing
-- [ ] UDP upstream routing
+- [x] Direct UDP
+- [x] UDP association table
+- [x] Per-client association limits
+- [x] Global association limits
+- [x] Idle expiry
+- [x] Target-aware reply demultiplexing
+- [x] UDP upstream routing
 - [ ] UDP chain validation
-- [ ] UDP metrics
-- [ ] Packet-size and amplification limits
+- [x] UDP metrics
+- [x] Packet-size and amplification limits
 
 ### TLS
 

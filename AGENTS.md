@@ -44,6 +44,7 @@ eggress/
 │   ├── eggress-admin/     # Admin HTTP server, PAC, static content, snapshot provider trait
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
+│   ├── eggress-udp/       # UDP association, codec, direct forwarding, limits, security
 │   └── eggress-testkit/   # Test utilities
 ├── tests/
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)

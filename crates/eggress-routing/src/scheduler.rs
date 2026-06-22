@@ -273,6 +273,7 @@ mod tests {
             listener: "test",
             inbound_protocol: crate::ProtocolId::Http,
             identity: &identity,
+            transport: crate::TransportKind::Tcp,
         };
 
         let candidates = vec![a.clone(), b.clone(), c.clone()];

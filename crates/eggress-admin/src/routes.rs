@@ -139,6 +139,21 @@ pub async fn handle_request(
             });
             build_json_response(200, config_summary.to_string())
         }
+        "/-/udp" => {
+            let snap = state.snapshot();
+            let udp = serde_json::json!({
+                "associations_active": state.metrics.udp_associations_active_gauge(),
+                "associations_total": state.metrics.udp_associations_total_count(),
+                "target_flows_active": state.metrics.udp_target_flows_active_gauge(),
+                "listeners": snap.listeners.iter().map(|l| {
+                    serde_json::json!({
+                        "name": l.name,
+                        "protocols": l.protocols,
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            build_json_response(200, udp.to_string())
+        }
         "/-/route-explain" => {
             if method != http::Method::POST {
                 return build_text_response(405, "method not allowed");
@@ -257,6 +272,7 @@ pub async fn handle_request(
                 listener: listener_str,
                 inbound_protocol: protocol,
                 identity,
+                transport: eggress_routing::TransportKind::Tcp,
             };
             let explanation = router.explain(&request, snap.generation);
             build_json_response(200, serde_json::to_string(&explanation).unwrap())

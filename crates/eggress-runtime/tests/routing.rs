@@ -25,6 +25,7 @@ fn make_request<'a>(
         listener,
         inbound_protocol: protocol,
         identity: &ANON,
+        transport: eggress_routing::TransportKind::Tcp,
     }
 }
 

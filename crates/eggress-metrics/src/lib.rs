@@ -45,6 +45,17 @@ pub struct MetricsRegistry {
     reload_total: Counter,
     reload_failures: Counter,
     config_generation: Gauge,
+    udp_associations_active: Gauge,
+    udp_associations_total: Counter,
+    udp_association_failures: Counter,
+    udp_packets_up_total: Counter,
+    udp_packets_down_total: Counter,
+    udp_bytes_up_total: Counter,
+    udp_bytes_down_total: Counter,
+    udp_dropped_packets_total: Counter,
+    udp_target_flows_active: Gauge,
+    udp_target_flows_total: Counter,
+    udp_decode_errors_total: Counter,
 }
 
 impl MetricsRegistry {
@@ -121,6 +132,83 @@ impl MetricsRegistry {
             config_generation.clone(),
         );
 
+        let udp_associations_active = Gauge::default();
+        registry.register(
+            "eggress_udp_associations_active",
+            "Currently active UDP associations",
+            udp_associations_active.clone(),
+        );
+
+        let udp_associations_total = Counter::default();
+        registry.register(
+            "eggress_udp_associations_total",
+            "Total UDP associations created",
+            udp_associations_total.clone(),
+        );
+
+        let udp_association_failures = Counter::default();
+        registry.register(
+            "eggress_udp_association_failures_total",
+            "Total UDP association creation failures",
+            udp_association_failures.clone(),
+        );
+
+        let udp_packets_up_total = Counter::default();
+        registry.register(
+            "eggress_udp_packets_up_total",
+            "Total UDP packets received from clients",
+            udp_packets_up_total.clone(),
+        );
+
+        let udp_packets_down_total = Counter::default();
+        registry.register(
+            "eggress_udp_packets_down_total",
+            "Total UDP packets sent to clients",
+            udp_packets_down_total.clone(),
+        );
+
+        let udp_bytes_up_total = Counter::default();
+        registry.register(
+            "eggress_udp_bytes_up_total",
+            "Total UDP bytes received from clients",
+            udp_bytes_up_total.clone(),
+        );
+
+        let udp_bytes_down_total = Counter::default();
+        registry.register(
+            "eggress_udp_bytes_down_total",
+            "Total UDP bytes sent to clients",
+            udp_bytes_down_total.clone(),
+        );
+
+        let udp_dropped_packets_total = Counter::default();
+        registry.register(
+            "eggress_udp_dropped_packets_total",
+            "Total UDP packets dropped",
+            udp_dropped_packets_total.clone(),
+        );
+
+        let udp_target_flows_active = Gauge::default();
+        registry.register(
+            "eggress_udp_target_flows_active",
+            "Currently active UDP target flows",
+            udp_target_flows_active.clone(),
+        );
+
+        let udp_target_flows_total = Counter::default();
+        registry.register(
+            "eggress_udp_target_flows_total",
+            "Total UDP target flows created",
+            udp_target_flows_total.clone(),
+        );
+
+        let udp_decode_errors_total = Counter::default();
+        registry.register(
+            "eggress_udp_decode_errors_total",
+            "Total UDP datagram decode errors",
+            udp_decode_errors_total.clone(),
+        );
+
         Self {
             registry,
             connections_active,
@@ -133,6 +221,17 @@ impl MetricsRegistry {
             reload_total,
             reload_failures,
             config_generation,
+            udp_associations_active,
+            udp_associations_total,
+            udp_association_failures,
+            udp_packets_up_total,
+            udp_packets_down_total,
+            udp_bytes_up_total,
+            udp_bytes_down_total,
+            udp_dropped_packets_total,
+            udp_target_flows_active,
+            udp_target_flows_total,
+            udp_decode_errors_total,
         }
     }
 
@@ -196,6 +295,58 @@ impl MetricsRegistry {
         encode(&mut buf, &self.registry).unwrap();
         buf
     }
+
+    pub fn record_udp_association_created(&self) {
+        self.udp_associations_active.inc();
+        self.udp_associations_total.inc();
+    }
+
+    pub fn record_udp_association_closed(&self) {
+        self.udp_associations_active.dec();
+    }
+
+    pub fn record_udp_association_failure(&self) {
+        self.udp_association_failures.inc();
+    }
+
+    pub fn record_udp_packet_up(&self, bytes: u64) {
+        self.udp_packets_up_total.inc();
+        self.udp_bytes_up_total.inc_by(bytes);
+    }
+
+    pub fn record_udp_packet_down(&self, bytes: u64) {
+        self.udp_packets_down_total.inc();
+        self.udp_bytes_down_total.inc_by(bytes);
+    }
+
+    pub fn record_udp_dropped(&self) {
+        self.udp_dropped_packets_total.inc();
+    }
+
+    pub fn record_udp_target_flow_created(&self) {
+        self.udp_target_flows_active.inc();
+        self.udp_target_flows_total.inc();
+    }
+
+    pub fn record_udp_target_flow_closed(&self) {
+        self.udp_target_flows_active.dec();
+    }
+
+    pub fn record_udp_decode_error(&self) {
+        self.udp_decode_errors_total.inc();
+    }
+
+    pub fn udp_associations_active_gauge(&self) -> i64 {
+        self.udp_associations_active.get()
+    }
+
+    pub fn udp_associations_total_count(&self) -> u64 {
+        self.udp_associations_total.get()
+    }
+
+    pub fn udp_target_flows_active_gauge(&self) -> i64 {
+        self.udp_target_flows_active.get()
+    }
 }
 
 impl Default for MetricsRegistry {
@@ -221,6 +372,17 @@ mod tests {
         assert!(output.contains("eggress_reload_total"));
         assert!(output.contains("eggress_reload_failures_total"));
         assert!(output.contains("eggress_config_generation"));
+        assert!(output.contains("eggress_udp_associations_active"));
+        assert!(output.contains("eggress_udp_associations_total"));
+        assert!(output.contains("eggress_udp_association_failures_total"));
+        assert!(output.contains("eggress_udp_packets_up_total"));
+        assert!(output.contains("eggress_udp_packets_down_total"));
+        assert!(output.contains("eggress_udp_bytes_up_total"));
+        assert!(output.contains("eggress_udp_bytes_down_total"));
+        assert!(output.contains("eggress_udp_dropped_packets_total"));
+        assert!(output.contains("eggress_udp_target_flows_active"));
+        assert!(output.contains("eggress_udp_target_flows_total"));
+        assert!(output.contains("eggress_udp_decode_errors_total"));
     }
 
     #[test]
@@ -363,6 +525,93 @@ mod tests {
         m.set_config_generation(42);
         let output = m.render_prometheus();
         assert!(output.contains("eggress_config_generation"));
+    }
+
+    #[test]
+    fn udp_association_metrics() {
+        let m = MetricsRegistry::new();
+        m.record_udp_association_created();
+        m.record_udp_association_created();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_associations_active"));
+        assert!(output.contains("eggress_udp_associations_total"));
+
+        m.record_udp_association_closed();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_associations_active"));
+    }
+
+    #[test]
+    fn udp_association_failure_metric() {
+        let m = MetricsRegistry::new();
+        m.record_udp_association_failure();
+        m.record_udp_association_failure();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_association_failures_total"));
+    }
+
+    #[test]
+    fn udp_packet_metrics() {
+        let m = MetricsRegistry::new();
+        m.record_udp_packet_up(100);
+        m.record_udp_packet_up(200);
+        m.record_udp_packet_down(50);
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_packets_up_total"));
+        assert!(output.contains("eggress_udp_packets_down_total"));
+        assert!(output.contains("eggress_udp_bytes_up_total"));
+        assert!(output.contains("eggress_udp_bytes_down_total"));
+    }
+
+    #[test]
+    fn udp_dropped_metric() {
+        let m = MetricsRegistry::new();
+        m.record_udp_dropped();
+        m.record_udp_dropped();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_dropped_packets_total"));
+    }
+
+    #[test]
+    fn udp_target_flow_metrics() {
+        let m = MetricsRegistry::new();
+        m.record_udp_target_flow_created();
+        m.record_udp_target_flow_created();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_target_flows_active"));
+        assert!(output.contains("eggress_udp_target_flows_total"));
+
+        m.record_udp_target_flow_closed();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_target_flows_active"));
+    }
+
+    #[test]
+    fn udp_decode_error_metric() {
+        let m = MetricsRegistry::new();
+        m.record_udp_decode_error();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_decode_errors_total"));
+    }
+
+    #[test]
+    fn udp_active_gauge_returns_to_zero() {
+        let m = MetricsRegistry::new();
+        m.record_udp_association_created();
+        m.record_udp_association_created();
+        m.record_udp_association_closed();
+        m.record_udp_association_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_udp_associations_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 0.0, "udp active associations should return to 0");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

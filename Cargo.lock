@@ -338,6 +338,7 @@ dependencies = [
  "eggress-routing",
  "eggress-server",
  "eggress-testkit",
+ "eggress-udp",
  "eggress-uri",
  "serde_json",
  "tempfile",
@@ -356,6 +357,7 @@ dependencies = [
  "eggress-protocol-socks",
  "eggress-routing",
  "eggress-testkit",
+ "eggress-udp",
  "eggress-uri",
  "thiserror",
  "tokio",
@@ -370,6 +372,21 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-test",
+]
+
+[[package]]
+name = "eggress-udp"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "eggress-core",
+ "eggress-protocol-socks",
+ "eggress-testkit",
+ "ipnet",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

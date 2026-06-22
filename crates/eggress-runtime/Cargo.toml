@@ -13,6 +13,7 @@ eggress-server.workspace = true
 eggress-admin.workspace = true
 eggress-metrics.workspace = true
 eggress-uri.workspace = true
+eggress-udp.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

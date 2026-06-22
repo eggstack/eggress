@@ -79,6 +79,12 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
 /// - Process-level settings (log format, log level, shutdown grace)
 /// - Timeout configuration
 /// - Admin bind address
+///
+/// **UDP-specific reload semantics:**
+/// - UDP limits apply to new associations only; existing associations keep their limits.
+/// - UDP bind changes are restart-required.
+/// - UDP advertise address changes are restart-required if socket bind changes.
+/// - Route changes apply immediately to future UDP packets.
 struct PreparedListener {
     name: String,
     bind: String,
@@ -99,6 +105,7 @@ pub struct RuntimeState {
     pub connection_counter: Arc<AtomicU64>,
     pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
     pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
+    pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
 }
 
 impl RuntimeState {
@@ -151,6 +158,10 @@ impl ServiceSupervisor {
         let active_connections = Arc::new(AtomicU64::new(0));
         let connection_counter = Arc::new(AtomicU64::new(1));
 
+        let udp_registry = Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
+            eggress_udp::limits::UdpLimits::default(),
+        ));
+
         let state = Arc::new(RuntimeState {
             snapshot: snapshot.clone(),
             routing: routing.clone(),
@@ -161,6 +172,7 @@ impl ServiceSupervisor {
             connection_counter,
             admin_local_addr: Arc::new(Mutex::new(None)),
             listener_addrs: Arc::new(Mutex::new(Vec::new())),
+            udp_registry,
         });
 
         let cancel = CancellationToken::new();
@@ -213,6 +225,12 @@ impl ServiceSupervisor {
 
     /// Classify whether a reload is supported given old and new listener configs.
     /// Returns `Ok(())` if the reload is safe, or `Err(reason)` if it should be rejected.
+    ///
+    /// UDP-specific reload semantics:
+    /// - UDP bind changes are restart-required.
+    /// - UDP advertise address changes are restart-required if socket bind changes.
+    /// - UDP limits apply to new associations only; existing ones keep their limits.
+    /// - Route changes apply immediately to future UDP packets.
     fn classify_reload(
         &self,
         new_config: &eggress_config::compile::RuntimeConfig,
@@ -457,6 +475,7 @@ impl ServiceSupervisor {
                         let conn_metrics = state.metrics.clone();
                         let active = state.active_connections.clone();
                         let conn_cancel = conn_cancel.child_token();
+                        let generation = state.snapshot.load().generation;
 
                         active.fetch_add(1, Ordering::Relaxed);
 
@@ -467,12 +486,14 @@ impl ServiceSupervisor {
                                 context: eggress_server::ConnectionContext {
                                     source: Some(peer),
                                     listener: listener_str,
+                                    generation,
                                 },
                                 handshake_timeout: prepared_listener.handshake_timeout,
                                 connect_timeout,
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
                                 metrics: Some(conn_metrics),
+                                udp: None,
                             };
 
                             let report = tokio::select! {
@@ -680,12 +701,15 @@ impl ServiceSupervisor {
             // 3. Stop health probes
             health_cancel.cancel();
 
-            // 4. Wait for listener accept loops to exit so they cannot hand
+            // 4. Close all UDP associations
+            state_ref.udp_registry.close_all().await;
+
+            // 5. Wait for listener accept loops to exit so they cannot hand
             //    new connections to the connection tracker.
             tasks.close();
             tasks.wait().await;
 
-            // 5. Drain active connections within the grace period; force-cancel
+            // 6. Drain active connections within the grace period; force-cancel
             //    afterwards. Admin stays up through this window so operators
             //    can observe drain progress via /-/ready, /-/status, /metrics.
             tracing::info!("draining active connections");
@@ -705,11 +729,11 @@ impl ServiceSupervisor {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
 
-            // 6. Wait for connection tasks (either drained naturally or force-cancelled)
+            // 7. Wait for connection tasks (either drained naturally or force-cancelled)
             connection_tasks.close();
             connection_tasks.wait().await;
 
-            // 7. Now that the proxy has fully stopped accepting and serving
+            // 8. Now that the proxy has fully stopped accepting and serving
             //    traffic, stop the admin server. /-/ready has been reporting
             //    503 since step 1.
             admin_cancel.cancel();

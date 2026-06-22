@@ -1,4 +1,4 @@
-use crate::accept::{AcceptedSession, PendingHttpForward, PendingTunnel};
+use crate::accept::{AcceptedSession, PendingHttpForward, PendingTunnel, PendingUdpAssociate};
 use crate::error::SessionOpenError;
 use crate::reply;
 use crate::ConnectionConfig;
@@ -8,7 +8,7 @@ use eggress_core::relay::relay;
 use eggress_core::BoxStream;
 use eggress_core::{TargetAddr, TargetHost};
 use eggress_routing::{RouteRequest, SelectedRoute};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct SessionReport {
     pub protocol: Option<String>,
@@ -175,6 +175,7 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
             let target = Some(pending.target.to_string());
             execute_http_forward(pending, config, target).await
         }
+        AcceptedSession::UdpAssociate(pending) => execute_udp_associate(pending, config).await,
     }
 }
 
@@ -320,6 +321,7 @@ async fn execute_tunnel(
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
         },
         identity: &pending.identity,
+        transport: eggress_routing::TransportKind::Tcp,
     };
 
     match open_route(config, &request).await {
@@ -407,6 +409,7 @@ async fn execute_http_forward(
         listener: &config.context.listener,
         inbound_protocol: eggress_core::ProtocolId::Http,
         identity: &pending.identity,
+        transport: eggress_routing::TransportKind::Tcp,
     };
 
     match open_route(config, &request).await {
@@ -536,6 +539,203 @@ type HandshakeFuture<'a> = std::pin::Pin<
             + 'a,
     >,
 >;
+
+async fn execute_udp_associate(
+    pending: PendingUdpAssociate,
+    config: &ConnectionConfig,
+) -> SessionReport {
+    let protocol = Some("socks5".to_string());
+
+    let udp_service = match &config.udp {
+        Some(svc) if svc.is_enabled() => svc,
+        _ => {
+            tracing::debug!("UDP ASSOCIATE rejected: UDP service not available");
+            let mut stream = pending.client;
+            let target = pending.client_hint.unwrap_or(TargetAddr {
+                host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+                port: 0,
+            });
+            let socks_addr = target_to_socks_addr(&target);
+            let _ = eggress_protocol_socks::socks5::server::send_connect_reply(
+                &mut stream,
+                eggress_protocol_socks::socks5::server::REP_NOT_ALLOWED,
+                &socks_addr,
+            )
+            .await;
+            return SessionReport {
+                protocol,
+                target: None,
+                route: "udp_associate_disabled".to_string(),
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+                outcome: SessionOutcome::RouteFailed,
+                failure: Some(FailureCategory::Protocol),
+                rule_id: None,
+                upstream_group: None,
+                upstream_id: None,
+                selection_reason: None,
+            };
+        }
+    };
+
+    let client_tcp_peer = config
+        .context
+        .source
+        .unwrap_or_else(|| "127.0.0.1:0".parse().unwrap());
+
+    let gen = config.context.generation;
+
+    let handle = match tokio::time::timeout(
+        config.connect_timeout,
+        udp_service.create_association(
+            &config.context.listener,
+            client_tcp_peer,
+            pending.identity.clone(),
+            gen,
+        ),
+    )
+    .await
+    {
+        Ok(Ok(handle)) => handle,
+        Ok(Err(e)) => {
+            tracing::debug!("UDP ASSOCIATE failed: {e}");
+            let mut stream = pending.client;
+            let target = pending.client_hint.unwrap_or(TargetAddr {
+                host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+                port: 0,
+            });
+            let socks_addr = target_to_socks_addr(&target);
+            let _ = eggress_protocol_socks::socks5::server::send_connect_reply(
+                &mut stream,
+                eggress_protocol_socks::socks5::server::REP_GENERAL_FAILURE,
+                &socks_addr,
+            )
+            .await;
+            return SessionReport {
+                protocol,
+                target: None,
+                route: "udp_associate_failed".to_string(),
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+                outcome: SessionOutcome::RouteFailed,
+                failure: Some(FailureCategory::Protocol),
+                rule_id: None,
+                upstream_group: None,
+                upstream_id: None,
+                selection_reason: None,
+            };
+        }
+        Err(_) => {
+            tracing::debug!("UDP ASSOCIATE failed: timeout");
+            let mut stream = pending.client;
+            let target = pending.client_hint.unwrap_or(TargetAddr {
+                host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+                port: 0,
+            });
+            let socks_addr = target_to_socks_addr(&target);
+            let _ = eggress_protocol_socks::socks5::server::send_connect_reply(
+                &mut stream,
+                eggress_protocol_socks::socks5::server::REP_GENERAL_FAILURE,
+                &socks_addr,
+            )
+            .await;
+            return SessionReport {
+                protocol,
+                target: None,
+                route: "udp_associate_timeout".to_string(),
+                bytes_upstream: 0,
+                bytes_downstream: 0,
+                outcome: SessionOutcome::HandshakeTimedOut,
+                failure: Some(FailureCategory::RouteTimeout),
+                rule_id: None,
+                upstream_group: None,
+                upstream_id: None,
+                selection_reason: None,
+            };
+        }
+    };
+
+    let relay_ip = handle.relay_addr.ip();
+    let relay_port = handle.relay_addr.port();
+    let socks_addr = match relay_ip {
+        std::net::IpAddr::V4(ip) => {
+            eggress_protocol_socks::socks5::server::SocksAddr::IPv4(ip.octets(), relay_port)
+        }
+        std::net::IpAddr::V6(ip) => {
+            eggress_protocol_socks::socks5::server::SocksAddr::IPv6(ip.octets(), relay_port)
+        }
+    };
+
+    let mut stream = pending.client;
+    if let Err(e) =
+        eggress_protocol_socks::socks5::server::send_udp_associate_reply(&mut stream, &socks_addr)
+            .await
+    {
+        tracing::debug!("failed to send UDP ASSOCIATE reply: {e}");
+        handle.cancel.cancel();
+        return SessionReport {
+            protocol,
+            target: None,
+            route: "udp_associate_reply_failed".to_string(),
+            bytes_upstream: 0,
+            bytes_downstream: 0,
+            outcome: SessionOutcome::ClientProtocolError,
+            failure: Some(FailureCategory::Protocol),
+            rule_id: None,
+            upstream_group: None,
+            upstream_id: None,
+            selection_reason: None,
+        };
+    }
+
+    tracing::info!(
+        association_id = ?handle.id,
+        relay_addr = %handle.relay_addr,
+        "UDP ASSOCIATE established, keeping TCP control connection alive"
+    );
+
+    let mut buf = [0u8; 1];
+    tokio::select! {
+        result = stream.read_exact(&mut buf) => {
+            match result {
+                Ok(_) => {
+                    tracing::debug!(
+                        association_id = ?handle.id,
+                        "TCP control connection closed by client"
+                    );
+                }
+                Err(_) => {
+                    tracing::debug!(
+                        association_id = ?handle.id,
+                        "TCP control connection read failed"
+                    );
+                }
+            }
+        }
+        _ = handle.cancel.cancelled() => {
+            tracing::debug!(
+                association_id = ?handle.id,
+                "UDP association cancelled"
+            );
+        }
+    }
+
+    handle.cancel.cancel();
+
+    SessionReport {
+        protocol,
+        target: None,
+        route: "udp_associate".to_string(),
+        bytes_upstream: 0,
+        bytes_downstream: 0,
+        outcome: SessionOutcome::Completed,
+        failure: None,
+        rule_id: None,
+        upstream_group: None,
+        upstream_id: None,
+        selection_reason: None,
+    }
+}
 
 fn build_chain_executor() -> ChainExecutor {
     let handlers: Vec<Box<dyn HopHandler>> = vec![

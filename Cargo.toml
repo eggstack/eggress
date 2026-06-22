@@ -8,6 +8,7 @@ members = [
     "crates/eggress-metrics",
     "crates/eggress-runtime",
     "crates/eggress-server",
+    "crates/eggress-udp",
     "crates/eggress-uri",
     "crates/eggress-routing",
     "crates/eggress-protocol-http",
@@ -64,6 +65,7 @@ eggress-protocol-socks = { path = "crates/eggress-protocol-socks" }
 eggress-testkit = { path = "crates/eggress-testkit" }
 eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server" }
+eggress-udp = { path = "crates/eggress-udp" }
 eggress-cli = { path = "crates/eggress-cli" }
 eggress-runtime = { path = "crates/eggress-runtime" }
 

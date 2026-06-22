@@ -8,6 +8,22 @@ pub mod lease;
 pub mod scheduler;
 pub mod upstream;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TransportKind {
+    #[default]
+    Tcp,
+    Udp,
+}
+
+impl std::fmt::Display for TransportKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportKind::Tcp => write!(f, "tcp"),
+            TransportKind::Udp => write!(f, "udp"),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum RegexError {
     #[error("invalid regex at line {line}: {source}")]
@@ -37,6 +53,7 @@ pub struct RouteExplanation {
     pub target: String,
     pub listener: String,
     pub protocol: String,
+    pub transport: String,
     pub matched_rule: Option<String>,
     pub action: String,
     pub upstream_group: Option<String>,
@@ -96,6 +113,7 @@ pub enum MatchExpr {
     Listener(Arc<str>),
     Protocol(ProtocolId),
     Identity(Arc<str>),
+    Transport(TransportKind),
 }
 
 fn normalize_host_for_exact(host: &str) -> String {
@@ -166,6 +184,7 @@ impl MatchExpr {
                 ClientIdentity::Username(u) => u == name.as_ref(),
                 ClientIdentity::Opaque(o) => o == name.as_ref(),
             },
+            MatchExpr::Transport(kind) => request.transport == *kind,
         }
     }
 }
@@ -183,6 +202,7 @@ pub struct RouteRequest<'a> {
     pub listener: &'a str,
     pub inbound_protocol: ProtocolId,
     pub identity: &'a ClientIdentity,
+    pub transport: TransportKind,
 }
 
 #[derive(Debug, Clone)]
@@ -282,6 +302,7 @@ impl Router {
         let target = request.target.to_string();
         let listener = request.listener.to_string();
         let protocol = request.inbound_protocol.to_string();
+        let transport = request.transport.to_string();
 
         let (matched_rule, action, upstream_group, scheduler, eligible, selected, chain) =
             match &decision {
@@ -383,6 +404,7 @@ impl Router {
             target,
             listener,
             protocol,
+            transport,
             matched_rule,
             action,
             upstream_group,
@@ -693,6 +715,7 @@ mod tests {
             listener,
             inbound_protocol: protocol,
             identity,
+            transport: TransportKind::Tcp,
         }
     }
 
@@ -1253,6 +1276,7 @@ mod tests {
             listener: "test",
             inbound_protocol: ProtocolId::Http,
             identity: &ClientIdentity::Anonymous,
+            transport: TransportKind::Tcp,
         }
     }
 
@@ -2287,7 +2311,7 @@ mod tests {
     }
 
     #[test]
-    fn selection_reason_normal_for_healthy_candidates() {
+    fn select_upstream_route_normal() {
         let u1 = make_upstream("up-1");
         let group_id = UpstreamGroupId(Arc::from("normal-group"));
         let group = UpstreamGroup::new(
@@ -2316,5 +2340,83 @@ mod tests {
             }
             _ => panic!("expected Upstream route"),
         }
+    }
+
+    #[test]
+    fn transport_matcher_matches_tcp() {
+        let target = target_domain("example.com", 80);
+        let req = RouteRequest {
+            target: &target,
+            source: None,
+            listener: "l",
+            inbound_protocol: ProtocolId::Http,
+            identity: &ANON,
+            transport: TransportKind::Tcp,
+        };
+        assert!(MatchExpr::Transport(TransportKind::Tcp).matches(&req));
+    }
+
+    #[test]
+    fn transport_matcher_matches_udp() {
+        let target = target_domain("example.com", 53);
+        let req = RouteRequest {
+            target: &target,
+            source: None,
+            listener: "l",
+            inbound_protocol: ProtocolId::Socks5,
+            identity: &ANON,
+            transport: TransportKind::Udp,
+        };
+        assert!(MatchExpr::Transport(TransportKind::Udp).matches(&req));
+    }
+
+    #[test]
+    fn transport_matcher_does_not_cross_match() {
+        let target = target_domain("example.com", 80);
+        let req = RouteRequest {
+            target: &target,
+            source: None,
+            listener: "l",
+            inbound_protocol: ProtocolId::Http,
+            identity: &ANON,
+            transport: TransportKind::Tcp,
+        };
+        assert!(!MatchExpr::Transport(TransportKind::Udp).matches(&req));
+    }
+
+    #[test]
+    fn transport_matcher_in_all() {
+        let target = target_domain("example.com", 53);
+        let req = RouteRequest {
+            target: &target,
+            source: None,
+            listener: "l",
+            inbound_protocol: ProtocolId::Socks5,
+            identity: &ANON,
+            transport: TransportKind::Udp,
+        };
+        let expr = MatchExpr::All(vec![
+            MatchExpr::Transport(TransportKind::Udp),
+            MatchExpr::DestinationPort(PortMatcher::Exact(53)),
+        ]);
+        assert!(expr.matches(&req));
+    }
+
+    #[test]
+    fn transport_matcher_in_all_fails_if_wrong_transport() {
+        let target = target_domain("example.com", 53);
+        let req = RouteRequest {
+            target: &target,
+            source: None,
+            listener: "l",
+            inbound_protocol: ProtocolId::Socks5,
+            identity: &ANON,
+            transport: TransportKind::Tcp,
+        };
+        let expr = MatchExpr::All(vec![
+            MatchExpr::Transport(TransportKind::Udp),
+            MatchExpr::DestinationPort(PortMatcher::Exact(53)),
+        ]);
+        assert!(!expr.matches(&req));
     }
 }

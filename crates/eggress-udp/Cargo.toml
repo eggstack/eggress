@@ -1,0 +1,22 @@
+[package]
+name = "eggress-udp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+eggress-core.workspace = true
+eggress-protocol-socks.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tokio-util.workspace = true
+ipnet.workspace = true
+
+[dev-dependencies]
+eggress-testkit.workspace = true
+
+[lints]
+workspace = true
