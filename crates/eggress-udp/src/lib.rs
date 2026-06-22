@@ -5,5 +5,6 @@ pub mod error;
 pub mod limits;
 pub mod metrics;
 pub mod registry;
+pub mod relay;
 pub mod security;
 pub mod testkit;

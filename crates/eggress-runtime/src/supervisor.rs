@@ -99,6 +99,8 @@ struct PreparedListener {
 struct RuntimeUdpService {
     registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     metrics: Arc<eggress_metrics::MetricsRegistry>,
+    udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
+    routing: Arc<SharedRoutingService>,
 }
 
 impl eggress_server::UdpService for RuntimeUdpService {
@@ -121,13 +123,41 @@ impl eggress_server::UdpService for RuntimeUdpService {
     > {
         let registry = self.registry.clone();
         let metrics = self.metrics.clone();
+        let udp_metrics = self.udp_metrics.clone();
+        let routing = self.routing.clone();
         let listener = listener.to_string();
         Box::pin(async move {
             let assoc = registry
                 .create_association(&listener, client_tcp_peer, identity, generation)
                 .await?;
             metrics.record_udp_association_created();
-            let relay_addr = "127.0.0.1:0".parse().unwrap();
+
+            let relay_socket =
+                std::sync::Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await?);
+            let relay_addr = relay_socket.local_addr()?;
+
+            let relay_config = eggress_udp::relay::RelayConfig {
+                routing: routing as Arc<dyn RouteService>,
+                udp_metrics: udp_metrics.clone(),
+                limits: registry.limits().clone(),
+                listener: listener.clone(),
+                generation,
+                identity: assoc.meta.identity.clone(),
+                client_tcp_peer,
+            };
+
+            let relay_assoc = assoc.clone();
+            let relay_cancel = assoc.cancel.clone();
+            tokio::spawn(async move {
+                let _ = eggress_udp::relay::udp_relay_loop(
+                    relay_socket,
+                    relay_assoc,
+                    relay_config,
+                    relay_cancel,
+                )
+                .await;
+            });
+
             Ok(eggress_server::UdpAssociationHandle {
                 id: assoc.id,
                 relay_addr,
@@ -159,6 +189,7 @@ pub struct RuntimeState {
     pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
     pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
+    pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
 }
 
 impl RuntimeState {
@@ -215,6 +246,8 @@ impl ServiceSupervisor {
             eggress_udp::limits::UdpLimits::default(),
         ));
 
+        let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
+
         let state = Arc::new(RuntimeState {
             snapshot: snapshot.clone(),
             routing: routing.clone(),
@@ -226,6 +259,7 @@ impl ServiceSupervisor {
             admin_local_addr: Arc::new(Mutex::new(None)),
             listener_addrs: Arc::new(Mutex::new(Vec::new())),
             udp_registry,
+            udp_metrics,
         });
 
         let cancel = CancellationToken::new();
@@ -537,6 +571,8 @@ impl ServiceSupervisor {
                             Some(Arc::new(RuntimeUdpService {
                                 registry: state.udp_registry.clone(),
                                 metrics: state.metrics.clone(),
+                                udp_metrics: state.udp_metrics.clone(),
+                                routing: routing.clone(),
                             }) as Arc<dyn eggress_server::UdpService>)
                         } else {
                             None

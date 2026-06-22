@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 
@@ -8,7 +9,7 @@ use eggress_protocol_socks::socks5::server::SocksAddr;
 
 pub struct UdpTargetFlow {
     pub target: SocksAddr,
-    pub socket: UdpSocket,
+    pub socket: Arc<UdpSocket>,
     pub last_activity: Instant,
     pub packets_up: AtomicU64,
     pub packets_down: AtomicU64,
@@ -23,7 +24,7 @@ impl UdpTargetFlow {
         socket.connect(resolved).await?;
         Ok(Self {
             target,
-            socket,
+            socket: Arc::new(socket),
             last_activity: Instant::now(),
             packets_up: AtomicU64::new(0),
             packets_down: AtomicU64::new(0),

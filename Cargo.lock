@@ -381,6 +381,7 @@ dependencies = [
  "bytes",
  "eggress-core",
  "eggress-protocol-socks",
+ "eggress-routing",
  "eggress-testkit",
  "ipnet",
  "thiserror",
