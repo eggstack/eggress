@@ -426,3 +426,231 @@ enabled = true
     token.cancel();
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn route_explain_source_field_changes_decision() {
+    use std::io::Write as _;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "internal-only"
+match = { source_cidr = "10.0.0.0/8" }
+direct = true
+
+[[rules]]
+id = "external"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    f.write_all(config.as_bytes()).unwrap();
+    f.flush().unwrap();
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let token = sup.shutdown_token();
+    struct AutoShutdown(tokio_util::sync::CancellationToken);
+    impl Drop for AutoShutdown {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let internal_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http","source":"10.1.2.3:5000"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", internal_body).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["matched_rule"], "internal-only",
+        "source=10.1.2.3 should match internal-only rule"
+    );
+
+    let external_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http","source":"192.0.2.10:5000"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", external_body).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["matched_rule"], "external",
+        "source=192.0.2.10 should fall through to external"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn route_explain_identity_field_changes_decision() {
+    use std::io::Write as _;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "alice"
+match = { identity = "alice" }
+direct = true
+
+[[rules]]
+id = "default"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    f.write_all(config.as_bytes()).unwrap();
+    f.flush().unwrap();
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let token = sup.shutdown_token();
+    struct AutoShutdown(tokio_util::sync::CancellationToken);
+    impl Drop for AutoShutdown {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let alice_body =
+        r#"{"target":"example.com:443","listener":"http-in","protocol":"http","identity":"alice"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", alice_body).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["matched_rule"], "alice");
+
+    let anon_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", anon_body).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["matched_rule"], "default",
+        "anonymous identity should fall through to default"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn route_explain_invalid_source_returns_400() {
+    use std::io::Write as _;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    f.write_all(config.as_bytes()).unwrap();
+    f.flush().unwrap();
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let token = sup.shutdown_token();
+    struct AutoShutdown(tokio_util::sync::CancellationToken);
+    impl Drop for AutoShutdown {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let bad_body = r#"{"target":"example.com:443","listener":"http-in","protocol":"http","source":"not-an-addr"}"#;
+    let (status, _body) = http_post(&admin_addr, "/-/route-explain", bad_body).await;
+    assert_eq!(status, 400, "invalid source should return 400");
+
+    let oversized = "x".repeat(300);
+    let oversized_body = format!(
+        r#"{{"target":"example.com:443","listener":"http-in","protocol":"http","identity":"{oversized}"}}"#
+    );
+    let (status, _body) = http_post(&admin_addr, "/-/route-explain", &oversized_body).await;
+    assert_eq!(status, 400, "oversized identity should return 400");
+
+    let empty_body =
+        r#"{"target":"example.com:443","listener":"http-in","protocol":"http","identity":""}"#;
+    let (status, _body) = http_post(&admin_addr, "/-/route-explain", empty_body).await;
+    assert_eq!(status, 400, "empty identity should return 400");
+
+    token.cancel();
+    jh.await.ok();
+}

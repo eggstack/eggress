@@ -402,3 +402,185 @@ direct = true
         "client stream should be dead after forced shutdown"
     );
 }
+
+#[tokio::test]
+async fn admin_responds_during_shutdown_drain() {
+    let (backend_addr, _backend_jh) = start_slow_backend().await;
+
+    let config = r#"
+version = 1
+
+[process]
+shutdown_grace = "5s"
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let listener_addr = state.listener_addrs.lock().unwrap()[0];
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let mut client = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect listener");
+    socks5_handshake(&mut client, backend_addr)
+        .await
+        .expect("socks5 handshake");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let active = state.active_connections.load(Ordering::Relaxed);
+    assert!(
+        active >= 1,
+        "should have one active connection, got {active}"
+    );
+
+    token.cancel();
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut stream = tokio::net::TcpStream::connect(&admin_addr)
+        .await
+        .expect("admin should still be listening during drain");
+    let req = b"GET /-/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    tokio::io::AsyncWriteExt::write_all(&mut stream, req)
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::flush(&mut stream).await.unwrap();
+
+    let mut buf = Vec::new();
+    let _ = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut buf),
+    )
+    .await;
+    let response = String::from_utf8_lossy(&buf);
+    assert!(
+        response.starts_with("HTTP/1.1 503"),
+        "admin /-/ready should respond 503 during drain, got: {response}"
+    );
+
+    drop(client);
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn admin_metrics_visible_during_drain() {
+    let (backend_addr, _backend_jh) = start_slow_backend().await;
+
+    let config = r#"
+version = 1
+
+[process]
+shutdown_grace = "5s"
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let listener_addr = state.listener_addrs.lock().unwrap()[0];
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let mut client = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect listener");
+    socks5_handshake(&mut client, backend_addr)
+        .await
+        .expect("socks5 handshake");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let active = state.active_connections.load(Ordering::Relaxed);
+    assert!(
+        active >= 1,
+        "should have one active connection, got {active}"
+    );
+
+    token.cancel();
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut stream = tokio::net::TcpStream::connect(&admin_addr)
+        .await
+        .expect("admin should still be listening during drain");
+    let req = b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    tokio::io::AsyncWriteExt::write_all(&mut stream, req)
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::flush(&mut stream).await.unwrap();
+
+    let mut buf = Vec::new();
+    let _ = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut buf),
+    )
+    .await;
+    let response = String::from_utf8_lossy(&buf);
+    assert!(
+        response.contains("eggress_connections_active"),
+        "/metrics should be available during drain, got: {response}"
+    );
+
+    drop(client);
+    jh.await.ok();
+}

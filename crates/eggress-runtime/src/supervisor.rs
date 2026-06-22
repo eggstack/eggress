@@ -671,25 +671,23 @@ impl ServiceSupervisor {
                 tracing::info!("shutdown signal received");
             }
 
-            // 1. Set readiness false
+            // 1. Set readiness false (admin /-/ready will report 503 during drain)
             readiness.store(false, Ordering::Release);
 
-            // 2. Stop listeners
+            // 2. Stop listeners (no new connections accepted)
             listener_cancel.cancel();
 
-            // 3. Stop health
+            // 3. Stop health probes
             health_cancel.cancel();
 
-            // 4. Stop admin
-            admin_cancel.cancel();
-
-            // 5. Wait for listener and admin tasks to finish
+            // 4. Wait for listener accept loops to exit so they cannot hand
+            //    new connections to the connection tracker.
             tasks.close();
-            admin_tasks.close();
             tasks.wait().await;
-            admin_tasks.wait().await;
 
-            // 6. Wait for connections to drain
+            // 5. Drain active connections within the grace period; force-cancel
+            //    afterwards. Admin stays up through this window so operators
+            //    can observe drain progress via /-/ready, /-/status, /metrics.
             tracing::info!("draining active connections");
 
             let deadline = tokio::time::Instant::now() + shutdown_grace;
@@ -707,9 +705,16 @@ impl ServiceSupervisor {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
 
-            // 7. Wait for connection tasks
+            // 6. Wait for connection tasks (either drained naturally or force-cancelled)
             connection_tasks.close();
             connection_tasks.wait().await;
+
+            // 7. Now that the proxy has fully stopped accepting and serving
+            //    traffic, stop the admin server. /-/ready has been reporting
+            //    503 since step 1.
+            admin_cancel.cancel();
+            admin_tasks.close();
+            admin_tasks.wait().await;
 
             Ok::<_, RuntimeError>(())
         });
