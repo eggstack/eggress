@@ -145,6 +145,12 @@ Legend:
 - [x] Per-listener TOML UDP configuration (`[listeners.udp]`)
 - [x] Configurable relay bind and advertise address per listener
 - [x] Association registry cleanup on close
+- [x] SOCKS5 UDP ASSOCIATE server
+- [x] Direct UDP forwarding
+- [x] UDP through one-hop SOCKS5 upstream
+- [ ] UDP through multi-hop proxy chains
+- [ ] UDP through HTTP/MASQUE/CONNECT-UDP
+- [ ] UDP through Shadowsocks/Trojan
 
 ### TLS
 

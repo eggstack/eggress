@@ -65,6 +65,13 @@ pub struct MetricsRegistry {
     udp_target_flows_total: Counter,
     udp_decode_errors_total: Family<DecodeErrorLabels, Counter>,
     udp_unsupported_upstream_total: Counter,
+    udp_upstream_associations_active: Gauge,
+    udp_upstream_associations_total: Counter,
+    udp_upstream_packets_up_total: Counter,
+    udp_upstream_packets_down_total: Counter,
+    udp_upstream_bytes_up_total: Counter,
+    udp_upstream_bytes_down_total: Counter,
+    udp_upstream_failures_total: Counter,
     bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
 }
 
@@ -79,6 +86,12 @@ struct BridgedUdpSnapshot {
     dropped_packets: u64,
     target_flows_total: u64,
     decode_errors: u64,
+    upstream_associations_total: u64,
+    upstream_packets_up: u64,
+    upstream_packets_down: u64,
+    upstream_bytes_up: u64,
+    upstream_bytes_down: u64,
+    upstream_failures: u64,
 }
 
 impl MetricsRegistry {
@@ -239,6 +252,55 @@ impl MetricsRegistry {
             udp_unsupported_upstream_total.clone(),
         );
 
+        let udp_upstream_associations_active = Gauge::default();
+        registry.register(
+            "eggress_udp_upstream_associations_active",
+            "Currently active UDP upstream associations",
+            udp_upstream_associations_active.clone(),
+        );
+
+        let udp_upstream_associations_total = Counter::default();
+        registry.register(
+            "eggress_udp_upstream_associations_total",
+            "Total UDP upstream associations created",
+            udp_upstream_associations_total.clone(),
+        );
+
+        let udp_upstream_packets_up_total = Counter::default();
+        registry.register(
+            "eggress_udp_upstream_packets_up_total",
+            "Total UDP packets sent upstream",
+            udp_upstream_packets_up_total.clone(),
+        );
+
+        let udp_upstream_packets_down_total = Counter::default();
+        registry.register(
+            "eggress_udp_upstream_packets_down_total",
+            "Total UDP packets received from upstream",
+            udp_upstream_packets_down_total.clone(),
+        );
+
+        let udp_upstream_bytes_up_total = Counter::default();
+        registry.register(
+            "eggress_udp_upstream_bytes_up_total",
+            "Total UDP bytes sent upstream",
+            udp_upstream_bytes_up_total.clone(),
+        );
+
+        let udp_upstream_bytes_down_total = Counter::default();
+        registry.register(
+            "eggress_udp_upstream_bytes_down_total",
+            "Total UDP bytes received from upstream",
+            udp_upstream_bytes_down_total.clone(),
+        );
+
+        let udp_upstream_failures_total = Counter::default();
+        registry.register(
+            "eggress_udp_upstream_failures_total",
+            "Total UDP upstream failures",
+            udp_upstream_failures_total.clone(),
+        );
+
         Self {
             registry,
             connections_active,
@@ -263,6 +325,13 @@ impl MetricsRegistry {
             udp_target_flows_total,
             udp_decode_errors_total,
             udp_unsupported_upstream_total,
+            udp_upstream_associations_active,
+            udp_upstream_associations_total,
+            udp_upstream_packets_up_total,
+            udp_upstream_packets_down_total,
+            udp_upstream_bytes_up_total,
+            udp_upstream_bytes_down_total,
+            udp_upstream_failures_total,
             bridged_udp_metrics: Mutex::new(None),
         }
     }
@@ -295,6 +364,24 @@ impl MetricsRegistry {
                 .load(std::sync::atomic::Ordering::Relaxed),
             decode_errors: metrics
                 .decode_errors
+                .load(std::sync::atomic::Ordering::Relaxed),
+            upstream_associations_total: metrics
+                .upstream_associations_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            upstream_packets_up: metrics
+                .upstream_packets_up
+                .load(std::sync::atomic::Ordering::Relaxed),
+            upstream_packets_down: metrics
+                .upstream_packets_down
+                .load(std::sync::atomic::Ordering::Relaxed),
+            upstream_bytes_up: metrics
+                .upstream_bytes_up
+                .load(std::sync::atomic::Ordering::Relaxed),
+            upstream_bytes_down: metrics
+                .upstream_bytes_down
+                .load(std::sync::atomic::Ordering::Relaxed),
+            upstream_failures: metrics
+                .upstream_failures
                 .load(std::sync::atomic::Ordering::Relaxed),
         };
         *self.bridged_udp_metrics.lock().unwrap() = Some((metrics, snapshot));
@@ -365,6 +452,8 @@ impl MetricsRegistry {
                 .set(metrics.associations_active.load(Ordering::Relaxed) as i64);
             self.udp_target_flows_active
                 .set(metrics.target_flows_active.load(Ordering::Relaxed) as i64);
+            self.udp_upstream_associations_active
+                .set(metrics.upstream_associations_active.load(Ordering::Relaxed) as i64);
 
             // Counters: increment by delta since last render
             let cur_total = metrics.associations_total.load(Ordering::Relaxed);
@@ -434,6 +523,48 @@ impl MetricsRegistry {
                     .inc_by(delta);
             }
             prev.decode_errors = cur;
+
+            let cur = metrics.upstream_associations_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.upstream_associations_total);
+            if delta > 0 {
+                self.udp_upstream_associations_total.inc_by(delta);
+            }
+            prev.upstream_associations_total = cur;
+
+            let cur = metrics.upstream_packets_up.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.upstream_packets_up);
+            if delta > 0 {
+                self.udp_upstream_packets_up_total.inc_by(delta);
+            }
+            prev.upstream_packets_up = cur;
+
+            let cur = metrics.upstream_packets_down.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.upstream_packets_down);
+            if delta > 0 {
+                self.udp_upstream_packets_down_total.inc_by(delta);
+            }
+            prev.upstream_packets_down = cur;
+
+            let cur = metrics.upstream_bytes_up.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.upstream_bytes_up);
+            if delta > 0 {
+                self.udp_upstream_bytes_up_total.inc_by(delta);
+            }
+            prev.upstream_bytes_up = cur;
+
+            let cur = metrics.upstream_bytes_down.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.upstream_bytes_down);
+            if delta > 0 {
+                self.udp_upstream_bytes_down_total.inc_by(delta);
+            }
+            prev.upstream_bytes_down = cur;
+
+            let cur = metrics.upstream_failures.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.upstream_failures);
+            if delta > 0 {
+                self.udp_upstream_failures_total.inc_by(delta);
+            }
+            prev.upstream_failures = cur;
         }
 
         let mut buf = String::new();
@@ -489,6 +620,29 @@ impl MetricsRegistry {
         self.udp_unsupported_upstream_total.inc();
     }
 
+    pub fn record_udp_upstream_association_created(&self) {
+        self.udp_upstream_associations_active.inc();
+        self.udp_upstream_associations_total.inc();
+    }
+
+    pub fn record_udp_upstream_association_closed(&self) {
+        self.udp_upstream_associations_active.dec();
+    }
+
+    pub fn record_udp_upstream_failure(&self) {
+        self.udp_upstream_failures_total.inc();
+    }
+
+    pub fn record_udp_upstream_packet_up(&self, bytes: u64) {
+        self.udp_upstream_packets_up_total.inc();
+        self.udp_upstream_bytes_up_total.inc_by(bytes);
+    }
+
+    pub fn record_udp_upstream_packet_down(&self, bytes: u64) {
+        self.udp_upstream_packets_down_total.inc();
+        self.udp_upstream_bytes_down_total.inc_by(bytes);
+    }
+
     pub fn udp_associations_active_gauge(&self) -> i64 {
         self.udp_associations_active.get()
     }
@@ -499,6 +653,10 @@ impl MetricsRegistry {
 
     pub fn udp_target_flows_active_gauge(&self) -> i64 {
         self.udp_target_flows_active.get()
+    }
+
+    pub fn udp_upstream_associations_active_gauge(&self) -> i64 {
+        self.udp_upstream_associations_active.get()
     }
 }
 
@@ -536,6 +694,13 @@ mod tests {
         assert!(output.contains("eggress_udp_target_flows_active"));
         assert!(output.contains("eggress_udp_target_flows_total"));
         assert!(output.contains("eggress_udp_decode_errors_total"));
+        assert!(output.contains("eggress_udp_upstream_associations_active"));
+        assert!(output.contains("eggress_udp_upstream_associations_total"));
+        assert!(output.contains("eggress_udp_upstream_packets_up_total"));
+        assert!(output.contains("eggress_udp_upstream_packets_down_total"));
+        assert!(output.contains("eggress_udp_upstream_bytes_up_total"));
+        assert!(output.contains("eggress_udp_upstream_bytes_down_total"));
+        assert!(output.contains("eggress_udp_upstream_failures_total"));
     }
 
     #[test]
@@ -754,6 +919,134 @@ mod tests {
         m.record_udp_unsupported_upstream();
         let output = m.render_prometheus();
         assert!(output.contains("eggress_udp_unsupported_upstream_total"));
+    }
+
+    #[test]
+    fn udp_upstream_association_metrics() {
+        let m = MetricsRegistry::new();
+        m.record_udp_upstream_association_created();
+        m.record_udp_upstream_association_created();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_upstream_associations_active"));
+        assert!(output.contains("eggress_udp_upstream_associations_total"));
+
+        m.record_udp_upstream_association_closed();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_upstream_associations_active"));
+    }
+
+    #[test]
+    fn udp_upstream_failure_metric() {
+        let m = MetricsRegistry::new();
+        m.record_udp_upstream_failure();
+        m.record_udp_upstream_failure();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_upstream_failures_total"));
+    }
+
+    #[test]
+    fn udp_upstream_packet_metrics() {
+        let m = MetricsRegistry::new();
+        m.record_udp_upstream_packet_up(100);
+        m.record_udp_upstream_packet_up(200);
+        m.record_udp_upstream_packet_down(50);
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_udp_upstream_packets_up_total"));
+        assert!(output.contains("eggress_udp_upstream_packets_down_total"));
+        assert!(output.contains("eggress_udp_upstream_bytes_up_total"));
+        assert!(output.contains("eggress_udp_upstream_bytes_down_total"));
+    }
+
+    #[test]
+    fn udp_upstream_active_gauge_returns_to_zero() {
+        let m = MetricsRegistry::new();
+        m.record_udp_upstream_association_created();
+        m.record_udp_upstream_association_created();
+        m.record_udp_upstream_association_closed();
+        m.record_udp_upstream_association_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_udp_upstream_associations_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 0.0, "upstream active associations should return to 0");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_upstream_packets_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_upstream_packet_up(100);
+        udp.record_upstream_packet_up(200);
+        udp.record_upstream_packet_down(50);
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_upstream_packets_up_total"),
+            "missing upstream_packets_up_total"
+        );
+        assert!(
+            output.contains("eggress_udp_upstream_bytes_up_total"),
+            "missing upstream_bytes_up_total"
+        );
+        assert!(
+            output.contains("eggress_udp_upstream_bytes_down_total"),
+            "missing upstream_bytes_down_total"
+        );
+    }
+
+    #[test]
+    fn bridge_upstream_associations_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_upstream_association_created();
+        udp.record_upstream_association_created();
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_upstream_associations_active"),
+            "missing upstream_associations_active"
+        );
+        assert!(
+            output.contains("eggress_udp_upstream_associations_total"),
+            "missing upstream_associations_total"
+        );
+
+        udp.record_upstream_association_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_udp_upstream_associations_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 1.0, "upstream active should be 1");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_upstream_failures_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_upstream_failure();
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_udp_upstream_failures_total"),
+            "missing upstream_failures_total"
+        );
     }
 
     #[test]

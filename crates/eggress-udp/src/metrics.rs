@@ -13,6 +13,14 @@ pub struct UdpMetrics {
     pub target_flows_active: AtomicU64,
     pub target_flows_total: AtomicU64,
     pub decode_errors: AtomicU64,
+    pub upstream_associations_total: AtomicU64,
+    pub upstream_associations_active: AtomicU64,
+    pub upstream_packets_up: AtomicU64,
+    pub upstream_packets_down: AtomicU64,
+    pub upstream_bytes_up: AtomicU64,
+    pub upstream_bytes_down: AtomicU64,
+    pub upstream_failures: AtomicU64,
+    pub unsupported_upstream_total: AtomicU64,
 }
 
 impl UdpMetrics {
@@ -67,6 +75,37 @@ impl UdpMetrics {
     pub fn record_target_flow_timeout(&self) {
         self.target_flows_active.fetch_sub(1, Ordering::Relaxed);
     }
+
+    pub fn record_upstream_association_created(&self) {
+        self.upstream_associations_active
+            .fetch_add(1, Ordering::Relaxed);
+        self.upstream_associations_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_upstream_association_closed(&self) {
+        self.upstream_associations_active
+            .fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn record_upstream_failure(&self) {
+        self.upstream_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_upstream_packet_up(&self, bytes: u64) {
+        self.upstream_packets_up.fetch_add(1, Ordering::Relaxed);
+        self.upstream_bytes_up.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn record_upstream_packet_down(&self, bytes: u64) {
+        self.upstream_packets_down.fetch_add(1, Ordering::Relaxed);
+        self.upstream_bytes_down.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn record_unsupported_upstream(&self) {
+        self.unsupported_upstream_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 #[cfg(test)]
@@ -86,6 +125,23 @@ mod tests {
         assert_eq!(metrics.target_flows_active.load(Ordering::Relaxed), 0);
         assert_eq!(metrics.target_flows_total.load(Ordering::Relaxed), 0);
         assert_eq!(metrics.decode_errors.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            metrics.upstream_associations_total.load(Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics.upstream_associations_active.load(Ordering::Relaxed),
+            0
+        );
+        assert_eq!(metrics.upstream_packets_up.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.upstream_packets_down.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.upstream_bytes_up.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.upstream_bytes_down.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.upstream_failures.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            metrics.unsupported_upstream_total.load(Ordering::Relaxed),
+            0
+        );
     }
 
     #[test]
@@ -171,5 +227,71 @@ mod tests {
         assert_eq!(metrics.target_flows_active.load(Ordering::Relaxed), 1);
         metrics.record_target_flow_timeout();
         assert_eq!(metrics.target_flows_active.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn upstream_association_metrics() {
+        let metrics = UdpMetrics::new();
+        metrics.record_upstream_association_created();
+        assert_eq!(
+            metrics.upstream_associations_active.load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            metrics.upstream_associations_total.load(Ordering::Relaxed),
+            1
+        );
+
+        metrics.record_upstream_association_created();
+        assert_eq!(
+            metrics.upstream_associations_active.load(Ordering::Relaxed),
+            2
+        );
+        assert_eq!(
+            metrics.upstream_associations_total.load(Ordering::Relaxed),
+            2
+        );
+
+        metrics.record_upstream_association_closed();
+        assert_eq!(
+            metrics.upstream_associations_active.load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            metrics.upstream_associations_total.load(Ordering::Relaxed),
+            2
+        );
+    }
+
+    #[test]
+    fn upstream_failure_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_upstream_failure();
+        metrics.record_upstream_failure();
+        assert_eq!(metrics.upstream_failures.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn upstream_packet_metrics() {
+        let metrics = UdpMetrics::new();
+        metrics.record_upstream_packet_up(100);
+        metrics.record_upstream_packet_up(200);
+        assert_eq!(metrics.upstream_packets_up.load(Ordering::Relaxed), 2);
+        assert_eq!(metrics.upstream_bytes_up.load(Ordering::Relaxed), 300);
+
+        metrics.record_upstream_packet_down(50);
+        assert_eq!(metrics.upstream_packets_down.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.upstream_bytes_down.load(Ordering::Relaxed), 50);
+    }
+
+    #[test]
+    fn unsupported_upstream_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_unsupported_upstream();
+        metrics.record_unsupported_upstream();
+        assert_eq!(
+            metrics.unsupported_upstream_total.load(Ordering::Relaxed),
+            2
+        );
     }
 }

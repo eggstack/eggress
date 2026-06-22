@@ -26,6 +26,10 @@ cargo test -p eggress-udp
 cargo test -p eggress-runtime udp
 cargo test -p eggress-config udp
 
+# Run UDP upstream tests
+cargo test -p eggress-udp socks5_upstream
+cargo test -p eggress-runtime udp_upstream
+
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
@@ -49,7 +53,7 @@ eggress/
 │   ├── eggress-admin/     # Admin HTTP server, PAC, static content, snapshot provider trait
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
-│   ├── eggress-udp/       # UDP association, codec, direct forwarding, limits, security
+│   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   └── eggress-testkit/   # Test utilities
 ├── tests/
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)

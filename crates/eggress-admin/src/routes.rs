@@ -153,6 +153,7 @@ pub async fn handle_request(
             let udp = serde_json::json!({
                 "associations_active": state.metrics.udp_associations_active_gauge(),
                 "target_flows_active": state.metrics.udp_target_flows_active_gauge(),
+                "upstream_flows_active": state.metrics.udp_upstream_associations_active_gauge(),
                 "listeners": listeners,
             });
             build_json_response(200, udp.to_string())

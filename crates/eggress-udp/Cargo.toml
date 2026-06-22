@@ -9,6 +9,7 @@ license.workspace = true
 eggress-core.workspace = true
 eggress-protocol-socks.workspace = true
 eggress-routing.workspace = true
+eggress-uri.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -18,7 +19,6 @@ ipnet.workspace = true
 
 [dev-dependencies]
 eggress-testkit.workspace = true
-eggress-uri.workspace = true
 
 [lints]
 workspace = true

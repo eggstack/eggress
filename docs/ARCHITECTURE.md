@@ -182,6 +182,56 @@ TCP SOCKS5 client → UDP ASSOCIATE command → server creates UdpAssociation
     → relay task removes association from registry
 ```
 
+## UDP Upstream Relay
+
+Eggress supports relaying UDP through one-hop SOCKS5 upstream proxies. The relay
+works as follows:
+
+1. Client sends SOCKS5 UDP datagram to Eggress
+2. Eggress decodes the target address and payload
+3. Routing selects a direct or upstream path
+4. For SOCKS5 upstream paths:
+   - Establishes TCP control connection to upstream
+   - Performs SOCKS5 handshake (method negotiation + optional auth)
+   - Sends UDP ASSOCIATE request to upstream
+   - Creates per-target UDP association with upstream
+   - Encodes and sends SOCKS5 UDP datagrams to upstream relay
+   - Receives responses and forwards to client
+5. For direct paths: sends directly via connected UDP socket
+
+### Flow Model
+
+Each target flow through a SOCKS5 upstream maintains:
+- A TCP control connection (kept alive while flow is active)
+- A UDP socket bound to 127.0.0.1:0
+- An active lease held on the upstream
+
+Flows are keyed by target address. On first packet to a target, a new upstream
+association is established. Subsequent packets to the same target reuse the
+existing flow until idle timeout.
+
+### Unsupported Chains
+
+HTTP, SOCKS4, and multi-hop chains are explicitly rejected for UDP with metrics.
+No silent fallback to direct unless the routing policy selects a direct fallback.
+
+### Reload Semantics
+
+- Existing upstream flows keep their selected upstream until idle expiry
+- New flows use the latest routing snapshot after reload
+- Removed upstreams are unavailable for new flows but old flows drain
+
+### Metrics
+
+Upstream-specific metrics in `/metrics`:
+- `eggress_udp_upstream_associations_active` - active upstream UDP associations
+- `eggress_udp_upstream_packets_up_total` - packets sent upstream
+- `eggress_udp_upstream_packets_down_total` - packets received upstream
+- `eggress_udp_upstream_failures_total` - upstream handshake failures
+- `eggress_udp_unsupported_upstream_total` - unsupported chain attempts
+
+The `/-/udp` endpoint includes `upstream_flows_active` in its response.
+
 ### UDP association lifecycle
 
 A UDP association is created when a SOCKS5 client issues a UDP ASSOCIATE command. The lifecycle is:
