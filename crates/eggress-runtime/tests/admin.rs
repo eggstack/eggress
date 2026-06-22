@@ -659,3 +659,133 @@ enabled = true
     token.cancel();
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn udp_before_association_active_count_zero() {
+    let state = test_state_with_listeners();
+    let addr = start_server(state).await;
+    let (status, body) = http_get(&addr, "/-/udp").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["associations_active"], 0);
+    let listeners = json["listeners"].as_array().unwrap();
+    assert_eq!(listeners.len(), 2);
+    assert_eq!(listeners[1]["name"], "socks-in");
+    assert_eq!(listeners[1]["udp_enabled"], true);
+    assert_eq!(listeners[1]["active_associations"], 0);
+}
+
+#[tokio::test]
+async fn udp_during_association_active_count_one() {
+    let state = test_state_with_listeners();
+    state
+        .udp_registry
+        .create_association(
+            "socks-in",
+            "127.0.0.1:5000".parse().unwrap(),
+            eggress_core::ClientIdentity::Anonymous,
+            1,
+        )
+        .await
+        .unwrap();
+    let addr = start_server(state).await;
+    let (status, body) = http_get(&addr, "/-/udp").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let listeners = json["listeners"].as_array().unwrap();
+    let socks_listener = listeners.iter().find(|l| l["name"] == "socks-in").unwrap();
+    assert_eq!(socks_listener["active_associations"], 1);
+}
+
+#[tokio::test]
+async fn udp_after_close_active_count_zero() {
+    let state = test_state_with_listeners();
+    let assoc = state
+        .udp_registry
+        .create_association(
+            "socks-in",
+            "127.0.0.1:5000".parse().unwrap(),
+            eggress_core::ClientIdentity::Anonymous,
+            1,
+        )
+        .await
+        .unwrap();
+    state.udp_registry.remove(assoc.id).await;
+    let addr = start_server(state).await;
+    let (status, body) = http_get(&addr, "/-/udp").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["associations_active"], 0);
+    let listeners = json["listeners"].as_array().unwrap();
+    let socks_listener = listeners.iter().find(|l| l["name"] == "socks-in").unwrap();
+    assert_eq!(socks_listener["active_associations"], 0);
+}
+
+#[tokio::test]
+async fn udp_per_listener_counts_distinguish() {
+    let state = test_state_with_listeners();
+    state
+        .udp_registry
+        .create_association(
+            "socks-in",
+            "127.0.0.1:5000".parse().unwrap(),
+            eggress_core::ClientIdentity::Anonymous,
+            1,
+        )
+        .await
+        .unwrap();
+    state
+        .udp_registry
+        .create_association(
+            "socks-in",
+            "127.0.0.1:5001".parse().unwrap(),
+            eggress_core::ClientIdentity::Anonymous,
+            1,
+        )
+        .await
+        .unwrap();
+    let addr = start_server(state).await;
+    let (status, body) = http_get(&addr, "/-/udp").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let listeners = json["listeners"].as_array().unwrap();
+    let socks_listener = listeners.iter().find(|l| l["name"] == "socks-in").unwrap();
+    assert_eq!(socks_listener["active_associations"], 2);
+    let http_listener = listeners.iter().find(|l| l["name"] == "http-in").unwrap();
+    assert_eq!(http_listener["active_associations"], 0);
+}
+
+#[tokio::test]
+async fn udp_target_flows_active_reflects_state() {
+    let state = test_state_with_listeners();
+    let addr = start_server(state).await;
+    let (status, body) = http_get(&addr, "/-/udp").await;
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["target_flows_active"], 0);
+}
+
+#[tokio::test]
+async fn udp_endpoint_no_client_or_target_address() {
+    let state = test_state_with_listeners();
+    state
+        .udp_registry
+        .create_association(
+            "socks-in",
+            "127.0.0.1:5000".parse().unwrap(),
+            eggress_core::ClientIdentity::Anonymous,
+            1,
+        )
+        .await
+        .unwrap();
+    let addr = start_server(state).await;
+    let (status, body) = http_get(&addr, "/-/udp").await;
+    assert_eq!(status, 200);
+    assert!(
+        !body.contains("127.0.0.1:5000"),
+        "endpoint should not expose client address"
+    );
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(json["listeners"].is_array());
+    assert!(json["associations_active"].is_number());
+}

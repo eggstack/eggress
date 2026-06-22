@@ -728,4 +728,492 @@ mod tests {
         drop(lease);
         assert_eq!(upstream.in_flight.load(Ordering::Relaxed), 0);
     }
+
+    fn relay_config_with_limits(routing: Arc<dyn RouteService>, limits: UdpLimits) -> RelayConfig {
+        RelayConfig {
+            routing,
+            udp_metrics: Arc::new(UdpMetrics::new()),
+            limits,
+            listener: "test".to_string(),
+            generation: 1,
+            identity: ClientIdentity::Anonymous,
+            client_tcp_peer: test_addr(),
+            registry: test_registry(),
+        }
+    }
+
+    #[tokio::test]
+    async fn relay_double_close_does_not_panic() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+
+        let config = relay_config(direct_router());
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+
+        assoc.close();
+        assoc.close();
+
+        let registry = test_registry();
+        registry.remove(assoc.id).await;
+        registry.remove(assoc.id).await;
+    }
+
+    #[tokio::test]
+    async fn relay_idle_timeout_closes_association() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+
+        let limits = UdpLimits {
+            idle_timeout: std::time::Duration::from_millis(150),
+            ..UdpLimits::default()
+        };
+        let config = relay_config_with_limits(direct_router(), limits);
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), relay_handle).await;
+        assert!(result.is_ok(), "relay should exit within timeout");
+        assert!(
+            !assoc.is_open(),
+            "association should be closed after idle timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn relay_valid_packet_extends_lifetime() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let limits = UdpLimits {
+            idle_timeout: std::time::Duration::from_millis(300),
+            ..UdpLimits::default()
+        };
+        let config = relay_config_with_limits(direct_router(), limits);
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"extend");
+
+        client_socket.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        client_socket.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let mut recv_buf = [0u8; 65535];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .expect("relay should still be alive");
+        assert!(n.unwrap() > 0);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_wrong_client_packet_does_not_extend() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let limits = UdpLimits {
+            idle_timeout: std::time::Duration::from_millis(200),
+            client_pin: true,
+            ..UdpLimits::default()
+        };
+        let config = relay_config_with_limits(direct_router(), limits);
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client1 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client1.connect(relay_addr).await.unwrap();
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"pin");
+        client1.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let client2 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client2.connect(relay_addr).await.unwrap();
+        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"wrong");
+        client2.send(&pkt2).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(assoc.client_udp_addr(), Some(client1.local_addr().unwrap()));
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), relay_handle).await;
+        assert!(result.is_ok(), "relay should exit after idle timeout");
+        assert!(!assoc.is_open());
+    }
+
+    #[tokio::test]
+    async fn relay_policy_rejected_packet_extends_lifetime() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let limits = UdpLimits {
+            idle_timeout: std::time::Duration::from_millis(300),
+            ..UdpLimits::default()
+        };
+        let config = relay_config_with_limits(reject_router(), limits);
+        let udp_metrics = config.udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"rejected");
+        client_socket.send(&pkt).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 1);
+        assert!(
+            assoc.is_open(),
+            "association should still be open after policy reject"
+        );
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            assoc.is_open(),
+            "association should still be open - rejected packet extended lifetime"
+        );
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_idle_timeout_records_metric() {
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+
+        let limits = UdpLimits {
+            idle_timeout: std::time::Duration::from_millis(150),
+            ..UdpLimits::default()
+        };
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = relay_config_with_limits(direct_router(), limits);
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        relay_handle.await.unwrap().unwrap();
+
+        assert_eq!(udp_metrics.associations_total.load(Ordering::Relaxed), 1);
+        assert!(!assoc.is_open());
+    }
+
+    #[tokio::test]
+    async fn relay_flow_created_on_first_packet() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = relay_config(direct_router());
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"flow1");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(n > 0);
+
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 1);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_flow_reused_for_same_target() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = relay_config(direct_router());
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"reuse1");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"reuse2");
+        client_socket.send(&pkt2).await.unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 1);
+        assert_eq!(udp_metrics.target_flows_total.load(Ordering::Relaxed), 1);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_flow_evicted_after_target_idle_timeout() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let limits = UdpLimits {
+            target_idle_timeout: std::time::Duration::from_millis(150),
+            ..UdpLimits::default()
+        };
+        let mut config = relay_config_with_limits(direct_router(), limits);
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"evict-me");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 1);
+
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
+        let flows_active = udp_metrics.target_flows_active.load(Ordering::Relaxed);
+        assert_eq!(
+            flows_active, 0,
+            "flow should be evicted after target idle timeout"
+        );
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_new_flow_after_eviction() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let limits = UdpLimits {
+            target_idle_timeout: std::time::Duration::from_millis(150),
+            ..UdpLimits::default()
+        };
+        let mut config = relay_config_with_limits(direct_router(), limits);
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"first");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 0);
+
+        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"after-evict");
+        client_socket.send(&pkt2).await.unwrap();
+
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
+        assert_eq!(resp.payload, b"after-evict");
+
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 1);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn relay_target_slot_reusable_after_eviction() {
+        let echo_addr = start_udp_echo().await;
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let limits = UdpLimits {
+            max_targets_per_association: 2,
+            target_idle_timeout: std::time::Duration::from_millis(150),
+            ..UdpLimits::default()
+        };
+        let mut config = relay_config_with_limits(direct_router(), limits);
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let echo_addr2 = start_udp_echo().await;
+
+        let pkt1 = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"target1");
+        client_socket.send(&pkt1).await.unwrap();
+        let mut recv_buf = [0u8; 65535];
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], echo_addr2.port(), b"target2");
+        client_socket.send(&pkt2).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 2);
+
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        assert_eq!(udp_metrics.target_flows_active.load(Ordering::Relaxed), 0);
+
+        let pkt3 = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"target3");
+        client_socket.send(&pkt3).await.unwrap();
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(n > 0);
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
 }

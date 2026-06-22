@@ -1241,4 +1241,79 @@ protocols = ["socks5"]
         assert!(result.is_err(), "listener count change should be rejected");
         assert!(result.unwrap_err().contains("listener count"));
     }
+
+    #[test]
+    fn compute_advertise_explicit() {
+        let result = compute_advertise_ip(
+            Some("10.0.0.1".parse().unwrap()),
+            "0.0.0.0".parse().unwrap(),
+            "127.0.0.1:5000".parse().unwrap(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            std::net::IpAddr::V4("10.0.0.1".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn compute_advertise_bind_ip() {
+        let result = compute_advertise_ip(
+            None,
+            "192.168.1.1".parse().unwrap(),
+            "127.0.0.1:5000".parse().unwrap(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            std::net::IpAddr::V4("192.168.1.1".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn compute_advertise_loopback_fallback() {
+        let result = compute_advertise_ip(
+            None,
+            "0.0.0.0".parse().unwrap(),
+            "127.0.0.1:5000".parse().unwrap(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        );
+    }
+
+    #[test]
+    fn compute_advertise_unspecified_non_loopback_rejected() {
+        let result = compute_advertise_ip(
+            None,
+            "0.0.0.0".parse().unwrap(),
+            "192.168.1.10:5000".parse().unwrap(),
+        );
+        assert!(
+            result.is_err(),
+            "non-loopback with unspecified bind should fail"
+        );
+    }
+
+    #[test]
+    fn compute_advertise_ipv6_loopback() {
+        let result =
+            compute_advertise_ip(None, "::".parse().unwrap(), "[::1]:5000".parse().unwrap());
+        assert_eq!(
+            result.unwrap(),
+            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        );
+    }
+
+    #[test]
+    fn compute_advertise_explicit_overrides_bind() {
+        let result = compute_advertise_ip(
+            Some("10.0.0.1".parse().unwrap()),
+            "192.168.1.1".parse().unwrap(),
+            "127.0.0.1:5000".parse().unwrap(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            std::net::IpAddr::V4("10.0.0.1".parse().unwrap())
+        );
+    }
 }

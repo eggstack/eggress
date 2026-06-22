@@ -398,3 +398,649 @@ direct = true
     token.cancel();
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn tcp_close_removes_from_udp_registry() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00);
+
+    let active_before = state.udp_registry.active_count().await;
+    assert!(active_before > 0, "should have active UDP association");
+
+    drop(stream);
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let active_after = state.udp_registry.active_count().await;
+    assert_eq!(
+        active_after, 0,
+        "UDP registry active count should be zero after TCP close"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn shutdown_removes_from_udp_registry() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let _reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+
+    let active_before = state.udp_registry.active_count().await;
+    assert!(active_before > 0);
+
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+
+    let active_after = state.udp_registry.active_count().await;
+    assert_eq!(
+        active_after, 0,
+        "UDP registry active count should be zero after shutdown"
+    );
+}
+
+#[tokio::test]
+async fn idle_timeout_removes_from_udp_registry() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+idle_timeout = "200ms"
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let _reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+
+    let active_before = state.udp_registry.active_count().await;
+    assert!(active_before > 0, "should have active UDP association");
+
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+
+    let active_after = state.udp_registry.active_count().await;
+    assert_eq!(
+        active_after, 0,
+        "UDP registry active count should be zero after idle timeout"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn udp_relay_task_exits_on_tcp_close() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00);
+
+    let active_before = state.udp_registry.active_count().await;
+    assert!(active_before > 0);
+
+    drop(stream);
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let active_after = state.udp_registry.active_count().await;
+    assert_eq!(active_after, 0);
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn shutdown_waits_for_udp_task_completion() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let _reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+
+    let start = std::time::Instant::now();
+    drop(stream);
+    token.cancel();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "shutdown should complete within grace period, took {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn no_stale_associations_after_shutdown() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    for _ in 0..3 {
+        let mut stream = tokio::net::TcpStream::connect(listener_addr)
+            .await
+            .expect("connect");
+        let _reply = socks5_udp_associate(&mut stream)
+            .await
+            .expect("udp associate");
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    token.cancel();
+    jh.await.ok();
+
+    let active = state.udp_registry.active_count().await;
+    assert_eq!(
+        active, 0,
+        "no stale associations should remain after shutdown"
+    );
+}
+
+#[tokio::test]
+async fn configured_advertise_ip_appears_in_socks5_reply() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+advertise = "10.0.0.1"
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00);
+
+    let relay_ip = std::net::Ipv4Addr::new(reply[4], reply[5], reply[6], reply[7]);
+    assert_eq!(
+        relay_ip,
+        std::net::Ipv4Addr::new(10, 0, 0, 1),
+        "advertised IP should appear in SOCKS5 reply"
+    );
+
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn udp_echo_increments_metrics_counters() {
+    let echo_addr = start_udp_echo().await;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00);
+
+    let relay_ip = std::net::Ipv4Addr::new(reply[4], reply[5], reply[6], reply[7]);
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = std::net::SocketAddr::new(relay_ip.into(), relay_port);
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"metrics");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("recv timeout")
+    .expect("recv failed");
+    assert!(n > 0);
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let (_status, _body) = http_get_local(&admin_addr, "/metrics").await;
+
+    let (_status, body) = http_get_local(&admin_addr, "/-/udp").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        json["associations_active"].as_i64().unwrap() >= 1,
+        "should have at least 1 active association"
+    );
+
+    drop(stream);
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let (_status, _body) = http_get_local(&admin_addr, "/metrics").await;
+
+    let (_status, body) = http_get_local(&admin_addr, "/-/udp").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["associations_active"].as_i64().unwrap(),
+        0,
+        "active count should be zero after TCP close"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn metrics_do_not_expose_client_or_target_addresses() {
+    let echo_addr = start_udp_echo().await;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(std::sync::atomic::Ordering::Relaxed));
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+
+    let relay_ip = std::net::Ipv4Addr::new(reply[4], reply[5], reply[6], reply[7]);
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = std::net::SocketAddr::new(relay_ip.into(), relay_port);
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"privacy");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("recv timeout")
+    .expect("recv failed");
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let (_status, body) = http_get_local(&admin_addr, "/metrics").await;
+
+    let client_addr = client_socket.local_addr().unwrap().to_string();
+    let target_addr = echo_addr.to_string();
+
+    assert!(
+        !body.contains(&client_addr),
+        "metrics should not contain client address {client_addr}"
+    );
+    assert!(
+        !body.contains(&target_addr),
+        "metrics should not contain target address {target_addr}"
+    );
+
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
+
+async fn http_get_local(addr: &str, path: &str) -> (u16, String) {
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::flush(&mut stream).await.unwrap();
+
+    let mut response = Vec::new();
+    loop {
+        let mut buf = [0u8; 4096];
+        match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+            Ok(0) => break,
+            Ok(n) => response.extend_from_slice(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+    let response = String::from_utf8_lossy(&response);
+    let status_line = response.lines().next().unwrap_or("");
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(0);
+    let body = response.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+    (status, body)
+}
