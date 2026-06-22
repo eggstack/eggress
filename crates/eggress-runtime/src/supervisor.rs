@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use eggress_admin::{AdminSnapshot, AdminSnapshotProvider, ListenerInfo};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
 use eggress_core::ProtocolId;
 use eggress_routing::health::HealthManager;
@@ -24,6 +25,44 @@ pub enum ReloadResult {
     Rejected { reason: String },
     /// Reload failed due to a compile or build error.
     Failed { error: String },
+}
+
+/// Adapter that exposes the runtime's compiled snapshot to the admin server.
+///
+/// Implements `AdminSnapshotProvider` so that admin handlers see live data:
+/// each request reads the current `ArcSwap<CompiledRuntimeSnapshot>` rather
+/// than a startup-captured copy. Reloads take effect on the next request.
+pub struct RuntimeAdminListenerInfos {
+    state: Arc<RuntimeState>,
+}
+
+impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
+    fn snapshot(&self) -> AdminSnapshot {
+        let snap = self.state.snapshot.load();
+        let addrs = self.state.listener_addrs.lock().unwrap();
+        let listeners: Vec<ListenerInfo> = snap
+            .listeners
+            .iter()
+            .enumerate()
+            .map(|(idx, lcfg)| ListenerInfo {
+                name: lcfg.name.clone(),
+                bind: lcfg.bind.clone(),
+                local_addr: addrs.get(idx).map(|a| a.to_string()).unwrap_or_default(),
+                protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
+            })
+            .collect();
+        AdminSnapshot {
+            generation: snap.generation,
+            router: snap.router.clone(),
+            pac: snap.admin.as_ref().and_then(|a| a.pac.clone()),
+            static_routes: snap
+                .admin
+                .as_ref()
+                .map(|a| a.static_content.clone())
+                .unwrap_or_default(),
+            listeners,
+        }
+    }
 }
 
 /// What is and isn't reloaded on SIGHUP:
@@ -263,6 +302,7 @@ impl ServiceSupervisor {
         let cancel = self.cancel.clone();
         let metrics = self.state.metrics.clone();
         let readiness = self.state.readiness.clone();
+        let admin_state_ref = self.state.clone();
         let active_connections = self.state.active_connections.clone();
         let shutdown_grace = self.shutdown_grace;
         let tasks = self.tasks.clone();
@@ -277,6 +317,11 @@ impl ServiceSupervisor {
 
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
+
+        let listener_infos_provider: Arc<RuntimeAdminListenerInfos> =
+            Arc::new(RuntimeAdminListenerInfos {
+                state: admin_state_ref.clone(),
+            });
 
         let rt = tokio::runtime::Runtime::new()?;
         let result = rt.block_on(async move {
@@ -371,8 +416,9 @@ impl ServiceSupervisor {
                     protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
                 })
                 .collect();
+            drop(listener_infos);
 
-            // Store listener addresses for test discovery
+            // Store listener addresses for admin snapshot
             {
                 let addrs: Vec<std::net::SocketAddr> =
                     prepared.iter().map(|p| p.local_addr).collect();
@@ -469,9 +515,7 @@ impl ServiceSupervisor {
                     let bind = admin_cfg.bind.clone();
                     let admin_cancel = admin_cancel.clone();
                     let state_ref = state_ref.clone();
-                    let listener_infos = listener_infos.clone();
-                    let pac_config = Arc::new(admin_cfg.pac.clone());
-                    let static_routes = Arc::new(admin_cfg.static_content.clone());
+                    let provider: Arc<dyn AdminSnapshotProvider> = listener_infos_provider.clone();
                     admin_tasks.spawn(async move {
                         let server =
                             match eggress_admin::AdminServer::new(&bind, admin_cancel).await {
@@ -486,15 +530,10 @@ impl ServiceSupervisor {
                         }
                         let admin_state = eggress_admin::AdminState {
                             metrics: state_ref.metrics.clone(),
-                            generation: Arc::new(AtomicU64::new(state_ref.generation())),
                             start_time: state_ref.start_time,
-                            static_routes,
-                            pac_config,
-                            router: Some(state_ref.routing.router()),
-                            routing: Some(state_ref.routing.clone()),
-                            listeners: Arc::new(listener_infos),
-                            active_connections: Some(state_ref.active_connections.clone()),
                             readiness: state_ref.readiness.clone(),
+                            active_connections: Some(state_ref.active_connections.clone()),
+                            provider,
                         };
                         if let Err(e) = server.run(admin_state).await {
                             tracing::error!("admin server error: {e}");

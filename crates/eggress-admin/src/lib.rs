@@ -3,8 +3,10 @@ pub mod routes;
 pub mod server;
 pub mod static_content;
 
-pub use server::AdminServer;
-pub use server::{AdminState, ListenerInfo, PacConfig, StaticRoute};
+pub use server::{
+    AdminServer, AdminSnapshot, AdminSnapshotProvider, AdminState, ListenerInfo, PacConfig,
+    StaticAdminSnapshot, StaticRoute,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AdminError {
@@ -23,47 +25,62 @@ mod tests {
     use super::*;
     use crate::pac::generate_pac;
     use crate::server::AdminState;
-    use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
     use std::time::Instant;
 
-    fn test_state() -> AdminState {
-        AdminState {
-            metrics: Arc::new(eggress_metrics::MetricsRegistry::new()),
-            generation: Arc::new(AtomicU64::new(42)),
-            start_time: Instant::now(),
-            static_routes: Arc::new(vec![StaticRoute {
-                path: "/test".to_string(),
-                content_type: "text/html".to_string(),
-                body: "<h1>Hello</h1>".to_string(),
-            }]),
-            pac_config: Arc::new(Some(PacConfig {
+    fn snapshot_with_router(router: Arc<eggress_routing::Router>) -> AdminSnapshot {
+        AdminSnapshot {
+            generation: 42,
+            router,
+            pac: Some(PacConfig {
                 path: "/pac".to_string(),
                 proxy_directive: "127.0.0.1:8080".to_string(),
                 direct_fallback: true,
                 direct_hosts: vec!["localhost".to_string()],
                 direct_suffixes: vec!["local".to_string()],
-            })),
-            router: None,
-            routing: None,
-            listeners: Arc::new(vec![]),
-            active_connections: None,
+            }),
+            static_routes: vec![StaticRoute {
+                path: "/test".to_string(),
+                content_type: "text/html".to_string(),
+                body: "<h1>Hello</h1>".to_string(),
+            }],
+            listeners: Vec::new(),
+        }
+    }
+
+    fn test_state() -> AdminState {
+        let router = Arc::new(eggress_routing::Router::new(
+            vec![],
+            eggress_routing::RouteActionSpec::Direct,
+        ));
+        let snap = snapshot_with_router(router);
+        AdminState {
+            metrics: Arc::new(eggress_metrics::MetricsRegistry::new()),
+            start_time: Instant::now(),
             readiness: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            active_connections: None,
+            provider: Arc::new(StaticAdminSnapshot { snapshot: snap }),
         }
     }
 
     fn test_state_no_pac() -> AdminState {
+        let router = Arc::new(eggress_routing::Router::new(
+            vec![],
+            eggress_routing::RouteActionSpec::Direct,
+        ));
+        let snap = AdminSnapshot {
+            generation: 0,
+            router,
+            pac: None,
+            static_routes: Vec::new(),
+            listeners: Vec::new(),
+        };
         AdminState {
             metrics: Arc::new(eggress_metrics::MetricsRegistry::new()),
-            generation: Arc::new(AtomicU64::new(0)),
             start_time: Instant::now(),
-            static_routes: Arc::new(vec![]),
-            pac_config: Arc::new(None),
-            router: None,
-            routing: None,
-            listeners: Arc::new(vec![]),
-            active_connections: None,
             readiness: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            active_connections: None,
+            provider: Arc::new(StaticAdminSnapshot { snapshot: snap }),
         }
     }
 
@@ -193,10 +210,9 @@ mod tests {
         let (status, body) = http_get(&addr, "/-/routes").await;
         assert_eq!(status, 200);
         let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-        assert!(json.is_array());
-        let routes = json.as_array().unwrap();
-        assert_eq!(routes.len(), 1);
-        assert_eq!(routes[0]["path"], "/test");
+        assert!(json.get("rules").is_some());
+        assert!(json.get("default_action").is_some());
+        assert_eq!(json["rule_count"], 0);
     }
 
     #[tokio::test]

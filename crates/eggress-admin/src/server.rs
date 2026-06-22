@@ -55,18 +55,54 @@ impl AdminServer {
     }
 }
 
+/// Live data the admin server reads per request.
+///
+/// Implementations wrap the current `CompiledRuntimeSnapshot` so reloads are
+/// reflected on the next request without restarting the admin server.
+#[derive(Clone)]
+pub struct AdminSnapshot {
+    pub generation: u64,
+    pub router: Arc<eggress_routing::Router>,
+    pub pac: Option<PacConfig>,
+    pub static_routes: Vec<StaticRoute>,
+    pub listeners: Vec<ListenerInfo>,
+}
+
+/// Source of admin-visible live data. Implemented by the runtime so that
+/// reloads immediately take effect on admin endpoints.
+pub trait AdminSnapshotProvider: Send + Sync + 'static {
+    fn snapshot(&self) -> AdminSnapshot;
+}
+
+/// A `AdminSnapshotProvider` backed by a fixed snapshot. Useful in tests
+/// that exercise admin endpoints without a full runtime.
+pub struct StaticAdminSnapshot {
+    pub snapshot: AdminSnapshot,
+}
+
+impl AdminSnapshotProvider for StaticAdminSnapshot {
+    fn snapshot(&self) -> AdminSnapshot {
+        self.snapshot.clone()
+    }
+}
+
 #[derive(Clone)]
 pub struct AdminState {
     pub metrics: Arc<eggress_metrics::MetricsRegistry>,
-    pub generation: Arc<AtomicU64>,
     pub start_time: Instant,
-    pub static_routes: Arc<Vec<StaticRoute>>,
-    pub pac_config: Arc<Option<PacConfig>>,
-    pub router: Option<Arc<eggress_routing::Router>>,
-    pub routing: Option<Arc<eggress_routing::SharedRoutingService>>,
-    pub listeners: Arc<Vec<ListenerInfo>>,
-    pub active_connections: Option<Arc<std::sync::atomic::AtomicU64>>,
     pub readiness: Arc<AtomicBool>,
+    pub active_connections: Option<Arc<AtomicU64>>,
+    pub provider: Arc<dyn AdminSnapshotProvider>,
+}
+
+impl AdminState {
+    pub fn snapshot(&self) -> AdminSnapshot {
+        self.provider.snapshot()
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.provider.snapshot().generation
+    }
 }
 
 pub type AdminResponse = http::Response<Full<Bytes>>;

@@ -8,6 +8,7 @@ use crate::server::{
 use crate::static_content::serve_static;
 
 const MAX_ADMIN_BODY: usize = 16 * 1024;
+const MAX_IDENTITY_LEN: usize = 256;
 
 pub async fn handle_request(
     req: http::Request<hyper::body::Incoming>,
@@ -26,14 +27,14 @@ pub async fn handle_request(
             }
         }
         "/-/status" => {
+            let snap = state.snapshot();
             let uptime = state.start_time.elapsed().as_secs();
-            let generation = state.generation.load(Ordering::Relaxed);
             let active = state
                 .active_connections
                 .as_ref()
                 .map(|c| c.load(Ordering::Relaxed))
                 .unwrap_or(0);
-            let listeners: Vec<serde_json::Value> = state
+            let listeners: Vec<serde_json::Value> = snap
                 .listeners
                 .iter()
                 .map(|l| {
@@ -46,7 +47,7 @@ pub async fn handle_request(
                 .collect();
             let status = serde_json::json!({
                 "version": "0.1.0",
-                "generation": generation,
+                "generation": snap.generation,
                 "uptime_seconds": uptime,
                 "active_connections": active,
                 "listeners": listeners,
@@ -54,109 +55,85 @@ pub async fn handle_request(
             build_json_response(200, status.to_string())
         }
         "/-/routes" => {
-            let router = state.routing.as_ref().map(|r| r.router());
-            let router = router.as_ref();
-            if let Some(router) = router {
-                let default_action = format!("{:?}", router.default_action());
-                let rules: Vec<serde_json::Value> = router
-                    .rules()
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "id": r.id.0.to_string(),
-                            "action": format!("{:?}", r.action),
-                        })
+            let router = &state.snapshot().router;
+            let default_action = format!("{:?}", router.default_action());
+            let rules: Vec<serde_json::Value> = router
+                .rules()
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "id": r.id.0.to_string(),
+                        "action": format!("{:?}", r.action),
                     })
-                    .collect();
-                let body = serde_json::json!({
-                    "rules": rules,
-                    "default_action": default_action,
-                    "rule_count": rules.len(),
-                });
-                build_json_response(200, body.to_string())
-            } else {
-                let rules: Vec<serde_json::Value> = state
-                    .static_routes
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "path": r.path,
-                            "content_type": r.content_type,
-                            "body_len": r.body.len(),
-                        })
-                    })
-                    .collect();
-                build_json_response(200, serde_json::to_string(&rules).unwrap())
-            }
+                })
+                .collect();
+            let body = serde_json::json!({
+                "rules": rules,
+                "default_action": default_action,
+                "rule_count": rules.len(),
+            });
+            build_json_response(200, body.to_string())
         }
         "/-/upstreams" => {
-            let router = state.routing.as_ref().map(|r| r.router());
-            let router = router.as_ref();
-            if let Some(router) = router {
-                let groups: Vec<serde_json::Value> = router
-                    .groups()
-                    .iter()
-                    .map(|(gid, group)| {
-                        let members: Vec<serde_json::Value> = group
-                            .members
-                            .iter()
-                            .map(|m| {
-                                let health_state = m.health.state();
-                                let eligible = eggress_routing::health::is_eligible(m);
-                                serde_json::json!({
-                                    "id": m.id.to_string(),
-                                    "health": format!("{:?}", health_state),
-                                    "eligible": eligible,
-                                    "enabled": m.is_enabled(),
-                                    "active": m.active.load(Ordering::Relaxed),
-                                    "in_flight": m.in_flight.load(Ordering::Relaxed),
-                                })
+            let router = &state.snapshot().router;
+            let groups: Vec<serde_json::Value> = router
+                .groups()
+                .iter()
+                .map(|(gid, group)| {
+                    let members: Vec<serde_json::Value> = group
+                        .members
+                        .iter()
+                        .map(|m| {
+                            let health_state = m.health.state();
+                            let eligible = eggress_routing::health::is_eligible(m);
+                            serde_json::json!({
+                                "id": m.id.to_string(),
+                                "health": format!("{:?}", health_state),
+                                "eligible": eligible,
+                                "enabled": m.is_enabled(),
+                                "active": m.active.load(Ordering::Relaxed),
+                                "in_flight": m.in_flight.load(Ordering::Relaxed),
                             })
-                            .collect();
-                        let sched_name = match group.scheduler_kind {
-                            eggress_routing::scheduler::SchedulerKind::FirstAvailable => {
-                                "first-available"
-                            }
-                            eggress_routing::scheduler::SchedulerKind::RoundRobin => "round-robin",
-                            eggress_routing::scheduler::SchedulerKind::Random => "random",
-                            eggress_routing::scheduler::SchedulerKind::LeastConnections => {
-                                "least-connections"
-                            }
-                        };
-                        serde_json::json!({
-                            "group_id": gid.0.to_string(),
-                            "scheduler": sched_name,
-                            "member_count": group.members.len(),
-                            "members": members,
                         })
+                        .collect();
+                    let sched_name = match group.scheduler_kind {
+                        eggress_routing::scheduler::SchedulerKind::FirstAvailable => {
+                            "first-available"
+                        }
+                        eggress_routing::scheduler::SchedulerKind::RoundRobin => "round-robin",
+                        eggress_routing::scheduler::SchedulerKind::Random => "random",
+                        eggress_routing::scheduler::SchedulerKind::LeastConnections => {
+                            "least-connections"
+                        }
+                    };
+                    serde_json::json!({
+                        "group_id": gid.0.to_string(),
+                        "scheduler": sched_name,
+                        "member_count": group.members.len(),
+                        "members": members,
                     })
-                    .collect();
-                build_json_response(200, serde_json::to_string(&groups).unwrap())
-            } else {
-                build_json_response(200, "[]")
-            }
+                })
+                .collect();
+            build_json_response(200, serde_json::to_string(&groups).unwrap())
         }
         "/-/config" => {
-            let generation = state.generation.load(Ordering::Relaxed);
+            let snap = state.snapshot();
+            let router = &snap.router;
             let uptime = state.start_time.elapsed().as_secs();
-            let router = state.routing.as_ref().map(|r| r.router());
-            let router = router.as_ref();
-            let rule_count = router.map(|r| r.rules().len()).unwrap_or(0);
-            let upstream_group_count = router.map(|r| r.groups().len()).unwrap_or(0);
-            let default_action = router
-                .map(|r| format!("{:?}", r.default_action()))
-                .unwrap_or_else(|| "none".to_string());
+            let rule_count = router.rules().len();
+            let upstream_group_count = router.groups().len();
+            let default_action = format!("{:?}", router.default_action());
             let listener_names: Vec<&str> =
-                state.listeners.iter().map(|l| l.name.as_str()).collect();
+                snap.listeners.iter().map(|l| l.name.as_str()).collect();
             let config_summary = serde_json::json!({
-                "generation": generation,
+                "generation": snap.generation,
                 "uptime_seconds": uptime,
-                "has_router": router.is_some(),
+                "has_router": true,
                 "rule_count": rule_count,
                 "upstream_group_count": upstream_group_count,
                 "default_action": default_action,
-                "static_routes_count": state.static_routes.len(),
-                "has_pac": state.pac_config.is_some(),
+                "static_routes_count": snap.static_routes.len(),
+                "has_pac": snap.pac.is_some(),
                 "listeners": listener_names,
                 "active_connections": state.active_connections.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(0),
             });
@@ -166,14 +143,8 @@ pub async fn handle_request(
             if method != http::Method::POST {
                 return build_text_response(405, "method not allowed");
             }
-            let router = state.routing.as_ref().map(|r| r.router());
-            let router = router.as_ref();
-            let Some(router) = router else {
-                return build_json_response(
-                    503,
-                    serde_json::json!({"error": "no router configured"}).to_string(),
-                );
-            };
+            let snap = state.snapshot();
+            let router = &snap.router;
             let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
                 Ok(b) => b.to_bytes(),
                 Err(_) => {
@@ -246,16 +217,48 @@ pub async fn handle_request(
                     );
                 }
             };
-            let generation = state.generation.load(Ordering::Relaxed);
-            let identity = eggress_core::ClientIdentity::Anonymous;
+            let source = match body.get("source").and_then(|v| v.as_str()) {
+                Some(raw) => match raw.parse::<std::net::SocketAddr>() {
+                    Ok(addr) => Some(addr),
+                    Err(e) => {
+                        return build_json_response(
+                            400,
+                            serde_json::json!({"error": format!("invalid source: {e}")})
+                                .to_string(),
+                        );
+                    }
+                },
+                None => None,
+            };
+            let identity_owned;
+            let identity: &eggress_core::ClientIdentity =
+                match body.get("identity").and_then(|v| v.as_str()) {
+                    Some("") => {
+                        return build_json_response(
+                            400,
+                            serde_json::json!({"error": "identity must be non-empty"}).to_string(),
+                        );
+                    }
+                    Some(raw) if raw.len() > MAX_IDENTITY_LEN => {
+                        return build_json_response(
+                            400,
+                            serde_json::json!({"error": "identity too long"}).to_string(),
+                        );
+                    }
+                    Some(raw) => {
+                        identity_owned = eggress_core::ClientIdentity::Username(raw.to_string());
+                        &identity_owned
+                    }
+                    None => &eggress_core::ClientIdentity::Anonymous,
+                };
             let request = eggress_routing::RouteRequest {
                 target: &target,
-                source: None,
+                source,
                 listener: listener_str,
                 inbound_protocol: protocol,
-                identity: &identity,
+                identity,
             };
-            let explanation = router.explain(&request, generation);
+            let explanation = router.explain(&request, snap.generation);
             build_json_response(200, serde_json::to_string(&explanation).unwrap())
         }
         "/metrics" => build_response(
@@ -264,7 +267,7 @@ pub async fn handle_request(
             "text/plain; version=0.0.4",
         ),
         "/pac" => {
-            if let Some(pac_config) = state.pac_config.as_ref() {
+            if let Some(pac_config) = state.snapshot().pac.as_ref() {
                 let pac = generate_pac(pac_config);
                 build_response(200, pac, "application/x-ns-proxy-autoconfig")
             } else {
@@ -272,7 +275,7 @@ pub async fn handle_request(
             }
         }
         _ => {
-            for route in state.static_routes.iter() {
+            for route in state.snapshot().static_routes.iter() {
                 if route.path == path {
                     return serve_static(route);
                 }

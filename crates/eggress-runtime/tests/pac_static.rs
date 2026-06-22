@@ -293,3 +293,185 @@ body = "here"
     token.cancel();
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn pac_reload_serves_new_content() {
+    let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+
+[admin.pac]
+direct = ["localhost"]
+proxy = "PROXY 127.0.0.1:8080"
+fallback = "DIRECT"
+"#;
+    let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+
+[admin.pac]
+direct = ["localhost"]
+proxy = "PROXY 127.0.0.1:9999"
+fallback = "DIRECT"
+"#;
+
+    let f = write_config(config1);
+    let path = f.path().to_str().unwrap().to_string();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+
+    let token = sup.shutdown_token();
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let (_status, body, _) = http_get(&admin_addr, "/pac").await;
+    assert!(body.contains("PROXY 127.0.0.1:8080"));
+
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(config2.as_bytes()).unwrap();
+        f.flush().unwrap();
+    }
+
+    std::process::Command::new("kill")
+        .arg("-HUP")
+        .arg(std::process::id().to_string())
+        .output()
+        .ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (_status, body, _) = http_get(&admin_addr, "/pac").await;
+    assert!(
+        body.contains("PROXY 127.0.0.1:9999"),
+        "admin should serve new PAC after reload, got: {body}"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn static_content_reload_serves_new_body() {
+    let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+
+[[admin.static_content]]
+path = "/version"
+content_type = "text/plain"
+body = "0.1.0"
+"#;
+    let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+
+[[admin.static_content]]
+path = "/version"
+content_type = "text/plain"
+body = "0.2.0"
+"#;
+
+    let f = write_config(config1);
+    let path = f.path().to_str().unwrap().to_string();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+
+    let token = sup.shutdown_token();
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let (_status, body, _) = http_get(&admin_addr, "/version").await;
+    assert_eq!(body, "0.1.0");
+
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(config2.as_bytes()).unwrap();
+        f.flush().unwrap();
+    }
+
+    std::process::Command::new("kill")
+        .arg("-HUP")
+        .arg(std::process::id().to_string())
+        .output()
+        .ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (_status, body, _) = http_get(&admin_addr, "/version").await;
+    assert_eq!(
+        body, "0.2.0",
+        "admin should serve new static content after reload"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}

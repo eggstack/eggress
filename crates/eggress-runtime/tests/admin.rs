@@ -2,7 +2,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use std::time::Instant;
 
-use eggress_admin::{AdminServer, AdminState, ListenerInfo, StaticRoute};
+use eggress_admin::{
+    AdminServer, AdminSnapshot, AdminState, ListenerInfo, StaticAdminSnapshot, StaticRoute,
+};
 use eggress_routing::Router;
 
 async fn http_get(addr: &str, path: &str) -> (u16, String) {
@@ -79,21 +81,16 @@ fn test_state_with_listeners() -> AdminState {
         vec![],
         eggress_routing::RouteActionSpec::Direct,
     ));
-    AdminState {
-        metrics: Arc::new(eggress_metrics::MetricsRegistry::new()),
-        generation: Arc::new(AtomicU64::new(3)),
-        start_time: Instant::now(),
-        static_routes: Arc::new(vec![StaticRoute {
+    let snap = AdminSnapshot {
+        generation: 3,
+        router,
+        pac: None,
+        static_routes: vec![StaticRoute {
             path: "/test".to_string(),
             content_type: "text/html".to_string(),
             body: "<h1>Hello</h1>".to_string(),
-        }]),
-        pac_config: Arc::new(None),
-        router: Some(router.clone()),
-        routing: Some(Arc::new(eggress_routing::SharedRoutingService::new_arc(
-            router,
-        ))),
-        listeners: Arc::new(vec![
+        }],
+        listeners: vec![
             ListenerInfo {
                 name: "http-in".to_string(),
                 bind: "0.0.0.0:8080".to_string(),
@@ -106,9 +103,14 @@ fn test_state_with_listeners() -> AdminState {
                 local_addr: "0.0.0.0:1080".to_string(),
                 protocols: vec!["socks5".to_string()],
             },
-        ]),
-        active_connections: Some(Arc::new(AtomicU64::new(5))),
+        ],
+    };
+    AdminState {
+        metrics: Arc::new(eggress_metrics::MetricsRegistry::new()),
+        start_time: Instant::now(),
         readiness: Arc::new(AtomicBool::new(true)),
+        active_connections: Some(Arc::new(AtomicU64::new(5))),
+        provider: Arc::new(StaticAdminSnapshot { snapshot: snap }),
     }
 }
 
@@ -215,4 +217,212 @@ async fn metrics_endpoint_returns_prometheus() {
     let (status, body) = http_get(&addr, "/metrics").await;
     assert_eq!(status, 200);
     assert!(body.contains("eggress_connections_active"));
+}
+
+#[tokio::test]
+async fn admin_routes_reflect_reload() {
+    use std::io::Write as _;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "first"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "replaced"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    f.write_all(config1.as_bytes()).unwrap();
+    f.flush().unwrap();
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let token = sup.shutdown_token();
+    struct AutoShutdown(tokio_util::sync::CancellationToken);
+    impl Drop for AutoShutdown {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let (_status, body) = http_get(&admin_addr, "/-/routes").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["rules"][0]["id"], "first");
+
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(config2.as_bytes()).unwrap();
+        f.flush().unwrap();
+    }
+    std::process::Command::new("kill")
+        .arg("-HUP")
+        .arg(std::process::id().to_string())
+        .output()
+        .ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (_status, body) = http_get(&admin_addr, "/-/routes").await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["rules"][0]["id"], "replaced",
+        "routes endpoint should reflect reloaded rule"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn admin_route_explain_reflects_reload() {
+    use std::io::Write as _;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "rule-direct"
+host_exact = "old.example"
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "rule-new"
+host_exact = "old.example"
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    f.write_all(config1.as_bytes()).unwrap();
+    f.flush().unwrap();
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let token = sup.shutdown_token();
+    struct AutoShutdown(tokio_util::sync::CancellationToken);
+    impl Drop for AutoShutdown {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+    let _shutdown = AutoShutdown(token.clone());
+    let state = sup.state().clone();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let admin_addr = state
+        .admin_local_addr
+        .lock()
+        .unwrap()
+        .expect("admin should have bound")
+        .to_string();
+
+    let body = r#"{"target":"old.example:443","listener":"http-in","protocol":"http"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", body).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["matched_rule"], "rule-direct");
+
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(config2.as_bytes()).unwrap();
+        f.flush().unwrap();
+    }
+    std::process::Command::new("kill")
+        .arg("-HUP")
+        .arg(std::process::id().to_string())
+        .output()
+        .ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let body2 = r#"{"target":"old.example:443","listener":"http-in","protocol":"http"}"#;
+    let (_status, body) = http_post(&admin_addr, "/-/route-explain", body2).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        json["matched_rule"], "rule-new",
+        "route-explain should reflect reloaded rule"
+    );
+
+    token.cancel();
+    jh.await.ok();
 }
