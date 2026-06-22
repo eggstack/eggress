@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::sync::atomic::Ordering;
 
 use tempfile::NamedTempFile;
 
@@ -51,7 +50,7 @@ protocols = ["http"]
     let path1 = f1.path().to_str().unwrap();
     let mut sup = eggress_runtime::ServiceSupervisor::start(path1).unwrap();
 
-    let gen_before = sup.state().generation.load(Ordering::Relaxed);
+    let gen_before = sup.state().generation();
 
     // Write an invalid config to the same file path
     let invalid = "this is not valid toml {{{";
@@ -77,7 +76,7 @@ protocols = ["http"]
         other => panic!("expected Failed for invalid config, got {:?}", other),
     }
 
-    let gen_after = sup.state().generation.load(Ordering::Relaxed);
+    let gen_after = sup.state().generation();
     assert_eq!(
         gen_before, gen_after,
         "generation should not change on failed reload"
@@ -98,13 +97,13 @@ protocols = ["http"]
     let path1 = f1.path().to_str().unwrap();
     let mut sup = eggress_runtime::ServiceSupervisor::start(path1).unwrap();
 
-    assert_eq!(sup.state().generation.load(Ordering::Relaxed), 0);
+    assert_eq!(sup.state().generation(), 0);
 
     let result = sup.reload_config();
     match result {
         eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
             assert_eq!(generation, 1);
-            assert_eq!(sup.state().generation.load(Ordering::Relaxed), 1);
+            assert_eq!(sup.state().generation(), 1);
         }
         other => panic!("expected Applied, got {:?}", other),
     }
@@ -113,7 +112,7 @@ protocols = ["http"]
     match result2 {
         eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
             assert_eq!(generation, 2);
-            assert_eq!(sup.state().generation.load(Ordering::Relaxed), 2);
+            assert_eq!(sup.state().generation(), 2);
         }
         other => panic!("expected Applied, got {:?}", other),
     }

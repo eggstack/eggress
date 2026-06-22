@@ -56,11 +56,16 @@ pub struct RuntimeState {
     pub metrics: Arc<eggress_metrics::MetricsRegistry>,
     pub readiness: Arc<AtomicBool>,
     pub start_time: Instant,
-    pub generation: Arc<AtomicU64>,
     pub active_connections: Arc<AtomicU64>,
     pub connection_counter: Arc<AtomicU64>,
     pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
     pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
+}
+
+impl RuntimeState {
+    pub fn generation(&self) -> u64 {
+        self.snapshot.load().generation
+    }
 }
 
 #[allow(dead_code)]
@@ -95,7 +100,6 @@ impl ServiceSupervisor {
 
         let metrics = Arc::new(eggress_metrics::MetricsRegistry::new());
         let readiness = Arc::new(AtomicBool::new(false));
-        let generation = Arc::new(AtomicU64::new(0));
 
         let snapshot = compile_runtime_snapshot(&rt_config, None)
             .map_err(|e| RuntimeError::Config(e.to_string()))?;
@@ -114,7 +118,6 @@ impl ServiceSupervisor {
             metrics,
             readiness,
             start_time: Instant::now(),
-            generation: generation.clone(),
             active_connections,
             connection_counter,
             admin_local_addr: Arc::new(Mutex::new(None)),
@@ -241,7 +244,6 @@ impl ServiceSupervisor {
 
         self.state.routing.swap_arc(new_snapshot.router.clone());
         self.state.snapshot.store(Arc::new(new_snapshot));
-        self.state.generation.store(gen, Ordering::Relaxed);
 
         self.rt_config = new_rt_config;
 
@@ -484,7 +486,7 @@ impl ServiceSupervisor {
                         }
                         let admin_state = eggress_admin::AdminState {
                             metrics: state_ref.metrics.clone(),
-                            generation: state_ref.generation.clone(),
+                            generation: Arc::new(AtomicU64::new(state_ref.generation())),
                             start_time: state_ref.start_time,
                             static_routes,
                             pac_config,
@@ -580,7 +582,6 @@ impl ServiceSupervisor {
                                             routing.swap_arc(new_snapshot.router.clone());
                                             snapshot.store(Arc::new(new_snapshot));
 
-                                            state_ref.generation.store(gen, Ordering::Relaxed);
                                             metrics.set_config_generation(gen);
                                             metrics.record_reload(true);
 

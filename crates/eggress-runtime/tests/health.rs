@@ -210,7 +210,7 @@ fallback = "reject"
     let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
 
     let state = sup.state().clone();
-    let gen_before = state.generation.load(Ordering::Relaxed);
+    let gen_before = state.generation();
     assert_eq!(gen_before, 0);
 
     let token = sup.shutdown_token();
@@ -232,7 +232,7 @@ fallback = "reject"
         .ok();
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let gen_after = state.generation.load(Ordering::Relaxed);
+    let gen_after = state.generation();
     assert!(
         gen_after > gen_before,
         "generation should increment on reload"

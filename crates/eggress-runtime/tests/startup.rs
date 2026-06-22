@@ -100,11 +100,7 @@ protocols = ["http"]
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
     let sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
-    assert_eq!(
-        sup.state().generation.load(Ordering::Relaxed),
-        0,
-        "generation should start at 0"
-    );
+    assert_eq!(sup.state().generation(), 0, "generation should start at 0");
 }
 
 #[test]
