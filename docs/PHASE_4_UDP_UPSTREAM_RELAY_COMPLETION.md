@@ -77,11 +77,16 @@ upstream SOCKS5 proxy.
   - Idle cleanup releases flow
   - Upstream metrics tracking
 
-- `crates/eggress-runtime/tests/udp_upstream.rs` - 4 tests covering:
+- `crates/eggress-runtime/tests/udp_upstream.rs` - 9 tests covering:
   - Shutdown closes UDP flows
   - Metrics expose UDP counters
   - Admin endpoint safe (no address leakage)
   - Direct fallback forwards direct
+  - Full TOML-configured SOCKS5 upstream echo
+  - Authenticated SOCKS5 upstream echo
+  - HTTP upstream drops unsupported
+  - Multi-hop upstream drops unsupported
+  - Target-flow idle timeout releases upstream gauge
 
 ## Verification
 
@@ -108,7 +113,7 @@ All checks passed:
 - [x] Active upstream leases held while flows active, released on close
 - [x] Runtime shutdown closes upstream UDP flows and waits for tasks
 - [x] Reload semantics documented and tested
-- [x] Full ServiceSupervisor runtime test proves TOML-configured upstream relay
+- [x] Full ServiceSupervisor runtime tests prove TOML-configured upstream relay (echo, auth, unsupported, idle timeout)
 - [x] `/metrics` exposes upstream UDP counters with aggregate counters
 - [x] `/-/udp` exposes safe upstream summary without client/target leakage
 - [x] Unsupported upstream selections visible in logs/metrics
@@ -116,7 +121,7 @@ All checks passed:
 - [x] All tests, lint, audit pass
 - [x] No unsafe Rust, OpenSSL, or native dependencies introduced
 - [x] Integration test files exist per plan (socks5_upstream.rs, udp_upstream.rs)
-- [x] 12 integration test scenarios covered
+- [x] 17 integration test scenarios covered
 - [x] Codec renamed with backwards-compatible wrappers
 - [x] `handle_client_datagram()` extracted from relay loop
 - [x] `UdpFlowKey` enum for typed flow map keys
@@ -132,6 +137,7 @@ Phase 4 closure fixes addressed:
 - Upstream response target preserved from decoded datagram (with equivalence check)
 - Aggregate upstream UDP metrics (per-upstream/group labels deferred to later observability pass)
 - Full ServiceSupervisor runtime test for TOML-configured SOCKS5 UDP upstream echo
+- Runtime tests for authenticated upstream, HTTP upstream drop, multi-hop drop, and target-flow idle timeout
 - Plan archival policy documented
 
-All required checks passed on $(date +%Y-%m-%d).
+All required checks passed on 2026-06-22.

@@ -505,3 +505,449 @@ all = [
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
+
+#[tokio::test]
+async fn runtime_authenticated_socks5_upstream_echoes() {
+    let upstream = eggress_udp::testkit::Socks5UdpTestServer::start(
+        eggress_udp::testkit::Socks5TestServerConfig {
+            mode: eggress_udp::testkit::Socks5TestMode::EchoWithCredentials {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+            },
+            relay_addr: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let echo_addr = start_udp_echo().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "socks-auth"
+uri = "socks5://user:pass@127.0.0.1:{upstream_port}"
+
+[[upstream_groups]]
+id = "udp-upstream"
+scheduler = "first-available"
+members = ["socks-auth"]
+fallback = "reject"
+
+[[rules]]
+id = "udp-via-socks"
+upstream_group = "udp-upstream"
+
+[rules.match]
+all = [
+  {{ transport = "udp" }}
+]
+"#,
+        upstream_port = upstream.tcp_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00, "udp associate should succeed");
+
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = format!("127.0.0.1:{relay_port}");
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(&relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"auth-upstream-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("timeout waiting for response")
+    .expect("recv");
+
+    let resp = eggress_udp::codec::decode_packet(
+        &recv_buf[..n],
+        &eggress_udp::limits::UdpLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(resp.payload, b"auth-upstream-test");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+#[tokio::test]
+async fn runtime_http_upstream_drops_unsupported() {
+    let upstream = eggress_udp::testkit::Socks5UdpTestServer::start(
+        eggress_udp::testkit::Socks5TestServerConfig {
+            mode: eggress_udp::testkit::Socks5TestMode::Echo,
+            relay_addr: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "http-up"
+uri = "http://127.0.0.1:{upstream_port}"
+
+[[upstream_groups]]
+id = "udp-upstream"
+scheduler = "first-available"
+members = ["http-up"]
+fallback = "reject"
+
+[[rules]]
+id = "udp-via-http"
+upstream_group = "udp-upstream"
+
+[rules.match]
+all = [
+  {{ transport = "udp" }}
+]
+"#,
+        upstream_port = upstream.tcp_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00, "udp associate should succeed");
+
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = format!("127.0.0.1:{relay_port}");
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(&relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], 12345, b"http-drop-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let mut recv_buf = [0u8; 65535];
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await;
+    assert!(
+        result.is_err(),
+        "HTTP upstream should not echo UDP — expect timeout"
+    );
+
+    let dropped = state.udp_metrics.dropped_packets.load(Ordering::Relaxed);
+    assert_eq!(dropped, 1, "should record exactly one dropped packet");
+
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn runtime_multi_hop_upstream_drops_unsupported() {
+    let upstream1 = eggress_udp::testkit::Socks5UdpTestServer::start(
+        eggress_udp::testkit::Socks5TestServerConfig {
+            mode: eggress_udp::testkit::Socks5TestMode::Echo,
+            relay_addr: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let upstream2 = eggress_udp::testkit::Socks5UdpTestServer::start(
+        eggress_udp::testkit::Socks5TestServerConfig {
+            mode: eggress_udp::testkit::Socks5TestMode::Echo,
+            relay_addr: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "multi-hop"
+uri = "socks5://127.0.0.1:{port1}__socks5://127.0.0.1:{port2}"
+
+[[upstream_groups]]
+id = "udp-upstream"
+scheduler = "first-available"
+members = ["multi-hop"]
+fallback = "reject"
+
+[[rules]]
+id = "udp-via-multi"
+upstream_group = "udp-upstream"
+
+[rules.match]
+all = [
+  {{ transport = "udp" }}
+]
+"#,
+        port1 = upstream1.tcp_addr.port(),
+        port2 = upstream2.tcp_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00, "udp associate should succeed");
+
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = format!("127.0.0.1:{relay_port}");
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(&relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], 12345, b"multi-hop-drop-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let mut recv_buf = [0u8; 65535];
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await;
+    assert!(
+        result.is_err(),
+        "multi-hop upstream should not echo UDP — expect timeout"
+    );
+
+    let dropped = state.udp_metrics.dropped_packets.load(Ordering::Relaxed);
+    assert_eq!(dropped, 1, "should record exactly one dropped packet");
+
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn runtime_target_flow_idle_timeout_releases_upstream_gauge() {
+    let upstream = eggress_udp::testkit::Socks5UdpTestServer::start(
+        eggress_udp::testkit::Socks5TestServerConfig {
+            mode: eggress_udp::testkit::Socks5TestMode::Echo,
+            relay_addr: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let echo_addr = start_udp_echo().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[listeners.udp]
+target_idle_timeout = "150ms"
+
+[[upstreams]]
+id = "socks-up"
+uri = "socks5://127.0.0.1:{upstream_port}"
+
+[[upstream_groups]]
+id = "udp-upstream"
+scheduler = "first-available"
+members = ["socks-up"]
+fallback = "reject"
+
+[[rules]]
+id = "udp-via-socks"
+upstream_group = "udp-upstream"
+
+[rules.match]
+all = [
+  {{ transport = "udp" }}
+]
+"#,
+        upstream_port = upstream.tcp_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00, "udp associate should succeed");
+
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = format!("127.0.0.1:{relay_port}");
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(&relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"idle-timeout-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("timeout waiting for response")
+    .expect("recv");
+
+    let resp = eggress_udp::codec::decode_packet(
+        &recv_buf[..n],
+        &eggress_udp::limits::UdpLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(resp.payload, b"idle-timeout-test");
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let flows_after_send = state
+        .udp_metrics
+        .target_flows_active
+        .load(Ordering::Relaxed);
+    assert_eq!(flows_after_send, 1, "should have one active target flow");
+
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let flows_after_idle = state
+        .udp_metrics
+        .target_flows_active
+        .load(Ordering::Relaxed);
+    assert_eq!(
+        flows_after_idle, 0,
+        "target flow should be evicted after idle timeout"
+    );
+
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
