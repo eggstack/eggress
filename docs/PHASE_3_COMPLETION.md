@@ -47,7 +47,7 @@ The following items were completed during the corrective closure pass:
 
 ### Limitations
 
-- No UDP relay through upstream proxies (SOCKS5, HTTP, etc.)
+- No UDP relay through HTTP, SOCKS4, or multi-hop upstream proxies (one-hop SOCKS5 added in Phase 4)
 - No QUIC, HTTP/3, MASQUE, or CONNECT-UDP support
 - No transparent UDP proxying
 - No UDP fragmentation/reassembly

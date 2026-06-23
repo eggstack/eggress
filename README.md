@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
+> Status: Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -359,7 +359,7 @@ Legend:
 
 ### Phase 3 UDP operational limitations
 
-- No UDP relay through upstream proxies (SOCKS5, HTTP, etc.); only direct forwarding is supported.
+- UDP relay through HTTP, SOCKS4, and multi-hop upstream proxies is not supported; one-hop SOCKS5 upstream is supported.
 - No QUIC, HTTP/3, MASQUE, or CONNECT-UDP transport.
 - No transparent UDP proxying.
 - No UDP fragmentation/reassembly (nonzero FRAG is rejected).
@@ -388,7 +388,11 @@ Native dependencies and platform FFI are reserved for operating-system facilitie
 ## Documentation
 
 - [Full roadmap](docs/ROADMAP.md)
-- [Phase 1 plan](docs/PHASE_1_PLAN.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [URI grammar](docs/URI_GRAMMAR.md)
+- [Phase 2 completion](docs/PHASE_2_COMPLETION.md)
+- [Phase 3 completion](docs/PHASE_3_COMPLETION.md)
+- [Phase 4 UDP upstream relay](docs/PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md)
 
 ## Status discipline
 

@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 3: Advanced features (planned)
+Phase 5: TLS and secure transports (planned)
 
 ## Completed Milestones
 
@@ -45,12 +45,35 @@ Phase 3: Advanced features (planned)
 - [x] 2.19: Direct fallback metadata and failure categories
 - [x] 2.20: End-to-end integration tests
 
+### Phase 3: UDP foundation — complete
+
+- [x] 3.1: SOCKS5 UDP ASSOCIATE server
+- [x] 3.2: UDP datagram codec (IPv4, IPv6, domain)
+- [x] 3.3: Association registry with bounded limits
+- [x] 3.4: Direct UDP forwarding
+- [x] 3.5: Transport-aware routing
+- [x] 3.6: UDP metrics and admin visibility
+- [x] 3.7: Security controls (client pinning, multicast rejection, size limits)
+- [x] 3.8: Shutdown integration
+- [x] 3.9: Corrective closure — lifecycle, config, metrics, routing, docs
+
+### Phase 4: UDP upstream relay — complete
+
+- [x] 4.1: UDP capability model (UdpRelayCapability)
+- [x] 4.2: SOCKS5 upstream client (handshake, auth, UDP ASSOCIATE)
+- [x] 4.3: Flow model (UdpFlowKind, UdpFlowKey, per-target upstream association)
+- [x] 4.4: Relay integration (handle_client_datagram refactor)
+- [x] 4.5: Upstream metrics and admin visibility
+- [x] 4.6: Codec rename with backward-compatible wrappers
+- [x] 4.7: Synthetic test server (Socks5UdpTestServer)
+- [x] 4.8: Integration tests (socks5_upstream, udp_upstream)
+
 ## Remaining Work
 
-None — Phase 2 is complete.
+None — Phases 1–4 are complete.
 
 ## Next Phase
 
-Phase 3: Advanced features (UDP, TLS listeners, system-proxy configuration)
+Phase 5: TLS and secure transports (rustls wrapping, HTTPS proxy, certificate policy)
 
 See the main roadmap for detailed descriptions of each phase.

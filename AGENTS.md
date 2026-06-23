@@ -41,6 +41,7 @@ cargo run --bin eggress -- --config path/to/config.toml
 ```text
 eggress/
 ├── Cargo.toml              # Workspace root
+├── .skills/                # Agent skill files for this codebase
 ├── crates/
 │   ├── eggress-core/      # Core types, traits, relay, listener, connector, chain
 │   ├── eggress-cli/       # CLI binary
@@ -55,6 +56,7 @@ eggress/
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   └── eggress-testkit/   # Test utilities
+├── plans/                  # Historical planning documents (reference only)
 ├── tests/
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)
 └── docs/
@@ -62,6 +64,7 @@ eggress/
     ├── ROADMAP.md
     ├── PHASE_2_COMPLETION.md
     ├── PHASE_3_COMPLETION.md
+    ├── PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md
     └── URI_GRAMMAR.md
 ```
 
@@ -84,7 +87,6 @@ topology rejection, config reload, and SOCKS5 upstream relay.
 - Logging: `tracing` + `tracing-subscriber`
 - No C dependencies, no OpenSSL
 - No `build.rs` files anywhere in the workspace
-- No CI workflow files in the repo (verify commands locally)
 
 ## Key Architecture Facts
 
@@ -100,4 +102,14 @@ topology rejection, config reload, and SOCKS5 upstream relay.
 - **Shared runtime snapshot**: `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
-- **UDP**: only direct forwarding and one-hop SOCKS5 upstream; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
+- **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
+
+## Skills
+
+The `.skills/` directory contains focused reference files for common development tasks:
+
+- `rust-proxy-dev.md` — Adding new protocols, transport wrappers, chain integration
+- `udp-protocol.md` — UDP association management, datagram relay, upstream SOCKS5 relay
+- `config-reload.md` — TOML config schema, hot-reload vs restart, atomic swaps
+- `routing-rules.md` — Rule engine, matchers, schedulers, route explanation
+- `testing.md` — Test layers, conventions, running and writing tests

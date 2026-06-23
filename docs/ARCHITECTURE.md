@@ -308,14 +308,16 @@ Every UDP datagram is routed through the Phase 2 rule engine using `RouteService
 
 - `SelectedRoute::Direct { selection_reason: Normal }` — forward to target via direct UDP socket.
 - `SelectedRoute::Direct { selection_reason: DirectFallback }` — forward via direct, with fallback metric recorded.
-- `SelectedRoute::Upstream { .. }` — drop with `unsupported_upstream` metric (no UDP-capable upstream relay).
+- `SelectedRoute::Upstream { .. }` — forward via one-hop SOCKS5 upstream if capable; drop with `unsupported_upstream` metric for HTTP/SOCKS4/multi-hop chains.
 - `RouteError::Rejected { .. }` — drop with policy metric.
 
 Route rules can match on `transport` to distinguish UDP from TCP traffic. Route changes via SIGHUP take effect on subsequent datagrams without restarting the UDP listener.
 
-### Direct-only limitation
+### Supported upstream relay
 
-Phase 3 supports only direct UDP forwarding. There is no relay through upstream SOCKS5, HTTP, or Shadowsocks proxies. If a rule selects an upstream group, the packet is dropped with an `unsupported_upstream` metric. This is the explicit, safe default for a connectionless protocol.
+Phase 4 supports one-hop SOCKS5 upstream relay for UDP. HTTP, SOCKS4, and
+multi-hop chains are explicitly rejected for UDP with metrics. No silent
+fallback to direct unless the routing policy selects a direct fallback.
 
 ### UDP task tracking
 
