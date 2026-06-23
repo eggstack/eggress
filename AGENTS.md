@@ -66,45 +66,38 @@ eggress/
 ```
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
-health, admin, reload, shutdown, pac_static, udp). They exercise the supervisor end
-to end and cover the negative-path behaviors (bind conflict, invalid source,
-oversized identity, reload-time failure). UDP integration tests cover
-association lifecycle, TCP control close, echo relay, bind conflict, topology
-rejection, and config reload.
+health, admin, reload, shutdown, pac_static, udp, udp_upstream). They exercise
+the supervisor end to end and cover negative-path behaviors (bind conflict,
+invalid source, oversized identity, reload-time failure). UDP integration tests
+cover association lifecycle, TCP control close, echo relay, bind conflict,
+topology rejection, config reload, and SOCKS5 upstream relay.
 
 ## Code Conventions
 
 - Edition: 2021
 - MSRV: 1.75
-- `unsafe_code = "forbid"` in all workspace crates
+- `unsafe_code = "forbid"` in all workspace crates — never lift this
 - `clippy::all` warnings denied
 - Async runtime: Tokio
 - Errors: `thiserror`
 - CLI: `clap` with derive
 - Logging: `tracing` + `tracing-subscriber`
 - No C dependencies, no OpenSSL
+- No `build.rs` files anywhere in the workspace
+- No CI workflow files in the repo (verify commands locally)
 
-## Architecture
+## Key Architecture Facts
 
-- Streams are boxed at protocol/transport boundaries (`BoxStream`)
-- Protocol detection uses ordered `ProtocolDetector` implementations
-- Chain executor folds over hop list with protocol-specific handlers
-- Relay uses `tokio::io::split` + `tokio::io::copy` for bidirectional forwarding
-- Credentials are never logged; URI display uses redacted format
-- Routing uses compiled rule AST with first-match-wins evaluation
-- Upstream selection via pluggable schedulers (first, round-robin, random, least-connections)
-- Health state machine with hysteresis and active TCP probes
-- Atomic config reload via `ArcSwap<Router>` for lock-free reads
-- Active connection accounting via `PendingLease`/`ActiveLease` drop guards
-- Route explanation for operator debugging without debug logs (supports source, listener, protocol, identity)
-- Recursive TOML matcher expressions (all, any_of, not) with leaf matchers
-- Session metrics via `SessionMetrics` trait for pluggable backends
-- Service supervisor pattern with graceful shutdown and signal handling
-- `ServiceSupervisor::run()` returns `Result<(), RuntimeError>`; bind failures and runtime init errors are structured rather than panicking
-- Shared runtime snapshot via `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
-- Separate cancellation tokens for shutdown phases (listeners, connections, health, admin)
-- Pre-bind listeners before readiness to avoid race conditions
-- Shutdown ordering: readiness=false → stop listeners → drain connections (force-cancel after grace) → stop admin, so /-/ready, /metrics, /-/status remain queryable during drain
-- Health config per upstream from TOML
-- PAC/static content from TOML config; admin reads them live from current snapshot via `AdminSnapshotProvider`, so reloads are visible without restarting the admin server
-- Single generation source: `CompiledRuntimeSnapshot.generation`, exposed by `RuntimeState::generation()`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
+- **Entry point**: `eggress-cli` binary → `eggress-runtime` `ServiceSupervisor::run()` → `eggress-server` `serve_connection()`
+- **Streams are boxed** at protocol/transport boundaries (`BoxStream`) — don't propagate generic stream types
+- **Protocol detection** uses ordered `ProtocolDetector` implementations; mixed-protocol listeners are the norm
+- **Chain executor** folds over hop list with protocol-specific handlers — validate chain capabilities before executing
+- **Credentials are never logged** — URI display uses redacted format
+- **Routing**: compiled rule AST with first-match-wins evaluation; recursive TOML matchers (`all`, `any_of`, `not`)
+- **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only routing/upstreams/groups/health are hot-reloadable, not listener topology
+- **Shutdown ordering**: readiness=false → stop listeners → drain connections (force-cancel after grace) → stop admin; admin stays queryable through drain
+- **Pre-bind listeners** before readiness to avoid race conditions
+- **Shared runtime snapshot**: `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
+- **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
+- **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
+- **UDP**: only direct forwarding and one-hop SOCKS5 upstream; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
