@@ -49,7 +49,7 @@ const AUTH_VERSION: u8 = 0x01;
 const MAX_CRED_LEN: usize = 255;
 
 /// A parsed SOCKS5 CONNECT request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SocksAddr {
     IPv4([u8; 4], u16),
     Domain(String, u16),

@@ -27,7 +27,7 @@ pub enum UdpCodecError {
     PacketTooLarge(usize, usize),
 }
 
-pub fn decode_socks5_udp_request(packet: &[u8]) -> Result<Socks5UdpRequest<'_>, UdpCodecError> {
+pub fn decode_socks5_udp_datagram(packet: &[u8]) -> Result<Socks5UdpRequest<'_>, UdpCodecError> {
     if packet.len() < 4 {
         return Err(UdpCodecError::TooShort);
     }
@@ -92,12 +92,20 @@ pub fn decode_socks5_udp_request(packet: &[u8]) -> Result<Socks5UdpRequest<'_>, 
     Ok(Socks5UdpRequest { target, payload })
 }
 
-pub fn encode_socks5_udp_response(target: &SocksAddr, payload: &[u8], out: &mut Vec<u8>) {
+pub fn encode_socks5_udp_datagram(target: &SocksAddr, payload: &[u8], out: &mut Vec<u8>) {
     out.clear();
     out.extend_from_slice(&[0x00, 0x00]);
     out.push(0x00);
     out.extend_from_slice(&target.encode_reply());
     out.extend_from_slice(payload);
+}
+
+pub fn decode_socks5_udp_request(packet: &[u8]) -> Result<Socks5UdpRequest<'_>, UdpCodecError> {
+    decode_socks5_udp_datagram(packet)
+}
+
+pub fn encode_socks5_udp_response(target: &SocksAddr, payload: &[u8], out: &mut Vec<u8>) {
+    encode_socks5_udp_datagram(target, payload, out)
 }
 
 #[cfg(test)]
@@ -131,7 +139,7 @@ mod tests {
     #[test]
     fn decode_ipv4_target() {
         let pkt = ipv4_packet([192, 168, 1, 1], 8080, b"hello");
-        let req = decode_socks5_udp_request(&pkt).unwrap();
+        let req = decode_socks5_udp_datagram(&pkt).unwrap();
         assert_eq!(req.target, SocksAddr::IPv4([192, 168, 1, 1], 8080));
         assert_eq!(req.payload, b"hello");
     }
@@ -140,7 +148,7 @@ mod tests {
     fn decode_ipv6_target() {
         let addr = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
         let pkt = ipv6_packet(addr, 443, b"data");
-        let req = decode_socks5_udp_request(&pkt).unwrap();
+        let req = decode_socks5_udp_datagram(&pkt).unwrap();
         assert_eq!(req.target, SocksAddr::IPv6(addr, 443));
         assert_eq!(req.payload, b"data");
     }
@@ -148,7 +156,7 @@ mod tests {
     #[test]
     fn decode_domain_target() {
         let pkt = domain_packet("example.com", 53, b"\x01\x02");
-        let req = decode_socks5_udp_request(&pkt).unwrap();
+        let req = decode_socks5_udp_datagram(&pkt).unwrap();
         assert_eq!(req.target, SocksAddr::Domain("example.com".to_string(), 53));
         assert_eq!(req.payload, b"\x01\x02");
     }
@@ -158,9 +166,9 @@ mod tests {
         let target = SocksAddr::IPv4([10, 0, 0, 1], 9999);
         let payload = b"roundtrip";
         let mut buf = Vec::new();
-        encode_socks5_udp_response(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf);
 
-        let req = decode_socks5_udp_request(&buf).unwrap();
+        let req = decode_socks5_udp_datagram(&buf).unwrap();
         assert_eq!(req.target, target);
         assert_eq!(req.payload, payload);
     }
@@ -171,9 +179,9 @@ mod tests {
         let target = SocksAddr::IPv6(addr, 80);
         let payload = b"test payload";
         let mut buf = Vec::new();
-        encode_socks5_udp_response(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf);
 
-        let req = decode_socks5_udp_request(&buf).unwrap();
+        let req = decode_socks5_udp_datagram(&buf).unwrap();
         assert_eq!(req.target, target);
         assert_eq!(req.payload, payload);
     }
@@ -183,9 +191,9 @@ mod tests {
         let target = SocksAddr::Domain("localhost".to_string(), 5353);
         let payload = b"dns query";
         let mut buf = Vec::new();
-        encode_socks5_udp_response(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf);
 
-        let req = decode_socks5_udp_request(&buf).unwrap();
+        let req = decode_socks5_udp_datagram(&buf).unwrap();
         assert_eq!(req.target, target);
         assert_eq!(req.payload, payload);
     }
@@ -195,7 +203,7 @@ mod tests {
         let mut pkt = ipv4_packet([1, 2, 3, 4], 80, b"");
         pkt[0] = 0x01;
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::BadReserved)
         ));
     }
@@ -205,7 +213,7 @@ mod tests {
         let mut pkt = ipv4_packet([1, 2, 3, 4], 80, b"");
         pkt[1] = 0x01;
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::BadReserved)
         ));
     }
@@ -215,7 +223,7 @@ mod tests {
         let mut pkt = ipv4_packet([1, 2, 3, 4], 80, b"");
         pkt[2] = 0x01;
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::FragmentationUnsupported)
         ));
     }
@@ -223,7 +231,7 @@ mod tests {
     #[test]
     fn reject_short_packet_too_few_bytes() {
         assert!(matches!(
-            decode_socks5_udp_request(&[0x00, 0x00]),
+            decode_socks5_udp_datagram(&[0x00, 0x00]),
             Err(UdpCodecError::TooShort)
         ));
     }
@@ -233,7 +241,7 @@ mod tests {
         // ATYP_IPV4 but missing address bytes
         let pkt = vec![0x00, 0x00, 0x00, ATYP_IPV4, 1, 2, 3];
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::TooShort)
         ));
     }
@@ -242,7 +250,7 @@ mod tests {
     fn reject_short_packet_ipv6() {
         let pkt = vec![0x00, 0x00, 0x00, ATYP_IPV6, 0, 0, 0, 0];
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::TooShort)
         ));
     }
@@ -251,7 +259,7 @@ mod tests {
     fn reject_short_packet_domain_no_len() {
         let pkt = vec![0x00, 0x00, 0x00, ATYP_DOMAIN];
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::TooShort)
         ));
     }
@@ -260,7 +268,7 @@ mod tests {
     fn reject_short_packet_domain_truncated() {
         let pkt = vec![0x00, 0x00, 0x00, ATYP_DOMAIN, 5, b'a', b'b'];
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::TooShort)
         ));
     }
@@ -269,7 +277,7 @@ mod tests {
     fn reject_unknown_atyp() {
         let pkt = vec![0x00, 0x00, 0x00, 0x05, 0x01, 0x02, 0x03, 0x04, 0x00, 0x50];
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::UnknownAddressType(0x05))
         ));
     }
@@ -278,7 +286,7 @@ mod tests {
     fn reject_zero_domain_length() {
         let pkt = vec![0x00, 0x00, 0x00, ATYP_DOMAIN, 0x00];
         assert!(matches!(
-            decode_socks5_udp_request(&pkt),
+            decode_socks5_udp_datagram(&pkt),
             Err(UdpCodecError::BadDomainLength)
         ));
     }
@@ -287,7 +295,7 @@ mod tests {
     fn preserve_payload_bytes_exactly() {
         let payload: Vec<u8> = (0..=255).collect();
         let pkt = ipv4_packet([10, 0, 0, 1], 1234, &payload);
-        let req = decode_socks5_udp_request(&pkt).unwrap();
+        let req = decode_socks5_udp_datagram(&pkt).unwrap();
         assert_eq!(req.payload.len(), 256);
         for (i, &b) in req.payload.iter().enumerate() {
             assert_eq!(b, i as u8);
@@ -297,7 +305,7 @@ mod tests {
     #[test]
     fn zero_length_payload() {
         let pkt = ipv4_packet([10, 0, 0, 1], 80, b"");
-        let req = decode_socks5_udp_request(&pkt).unwrap();
+        let req = decode_socks5_udp_datagram(&pkt).unwrap();
         assert_eq!(req.payload.len(), 0);
     }
 
@@ -306,7 +314,7 @@ mod tests {
         let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
         let payload = b"test";
         let mut buf = Vec::new();
-        encode_socks5_udp_response(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf);
 
         assert_eq!(buf[0], 0x00);
         assert_eq!(buf[1], 0x00);

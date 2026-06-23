@@ -14,7 +14,7 @@ pub fn decode_packet<'a>(
             limits.max_datagram_size,
         ));
     }
-    Ok(decode_socks5_udp_request(packet)?)
+    Ok(decode_socks5_udp_datagram(packet)?)
 }
 
 #[cfg(test)]

@@ -73,7 +73,7 @@ async fn resolve_target(target: &SocksAddr) -> Result<SocketAddr, UdpError> {
 
 pub fn encode_response(target: &SocksAddr, payload: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
-    eggress_protocol_socks::socks5::udp_codec::encode_socks5_udp_response(
+    eggress_protocol_socks::socks5::udp_codec::encode_socks5_udp_datagram(
         target, payload, &mut buf,
     );
     buf

@@ -141,10 +141,14 @@ UDP association management and direct forwarding:
 - `UdpAssociation` — association state machine with ownership by TCP control connection
 - `UdpAssociationRegistry` — bounded association tracking with global and per-listener limits
 - `UdpTargetFlow` — connected UDP socket per target for reliable response demux
+- `UdpFlowKind` — enum distinguishing direct and SOCKS5 upstream flows
+- `UdpFlowKey` — typed flow key for direct and upstream flows
 - `UdpLimits` — configurable association, datagram, and idle constraints
 - `UdpMetrics` — Prometheus-compatible counters and gauges for UDP operations
+- `UdpRelayCapability` — classifies proxy chains as UDP-supported or unsupported
 - `validate_target` — security policy rejecting multicast, broadcast, unspecified, and port zero
-- `testkit` — UDP echo server helper for integration tests
+- `upstream_socks5` — SOCKS5 upstream client with handshake and UDP ASSOCIATE
+- `testkit` — UDP echo server and SOCKS5 UDP test server for integration tests
 
 ### eggress-testkit
 Test utilities:
@@ -231,6 +235,46 @@ Upstream-specific metrics in `/metrics`:
 - `eggress_udp_unsupported_upstream_total` - unsupported chain attempts
 
 The `/-/udp` endpoint includes `upstream_flows_active` in its response.
+
+### Configuration Example
+
+```toml
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+bind = "127.0.0.1:0"
+advertise = "127.0.0.1"
+idle_timeout = "60s"
+target_idle_timeout = "30s"
+max_associations = 512
+max_targets_per_association = 32
+max_datagram_size = 65535
+client_pin = true
+
+[[upstreams]]
+id = "socks-upstream"
+uri = "socks5://user:pass@127.0.0.1:19080"
+
+[[upstream_groups]]
+id = "udp-egress"
+scheduler = "first-available"
+members = ["socks-upstream"]
+fallback = "reject"
+
+[[rules]]
+id = "udp-via-socks"
+upstream_group = "udp-egress"
+
+[rules.match]
+all = [
+  { transport = "udp" },
+  { destination_port = 53 }
+]
+```
 
 ### UDP association lifecycle
 

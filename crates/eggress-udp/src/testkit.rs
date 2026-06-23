@@ -16,6 +16,7 @@ pub async fn start_udp_echo_server() -> SocketAddr {
 pub enum Socks5TestMode {
     NoAuth,
     UsernamePassword { username: String, password: String },
+    EchoWithCredentials { username: String, password: String },
     AuthFailure,
     AssociateFailure { reply_code: u8 },
     Echo,
@@ -95,7 +96,9 @@ async fn handle_socks5_connection(
             }
             stream.write_all(&[0x05, 0x00]).await?;
         }
-        Socks5TestMode::UsernamePassword { .. } | Socks5TestMode::AuthFailure => {
+        Socks5TestMode::UsernamePassword { .. }
+        | Socks5TestMode::EchoWithCredentials { .. }
+        | Socks5TestMode::AuthFailure => {
             if !methods.contains(&0x02) {
                 stream.write_all(&[0x05, 0xFF]).await?;
                 return Ok(());
@@ -113,6 +116,10 @@ async fn handle_socks5_connection(
 
     match mode {
         Socks5TestMode::UsernamePassword {
+            username: expected_user,
+            password: expected_pass,
+        }
+        | Socks5TestMode::EchoWithCredentials {
             username: expected_user,
             password: expected_pass,
         } => {
@@ -205,7 +212,10 @@ async fn handle_socks5_connection(
         reply.extend_from_slice(&relay_port.to_be_bytes());
         stream.write_all(&reply).await?;
 
-        if matches!(mode, Socks5TestMode::Echo) {
+        if matches!(
+            mode,
+            Socks5TestMode::Echo | Socks5TestMode::EchoWithCredentials { .. }
+        ) {
             let udp_socket = std::sync::Arc::new(udp_socket);
             let udp_socket_clone = udp_socket.clone();
             let tx_clone = tx.clone();

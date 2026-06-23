@@ -8,10 +8,10 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::assoc::UdpAssociation;
-use crate::codec::{decode_packet, encode_socks5_udp_response};
+use crate::codec::{decode_packet, encode_socks5_udp_datagram};
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
-use crate::flow::{TargetFlowEntry, UdpFlowKind};
+use crate::flow::{TargetFlowEntry, UdpFlowKey, UdpFlowKind};
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
 use crate::registry::UdpAssociationRegistry;
@@ -40,12 +40,8 @@ struct ResponseMsg {
     payload: Vec<u8>,
 }
 
-fn socks_addr_key(addr: &SocksAddr) -> String {
-    format!("{}:{}", addr.host_str(), addr.port())
-}
-
 fn reap_idle_flows(
-    flows: &mut HashMap<String, TargetFlowEntry>,
+    flows: &mut HashMap<UdpFlowKey, TargetFlowEntry>,
     now: Instant,
     timeout: std::time::Duration,
     metrics: &UdpMetrics,
@@ -63,6 +59,235 @@ fn reap_idle_flows(
     });
 }
 
+async fn handle_client_datagram(
+    packet: &[u8],
+    client_addr: SocketAddr,
+    flows: &mut HashMap<UdpFlowKey, TargetFlowEntry>,
+    config: &RelayConfig,
+    response_tx: &mpsc::UnboundedSender<ResponseMsg>,
+    _association: &UdpAssociation,
+) -> Result<(), UdpError> {
+    let request = match decode_packet(packet, &config.limits) {
+        Ok(r) => r,
+        Err(_e) => {
+            config.udp_metrics.record_decode_error();
+            return Ok(());
+        }
+    };
+
+    if let Err(_e) = validate_target(&request.target) {
+        config.udp_metrics.record_dropped();
+        return Ok(());
+    }
+
+    let target_addr = socks_to_target_addr(&request.target);
+    let route_request = RouteRequest {
+        target: &target_addr,
+        source: Some(client_addr),
+        listener: &config.listener,
+        inbound_protocol: ProtocolId::Socks5,
+        identity: &config.identity,
+        transport: TransportKind::Udp,
+    };
+
+    let selected = match config.routing.route(&route_request) {
+        Ok(selected) => selected,
+        Err(RouteError::Rejected { rule: _, .. }) => {
+            config.udp_metrics.record_dropped();
+            return Ok(());
+        }
+        Err(_) => {
+            config.udp_metrics.record_dropped();
+            return Ok(());
+        }
+    };
+
+    match selected {
+        SelectedRoute::Direct {
+            selection_reason, ..
+        } => {
+            if selection_reason == SelectionReason::DirectFallback {
+                tracing::debug!(
+                    target = %request.target.host_str(),
+                    "UDP using direct fallback"
+                );
+            }
+        }
+        SelectedRoute::Upstream {
+            upstream,
+            chain,
+            pending_lease,
+            ..
+        } => match udp_capability(&chain) {
+            UdpRelayCapability::SupportedSocks5 => {
+                let key = UdpFlowKey::Socks5Upstream {
+                    target: request.target.clone(),
+                    upstream_id: upstream.clone(),
+                };
+
+                if flows.len() >= config.limits.max_targets_per_association
+                    && !flows.contains_key(&key)
+                {
+                    config.udp_metrics.record_dropped();
+                    drop(pending_lease);
+                    return Ok(());
+                }
+
+                let entry = match flows.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.get_mut().touch();
+                        e.into_mut()
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        let hop = &chain.hops[0];
+                        let upstream_config = Socks5UdpUpstreamConfig {
+                            upstream_id: upstream.clone(),
+                            hop: hop.clone(),
+                            connect_timeout: std::time::Duration::from_secs(10),
+                            udp_bind: "127.0.0.1:0".parse().unwrap(),
+                        };
+
+                        match open_socks5_udp_upstream(upstream_config, None).await {
+                            Ok(upstream_assoc) => {
+                                let active_lease = pending_lease.established();
+                                let target = request.target.clone();
+                                let udp_socket = upstream_assoc.udp_socket.clone();
+                                let relay_addr = upstream_assoc.relay_addr;
+                                let upstream_id = upstream_assoc.upstream_id.clone();
+                                let control_cancel = upstream_assoc.control_cancel.clone();
+                                let control_task = upstream_assoc.control_task;
+
+                                let flow_response_tx = response_tx.clone();
+                                let flow_target = target.clone();
+                                let flow_socket = udp_socket.clone();
+
+                                let recv_task = tokio::spawn(async move {
+                                    let mut recv_buf = [0u8; 65535];
+                                    while let Ok(Ok((n, _peer))) = tokio::time::timeout(
+                                        std::time::Duration::from_secs(30),
+                                        flow_socket.recv_from(&mut recv_buf),
+                                    )
+                                    .await
+                                    {
+                                        if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
+                                                let _ = flow_response_tx.send(ResponseMsg {
+                                                    target: flow_target.clone(),
+                                                    payload: upstream_resp.payload.to_vec(),
+                                                });
+                                            }
+                                    }
+                                });
+
+                                config.udp_metrics.record_target_flow_created();
+
+                                let flow = crate::flow::Socks5UdpTargetFlow {
+                                    target: request.target.clone(),
+                                    upstream_id,
+                                    upstream_relay_addr: relay_addr,
+                                    udp_socket,
+                                    control_cancel,
+                                    control_task,
+                                    lease: active_lease,
+                                    last_activity: Instant::now(),
+                                };
+
+                                e.insert(TargetFlowEntry {
+                                    flow: UdpFlowKind::Socks5Upstream(flow),
+                                    recv_task,
+                                })
+                            }
+                            Err(_e) => {
+                                config.udp_metrics.record_dropped();
+                                drop(pending_lease);
+                                return Ok(());
+                            }
+                        }
+                    }
+                };
+
+                match &entry.flow {
+                    UdpFlowKind::Socks5Upstream(f) => {
+                        if let Err(_e) = f.send(&request.target, request.payload).await {
+                            config.udp_metrics.record_dropped();
+                            return Ok(());
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+
+                config
+                    .udp_metrics
+                    .record_packet_up(request.payload.len() as u64);
+                return Ok(());
+            }
+            UdpRelayCapability::UnsupportedProtocol { .. } => {
+                config.udp_metrics.record_dropped();
+                drop(pending_lease);
+                return Ok(());
+            }
+            UdpRelayCapability::UnsupportedMultiHop => {
+                config.udp_metrics.record_dropped();
+                drop(pending_lease);
+                return Ok(());
+            }
+        },
+    }
+
+    let key = UdpFlowKey::Direct {
+        target: request.target.clone(),
+    };
+
+    if flows.len() >= config.limits.max_targets_per_association && !flows.contains_key(&key) {
+        config.udp_metrics.record_dropped();
+        return Ok(());
+    }
+
+    let entry = match flows.entry(key) {
+        std::collections::hash_map::Entry::Occupied(mut e) => {
+            e.get_mut().touch();
+            e.into_mut()
+        }
+        std::collections::hash_map::Entry::Vacant(e) => {
+            let flow =
+                UdpTargetFlow::new(request.target.clone(), "127.0.0.1:0".parse().unwrap()).await?;
+
+            let target_addr_clone = request.target.clone();
+            let flow_response_tx = response_tx.clone();
+            let flow_socket = flow.socket.clone();
+
+            let recv_task = tokio::spawn(async move {
+                let mut recv_buf = [0u8; 65535];
+                while let Ok(n) = flow_socket.recv(&mut recv_buf).await {
+                    let payload = recv_buf[..n].to_vec();
+                    let _ = flow_response_tx.send(ResponseMsg {
+                        target: target_addr_clone.clone(),
+                        payload,
+                    });
+                }
+            });
+
+            config.udp_metrics.record_target_flow_created();
+
+            e.insert(TargetFlowEntry {
+                flow: UdpFlowKind::Direct(flow),
+                recv_task,
+            })
+        }
+    };
+
+    if let UdpFlowKind::Direct(ref f) = entry.flow {
+        if let Err(_e) = f.send(request.payload).await {
+            config.udp_metrics.record_dropped();
+            return Ok(());
+        }
+    }
+
+    config
+        .udp_metrics
+        .record_packet_up(request.payload.len() as u64);
+    Ok(())
+}
+
 pub async fn udp_relay_loop(
     relay_socket: Arc<UdpSocket>,
     association: Arc<UdpAssociation>,
@@ -70,7 +295,7 @@ pub async fn udp_relay_loop(
     cancel: CancellationToken,
 ) -> Result<(), UdpError> {
     let mut buf = vec![0u8; config.limits.max_datagram_size];
-    let mut flows: HashMap<String, TargetFlowEntry> = HashMap::new();
+    let mut flows: HashMap<UdpFlowKey, TargetFlowEntry> = HashMap::new();
 
     let (response_tx, mut response_rx) = mpsc::unbounded_channel::<ResponseMsg>();
 
@@ -118,273 +343,25 @@ pub async fn udp_relay_loop(
 
                     association.touch();
 
-                    let packet = &buf[..n];
-                    let request = match decode_packet(packet, &config.limits) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::trace!(
-                                association_id = ?assoc_id,
-                                "decode error: {e}"
-                            );
-                            config.udp_metrics.record_decode_error();
-                            continue;
-                        }
-                    };
-
-                    if let Err(e) = validate_target(&request.target) {
+                    let packet = buf[..n].to_vec();
+                    if let Err(e) = handle_client_datagram(
+                        &packet,
+                        client_addr,
+                        &mut flows,
+                        &config,
+                        &response_tx,
+                        &association,
+                    ).await {
                         tracing::trace!(
                             association_id = ?assoc_id,
-                            target = %request.target.host_str(),
-                            "target validation failed: {e}"
+                            "datagram handling error: {e}"
                         );
-                        config.udp_metrics.record_dropped();
-                        continue;
                     }
-
-                    let target_addr = socks_to_target_addr(&request.target);
-                    let route_request = RouteRequest {
-                        target: &target_addr,
-                        source: Some(client_addr),
-                        listener: &config.listener,
-                        inbound_protocol: ProtocolId::Socks5,
-                        identity: &config.identity,
-                        transport: TransportKind::Udp,
-                    };
-
-                    let selected = match config.routing.route(&route_request) {
-                        Ok(selected) => selected,
-                        Err(RouteError::Rejected { rule, .. }) => {
-                            tracing::trace!(
-                                association_id = ?assoc_id,
-                                target = %request.target.host_str(),
-                                rule = %rule,
-                                "route rejected"
-                            );
-                            config.udp_metrics.record_dropped();
-                            continue;
-                        }
-                        Err(_) => {
-                            tracing::trace!(
-                                association_id = ?assoc_id,
-                                target = %request.target.host_str(),
-                                "no eligible upstream for UDP"
-                            );
-                            config.udp_metrics.record_dropped();
-                            continue;
-                        }
-                    };
-
-                    match selected {
-                        SelectedRoute::Direct { selection_reason, .. } => {
-                            if selection_reason == SelectionReason::DirectFallback {
-                                tracing::debug!(
-                                    association_id = ?assoc_id,
-                                    target = %request.target.host_str(),
-                                    "UDP using direct fallback"
-                                );
-                            }
-                        }
-                        SelectedRoute::Upstream { upstream, chain, pending_lease, .. } => {
-                            match udp_capability(&chain) {
-                                UdpRelayCapability::SupportedSocks5 => {
-                                    let key = socks_addr_key(&request.target);
-
-                                    if flows.len() >= config.limits.max_targets_per_association
-                                        && !flows.contains_key(&key)
-                                    {
-                                        tracing::trace!(
-                                            association_id = ?assoc_id,
-                                            "target flow limit exceeded"
-                                        );
-                                        config.udp_metrics.record_dropped();
-                                        drop(pending_lease);
-                                        continue;
-                                    }
-
-                                    let entry = match flows.entry(key) {
-                                        std::collections::hash_map::Entry::Occupied(mut e) => {
-                                            e.get_mut().touch();
-                                            e.into_mut()
-                                        }
-                                        std::collections::hash_map::Entry::Vacant(e) => {
-                                            let hop = &chain.hops[0];
-                                            let upstream_config = Socks5UdpUpstreamConfig {
-                                                upstream_id: upstream.clone(),
-                                                hop: hop.clone(),
-                                                connect_timeout: std::time::Duration::from_secs(10),
-                                                udp_bind: "127.0.0.1:0".parse().unwrap(),
-                                            };
-
-                                            match open_socks5_udp_upstream(upstream_config, None).await {
-                                                Ok(association) => {
-                                                    let active_lease = pending_lease.established();
-                                                    let target = request.target.clone();
-                                                    let udp_socket = association.udp_socket.clone();
-                                                    let relay_addr = association.relay_addr;
-                                                    let upstream_id = association.upstream_id.clone();
-                                                    let control_cancel = association.control_cancel.clone();
-                                                    let control_task = association.control_task;
-
-                                                    let flow_response_tx = response_tx.clone();
-                                                    let flow_target = target.clone();
-                                                    let flow_socket = udp_socket.clone();
-
-                                                    let recv_task = tokio::spawn(async move {
-                                                        let mut recv_buf = [0u8; 65535];
-                                                        while let Ok(Ok((n, _peer))) = tokio::time::timeout(
-                                                            std::time::Duration::from_secs(30),
-                                                            flow_socket.recv_from(&mut recv_buf)
-                                                        ).await {
-                                                            if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_request(&recv_buf[..n]) {
-                                                                let _ = flow_response_tx.send(ResponseMsg {
-                                                                    target: flow_target.clone(),
-                                                                    payload: upstream_resp.payload.to_vec(),
-                                                                });
-                                                            }
-                                                        }
-                                                    });
-
-                                                    config.udp_metrics.record_target_flow_created();
-
-                                                    let flow = crate::flow::Socks5UdpTargetFlow {
-                                                        target: request.target.clone(),
-                                                        upstream_id,
-                                                        upstream_relay_addr: relay_addr,
-                                                        udp_socket,
-                                                        control_cancel,
-                                                        control_task,
-                                                        lease: active_lease,
-                                                        last_activity: Instant::now(),
-                                                    };
-
-                                                    e.insert(TargetFlowEntry {
-                                                        flow: UdpFlowKind::Socks5Upstream(flow),
-                                                        recv_task,
-                                                    })
-                                                }
-                                                Err(e) => {
-                                                    tracing::trace!(
-                                                        association_id = ?assoc_id,
-                                                        target = %request.target.host_str(),
-                                                        "SOCKS5 upstream handshake failed: {e}"
-                                                    );
-                                                    config.udp_metrics.record_dropped();
-                                                    drop(pending_lease);
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    };
-
-                                    match &entry.flow {
-                                        UdpFlowKind::Socks5Upstream(f) => {
-                                            if let Err(e) = f.send(&request.target, request.payload).await {
-                                                tracing::trace!(
-                                                    association_id = ?assoc_id,
-                                                    target = %request.target.host_str(),
-                                                    "upstream send failed: {e}"
-                                                );
-                                                config.udp_metrics.record_dropped();
-                                                continue;
-                                            }
-                                        }
-                                        _ => unreachable!(),
-                                    }
-
-                                    config.udp_metrics.record_packet_up(request.payload.len() as u64);
-                                    continue;
-                                }
-                                UdpRelayCapability::UnsupportedProtocol { ref protocol } => {
-                                    tracing::trace!(
-                                        association_id = ?assoc_id,
-                                        target = %request.target.host_str(),
-                                        "unsupported UDP upstream protocol: {protocol}"
-                                    );
-                                    config.udp_metrics.record_dropped();
-                                    drop(pending_lease);
-                                    continue;
-                                }
-                                UdpRelayCapability::UnsupportedMultiHop => {
-                                    tracing::trace!(
-                                        association_id = ?assoc_id,
-                                        target = %request.target.host_str(),
-                                        "multi-hop UDP upstream not supported"
-                                    );
-                                    config.udp_metrics.record_dropped();
-                                    drop(pending_lease);
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-
-                    let key = socks_addr_key(&request.target);
-
-                    if flows.len() >= config.limits.max_targets_per_association
-                        && !flows.contains_key(&key)
-                    {
-                        tracing::trace!(
-                            association_id = ?assoc_id,
-                            "target flow limit exceeded"
-                        );
-                        config.udp_metrics.record_dropped();
-                        continue;
-                    }
-
-                    let entry = match flows.entry(key) {
-                        std::collections::hash_map::Entry::Occupied(mut e) => {
-                            e.get_mut().touch();
-                            e.into_mut()
-                        }
-                        std::collections::hash_map::Entry::Vacant(e) => {
-                            let flow = UdpTargetFlow::new(
-                                request.target.clone(),
-                                "127.0.0.1:0".parse().unwrap(),
-                            )
-                            .await?;
-
-                            let target_addr_clone = request.target.clone();
-                            let flow_response_tx = response_tx.clone();
-                            let flow_socket = flow.socket.clone();
-
-                            let recv_task = tokio::spawn(async move {
-                                let mut recv_buf = [0u8; 65535];
-                                while let Ok(n) = flow_socket.recv(&mut recv_buf).await {
-                                    let payload = recv_buf[..n].to_vec();
-                                    let _ = flow_response_tx.send(ResponseMsg {
-                                        target: target_addr_clone.clone(),
-                                        payload,
-                                    });
-                                }
-                            });
-
-                            config.udp_metrics.record_target_flow_created();
-
-                            e.insert(TargetFlowEntry {
-                                flow: UdpFlowKind::Direct(flow),
-                                recv_task,
-                            })
-                        }
-                    };
-
-                    if let UdpFlowKind::Direct(ref f) = entry.flow {
-                        if let Err(e) = f.send(request.payload).await {
-                            tracing::trace!(
-                                association_id = ?assoc_id,
-                                target = %request.target.host_str(),
-                                "send failed: {e}"
-                            );
-                            config.udp_metrics.record_dropped();
-                            continue;
-                        }
-                    }
-
-                    config.udp_metrics.record_packet_up(request.payload.len() as u64);
                 }
                 Some(msg) = response_rx.recv() => {
                     if let Some(client_addr) = association.client_udp_addr() {
                         let mut out = Vec::new();
-                        encode_socks5_udp_response(&msg.target, &msg.payload, &mut out);
+                        encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
                         let _ = relay_socket.send_to(&out, client_addr).await;
                         config.udp_metrics.record_packet_down(msg.payload.len() as u64);
                     }

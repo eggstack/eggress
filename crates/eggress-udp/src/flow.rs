@@ -9,6 +9,26 @@ use eggress_routing::lease::ActiveLease;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UdpFlowKey {
+    Direct {
+        target: SocksAddr,
+    },
+    Socks5Upstream {
+        target: SocksAddr,
+        upstream_id: UpstreamId,
+    },
+}
+
+impl UdpFlowKey {
+    pub fn target(&self) -> &SocksAddr {
+        match self {
+            UdpFlowKey::Direct { target } => target,
+            UdpFlowKey::Socks5Upstream { target, .. } => target,
+        }
+    }
+}
+
 pub enum UdpFlowKind {
     Direct(UdpTargetFlow),
     Socks5Upstream(Socks5UdpTargetFlow),
@@ -35,9 +55,9 @@ impl Socks5UdpTargetFlow {
     }
 
     pub async fn send(&self, target: &SocksAddr, payload: &[u8]) -> Result<(), std::io::Error> {
-        use crate::codec::encode_socks5_udp_response;
+        use crate::codec::encode_socks5_udp_datagram;
         let mut out = Vec::new();
-        encode_socks5_udp_response(target, payload, &mut out);
+        encode_socks5_udp_datagram(target, payload, &mut out);
         self.udp_socket
             .send_to(&out, self.upstream_relay_addr)
             .await?;

@@ -25,12 +25,14 @@ upstream SOCKS5 proxy.
 
 ### Flow Model
 - `UdpFlowKind` enum distinguishes direct and upstream flows
+- `UdpFlowKey` typed enum for flow map keys (Direct vs Socks5Upstream)
 - Per-target upstream association with TCP control + UDP relay
 - Route-on-first-packet-per-flow semantics
 - Flow reuse until idle timeout
 
 ### Relay Integration
 - `SelectedRoute::Upstream` branch handles SOCKS5 upstream selection
+- `handle_client_datagram()` extracted for cleaner relay loop
 - Pending lease dropped on unsupported chains
 - Active lease held during upstream flow lifetime
 - Cleanup on idle expiry, association close, and shutdown
@@ -40,21 +42,46 @@ upstream SOCKS5 proxy.
 - `/-/udp` endpoint extended with `upstream_flows_active`
 - Bridge from in-memory `UdpMetrics` to Prometheus registry
 
+### Codec Rename
+- `encode_socks5_udp_response` → `encode_socks5_udp_datagram`
+- `decode_socks5_udp_request` → `decode_socks5_udp_datagram`
+- Backwards-compatible wrappers retained for old names
+
 ### Synthetic Test Server
 - `Socks5UdpTestServer` with configurable modes:
-  - No auth, username/password, auth failure, associate failure, echo
+  - No auth, username/password, EchoWithCredentials, auth failure, associate failure, echo
 - Used for integration testing without external dependencies
 
 ## Files Modified
 
-- `crates/eggress-udp/src/flow.rs` - new: flow model types
+- `crates/eggress-udp/src/flow.rs` - new: flow model types and `UdpFlowKey`
 - `crates/eggress-udp/src/udp_capability.rs` - new: capability classification
 - `crates/eggress-udp/src/upstream_socks5.rs` - new: SOCKS5 client handshake
-- `crates/eggress-udp/src/relay.rs` - updated: upstream flow handling
+- `crates/eggress-udp/src/relay.rs` - updated: upstream flow handling, `handle_client_datagram()` refactor, `UdpFlowKey` usage
 - `crates/eggress-udp/src/metrics.rs` - updated: upstream metrics
-- `crates/eggress-udp/src/testkit.rs` - updated: synthetic test server
+- `crates/eggress-udp/src/testkit.rs` - updated: synthetic test server with `EchoWithCredentials` mode
+- `crates/eggress-protocol-socks/src/socks5/udp_codec.rs` - renamed: codec functions with backwards-compatible wrappers
+- `crates/eggress-protocol-socks/src/socks5/server.rs` - added: `Hash` derive to `SocksAddr`
 - `crates/eggress-metrics/src/lib.rs` - updated: Prometheus bridge
 - `crates/eggress-admin/src/routes.rs` - updated: admin endpoint
+
+## New Integration Tests
+
+- `crates/eggress-udp/tests/socks5_upstream.rs` - 8 tests covering:
+  - Echo through upstream (no-auth)
+  - Authenticated upstream
+  - Auth failure drops and records metric
+  - Associate failure drops
+  - HTTP upstream unsupported
+  - Multi-hop chain unsupported
+  - Idle cleanup releases flow
+  - Upstream metrics tracking
+
+- `crates/eggress-runtime/tests/udp_upstream.rs` - 4 tests covering:
+  - Shutdown closes UDP flows
+  - Metrics expose UDP counters
+  - Admin endpoint safe (no address leakage)
+  - Direct fallback forwards direct
 
 ## Verification
 
@@ -63,6 +90,7 @@ All checks passed:
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
 - `cargo check --workspace`
+- `cargo deny check`
 
 ## Definition of Done Checklist
 
@@ -83,3 +111,9 @@ All checks passed:
 - [x] Docs state only one-hop SOCKS5 UDP upstream supported
 - [x] All tests, lint, audit pass
 - [x] No unsafe Rust, OpenSSL, or native dependencies introduced
+- [x] Integration test files exist per plan (socks5_upstream.rs, udp_upstream.rs)
+- [x] 12 integration test scenarios covered
+- [x] Codec renamed with backwards-compatible wrappers
+- [x] `handle_client_datagram()` extracted from relay loop
+- [x] `UdpFlowKey` enum for typed flow map keys
+- [x] TOML config example in architecture docs
