@@ -170,11 +170,19 @@ async fn handle_client_datagram(
                                     .await
                                     {
                                         if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
+                                            if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
                                                 let _ = flow_response_tx.send(ResponseMsg {
-                                                    target: flow_target.clone(),
+                                                    target: upstream_resp.target.clone(),
                                                     payload: upstream_resp.payload.to_vec(),
                                                 });
+                                            } else {
+                                                tracing::trace!(
+                                                    "upstream response target mismatch: expected {:?}, got {:?}",
+                                                    flow_target,
+                                                    upstream_resp.target
+                                                );
                                             }
+                                        }
                                     }
                                 });
 
@@ -406,6 +414,21 @@ fn socks_to_target_addr(addr: &SocksAddr) -> TargetAddr {
             host: TargetHost::Domain(domain.clone()),
             port: *port,
         },
+    }
+}
+
+fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
+    match (a, b) {
+        (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
+            a_addr == b_addr && a_port == b_port
+        }
+        (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
+            a_addr == b_addr && a_port == b_port
+        }
+        (SocksAddr::Domain(a_dom, a_port), SocksAddr::Domain(b_dom, b_port)) => {
+            a_dom == b_dom && a_port == b_port
+        }
+        _ => false,
     }
 }
 
@@ -1321,5 +1344,25 @@ mod tests {
 
         cancel.cancel();
         relay_handle.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn socks_addr_equivalent_works() {
+        assert!(socks_addr_equivalent(
+            &SocksAddr::IPv4([127, 0, 0, 1], 80),
+            &SocksAddr::IPv4([127, 0, 0, 1], 80)
+        ));
+        assert!(!socks_addr_equivalent(
+            &SocksAddr::IPv4([127, 0, 0, 1], 80),
+            &SocksAddr::IPv4([127, 0, 0, 2], 80)
+        ));
+        assert!(socks_addr_equivalent(
+            &SocksAddr::Domain("example.com".to_string(), 443),
+            &SocksAddr::Domain("example.com".to_string(), 443)
+        ));
+        assert!(!socks_addr_equivalent(
+            &SocksAddr::IPv4([127, 0, 0, 1], 80),
+            &SocksAddr::Domain("example.com".to_string(), 80)
+        ));
     }
 }

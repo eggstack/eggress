@@ -38,7 +38,7 @@ upstream SOCKS5 proxy.
 - Cleanup on idle expiry, association close, and shutdown
 
 ### Metrics and Admin
-- Upstream-specific Prometheus metrics with bounded labels
+- Upstream-specific Prometheus metrics (aggregate counters, per-upstream/group labels deferred)
 - `/-/udp` endpoint extended with `upstream_flows_active`
 - Bridge from in-memory `UdpMetrics` to Prometheus registry
 
@@ -97,7 +97,10 @@ All checks passed:
 - [x] One-hop SOCKS5 upstream chains classified as UDP-capable
 - [x] HTTP, SOCKS4, multi-hop explicitly unsupported with metrics
 - [x] SOCKS5 UDP ASSOCIATE control connection established
-- [x] Username/password auth works, failures handled without credential leakage
+- [x] Full upstream SOCKS5 handshake bounded by timeout (was only TCP connect)
+- [x] Username/password/domain SOCKS5 lengths validated before encoding
+- [x] Domain ATYP supported in upstream UDP ASSOCIATE replies
+- [x] Upstream response target validated and forwarded correctly
 - [x] Unspecified relay address substituted correctly
 - [x] Client packet traverses: client -> Eggress -> upstream -> target -> upstream -> Eggress -> client
 - [x] Upstream target flows bounded by target-flow limits
@@ -105,7 +108,8 @@ All checks passed:
 - [x] Active upstream leases held while flows active, released on close
 - [x] Runtime shutdown closes upstream UDP flows and waits for tasks
 - [x] Reload semantics documented and tested
-- [x] `/metrics` exposes upstream UDP counters with bounded labels
+- [x] Full ServiceSupervisor runtime test proves TOML-configured upstream relay
+- [x] `/metrics` exposes upstream UDP counters with aggregate counters
 - [x] `/-/udp` exposes safe upstream summary without client/target leakage
 - [x] Unsupported upstream selections visible in logs/metrics
 - [x] Docs state only one-hop SOCKS5 UDP upstream supported
@@ -117,3 +121,17 @@ All checks passed:
 - [x] `handle_client_datagram()` extracted from relay loop
 - [x] `UdpFlowKey` enum for typed flow map keys
 - [x] TOML config example in architecture docs
+
+## Final Closure Record
+
+Phase 4 closure fixes addressed:
+
+- Full upstream SOCKS5 handshake timeout (method negotiation, auth, UDP ASSOCIATE now bounded)
+- SOCKS5 field length validation (username/password/domain lengths checked before u8 encoding)
+- Domain ATYP support in upstream UDP ASSOCIATE reply parser (streaming and buffer-based)
+- Upstream response target preserved from decoded datagram (with equivalence check)
+- Aggregate upstream UDP metrics (per-upstream/group labels deferred to later observability pass)
+- Full ServiceSupervisor runtime test for TOML-configured SOCKS5 UDP upstream echo
+- Plan archival policy documented
+
+All required checks passed on $(date +%Y-%m-%d).

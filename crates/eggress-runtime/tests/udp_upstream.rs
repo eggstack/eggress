@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::sync::atomic::Ordering;
 
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -391,4 +392,116 @@ direct = true
     drop(stream);
     token.cancel();
     jh.await.ok();
+}
+
+#[tokio::test]
+async fn runtime_udp_via_configured_socks5_upstream_echoes() {
+    // 1. Start a SOCKS5 UDP test server in echo mode
+    let upstream = eggress_udp::testkit::Socks5UdpTestServer::start(
+        eggress_udp::testkit::Socks5TestServerConfig {
+            mode: eggress_udp::testkit::Socks5TestMode::Echo,
+            relay_addr: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // 2. Start a UDP echo server to act as the "target"
+    let echo_addr = start_udp_echo().await;
+
+    // 3. Write TOML config that routes UDP through the SOCKS5 upstream
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "socks-up"
+uri = "socks5://127.0.0.1:{upstream_port}"
+
+[[upstream_groups]]
+id = "udp-upstream"
+scheduler = "first-available"
+members = ["socks-up"]
+fallback = "reject"
+
+[[rules]]
+id = "udp-via-socks"
+upstream_group = "udp-upstream"
+
+[rules.match]
+all = [
+  {{ transport = "udp" }}
+]
+"#,
+        upstream_port = upstream.tcp_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // 4. Wait for readiness
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
+
+    // 5. Connect to Eggress SOCKS5 and do UDP ASSOCIATE
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00, "udp associate should succeed");
+
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = format!("127.0.0.1:{relay_port}");
+
+    // 6. Send a UDP datagram to the relay and assert echo
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(&relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"runtime-upstream-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("timeout waiting for response")
+    .expect("recv");
+
+    let resp = eggress_udp::codec::decode_packet(
+        &recv_buf[..n],
+        &eggress_udp::limits::UdpLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(resp.payload, b"runtime-upstream-test");
+
+    // 7. Shutdown
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
 }

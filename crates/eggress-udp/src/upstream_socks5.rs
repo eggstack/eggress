@@ -37,6 +37,10 @@ pub enum UdpUpstreamError {
     UdpRelayAddressInvalid,
     #[error("handshake timed out")]
     Timeout,
+    #[error("credential too long for SOCKS5 encoding")]
+    CredentialTooLong,
+    #[error("domain too long for SOCKS5 encoding")]
+    DomainTooLong,
     #[error("I/O error: {0}")]
     Io(#[source] std::io::Error),
 }
@@ -53,6 +57,8 @@ impl UdpUpstreamError {
             Self::MalformedSocksReply => "malformed_reply",
             Self::UdpRelayAddressInvalid => "bad_relay_addr",
             Self::Timeout => "timeout",
+            Self::CredentialTooLong => "credential_too_long",
+            Self::DomainTooLong => "domain_too_long",
             Self::Io(_) => "io",
         }
     }
@@ -73,7 +79,31 @@ pub struct Socks5UdpUpstreamAssociation {
     pub udp_socket: Arc<tokio::net::UdpSocket>,
 }
 
+fn checked_u8_len(value: &str, field: &'static str) -> Result<u8, UdpUpstreamError> {
+    if value.len() > u8::MAX as usize {
+        match field {
+            "credential" => Err(UdpUpstreamError::CredentialTooLong),
+            "domain" => Err(UdpUpstreamError::DomainTooLong),
+            _ => Err(UdpUpstreamError::MalformedSocksReply),
+        }
+    } else {
+        Ok(value.len() as u8)
+    }
+}
+
 pub async fn open_socks5_udp_upstream(
+    config: Socks5UdpUpstreamConfig,
+    target_hint: Option<SocksAddr>,
+) -> Result<Socks5UdpUpstreamAssociation, UdpUpstreamError> {
+    time::timeout(
+        config.connect_timeout,
+        open_socks5_udp_upstream_inner(config, target_hint),
+    )
+    .await
+    .map_err(|_| UdpUpstreamError::Timeout)?
+}
+
+async fn open_socks5_udp_upstream_inner(
     config: Socks5UdpUpstreamConfig,
     target_hint: Option<SocksAddr>,
 ) -> Result<Socks5UdpUpstreamAssociation, UdpUpstreamError> {
@@ -94,12 +124,9 @@ pub async fn open_socks5_udp_upstream(
         .await
         .map_err(UdpUpstreamError::TcpConnect)?;
 
-    let tcp_stream = time::timeout(config.connect_timeout, TcpStream::connect(connect_addr))
+    let mut stream = TcpStream::connect(connect_addr)
         .await
-        .map_err(|_| UdpUpstreamError::Timeout)?
         .map_err(UdpUpstreamError::TcpConnect)?;
-
-    let mut stream = tcp_stream;
     stream.set_nodelay(true).map_err(UdpUpstreamError::Io)?;
 
     let auth = config
@@ -174,6 +201,14 @@ fn is_unspecified(addr: &SocketAddr) -> bool {
     }
 }
 
+async fn resolve_domain_relay(domain: &str, port: u16) -> Result<SocketAddr, UdpUpstreamError> {
+    tokio::net::lookup_host((domain, port))
+        .await
+        .map_err(UdpUpstreamError::Io)?
+        .next()
+        .ok_or(UdpUpstreamError::UdpRelayAddressInvalid)
+}
+
 async fn socks5_method_negotiate(
     stream: &mut TcpStream,
     auth: Option<(&str, &str)>,
@@ -208,11 +243,13 @@ async fn socks5_auth(
     username: &str,
     password: &str,
 ) -> Result<(), UdpUpstreamError> {
+    let u_len = checked_u8_len(username, "credential")?;
+    let p_len = checked_u8_len(password, "credential")?;
     let mut buf = Vec::with_capacity(3 + username.len() + password.len());
     buf.push(AUTH_VERSION);
-    buf.push(username.len() as u8);
+    buf.push(u_len);
     buf.extend_from_slice(username.as_bytes());
-    buf.push(password.len() as u8);
+    buf.push(p_len);
     buf.extend_from_slice(password.as_bytes());
     stream.write_all(&buf).await.map_err(UdpUpstreamError::Io)?;
     stream.flush().await.map_err(UdpUpstreamError::Io)?;
@@ -236,7 +273,7 @@ async fn socks5_udp_associate(
     buf.push(SOCKS5_VERSION);
     buf.push(CMD_UDP_ASSOCIATE);
     buf.push(0x00);
-    encode_socks_addr(target, &mut buf);
+    encode_socks_addr(target, &mut buf)?;
     stream.write_all(&buf).await.map_err(UdpUpstreamError::Io)?;
     stream.flush().await.map_err(UdpUpstreamError::Io)?;
 
@@ -270,13 +307,28 @@ async fn socks5_udp_associate(
             let port = stream.read_u16().await.map_err(UdpUpstreamError::Io)?;
             SocketAddr::new(IpAddr::V6(Ipv6Addr::from(addr)), port)
         }
+        ATYP_DOMAIN => {
+            let len = stream.read_u8().await.map_err(UdpUpstreamError::Io)? as usize;
+            if len == 0 {
+                return Err(UdpUpstreamError::UdpRelayAddressInvalid);
+            }
+            let mut domain = vec![0u8; len];
+            stream
+                .read_exact(&mut domain)
+                .await
+                .map_err(UdpUpstreamError::Io)?;
+            let port = stream.read_u16().await.map_err(UdpUpstreamError::Io)?;
+            let domain =
+                String::from_utf8(domain).map_err(|_| UdpUpstreamError::UdpRelayAddressInvalid)?;
+            resolve_domain_relay(&domain, port).await?
+        }
         _ => return Err(UdpUpstreamError::UdpRelayAddressInvalid),
     };
 
     Ok(addr)
 }
 
-fn encode_socks_addr(addr: &SocksAddr, buf: &mut Vec<u8>) {
+fn encode_socks_addr(addr: &SocksAddr, buf: &mut Vec<u8>) -> Result<(), UdpUpstreamError> {
     match addr {
         SocksAddr::IPv4(addr, port) => {
             buf.push(ATYP_IPV4);
@@ -285,7 +337,7 @@ fn encode_socks_addr(addr: &SocksAddr, buf: &mut Vec<u8>) {
         }
         SocksAddr::Domain(domain, port) => {
             buf.push(ATYP_DOMAIN);
-            buf.push(domain.len() as u8);
+            buf.push(checked_u8_len(domain, "domain")?);
             buf.extend_from_slice(domain.as_bytes());
             buf.extend_from_slice(&port.to_be_bytes());
         }
@@ -295,6 +347,7 @@ fn encode_socks_addr(addr: &SocksAddr, buf: &mut Vec<u8>) {
             buf.extend_from_slice(&port.to_be_bytes());
         }
     }
+    Ok(())
 }
 
 pub fn encode_method_negotiation(methods: &[u8]) -> Vec<u8> {
@@ -305,23 +358,25 @@ pub fn encode_method_negotiation(methods: &[u8]) -> Vec<u8> {
     buf
 }
 
-pub fn encode_auth_request(username: &str, password: &str) -> Vec<u8> {
+pub fn encode_auth_request(username: &str, password: &str) -> Result<Vec<u8>, UdpUpstreamError> {
+    let u_len = checked_u8_len(username, "credential")?;
+    let p_len = checked_u8_len(password, "credential")?;
     let mut buf = Vec::with_capacity(3 + username.len() + password.len());
     buf.push(AUTH_VERSION);
-    buf.push(username.len() as u8);
+    buf.push(u_len);
     buf.extend_from_slice(username.as_bytes());
-    buf.push(password.len() as u8);
+    buf.push(p_len);
     buf.extend_from_slice(password.as_bytes());
-    buf
+    Ok(buf)
 }
 
-pub fn encode_udp_associate_request(target: &SocksAddr) -> Vec<u8> {
+pub fn encode_udp_associate_request(target: &SocksAddr) -> Result<Vec<u8>, UdpUpstreamError> {
     let mut buf = Vec::with_capacity(32);
     buf.push(SOCKS5_VERSION);
     buf.push(CMD_UDP_ASSOCIATE);
     buf.push(0x00);
-    encode_socks_addr(target, &mut buf);
-    buf
+    encode_socks_addr(target, &mut buf)?;
+    Ok(buf)
 }
 
 pub fn decode_method_selection(buf: &[u8]) -> Result<u8, UdpUpstreamError> {
@@ -347,7 +402,7 @@ pub fn decode_auth_response(buf: &[u8]) -> Result<(), UdpUpstreamError> {
     Ok(())
 }
 
-pub fn decode_udp_associate_reply(buf: &[u8]) -> Result<SocketAddr, UdpUpstreamError> {
+pub async fn decode_udp_associate_reply(buf: &[u8]) -> Result<SocketAddr, UdpUpstreamError> {
     if buf.len() < 4 {
         return Err(UdpUpstreamError::MalformedSocksReply);
     }
@@ -377,6 +432,27 @@ pub fn decode_udp_associate_reply(buf: &[u8]) -> Result<SocketAddr, UdpUpstreamE
             addr.copy_from_slice(&buf[4..20]);
             let port = u16::from_be_bytes([buf[20], buf[21]]);
             Ok(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(addr)), port))
+        }
+        ATYP_DOMAIN => {
+            if buf.len() < 5 {
+                return Err(UdpUpstreamError::MalformedSocksReply);
+            }
+            let len = buf[4] as usize;
+            if len == 0 || buf.len() < 5 + len + 2 {
+                return Err(UdpUpstreamError::MalformedSocksReply);
+            }
+            let domain_bytes = &buf[5..5 + len];
+            let domain = String::from_utf8(domain_bytes.to_vec())
+                .map_err(|_| UdpUpstreamError::UdpRelayAddressInvalid)?;
+            let port = u16::from_be_bytes([buf[5 + len], buf[6 + len]]);
+            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((&*domain, port))
+                .await
+                .map_err(UdpUpstreamError::Io)?
+                .collect();
+            addrs
+                .into_iter()
+                .next()
+                .ok_or(UdpUpstreamError::UdpRelayAddressInvalid)
         }
         _ => Err(UdpUpstreamError::UdpRelayAddressInvalid),
     }
@@ -412,7 +488,7 @@ mod tests {
 
     #[test]
     fn encode_auth_request_wire_format() {
-        let buf = encode_auth_request("user", "pass");
+        let buf = encode_auth_request("user", "pass").unwrap();
         let expected = vec![
             AUTH_VERSION,
             4,
@@ -432,7 +508,7 @@ mod tests {
     #[test]
     fn encode_udp_associate_request_ipv4() {
         let target = SocksAddr::IPv4([192, 168, 1, 1], 8080);
-        let buf = encode_udp_associate_request(&target);
+        let buf = encode_udp_associate_request(&target).unwrap();
         assert_eq!(buf[0], SOCKS5_VERSION);
         assert_eq!(buf[1], CMD_UDP_ASSOCIATE);
         assert_eq!(buf[2], 0x00);
@@ -444,7 +520,7 @@ mod tests {
     #[test]
     fn encode_udp_associate_request_domain() {
         let target = SocksAddr::Domain("example.com".to_string(), 443);
-        let buf = encode_udp_associate_request(&target);
+        let buf = encode_udp_associate_request(&target).unwrap();
         assert_eq!(buf[0], SOCKS5_VERSION);
         assert_eq!(buf[1], CMD_UDP_ASSOCIATE);
         assert_eq!(buf[3], ATYP_DOMAIN);
@@ -507,51 +583,51 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn decode_udp_associate_reply_success_ipv4() {
+    #[tokio::test]
+    async fn decode_udp_associate_reply_success_ipv4() {
         let mut buf = vec![SOCKS5_VERSION, 0x00, 0x00, ATYP_IPV4];
         buf.extend_from_slice(&[10, 0, 0, 1]);
         buf.extend_from_slice(&9090u16.to_be_bytes());
-        let addr = decode_udp_associate_reply(&buf).unwrap();
+        let addr = decode_udp_associate_reply(&buf).await.unwrap();
         assert_eq!(
             addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 9090)
         );
     }
 
-    #[test]
-    fn decode_udp_associate_reply_success_ipv6() {
+    #[tokio::test]
+    async fn decode_udp_associate_reply_success_ipv6() {
         let mut buf = vec![SOCKS5_VERSION, 0x00, 0x00, ATYP_IPV6];
         buf.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         buf.extend_from_slice(&53u16.to_be_bytes());
-        let addr = decode_udp_associate_reply(&buf).unwrap();
+        let addr = decode_udp_associate_reply(&buf).await.unwrap();
         assert_eq!(addr, SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 53));
     }
 
-    #[test]
-    fn decode_udp_associate_reply_failure() {
+    #[tokio::test]
+    async fn decode_udp_associate_reply_failure() {
         let mut buf = vec![SOCKS5_VERSION, 0x01, 0x00, ATYP_IPV4];
         buf.extend_from_slice(&[0, 0, 0, 0]);
         buf.extend_from_slice(&0u16.to_be_bytes());
         assert!(matches!(
-            decode_udp_associate_reply(&buf),
+            decode_udp_associate_reply(&buf).await,
             Err(UdpUpstreamError::SocksAssociateRejected(0x01))
         ));
     }
 
-    #[test]
-    fn decode_udp_associate_reply_bad_version() {
+    #[tokio::test]
+    async fn decode_udp_associate_reply_bad_version() {
         let mut buf = vec![0x04, 0x00, 0x00, ATYP_IPV4];
         buf.extend_from_slice(&[0, 0, 0, 0]);
         buf.extend_from_slice(&0u16.to_be_bytes());
         assert!(matches!(
-            decode_udp_associate_reply(&buf),
+            decode_udp_associate_reply(&buf).await,
             Err(UdpUpstreamError::MalformedSocksReply)
         ));
     }
 
-    #[test]
-    fn decode_udp_associate_reply_unsupported_atyp() {
+    #[tokio::test]
+    async fn decode_udp_associate_reply_unsupported_atyp() {
         let buf = vec![
             SOCKS5_VERSION,
             0x00,
@@ -565,8 +641,30 @@ mod tests {
             0x50,
         ];
         assert!(matches!(
-            decode_udp_associate_reply(&buf),
+            decode_udp_associate_reply(&buf).await,
             Err(UdpUpstreamError::UdpRelayAddressInvalid)
+        ));
+    }
+
+    #[tokio::test]
+    async fn decode_udp_associate_reply_success_domain() {
+        let domain = "localhost";
+        let mut buf = vec![SOCKS5_VERSION, 0x00, 0x00, ATYP_DOMAIN];
+        buf.push(domain.len() as u8);
+        buf.extend_from_slice(domain.as_bytes());
+        buf.extend_from_slice(&8080u16.to_be_bytes());
+        let addr = decode_udp_associate_reply(&buf).await.unwrap();
+        assert_eq!(addr.port(), 8080);
+        assert!(addr.ip().is_loopback());
+    }
+
+    #[tokio::test]
+    async fn decode_udp_associate_reply_domain_zero_length() {
+        let mut buf = vec![SOCKS5_VERSION, 0x00, 0x00, ATYP_DOMAIN, 0x00];
+        buf.extend_from_slice(&80u16.to_be_bytes());
+        assert!(matches!(
+            decode_udp_associate_reply(&buf).await,
+            Err(UdpUpstreamError::MalformedSocksReply)
         ));
     }
 
@@ -629,6 +727,8 @@ mod tests {
             (UdpUpstreamError::MalformedSocksReply, "malformed_reply"),
             (UdpUpstreamError::UdpRelayAddressInvalid, "bad_relay_addr"),
             (UdpUpstreamError::Timeout, "timeout"),
+            (UdpUpstreamError::CredentialTooLong, "credential_too_long"),
+            (UdpUpstreamError::DomainTooLong, "domain_too_long"),
         ];
         for (err, label) in cases {
             assert_eq!(err.reason_label(), label);
@@ -641,5 +741,66 @@ mod tests {
         let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "test");
         let err = UdpUpstreamError::TcpConnect(io_err);
         assert_eq!(err.reason_label(), "tcp_connect");
+    }
+
+    #[test]
+    fn credential_too_long_error() {
+        let long = "x".repeat(256);
+        assert!(matches!(
+            checked_u8_len(&long, "credential"),
+            Err(UdpUpstreamError::CredentialTooLong)
+        ));
+    }
+
+    #[test]
+    fn domain_too_long_error() {
+        let long = "x".repeat(256);
+        assert!(matches!(
+            checked_u8_len(&long, "domain"),
+            Err(UdpUpstreamError::DomainTooLong)
+        ));
+    }
+
+    #[test]
+    fn max_length_255_succeeds() {
+        let max = "x".repeat(255);
+        assert!(checked_u8_len(&max, "credential").is_ok());
+        assert!(checked_u8_len(&max, "domain").is_ok());
+    }
+
+    #[test]
+    fn encode_auth_request_rejects_long_credentials() {
+        let long = "x".repeat(256);
+        assert!(matches!(
+            encode_auth_request(&long, "pass"),
+            Err(UdpUpstreamError::CredentialTooLong)
+        ));
+        assert!(matches!(
+            encode_auth_request("user", &long),
+            Err(UdpUpstreamError::CredentialTooLong)
+        ));
+    }
+
+    #[test]
+    fn encode_socks_addr_rejects_long_domain() {
+        let long = "x".repeat(256);
+        let addr = SocksAddr::Domain(long, 443);
+        let mut buf = Vec::new();
+        assert!(matches!(
+            encode_socks_addr(&addr, &mut buf),
+            Err(UdpUpstreamError::DomainTooLong)
+        ));
+    }
+
+    #[test]
+    fn reason_labels_include_new_variants() {
+        assert_eq!(
+            UdpUpstreamError::CredentialTooLong.reason_label(),
+            "credential_too_long"
+        );
+        assert_eq!(
+            UdpUpstreamError::DomainTooLong.reason_label(),
+            "domain_too_long"
+        );
     }
 }
