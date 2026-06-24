@@ -20,6 +20,9 @@ pub enum Socks5TestMode {
     AuthFailure,
     AssociateFailure { reply_code: u8 },
     Echo,
+    MethodStall,
+    AuthStall,
+    AssociateStall,
 }
 
 pub struct Socks5TestServerConfig {
@@ -89,7 +92,13 @@ async fn handle_socks5_connection(
     stream.read_exact(&mut methods).await?;
 
     match mode {
-        Socks5TestMode::NoAuth | Socks5TestMode::Echo => {
+        Socks5TestMode::MethodStall => {
+            std::future::pending::<()>().await;
+        }
+        Socks5TestMode::NoAuth
+        | Socks5TestMode::Echo
+        | Socks5TestMode::AuthStall
+        | Socks5TestMode::AssociateStall => {
             if !methods.contains(&0x00) {
                 stream.write_all(&[0x05, 0xFF]).await?;
                 return Ok(());
@@ -155,6 +164,19 @@ async fn handle_socks5_connection(
             stream.write_all(&[0x01, 0x01]).await?;
             return Ok(());
         }
+        Socks5TestMode::AuthStall => {
+            let auth_version = stream.read_u8().await?;
+            if auth_version != 0x01 {
+                return Ok(());
+            }
+            let ulen = stream.read_u8().await? as usize;
+            let mut username = vec![0u8; ulen];
+            stream.read_exact(&mut username).await?;
+            let plen = stream.read_u8().await? as usize;
+            let mut password = vec![0u8; plen];
+            stream.read_exact(&mut password).await?;
+            std::future::pending::<()>().await;
+        }
         _ => {}
     }
 
@@ -193,6 +215,10 @@ async fn handle_socks5_connection(
             reply.extend_from_slice(&0u16.to_be_bytes());
             stream.write_all(&reply).await?;
             return Ok(());
+        }
+
+        if matches!(mode, Socks5TestMode::AssociateStall) {
+            std::future::pending::<()>().await;
         }
 
         let relay = udp_socket.local_addr()?;

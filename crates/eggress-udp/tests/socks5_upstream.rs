@@ -12,6 +12,9 @@ use eggress_udp::metrics::UdpMetrics;
 use eggress_udp::registry::UdpAssociationRegistry;
 use eggress_udp::relay::{udp_relay_loop, RelayConfig};
 use eggress_udp::testkit::{Socks5TestMode, Socks5TestServerConfig, Socks5UdpTestServer};
+use eggress_udp::upstream_socks5::{
+    open_socks5_udp_upstream, Socks5UdpUpstreamConfig, UdpUpstreamError,
+};
 use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyChainSpec, ProxyHopSpec};
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
@@ -537,4 +540,83 @@ async fn upstream_metrics_tracking() {
 
     cancel.cancel();
     relay_handle.await.unwrap().unwrap();
+}
+
+fn upstream_config_for_timeout_test(
+    tcp_addr: std::net::SocketAddr,
+    credentials: Option<(String, String)>,
+) -> Socks5UdpUpstreamConfig {
+    let hop = ProxyHopSpec {
+        protocols: vec![ProtocolSpec::Socks5],
+        endpoint: EndpointSpec {
+            host: tcp_addr.ip().to_string(),
+            port: tcp_addr.port(),
+        },
+        credentials: credentials.map(|(u, p)| eggress_uri::CredentialSpec {
+            username: u,
+            password: p,
+        }),
+        rule: None,
+        local_bind: None,
+    };
+    Socks5UdpUpstreamConfig {
+        upstream_id: UpstreamId::new("timeout-test"),
+        hop,
+        connect_timeout: std::time::Duration::from_millis(50),
+        udp_bind: "127.0.0.1:0".parse().unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn upstream_method_negotiation_timeout_is_bounded() {
+    let upstream = Socks5UdpTestServer::start(Socks5TestServerConfig {
+        mode: Socks5TestMode::MethodStall,
+        relay_addr: None,
+    })
+    .await
+    .unwrap();
+
+    let config = upstream_config_for_timeout_test(upstream.tcp_addr, None);
+    let result = open_socks5_udp_upstream(config, None).await;
+    assert!(
+        matches!(result, Err(UdpUpstreamError::Timeout)),
+        "method stall should return Timeout"
+    );
+}
+
+#[tokio::test]
+async fn upstream_auth_timeout_is_bounded() {
+    let upstream = Socks5UdpTestServer::start(Socks5TestServerConfig {
+        mode: Socks5TestMode::AuthStall,
+        relay_addr: None,
+    })
+    .await
+    .unwrap();
+
+    let config = upstream_config_for_timeout_test(
+        upstream.tcp_addr,
+        Some(("user".to_string(), "pass".to_string())),
+    );
+    let result = open_socks5_udp_upstream(config, None).await;
+    assert!(
+        matches!(result, Err(UdpUpstreamError::Timeout)),
+        "auth stall should return Timeout"
+    );
+}
+
+#[tokio::test]
+async fn upstream_associate_timeout_is_bounded() {
+    let upstream = Socks5UdpTestServer::start(Socks5TestServerConfig {
+        mode: Socks5TestMode::AssociateStall,
+        relay_addr: None,
+    })
+    .await
+    .unwrap();
+
+    let config = upstream_config_for_timeout_test(upstream.tcp_addr, None);
+    let result = open_socks5_udp_upstream(config, None).await;
+    assert!(
+        matches!(result, Err(UdpUpstreamError::Timeout)),
+        "associate stall should return Timeout"
+    );
 }

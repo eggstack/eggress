@@ -67,7 +67,7 @@ upstream SOCKS5 proxy.
 
 ## New Integration Tests
 
-- `crates/eggress-udp/tests/socks5_upstream.rs` - 8 tests covering:
+- `crates/eggress-udp/tests/socks5_upstream.rs` - 11 tests covering:
   - Echo through upstream (no-auth)
   - Authenticated upstream
   - Auth failure drops and records metric
@@ -76,6 +76,9 @@ upstream SOCKS5 proxy.
   - Multi-hop chain unsupported
   - Idle cleanup releases flow
   - Upstream metrics tracking
+  - Method negotiation stall returns Timeout
+  - Auth stall returns Timeout
+  - Associate stall returns Timeout
 
 - `crates/eggress-runtime/tests/udp_upstream.rs` - 9 tests covering:
   - Shutdown closes UDP flows
@@ -121,7 +124,7 @@ All checks passed:
 - [x] All tests, lint, audit pass
 - [x] No unsafe Rust, OpenSSL, or native dependencies introduced
 - [x] Integration test files exist per plan (socks5_upstream.rs, udp_upstream.rs)
-- [x] 17 integration test scenarios covered
+- [x] 20 integration test scenarios covered
 - [x] Codec renamed with backwards-compatible wrappers
 - [x] `handle_client_datagram()` extracted from relay loop
 - [x] `UdpFlowKey` enum for typed flow map keys
@@ -138,6 +141,7 @@ Phase 4 closure fixes addressed:
 - Aggregate upstream UDP metrics (per-upstream/group labels deferred to later observability pass)
 - Full ServiceSupervisor runtime test for TOML-configured SOCKS5 UDP upstream echo
 - Runtime tests for authenticated upstream, HTTP upstream drop, multi-hop drop, and target-flow idle timeout
+- Handshake-stage timeout unit tests (method stall, auth stall, associate stall)
 - Plan archival policy documented
 
 All required checks passed on 2026-06-22.
