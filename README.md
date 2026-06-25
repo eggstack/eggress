@@ -94,7 +94,7 @@ Legend:
 - [x] SOCKS5 domain targets
 - [ ] SOCKS5 BIND
 - [x] SOCKS5 UDP ASSOCIATE server
-- [ ] SOCKS5 UDP ASSOCIATE client
+- [x] SOCKS5 UDP ASSOCIATE client
 
 ### Routing and scheduling
 
@@ -151,7 +151,7 @@ Legend:
 - [x] Target-aware reply demultiplexing
 - [x] UDP routing with direct-fallback support
 - [x] UDP relay tasks tracked via TaskTracker
-- [ ] UDP chain validation
+- [x] UDP chain validation
 - [x] UDP metrics (exposed via `/metrics`)
 - [x] Packet-size and amplification limits
 - [x] Per-listener TOML UDP configuration (`[listeners.udp]`)
@@ -168,18 +168,18 @@ Legend:
 ### TLS
 
 - [x] rustls client transport (Trojan)
-- [ ] rustls server transport
-- [ ] System root certificates
-- [ ] Custom CA roots
-- [ ] SNI
-- [ ] ALPN
-- [ ] Secure certificate verification default
-- [ ] Explicit insecure compatibility mode
-- [ ] Certificate reload
-- [ ] HTTPS proxy server
-- [ ] HTTPS proxy client
-- [ ] TLS-wrapped SOCKS
-- [ ] TLS-wrapped custom protocols
+- [x] rustls server transport (TLS listener accept)
+- [x] System root certificates (webpki-roots)
+- [x] Custom CA roots (TlsClientConfigBuilder)
+- [x] SNI (client-side via TlsConnector)
+- [x] ALPN (configurable via builder)
+- [x] Secure certificate verification default (rustls default)
+- [x] Explicit insecure compatibility mode (TlsClientConfigBuilder::with_insecure)
+- [ ] Certificate reload (deferred)
+- [x] HTTPS proxy server (TLS listener + HTTP protocol)
+- [x] HTTPS proxy client (TLS upstream wrapping)
+- [x] TLS-wrapped SOCKS (hop.tls flag)
+- [x] TLS-wrapped custom protocols (hop.tls flag)
 
 ### Shadowsocks
 

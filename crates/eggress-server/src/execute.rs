@@ -738,14 +738,47 @@ async fn execute_udp_associate(
 }
 
 fn build_chain_executor() -> ChainExecutor {
+    // Build shared TLS client config for upstream hops
+    let shared_tls_config = {
+        let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+        match builder.with_system_roots().and_then(|b| b.build()) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                tracing::warn!("failed to build shared TLS config: {e}");
+                None
+            }
+        }
+    };
+
+    let shared_tls_config_arc = shared_tls_config.clone();
+
     let handlers: Vec<Box<dyn HopHandler>> = vec![
         Box::new(HttpHopHandler),
         Box::new(Socks5HopHandler),
         Box::new(Socks4HopHandler),
         Box::new(ShadowsocksHopHandler),
-        Box::new(TrojanHopHandler),
+        Box::new(TrojanHopHandler {
+            tls_config: shared_tls_config_arc,
+        }),
     ];
+
+    // Set up TLS wrapper using system roots by default
+    let tls_wrapper: eggress_core::chain::TlsWrapper = Box::new(|stream, server_name| {
+        Box::pin(async move {
+            let config = eggress_transport_tls::TlsClientConfigBuilder::new()
+                .with_system_roots()
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })?
+                .build()
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })?;
+            eggress_transport_tls::tls_connect(stream, config, &server_name)
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })
+        })
+    });
+
     ChainExecutor::new(handlers)
+        .with_tls_wrapper(tls_wrapper)
+        .with_shared_tls_config(shared_tls_config)
 }
 
 struct HttpHopHandler;
@@ -850,7 +883,9 @@ impl HopHandler for ShadowsocksHopHandler {
     }
 }
 
-struct TrojanHopHandler;
+struct TrojanHopHandler {
+    tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+}
 
 impl HopHandler for TrojanHopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
@@ -863,6 +898,7 @@ impl HopHandler for TrojanHopHandler {
         target: &'a TargetAddr,
         credentials: Option<&'a eggress_uri::CredentialSpec>,
     ) -> HandshakeFuture<'a> {
+        let tls_config = self.tls_config.clone();
         Box::pin(async move {
             let creds = credentials.ok_or_else(|| {
                 Box::new(eggress_protocol_trojan::TrojanError::Protocol(
@@ -874,9 +910,15 @@ impl HopHandler for TrojanHopHandler {
             let server_name = &creds.password;
             let password = &creds.username;
 
-            eggress_protocol_trojan::trojan_connect(stream, target, password, server_name)
-                .await
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+            eggress_protocol_trojan::trojan_connect(
+                stream,
+                target,
+                password,
+                server_name,
+                tls_config,
+            )
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 }

@@ -14,6 +14,7 @@ eggress-admin.workspace = true
 eggress-metrics.workspace = true
 eggress-uri.workspace = true
 eggress-udp.workspace = true
+eggress-transport-tls.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
@@ -30,6 +31,8 @@ eggress-routing.workspace = true
 eggress-core.workspace = true
 eggress-uri.workspace = true
 eggress-testkit.workspace = true
+rcgen = "0.13"
+eggress-transport-tls.workspace = true
 
 [lints]
 workspace = true

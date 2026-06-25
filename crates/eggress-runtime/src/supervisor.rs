@@ -95,6 +95,7 @@ struct PreparedListener {
     auth: eggress_server::accept::InboundAuthentication,
     handshake_timeout: Duration,
     udp: Option<eggress_config::compile::CompiledListenerUdpConfig>,
+    tls: Option<eggress_config::compile::CompiledListenerTlsConfig>,
 }
 
 /// Compute the advertised IP for the SOCKS5 UDP ASSOCIATE reply.
@@ -600,6 +601,7 @@ impl ServiceSupervisor {
                     auth,
                     handshake_timeout,
                     udp: lcfg.udp.clone(),
+                    tls: lcfg.tls.clone(),
                 });
             }
 
@@ -658,6 +660,8 @@ impl ServiceSupervisor {
 
                         active.fetch_add(1, Ordering::Relaxed);
 
+                        let tls_config = prepared_listener.tls.clone();
+
                         let udp_svc = if let Some(ref udp_config) = prepared_listener.udp {
                             Some(Arc::new(RuntimeUdpService {
                                 _listener_name: prepared_listener.name.clone(),
@@ -673,6 +677,35 @@ impl ServiceSupervisor {
                         };
                         conn_tasks.spawn(async move {
                             let started = std::time::Instant::now();
+
+                            // Apply TLS if configured for this listener
+                            let stream: eggress_core::BoxStream = if let Some(ref tls_cfg) = tls_config {
+                                let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
+                                    .with_certificate_pem(&tls_cfg.cert_pem)
+                                    .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
+                                    .and_then(|b| {
+                                        let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
+                                        b.build()
+                                    }) {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        tracing::error!(%peer, "TLS config error: {e}");
+                                        active.fetch_sub(1, Ordering::Relaxed);
+                                        return;
+                                    }
+                                };
+                                match eggress_transport_tls::tls_accept(Box::new(conn.stream), server_config).await {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        tracing::debug!(%peer, "TLS accept failed: {e}");
+                                        active.fetch_sub(1, Ordering::Relaxed);
+                                        return;
+                                    }
+                                }
+                            } else {
+                                Box::new(conn.stream)
+                            };
+
                             let config = eggress_server::ConnectionConfig {
                                 routing: routing as Arc<dyn RouteService>,
                                 context: eggress_server::ConnectionContext {
@@ -689,7 +722,7 @@ impl ServiceSupervisor {
                             };
 
                             let report = tokio::select! {
-                                report = eggress_server::serve_connection(conn.stream, config)
+                                report = eggress_server::serve_connection(stream, config)
                                     .instrument(tracing::info_span!(
                                         "conn",
                                         id = conn_id,

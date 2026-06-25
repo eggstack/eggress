@@ -125,6 +125,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         }
     }
 
@@ -141,6 +143,8 @@ mod tests {
             }),
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         }
     }
 

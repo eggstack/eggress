@@ -92,6 +92,15 @@ pub struct ListenerConfig {
     pub connection_limit: Option<u32>,
     pub auth: Option<crate::model::AuthConfig>,
     pub udp: Option<CompiledListenerUdpConfig>,
+    pub tls: Option<CompiledListenerTlsConfig>,
+}
+
+/// Compiled TLS configuration for a listener.
+#[derive(Debug, Clone)]
+pub struct CompiledListenerTlsConfig {
+    pub cert_pem: Vec<u8>,
+    pub key_pem: Vec<u8>,
+    pub alpn: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -519,6 +528,44 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 }
             };
 
+            let tls = match l.tls.as_ref() {
+                Some(tls_cfg) => {
+                    let cert_pem = std::fs::read(&tls_cfg.cert).map_err(|e| {
+                        ConfigError::validation(
+                            &format!("{}.tls.cert", path),
+                            &format!("failed to read cert file: {}", e),
+                        )
+                    })?;
+                    let key_pem = std::fs::read(&tls_cfg.key).map_err(|e| {
+                        ConfigError::validation(
+                            &format!("{}.tls.key", path),
+                            &format!("failed to read key file: {}", e),
+                        )
+                    })?;
+                    // Validate PEM at compile time
+                    eggress_transport_tls::TlsServerConfigBuilder::new()
+                        .with_certificate_pem(&cert_pem)
+                        .and_then(|b| b.with_key_pem(&key_pem))
+                        .map_err(|e| {
+                            ConfigError::validation(
+                                &format!("{}.tls", path),
+                                &format!("invalid TLS config: {}", e),
+                            )
+                        })?;
+                    let alpn = tls_cfg
+                        .alpn
+                        .as_ref()
+                        .map(|protocols| protocols.iter().map(|p| p.as_bytes().to_vec()).collect())
+                        .unwrap_or_default();
+                    Some(CompiledListenerTlsConfig {
+                        cert_pem,
+                        key_pem,
+                        alpn,
+                    })
+                }
+                None => None,
+            };
+
             Ok(ListenerConfig {
                 name: l.name.clone(),
                 bind: l.bind.clone(),
@@ -526,6 +573,7 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 connection_limit: l.connection_limit,
                 auth: l.auth.clone(),
                 udp,
+                tls,
             })
         })
         .collect()

@@ -84,6 +84,23 @@ pub trait HopHandler: Send + Sync {
     ) -> HandshakeFuture<'a>;
 }
 
+/// A function that wraps a `BoxStream` in TLS for upstream connections.
+///
+/// Returns the TLS-wrapped stream, or an error if the handshake fails.
+pub type TlsWrapper = Box<
+    dyn Fn(
+            BoxStream,
+            String,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
+                    > + Send,
+            >,
+        > + Send
+        + Sync,
+>;
+
 /// Executor for proxy chains.
 ///
 /// Establishes a connection through a series of proxy hops, performing
@@ -93,13 +110,17 @@ pub trait HopHandler: Send + Sync {
 ///
 /// ```text
 /// Transport to hop 1
+/// → TLS wrap (if hop.tls)
 /// → protocol handshake requesting hop 2
+/// → TLS wrap (if hop.tls)
 /// → protocol handshake requesting hop 3
 /// → final protocol handshake requesting destination
 /// ```
 pub struct ChainExecutor {
     direct_connector: DirectConnector,
     handlers: Vec<Box<dyn HopHandler>>,
+    tls_wrapper: Option<TlsWrapper>,
+    shared_tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
 }
 
 impl ChainExecutor {
@@ -108,7 +129,30 @@ impl ChainExecutor {
         Self {
             direct_connector: DirectConnector,
             handlers,
+            tls_wrapper: None,
+            shared_tls_config: None,
         }
+    }
+
+    /// Set a TLS wrapper for upstream hops with `tls: true`.
+    pub fn with_tls_wrapper(mut self, wrapper: TlsWrapper) -> Self {
+        self.tls_wrapper = Some(wrapper);
+        self
+    }
+
+    /// Set a shared TLS client config for protocols that need their own TLS
+    /// handshake (e.g., Trojan).
+    pub fn with_shared_tls_config(
+        mut self,
+        config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    ) -> Self {
+        self.shared_tls_config = config;
+        self
+    }
+
+    /// Get the shared TLS client config, if set.
+    pub fn shared_tls_config(&self) -> Option<&std::sync::Arc<rustls::ClientConfig>> {
+        self.shared_tls_config.as_ref()
     }
 
     /// Execute a proxy chain to connect to the target.
@@ -160,6 +204,24 @@ impl ChainExecutor {
 
         // Step 2: For each hop, perform the protocol handshake
         for (i, hop) in chain.iter().enumerate() {
+            // Apply TLS wrapping if configured for this hop
+            if hop.tls {
+                if let Some(ref tls_wrapper) = self.tls_wrapper {
+                    let server_name = hop
+                        .server_name
+                        .clone()
+                        .unwrap_or_else(|| hop.endpoint.host.clone());
+                    current_stream =
+                        tls_wrapper(current_stream, server_name)
+                            .await
+                            .map_err(|e| ChainError::HandshakeFailed {
+                                hop_index: i,
+                                protocol: "tls".to_string(),
+                                source: e,
+                            })?;
+                }
+            }
+
             // Determine the target for this hop's handshake
             let next_target = if i + 1 < chain.len() {
                 // Target is the next hop's endpoint
@@ -255,6 +317,7 @@ fn format_protocols(protocols: &[ProtocolSpec]) -> String {
 mod tests {
     use super::*;
     use crate::TargetHost;
+    use std::sync::Arc;
 
     /// A mock handler that records the target and returns a successful result.
     struct MockHandler {
@@ -325,6 +388,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         }
     }
 
@@ -347,6 +412,8 @@ mod tests {
             }),
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         }
     }
 
@@ -394,6 +461,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         };
         let executor = ChainExecutor::new(vec![]);
         let target = make_target("example.com", 80);
@@ -431,6 +500,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         };
         let executor = ChainExecutor::new(vec![]);
         let target = make_target("example.com", 80);
@@ -818,6 +889,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         };
         let target = make_target("example.com", 80);
         let result = executor.execute(&[hop], &target).await;
@@ -1171,6 +1244,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         }];
         assert!(executor.validate_chain(&chain).is_err());
     }
@@ -1194,6 +1269,8 @@ mod tests {
             credentials: None,
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         }];
         assert!(executor.validate_chain(&chain).is_err());
     }
@@ -1221,5 +1298,228 @@ mod tests {
         assert!(err.to_string().contains("hop 0"));
         assert!(err.to_string().contains("127.0.0.1:8080"));
         assert!(err.to_string().contains("connection refused"));
+    }
+
+    // ===== TLS Wrapping Tests =====
+
+    #[tokio::test]
+    async fn test_tls_wrapper_called_when_hop_tls_true() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        });
+
+        let (_handler, _captured) = MockHandler::new(ProtocolSpec::Http);
+        let executor = ChainExecutor::new(vec![Box::new(_handler)]);
+
+        let tls_called = Arc::new(AtomicBool::new(false));
+        let tls_called_clone = tls_called.clone();
+
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name| {
+            let called = tls_called_clone.clone();
+            Box::pin(async move {
+                called.store(true, Ordering::Relaxed);
+                // Just pass through - don't actually do TLS in this test
+                Ok(stream)
+            })
+        });
+
+        let executor = executor.with_tls_wrapper(tls_wrapper);
+
+        let mut hop = make_hop(ProtocolSpec::Http, &addr.ip().to_string(), addr.port());
+        hop.tls = true;
+        hop.server_name = Some("test.example.com".to_string());
+
+        let target = make_target("example.com", 80);
+        let result = executor.execute(&[hop], &target).await;
+
+        assert!(result.is_ok());
+        assert!(
+            tls_called.load(Ordering::Relaxed),
+            "TLS wrapper should have been called"
+        );
+
+        server_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_tls_wrapper_not_called_when_hop_tls_false() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        });
+
+        let (_handler, _captured) = MockHandler::new(ProtocolSpec::Http);
+        let executor = ChainExecutor::new(vec![Box::new(_handler)]);
+
+        let tls_called = Arc::new(AtomicBool::new(false));
+        let tls_called_clone = tls_called.clone();
+
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name| {
+            let called = tls_called_clone.clone();
+            Box::pin(async move {
+                called.store(true, Ordering::Relaxed);
+                Ok(stream)
+            })
+        });
+
+        let executor = executor.with_tls_wrapper(tls_wrapper);
+
+        let hop = make_hop(ProtocolSpec::Http, &addr.ip().to_string(), addr.port());
+        // hop.tls defaults to false
+
+        let target = make_target("example.com", 80);
+        let result = executor.execute(&[hop], &target).await;
+
+        assert!(result.is_ok());
+        assert!(
+            !tls_called.load(Ordering::Relaxed),
+            "TLS wrapper should NOT have been called"
+        );
+
+        server_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_tls_wrapper_uses_server_name_from_hop() {
+        use std::sync::Mutex;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        });
+
+        let (handler, _) = MockHandler::new(ProtocolSpec::Http);
+        let executor = ChainExecutor::new(vec![Box::new(handler)]);
+
+        let captured_name = Arc::new(Mutex::new(None::<String>));
+        let captured_name_clone = captured_name.clone();
+
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name| {
+            let captured = captured_name_clone.clone();
+            Box::pin(async move {
+                *captured.lock().unwrap() = Some(server_name);
+                Ok(stream)
+            })
+        });
+
+        let executor = executor.with_tls_wrapper(tls_wrapper);
+
+        let mut hop = make_hop(ProtocolSpec::Http, &addr.ip().to_string(), addr.port());
+        hop.tls = true;
+        hop.server_name = Some("custom-sni.example.com".to_string());
+
+        let target = make_target("example.com", 80);
+        let result = executor.execute(&[hop], &target).await;
+
+        assert!(result.is_ok());
+        let name = captured_name.lock().unwrap().take().unwrap();
+        assert_eq!(name, "custom-sni.example.com");
+
+        server_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_tls_wrapper_falls_back_to_endpoint_host() {
+        use std::sync::Mutex;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        });
+
+        let (handler, _) = MockHandler::new(ProtocolSpec::Http);
+        let executor = ChainExecutor::new(vec![Box::new(handler)]);
+
+        let captured_name = Arc::new(Mutex::new(None::<String>));
+        let captured_name_clone = captured_name.clone();
+
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name| {
+            let captured = captured_name_clone.clone();
+            Box::pin(async move {
+                *captured.lock().unwrap() = Some(server_name);
+                Ok(stream)
+            })
+        });
+
+        let executor = executor.with_tls_wrapper(tls_wrapper);
+
+        // hop with no server_name - should use endpoint host
+        let hop = make_hop(ProtocolSpec::Http, &addr.ip().to_string(), addr.port());
+        // hop.tls defaults to false, so set it to true
+        let mut hop = hop;
+        hop.tls = true;
+        // No server_name set - should fallback to endpoint.host
+
+        let target = make_target("example.com", 80);
+        let result = executor.execute(&[hop], &target).await;
+
+        assert!(result.is_ok());
+        let name = captured_name.lock().unwrap().take().unwrap();
+        assert_eq!(name, addr.ip().to_string());
+
+        server_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_tls_failure_propagates_as_handshake_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        });
+
+        let (handler, _) = MockHandler::new(ProtocolSpec::Http);
+        let executor = ChainExecutor::new(vec![Box::new(handler)]);
+
+        let tls_wrapper: TlsWrapper = Box::new(|_stream, _server_name| {
+            Box::pin(async move {
+                Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                    "TLS handshake failed: certificate rejected",
+                ))
+            })
+        });
+
+        let executor = executor.with_tls_wrapper(tls_wrapper);
+
+        let mut hop = make_hop(ProtocolSpec::Http, &addr.ip().to_string(), addr.port());
+        hop.tls = true;
+
+        let target = make_target("example.com", 80);
+        let result = executor.execute(&[hop], &target).await;
+
+        match result {
+            Err(ChainError::HandshakeFailed {
+                hop_index,
+                protocol,
+                source,
+            }) => {
+                assert_eq!(hop_index, 0);
+                assert_eq!(protocol, "tls");
+                assert!(source.to_string().contains("TLS handshake failed"));
+            }
+            Err(e) => panic!("expected HandshakeFailed, got: {e}"),
+            Ok(_) => panic!("expected error"),
+        }
+
+        server_jh.abort();
     }
 }

@@ -25,6 +25,12 @@ pub struct ProxyHopSpec {
     /// Optional local bind address.
     #[serde(default)]
     pub local_bind: Option<String>,
+    /// Whether to wrap this hop in TLS.
+    #[serde(default)]
+    pub tls: bool,
+    /// Optional SNI override for TLS (defaults to endpoint host).
+    #[serde(default)]
+    pub server_name: Option<String>,
 }
 
 /// Supported proxy protocols.
@@ -89,7 +95,7 @@ impl<'a> fmt::Display for RedactedUri<'a> {
             .hops
             .iter()
             .map(|hop| {
-                let proto_str = hop
+                let mut proto_parts: Vec<&str> = hop
                     .protocols
                     .iter()
                     .map(|p| match p {
@@ -99,8 +105,11 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::Shadowsocks => "shadowsocks",
                         ProtocolSpec::Trojan => "trojan",
                     })
-                    .collect::<Vec<_>>()
-                    .join("+");
+                    .collect();
+                if hop.tls {
+                    proto_parts.push("tls");
+                }
+                let proto_str = proto_parts.join("+");
 
                 let endpoint_str = if hop.endpoint.host.contains(':') {
                     format!("[{}]:{}", hop.endpoint.host, hop.endpoint.port)
@@ -228,11 +237,11 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
     };
 
     // Split scheme from the rest
-    let (protocols, after_scheme) = if let Some(colon_pos) = remaining.find("://") {
+    let (protocols, tls, after_scheme) = if let Some(colon_pos) = remaining.find("://") {
         let scheme_part = &remaining[..colon_pos];
         let rest = &remaining[colon_pos + 3..];
-        let protocols = parse_protocols(scheme_part)?;
-        (protocols, rest)
+        let (protocols, tls) = parse_protocols(scheme_part)?;
+        (protocols, tls, rest)
     } else {
         return Err(UriParseError::InvalidFormat {
             message: "missing scheme (expected protocol://)".to_string(),
@@ -282,10 +291,12 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         credentials,
         rule,
         local_bind,
+        tls,
+        server_name: None,
     })
 }
 
-fn parse_protocols(scheme: &str) -> Result<Vec<ProtocolSpec>, UriParseError> {
+fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseError> {
     let parts: Vec<&str> = scheme.split('+').collect();
     if parts.is_empty() {
         return Err(UriParseError::InvalidFormat {
@@ -294,17 +305,29 @@ fn parse_protocols(scheme: &str) -> Result<Vec<ProtocolSpec>, UriParseError> {
         });
     }
 
-    parts
-        .iter()
-        .map(|p| match *p {
-            "http" => Ok(ProtocolSpec::Http),
-            "socks4" => Ok(ProtocolSpec::Socks4),
-            "socks5" => Ok(ProtocolSpec::Socks5),
-            "shadowsocks" | "ss" => Ok(ProtocolSpec::Shadowsocks),
-            "trojan" => Ok(ProtocolSpec::Trojan),
-            _ => Err(UriParseError::UnsupportedProtocol(p.to_string())),
-        })
-        .collect()
+    let mut protocols = Vec::new();
+    let mut tls = false;
+
+    for p in &parts {
+        match *p {
+            "http" => protocols.push(ProtocolSpec::Http),
+            "socks4" => protocols.push(ProtocolSpec::Socks4),
+            "socks5" => protocols.push(ProtocolSpec::Socks5),
+            "shadowsocks" | "ss" => protocols.push(ProtocolSpec::Shadowsocks),
+            "trojan" => protocols.push(ProtocolSpec::Trojan),
+            "tls" => tls = true,
+            _ => return Err(UriParseError::UnsupportedProtocol(p.to_string())),
+        }
+    }
+
+    if protocols.is_empty() {
+        return Err(UriParseError::InvalidFormat {
+            message: "no protocol specified".to_string(),
+            span: None,
+        });
+    }
+
+    Ok((protocols, tls))
 }
 
 fn parse_endpoint(endpoint: &str) -> Result<EndpointSpec, UriParseError> {
@@ -607,6 +630,8 @@ mod tests {
                 }),
                 rule: None,
                 local_bind: None,
+                tls: false,
+                server_name: None,
             }],
         };
         let redacted = RedactedUri::new(&spec);
@@ -627,6 +652,8 @@ mod tests {
                 credentials: None,
                 rule: None,
                 local_bind: None,
+                tls: false,
+                server_name: None,
             }],
         };
         let redacted = RedactedUri::new(&spec);
@@ -718,6 +745,32 @@ mod tests {
         assert!(redacted.contains("****:****@"));
         assert!(redacted.contains("proxy.example:8388"));
     }
+
+    #[test]
+    fn test_tls_suffix_parses_to_tls_flag() {
+        let result = parse_proxy_chain("socks5+tls://proxy.example:1080").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Socks5]);
+        assert!(result.hops[0].tls);
+        assert_eq!(result.hops[0].endpoint.host, "proxy.example");
+        assert_eq!(result.hops[0].endpoint.port, 1080);
+    }
+
+    #[test]
+    fn test_tls_only_protocol_with_other() {
+        let result = parse_proxy_chain("http+tls://proxy.example:443").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Http]);
+        assert!(result.hops[0].tls);
+    }
+
+    #[test]
+    fn test_tls_suffix_roundtrip() {
+        let original = "socks5+tls://proxy.example:1080";
+        let spec = parse_proxy_chain(original).unwrap();
+        let redacted = RedactedUri::new(&spec).to_string();
+        assert_eq!(redacted, original);
+    }
 }
 
 #[cfg(test)]
@@ -764,6 +817,8 @@ mod proptest_tests {
                 }),
                 rule,
                 local_bind: None,
+                tls: false,
+                server_name: None,
             })
     }
 

@@ -316,6 +316,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "const-oid"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -342,6 +348,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
 dependencies = [
  "cipher",
+]
+
+[[package]]
+name = "der"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71fd89660b2dc699704064e59e9dba0147b903e85319429e131620d022be411b"
+dependencies = [
+ "const-oid",
 ]
 
 [[package]]
@@ -432,8 +447,10 @@ dependencies = [
  "eggress-admin",
  "eggress-core",
  "eggress-routing",
+ "eggress-transport-tls",
  "eggress-uri",
  "ipnet",
+ "rcgen",
  "regex",
  "serde",
  "tempfile",
@@ -448,6 +465,7 @@ dependencies = [
  "bytes",
  "eggress-uri",
  "pin-project-lite",
+ "rustls",
  "serde",
  "thiserror",
  "tokio",
@@ -514,6 +532,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "eggress-core",
+ "eggress-transport-tls",
  "eggress-uri",
  "rcgen",
  "rustls",
@@ -522,7 +541,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
- "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -554,8 +572,10 @@ dependencies = [
  "eggress-routing",
  "eggress-server",
  "eggress-testkit",
+ "eggress-transport-tls",
  "eggress-udp",
  "eggress-uri",
+ "rcgen",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -575,8 +595,10 @@ dependencies = [
  "eggress-protocol-trojan",
  "eggress-routing",
  "eggress-testkit",
+ "eggress-transport-tls",
  "eggress-udp",
  "eggress-uri",
+ "rustls",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -590,6 +612,22 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-test",
+]
+
+[[package]]
+name = "eggress-transport-tls"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "eggress-core",
+ "pkcs8",
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -1078,6 +1116,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "pkcs8"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7"
+dependencies = [
+ "der",
+ "spki",
+]
+
+[[package]]
 name = "poly1305"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1378,6 +1426,7 @@ dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -1546,6 +1595,15 @@ checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "spki"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d9efca8738c78ee9484207732f728b1ef517bbb1833d6fc0879ca898a522f6f"
+dependencies = [
+ "der",
 ]
 
 [[package]]

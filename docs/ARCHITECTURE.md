@@ -149,8 +149,18 @@ Shadowsocks protocol implementation:
 Trojan protocol implementation:
 - SHA224 password hash authentication
 - Trojan wire format encoding (hash + CONNECT + address + port)
-- TLS transport via rustls with webpki root certificates
+- TLS transport via shared `eggress-transport-tls` layer
+- Accepts optional `Arc<ClientConfig>` for shared config (falls back to system roots)
 - Unit tests for hash and wire format
+
+### eggress-transport-tls
+Shared TLS transport layer:
+- `TlsClientConfigBuilder` — builds `Arc<ClientConfig>` from system roots, custom CA PEM, ALPN, insecure mode, server name override
+- `TlsServerConfigBuilder` — builds `Arc<ServerConfig>` from cert chain and key PEM
+- `tls_connect` / `tls_accept` — wraps `BoxStream` in TLS
+- `load_system_roots` / `load_pem_roots` / `load_pem_certs` — root certificate loading
+- `TlsError` — structured error type for TLS operations
+- Used by: `eggress-runtime` (listener TLS), `eggress-server` (upstream TLS), `eggress-protocol-trojan` (Trojan TLS)
 
 ### eggress-udp
 UDP association management and direct forwarding:
@@ -184,6 +194,33 @@ Client → TcpListener → serve_connection()
     → relay() or HTTP forward exchange (with byte counting)
     → SessionReport (with rule ID, upstream group, byte counts, failure category)
 ```
+
+## TLS Transport Layer
+
+TLS is applied at two points in the data flow:
+
+### Listener TLS (inbound)
+
+```
+TCP accept → raw TcpStream
+    → if listener has TLS config: tls_accept() → TlsStream<TcpStream>
+    → protocol detection on the unwrapped stream
+    → route → relay
+```
+
+Configured via `[listeners.tls]` in TOML with cert/key PEM files.
+
+### Upstream TLS (outbound)
+
+```
+ChainExecutor::execute()
+    → DirectConnector.connect(first_hop) → BoxStream
+    → for each hop:
+        if hop.tls: TlsWrapper(stream, server_name) → BoxStream (TLS)
+        handler.handshake(stream, target, creds) → BoxStream (protocol)
+```
+
+Configured via `+tls` URI suffix (e.g., `socks5+tls://proxy:1080`) or `tls = true` on the hop spec.
 
 ## UDP Data Flow
 

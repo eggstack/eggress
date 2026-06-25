@@ -491,23 +491,29 @@ Introduce reusable TLS wrapping without coupling TLS to individual proxy protoco
 
 ## Included
 
-- rustls client and server wrappers;
-- certificate and private-key loading;
-- system roots;
-- custom CA roots;
-- SNI;
-- ALPN;
-- secure verification default;
-- explicit insecure compatibility mode;
-- HTTPS proxy client and server;
-- TLS-wrapped SOCKS and custom protocol stacks;
-- handshake limits and timeouts;
-- certificate reload;
-- redacted diagnostics.
+- [x] rustls client and server wrappers;
+- [x] certificate and private-key loading;
+- [x] system roots;
+- [x] custom CA roots;
+- [x] SNI;
+- [x] ALPN;
+- [x] secure verification default;
+- [x] explicit insecure compatibility mode;
+- [x] HTTPS proxy client and server;
+- [x] TLS-wrapped SOCKS and custom protocol stacks;
+- [x] handshake limits and timeouts;
+- [ ] certificate reload (deferred);
+- [x] redacted diagnostics.
 
 ## Exit criteria
 
 Any stream protocol implemented to date can be layered over TLS where the URI grammar permits it.
+
+## Status
+
+Phase 4 core complete. All items except certificate reload are implemented and tested.
+New crate `eggress-transport-tls` provides the shared TLS layer.
+Listener TLS, upstream TLS, and Trojan refactoring all verified with 30+ TLS-specific tests.
 
 ---
 

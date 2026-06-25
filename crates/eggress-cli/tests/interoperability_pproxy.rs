@@ -161,6 +161,8 @@ async fn test_pproxy_http_server_eggress_client() {
         credentials: None,
         rule: None,
         local_bind: None,
+        tls: false,
+        server_name: None,
     }];
 
     let target = TargetAddr {
@@ -218,6 +220,8 @@ async fn test_pproxy_socks5_server_eggress_client() {
         credentials: None,
         rule: None,
         local_bind: None,
+        tls: false,
+        server_name: None,
     }];
 
     let target = TargetAddr {

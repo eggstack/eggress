@@ -36,6 +36,9 @@ cargo test -p eggress-protocol-shadowsocks
 # Run Trojan tests
 cargo test -p eggress-protocol-trojan
 
+# Run TLS transport tests
+cargo test -p eggress-transport-tls
+
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
@@ -62,6 +65,7 @@ eggress/
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
 │   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD TCP/UDP
 │   ├── eggress-protocol-trojan/ # Trojan TLS-based proxy
+│   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   └── eggress-testkit/   # Test utilities
 ├── plans/                  # Historical planning documents (reference only)

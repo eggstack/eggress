@@ -1543,6 +1543,8 @@ mod tests {
             }),
             rule: None,
             local_bind: None,
+            tls: false,
+            server_name: None,
         };
 
         let chain = eggress_uri::ProxyChainSpec {

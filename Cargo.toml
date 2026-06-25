@@ -8,6 +8,7 @@ members = [
     "crates/eggress-metrics",
     "crates/eggress-runtime",
     "crates/eggress-server",
+    "crates/eggress-transport-tls",
     "crates/eggress-udp",
     "crates/eggress-uri",
     "crates/eggress-routing",
@@ -56,6 +57,11 @@ prometheus-client = "0.22"
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = "0.26"
+webpki-roots = "0.26"
+rustls-pemfile = "2"
+pkcs8 = "0.11"
 
 # Internal crates
 eggress-admin = { path = "crates/eggress-admin" }
@@ -67,6 +73,7 @@ eggress-protocol-http = { path = "crates/eggress-protocol-http" }
 eggress-protocol-socks = { path = "crates/eggress-protocol-socks" }
 eggress-protocol-shadowsocks = { path = "crates/eggress-protocol-shadowsocks" }
 eggress-protocol-trojan = { path = "crates/eggress-protocol-trojan" }
+eggress-transport-tls = { path = "crates/eggress-transport-tls" }
 eggress-testkit = { path = "crates/eggress-testkit" }
 eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server" }

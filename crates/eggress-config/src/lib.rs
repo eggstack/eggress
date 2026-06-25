@@ -1774,4 +1774,127 @@ upstream_group = "main"
             result.ok()
         );
     }
+
+    #[test]
+    fn listener_tls_config_accepted() {
+        // Generate self-signed cert for test
+        let cert_params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let cert_der = cert_params.self_signed(&key_pair).unwrap();
+        let cert_pem = cert_der.pem();
+        let key_pem = key_pair.serialize_pem();
+
+        let cert_file = NamedTempFile::new().unwrap();
+        let key_file = NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), &cert_pem).unwrap();
+        std::fs::write(key_file.path(), &key_pem).unwrap();
+
+        let config = format!(
+            r#"
+version = 1
+
+[[listeners]]
+name = "https-in"
+bind = "127.0.0.1:8443"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "{}"
+key = "{}"
+"#,
+            cert_file.path().display(),
+            key_file.path().display()
+        );
+        let f = write_config(&config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "TLS listener config should be accepted: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        assert!(rt.listeners[0].tls.is_some());
+    }
+
+    #[test]
+    fn listener_tls_missing_cert_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "https-in"
+bind = "127.0.0.1:8443"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "/nonexistent/cert.pem"
+key = "/nonexistent/key.pem"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "Missing cert file should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn listener_tls_invalid_pem_rejected() {
+        let cert_file = NamedTempFile::new().unwrap();
+        let key_file = NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), "not-a-valid-pem-certificate").unwrap();
+        std::fs::write(key_file.path(), "not-a-valid-pem-key").unwrap();
+
+        let config = format!(
+            r#"
+version = 1
+
+[[listeners]]
+name = "https-in"
+bind = "127.0.0.1:8443"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "{}"
+key = "{}"
+"#,
+            cert_file.path().display(),
+            key_file.path().display()
+        );
+        let f = write_config(&config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "Invalid PEM should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn tls_uri_plus_suffix_parses() {
+        let config = r#"
+version = 1
+
+[[upstreams]]
+id = "tls-socks"
+uri = "socks5+tls://proxy.example:1080"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "TLS URI +tls suffix should be accepted: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let hop = &rt.upstreams[0].chain.hops[0];
+        assert!(hop.tls);
+        assert_eq!(hop.protocols, vec![eggress_uri::ProtocolSpec::Socks5]);
+        assert_eq!(hop.endpoint.host, "proxy.example");
+    }
 }

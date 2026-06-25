@@ -10,6 +10,7 @@ eggress-core.workspace = true
 eggress-uri.workspace = true
 eggress-routing.workspace = true
 eggress-admin.workspace = true
+eggress-transport-tls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 toml.workspace = true
 thiserror.workspace = true
@@ -18,6 +19,7 @@ ipnet.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+rcgen = "0.13"
 
 [lints]
 workspace = true

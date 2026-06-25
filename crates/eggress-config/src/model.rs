@@ -88,6 +88,17 @@ pub struct ListenerConfig {
     pub udp_enabled: Option<bool>,
     #[serde(default)]
     pub udp: Option<ListenerUdpConfig>,
+    #[serde(default)]
+    pub tls: Option<ListenerTlsConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListenerTlsConfig {
+    pub cert: String,
+    pub key: String,
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

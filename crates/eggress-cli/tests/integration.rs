@@ -553,6 +553,8 @@ async fn test_http_to_socks5_chain() {
                         credentials: None,
                         rule: None,
                         local_bind: None,
+                        tls: false,
+                        server_name: None,
                     }];
                     if let Ok(server_stream) = executor.execute(&chain, &request.target).await {
                         let _ = relay(client_stream, server_stream).await;
@@ -687,6 +689,8 @@ async fn test_socks5_to_http_chain() {
                             credentials: None,
                             rule: None,
                             local_bind: None,
+                            tls: false,
+                            server_name: None,
                         }];
                         if let Ok(server_stream) = executor.execute(&chain, &target).await {
                             let _ = relay(client_stream, server_stream).await;

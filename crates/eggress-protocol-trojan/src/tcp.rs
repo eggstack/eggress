@@ -19,21 +19,28 @@ use eggress_core::{BoxStream, TargetAddr, TargetHost};
 /// * `target` - The target address to connect to
 /// * `password` - The Trojan password (will be SHA224-hashed for auth)
 /// * `server_name` - The TLS server name for SNI and certificate verification
+/// * `tls_config` - Optional shared TLS client config. If `None`, builds one with system roots.
 pub async fn trojan_connect(
     stream: BoxStream,
     target: &TargetAddr,
     password: &str,
     server_name: &str,
+    tls_config: Option<Arc<rustls::ClientConfig>>,
 ) -> Result<BoxStream, TrojanError> {
-    // Build TLS config with webpki root certificates
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = match tls_config {
+        Some(c) => c,
+        None => {
+            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+            let builder = builder
+                .with_system_roots()
+                .map_err(|e| TrojanError::Tls(format!("failed to load system roots: {e}")))?;
+            builder
+                .build()
+                .map_err(|e| TrojanError::Tls(format!("failed to build TLS config: {e}")))?
+        }
+    };
 
-    let config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-
-    let connector = TlsConnector::from(Arc::new(config));
+    let connector = TlsConnector::from(config);
 
     // Perform TLS handshake
     let domain = ServerName::try_from(server_name.to_string())
@@ -167,6 +174,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_trojan_connect_through_synthetic_tls_server() {
+        eggress_transport_tls::install_default_crypto_provider();
         // Generate a self-signed certificate for the test server
         let subject_alt_names = vec!["localhost".to_string()];
         let cert_params = rcgen::CertificateParams::new(subject_alt_names).expect("valid params");
@@ -270,6 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_trojan_connect_wrong_password_rejected() {
+        eggress_transport_tls::install_default_crypto_provider();
         // Generate test certificate
         let subject_alt_names = vec!["localhost".to_string()];
         let cert_params = rcgen::CertificateParams::new(subject_alt_names).expect("valid params");
