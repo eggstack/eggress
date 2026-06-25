@@ -30,6 +30,12 @@ cargo test -p eggress-config udp
 cargo test -p eggress-udp socks5_upstream
 cargo test -p eggress-runtime udp_upstream
 
+# Run Shadowsocks tests
+cargo test -p eggress-protocol-shadowsocks
+
+# Run Trojan tests
+cargo test -p eggress-protocol-trojan
+
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
@@ -54,6 +60,8 @@ eggress/
 │   ├── eggress-admin/     # Admin HTTP server, PAC, static content, snapshot provider trait
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
+│   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD TCP/UDP
+│   ├── eggress-protocol-trojan/ # Trojan TLS-based proxy
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   └── eggress-testkit/   # Test utilities
 ├── plans/                  # Historical planning documents (reference only)
@@ -65,7 +73,13 @@ eggress/
     ├── PHASE_2_COMPLETION.md
     ├── PHASE_3_COMPLETION.md
     ├── PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md
-    └── URI_GRAMMAR.md
+    ├── PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md
+    ├── URI_GRAMMAR.md
+    └── protocols/
+        ├── HTTP_CONNECT.md
+        ├── SOCKS4.md
+        ├── SHADOWSOCKS.md
+        └── TROJAN.md
 ```
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,

@@ -1,6 +1,9 @@
+use eggress_core::classify_upstream_chain;
+use eggress_core::CapabilityResult;
 use eggress_uri::ProtocolSpec;
 use eggress_uri::ProxyChainSpec;
 
+#[derive(Debug)]
 pub enum UdpRelayCapability {
     SupportedSocks5,
     UnsupportedProtocol { protocol: String },
@@ -28,6 +31,31 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
             }
         }
         _ => UdpRelayCapability::UnsupportedMultiHop,
+    }
+}
+
+pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
+    let caps = classify_upstream_chain(chain);
+    match caps.udp_associate {
+        CapabilityResult::Supported => UdpRelayCapability::SupportedSocks5,
+        CapabilityResult::UnsupportedProtocol { protocol } => {
+            UdpRelayCapability::UnsupportedProtocol { protocol }
+        }
+        CapabilityResult::UnsupportedChain { reason } => {
+            if reason == "multi-hop" {
+                UdpRelayCapability::UnsupportedMultiHop
+            } else if reason == "multi-protocol" && chain.hops.len() == 1 {
+                UdpRelayCapability::UnsupportedProtocol {
+                    protocol: format!("{:?}", chain.hops[0].protocols),
+                }
+            } else if reason == "direct" {
+                UdpRelayCapability::UnsupportedProtocol {
+                    protocol: "direct".to_string(),
+                }
+            } else {
+                UdpRelayCapability::UnsupportedProtocol { protocol: reason }
+            }
+        }
     }
 }
 
@@ -140,5 +168,64 @@ mod tests {
             UdpRelayCapability::UnsupportedProtocol { ref protocol }
             if protocol == "direct"
         ));
+    }
+
+    #[test]
+    fn from_chain_matches_original_socks5() {
+        let c = chain(vec![hop(vec![ProtocolSpec::Socks5])]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_socks5_with_creds() {
+        let c = chain(vec![hop_with_creds(vec![ProtocolSpec::Socks5])]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_http() {
+        let c = chain(vec![hop(vec![ProtocolSpec::Http])]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_socks4() {
+        let c = chain(vec![hop(vec![ProtocolSpec::Socks4])]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_multi_protocol() {
+        let c = chain(vec![hop(vec![ProtocolSpec::Http, ProtocolSpec::Socks5])]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_multi_hop() {
+        let c = chain(vec![
+            hop(vec![ProtocolSpec::Socks5]),
+            hop(vec![ProtocolSpec::Http]),
+        ]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_empty() {
+        let c = chain(vec![]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
     }
 }

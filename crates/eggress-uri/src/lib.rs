@@ -33,6 +33,8 @@ pub enum ProtocolSpec {
     Http,
     Socks4,
     Socks5,
+    Shadowsocks,
+    Trojan,
 }
 
 /// Endpoint address specification.
@@ -94,6 +96,8 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::Http => "http",
                         ProtocolSpec::Socks4 => "socks4",
                         ProtocolSpec::Socks5 => "socks5",
+                        ProtocolSpec::Shadowsocks => "shadowsocks",
+                        ProtocolSpec::Trojan => "trojan",
                     })
                     .collect::<Vec<_>>()
                     .join("+");
@@ -296,6 +300,8 @@ fn parse_protocols(scheme: &str) -> Result<Vec<ProtocolSpec>, UriParseError> {
             "http" => Ok(ProtocolSpec::Http),
             "socks4" => Ok(ProtocolSpec::Socks4),
             "socks5" => Ok(ProtocolSpec::Socks5),
+            "shadowsocks" | "ss" => Ok(ProtocolSpec::Shadowsocks),
+            "trojan" => Ok(ProtocolSpec::Trojan),
             _ => Err(UriParseError::UnsupportedProtocol(p.to_string())),
         })
         .collect()
@@ -681,6 +687,37 @@ mod tests {
         let result = parse_proxy_chain("http://[::1:8080");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_shadowsocks_scheme() {
+        let result =
+            parse_proxy_chain("shadowsocks://aes-256-gcm:secret@proxy.example:8388").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Shadowsocks]);
+        assert_eq!(result.hops[0].endpoint.host, "proxy.example");
+        assert_eq!(result.hops[0].endpoint.port, 8388);
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "aes-256-gcm");
+        assert_eq!(creds.password, "secret");
+    }
+
+    #[test]
+    fn test_shadowsocks_ss_scheme() {
+        let result = parse_proxy_chain("ss://aes-128-gcm:pass@host:1080").unwrap();
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Shadowsocks]);
+    }
+
+    #[test]
+    fn test_shadowsocks_roundtrip() {
+        let original = "shadowsocks://aes-256-gcm:secret@proxy.example:8388";
+        let spec = parse_proxy_chain(original).unwrap();
+        assert_eq!(spec.hops.len(), 1);
+        assert_eq!(spec.hops[0].protocols, vec![ProtocolSpec::Shadowsocks]);
+        let redacted = RedactedUri::new(&spec).to_string();
+        assert!(redacted.starts_with("shadowsocks://"));
+        assert!(redacted.contains("****:****@"));
+        assert!(redacted.contains("proxy.example:8388"));
+    }
 }
 
 #[cfg(test)]
@@ -693,6 +730,7 @@ mod proptest_tests {
             Just(ProtocolSpec::Http),
             Just(ProtocolSpec::Socks4),
             Just(ProtocolSpec::Socks5),
+            Just(ProtocolSpec::Shadowsocks),
         ]
     }
 

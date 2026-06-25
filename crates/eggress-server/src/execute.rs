@@ -742,6 +742,8 @@ fn build_chain_executor() -> ChainExecutor {
         Box::new(HttpHopHandler),
         Box::new(Socks5HopHandler),
         Box::new(Socks4HopHandler),
+        Box::new(ShadowsocksHopHandler),
+        Box::new(TrojanHopHandler),
     ];
     ChainExecutor::new(handlers)
 }
@@ -761,7 +763,7 @@ impl HopHandler for HttpHopHandler {
     ) -> HandshakeFuture<'a> {
         let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
-            eggress_protocol_http::http_connect(stream, target, auth)
+            eggress_protocol_http::http_connect(stream, target, auth, &Default::default())
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })
@@ -807,6 +809,72 @@ impl HopHandler for Socks4HopHandler {
         let user_id = credentials.map(|c| c.username.as_str());
         Box::pin(async move {
             eggress_protocol_socks::socks4_connect(stream, target, user_id)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+}
+
+struct ShadowsocksHopHandler;
+
+impl HopHandler for ShadowsocksHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Shadowsocks
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        target: &'a TargetAddr,
+        credentials: Option<&'a eggress_uri::CredentialSpec>,
+    ) -> HandshakeFuture<'a> {
+        Box::pin(async move {
+            let creds = credentials.ok_or_else(|| {
+                Box::new(eggress_protocol_shadowsocks::ShadowsocksError::Other(
+                    "shadowsocks requires credentials (method:password)".to_string(),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
+            let method = eggress_protocol_shadowsocks::CipherMethod::parse_method(&creds.username)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+            eggress_protocol_shadowsocks::shadowsocks_connect(
+                stream,
+                target,
+                method,
+                &creds.password,
+            )
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+}
+
+struct TrojanHopHandler;
+
+impl HopHandler for TrojanHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Trojan
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        target: &'a TargetAddr,
+        credentials: Option<&'a eggress_uri::CredentialSpec>,
+    ) -> HandshakeFuture<'a> {
+        Box::pin(async move {
+            let creds = credentials.ok_or_else(|| {
+                Box::new(eggress_protocol_trojan::TrojanError::Protocol(
+                    "trojan requires credentials (password as username, server_name as password)"
+                        .to_string(),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
+            let server_name = &creds.password;
+            let password = &creds.username;
+
+            eggress_protocol_trojan::trojan_connect(stream, target, password, server_name)
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })

@@ -8,7 +8,9 @@ pub mod detect;
 pub mod error;
 pub mod forward;
 
-pub use connect::{handle_connect, http_connect, ConnectRequest};
+pub use connect::{
+    handle_connect, http_connect, validate_credentials, ConnectRequest, HttpConnectLimits,
+};
 pub use detect::HttpDetector;
 pub use error::HttpError;
 pub use forward::{
@@ -83,7 +85,9 @@ mod tests {
             host: TargetHost::Ip(addr.ip()),
             port: addr.port(),
         };
-        let mut conn = connect::http_connect(boxed, &target, None).await.unwrap();
+        let mut conn = connect::http_connect(boxed, &target, None, &Default::default())
+            .await
+            .unwrap();
 
         // Verify stream works after CONNECT
         conn.write_all(b"hello connect").await.unwrap();
@@ -130,9 +134,10 @@ mod tests {
             host: TargetHost::Ip(addr.ip()),
             port: addr.port(),
         };
-        let mut conn = connect::http_connect(boxed, &target, Some(("user", "pass")))
-            .await
-            .unwrap();
+        let mut conn =
+            connect::http_connect(boxed, &target, Some(("user", "pass")), &Default::default())
+                .await
+                .unwrap();
 
         conn.write_all(b"auth test").await.unwrap();
         conn.shutdown().await.unwrap();
@@ -163,7 +168,7 @@ mod tests {
             host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
             port: 80,
         };
-        let result = connect::http_connect(boxed, &target, None).await;
+        let result = connect::http_connect(boxed, &target, None, &Default::default()).await;
         assert!(result.is_err());
         match result {
             Err(HttpError::AuthRequired) => {}
@@ -210,7 +215,9 @@ mod tests {
             host: TargetHost::Domain("example.com".to_string()),
             port: 443,
         };
-        let mut conn = connect::http_connect(boxed, &target, None).await.unwrap();
+        let mut conn = connect::http_connect(boxed, &target, None, &Default::default())
+            .await
+            .unwrap();
 
         conn.write_all(b"domain test").await.unwrap();
         conn.shutdown().await.unwrap();
@@ -257,7 +264,9 @@ mod tests {
             host: TargetHost::Ip("::1".parse().unwrap()),
             port: addr.port(),
         };
-        let mut conn = connect::http_connect(boxed, &target, None).await.unwrap();
+        let mut conn = connect::http_connect(boxed, &target, None, &Default::default())
+            .await
+            .unwrap();
 
         conn.write_all(b"ipv6 test").await.unwrap();
         conn.shutdown().await.unwrap();

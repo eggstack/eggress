@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 5: TLS and secure transports (planned)
+Phase 6: TLS and secure transports (planned)
 
 ## Completed Milestones
 
@@ -68,12 +68,24 @@ Phase 5: TLS and secure transports (planned)
 - [x] 4.7: Synthetic test server (Socks5UdpTestServer)
 - [x] 4.8: Integration tests (socks5_upstream, udp_upstream)
 
+### Phase 5: Upstream protocol parity — complete
+
+- [x] 5.1: Upstream capability matrix (classify_upstream_chain)
+- [x] 5.2: HTTP CONNECT upstream polish (HttpConnectLimits, credential validation, synthetic server tests)
+- [x] 5.3: SOCKS4/SOCKS4a upstream polish (synthetic server tests, all status codes)
+- [x] 5.4: Shadowsocks TCP foundation (AEAD methods, key derivation, address encoding, tcp connect)
+- [x] 5.5: Shadowsocks UDP foundation (packet encode/decode, one-hop upstream)
+- [x] 5.6: Trojan TCP foundation (SHA224 hash, wire format, rustls TLS)
+- [x] 5.7: URI/config integration (ProtocolSpec::Shadowsocks, ProtocolSpec::Trojan)
+- [x] 5.8: Chain executor integration (ShadowsocksHopHandler, TrojanHopHandler)
+- [x] 5.9: Protocol documentation (HTTP_CONNECT.md, SOCKS4.md, SHADOWSOCKS.md, TROJAN.md)
+
 ## Remaining Work
 
-None — Phases 1–4 are complete.
+None — Phases 1–5 are complete.
 
 ## Next Phase
 
-Phase 5: TLS and secure transports (rustls wrapping, HTTPS proxy, certificate policy)
+Phase 6: TLS and secure transports (HTTPS proxy, certificate policy, TLS-wrapped protocols)
 
 See the main roadmap for detailed descriptions of each phase.

@@ -136,6 +136,22 @@ SOCKS4/4a and SOCKS5 protocol implementations:
 - SOCKS5 UDP ASSOCIATE command and reply
 - SOCKS5 UDP datagram codec (encode/decode with IPv4, IPv6, and domain targets)
 
+### eggress-protocol-shadowsocks
+Shadowsocks protocol implementation:
+- AEAD cipher methods: AES-128-GCM, AES-256-GCM, ChaCha20-IETF-Poly1305
+- Key derivation via HKDF-SHA256
+- Shadowsocks address encoding/decoding (IPv4, IPv6, domain)
+- TCP CONNECT with encrypted address header
+- UDP packet encode/decode with random nonce
+- Synthetic server tests for all methods
+
+### eggress-protocol-trojan
+Trojan protocol implementation:
+- SHA224 password hash authentication
+- Trojan wire format encoding (hash + CONNECT + address + port)
+- TLS transport via rustls with webpki root certificates
+- Unit tests for hash and wire format
+
 ### eggress-udp
 UDP association management and direct forwarding:
 - `UdpAssociation` — association state machine with ownership by TCP control connection

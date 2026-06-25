@@ -13,6 +13,8 @@ members = [
     "crates/eggress-routing",
     "crates/eggress-protocol-http",
     "crates/eggress-protocol-socks",
+    "crates/eggress-protocol-shadowsocks",
+    "crates/eggress-protocol-trojan",
     "crates/eggress-testkit",
 ]
 
@@ -62,6 +64,8 @@ eggress-uri = { path = "crates/eggress-uri" }
 eggress-routing = { path = "crates/eggress-routing" }
 eggress-protocol-http = { path = "crates/eggress-protocol-http" }
 eggress-protocol-socks = { path = "crates/eggress-protocol-socks" }
+eggress-protocol-shadowsocks = { path = "crates/eggress-protocol-shadowsocks" }
+eggress-protocol-trojan = { path = "crates/eggress-protocol-trojan" }
 eggress-testkit = { path = "crates/eggress-testkit" }
 eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server" }

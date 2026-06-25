@@ -63,6 +63,9 @@ pub enum HttpError {
 
     #[error("chunked transfer encoding must be the final coding")]
     ChunkedNotFinal,
+
+    #[error("invalid credentials: control characters not allowed")]
+    InvalidCredentials,
 }
 
 impl HttpError {
@@ -82,6 +85,7 @@ impl HttpError {
             HttpError::TransferEncodingWithContentLength => 400,
             HttpError::UnsupportedTransferEncoding(_) => 400,
             HttpError::ChunkedNotFinal => 400,
+            HttpError::InvalidCredentials => 400,
             _ => 500,
         }
     }

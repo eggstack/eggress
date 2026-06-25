@@ -4,6 +4,11 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
+pub use capability::{
+    classify_upstream_chain, CapabilityResult, TransportCapability, UpstreamCapabilities,
+};
+
+pub mod capability;
 pub mod chain;
 pub mod connector;
 pub mod detect;
@@ -18,6 +23,8 @@ pub enum ProtocolId {
     Http,
     Socks4,
     Socks5,
+    Shadowsocks,
+    Trojan,
 }
 
 impl fmt::Display for ProtocolId {
@@ -26,6 +33,8 @@ impl fmt::Display for ProtocolId {
             ProtocolId::Http => write!(f, "http"),
             ProtocolId::Socks4 => write!(f, "socks4"),
             ProtocolId::Socks5 => write!(f, "socks5"),
+            ProtocolId::Shadowsocks => write!(f, "shadowsocks"),
+            ProtocolId::Trojan => write!(f, "trojan"),
         }
     }
 }

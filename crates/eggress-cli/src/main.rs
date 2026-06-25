@@ -428,7 +428,7 @@ fn build_test_chain_executor() -> ChainExecutor {
         > {
             let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
             Box::pin(async move {
-                eggress_protocol_http::http_connect(stream, target, auth)
+                eggress_protocol_http::http_connect(stream, target, auth, &Default::default())
                     .await
                     .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
             })
@@ -703,6 +703,8 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
             eggress_uri::ProtocolSpec::Http => eggress_core::ProtocolId::Http,
             eggress_uri::ProtocolSpec::Socks4 => eggress_core::ProtocolId::Socks4,
             eggress_uri::ProtocolSpec::Socks5 => eggress_core::ProtocolId::Socks5,
+            eggress_uri::ProtocolSpec::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
+            eggress_uri::ProtocolSpec::Trojan => eggress_core::ProtocolId::Trojan,
         })
         .collect();
 

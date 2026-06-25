@@ -84,3 +84,167 @@ pub async fn socks4_connect(
         None => Err(Socks4Error::UnknownStatus(status)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::socks4::test_server::{TestServerHandle, TestServerMode};
+    use eggress_core::{TargetAddr, TargetHost};
+
+    fn ipv4_target(addr: SocketAddr) -> TargetAddr {
+        TargetAddr {
+            host: TargetHost::Ip(addr.ip()),
+            port: addr.port(),
+        }
+    }
+
+    fn domain_target(domain: &str, port: u16) -> TargetAddr {
+        TargetAddr {
+            host: TargetHost::Domain(domain.to_string()),
+            port,
+        }
+    }
+
+    #[tokio::test]
+    async fn ipv4_connect_success() {
+        let server = TestServerHandle::spawn(TestServerMode::Success).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let mut conn = socks4_connect(boxed, &target, None).await.unwrap();
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        conn.write_all(b"ping").await.unwrap();
+        conn.shutdown().await.unwrap();
+        let mut buf = [0u8; 4];
+        conn.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"ping");
+    }
+
+    #[tokio::test]
+    async fn domain_socks4a_success() {
+        let server = TestServerHandle::spawn(TestServerMode::DomainSuccess).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = domain_target("example.com", 80);
+
+        let mut conn = socks4_connect(boxed, &target, None).await.unwrap();
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        conn.write_all(b"hello").await.unwrap();
+        conn.shutdown().await.unwrap();
+        let mut buf = [0u8; 5];
+        conn.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"hello");
+    }
+
+    #[tokio::test]
+    async fn request_rejected() {
+        let server = TestServerHandle::spawn(TestServerMode::Rejected).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = socks4_connect(boxed, &target, None).await;
+        assert!(matches!(result, Err(Socks4Error::ConnectionFailed)));
+    }
+
+    #[tokio::test]
+    async fn identd_unavailable() {
+        let server = TestServerHandle::spawn(TestServerMode::NoIdent).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = socks4_connect(boxed, &target, None).await;
+        assert!(matches!(result, Err(Socks4Error::FailedNoIdent)));
+    }
+
+    #[tokio::test]
+    async fn different_user() {
+        let server = TestServerHandle::spawn(TestServerMode::DifferentUser).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = socks4_connect(boxed, &target, Some("alice")).await;
+        assert!(matches!(result, Err(Socks4Error::FailedDifferentUser)));
+    }
+
+    #[tokio::test]
+    async fn malformed_response() {
+        let server = TestServerHandle::spawn(TestServerMode::MalformedResponse).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = socks4_connect(boxed, &target, None).await;
+        assert!(matches!(result, Err(Socks4Error::InvalidVersion(_))));
+    }
+
+    #[tokio::test]
+    async fn unknown_status() {
+        let server = TestServerHandle::spawn(TestServerMode::UnknownStatus).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = socks4_connect(boxed, &target, None).await;
+        assert!(matches!(result, Err(Socks4Error::UnknownStatus(99))));
+    }
+
+    #[tokio::test]
+    async fn slow_response_timeout() {
+        let server = TestServerHandle::spawn(TestServerMode::SlowResponse).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            socks4_connect(boxed, &target, None),
+        )
+        .await;
+
+        assert!(result.is_err(), "expected timeout");
+    }
+
+    #[tokio::test]
+    async fn user_id_length_limit() {
+        let server = TestServerHandle::spawn(TestServerMode::Success).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let long_id = "A".repeat(256);
+
+        let result = socks4_connect(boxed, &ipv4_target(server.addr), Some(&long_id)).await;
+        assert!(matches!(result, Err(Socks4Error::UserIdTooLong)));
+    }
+
+    #[tokio::test]
+    async fn user_id_with_connect() {
+        let server = TestServerHandle::spawn(TestServerMode::Success).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let mut conn = socks4_connect(boxed, &target, Some("testuser"))
+            .await
+            .unwrap();
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        conn.write_all(b"uid").await.unwrap();
+        conn.shutdown().await.unwrap();
+        let mut buf = [0u8; 3];
+        conn.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"uid");
+    }
+
+    #[tokio::test]
+    async fn no_reply_causes_eof() {
+        let server = TestServerHandle::spawn(TestServerMode::NoReply).await;
+        let stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = ipv4_target(server.addr);
+
+        let result = socks4_connect(boxed, &target, None).await;
+        assert!(matches!(result, Err(Socks4Error::Io(_))));
+    }
+}

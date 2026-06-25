@@ -44,7 +44,7 @@ impl HopHandler for HttpHopHandler {
     ) -> HandshakeFuture<'a> {
         let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
-            http_connect(stream, target, auth)
+            http_connect(stream, target, auth, &Default::default())
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })
@@ -159,7 +159,9 @@ async fn test_http_connect_to_echo() {
         host: TargetHost::Ip(echo_addr.ip()),
         port: echo_addr.port(),
     };
-    let mut conn = http_connect(boxed, &target, None).await.unwrap();
+    let mut conn = http_connect(boxed, &target, None, &Default::default())
+        .await
+        .unwrap();
 
     conn.write_all(b"hello proxy").await.unwrap();
     conn.shutdown().await.unwrap();
@@ -222,7 +224,9 @@ async fn test_http_connect_domain_target() {
         host: TargetHost::Ip(echo_addr.ip()),
         port: echo_addr.port(),
     };
-    let mut conn = http_connect(boxed, &target, None).await.unwrap();
+    let mut conn = http_connect(boxed, &target, None, &Default::default())
+        .await
+        .unwrap();
 
     conn.write_all(b"domain test").await.unwrap();
     conn.shutdown().await.unwrap();
@@ -565,7 +569,9 @@ async fn test_http_to_socks5_chain() {
         host: TargetHost::Ip(echo_addr.ip()),
         port: echo_addr.port(),
     };
-    let mut conn = http_connect(boxed, &target, None).await.unwrap();
+    let mut conn = http_connect(boxed, &target, None, &Default::default())
+        .await
+        .unwrap();
 
     conn.write_all(b"chain test").await.unwrap();
     conn.shutdown().await.unwrap();

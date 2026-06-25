@@ -41,7 +41,7 @@ impl HopHandler for HttpHopHandler {
     ) -> HandshakeFuture<'a> {
         let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
-            http_connect(stream, target, auth)
+            http_connect(stream, target, auth, &Default::default())
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })

@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
+> Status: Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -124,9 +124,21 @@ Legend:
 - [x] SOCKS5 → HTTP
 - [x] HTTP → HTTP
 - [x] SOCKS5 → SOCKS5
+- [x] Shadowsocks → destination
 - [x] Three-or-more-hop TCP chains
 - [x] Per-hop timeout and diagnostics
 - [x] Chain capability validation
+
+### Upstream protocol capability matrix
+
+| Upstream protocol | TCP CONNECT | UDP relay | Phase |
+|---|---|---|---|
+| Direct | yes | yes | 3 |
+| HTTP CONNECT | yes | no | 5 |
+| SOCKS4/SOCKS4a | yes | no | 5 |
+| SOCKS5 | yes | one-hop yes | 4 |
+| Shadowsocks | TCP yes | UDP one-hop yes | 5 |
+| Trojan | TCP yes (rustls) | no | 5 |
 
 ### UDP
 
@@ -154,7 +166,7 @@ Legend:
 
 ### TLS
 
-- [ ] rustls client transport
+- [x] rustls client transport (Trojan)
 - [ ] rustls server transport
 - [ ] System root certificates
 - [ ] Custom CA roots
@@ -170,15 +182,15 @@ Legend:
 
 ### Shadowsocks
 
-- [ ] Shadowsocks TCP client
+- [x] Shadowsocks TCP client
 - [ ] Shadowsocks TCP server
-- [ ] Shadowsocks UDP client
+- [x] Shadowsocks UDP client
 - [ ] Shadowsocks UDP server
-- [ ] AEAD cipher support
-- [ ] Modern default cipher suite
+- [x] AEAD cipher support
+- [x] Modern default cipher suite
 - [ ] Legacy stream cipher compatibility
 - [ ] OTA compatibility
-- [ ] Password/key derivation compatibility
+- [x] Password/key derivation compatibility
 - [ ] Interoperability with `shadowsocks-rust`
 - [ ] Interoperability with Python `pproxy`
 
@@ -197,10 +209,10 @@ Legend:
 
 ### Trojan
 
-- [ ] Trojan client
+- [x] Trojan client
 - [ ] Trojan server
-- [ ] Trojan authentication
-- [ ] Trojan TCP target framing
+- [x] Trojan authentication
+- [x] Trojan TCP target framing
 - [ ] Trojan fallback routing
 - [ ] Trojan interoperability tests
 
@@ -393,6 +405,11 @@ Native dependencies and platform FFI are reserved for operating-system facilitie
 - [Phase 2 completion](docs/PHASE_2_COMPLETION.md)
 - [Phase 3 completion](docs/PHASE_3_COMPLETION.md)
 - [Phase 4 UDP upstream relay](docs/PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md)
+- [Phase 5 upstream protocol parity](docs/PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md)
+- [Protocol: HTTP CONNECT](docs/protocols/HTTP_CONNECT.md)
+- [Protocol: SOCKS4](docs/protocols/SOCKS4.md)
+- [Protocol: Shadowsocks](docs/protocols/SHADOWSOCKS.md)
+- [Protocol: Trojan](docs/protocols/TROJAN.md)
 
 ## Status discipline
 
