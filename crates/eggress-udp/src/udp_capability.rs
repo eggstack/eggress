@@ -72,6 +72,12 @@ pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
             if chain.hops.len() == 1 {
                 if let Some((method, password)) = extract_shadowsocks_creds(&chain.hops[0]) {
                     UdpRelayCapability::SupportedShadowsocks { method, password }
+                } else if chain.hops[0].protocols.len() == 1
+                    && chain.hops[0].protocols[0] == ProtocolSpec::Shadowsocks
+                {
+                    UdpRelayCapability::UnsupportedProtocol {
+                        protocol: "Shadowsocks (missing credentials)".to_string(),
+                    }
                 } else {
                     UdpRelayCapability::SupportedSocks5
                 }
@@ -265,6 +271,22 @@ mod tests {
     #[test]
     fn from_chain_matches_original_empty() {
         let c = chain(vec![]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_shadowsocks() {
+        let c = chain(vec![hop_with_creds(vec![ProtocolSpec::Shadowsocks])]);
+        let original = udp_capability(&c);
+        let new = udp_capability_from_chain(&c);
+        assert_eq!(format!("{:?}", original), format!("{:?}", new));
+    }
+
+    #[test]
+    fn from_chain_matches_original_shadowsocks_no_creds() {
+        let c = chain(vec![hop(vec![ProtocolSpec::Shadowsocks])]);
         let original = udp_capability(&c);
         let new = udp_capability_from_chain(&c);
         assert_eq!(format!("{:?}", original), format!("{:?}", new));

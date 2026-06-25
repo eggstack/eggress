@@ -515,29 +515,43 @@ Any stream protocol implemented to date can be layered over TLS where the URI gr
 
 ## Objective
 
-Add encrypted proxy protocols while preserving modern security defaults.
+Add encrypted proxy protocol foundations — upstream/client roles, AEAD
+ciphers, and basic TCP/UDP relay — while preserving modern security
+defaults.
 
-## Included
+## Included (upstream/client only)
 
 - Shadowsocks target framing;
-- Shadowsocks AEAD TCP;
-- Shadowsocks AEAD UDP;
-- client and server roles;
-- password/key derivation through established Rust crates;
-- modern cipher suite;
-- optional legacy stream cipher compatibility;
+- Shadowsocks AEAD TCP (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305);
+- Shadowsocks AEAD UDP (one-hop upstream relay);
+- password/key derivation through RustCrypto;
+- modern cipher suite only;
+- Trojan TCP client with rustls;
+- SHA224 password hash authentication;
+- upstream protocol capability classification;
+- metrics and admin integration for new protocols;
+- config validation for unsupported protocol/transport combos.
+
+## Deferred (moved to later phases)
+
+- Shadowsocks TCP/UDP server (inbound listener role);
+- legacy stream cipher compatibility;
 - OTA compatibility wrappers;
-- Trojan client and server;
+- Trojan server role;
 - Trojan fallback routing;
-- bidirectional differential tests.
+- interoperability tests with `shadowsocks-rust` and `pproxy`;
+- ShadowsocksR.
 
 ## Dependency strategy
 
-Prefer reusable protocol crates from `shadowsocks-rust` and RustCrypto. Do not reimplement block ciphers, AEADs, hashes, or KDFs.
+Pure Rust crypto via RustCrypto (aes-gcm, chacha20poly1305, hkdf, sha2).
+`rustls` for TLS. No OpenSSL or native-tls.
 
 ## Exit criteria
 
-eggress interoperates with Python `pproxy` and `shadowsocks-rust` for supported modes, and with an independent Trojan implementation.
+Upstream protocol parity for all five supported protocols (HTTP, SOCKS4,
+SOCKS5, Shadowsocks, Trojan) with capability classification, metrics,
+and protocol docs.
 
 ---
 

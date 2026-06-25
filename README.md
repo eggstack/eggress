@@ -160,9 +160,10 @@ Legend:
 - [x] SOCKS5 UDP ASSOCIATE server
 - [x] Direct UDP forwarding
 - [x] UDP through one-hop SOCKS5 upstream
+- [x] UDP through one-hop Shadowsocks upstream
+- [ ] UDP through Trojan upstream
 - [ ] UDP through multi-hop proxy chains
 - [ ] UDP through HTTP/MASQUE/CONNECT-UDP
-- [ ] UDP through Shadowsocks/Trojan
 
 ### TLS
 
