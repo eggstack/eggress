@@ -2,7 +2,10 @@
 targets = []
 
 [advisories]
-ignore = []
+ignore = [
+    # rustls-pemfile is unmaintained but dev-only; migrate when rustls-pki-types PemObject is stable
+    "RUSTSEC-2025-0134",
+]
 
 [licenses]
 allow = [
@@ -14,6 +17,7 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "Zlib",
+    "CDLA-Permissive-2.0",
 ]
 
 [licenses.private]

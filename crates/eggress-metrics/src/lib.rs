@@ -41,6 +41,25 @@ pub struct DecodeErrorLabels {
     pub kind: String,
 }
 
+#[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
+pub struct UpstreamOpenLabels {
+    pub protocol: String,
+    pub outcome: String,
+}
+
+#[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
+pub struct UpstreamFailureLabels {
+    pub protocol: String,
+    pub reason: String,
+}
+
+#[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
+pub struct UnsupportedTransportLabels {
+    pub protocol: String,
+    pub transport: String,
+    pub reason: String,
+}
+
 pub struct MetricsRegistry {
     registry: Registry,
     connections_active: Gauge,
@@ -72,6 +91,9 @@ pub struct MetricsRegistry {
     udp_upstream_bytes_up_total: Counter,
     udp_upstream_bytes_down_total: Counter,
     udp_upstream_failures_total: Counter,
+    upstream_open_total: Family<UpstreamOpenLabels, Counter>,
+    upstream_open_failures_total: Family<UpstreamFailureLabels, Counter>,
+    unsupported_transport_total: Family<UnsupportedTransportLabels, Counter>,
     bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
 }
 
@@ -301,6 +323,27 @@ impl MetricsRegistry {
             udp_upstream_failures_total.clone(),
         );
 
+        let upstream_open_total = Family::<UpstreamOpenLabels, Counter>::default();
+        registry.register(
+            "eggress_upstream_open_total",
+            "Total upstream connection attempts by protocol and outcome",
+            upstream_open_total.clone(),
+        );
+
+        let upstream_open_failures_total = Family::<UpstreamFailureLabels, Counter>::default();
+        registry.register(
+            "eggress_upstream_open_failures_total",
+            "Total upstream connection failures by protocol and reason",
+            upstream_open_failures_total.clone(),
+        );
+
+        let unsupported_transport_total = Family::<UnsupportedTransportLabels, Counter>::default();
+        registry.register(
+            "eggress_unsupported_transport_total",
+            "Total unsupported transport attempts by protocol and transport",
+            unsupported_transport_total.clone(),
+        );
+
         Self {
             registry,
             connections_active,
@@ -332,6 +375,9 @@ impl MetricsRegistry {
             udp_upstream_bytes_up_total,
             udp_upstream_bytes_down_total,
             udp_upstream_failures_total,
+            upstream_open_total,
+            upstream_open_failures_total,
+            unsupported_transport_total,
             bridged_udp_metrics: Mutex::new(None),
         }
     }
@@ -658,6 +704,34 @@ impl MetricsRegistry {
     pub fn udp_upstream_associations_active_gauge(&self) -> i64 {
         self.udp_upstream_associations_active.get()
     }
+
+    pub fn record_upstream_open(&self, protocol: &str, outcome: &str) {
+        self.upstream_open_total
+            .get_or_create(&UpstreamOpenLabels {
+                protocol: protocol.to_string(),
+                outcome: outcome.to_string(),
+            })
+            .inc();
+    }
+
+    pub fn record_upstream_failure(&self, protocol: &str, reason: &str) {
+        self.upstream_open_failures_total
+            .get_or_create(&UpstreamFailureLabels {
+                protocol: protocol.to_string(),
+                reason: reason.to_string(),
+            })
+            .inc();
+    }
+
+    pub fn record_unsupported_transport(&self, protocol: &str, transport: &str, reason: &str) {
+        self.unsupported_transport_total
+            .get_or_create(&UnsupportedTransportLabels {
+                protocol: protocol.to_string(),
+                transport: transport.to_string(),
+                reason: reason.to_string(),
+            })
+            .inc();
+    }
 }
 
 impl Default for MetricsRegistry {
@@ -701,6 +775,9 @@ mod tests {
         assert!(output.contains("eggress_udp_upstream_bytes_up_total"));
         assert!(output.contains("eggress_udp_upstream_bytes_down_total"));
         assert!(output.contains("eggress_udp_upstream_failures_total"));
+        assert!(output.contains("eggress_upstream_open_total"));
+        assert!(output.contains("eggress_upstream_open_failures_total"));
+        assert!(output.contains("eggress_unsupported_transport_total"));
     }
 
     #[test]
@@ -1275,5 +1352,86 @@ mod tests {
         let output = m.render_prometheus();
         assert!(!output.contains("127.0.0.1"), "no IP addresses in metrics");
         assert!(!output.contains("192.168"), "no private IPs in metrics");
+    }
+
+    #[test]
+    fn upstream_open_metric_records_by_protocol_and_outcome() {
+        let m = MetricsRegistry::new();
+        m.record_upstream_open("shadowsocks", "success");
+        m.record_upstream_open("shadowsocks", "success");
+        m.record_upstream_open("trojan", "success");
+        m.record_upstream_open("http", "failure");
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_upstream_open_total"));
+        assert!(output.contains("protocol=\"shadowsocks\""));
+        assert!(output.contains("protocol=\"trojan\""));
+        assert!(output.contains("protocol=\"http\""));
+        assert!(output.contains("outcome=\"success\""));
+        assert!(output.contains("outcome=\"failure\""));
+    }
+
+    #[test]
+    fn upstream_failure_metric_records_by_protocol_and_reason() {
+        let m = MetricsRegistry::new();
+        m.record_upstream_failure("shadowsocks", "dns_resolution");
+        m.record_upstream_failure("trojan", "tls_handshake");
+        m.record_upstream_failure("http", "connection_refused");
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_upstream_open_failures_total"));
+        assert!(output.contains("protocol=\"shadowsocks\""));
+        assert!(output.contains("protocol=\"trojan\""));
+        assert!(output.contains("protocol=\"http\""));
+        assert!(output.contains("reason=\"dns_resolution\""));
+        assert!(output.contains("reason=\"tls_handshake\""));
+        assert!(output.contains("reason=\"connection_refused\""));
+    }
+
+    #[test]
+    fn unsupported_transport_metric_records_by_protocol_transport_reason() {
+        let m = MetricsRegistry::new();
+        m.record_unsupported_transport("shadowsocks", "udp", "not_implemented");
+        m.record_unsupported_transport("trojan", "quic", "unsupported");
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_unsupported_transport_total"));
+        assert!(output.contains("protocol=\"shadowsocks\""));
+        assert!(output.contains("protocol=\"trojan\""));
+        assert!(output.contains("transport=\"udp\""));
+        assert!(output.contains("transport=\"quic\""));
+        assert!(output.contains("reason=\"not_implemented\""));
+        assert!(output.contains("reason=\"unsupported\""));
+    }
+
+    #[test]
+    fn upstream_open_counter_increments() {
+        let m = MetricsRegistry::new();
+        m.record_upstream_open("socks5", "success");
+        m.record_upstream_open("socks5", "success");
+        m.record_upstream_open("socks5", "failure");
+        let output = m.render_prometheus();
+        // Verify the metric exists with labels
+        assert!(output.contains("eggress_upstream_open_total"));
+        assert!(output.contains("protocol=\"socks5\""));
+    }
+
+    #[test]
+    fn new_metrics_parseable() {
+        let m = MetricsRegistry::new();
+        m.record_upstream_open("http", "ok");
+        m.record_upstream_failure("http", "timeout");
+        m.record_unsupported_transport("http", "quic", "no");
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            assert!(parts.len() >= 2, "bad prometheus line: {trimmed}");
+            let value = parts.last().unwrap();
+            assert!(
+                value.parse::<f64>().is_ok(),
+                "non-numeric value in line: {trimmed}"
+            );
+        }
     }
 }

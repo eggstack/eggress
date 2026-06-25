@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 eggress-core.workspace = true
 eggress-protocol-socks.workspace = true
+eggress-protocol-shadowsocks.workspace = true
 eggress-routing.workspace = true
 eggress-uri.workspace = true
 bytes.workspace = true
@@ -16,6 +17,7 @@ tokio.workspace = true
 tracing.workspace = true
 tokio-util.workspace = true
 ipnet.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 eggress-testkit.workspace = true

@@ -9,9 +9,9 @@ use eggress_core::TargetAddr;
 
 /// Encode a Shadowsocks UDP packet.
 ///
-/// Packet format: nonce (12 bytes) + encrypted(address + payload)
+/// Packet format: salt (16 bytes) + nonce (12 bytes) + encrypted(address + payload)
 ///
-/// Each packet is self-contained with a random nonce.
+/// The salt allows the receiver to derive the same subkey from the password.
 pub fn encode_udp_packet(
     method: CipherMethod,
     key: &[u8],
@@ -30,7 +30,7 @@ pub fn encode_udp_packet(
     plaintext.extend_from_slice(&address);
     plaintext.extend_from_slice(payload);
 
-    // Encrypt
+    // Encrypt with the pre-derived key
     let ciphertext = aead_encrypt(method, key, &nonce, &plaintext)?;
 
     // Build output: nonce + ciphertext

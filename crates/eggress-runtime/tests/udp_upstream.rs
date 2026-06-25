@@ -659,61 +659,12 @@ all = [
 
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
-    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
-
-    let state = sup.state().clone();
-    let token = sup.shutdown_token();
-    let jh = tokio::task::spawn_blocking(move || sup.run());
-
-    for _ in 0..100 {
-        if state.readiness.load(Ordering::Relaxed) {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
-
-    let listener_addr = {
-        let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
-    };
-
-    let mut stream = tokio::net::TcpStream::connect(listener_addr)
-        .await
-        .expect("connect");
-
-    let reply = socks5_udp_associate(&mut stream)
-        .await
-        .expect("udp associate");
-    assert_eq!(reply[1], 0x00, "udp associate should succeed");
-
-    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
-    let relay_addr = format!("127.0.0.1:{relay_port}");
-
-    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    client_socket.connect(&relay_addr).await.unwrap();
-
-    let pkt = ipv4_socks5_packet([127, 0, 0, 1], 12345, b"http-drop-test");
-    client_socket.send(&pkt).await.unwrap();
-
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    let mut recv_buf = [0u8; 65535];
-    let result = tokio::time::timeout(std::time::Duration::from_millis(200), async {
-        client_socket.recv(&mut recv_buf).await
-    })
-    .await;
+    // Config validation now rejects HTTP upstream + UDP listener at config time
+    let result = eggress_runtime::ServiceSupervisor::start(path);
     assert!(
         result.is_err(),
-        "HTTP upstream should not echo UDP — expect timeout"
+        "HTTP upstream with UDP listener should be rejected at config validation"
     );
-
-    let dropped = state.udp_metrics.dropped_packets.load(Ordering::Relaxed);
-    assert_eq!(dropped, 1, "should record exactly one dropped packet");
-
-    drop(stream);
-    token.cancel();
-    jh.await.ok();
 }
 
 #[tokio::test]
@@ -771,61 +722,12 @@ all = [
 
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
-    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
-
-    let state = sup.state().clone();
-    let token = sup.shutdown_token();
-    let jh = tokio::task::spawn_blocking(move || sup.run());
-
-    for _ in 0..100 {
-        if state.readiness.load(Ordering::Relaxed) {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
-    assert!(state.readiness.load(Ordering::Relaxed), "should be ready");
-
-    let listener_addr = {
-        let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
-    };
-
-    let mut stream = tokio::net::TcpStream::connect(listener_addr)
-        .await
-        .expect("connect");
-
-    let reply = socks5_udp_associate(&mut stream)
-        .await
-        .expect("udp associate");
-    assert_eq!(reply[1], 0x00, "udp associate should succeed");
-
-    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
-    let relay_addr = format!("127.0.0.1:{relay_port}");
-
-    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    client_socket.connect(&relay_addr).await.unwrap();
-
-    let pkt = ipv4_socks5_packet([127, 0, 0, 1], 12345, b"multi-hop-drop-test");
-    client_socket.send(&pkt).await.unwrap();
-
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    let mut recv_buf = [0u8; 65535];
-    let result = tokio::time::timeout(std::time::Duration::from_millis(200), async {
-        client_socket.recv(&mut recv_buf).await
-    })
-    .await;
+    // Config validation now rejects multi-hop upstream + UDP listener at config time
+    let result = eggress_runtime::ServiceSupervisor::start(path);
     assert!(
         result.is_err(),
-        "multi-hop upstream should not echo UDP — expect timeout"
+        "multi-hop upstream with UDP listener should be rejected at config validation"
     );
-
-    let dropped = state.udp_metrics.dropped_packets.load(Ordering::Relaxed);
-    assert_eq!(dropped, 1, "should record exactly one dropped packet");
-
-    drop(stream);
-    token.cancel();
-    jh.await.ok();
 }
 
 #[tokio::test]

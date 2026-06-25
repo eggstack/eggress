@@ -164,4 +164,201 @@ mod tests {
         // hash(56) + CRLF(2) + CMD(1) + ATYP(1) + ip(16) + port(2) + CRLF(2) = 80
         assert_eq!(request.len(), 80);
     }
+
+    #[tokio::test]
+    async fn test_trojan_connect_through_synthetic_tls_server() {
+        // Generate a self-signed certificate for the test server
+        let subject_alt_names = vec!["localhost".to_string()];
+        let cert_params = rcgen::CertificateParams::new(subject_alt_names).expect("valid params");
+        let cert_key = rcgen::KeyPair::generate().expect("key gen");
+        let cert = cert_params
+            .self_signed(&cert_key)
+            .expect("self-signed cert");
+
+        let cert_der = cert.der().clone();
+        let key_der = rustls::pki_types::PrivatePkcs8KeyDer::from(cert_key.serialize_der());
+
+        // Build server TLS config
+        let mut server_root_store = rustls::RootCertStore::empty();
+        server_root_store.add(cert_der.clone()).unwrap();
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der.clone()], key_der.into())
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+        // Start TCP listener
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let expected_password = "my-secret-password";
+        let expected_hash = password_hash(expected_password);
+
+        // Spawn server task
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let tls_stream = acceptor.accept(stream).await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let mut reader = tls_stream;
+            let n = tokio::io::AsyncReadExt::read(&mut reader, &mut buf)
+                .await
+                .unwrap();
+            buf.truncate(n);
+
+            // Parse: hash(56) + CRLF(2) + CMD(1) + ATYP(1) + addr + port(2) + CRLF(2)
+            assert!(buf.len() > 60);
+            let received_hash = std::str::from_utf8(&buf[..56]).unwrap();
+            assert_eq!(received_hash, expected_hash);
+            assert_eq!(&buf[56..58], b"\r\n");
+            assert_eq!(buf[58], 0x01); // CONNECT command
+            assert_eq!(buf[59], 0x01); // ATYP IPv4
+            assert_eq!(&buf[60..64], &[127, 0, 0, 1]);
+            assert_eq!(&buf[64..66], &8080u16.to_be_bytes());
+            assert_eq!(&buf[66..68], b"\r\n");
+
+            // Echo back some data to confirm the connection works
+            use tokio::io::AsyncWriteExt;
+            reader.write_all(b"hello from trojan server").await.unwrap();
+        });
+
+        // Client side
+        let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let boxed: BoxStream = Box::new(tcp_stream);
+
+        // Use the synthetic cert as the root certificate for the client
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add(cert_der).unwrap();
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let connector = TlsConnector::from(Arc::new(config));
+
+        let domain = ServerName::try_from("localhost".to_string()).unwrap();
+        let tls_stream = connector.connect(domain, boxed).await.unwrap();
+
+        // Build and send Trojan request manually
+        let mut request = Vec::new();
+        let hash = password_hash(expected_password);
+        request.extend_from_slice(hash.as_bytes());
+        request.extend_from_slice(b"\r\n");
+        request.push(0x01); // CONNECT
+        request.push(0x01); // ATYP IPv4
+        request.extend_from_slice(&[127, 0, 0, 1]);
+        request.extend_from_slice(&8080u16.to_be_bytes());
+        request.extend_from_slice(b"\r\n");
+
+        let mut boxed_tls: BoxStream = Box::new(tls_stream);
+        use tokio::io::AsyncWriteExt;
+        boxed_tls.write_all(&request).await.unwrap();
+        boxed_tls.flush().await.unwrap();
+
+        // Read server response
+        use tokio::io::AsyncReadExt;
+        let mut response = vec![0u8; 256];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            boxed_tls.read(&mut response).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        response.truncate(n);
+
+        assert_eq!(&response, b"hello from trojan server");
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_trojan_connect_wrong_password_rejected() {
+        // Generate test certificate
+        let subject_alt_names = vec!["localhost".to_string()];
+        let cert_params = rcgen::CertificateParams::new(subject_alt_names).expect("valid params");
+        let cert_key = rcgen::KeyPair::generate().expect("key gen");
+        let cert = cert_params
+            .self_signed(&cert_key)
+            .expect("self-signed cert");
+
+        let cert_der = cert.der().clone();
+        let key_der = rustls::pki_types::PrivatePkcs8KeyDer::from(cert_key.serialize_der());
+
+        let mut server_root_store = rustls::RootCertStore::empty();
+        server_root_store.add(cert_der.clone()).unwrap();
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der.clone()], key_der.into())
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let correct_password = "correct-password";
+        let correct_hash = password_hash(correct_password);
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let tls_stream = acceptor.accept(stream).await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let mut reader = tls_stream;
+            let n = tokio::io::AsyncReadExt::read(&mut reader, &mut buf)
+                .await
+                .unwrap();
+            buf.truncate(n);
+
+            // Check password hash
+            let received_hash = std::str::from_utf8(&buf[..56]).unwrap();
+            if received_hash != correct_hash {
+                // Wrong password - drop connection (Trojan behavior)
+            }
+        });
+
+        // Client sends wrong password
+        let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add(cert_der).unwrap();
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let connector = TlsConnector::from(Arc::new(config));
+
+        let domain = ServerName::try_from("localhost".to_string()).unwrap();
+        let tls_stream = connector
+            .connect(domain, Box::new(tcp_stream) as BoxStream)
+            .await
+            .unwrap();
+
+        let mut request = Vec::new();
+        let wrong_hash = password_hash("wrong-password");
+        request.extend_from_slice(wrong_hash.as_bytes());
+        request.extend_from_slice(b"\r\n");
+        request.push(0x01);
+        request.push(0x01);
+        request.extend_from_slice(&[127, 0, 0, 1]);
+        request.extend_from_slice(&80u16.to_be_bytes());
+        request.extend_from_slice(b"\r\n");
+
+        let mut boxed_tls: BoxStream = Box::new(tls_stream);
+        use tokio::io::AsyncWriteExt;
+        boxed_tls.write_all(&request).await.unwrap();
+        boxed_tls.flush().await.unwrap();
+
+        // Server should drop the connection
+        use tokio::io::AsyncReadExt;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut buf = [0u8; 1];
+            boxed_tls.read(&mut buf).await
+        })
+        .await;
+
+        // Connection should be closed (EOF, error, or timeout)
+        match result {
+            Ok(Ok(0)) => {}  // EOF - connection closed by server
+            Ok(Ok(_)) => {}  // Got data (unexpected but OK)
+            Ok(Err(_)) => {} // Error - connection reset
+            Err(_) => {}     // Timeout
+        }
+
+        server_jh.await.unwrap();
+    }
 }

@@ -6,8 +6,30 @@ use eggress_uri::ProxyChainSpec;
 #[derive(Debug)]
 pub enum UdpRelayCapability {
     SupportedSocks5,
-    UnsupportedProtocol { protocol: String },
+    SupportedShadowsocks {
+        method: eggress_protocol_shadowsocks::CipherMethod,
+        password: String,
+    },
+    UnsupportedProtocol {
+        protocol: String,
+    },
     UnsupportedMultiHop,
+}
+
+fn extract_shadowsocks_creds(
+    hop: &eggress_uri::ProxyHopSpec,
+) -> Option<(eggress_protocol_shadowsocks::CipherMethod, String)> {
+    if hop.protocols.len() == 1 && hop.protocols[0] == ProtocolSpec::Shadowsocks {
+        if let Some(ref creds) = hop.credentials {
+            let method =
+                eggress_protocol_shadowsocks::CipherMethod::parse_method(&creds.username).ok()?;
+            Some((method, creds.password.clone()))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
@@ -20,6 +42,15 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
             if hop.protocols.len() == 1 {
                 match &hop.protocols[0] {
                     ProtocolSpec::Socks5 => UdpRelayCapability::SupportedSocks5,
+                    ProtocolSpec::Shadowsocks => {
+                        if let Some((method, password)) = extract_shadowsocks_creds(hop) {
+                            UdpRelayCapability::SupportedShadowsocks { method, password }
+                        } else {
+                            UdpRelayCapability::UnsupportedProtocol {
+                                protocol: "Shadowsocks (missing credentials)".to_string(),
+                            }
+                        }
+                    }
                     other => UdpRelayCapability::UnsupportedProtocol {
                         protocol: format!("{:?}", other),
                     },
@@ -37,7 +68,17 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
 pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
     let caps = classify_upstream_chain(chain);
     match caps.udp_associate {
-        CapabilityResult::Supported => UdpRelayCapability::SupportedSocks5,
+        CapabilityResult::Supported => {
+            if chain.hops.len() == 1 {
+                if let Some((method, password)) = extract_shadowsocks_creds(&chain.hops[0]) {
+                    UdpRelayCapability::SupportedShadowsocks { method, password }
+                } else {
+                    UdpRelayCapability::SupportedSocks5
+                }
+            } else {
+                UdpRelayCapability::SupportedSocks5
+            }
+        }
         CapabilityResult::UnsupportedProtocol { protocol } => {
             UdpRelayCapability::UnsupportedProtocol { protocol }
         }

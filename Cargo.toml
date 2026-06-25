@@ -50,6 +50,7 @@ insta = "1"
 trait-variant = "0.1"
 ipnet = "2"
 fastrand = "2"
+rand = "0.8"
 arc-swap = "1"
 prometheus-client = "0.22"
 hyper = { version = "1", features = ["server", "http1"] }

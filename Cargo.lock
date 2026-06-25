@@ -598,11 +598,13 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "eggress-core",
+ "eggress-protocol-shadowsocks",
  "eggress-protocol-socks",
  "eggress-routing",
  "eggress-testkit",
  "eggress-uri",
  "ipnet",
+ "rand 0.8.6",
  "thiserror",
  "tokio",
  "tokio-util",

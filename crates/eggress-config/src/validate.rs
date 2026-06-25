@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::error::ConfigError;
-use crate::model::ConfigFile;
+use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig};
 
 const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5"];
 
@@ -79,6 +79,12 @@ pub fn validate_config(config: &ConfigFile) -> Result<(), Vec<ConfigError>> {
                     ));
                 }
             }
+        }
+    }
+
+    if let Some(ref upstreams) = config.upstreams {
+        if let Some(ref groups) = config.upstream_groups {
+            validate_upstream_transport(upstreams, groups, config, &mut errors);
         }
     }
 
@@ -269,6 +275,134 @@ fn validate_upstream_groups(
             }
         }
     }
+}
+
+fn validate_upstream_transport(
+    upstreams: &[crate::model::UpstreamConfig],
+    groups: &[crate::model::UpstreamGroupConfig],
+    config: &ConfigFile,
+    errors: &mut Vec<ConfigError>,
+) {
+    let upstream_chains: std::collections::HashMap<&str, eggress_uri::ProxyChainSpec> = upstreams
+        .iter()
+        .filter_map(|u| {
+            eggress_uri::parse_proxy_chain(&u.uri)
+                .ok()
+                .map(|chain| (u.id.as_str(), chain))
+        })
+        .collect();
+
+    let mut group_udp_support: std::collections::HashMap<&str, bool> =
+        std::collections::HashMap::new();
+
+    for group in groups {
+        let has_udp_upstream = group.members.iter().any(|member_id| {
+            upstream_chains
+                .get(member_id.as_str())
+                .map(|chain| {
+                    eggress_core::capability::classify_upstream_chain(chain).is_udp_supported()
+                })
+                .unwrap_or(false)
+        });
+        group_udp_support.insert(group.id.as_str(), has_udp_upstream);
+    }
+
+    let udp_listener_exists = config
+        .listeners
+        .as_ref()
+        .map(|listeners| {
+            listeners.iter().any(|l| {
+                l.udp_enabled == Some(true)
+                    || l.udp.as_ref().is_some_and(|u| u.enabled != Some(false))
+            })
+        })
+        .unwrap_or(false);
+
+    if let Some(ref rules) = config.rules {
+        for rule in rules {
+            if let Some(ref upstream_group) = rule.upstream_group {
+                let group_id = upstream_group.as_str();
+                let group_supports_udp = group_udp_support.get(group_id).copied().unwrap_or(false);
+
+                let rule_could_match_udp = rule_upstream_group_could_match_udp(rule);
+
+                if !group_supports_udp && rule_could_match_udp && udp_listener_exists {
+                    errors.push(ConfigError::validation(
+                        &format!("rules[{}].upstream_group", rule.id),
+                        &format!(
+                            "upstream group '{}' contains no UDP-capable upstreams but is referenced by a rule that could match UDP traffic",
+                            upstream_group
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(ref routing) = config.routing {
+        if let Some(ref default) = routing.default {
+            if default != "direct" && default != "reject" {
+                let group_supports_udp = group_udp_support
+                    .get(default.as_str())
+                    .copied()
+                    .unwrap_or(false);
+                if !group_supports_udp && udp_listener_exists {
+                    errors.push(ConfigError::validation(
+                        "routing.default",
+                        &format!(
+                            "upstream group '{}' contains no UDP-capable upstreams but is the default route while UDP listeners exist",
+                            default
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn rule_upstream_group_could_match_udp(rule: &crate::model::RuleConfig) -> bool {
+    if let Some(ref match_expr) = rule.match_expr {
+        return matcher_could_match_udp(match_expr);
+    }
+
+    if rule.host_exact.is_some()
+        || rule.host_suffix.is_some()
+        || rule.host_regex.is_some()
+        || rule.destination_port.is_some()
+    {
+        return true;
+    }
+
+    if rule.any.unwrap_or(false) {
+        return true;
+    }
+
+    true
+}
+
+fn matcher_could_match_udp(matcher: &MatchExprConfig) -> bool {
+    match matcher {
+        MatchExprConfig::Leaf(leaf) => leaf_could_match_udp(leaf),
+        MatchExprConfig::Composite(composite) => {
+            if let Some(ref all) = composite.all {
+                return all.iter().any(matcher_could_match_udp);
+            }
+            if let Some(ref any_of) = composite.any_of {
+                return any_of.iter().any(matcher_could_match_udp);
+            }
+            if let Some(ref not) = composite.not {
+                return matcher_could_match_udp(not);
+            }
+            true
+        }
+    }
+}
+
+fn leaf_could_match_udp(leaf: &LeafMatcher) -> bool {
+    if let Some(ref transport) = leaf.transport {
+        return transport == "udp";
+    }
+    true
 }
 
 fn validate_rules(

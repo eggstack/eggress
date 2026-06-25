@@ -18,6 +18,10 @@ pub enum UdpFlowKey {
         target: SocksAddr,
         upstream_id: UpstreamId,
     },
+    ShadowsocksUpstream {
+        target: SocksAddr,
+        upstream_id: UpstreamId,
+    },
 }
 
 impl UdpFlowKey {
@@ -25,6 +29,7 @@ impl UdpFlowKey {
         match self {
             UdpFlowKey::Direct { target } => target,
             UdpFlowKey::Socks5Upstream { target, .. } => target,
+            UdpFlowKey::ShadowsocksUpstream { target, .. } => target,
         }
     }
 }
@@ -32,6 +37,7 @@ impl UdpFlowKey {
 pub enum UdpFlowKind {
     Direct(UdpTargetFlow),
     Socks5Upstream(Socks5UdpTargetFlow),
+    ShadowsocksUpstream(ShadowsocksUdpTargetFlow),
 }
 
 pub struct Socks5UdpTargetFlow {
@@ -65,6 +71,40 @@ impl Socks5UdpTargetFlow {
     }
 }
 
+pub struct ShadowsocksUdpTargetFlow {
+    pub target: SocksAddr,
+    pub upstream_id: UpstreamId,
+    pub upstream_addr: SocketAddr,
+    pub udp_socket: Arc<tokio::net::UdpSocket>,
+    pub method: eggress_protocol_shadowsocks::CipherMethod,
+    pub derived_key: Vec<u8>,
+    pub lease: ActiveLease,
+    pub last_activity: Instant,
+}
+
+impl ShadowsocksUdpTargetFlow {
+    pub fn touch(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    pub fn last_activity(&self) -> Instant {
+        self.last_activity
+    }
+
+    pub async fn send(
+        &self,
+        target: &SocksAddr,
+        payload: &[u8],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use eggress_protocol_shadowsocks::udp::encode_udp_packet;
+
+        let target_addr = socks_to_shadowsocks_target(target)?;
+        let packet = encode_udp_packet(self.method, &self.derived_key, &target_addr, payload)?;
+        self.udp_socket.send_to(&packet, self.upstream_addr).await?;
+        Ok(())
+    }
+}
+
 pub struct TargetFlowEntry {
     pub flow: UdpFlowKind,
     pub recv_task: JoinHandle<()>,
@@ -75,6 +115,7 @@ impl TargetFlowEntry {
         match &mut self.flow {
             UdpFlowKind::Direct(f) => f.touch(),
             UdpFlowKind::Socks5Upstream(f) => f.touch(),
+            UdpFlowKind::ShadowsocksUpstream(f) => f.touch(),
         }
     }
 
@@ -82,6 +123,27 @@ impl TargetFlowEntry {
         match &self.flow {
             UdpFlowKind::Direct(f) => f.last_activity,
             UdpFlowKind::Socks5Upstream(f) => f.last_activity(),
+            UdpFlowKind::ShadowsocksUpstream(f) => f.last_activity(),
         }
+    }
+}
+
+fn socks_to_shadowsocks_target(
+    addr: &SocksAddr,
+) -> Result<eggress_core::TargetAddr, Box<dyn std::error::Error + Send + Sync>> {
+    use eggress_core::{TargetAddr, TargetHost};
+    match addr {
+        SocksAddr::IPv4(octets, port) => Ok(TargetAddr {
+            host: TargetHost::Ip(std::net::IpAddr::V4((*octets).into())),
+            port: *port,
+        }),
+        SocksAddr::IPv6(octets, port) => Ok(TargetAddr {
+            host: TargetHost::Ip(std::net::IpAddr::V6((*octets).into())),
+            port: *port,
+        }),
+        SocksAddr::Domain(domain, port) => Ok(TargetAddr {
+            host: TargetHost::Domain(domain.clone()),
+            port: *port,
+        }),
     }
 }

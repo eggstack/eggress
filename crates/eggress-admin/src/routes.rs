@@ -1,5 +1,7 @@
 use std::sync::atomic::Ordering;
 
+use eggress_core::capability::classify_upstream_chain;
+
 use crate::pac::generate_pac;
 use crate::server::{
     build_json_response, build_not_found, build_response, build_text_response, AdminResponse,
@@ -86,8 +88,29 @@ pub async fn handle_request(
                         .map(|m| {
                             let health_state = m.health.state();
                             let eligible = eggress_routing::health::is_eligible(m);
+                            let caps = classify_upstream_chain(&m.chain);
+                            let protocols: Vec<String> = m
+                                .chain
+                                .hops
+                                .iter()
+                                .flat_map(|h| h.protocols.iter())
+                                .map(|p| format!("{:?}", p).to_lowercase())
+                                .collect();
+                            let tcp_connect = if caps.is_tcp_supported() {
+                                "supported"
+                            } else {
+                                "unsupported"
+                            };
+                            let udp_associate = if caps.is_udp_supported() {
+                                "supported"
+                            } else {
+                                "unsupported"
+                            };
                             serde_json::json!({
                                 "id": m.id.to_string(),
+                                "protocols": protocols,
+                                "tcp_connect": tcp_connect,
+                                "udp_associate": udp_associate,
                                 "health": format!("{:?}", health_state),
                                 "eligible": eligible,
                                 "enabled": m.is_enabled(),

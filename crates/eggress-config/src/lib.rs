@@ -1431,4 +1431,347 @@ client_pin = false
         assert_eq!(udp.max_datagram_size, 65535);
         assert_eq!(udp.max_associations, 1024);
     }
+
+    // === UDP transport validation tests ===
+
+    #[test]
+    fn udp_listener_with_http_upstream_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "http-proxy"
+uri = "http://proxy.example:8080"
+
+[[upstream_groups]]
+id = "main"
+members = ["http-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "HTTP upstream with UDP listener should be rejected: {:?}",
+            result.ok()
+        );
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("no UDP-capable upstreams"),
+            "error should mention UDP capability: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_socks5_upstream_accepted() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "socks5-proxy"
+uri = "socks5://proxy.example:1080"
+
+[[upstream_groups]]
+id = "main"
+members = ["socks5-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "SOCKS5 upstream with UDP listener should be accepted: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_socks4_upstream_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "socks4-proxy"
+uri = "socks4://proxy.example:1080"
+
+[[upstream_groups]]
+id = "main"
+members = ["socks4-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "SOCKS4 upstream with UDP listener should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_multi_hop_chain_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "multi-hop"
+uri = "socks5://hop1:1080__http://hop2:8080"
+
+[[upstream_groups]]
+id = "main"
+members = ["multi-hop"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "Multi-hop chain with UDP listener should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn no_udp_listener_allows_http_upstream() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[upstreams]]
+id = "http-proxy"
+uri = "http://proxy.example:8080"
+
+[[upstream_groups]]
+id = "main"
+members = ["http-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "HTTP upstream without UDP listener should be accepted: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_mixed_group_one_socks5_accepted() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "socks5-proxy"
+uri = "socks5://proxy.example:1080"
+
+[[upstreams]]
+id = "http-proxy"
+uri = "http://proxy.example:8080"
+
+[[upstream_groups]]
+id = "main"
+members = ["socks5-proxy", "http-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "Mixed group with one SOCKS5 should be accepted: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn udp_listener_default_route_http_upstream_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "http-proxy"
+uri = "http://proxy.example:8080"
+
+[[upstream_groups]]
+id = "main"
+members = ["http-proxy"]
+
+[routing]
+default = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "HTTP upstream as default route with UDP listener should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_transport_udp_explicit_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "http-proxy"
+uri = "http://proxy.example:8080"
+
+[[upstream_groups]]
+id = "main"
+members = ["http-proxy"]
+
+[[rules]]
+id = "udp-only"
+upstream_group = "main"
+
+[rules.match]
+transport = "udp"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "Rule with explicit transport=udp and HTTP upstream should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_shadowsocks_upstream_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "ss-proxy"
+uri = "shadowsocks://aes-256-gcm:secret@proxy.example:8388"
+
+[[upstream_groups]]
+id = "main"
+members = ["ss-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "Shadowsocks upstream with UDP listener should be rejected: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn udp_listener_with_trojan_upstream_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+udp_enabled = true
+
+[[upstreams]]
+id = "trojan-proxy"
+uri = "trojan://password@proxy.example:443"
+
+[[upstream_groups]]
+id = "main"
+members = ["trojan-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_err(),
+            "Trojan upstream with UDP listener should be rejected: {:?}",
+            result.ok()
+        );
+    }
 }

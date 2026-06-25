@@ -50,8 +50,12 @@ fn reap_idle_flows(
         let keep = now.duration_since(entry.last_activity()) < timeout;
         if !keep {
             entry.recv_task.abort();
-            if let UdpFlowKind::Socks5Upstream(ref u) = entry.flow {
-                u.control_cancel.cancel();
+            match &entry.flow {
+                UdpFlowKind::Socks5Upstream(ref u) => {
+                    u.control_cancel.cancel();
+                }
+                UdpFlowKind::ShadowsocksUpstream(_) => {}
+                UdpFlowKind::Direct(_) => {}
             }
             metrics.record_target_flow_timeout();
         }
@@ -228,6 +232,118 @@ async fn handle_client_datagram(
                     .record_packet_up(request.payload.len() as u64);
                 return Ok(());
             }
+            UdpRelayCapability::SupportedShadowsocks { method, password } => {
+                let key = UdpFlowKey::ShadowsocksUpstream {
+                    target: request.target.clone(),
+                    upstream_id: upstream.clone(),
+                };
+
+                if flows.len() >= config.limits.max_targets_per_association
+                    && !flows.contains_key(&key)
+                {
+                    config.udp_metrics.record_dropped();
+                    drop(pending_lease);
+                    return Ok(());
+                }
+
+                let entry = match flows.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.get_mut().touch();
+                        e.into_mut()
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        let hop = &chain.hops[0];
+                        let upstream_addr: SocketAddr =
+                            format!("{}:{}", hop.endpoint.host, hop.endpoint.port)
+                                .parse()
+                                .map_err(|_| {
+                                    UdpError::Other("invalid shadowsocks upstream address".into())
+                                })?;
+
+                        let udp_socket = Arc::new(
+                            UdpSocket::bind("127.0.0.1:0")
+                                .await
+                                .map_err(|e| UdpError::Other(e.to_string()))?,
+                        );
+
+                        let salt = vec![0u8; method.salt_size()];
+                        let derived_key = method.derive_key(password.as_bytes(), &salt);
+
+                        let flow_response_tx = response_tx.clone();
+                        let flow_target = request.target.clone();
+                        let flow_socket = udp_socket.clone();
+                        let flow_method = method;
+                        let flow_key = derived_key.clone();
+
+                        let recv_task = tokio::spawn(async move {
+                            let mut recv_buf = [0u8; 65535];
+                            while let Ok(Ok((n, _peer))) = tokio::time::timeout(
+                                std::time::Duration::from_secs(30),
+                                flow_socket.recv_from(&mut recv_buf),
+                            )
+                            .await
+                            {
+                                if let Ok((resp_target, resp_payload)) =
+                                    eggress_protocol_shadowsocks::udp::decode_udp_packet(
+                                        flow_method,
+                                        &flow_key,
+                                        &recv_buf[..n],
+                                    )
+                                {
+                                    let resp_socks_addr = target_to_socks_addr(&resp_target);
+                                    if socks_addr_equivalent(&resp_socks_addr, &flow_target) {
+                                        let _ = flow_response_tx.send(ResponseMsg {
+                                            target: resp_socks_addr,
+                                            payload: resp_payload,
+                                        });
+                                    } else {
+                                        tracing::trace!(
+                                            "shadowsocks upstream response target mismatch: expected {:?}, got {:?}",
+                                            flow_target,
+                                            resp_target
+                                        );
+                                    }
+                                }
+                            }
+                        });
+
+                        let active_lease = pending_lease.established();
+
+                        config.udp_metrics.record_target_flow_created();
+
+                        let flow = crate::flow::ShadowsocksUdpTargetFlow {
+                            target: request.target.clone(),
+                            upstream_id: upstream.clone(),
+                            upstream_addr,
+                            udp_socket,
+                            method,
+                            derived_key,
+                            lease: active_lease,
+                            last_activity: Instant::now(),
+                        };
+
+                        e.insert(TargetFlowEntry {
+                            flow: UdpFlowKind::ShadowsocksUpstream(flow),
+                            recv_task,
+                        })
+                    }
+                };
+
+                match &entry.flow {
+                    UdpFlowKind::ShadowsocksUpstream(f) => {
+                        if let Err(_e) = f.send(&request.target, request.payload).await {
+                            config.udp_metrics.record_dropped();
+                            return Ok(());
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+
+                config
+                    .udp_metrics
+                    .record_packet_up(request.payload.len() as u64);
+                return Ok(());
+            }
             UdpRelayCapability::UnsupportedProtocol { .. } => {
                 config.udp_metrics.record_dropped();
                 drop(pending_lease);
@@ -388,8 +504,12 @@ pub async fn udp_relay_loop(
 
     for entry in flows.values() {
         entry.recv_task.abort();
-        if let UdpFlowKind::Socks5Upstream(ref u) = entry.flow {
-            u.control_cancel.cancel();
+        match &entry.flow {
+            UdpFlowKind::Socks5Upstream(ref u) => {
+                u.control_cancel.cancel();
+            }
+            UdpFlowKind::ShadowsocksUpstream(_) => {}
+            UdpFlowKind::Direct(_) => {}
         }
         config.udp_metrics.record_target_flow_closed();
     }
@@ -429,6 +549,14 @@ fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
             a_dom == b_dom && a_port == b_port
         }
         _ => false,
+    }
+}
+
+fn target_to_socks_addr(target: &TargetAddr) -> SocksAddr {
+    match &target.host {
+        TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),
+        TargetHost::Ip(std::net::IpAddr::V6(ip)) => SocksAddr::IPv6(ip.octets(), target.port),
+        TargetHost::Domain(domain) => SocksAddr::Domain(domain.clone(), target.port),
     }
 }
 
@@ -1364,5 +1492,127 @@ mod tests {
             &SocksAddr::IPv4([127, 0, 0, 1], 80),
             &SocksAddr::Domain("example.com".to_string(), 80)
         ));
+    }
+
+    #[tokio::test]
+    async fn relay_shadowsocks_upstream_encrypts_and_relay() {
+        use crate::udp_capability::udp_capability;
+        use eggress_protocol_shadowsocks::udp::{decode_udp_packet, encode_udp_packet};
+        use eggress_protocol_shadowsocks::CipherMethod;
+        use eggress_uri::{CredentialSpec, EndpointSpec, ProtocolSpec, ProxyHopSpec};
+
+        // Start a synthetic Shadowsocks UDP echo server
+        let ss_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let ss_addr = ss_socket.local_addr().unwrap();
+        let ss_method = CipherMethod::Aes256Gcm;
+        let ss_password = "test-ss-password";
+
+        // Derive the key using a fixed zero salt (matches relay behavior)
+        let salt = vec![0u8; ss_method.salt_size()];
+        let ss_key = ss_method.derive_key(ss_password.as_bytes(), &salt);
+
+        let ss_key_clone = ss_key.clone();
+        let ss_method_clone = ss_method;
+
+        tokio::spawn(async move {
+            let mut buf = [0u8; 65535];
+            while let Ok((n, peer)) = ss_socket.recv_from(&mut buf).await {
+                if let Ok((target, payload)) =
+                    decode_udp_packet(ss_method_clone, &ss_key_clone, &buf[..n])
+                {
+                    // Echo back the payload re-encrypted
+                    if let Ok(response) =
+                        encode_udp_packet(ss_method_clone, &ss_key_clone, &target, &payload)
+                    {
+                        let _ = ss_socket.send_to(&response, peer).await;
+                    }
+                }
+            }
+        });
+
+        // Create upstream chain with Shadowsocks credentials
+        let hop = ProxyHopSpec {
+            protocols: vec![ProtocolSpec::Shadowsocks],
+            endpoint: EndpointSpec {
+                host: ss_addr.ip().to_string(),
+                port: ss_addr.port(),
+            },
+            credentials: Some(CredentialSpec {
+                username: "aes-256-gcm".to_string(),
+                password: ss_password.to_string(),
+            }),
+            rule: None,
+            local_bind: None,
+        };
+
+        let chain = eggress_uri::ProxyChainSpec {
+            hops: vec![hop.clone()],
+        };
+
+        // Verify capability detection works for Shadowsocks
+        let cap = udp_capability(&chain);
+        assert!(
+            matches!(
+                cap,
+                crate::udp_capability::UdpRelayCapability::SupportedShadowsocks { .. }
+            ),
+            "expected SupportedShadowsocks, got {:?}",
+            cap
+        );
+
+        // Create upstream with the proper chain
+        let upstream = std::sync::Arc::new(UpstreamRuntime::new(UpstreamId::new("ss-up-1"), chain));
+        let group_id = UpstreamGroupId(std::sync::Arc::from("ss-proxy"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            eggress_routing::scheduler::SchedulerKind::FirstAvailable,
+            std::sync::Arc::from(vec![upstream]),
+            GroupFallback::Reject,
+        );
+
+        let rules = vec![CompiledRule {
+            id: RuleId(std::sync::Arc::from("to-ss")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        }];
+
+        let router = Arc::new(Router::with_groups(
+            rules,
+            RouteActionSpec::Direct,
+            vec![(group_id, group)],
+        ));
+
+        let assoc = test_assoc();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let config = relay_config(router);
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 9090, b"ss relay test");
+        client_socket.send(&pkt).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
+        assert_eq!(resp.payload, b"ss relay test");
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
     }
 }
