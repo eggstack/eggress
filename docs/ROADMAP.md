@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 7: pproxy parity specification (complete)
+Phase 8: pproxy-compatible CLI and URI translation (complete)
 
 ## Completed Milestones
 
@@ -89,12 +89,22 @@ Phase 7: pproxy parity specification (complete)
 - [x] 7.5: Black-box probe tests for ambiguous pproxy behavior
 - [x] 7.6: Intentional non-parity documentation
 
+### Phase 8: pproxy-compatible CLI and URI translation — complete
+
+- [x] 8.1: `eggress-pproxy-compat` crate with URI parser and TOML translator
+- [x] 8.2: CLI subcommands (`pproxy translate`, `pproxy check`, `pproxy run`)
+- [x] 8.3: Flag translation with structured warnings (`-v`, `-s`, `-a`, `--ssl`, `-b`)
+- [x] 8.4: Unknown flag detection and warnings
+- [x] 8.5: Credential redaction in all output
+- [x] 8.6: Migration guide (`docs/PPROXY_MIGRATION.md`)
+- [x] 8.7: CLI integration tests for pproxy subcommands
+
 ## Remaining Work
 
-None — Phases 1–7 are complete.
+None — Phases 1–8 are complete.
 
 ## Next Phase
 
-Phase 8: pproxy-compatible CLI and URI
+Phase 9: (to be determined)
 
 See the main roadmap for detailed descriptions of each phase.

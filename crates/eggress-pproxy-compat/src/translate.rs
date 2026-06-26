@@ -14,7 +14,13 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
         });
     }
 
-    translate_from_uris(&local_uris, &remote_uris, &args.raw_flags)
+    let mut output = translate_from_uris(&local_uris, &remote_uris, &args.raw_flags)?;
+
+    // Merge unknown-flag warnings
+    let unknown_warnings = args.unknown_flag_warnings();
+    output = output.with_warnings(unknown_warnings);
+
+    Ok(output)
 }
 
 /// Translate pproxy-style local and remote URIs into Eggress TOML.
@@ -29,7 +35,8 @@ pub fn translate_from_uris(
     let mut upstream_groups = Vec::new();
     let mut rules = Vec::new();
 
-    // Check for unsupported flags
+    // Check for unsupported flags and handle supported ones
+    let mut scheduler_override = None;
     for flag in flags {
         if flag == "daemon" {
             output = output.with_unsupported(
@@ -53,6 +60,56 @@ pub fn translate_from_uris(
             output = output.with_unsupported(
                 "rulefile",
                 "--rulefile is not supported; use eggress TOML routing rules",
+            );
+        }
+        if flag == "verbose" {
+            output = output.with_warning(
+                "verbose-mode",
+                "pproxy -v flag detected; set RUST_LOG=debug environment variable for equivalent behavior",
+            );
+        }
+        if let Some(scheduler_value) = flag.strip_prefix("scheduler=") {
+            let mapped = match scheduler_value {
+                "fa" | "first_available" => Some("first-available".to_string()),
+                "rr" | "round_robin" => Some("round-robin".to_string()),
+                "rc" | "random_choice" => Some("random-choice".to_string()),
+                "lc" | "least_connection" => Some("least-connections".to_string()),
+                _ => None,
+            };
+            if let Some(m) = mapped {
+                scheduler_override = Some(m);
+            } else {
+                output = output.with_warning(
+                    "scheduler",
+                    format!(
+                        "pproxy scheduler '{}' is not recognized; using first-available",
+                        scheduler_value
+                    ),
+                );
+            }
+        }
+        if flag.starts_with("alive=") {
+            output = output.with_warning(
+                "alive-check",
+                "pproxy -a (alive check interval) is not directly mappable; configure health probes in TOML",
+            );
+        }
+        if let Some(ssl_value) = flag.strip_prefix("ssl=") {
+            output = output.with_unsupported(
+                "ssl-listener",
+                format!(
+                    "pproxy --ssl '{}' (TLS listener) is not yet supported; configure TLS in eggress TOML",
+                    ssl_value
+                ),
+            );
+        }
+        if let Some(block_value) = flag.strip_prefix("block=") {
+            output = output.with_unsupported(
+                "block-rules",
+                format!(
+                    "pproxy -b '{}' (block regex rules) is not supported; use eggress TOML routing rules",
+                    block_value
+                ),
             );
         }
     }
@@ -184,10 +241,11 @@ pub fn translate_from_uris(
     if !upstreams.is_empty() {
         let group_id = "pproxy-chain".to_string();
         let member_ids: Vec<String> = upstreams.iter().map(|u| u.id.clone()).collect();
+        let scheduler = scheduler_override.unwrap_or_else(|| "first-available".to_string());
 
         upstream_groups.push(UpstreamGroupToml {
             id: group_id.clone(),
-            scheduler: "first-available".to_string(),
+            scheduler,
             members: member_ids,
             fallback: "reject".to_string(),
         });
@@ -404,5 +462,135 @@ mod tests {
         assert_eq!(listeners.len(), 1);
         let upstreams = parsed["upstreams"].as_array().unwrap();
         assert_eq!(upstreams.len(), 1);
+    }
+
+    #[test]
+    fn test_verbose_flag_emits_warning() {
+        let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-v".into()])
+            .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "verbose-mode"));
+    }
+
+    #[test]
+    fn test_scheduler_flag_maps_to_toml() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://proxy:8080".into(),
+            "-s".into(),
+            "rr".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("round-robin"));
+    }
+
+    #[test]
+    fn test_scheduler_flag_all_values() {
+        for (input, expected) in &[
+            ("fa", "first-available"),
+            ("first_available", "first-available"),
+            ("rr", "round-robin"),
+            ("round_robin", "round-robin"),
+            ("rc", "random-choice"),
+            ("random_choice", "random-choice"),
+            ("lc", "least-connections"),
+            ("least_connection", "least-connections"),
+        ] {
+            let args = PproxyArgs::parse(&[
+                "-l".into(),
+                "socks5://127.0.0.1:1080".into(),
+                "-r".into(),
+                "http://proxy:8080".into(),
+                "-s".into(),
+                input.to_string(),
+            ])
+            .unwrap();
+            let output = translate_pproxy_args(&args).unwrap();
+            assert!(
+                output.toml.contains(expected),
+                "expected '{}' for scheduler input '{}', got:\n{}",
+                expected,
+                input,
+                output.toml
+            );
+        }
+    }
+
+    #[test]
+    fn test_alive_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-a".into(),
+            "10".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "alive-check"));
+    }
+
+    #[test]
+    fn test_ssl_flag_emits_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--ssl".into(),
+            "cert.pem,key.pem".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "ssl-listener"));
+    }
+
+    #[test]
+    fn test_block_flag_emits_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-b".into(),
+            ".*\\.example\\.com".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "block-rules"));
+    }
+
+    #[test]
+    fn test_unknown_flags_emitted_as_warnings() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--totally-unknown".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "unknown-flag" && w.message.contains("--totally-unknown")));
+    }
+
+    #[test]
+    fn test_scheduler_default_first_available() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://proxy:8080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("first-available"));
     }
 }

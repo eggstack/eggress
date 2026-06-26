@@ -107,7 +107,8 @@ The following pproxy features are explicitly unsupported:
 - **Shadowsocks listeners** -- Shadowsocks is experimental as upstream only
 - **`--daemon` mode** -- Use systemd or a process manager instead
 - **`-ul` / `-ur` UDP flags** -- Eggress uses SOCKS5 UDP ASSOCIATE instead
-- **`--rulefile`** -- Use Eggress TOML routing rules
+- **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
+- **`-b` block regex rules** -- Use eggress TOML routing rules
 - **Multi-hop UDP** -- Not supported
 - **SSH protocol** -- Not supported
 - **Transparent/system proxy mode** -- Not supported

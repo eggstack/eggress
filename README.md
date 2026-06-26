@@ -24,7 +24,7 @@ eggress will preserve the compact URI-driven workflow of `pproxy` while using ex
 The `eggress-pproxy-compat` crate provides:
 
 - URI-mode command translation from `pproxy` to `eggress` syntax
-- Configuration file migration (`pproxy migrate`)
+- CLI flag translation with structured warnings for unsupported features
 - Differential tests verifying behavioral parity with Python `pproxy`
 
 ## Usage
@@ -39,8 +39,9 @@ eggress -l http+socks5://user:pass@:8080
 eggress -r http://proxy.example:8080
 eggress -r socks5://proxy.example:1080
 eggress -r socks5://hop1:1080__http://hop2:8080
-eggress pproxy migrate --config /path/to/pproxy.conf
-eggress pproxy translate -l http://:8080 -r socks5://proxy:1080
+eggress pproxy translate -- -l http://:8080 -r socks5://proxy:1080
+eggress pproxy check -- -l socks5://:1080 -r http://proxy:8080
+eggress pproxy run -- -l socks5://:1080 -r http://proxy:8080
 ```
 
 ## Capability status
@@ -377,7 +378,7 @@ Legend:
 ### pproxy compatibility
 
 - [x] URI-mode command translation (`pproxy translate`)
-- [x] Configuration file migration (`pproxy migrate`)
+- [x] CLI flag translation with warnings (`pproxy check`)
 - [x] Differential tests against Python `pproxy` (gated)
 - [x] Behavioral parity for common listener patterns
 - [ ] Complete URI option coverage (all pproxy flags)

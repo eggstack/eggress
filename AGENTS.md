@@ -211,7 +211,7 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
-- **pproxy CLI subcommands**: `pproxy migrate` translates pproxy config files to eggress TOML; `pproxy translate` converts pproxy URI arguments to eggress-compatible format
+- **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
 
 ## Skills
 

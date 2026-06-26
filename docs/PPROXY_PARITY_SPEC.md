@@ -206,7 +206,7 @@ vs. SOCKS5 session). See `differential_socks5_udp_associate` test.
 | Shadowsocks stream | `aes-128-ctr`, `aes-192-ctr`, `aes-256-ctr`, etc. | **Rejected** (insecure, deprecated) |
 | Trojan over TLS | rustls/ssl | Supported (rustls) |
 | HTTPS wrapping | Supported | Planned (Phase 6) |
-| TLS certificate options | `--certfile`, `--keyfile` | `tls` field in `ProxyHopSpec` |
+| TLS certificate options | `--ssl certfile[,keyfile]` | `tls` field in `ProxyHopSpec` |
 | TLS verification | Configurable | System root store by default; insecure mode API-only |
 
 Shadowsocks AEAD ciphers (all supported by both):
@@ -264,14 +264,16 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `-r` | Remote/upstream address (URI) | `[[upstreams]]` in TOML config |
 | `-ul` | UDP listen address | `[[listeners]]` with `protocol = "socks5"` + UDP config |
 | `-ur` | UDP remote address | UDP upstream config |
-| `-b` | Bind address for outgoing connections | `local_bind` in `ProxyHopSpec` |
-| `-F` | Fallback upstream | `fallback` in route action |
-| `--reuse` | Reuse upstream connections | Connection pooling (default) |
+| `-b` | Block regex rules (filter hostnames) | Not supported; use eggress TOML routing rules |
+| `-s` | Scheduling algorithm (`fa`, `rr`, `rc`, `lc`) | `scheduler` in upstream group TOML |
+| `-a` | Alive check interval (seconds) | Health probe config in TOML |
+| `-v` | Verbose logging | `RUST_LOG=debug` environment variable |
+| `--ssl` | TLS cert/key file (`certfile[,keyfile]`) | TLS config in eggress TOML |
 | `--daemon` | Run as daemon | Not supported (use systemd/supervisord) |
-| `--rulefile` | Rule file path | `[[rules]]` in TOML config |
-| `--certfile` | TLS certificate file | `tls` + `certfile` in TOML |
-| `--keyfile` | TLS key file | `tls` + `keyfile` in TOML |
-| `-v` | Verbose logging | `RUST_LOG=debug` |
+| `--log` | Log file path | Not supported (use tracing-subscriber) |
+| `--pac` | PAC file path | PAC serving via admin API |
+| `--sys` | Set system proxy (mac/windows) | Not supported |
+| `--test` | Test all remote proxies and exit | `eggress route test` command |
 
 ## 11. Python Library Usage
 
@@ -432,11 +434,13 @@ model.
 
 ### Supported Flags
 
-The compat layer translates: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-F`,
-`--rulefile`, `--certfile`, `--keyfile`, `--reuse`, `--daemon`, `-v`.
+The compat layer translates: `-l`, `-r`, `-ul`, `-ur`, `-s`, `-v`, `-a`,
+`--ssl`, `-b`, `--daemon`.
 
-Flags without a direct mapping (e.g., `--daemon`) emit a warning but do not
-fail translation.
+Flags with direct mapping produce TOML configuration. Flags without a direct
+mapping (e.g., `--daemon`, `--ssl`, `-b`) emit a warning or unsupported
+feature diagnostic but do not fail translation. Unknown flags emit an
+`unknown-flag` warning.
 
 ### Migration Guidance
 
