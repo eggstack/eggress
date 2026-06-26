@@ -1,28 +1,52 @@
+#[allow(unused_imports)]
 use rand::RngCore;
 
 use crate::address::{decode_address, encode_address};
+use crate::aead::{aead_decrypt_raw, aead_encrypt_raw};
 use crate::error::ShadowsocksError;
 use crate::method::CipherMethod;
-use aes_gcm::{aead::Aead, Aes128Gcm, Aes256Gcm, KeyInit, Nonce};
-use chacha20poly1305::ChaCha20Poly1305;
-use eggress_core::TargetAddr;
+use eggress_core::{TargetAddr, TargetHost};
 
-/// Encode a Shadowsocks UDP packet.
+/// Maximum domain name length per RFC 1035.
+const MAX_DOMAIN_LEN: usize = 255;
+
+/// Maximum Shadowsocks UDP datagram size.
+const MAX_UDP_PACKET_SIZE: usize = 65535;
+
+/// Encode a Shadowsocks UDP packet using the standard AEAD format.
 ///
-/// Packet format: salt (16 bytes) + nonce (12 bytes) + encrypted(address + payload)
+/// Packet format: salt (16 bytes) + AEAD(address + payload, nonce=0)
 ///
-/// The salt allows the receiver to derive the same subkey from the password.
+/// The salt is generated randomly and used to derive the subkey from the password.
+/// The receiver extracts the salt to derive the same subkey for decryption.
 pub fn encode_udp_packet(
     method: CipherMethod,
-    key: &[u8],
+    password: &[u8],
     target: &TargetAddr,
     payload: &[u8],
+    salt: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
-    let nonce_size = method.nonce_size();
+    if salt.len() != method.salt_size() {
+        return Err(ShadowsocksError::DecryptionFailed(format!(
+            "salt must be {} bytes, got {}",
+            method.salt_size(),
+            salt.len()
+        )));
+    }
 
-    // Generate random nonce
-    let mut nonce = vec![0u8; nonce_size];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    // Derive subkey from password and salt
+    let subkey = method.derive_key(password, salt);
+
+    // Validate domain length before encoding
+    if let TargetHost::Domain(ref domain) = target.host {
+        if domain.len() > MAX_DOMAIN_LEN {
+            return Err(ShadowsocksError::InvalidAddress(format!(
+                "domain too long: {} exceeds maximum {}",
+                domain.len(),
+                MAX_DOMAIN_LEN
+            )));
+        }
+    }
 
     // Build plaintext: address + payload
     let address = encode_address(target);
@@ -30,117 +54,76 @@ pub fn encode_udp_packet(
     plaintext.extend_from_slice(&address);
     plaintext.extend_from_slice(payload);
 
-    // Encrypt with the pre-derived key
-    let ciphertext = aead_encrypt(method, key, &nonce, &plaintext)?;
+    // Encrypt with AEAD using nonce=0 (all zeros)
+    let nonce_size = method.nonce_size();
+    let nonce = vec![0u8; nonce_size];
+    let ciphertext = aead_encrypt_raw(method, &subkey, &nonce, &plaintext)?;
 
-    // Build output: nonce + ciphertext
-    let mut output = Vec::with_capacity(nonce_size + ciphertext.len());
-    output.extend_from_slice(&nonce);
+    // Build output: salt + ciphertext
+    let mut output = Vec::with_capacity(salt.len() + ciphertext.len());
+    output.extend_from_slice(salt);
     output.extend_from_slice(&ciphertext);
 
     Ok(output)
 }
 
-/// Decode a Shadowsocks UDP packet.
+/// Decode a Shadowsocks UDP packet using the standard AEAD format.
 ///
-/// Input: nonce (12 bytes) + encrypted(address + payload)
+/// Input: salt (16 bytes) + AEAD ciphertext
 /// Returns: (target address, payload)
+///
+/// The salt is extracted from the packet prefix and used to derive the subkey.
 pub fn decode_udp_packet(
     method: CipherMethod,
-    key: &[u8],
+    password: &[u8],
     packet: &[u8],
 ) -> Result<(TargetAddr, Vec<u8>), ShadowsocksError> {
-    let nonce_size = method.nonce_size();
+    let salt_size = method.salt_size();
     let tag_size = method.tag_size();
 
-    // Minimum packet: nonce + tag (for empty address + empty payload)
-    let min_size = nonce_size + tag_size;
+    // Minimum packet: salt + tag (for empty address + empty payload)
+    let min_size = salt_size + tag_size;
     if packet.len() < min_size {
         return Err(ShadowsocksError::DecryptionFailed(
             "packet too short".into(),
         ));
     }
 
-    // Extract nonce and ciphertext
-    let nonce = &packet[..nonce_size];
-    let ciphertext = &packet[nonce_size..];
+    if packet.len() > MAX_UDP_PACKET_SIZE {
+        return Err(ShadowsocksError::DecryptionFailed(format!(
+            "packet too large: {} exceeds maximum {}",
+            packet.len(),
+            MAX_UDP_PACKET_SIZE
+        )));
+    }
 
-    // Decrypt
-    let plaintext = aead_decrypt(method, key, nonce, ciphertext)?;
+    // Extract salt and derive subkey
+    let salt = &packet[..salt_size];
+    let subkey = method.derive_key(password, salt);
+
+    // Decrypt ciphertext with nonce=0
+    let ciphertext = &packet[salt_size..];
+    let nonce_size = method.nonce_size();
+    let nonce = vec![0u8; nonce_size];
+    let plaintext = aead_decrypt_raw(method, &subkey, &nonce, ciphertext)?;
 
     // Parse address from plaintext
     let (target, addr_len) = decode_address(&plaintext)?;
+
+    // Validate domain length if applicable
+    if let TargetHost::Domain(ref domain) = target.host {
+        if domain.len() > MAX_DOMAIN_LEN {
+            return Err(ShadowsocksError::InvalidAddress(format!(
+                "domain too long: {} exceeds maximum {}",
+                domain.len(),
+                MAX_DOMAIN_LEN
+            )));
+        }
+    }
+
     let payload = plaintext[addr_len..].to_vec();
 
     Ok((target, payload))
-}
-
-/// Internal AEAD encryption.
-fn aead_encrypt(
-    method: CipherMethod,
-    key: &[u8],
-    nonce: &[u8],
-    plaintext: &[u8],
-) -> Result<Vec<u8>, ShadowsocksError> {
-    let nonce = Nonce::from_slice(nonce);
-
-    match method {
-        CipherMethod::Aes128Gcm => {
-            let cipher = Aes128Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::Aes256Gcm => {
-            let cipher = Aes256Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::ChaCha20IetfPoly1305 => {
-            let cipher = ChaCha20Poly1305::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-    }
-}
-
-/// Internal AEAD decryption.
-fn aead_decrypt(
-    method: CipherMethod,
-    key: &[u8],
-    nonce: &[u8],
-    ciphertext: &[u8],
-) -> Result<Vec<u8>, ShadowsocksError> {
-    let nonce = Nonce::from_slice(nonce);
-
-    match method {
-        CipherMethod::Aes128Gcm => {
-            let cipher = Aes128Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::Aes256Gcm => {
-            let cipher = Aes256Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::ChaCha20IetfPoly1305 => {
-            let cipher = ChaCha20Poly1305::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-    }
 }
 
 #[cfg(test)]
@@ -148,18 +131,28 @@ mod tests {
     use super::*;
     use eggress_core::{TargetAddr, TargetHost};
 
+    fn test_password() -> &'static [u8] {
+        b"test-password-for-udp"
+    }
+
+    fn test_salt() -> [u8; 16] {
+        [0x42u8; 16]
+    }
+
     #[test]
     fn test_encode_decode_roundtrip_ipv4() {
-        let key = b"0123456789abcdef0123456789abcdef";
+        let password = test_password();
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Ip("192.168.1.1".parse().unwrap()),
             port: 8080,
         };
         let payload = b"hello shadowsocks udp";
 
-        let packet = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, payload).unwrap();
+        let packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt).unwrap();
         let (decoded_target, decoded_payload) =
-            decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).unwrap();
+            decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).unwrap();
 
         assert_eq!(decoded_target, target);
         assert_eq!(decoded_payload, payload);
@@ -167,16 +160,18 @@ mod tests {
 
     #[test]
     fn test_encode_decode_roundtrip_ipv6() {
-        let key = b"0123456789abcdef0123456789abcdef";
+        let password = test_password();
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Ip("::1".parse().unwrap()),
             port: 443,
         };
         let payload = b"ipv6 udp test";
 
-        let packet = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, payload).unwrap();
+        let packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt).unwrap();
         let (decoded_target, decoded_payload) =
-            decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).unwrap();
+            decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).unwrap();
 
         assert_eq!(decoded_target, target);
         assert_eq!(decoded_payload, payload);
@@ -184,16 +179,18 @@ mod tests {
 
     #[test]
     fn test_encode_decode_roundtrip_domain() {
-        let key = b"0123456789abcdef0123456789abcdef";
+        let password = test_password();
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Domain("example.com".to_string()),
             port: 443,
         };
         let payload = b"domain udp test";
 
-        let packet = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, payload).unwrap();
+        let packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt).unwrap();
         let (decoded_target, decoded_payload) =
-            decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).unwrap();
+            decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).unwrap();
 
         assert_eq!(decoded_target, target);
         assert_eq!(decoded_payload, payload);
@@ -206,22 +203,19 @@ mod tests {
             CipherMethod::Aes256Gcm,
             CipherMethod::ChaCha20IetfPoly1305,
         ];
-        let keys: Vec<&[u8]> = vec![
-            b"0123456789abcdef",
-            b"0123456789abcdef0123456789abcdef",
-            b"0123456789abcdef0123456789abcdef",
-        ];
+        let password = test_password();
+        let salt = test_salt();
 
-        for (method, key) in methods.iter().zip(keys.iter()) {
+        for method in methods.iter() {
             let target = TargetAddr {
                 host: TargetHost::Domain("test.example.com".to_string()),
                 port: 9090,
             };
             let payload = b"method-specific test";
 
-            let packet = encode_udp_packet(*method, key, &target, payload).unwrap();
+            let packet = encode_udp_packet(*method, password, &target, payload, &salt).unwrap();
             let (decoded_target, decoded_payload) =
-                decode_udp_packet(*method, key, &packet).unwrap();
+                decode_udp_packet(*method, password, &packet).unwrap();
 
             assert_eq!(decoded_target, target, "method {} failed", method);
             assert_eq!(decoded_payload, payload, "method {} failed", method);
@@ -230,47 +224,53 @@ mod tests {
 
     #[test]
     fn test_tampered_packet_fails() {
-        let key = b"0123456789abcdef0123456789abcdef";
+        let password = test_password();
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
             port: 80,
         };
         let payload = b"tamper test";
 
-        let mut packet = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, payload).unwrap();
+        let mut packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt).unwrap();
 
-        // Tamper with the ciphertext (after the nonce)
+        // Tamper with the ciphertext (after the salt)
         let last = packet.len() - 1;
         packet[last] ^= 0xFF;
 
-        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).is_err());
+        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).is_err());
     }
 
     #[test]
-    fn test_wrong_key_fails() {
-        let key1 = b"0123456789abcdef0123456789abcdef";
-        let key2 = b"fedcba9876543210fedcba9876543210";
+    fn test_wrong_password_fails() {
+        let password1 = b"correct-password-123456";
+        let password2 = b"wrong-password-678901";
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
             port: 80,
         };
-        let payload = b"wrong key test";
+        let payload = b"wrong password test";
 
-        let packet = encode_udp_packet(CipherMethod::Aes256Gcm, key1, &target, payload).unwrap();
-        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, key2, &packet).is_err());
+        let packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password1, &target, payload, &salt).unwrap();
+        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password2, &packet).is_err());
     }
 
     #[test]
     fn test_empty_payload() {
-        let key = b"0123456789abcdef0123456789abcdef";
+        let password = test_password();
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
             port: 80,
         };
 
-        let packet = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, b"").unwrap();
+        let packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, b"", &salt).unwrap();
         let (decoded_target, decoded_payload) =
-            decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).unwrap();
+            decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).unwrap();
 
         assert_eq!(decoded_target, target);
         assert!(decoded_payload.is_empty());
@@ -278,16 +278,18 @@ mod tests {
 
     #[test]
     fn test_large_payload() {
-        let key = b"0123456789abcdef0123456789abcdef";
+        let password = test_password();
+        let salt = test_salt();
         let target = TargetAddr {
             host: TargetHost::Domain("example.com".to_string()),
             port: 443,
         };
         let payload = vec![0xABu8; 1400]; // Typical UDP payload size
 
-        let packet = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, &payload).unwrap();
+        let packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, &payload, &salt).unwrap();
         let (decoded_target, decoded_payload) =
-            decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).unwrap();
+            decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).unwrap();
 
         assert_eq!(decoded_target, target);
         assert_eq!(decoded_payload, payload);
@@ -295,25 +297,55 @@ mod tests {
 
     #[test]
     fn test_packet_too_short() {
-        let key = b"0123456789abcdef0123456789abcdef";
-        // Packet shorter than nonce + tag
+        let password = test_password();
+        // Packet shorter than salt + tag
         let packet = vec![0u8; 5];
-        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, key, &packet).is_err());
+        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).is_err());
     }
 
     #[test]
-    fn test_unique_nonces() {
-        let key = b"0123456789abcdef0123456789abcdef";
+    fn test_unique_salts() {
+        let password = test_password();
         let target = TargetAddr {
             host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
             port: 80,
         };
-        let payload = b"nonce uniqueness test";
+        let payload = b"salts uniqueness test";
 
-        let p1 = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, payload).unwrap();
-        let p2 = encode_udp_packet(CipherMethod::Aes256Gcm, key, &target, payload).unwrap();
+        let salt1 = [0x01u8; 16];
+        let salt2 = [0x02u8; 16];
 
-        // Different random nonces should produce different packets
+        let p1 =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt1).unwrap();
+        let p2 =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt2).unwrap();
+
+        // Different salts should produce different packets
         assert_ne!(p1, p2);
+    }
+
+    #[test]
+    fn test_overlong_domain_rejects() {
+        let password = test_password();
+        let salt = test_salt();
+        let long_domain = "a".repeat(256); // 256 > MAX_DOMAIN_LEN (255)
+        let target = TargetAddr {
+            host: TargetHost::Domain(long_domain),
+            port: 443,
+        };
+        let payload = b"test";
+
+        // Encoding should reject the overlong domain
+        assert!(
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt,).is_err()
+        );
+    }
+
+    #[test]
+    fn test_oversized_datagram_rejects() {
+        let password = test_password();
+        // Build a packet that exceeds MAX_UDP_PACKET_SIZE
+        let oversized = vec![0u8; MAX_UDP_PACKET_SIZE + 1];
+        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password, &oversized).is_err());
     }
 }

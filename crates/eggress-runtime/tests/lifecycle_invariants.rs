@@ -919,7 +919,7 @@ reject = "blocked"
 
 // ---------------------------------------------------------------------------
 // Test 8: Unsupported UDP upstreams are rejected at config validation, never
-//         silently direct-routed
+//         silently direct-routed. Shadowsocks is supported for UDP.
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn http_upstream_with_udp_rejected_not_direct_routed() {
@@ -990,7 +990,7 @@ upstream_group = "udp-upstream"
 }
 
 #[tokio::test]
-async fn shadowsocks_upstream_with_udp_rejected_not_direct_routed() {
+async fn shadowsocks_upstream_with_udp_accepted() {
     let config = r#"
 version = 1
 
@@ -1018,9 +1018,13 @@ upstream_group = "udp-upstream"
     let path = f.path().to_str().unwrap();
     let result = eggress_runtime::ServiceSupervisor::start(path);
     assert!(
-        result.is_err(),
-        "Shadowsocks upstream with UDP listener should be rejected at config validation, not silently direct-routed"
+        result.is_ok(),
+        "Shadowsocks upstream with UDP listener should now be accepted: {:?}",
+        result.err()
     );
+    if let Ok(mut sup) = result {
+        sup.shutdown_token().cancel();
+    }
 }
 
 #[tokio::test]

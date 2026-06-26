@@ -34,6 +34,7 @@ cargo test -p eggress-runtime udp_upstream
 # Run Shadowsocks tests
 cargo test -p eggress-protocol-shadowsocks
 cargo test -p eggress-runtime shadowsocks_tcp
+cargo test -p eggress-runtime shadowsocks_udp
 
 # Run Trojan tests
 cargo test -p eggress-protocol-trojan
@@ -153,6 +154,7 @@ eggress/
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
 health, admin, reload, shutdown, pac_static, udp, udp_upstream, upstream_protocols,
+shadowsocks_tcp, shadowsocks_udp,
 lifecycle_invariants, observability, security_invariants, load).
 They exercise the supervisor end to end and cover negative-path behaviors (bind
 conflict, invalid source, oversized identity, reload-time failure). UDP integration tests
@@ -209,7 +211,7 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **Shared runtime snapshot**: `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
-- **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
+- **UDP**: direct forwarding, one-hop SOCKS5 upstream relay, and one-hop Shadowsocks upstream relay (standard AEAD format); no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service

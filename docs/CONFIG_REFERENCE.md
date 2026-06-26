@@ -150,6 +150,20 @@ uri = "shadowsocks://aes-256-gcm:password@192.168.1.1:8388"
 uri = "shadowsocks://chacha20-ietf-poly1305:password@192.168.1.1:8388"
 ```
 
+Shadowsocks UDP uses standard AEAD format (`salt + encrypted(address + payload)`).
+It works as an upstream for UDP associations routed through a SOCKS5 listener:
+
+```toml
+# Shadowsocks UDP upstream (single-hop via SOCKS5 UDP ASSOCIATE)
+[[upstreams]]
+id = "ss-udp"
+uri = "shadowsocks://aes-256-gcm:password@192.168.1.1:8388"
+
+[[upstream_groups]]
+id = "udp-egress"
+members = ["ss-udp"]
+```
+
 **Trojan URI:** `trojan://password@host:port`
 
 ### `[upstreams.health]`

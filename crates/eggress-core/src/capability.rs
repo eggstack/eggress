@@ -94,13 +94,8 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
             udp_associate: CapabilityResult::Supported,
         },
         ProtocolSpec::Shadowsocks => UpstreamCapabilities {
-            tcp_connect: CapabilityResult::UnsupportedProtocol {
-                protocol: "Shadowsocks (experimental — TCP stream encryption not implemented)"
-                    .to_string(),
-            },
-            udp_associate: CapabilityResult::UnsupportedProtocol {
-                protocol: "Shadowsocks (experimental — UDP format non-interoperable)".to_string(),
-            },
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::Supported,
         },
         ProtocolSpec::Trojan => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
@@ -204,21 +199,10 @@ mod tests {
     fn single_shadowsocks_hop() {
         let c = chain(vec![hop(vec![ProtocolSpec::Shadowsocks])]);
         let caps = classify_upstream_chain(&c);
-        assert!(!caps.is_tcp_supported());
-        assert!(!caps.is_udp_supported());
-        assert_eq!(
-            caps.tcp_connect,
-            CapabilityResult::UnsupportedProtocol {
-                protocol: "Shadowsocks (experimental — TCP stream encryption not implemented)"
-                    .to_string()
-            }
-        );
-        assert_eq!(
-            caps.udp_associate,
-            CapabilityResult::UnsupportedProtocol {
-                protocol: "Shadowsocks (experimental — UDP format non-interoperable)".to_string()
-            }
-        );
+        assert!(caps.is_tcp_supported());
+        assert!(caps.is_udp_supported());
+        assert_eq!(caps.tcp_connect, CapabilityResult::Supported);
+        assert_eq!(caps.udp_associate, CapabilityResult::Supported);
     }
 
     #[test]

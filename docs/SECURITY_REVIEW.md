@@ -119,6 +119,14 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Only AEAD methods are supported (`aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream ciphers are rejected.
 - Password is never logged; URI display uses the redacted `****:****@` format.
 
+**Shadowsocks UDP Security Properties** (`eggress-protocol-shadowsocks/src/udp.rs`):
+- Standard AEAD UDP format: `salt + encrypted(address + payload)` per datagram.
+- Per-connection subkeys derived via HKDF-SHA256 from the shared secret and a random salt (same derivation as TCP).
+- Each datagram uses a fresh random salt; no nonce reuse across datagrams.
+- Only AEAD methods are supported (same set as TCP); legacy stream ciphers are rejected.
+- Payload length is authenticated via AEAD tag, preventing truncation or extension attacks.
+- Client address is authenticated inside the encrypted envelope, preventing address spoofing.
+
 **Protocol Detection Ordering** (`eggress-core/src/detect.rs`):
 - `ProtocolDetector` trait with ordered detection.
 - `NeedMore` result prevents premature protocol selection.

@@ -679,7 +679,7 @@ upstream_group = "udp-upstream"
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shadowsocks_upstream_with_udp_listener_rejected_at_config() {
+async fn shadowsocks_upstream_with_udp_listener_accepted() {
     install_crypto();
     let config = r#"
 version = 1
@@ -708,9 +708,13 @@ upstream_group = "udp-upstream"
     let path = f.path().to_str().unwrap();
     let result = eggress_runtime::ServiceSupervisor::start(path);
     assert!(
-        result.is_err(),
-        "Shadowsocks upstream with UDP listener should be rejected at config validation"
+        result.is_ok(),
+        "Shadowsocks upstream with UDP listener should now be accepted: {:?}",
+        result.err()
     );
+    if let Ok(mut sup) = result {
+        sup.shutdown_token().cancel();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

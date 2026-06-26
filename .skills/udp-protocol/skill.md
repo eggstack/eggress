@@ -8,7 +8,8 @@ Use when working with UDP associations, datagram relay, upstream SOCKS5 relay, o
 - Each target gets its own `UdpTargetFlow` (connected UDP socket) for reliable response demux
 - Client address pinning is enabled by default
 - Direct forwarding and one-hop SOCKS5 upstream are supported
-- Multi-hop chains, HTTP/MASQUE, Shadowsocks are NOT supported for UDP
+- Multi-hop chains and HTTP/MASQUE are NOT supported for UDP
+- Shadowsocks upstream is supported (standard AEAD format, one-hop only)
 
 ## Key types (`eggress-udp`)
 - `UdpAssociation` — association state machine

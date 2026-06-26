@@ -148,7 +148,7 @@ Legend:
 | HTTP CONNECT | yes | no | 5 |
 | SOCKS4/SOCKS4a | yes | no | 5 |
 | SOCKS5 | yes | one-hop yes | 4 |
-| Shadowsocks | yes (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305) | experimental (non-interoperable) | 5 |
+| Shadowsocks | yes (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305) | yes (standard AEAD format) | 5/10 |
 | Trojan | TCP yes (rustls) | no | 5 |
 
 ### UDP
@@ -171,7 +171,7 @@ Legend:
 - [x] SOCKS5 UDP ASSOCIATE server
 - [x] Direct UDP forwarding
 - [x] UDP through one-hop SOCKS5 upstream
-- [ ] UDP through one-hop Shadowsocks upstream (experimental — non-interoperable format)
+- [x] UDP through one-hop Shadowsocks upstream (standard AEAD format)
 - [ ] UDP through Trojan upstream
 - [ ] UDP through multi-hop proxy chains
 - [ ] UDP through HTTP/MASQUE/CONNECT-UDP
@@ -196,7 +196,7 @@ Legend:
 
 - [x] Shadowsocks TCP client (full AEAD stream encryption; aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [ ] Shadowsocks TCP server
-- [ ] Shadowsocks UDP client (experimental — non-interoperable packet format)
+- [x] Shadowsocks UDP client (standard AEAD format: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [ ] Shadowsocks UDP server
 - [x] AEAD cipher support (individual encrypt/decrypt operations)
 - [x] Modern default cipher suite

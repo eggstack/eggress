@@ -15,12 +15,11 @@ performs the initial handshake and returns the encrypted stream.
 The TCP client sends an encrypted address header and all subsequent
 bidirectional data is encrypted with per-direction AEAD nonces.
 
-### UDP Status: Experimental
+### UDP Status: Supported
 
-The UDP packet format uses `nonce + encrypted(address + payload)` instead
-of the standard Shadowsocks AEAD UDP format (`salt + encrypted(address + payload)`).
-This format is non-interoperable with standard Shadowsocks servers (e.g.,
-`shadowsocks-rust`, `ssserver`).
+The UDP packet format uses the standard Shadowsocks AEAD UDP format:
+`salt + encrypted(address + payload)`. This is interoperable with standard
+Shadowsocks implementations (e.g., `shadowsocks-rust`, `ssserver`).
 
 Source: `crates/eggress-protocol-shadowsocks/src/`
 
@@ -79,24 +78,24 @@ Source: `crates/eggress-protocol-shadowsocks/src/address.rs`
 ### Packet Structure
 
 ```
-+--------+--------------------------------+
-| Nonce  |  Encrypted(address + payload)  |
-+--------+--------------------------------+
- 12 bytes           variable
++--------+-----------------------------------+
+|  Salt  |  AEAD(address + payload, nonce=0) |
++--------+-----------------------------------+
+ variable              variable
 ```
 
-- **Nonce**: Random 12 bytes per packet (unique per packet)
+- **Salt**: Random bytes (`salt_size` for the method), unique per packet
 - **Plaintext**: Target address (Shadowsocks format) concatenated with payload
-- **AEAD**: Encrypts the entire plaintext with the nonce
+- **AEAD**: Encrypts the entire plaintext with nonce = zero bytes
 
 Each UDP packet is self-contained. Tampered packets or wrong keys cause
 decryption failure.
 
 ### Key Differences from TCP
 
-- Each packet has its own random nonce (no stream state)
+- Each packet has its own random salt (no stream state)
+- Salt is per-packet (random), not session-wide like TCP
 - Address + payload encrypted together per packet
-- No salt in the UDP format (key is pre-derived)
 
 ## URI Format
 
@@ -118,6 +117,8 @@ Example: `ss://aes-256-gcm:mypassword@192.168.1.1:8388`
 - Nonce uniqueness verification
 - Address encoding/decoding edge cases (truncated, unknown ATYP)
 - TCP connect sends correct payload structure
+- UDP standard AEAD format (salt + encrypted payload)
+- UDP interoperability with standard Shadowsocks format
 
 Test count: 53+ tests across `eggress-protocol-shadowsocks`, including
 stream adapter tests for `ShadowsocksAeadStream` and 5 runtime
@@ -125,10 +126,8 @@ integration tests in `shadowsocks_tcp.rs`.
 
 ## Limitations
 
-- **UDP format non-interoperable** — uses `nonce + ciphertext` instead of standard `salt + ciphertext`
 - No legacy stream ciphers (RC4, etc.) -- only AEAD methods
 - No plugin transport modes (simple-obfs, v2ray-plugin, etc.)
 - No multi-hop UDP (single Shadowsocks hop only)
 - No server-side implementation (client/upstream only)
 - Maximum frame size: 65,535 bytes
-- Marked as experimental in capability classifier — not selected by default in routing

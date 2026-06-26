@@ -77,7 +77,7 @@ pub struct ShadowsocksUdpTargetFlow {
     pub upstream_addr: SocketAddr,
     pub udp_socket: Arc<tokio::net::UdpSocket>,
     pub method: eggress_protocol_shadowsocks::CipherMethod,
-    pub derived_key: Vec<u8>,
+    pub password: Vec<u8>,
     pub lease: ActiveLease,
     pub last_activity: Instant,
 }
@@ -97,9 +97,12 @@ impl ShadowsocksUdpTargetFlow {
         payload: &[u8],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use eggress_protocol_shadowsocks::udp::encode_udp_packet;
+        use rand::RngCore;
 
         let target_addr = socks_to_shadowsocks_target(target)?;
-        let packet = encode_udp_packet(self.method, &self.derived_key, &target_addr, payload)?;
+        let mut salt = vec![0u8; self.method.salt_size()];
+        rand::thread_rng().fill_bytes(&mut salt);
+        let packet = encode_udp_packet(self.method, &self.password, &target_addr, payload, &salt)?;
         self.udp_socket.send_to(&packet, self.upstream_addr).await?;
         Ok(())
     }

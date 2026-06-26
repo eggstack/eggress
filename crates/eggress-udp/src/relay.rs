@@ -266,14 +266,11 @@ async fn handle_client_datagram(
                                 .map_err(|e| UdpError::Other(e.to_string()))?,
                         );
 
-                        let salt = vec![0u8; method.salt_size()];
-                        let derived_key = method.derive_key(password.as_bytes(), &salt);
-
                         let flow_response_tx = response_tx.clone();
                         let flow_target = request.target.clone();
                         let flow_socket = udp_socket.clone();
                         let flow_method = method;
-                        let flow_key = derived_key.clone();
+                        let flow_password = password.as_bytes().to_vec();
 
                         let recv_task = tokio::spawn(async move {
                             let mut recv_buf = [0u8; 65535];
@@ -286,7 +283,7 @@ async fn handle_client_datagram(
                                 if let Ok((resp_target, resp_payload)) =
                                     eggress_protocol_shadowsocks::udp::decode_udp_packet(
                                         flow_method,
-                                        &flow_key,
+                                        &flow_password,
                                         &recv_buf[..n],
                                     )
                                 {
@@ -317,7 +314,7 @@ async fn handle_client_datagram(
                             upstream_addr,
                             udp_socket,
                             method,
-                            derived_key,
+                            password: password.into_bytes(),
                             lease: active_lease,
                             last_activity: Instant::now(),
                         };
@@ -1494,13 +1491,13 @@ mod tests {
         ));
     }
 
-    #[ignore = "Shadowsocks UDP is experimental and not yet supported"]
     #[tokio::test]
     async fn relay_shadowsocks_upstream_encrypts_and_relay() {
         use crate::udp_capability::udp_capability;
         use eggress_protocol_shadowsocks::udp::{decode_udp_packet, encode_udp_packet};
         use eggress_protocol_shadowsocks::CipherMethod;
         use eggress_uri::{CredentialSpec, EndpointSpec, ProtocolSpec, ProxyHopSpec};
+        use rand::RngCore;
 
         // Start a synthetic Shadowsocks UDP echo server
         let ss_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -1508,23 +1505,25 @@ mod tests {
         let ss_method = CipherMethod::Aes256Gcm;
         let ss_password = "test-ss-password";
 
-        // Derive the key using a fixed zero salt (matches relay behavior)
-        let salt = vec![0u8; ss_method.salt_size()];
-        let ss_key = ss_method.derive_key(ss_password.as_bytes(), &salt);
-
-        let ss_key_clone = ss_key.clone();
+        let ss_password_owned = ss_password.as_bytes().to_vec();
         let ss_method_clone = ss_method;
 
         tokio::spawn(async move {
             let mut buf = [0u8; 65535];
             while let Ok((n, peer)) = ss_socket.recv_from(&mut buf).await {
                 if let Ok((target, payload)) =
-                    decode_udp_packet(ss_method_clone, &ss_key_clone, &buf[..n])
+                    decode_udp_packet(ss_method_clone, &ss_password_owned, &buf[..n])
                 {
-                    // Echo back the payload re-encrypted
-                    if let Ok(response) =
-                        encode_udp_packet(ss_method_clone, &ss_key_clone, &target, &payload)
-                    {
+                    // Echo back the payload re-encrypted with a random salt
+                    let mut resp_salt = vec![0u8; ss_method_clone.salt_size()];
+                    rand::thread_rng().fill_bytes(&mut resp_salt);
+                    if let Ok(response) = encode_udp_packet(
+                        ss_method_clone,
+                        &ss_password_owned,
+                        &target,
+                        &payload,
+                        &resp_salt,
+                    ) {
                         let _ = ss_socket.send_to(&response, peer).await;
                     }
                 }

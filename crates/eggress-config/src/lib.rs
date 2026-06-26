@@ -1710,7 +1710,7 @@ transport = "udp"
     }
 
     #[test]
-    fn udp_listener_with_shadowsocks_upstream_rejected() {
+    fn udp_listener_with_shadowsocks_upstream_accepted() {
         let config = r#"
 version = 1
 
@@ -1736,9 +1736,9 @@ upstream_group = "main"
         let path = f.path().to_str().unwrap();
         let result = load_and_validate(path);
         assert!(
-            result.is_err(),
-            "Shadowsocks upstream with UDP listener should be rejected (experimental): {:?}",
-            result
+            result.is_ok(),
+            "Shadowsocks upstream with UDP listener should now be accepted: {:?}",
+            result.err()
         );
     }
 
