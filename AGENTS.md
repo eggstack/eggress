@@ -112,6 +112,21 @@ cover HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection through the full sta
 - No C dependencies, no OpenSSL
 - No `build.rs` files anywhere in the workspace
 
+## CI / Status Visibility
+
+- `.github/workflows/ci.yml` and `.github/workflows/security.yml` exist.
+- Hosted CI run status is **not** currently visible via the
+  `commits/{sha}/status` endpoint for `main` (returns `state: pending,
+  statuses: []`). Recent runs surfaced via `gh run list` are reported as
+  `completed failure` with billing-related annotations (no code execution).
+- Treat **local verification** (`cargo fmt`, `cargo test --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check`)
+  as the source of truth until hosted CI resumes. Record local verification
+  in completion docs; do not claim hosted CI visibility unless a workflow run
+  ID is observable on the commit.
+- See `docs/PHASE_5_CORRECTIVE_CLOSURE_COMPLETION.md` criterion 10 for the
+  detailed split between local and hosted CI.
+
 ## Key Architecture Facts
 
 - **Entry point**: `eggress-cli` binary → `eggress-runtime` `ServiceSupervisor::run()` → `eggress-server` `serve_connection()`

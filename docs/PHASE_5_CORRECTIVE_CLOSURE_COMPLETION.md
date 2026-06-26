@@ -27,9 +27,38 @@ and documented accurately.
 | 7 | Phase numbering no longer conflicts with UDP Phase 4 | PASS |
 | 8 | HTTP CONNECT and SOCKS4/SOCKS4a runtime tests exist | PASS |
 | 9 | README, roadmap, protocol docs, admin output all agree | PASS |
-| 10 | CI/status checks visible | PASS |
+| 10 | CI/status checks visible | PARTIAL — local verification recorded; hosted status contexts not visible via connector |
 | 11 | All workspace tests, lint, audit pass | PASS |
 | 12 | No unsafe Rust or unapproved native dependency | PASS (corrected) |
+
+### CI/Status visibility (criterion 10) — detail
+
+The completion doc records what was actually observed at the time the criterion was
+evaluated, not what is wished for:
+
+- **Hosted CI/status visibility:** NOT VERIFIED via connector. The
+  `/repos/{owner}/{repo}/commits/{sha}/status` endpoint returns
+  `state: pending, statuses: []` for the current `main` HEAD
+  (`970b5e3db52573fc3f75c9dfc4d0597f5fc2c524`). The `.github/workflows/ci.yml`
+  and `.github/workflows/security.yml` workflows exist, but hosted runs have
+  not been observed to surface status contexts on `main`. The most recent
+  workflow runs visible to the connector (`gh run list --branch main`) are
+  reported as `completed failure` with annotations such as
+  "The job was not started because recent account payments have failed or your
+  spending limit needs to be increased" — i.e., hosted CI is not currently
+  executing code from this repository.
+- **Local verification:** PASS per recorded command output and commit notes.
+  Commands run locally and recorded as green:
+  `cargo fmt --all -- --check`,
+  `cargo test --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo deny check`, and the dependency-tree sanity checks
+  (`cargo tree -i aws-lc-sys`, `cargo tree -i cmake`,
+  `cargo tree -i openssl-sys`).
+
+If hosted CI resumes and produces status contexts on `main`, this row should be
+updated to cite the workflow run ID and SHA. Until then, the criterion is
+considered PARTIAL — local verification is the sole source of truth.
 
 ## Commit Sequence
 
@@ -42,11 +71,25 @@ and documented accurately.
 - Runtime protocol test matrix added
 - Documentation truth pass across all files
 
-### Commit 2: TLS dependency leak fix (pending)
+### Commit 2: TLS dependency leak fix (f28d89e)
 - `tokio-rustls` configured with `default-features = false, features = ["logging", "tls12"]`
 - Eliminates `aws-lc-sys` and `cmake` from production dependency graph
 - `DEPENDENCY_POLICY.md` updated with corrected verification commands
 - Completion record created
+
+### Commit 3: Phase 5 final follow-up (this commit)
+- Trojan test cleanup so the happy-path synthetic TLS test calls
+  `trojan_connect()` directly instead of manually performing TLS and writing
+  the Trojan request.
+- Extracted `encode_trojan_request()` helper as the single request-encoding
+  code path; `trojan_connect()` now delegates to it.
+- Domain-length validation tests (`256` rejected, empty rejected, `255`
+  accepted) now invoke `encode_trojan_request()` and assert the returned
+  error variant, instead of only inspecting a constructed `TargetAddr`.
+- IPv4 and IPv6 request encoding tests updated to compare against
+  `encode_trojan_request()` output (asserting encoding is unchanged).
+- CI/Status visibility criterion wording corrected: documented that hosted CI
+  is currently not visible via connector; local verification remains PASS.
 
 ## Final Support Matrix
 
@@ -56,7 +99,7 @@ and documented accurately.
 | SOCKS4/SOCKS4a | Supported | N/A | Fully tested | `upstream_protocols.rs` |
 | SOCKS5 | Supported | Supported (one-hop) | Fully tested | `udp_upstream.rs`, `upstream_protocols.rs` |
 | Shadowsocks | Experimental | Experimental | Header-only TCP, non-interop UDP | Ignored |
-| Trojan | Supported | N/A | Fully tested (rustls) | `upstream_protocols.rs` |
+| Trojan | Supported | N/A | Fully tested (rustls) | `upstream_protocols.rs`, `eggress-protocol-trojan` |
 
 ## Dependency Policy
 
@@ -87,7 +130,8 @@ cargo deny check                     # advisories ok, bans ok, licenses ok, sour
 - `crates/eggress-core/src/capability.rs` — Shadowsocks downgraded
 - `crates/eggress-core/src/chain.rs` — HopHandler accepts `&ProxyHopSpec`
 - `crates/eggress-server/src/execute.rs` — Handlers updated for new trait
-- `crates/eggress-protocol-trojan/src/tcp.rs` — Domain length validation
+- `crates/eggress-protocol-trojan/src/tcp.rs` — Domain length validation,
+  `encode_trojan_request()` helper, exported-path test coverage
 - `crates/eggress-udp/src/udp_capability.rs` — Shadowsocks UDP unsupported
 - `crates/eggress-config/src/lib.rs` — Shadowsocks UDP config test rejected
 - `EGGRESS_ROADMAP.md` — Phase numbering corrected
@@ -111,3 +155,6 @@ cargo deny check                    # advisories ok, bans ok, licenses ok, sourc
 cargo tree -i aws-lc-sys -e normal  # not found
 cargo tree -i cmake -e normal       # not found
 ```
+
+> Local verification PASS. Hosted CI status contexts are not currently visible
+> on `main`; see criterion 10 detail above.
