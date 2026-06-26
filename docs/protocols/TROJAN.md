@@ -73,20 +73,38 @@ Source: `crates/eggress-protocol-trojan/src/hash.rs`
 - Password hash determinism (same input = same output)
 - Password hash uniqueness (different inputs = different outputs)
 - Known test vectors for `password_hash("password")` and `password_hash("")`
-- Wire format construction for domain, IPv4, and IPv6 targets
-- Wire format size verification
+- `encode_trojan_request()` layout matches the expected wire format for
+  domain, IPv4, and IPv6 targets
+- `encode_trojan_request()` rejects empty domain (`TrojanError::Protocol`)
+- `encode_trojan_request()` rejects 256-byte domain (`TrojanError::Protocol`)
+- `encode_trojan_request()` accepts 255-byte domain
+- `trojan_connect()` happy path through a synthetic TLS server: server observes
+  the password hash, CRLF, command, ATYP, target, port, and trailing CRLF
+  produced by `trojan_connect()`; client reads back the server's echo
+- `trojan_connect()` rejects 256-byte domain (covered by `encode_trojan_request()`
+  validation path exercised from `trojan_connect`)
+- `trojan_connect()` rejects empty domain (covered by `encode_trojan_request()`
+  validation path exercised from `trojan_connect`)
+- `trojan_connect()` accepts 255-byte domain end-to-end through TLS
+- Wrong-password server-side rejection
 
-Test count: 9 tests across `eggress-protocol-trojan`.
+Test count: 15 tests across `eggress-protocol-trojan`
+(`hash::tests` + `tcp::tests`).
 
 ## Current Status
 
-The foundation is implemented:
+The foundation is implemented and tested through the exported function:
+
 - Password hashing: complete
-- Wire format construction: complete
+- `encode_trojan_request()` helper: complete; sole encoder path
+- `trojan_connect()`: delegates to `encode_trojan_request()` after TLS handshake
 - TLS handshake with rustls: complete
 - Request sending: complete
+- Domain-length validation (1-255 bytes): complete and tested through the
+  exported function
 
-TLS integration tests (end-to-end with a real Trojan server) are pending.
+End-to-end interoperability tests against a real third-party Trojan server are
+not yet included.
 
 ## Limitations
 

@@ -148,10 +148,15 @@ Shadowsocks protocol implementation:
 ### eggress-protocol-trojan
 Trojan protocol implementation:
 - SHA224 password hash authentication
-- Trojan wire format encoding (hash + CONNECT + address + port)
+- `encode_trojan_request()` — single helper that validates domain length (1-255)
+  and produces the wire format (hash + CRLF + CONNECT + address + port + CRLF)
 - TLS transport via shared `eggress-transport-tls` layer
+- `trojan_connect()` — performs TLS handshake via the shared client connector
+  and delegates request encoding to `encode_trojan_request()`
 - Accepts optional `Arc<ClientConfig>` for shared config (falls back to system roots)
-- Unit tests for hash and wire format
+- Hash tests, encoder tests (domain length validation, IPv4/IPv6/domain layout),
+  and synthetic TLS happy-path test that exercises `trojan_connect()` directly
+  and asserts the server-observed request bytes
 
 ### eggress-transport-tls
 Shared TLS transport layer:

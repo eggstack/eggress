@@ -214,6 +214,9 @@ Legend:
 - [ ] Trojan server
 - [x] Trojan authentication
 - [x] Trojan TCP target framing
+- [x] Domain length validation (1-255 bytes) through `encode_trojan_request()`
+- [x] Synthetic TLS happy-path test exercises `trojan_connect()` directly
+  (server-observed request bytes asserted)
 - [ ] Trojan fallback routing
 - [ ] Trojan interoperability tests
 

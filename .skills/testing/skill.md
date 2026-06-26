@@ -19,6 +19,15 @@ In `crates/eggress-runtime/tests/`:
 - `pac_static.rs` — PAC generation, static content, reload freshness
 - `udp.rs` — association lifecycle, echo, bind conflict
 - `udp_upstream.rs` — SOCKS5 upstream relay, shutdown, metrics
+- `upstream_protocols.rs` — HTTP CONNECT, SOCKS4, SOCKS5, and
+  unsupported-combo (HTTP/SOCKS4/Shadowsocks/Trojan + UDP) rejection
+
+### Protocol-crate tests
+Protocol-specific tests live alongside the implementation:
+- `crates/eggress-protocol-trojan/src/tcp.rs` — hash, `encode_trojan_request()`
+  layout (domain/IPv4/IPv6), domain-length validation (1-255), and a synthetic
+  TLS happy-path test that calls `trojan_connect()` directly and asserts the
+  server-observed request bytes
 
 ### UDP-specific tests
 - `crates/eggress-udp/tests/socks5_upstream.rs` — upstream relay scenarios
