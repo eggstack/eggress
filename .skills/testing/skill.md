@@ -87,6 +87,19 @@ Protocol-specific tests live alongside the implementation:
 ### Differential tests
 - `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy
 
+### Differential test harness primitives
+
+The differential test file (`crates/eggress-cli/tests/differential_pproxy.rs`) provides reusable primitives:
+- `ProcessGuard` / `TaskGuard` — Drop-based cleanup for child processes and tokio tasks
+- `start_tcp_echo()` / `start_udp_echo()` — Echo server fixtures
+- `start_eggress_from_toml(config_str)` — Start eggress from TOML config
+- `compare_tcp_echo()` / `compare_udp_echo()` — Payload comparison helpers
+- `assert_coarse_failure_equivalence()` — Assert both succeeded or both failed
+- `socks5_udp_associate()` — SOCKS5 handshake + UDP ASSOCIATE helper
+- `build_socks5_udp_packet()` / `recv_udp_response()` — UDP datagram helpers
+
+Black-box probe tests document pproxy behavior for ambiguous scenarios (refused replies, auth success shape, chained failure, UDP relay lifetime).
+
 ### CLI tests
 - `crates/eggress-cli/tests/cli_tests.rs` — argument parsing
 - `crates/eggress-cli/tests/reply_order.rs` — deferred success reply ordering

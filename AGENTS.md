@@ -135,6 +135,8 @@ eggress/
     ├── RELEASE_READINESS.md
     ├── SECURITY_REVIEW.md
     ├── TESTING.md
+    ├── PPROXY_PARITY_SPEC.md
+    ├── PHASE_7_PPROXY_PARITY_SPEC_COMPLETION.md
     ├── TRANSPORT_TLS_COMPLETION.md
     ├── URI_GRAMMAR.md
     └── protocols/
@@ -203,6 +205,8 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
 - **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
+- **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
+- **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 
 ## Skills
 
@@ -212,4 +216,4 @@ The `.skills/` directory contains focused reference files for common development
 - `udp-protocol.md` — UDP association management, datagram relay, upstream SOCKS5 relay
 - `config-reload.md` — TOML config schema, hot-reload vs restart, atomic swaps
 - `routing-rules.md` — Rule engine, matchers, schedulers, route explanation
-- `testing.md` — Test layers, conventions, running and writing tests
+- `testing.md` — Test layers, conventions, running and writing tests, including differential tests

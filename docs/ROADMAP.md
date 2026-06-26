@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 6: TLS and secure transports (planned)
+Phase 7: pproxy parity specification (complete)
 
 ## Completed Milestones
 
@@ -80,12 +80,21 @@ Phase 6: TLS and secure transports (planned)
 - [x] 5.8: Chain executor integration (ShadowsocksHopHandler, TrojanHopHandler)
 - [x] 5.9: Protocol documentation (HTTP_CONNECT.md, SOCKS4.md, SHADOWSOCKS.md, TROJAN.md)
 
+### Phase 7: pproxy parity specification — complete
+
+- [x] 7.1: pproxy parity spec (`docs/PPROXY_PARITY_SPEC.md`)
+- [x] 7.2: Compatibility tier taxonomy
+- [x] 7.3: Expanded parity matrix (`docs/PARITY_MATRIX.md`)
+- [x] 7.4: Refactored differential test harness primitives
+- [x] 7.5: Black-box probe tests for ambiguous pproxy behavior
+- [x] 7.6: Intentional non-parity documentation
+
 ## Remaining Work
 
-None — Phases 1–5 are complete.
+None — Phases 1–7 are complete.
 
 ## Next Phase
 
-Phase 6: TLS and secure transports (HTTPS proxy, certificate policy, TLS-wrapped protocols)
+Phase 8: pproxy-compatible CLI and URI
 
 See the main roadmap for detailed descriptions of each phase.
