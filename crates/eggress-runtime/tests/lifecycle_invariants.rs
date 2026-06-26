@@ -23,6 +23,30 @@ async fn wait_ready(state: &eggress_runtime::RuntimeState) {
     panic!("timeout waiting for readiness");
 }
 
+/// Poll `f` until it returns `Some(value)` or the deadline elapses.
+/// Returns the inner value on success and panics with `msg` on timeout.
+///
+/// This is used in place of fixed `tokio::time::sleep` to make post-close
+/// invariants deterministic: tests exit as soon as the condition is observed
+/// instead of relying on a sleep that is only an upper bound on relay
+/// teardown latency.
+async fn wait_for<T, F>(deadline: Duration, mut f: F, msg: &str) -> T
+where
+    F: FnMut() -> Option<T>,
+{
+    let start = std::time::Instant::now();
+    let step = Duration::from_millis(20);
+    loop {
+        if let Some(v) = f() {
+            return v;
+        }
+        if start.elapsed() >= deadline {
+            panic!("timeout after {deadline:?}: {msg}");
+        }
+        tokio::time::sleep(step).await;
+    }
+}
+
 async fn start_tcp_echo() -> std::net::SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -279,9 +303,24 @@ upstream_group = "tcp-upstream"
 
     // Close the connection
     drop(stream);
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // Active count should return to zero
+    // Active count should return to zero. Poll until observed (deterministic)
+    // rather than sleeping a fixed duration.
+    let _ = wait_for(
+        Duration::from_secs(5),
+        || {
+            let snap = state.snapshot.load();
+            let rt = snap.upstreams.get("socks-up").unwrap();
+            if rt.active.load(Ordering::Relaxed) == 0 && rt.in_flight.load(Ordering::Relaxed) == 0 {
+                Some(())
+            } else {
+                None
+            }
+        },
+        "active+in_flight lease counters should return to 0 after close",
+    )
+    .await;
+    // Re-read once for the final assertion (snap above may be stale).
     let snap = state.snapshot.load();
     let upstream_rt = snap.upstreams.get("socks-up").unwrap();
     assert_eq!(
@@ -365,9 +404,21 @@ upstream_group = "tcp-upstream"
     stream.read_exact(&mut reply).await.unwrap();
     assert_ne!(reply[1], 0x00, "CONNECT should fail when upstream refuses");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // Active and in_flight should both be zero
+    // Active and in_flight should both return to zero. Poll deterministically.
+    let _ = wait_for(
+        Duration::from_secs(5),
+        || {
+            let snap = state.snapshot.load();
+            let rt = snap.upstreams.get("refuse-up").unwrap();
+            if rt.active.load(Ordering::Relaxed) == 0 && rt.in_flight.load(Ordering::Relaxed) == 0 {
+                Some(())
+            } else {
+                None
+            }
+        },
+        "active+in_flight lease counters should return to 0 after failed connect",
+    )
+    .await;
     let snap = state.snapshot.load();
     let upstream_rt = snap.upstreams.get("refuse-up").unwrap();
     assert_eq!(
@@ -443,9 +494,21 @@ direct = true
 
     // Close the TCP control connection
     drop(stream);
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // Registry should be empty again
+    // Registry should be empty again. Poll until observed.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let count_now = state.udp_registry.active_count().await;
+        if count_now == 0 {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!(
+                "timeout: UDP registry should be empty after TCP control close, still {count_now}"
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let count_after = state.udp_registry.active_count().await;
     assert_eq!(
         count_after, 0,

@@ -107,6 +107,135 @@ See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for full review.
 - `cargo deny check`: advisories ok, bans ok, licenses ok, sources ok
 - `unsafe_code = "forbid"` active in workspace lints
 
+### Build-time-only dependencies
+
+These dependencies are present in the workspace but **never enter production
+binary artifacts**:
+
+- `criterion` (HTML benchmark reports): workspace dep of the root
+  `eggress-bench` package, which declares only `[[bench]]` targets and no
+  `[[bin]]` / `[lib]`. Criterion is compiled only when building benchmarks
+  (`cargo bench` or `cargo build --benches`); `cargo build --bins
+  --release` does not pull it in. The deliverable `eggress-cli` binary is
+  unaffected.
+- `libfuzzer-sys` (fuzz harness): workspace dep of the standalone `fuzz/`
+  workspace, which declares its own `[workspace]` block and is not a member
+  of the main `eggress-bench` / `crates/*` workspace. `cargo build
+  --workspace` and `cargo test --workspace` never compile it; only
+  `cargo build --manifest-path fuzz/Cargo.toml` does.
+
+## Observability / Lifecycle Test Depth
+
+### Observability Tests (9)
+
+All observability tests are **semantic**: they parse the Prometheus output
+and assert on counter/gauge values, not just string presence. Helpers
+`metric_value`, `metric_value_with_labels`, and `label_keys` are defined in
+the test file. They correctly handle the `prometheus-client` 0.22 quirk of
+unconditionally appending `_total` to counter names (e.g. the registered
+`eggress_connections_total` is encoded as `eggress_connections_total_total`).
+Specifics:
+
+- `metrics_renders_after_direct_tcp_session`: parses
+  `eggress_connections_total`, `eggress_connection_failures_total`,
+  `eggress_bytes_upstream_total`, `eggress_connections_active` and asserts
+  the values reflect the session (≥ 1 connection, ≥ 5 bytes upstream,
+  failures == 0, active == 0 after close).
+- `metrics_renders_after_udp_direct_association`: parses
+  `eggress_udp_associations_total`, `eggress_udp_packets_up_total`,
+  `eggress_udp_packets_down_total` and asserts ≥ 1 each.
+- `metrics_renders_after_upstream_relay`: parses
+  `eggress_route_decisions_total{outcome="selected"}` and
+  `eggress_connections_total` and asserts ≥ 1; verifies
+  `eggress_upstream_open_total` is registered (HELP+TYPE present).
+- `metrics_renders_with_upstream_group_for_udp`: parses
+  `eggress_udp_associations_total` and asserts ≥ 1; verifies
+  `eggress_route_decisions_total` and `eggress_upstream_open_total` are
+  registered.
+- `route_decision_counters_increment`: parses
+  `eggress_route_decisions_total{outcome="selected"}` and
+  `eggress_route_decisions_total{action="direct"}` and asserts ≥ 1 each.
+- `udp_active_gauges_return_to_zero_after_close`: parses
+  `eggress_udp_associations_active` and asserts == 0 after TCP close.
+- `metrics_no_secrets_in_labels`: enumerates **all** label keys across the
+  body and asserts none of `client`, `client_addr`, `client_ip`, `source`,
+  `target`, `target_host`, `dst`, `username`, `password`, `token`, `secret`,
+  `payload`, `credential` appear as keys (catches high-cardinality label
+  regressions). Also asserts known payload/client/target strings do not
+  appear in the body.
+- `admin_upstreams_redact_credentials`: parses the `/-/upstreams` JSON and
+  asserts configured credentials (`supersecret`, `hunter2`) do not appear.
+- `admin_route_explain_no_secrets`: POSTs a route-explain request and
+  asserts configured upstream passwords do not appear in the response.
+
+### Lifecycle Invariant Tests (11)
+
+All lifecycle tests are **deterministic**: they poll for the post-close
+invariant within a deadline rather than sleeping a fixed duration. A
+`wait_for(deadline, predicate, msg)` helper drives the polling at 20ms
+steps. Specifics:
+
+- `tcp_active_lease_increments_and_decrements`: opens a SOCKS5 session
+  through an upstream, polls `active` and `in_flight` until both return to
+  0 (deadline 5s).
+- `failed_upstream_connect_does_not_increment_active`: opens a SOCKS5
+  session against a refusing upstream, polls `active` and `in_flight` until
+  both are 0.
+- `udp_association_close_removes_registry_entry`: opens a UDP ASSOCIATE,
+  closes TCP control, polls `state.udp_registry.active_count()` until 0.
+- `shutdown_drains_active_tcp_sessions_within_grace`: triggers shutdown,
+  asserts `active_connections` reaches 0 and elapsed < grace budget.
+- `shutdown_cancels_udp_and_leaves_counts_zero`: same for UDP shutdown.
+- `reload_failure_preserves_generation`, `reload_atomically_swaps_snapshot_*`,
+  and 4 unsupported-protocol-combo rejection tests: deterministic, no
+  sleeps.
+
+The 11 lifecycle tests complete in ~0.3 s with the poll-wait pattern (vs.
+the previous `sleep(200ms..500ms)` baseline that was an upper-bound only).
+
+### Known Production Wiring Gaps Surfaced
+
+The strengthened observability tests surfaced one real pre-Phase-6 wiring gap
+that is now tracked for a follow-up phase:
+
+- `eggress_upstream_open_total` is **registered** in the metrics registry
+  with HELP/TYPE comments but **not yet called** from the TCP chain executor
+  (`record_upstream_open` is only exercised by unit tests in
+  `eggress-metrics/src/lib.rs`). The HTTP CONNECT, SOCKS5, SOCKS4, Trojan,
+  and Shadowsocks chain handlers do not increment it after a successful
+  upstream connect.
+- `eggress_upstream_open_failures_total` has the same gap
+  (`record_upstream_failure` is only exercised by unit tests).
+
+The observability tests assert HELP/TYPE registration for these metrics;
+a future phase should wire the call sites and promote the assertions to
+value-based checks.
+
+## CI Test Coverage
+
+The hosted CI workflow (`.github/workflows/ci.yml`) invokes:
+
+- `cargo check --workspace --all-targets` (3 OS matrix)
+- `cargo test --workspace` (3 OS matrix) — runs all per-crate test suites
+  including the new observability, lifecycle, security, fuzz smoke, and
+  property tests
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo deny check`
+- `cargo audit`
+- `cargo test --test interoperability_pproxy` (env-gated)
+- `cargo test --test interoperability_curl` (env-gated)
+
+The `differential_pproxy.rs` test file is **not** invoked in CI. It is a
+standalone test file with `#[ignore]` annotations and a runtime env-var
+panic (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`) so it is exercised only via the
+opt-in command:
+
+```bash
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli \
+    --test differential_pproxy -- --ignored
+```
+
 ## CI/Local Verification Status
 
 - **Hosted CI**: Billing-blocked (GitHub Actions spending limit). No jobs execute.

@@ -160,6 +160,113 @@ fn get_listener_addr(state: &eggress_runtime::RuntimeState) -> std::net::SocketA
     addrs[0]
 }
 
+/// Parse a Prometheus counter/gauge value for the named metric.
+///
+/// Returns the sum of all samples whose metric name matches (so a labeled
+/// metric contributes its full label-set cardinality). Returns `None` if the
+/// metric name is absent from the body.
+///
+/// Note: `prometheus-client` 0.22 unconditionally appends `_total` to counter
+/// names when encoding the Prometheus text format, regardless of whether the
+/// registered name already ends in `_total`. The parser therefore accepts
+/// both the registered name and the `_total`-suffixed variant.
+fn metric_value(body: &str, name: &str) -> Option<f64> {
+    let candidates = [name.to_string(), format!("{name}_total")];
+    let mut total = 0.0;
+    let mut found = false;
+    for line in body.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        if !candidates.iter().any(|n| matches_name(line, n)) {
+            continue;
+        }
+        if let Some(v) = line_value(line) {
+            total += v;
+            found = true;
+        }
+    }
+    found.then_some(total)
+}
+
+/// True if `line` is a non-comment Prometheus sample whose metric name equals
+/// `name` (unlabeled) or starts with `name{` (labeled).
+fn matches_name(line: &str, name: &str) -> bool {
+    if let Some(rest) = line.strip_prefix(name) {
+        rest.starts_with(' ') || rest.starts_with('{')
+    } else {
+        false
+    }
+}
+
+/// Extract the numeric value (last whitespace-separated token) from a
+/// non-comment Prometheus line. Tolerates a trailing `\r`.
+fn line_value(line: &str) -> Option<f64> {
+    line.split_whitespace().last()?.parse::<f64>().ok()
+}
+
+/// Parse a labeled Prometheus sample where every label key=value pair in
+/// `labels` must be present (other labels may also be present). Returns the
+/// numeric value, or None if no matching sample exists. Accepts both the
+/// registered name and the auto-suffixed `_total` variant for counters.
+fn metric_value_with_labels(body: &str, name: &str, labels: &[(&str, &str)]) -> Option<f64> {
+    let candidates = [name.to_string(), format!("{name}_total")];
+    for line in body.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some(cand) = candidates.iter().find(|n| matches_name(line, n)) else {
+            continue;
+        };
+        let prefix = format!("{cand}{{");
+        let Some(rest) = line.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Some(brace) = rest.find('}') else {
+            continue;
+        };
+        let label_section = &rest[..brace];
+        let value_section = &rest[brace + 1..];
+        let all_present = labels.iter().all(|(k, v)| {
+            let needle = format!("{k}=\"{v}\"");
+            label_section.contains(&needle)
+        });
+        if !all_present {
+            continue;
+        }
+        if let Ok(v) = value_section.split_whitespace().last()?.parse::<f64>() {
+            return Some(v);
+        }
+    }
+    None
+}
+
+/// Collect every distinct label key across all labeled metric samples in the
+/// body. Unlabeled metrics contribute nothing. This is used to assert no
+/// high-cardinality identifier (client addr, target host, username, ...)
+/// appears as a label key.
+fn label_keys(body: &str) -> std::collections::BTreeSet<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    for line in body.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some(brace) = line.find('{') else {
+            continue;
+        };
+        let Some(close) = line[brace..].find('}') else {
+            continue;
+        };
+        let label_section = &line[brace + 1..brace + close];
+        for pair in label_section.split(',') {
+            if let Some(eq) = pair.find('=') {
+                keys.insert(pair[..eq].trim().to_string());
+            }
+        }
+    }
+    keys
+}
+
 /// Start a SOCKS5 upstream proxy that handles TCP CONNECT.
 async fn start_socks5_tcp_upstream() -> std::net::SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -323,17 +430,29 @@ enabled = true
 
     let (status, body) = http_get(&admin_addr, "/metrics").await;
     assert_eq!(status, 200);
+    let connections_total = metric_value(&body, "eggress_connections_total")
+        .expect("eggress_connections_total should be present");
     assert!(
-        body.contains("eggress_connections_total"),
-        "metrics should contain connections_total"
+        connections_total >= 1.0,
+        "eggress_connections_total should be >= 1 after direct session, got {connections_total}"
     );
-    assert!(
-        body.contains("eggress_connections_active"),
-        "metrics should contain connections_active"
+    let connection_failures = metric_value(&body, "eggress_connection_failures_total")
+        .expect("eggress_connection_failures_total should be present");
+    assert_eq!(
+        connection_failures, 0.0,
+        "eggress_connection_failures_total should be 0 on success, got {connection_failures}"
     );
+    let bytes_upstream = metric_value(&body, "eggress_bytes_upstream_total")
+        .expect("eggress_bytes_upstream_total should be present");
     assert!(
-        body.contains("eggress_bytes_upstream_total"),
-        "metrics should contain bytes_upstream_total"
+        bytes_upstream >= 5.0,
+        "eggress_bytes_upstream_total should reflect the 5-byte hello payload, got {bytes_upstream}"
+    );
+    let connections_active = metric_value(&body, "eggress_connections_active")
+        .expect("eggress_connections_active should be present");
+    assert_eq!(
+        connections_active, 0.0,
+        "eggress_connections_active should be 0 after session close, got {connections_active}"
     );
 
     token.cancel();
@@ -415,13 +534,23 @@ enabled = true
 
     let (status, body) = http_get(&admin_addr, "/metrics").await;
     assert_eq!(status, 200);
+    let udp_associations_total = metric_value(&body, "eggress_udp_associations_total")
+        .expect("eggress_udp_associations_total should be present");
     assert!(
-        body.contains("eggress_udp_associations_total"),
-        "metrics should contain udp_associations_total"
+        udp_associations_total >= 1.0,
+        "eggress_udp_associations_total should be >= 1 after UDP associate, got {udp_associations_total}"
     );
+    let udp_packets_up = metric_value(&body, "eggress_udp_packets_up_total")
+        .expect("eggress_udp_packets_up_total should be present");
     assert!(
-        body.contains("eggress_udp_packets_up_total"),
-        "metrics should contain udp_packets_up_total"
+        udp_packets_up >= 1.0,
+        "eggress_udp_packets_up_total should be >= 1 after sending 1 datagram, got {udp_packets_up}"
+    );
+    let udp_packets_down = metric_value(&body, "eggress_udp_packets_down_total")
+        .expect("eggress_udp_packets_down_total should be present");
+    assert!(
+        udp_packets_down >= 1.0,
+        "eggress_udp_packets_down_total should be >= 1 after echo, got {udp_packets_down}"
     );
 
     drop(stream);
@@ -519,13 +648,32 @@ enabled = true
 
     let (status, body) = http_get(&admin_addr, "/metrics").await;
     assert_eq!(status, 200);
+    let route_decisions_total = metric_value_with_labels(
+        &body,
+        "eggress_route_decisions_total",
+        &[("outcome", "selected")],
+    )
+    .expect("eggress_route_decisions_total{outcome=\"selected\"} should be present");
     assert!(
-        body.contains("eggress_upstream_open_total"),
-        "metrics should contain upstream_open_total after upstream relay"
+        route_decisions_total >= 1.0,
+        "selected route decisions should be >= 1 after upstream relay, got {route_decisions_total}"
+    );
+    let connections_total = metric_value(&body, "eggress_connections_total")
+        .expect("eggress_connections_total should be present");
+    assert!(
+        connections_total >= 1.0,
+        "eggress_connections_total should be >= 1 after upstream relay, got {connections_total}"
+    );
+    // eggress_upstream_open_total is registered (HELP+TYPE present) but not
+    // yet wired into the TCP chain executor; assert registration here and
+    // leave value-side wiring as a tracked gap.
+    assert!(
+        body.contains("# HELP eggress_upstream_open_total"),
+        "metrics should register eggress_upstream_open_total"
     );
     assert!(
-        body.contains("eggress_route_decisions_total"),
-        "metrics should contain route_decisions_total"
+        body.contains("# TYPE eggress_upstream_open_total counter"),
+        "eggress_upstream_open_total should be declared as a counter"
     );
 
     token.cancel();
@@ -597,17 +745,27 @@ enabled = true
     // Verify /metrics renders correctly with upstream group configured
     let (status, body) = http_get(&admin_addr, "/metrics").await;
     assert_eq!(status, 200);
+    let udp_associations_total = metric_value(&body, "eggress_udp_associations_total")
+        .expect("eggress_udp_associations_total should be present");
     assert!(
-        body.contains("eggress_udp_associations_total"),
-        "metrics should contain udp_associations_total"
+        udp_associations_total >= 1.0,
+        "eggress_udp_associations_total should be >= 1 after associate, got {udp_associations_total}"
     );
+    // eggress_route_decisions_total is registered (HELP+TYPE present). A
+    // UDP ASSOCIATE alone does not increment the counter; only datagram
+    // relay does. The TCP upstream-relay test covers the value-side
+    // assertion (metrics_renders_after_upstream_relay). Here we just verify
+    // the metric is declared.
     assert!(
-        body.contains("eggress_upstream_open_total"),
-        "metrics should contain upstream_open_total"
+        body.contains("# HELP eggress_route_decisions_total"),
+        "metrics should register eggress_route_decisions_total"
     );
+    // eggress_upstream_open_total is registered (HELP+TYPE present) but not
+    // yet wired into the TCP chain executor; assert registration here and
+    // leave value-side wiring as a tracked gap.
     assert!(
-        body.contains("eggress_route_decisions_total"),
-        "metrics should contain route_decisions_total"
+        body.contains("# HELP eggress_upstream_open_total"),
+        "metrics should register eggress_upstream_open_total"
     );
 
     // Verify upstreams endpoint shows the configured upstream
@@ -697,17 +855,25 @@ enabled = true
     // Verify route decision counters in metrics
     let (status, body) = http_get(&admin_addr, "/metrics").await;
     assert_eq!(status, 200);
+    let route_decisions_total = metric_value_with_labels(
+        &body,
+        "eggress_route_decisions_total",
+        &[("outcome", "selected")],
+    )
+    .expect("eggress_route_decisions_total{outcome=\"selected\"} should be present");
     assert!(
-        body.contains("eggress_route_decisions_total"),
-        "metrics should contain route decisions"
+        route_decisions_total >= 1.0,
+        "selected route decisions should be >= 1 after direct TCP, got {route_decisions_total}"
     );
+    let route_direct = metric_value_with_labels(
+        &body,
+        "eggress_route_decisions_total",
+        &[("action", "direct")],
+    )
+    .expect("eggress_route_decisions_total{action=\"direct\"} should be present");
     assert!(
-        body.contains("action=\"direct\""),
-        "should have direct route decision"
-    );
-    assert!(
-        body.contains("outcome=\"selected\""),
-        "should have 'selected' outcome in route decisions"
+        route_direct >= 1.0,
+        "direct route decisions should be >= 1 after direct TCP, got {route_direct}"
     );
 
     token.cancel();
@@ -877,7 +1043,36 @@ enabled = true
     let (status, body) = http_get(&admin_addr, "/metrics").await;
     assert_eq!(status, 200);
 
-    // Client IP addresses should not appear
+    // Structural check: the set of label keys used across ALL labeled metrics
+    // must be a closed set. None of them should be a high-cardinality
+    // identifier (client address, target host, username, token, payload,
+    // credentials). This catches accidental introduction of unbounded
+    // label values that would explode Prometheus cardinality.
+    let keys = label_keys(&body);
+    for forbidden in [
+        "client",
+        "client_addr",
+        "client_ip",
+        "source",
+        "src",
+        "target",
+        "target_host",
+        "dst",
+        "destination",
+        "username",
+        "password",
+        "token",
+        "secret",
+        "payload",
+        "credential",
+    ] {
+        assert!(
+            !keys.contains(forbidden),
+            "metrics label key '{forbidden}' is forbidden (high-cardinality risk); observed keys: {keys:?}"
+        );
+    }
+
+    // Client IP addresses should not appear anywhere in the body
     assert!(
         !body.contains(&client_addr),
         "metrics should not contain client address {client_addr}"
@@ -896,7 +1091,7 @@ enabled = true
         "metrics should not contain payload"
     );
 
-    // No sensitive keywords in metric labels
+    // No sensitive keywords anywhere in the body
     assert!(
         !body.contains("password"),
         "metrics should not contain 'password'"

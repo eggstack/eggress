@@ -17,6 +17,12 @@ Run with:
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 ```
 
+Note: this test target is **opt-in only**. The hosted CI workflow invokes a
+separate `interoperability_pproxy` test file
+(`crates/eggress-cli/tests/interoperability_pproxy.rs`) under the same env
+var for the broader cross-implementation sanity suite. See
+`docs/PHASE_6_HARDENING_COMPLETION.md` for the full CI test inventory.
+
 ## Feature Matrix
 
 | Feature | Eggress | pproxy | Differential Test | Notes |

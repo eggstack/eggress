@@ -48,6 +48,41 @@ cargo tree -i openssl-sys -e normal 2>&1  # should show nothing or error
 Note: `aws-lc-sys` may appear in dev-dependencies (via `rcgen` for test certs)
 but is not compiled into production builds.
 
+### Build-time-only dependencies
+
+These dependencies live in the workspace graph but **never enter production
+binary artifacts**. They are explicitly tolerated because they only affect
+benchmark or fuzz compilation.
+
+- `criterion` (HTML benchmark reports): workspace dep of the root
+  `eggress-bench` package. That package declares only `[[bench]]` targets
+  and no `[[bin]]` / `[lib]`. `criterion` is compiled only when building
+  benchmarks (`cargo bench`, `cargo build --benches`,
+  `cargo test --benches`). `cargo build --bins --release` for the
+  deliverable `eggress-cli` does **not** pull it in. Verify with:
+
+  ```bash
+  cargo tree -i criterion --package eggress-cli 2>&1   # should show error
+  cargo tree -i criterion --package eggress-runtime 2>&1   # should show error
+  ```
+
+- `libfuzzer-sys` (fuzz harness): workspace dep of the **standalone** `fuzz/`
+  workspace. `fuzz/Cargo.toml` declares its own `[workspace]` block and is
+  not a member of the main workspace. `cargo build --workspace` and
+  `cargo test --workspace` never compile it. Verify with:
+
+  ```bash
+  cargo tree --manifest-path fuzz/Cargo.toml -i libfuzzer-sys 2>&1
+  cargo tree --manifest-path . -i libfuzzer-sys 2>&1     # should show error
+  ```
+
+- `rcgen` (test-only certificate generation): pulled in by
+  `eggress-transport-tls` test targets. It transitively depends on
+  `aws-lc-sys` in some versions. The dependency is dev-only and never
+  reaches the runtime binary; it is the reason the cryptographic production
+  build is ring-only even though test compilation may link against
+  `aws-lc-sys` for the in-process mock CA.
+
 ### Rationale
 
 The project targets Linux, macOS, and Windows with minimal build prerequisites.
