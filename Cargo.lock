@@ -677,6 +677,7 @@ dependencies = [
  "eggress-config",
  "eggress-core",
  "eggress-metrics",
+ "eggress-protocol-shadowsocks",
  "eggress-routing",
  "eggress-server",
  "eggress-testkit",

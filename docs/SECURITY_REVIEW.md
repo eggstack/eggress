@@ -107,11 +107,17 @@ Adversaries may include malicious clients on the network, compromised upstream p
 
 **Unsupported Protocol/Transport Combinations** (`eggress-core/src/capability.rs`):
 - `classify_upstream_chain()` explicitly reports `UnsupportedProtocol` or `UnsupportedChain` for:
-  - Shadowsocks (TCP and UDP both marked experimental/unsupported)
   - Multi-protocol hops
   - Multi-hop chains for UDP
   - HTTP and SOCKS4 for UDP
 - Config validation rejects UDP listeners when no UDP-capable upstreams exist.
+
+**Shadowsocks TCP Security Properties**:
+- Full AEAD stream encryption (not just header encryption); each direction is independently encrypted.
+- Nonces are per-direction counters starting at 1, preventing nonce reuse.
+- Per-connection subkeys derived via HKDF-SHA256 from the shared secret and a random salt.
+- Only AEAD methods are supported (`aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream ciphers are rejected.
+- Password is never logged; URI display uses the redacted `****:****@` format.
 
 **Protocol Detection Ordering** (`eggress-core/src/detect.rs`):
 - `ProtocolDetector` trait with ordered detection.

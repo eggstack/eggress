@@ -33,6 +33,7 @@ cargo test -p eggress-runtime udp_upstream
 
 # Run Shadowsocks tests
 cargo test -p eggress-protocol-shadowsocks
+cargo test -p eggress-runtime shadowsocks_tcp
 
 # Run Trojan tests
 cargo test -p eggress-protocol-trojan
@@ -112,7 +113,7 @@ eggress/
 │   ├── eggress-admin/     # Admin HTTP server, PAC, static content, snapshot provider trait
 │   ├── eggress-protocol-http/   # HTTP CONNECT and forwarding
 │   ├── eggress-protocol-socks/  # SOCKS4/4a and SOCKS5
-│   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD TCP/UDP
+│   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD TCP/UDP (TCP: full stream encryption)
 │   ├── eggress-protocol-trojan/ # Trojan TLS-based proxy
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
@@ -208,7 +209,7 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **Shared runtime snapshot**: `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
-- **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
+- **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service

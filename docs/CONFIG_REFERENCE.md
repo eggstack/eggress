@@ -140,6 +140,16 @@ protocol://[user:pass@]host:port[/rule][+tls]
 
 **Shadowsocks URI:** `shadowsocks://method:password@host:port`
 
+Supported AEAD methods: `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`. Legacy stream ciphers are not supported.
+
+```toml
+# Shadowsocks upstream (TCP)
+uri = "shadowsocks://aes-256-gcm:password@192.168.1.1:8388"
+
+# Shadowsocks with ChaCha20
+uri = "shadowsocks://chacha20-ietf-poly1305:password@192.168.1.1:8388"
+```
+
 **Trojan URI:** `trojan://password@host:port`
 
 ### `[upstreams.health]`

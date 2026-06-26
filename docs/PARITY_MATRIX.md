@@ -26,7 +26,7 @@ or document supported-but-unverified functionality.
 | SOCKS4/4a | server + client | server + client | Supported | integration tests | none | Separate unit tests; no differential |
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo` | Byte-exact payload match |
 | SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing, not SOCKS5 UDP ASSOCIATE as server |
-| Shadowsocks TCP | full AEAD + stream | experimental header-only | Partial | none | none | Eggress sends encrypted header only, no stream encryption |
+| Shadowsocks TCP | full AEAD + stream | client/upstream only | Partial | none | none | No inbound listener; upstream has full AEAD stream encryption |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
 ### Inbound UDP Protocols
@@ -44,7 +44,7 @@ or document supported-but-unverified functionality.
 | HTTP CONNECT upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_http_upstream` | Chain payloads match |
 | SOCKS4/SOCKS4a upstream | supported | supported | Supported | integration tests | none | Unit tested |
 | SOCKS5 upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_socks5_upstream` | Chain payloads match |
-| Shadowsocks upstream | supported | experimental | Experimental | none | none | Header-only encryption |
+| Shadowsocks upstream | supported | supported | Compatible | `shadowsocks_tcp.rs` | none | Full AEAD stream encryption: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305 |
 | Trojan upstream | supported | supported (client only) | Partial | unit tests | none | No server side |
 | Direct upstream | supported | supported | Compatible | integration tests | implicit in echo tests | Both connect directly |
 
@@ -83,7 +83,7 @@ or document supported-but-unverified functionality.
 | HTTP auth rejection | rejects unauthenticated | rejects unauthenticated | Compatible | integration tests | `differential_http_auth_failure` | Both reject |
 | SOCKS5 username/password | URI-embedded | URI-embedded | Supported | integration tests | none | |
 | HTTP Basic auth | URI-embedded | URI-embedded | Supported | integration tests | none | |
-| Shadowsocks password | URI-embedded | URI-embedded | Supported | none | none | |
+| Shadowsocks password | URI-embedded | URI-embedded | Supported | `shadowsocks_tcp.rs` | none | |
 
 ### CLI Compatibility
 
@@ -108,7 +108,7 @@ or document supported-but-unverified functionality.
 | `http://` scheme | supported | supported | Compatible | cli_tests | none | |
 | `socks5://` scheme | supported | supported | Compatible | cli_tests | none | |
 | `socks4://` scheme | supported | supported | Compatible | cli_tests | none | |
-| `ss://` scheme | supported | supported (partial) | Partial | none | none | Different auth parsing |
+| `ss://` scheme | supported | supported | Supported | cli_tests | none | |
 | `trojan://` scheme | supported | supported | Supported | unit tests | none | |
 | `__` chain separator | supported | supported | Compatible | integration tests | none | |
 | `user:pass@` auth | supported | supported | Compatible | integration tests | none | |
@@ -136,7 +136,7 @@ or document supported-but-unverified functionality.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
 - **CLI (Compatible / Partial)**: `-l` and `-r` flags share syntax. `-ul` and `-ur` are unsupported (Eggress uses SOCKS5 UDP ASSOCIATE). `--daemon` is not yet implemented.
-- **Shadowsocks / Trojan (Partial / Experimental)**: Shadowsocks TCP sends encrypted headers only (no stream encryption). Trojan is client-only. Neither has differential coverage.
+- **Shadowsocks / Trojan (Partial / Supported)**: Shadowsocks TCP upstream has full AEAD stream encryption (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305). Trojan is client-only. Neither has differential coverage.
 - **Python bindings (Unsupported)**: Not started; planned for later phases.
 
 ## Limitations
@@ -150,7 +150,7 @@ or document supported-but-unverified functionality.
 7. **HTTP forward proxy**: pproxy supports persistent HTTP forward proxy (multiple requests per connection); eggress implements single-exchange forward only.
 8. **Hot reload scope**: Eggress reloads routing, upstreams, groups, and health config atomically via `ArcSwap`. Listener topology changes require restart. pproxy reloads its full config on SIGHUP.
 9. **Fallback model**: pproxy uses `-F` flag for fallback; eggress falls back to direct connection or rejects based on route rules. Different semantics.
-10. **Shadowsocks stream encryption**: Eggress sends an encrypted header but does not encrypt the stream payload. This is a known gap vs. pproxy's full AEAD stream encryption.
+10. **Shadowsocks UDP format**: Uses `nonce + ciphertext` instead of standard `salt + ciphertext`. Non-interoperable with standard Shadowsocks implementations.
 
 ## Test Infrastructure
 

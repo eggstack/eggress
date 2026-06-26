@@ -115,8 +115,8 @@ pub fn decrypt_chunk(
     Ok(plaintext[2..2 + len].to_vec())
 }
 
-/// Internal AEAD encryption.
-fn aead_encrypt(
+/// Raw AEAD encryption without salt derivation (for address header).
+pub fn aead_encrypt_raw(
     method: CipherMethod,
     key: &[u8],
     nonce: &[u8],
@@ -149,8 +149,8 @@ fn aead_encrypt(
     }
 }
 
-/// Internal AEAD decryption.
-fn aead_decrypt(
+/// Raw AEAD decryption without salt derivation (for address header).
+pub fn aead_decrypt_raw(
     method: CipherMethod,
     key: &[u8],
     nonce: &[u8],
@@ -181,6 +181,26 @@ fn aead_decrypt(
                 .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
         }
     }
+}
+
+/// Internal AEAD encryption.
+fn aead_encrypt(
+    method: CipherMethod,
+    key: &[u8],
+    nonce: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
+    aead_encrypt_raw(method, key, nonce, plaintext)
+}
+
+/// Internal AEAD decryption.
+fn aead_decrypt(
+    method: CipherMethod,
+    key: &[u8],
+    nonce: &[u8],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
+    aead_decrypt_raw(method, key, nonce, ciphertext)
 }
 
 #[cfg(test)]

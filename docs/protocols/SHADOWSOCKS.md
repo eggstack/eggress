@@ -2,19 +2,18 @@
 
 ## Overview
 
-Shadowsocks proxy protocol with AEAD cipher support. This implementation is
-**experimental** and should not be considered production-ready.
+Shadowsocks proxy protocol with AEAD cipher support. TCP upstream is
+**supported** with full bidirectional AEAD stream encryption.
 
-### TCP Status: Experimental
+### TCP Status: Supported
 
-The TCP client sends an encrypted address header but does NOT encrypt
-subsequent bidirectional data. This means:
-- The target address is encrypted in the initial payload
-- All subsequent data flows as plaintext through the connection
-- This does NOT provide Shadowsocks TCP privacy/confidentiality
+Full bidirectional AEAD stream encryption is implemented via
+`ShadowsocksAeadStream`, a stream adapter that maintains independent
+read/write nonce sequences. The server helper `shadowsocks_accept`
+performs the initial handshake and returns the encrypted stream.
 
-Full TCP stream encryption requires a bidirectional AEAD stream adapter
-with independent read/write nonce sequences, which is not yet implemented.
+The TCP client sends an encrypted address header and all subsequent
+bidirectional data is encrypted with per-direction AEAD nonces.
 
 ### UDP Status: Experimental
 
@@ -75,12 +74,6 @@ Source: `crates/eggress-protocol-shadowsocks/src/method.rs:50`
 
 Source: `crates/eggress-protocol-shadowsocks/src/address.rs`
 
-### Limitation
-
-The current implementation sends the encrypted address header but does NOT
-encrypt subsequent bidirectional data. Full stream encryption requires a
-wrapping stream adapter (planned for future work).
-
 ## UDP Wire Format
 
 ### Packet Structure
@@ -126,11 +119,12 @@ Example: `ss://aes-256-gcm:mypassword@192.168.1.1:8388`
 - Address encoding/decoding edge cases (truncated, unknown ATYP)
 - TCP connect sends correct payload structure
 
-Test count: 38 tests across `eggress-protocol-shadowsocks`.
+Test count: 53+ tests across `eggress-protocol-shadowsocks`, including
+stream adapter tests for `ShadowsocksAeadStream` and 5 runtime
+integration tests in `shadowsocks_tcp.rs`.
 
 ## Limitations
 
-- **TCP stream encryption not implemented** — only the address header is encrypted; subsequent data is plaintext
 - **UDP format non-interoperable** — uses `nonce + ciphertext` instead of standard `salt + ciphertext`
 - No legacy stream ciphers (RC4, etc.) -- only AEAD methods
 - No plugin transport modes (simple-obfs, v2ray-plugin, etc.)

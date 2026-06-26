@@ -605,12 +605,7 @@ upstream_group = "tcp-upstream"
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
 
-#[ignore = "Shadowsocks upstream TCP is experimental and not yet supported end-to-end"]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shadowsocks_upstream_routes_tcp_echo() {
-    // Placeholder for future Shadowsocks upstream TCP testing.
-    // Requires a synthetic Shadowsocks server that can relay TCP connections.
-}
+// Shadowsocks upstream TCP tests moved to tests/shadowsocks_tcp.rs
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn http_upstream_with_udp_listener_rejected_at_config() {

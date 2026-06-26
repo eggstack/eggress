@@ -148,7 +148,7 @@ Legend:
 | HTTP CONNECT | yes | no | 5 |
 | SOCKS4/SOCKS4a | yes | no | 5 |
 | SOCKS5 | yes | one-hop yes | 4 |
-| Shadowsocks | experimental (header only) | experimental (non-interoperable) | 5 |
+| Shadowsocks | yes (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305) | experimental (non-interoperable) | 5 |
 | Trojan | TCP yes (rustls) | no | 5 |
 
 ### UDP
@@ -194,7 +194,7 @@ Legend:
 
 ### Shadowsocks
 
-- [ ] Shadowsocks TCP client (experimental — sends encrypted header only, no stream encryption)
+- [x] Shadowsocks TCP client (full AEAD stream encryption; aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [ ] Shadowsocks TCP server
 - [ ] Shadowsocks UDP client (experimental — non-interoperable packet format)
 - [ ] Shadowsocks UDP server
