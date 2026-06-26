@@ -480,6 +480,10 @@ fn handle_pproxy_translate(args: &PproxyTranslate) {
     }
 
     print!("{}", output.toml);
+
+    if output.has_unsupported() {
+        std::process::exit(1);
+    }
 }
 
 fn handle_pproxy_check(args: &PproxyCheck) {

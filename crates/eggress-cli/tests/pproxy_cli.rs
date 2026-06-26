@@ -115,7 +115,7 @@ fn translate_ssl_unsupported() {
         ])
         .output()
         .expect("failed to run eggress");
-    assert!(output.status.success());
+    assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("ssl-listener"));
 }
@@ -134,7 +134,7 @@ fn translate_block_unsupported() {
         ])
         .output()
         .expect("failed to run eggress");
-    assert!(output.status.success());
+    assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("block-rules"));
 }

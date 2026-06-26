@@ -173,7 +173,7 @@ pproxy compatibility layer:
 - `pproxy check` — validates translated configuration
 - `pproxy run` — runs eggress with pproxy-style arguments (translated internally)
 - URI translation from pproxy listen/remote format to eggress TOML
-- Flag mapping: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-F`, `--rulefile`, `--certfile`, `--keyfile`, `--reuse`, `-v`
+- Flag mapping: `-l`, `-r`, `-s`, `-v`, `-a`; unsupported flags (`-ul`, `-ur`, `--ssl`, `-b`, `--daemon`) emit diagnostics
 
 ### eggress-udp
 UDP association management and direct forwarding:

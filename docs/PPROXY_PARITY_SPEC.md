@@ -434,13 +434,12 @@ model.
 
 ### Supported Flags
 
-The compat layer translates: `-l`, `-r`, `-ul`, `-ur`, `-s`, `-v`, `-a`,
-`--ssl`, `-b`, `--daemon`.
+The compat layer translates: `-l`, `-r`, `-s`, `-v`, `-a`.
 
 Flags with direct mapping produce TOML configuration. Flags without a direct
-mapping (e.g., `--daemon`, `--ssl`, `-b`) emit a warning or unsupported
-feature diagnostic but do not fail translation. Unknown flags emit an
-`unknown-flag` warning.
+mapping (e.g., `--daemon`, `--ssl`, `-b`, `-ul`, `-ur`) emit a warning or
+unsupported feature diagnostic. Unknown flags emit an `unknown-flag` warning.
+Translation exits nonzero when unsupported features are present.
 
 ### Migration Guidance
 

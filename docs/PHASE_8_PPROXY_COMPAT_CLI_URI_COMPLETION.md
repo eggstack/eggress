@@ -38,11 +38,11 @@ Phase 8 adds a compatibility layer for common Python pproxy invocation and URI s
 
 ## Test Coverage
 
-### Unit Tests (33 total)
+### Unit Tests (52 total)
 
 - URI parsing: 12 tests covering all schemes, auth, IPv6, TLS, rules
-- Translation: 9 tests covering all supported combinations
-- Args parsing: 5 tests covering flags and positional arguments
+- Translation: 17 tests covering all supported combinations, scheduler mapping, unsupported flag handling
+- Args parsing: 16 tests covering flags, positional arguments, unknown flag detection
 - Integration: 7 tests covering TOML generation, credential redaction, stable naming
 
 ### Differential Tests
