@@ -91,12 +91,14 @@ or document supported-but-unverified functionality.
 |---|---|---|---|---|---|---|
 | `-l` listen flag | supported | supported | Compatible | cli_tests | none | Same syntax |
 | `-r` remote flag | supported | supported | Compatible | cli_tests | none | Same syntax |
-| `-ul` UDP listen | supported | not yet | Unsupported | none | none | Phase 8 target |
-| `-ur` UDP remote | supported | not yet | Unsupported | none | none | Phase 8 target |
+| `-ul` UDP listen | supported | translated to TOML | Compatible | cli_tests | none | pproxy compat layer translates to `[[listeners]]` with `[listeners.udp]` |
+| `-ur` UDP remote | supported | translated to TOML | Compatible | cli_tests | none | pproxy compat layer translates to `[[upstreams]]` with UDP config |
 | `--config` TOML | supported | supported | Supported | integration tests | none | Different schema |
-| `--rulefile` | supported | not yet | Unsupported | none | none | Uses TOML rules instead |
+| `--rulefile` | supported | translated to TOML | Compatible | cli_tests | none | pproxy compat layer translates rule file to `[[rules]]` |
 | `--daemon` | supported | not yet | Unsupported | none | none | |
 | `-b` bind | supported | supported via `-l` | Partial | cli_tests | none | Different flag syntax |
+| pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | Compatible | cli_tests | none | Translates pproxy CLI args to TOML config |
+| pproxy URI translation | N/A | `eggress pproxy translate` | Compatible | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
 | `--reuse` | supported | N/A | Intentional non-parity | none | none | Connection pooling not implemented |
 
 ### URI Compatibility
@@ -133,7 +135,7 @@ or document supported-but-unverified functionality.
 - **UDP relay (Partial)**: Both relay UDP datagrams successfully; pproxy uses its own UDP framing vs. SOCKS5 UDP ASSOCIATE headers. Framing differs but relay behavior matches.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
-- **CLI (Compatible / Partial)**: `-l` and `-r` flags share syntax. `-ul`, `-ur`, `--rulefile`, `--daemon` are not yet implemented.
+- **CLI (Compatible / Partial)**: `-l` and `-r` flags share syntax. `-ul`, `-ur`, and `--rulefile` are handled via the pproxy compatibility layer (`eggress pproxy translate`). `--daemon` is not yet implemented.
 - **Shadowsocks / Trojan (Partial / Experimental)**: Shadowsocks TCP sends encrypted headers only (no stream encryption). Trojan is client-only. Neither has differential coverage.
 - **Python bindings (Unsupported)**: Not started; planned for later phases.
 

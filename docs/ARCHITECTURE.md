@@ -167,6 +167,14 @@ Shared TLS transport layer:
 - `TlsError` — structured error type for TLS operations
 - Used by: `eggress-runtime` (listener TLS), `eggress-server` (upstream TLS), `eggress-protocol-trojan` (Trojan TLS)
 
+### eggress-pproxy-compat
+pproxy compatibility layer:
+- `pproxy translate` — converts pproxy CLI args to TOML configuration
+- `pproxy check` — validates translated configuration
+- `pproxy run` — runs eggress with pproxy-style arguments (translated internally)
+- URI translation from pproxy listen/remote format to eggress TOML
+- Flag mapping: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-F`, `--rulefile`, `--certfile`, `--keyfile`, `--reuse`, `-v`
+
 ### eggress-udp
 UDP association management and direct forwarding:
 - `UdpAssociation` — association state machine with ownership by TCP control connection

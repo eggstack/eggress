@@ -511,6 +511,7 @@ dependencies = [
  "eggress-config",
  "eggress-core",
  "eggress-metrics",
+ "eggress-pproxy-compat",
  "eggress-protocol-http",
  "eggress-protocol-socks",
  "eggress-routing",
@@ -571,6 +572,21 @@ dependencies = [
  "prometheus-client",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "eggress-pproxy-compat"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "eggress-config",
+ "eggress-uri",
+ "predicates",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

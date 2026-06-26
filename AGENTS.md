@@ -67,6 +67,9 @@ cargo test -p eggress-runtime --test load -- --ignored
 # Run pproxy differential tests (gated)
 cargo test -p eggress-cli --test differential_pproxy
 
+# Run pproxy compatibility tests
+cargo test -p eggress-pproxy-compat
+
 # Run benchmarks
 cargo bench --workspace
 
@@ -113,6 +116,7 @@ eggress/
 │   ├── eggress-protocol-trojan/ # Trojan TLS-based proxy
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
+│   ├── eggress-pproxy-compat/ # pproxy compatibility: URI translation, config migration
 │   └── eggress-testkit/   # Test utilities
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
@@ -207,6 +211,7 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **UDP**: direct forwarding and one-hop SOCKS5 upstream relay; no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default.
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
+- **pproxy CLI subcommands**: `pproxy migrate` translates pproxy config files to eggress TOML; `pproxy translate` converts pproxy URI arguments to eggress-compatible format
 
 ## Skills
 

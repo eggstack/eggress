@@ -415,7 +415,34 @@ The following items need further investigation or testing to confirm behavior:
 | pproxy `--rulefile` format details | `needs-probe` | Exact syntax for rule-file entries and regex patterns |
 | pproxy SOCKS4a domain resolution | `needs-probe` | Whether pproxy resolves domains at the SOCKS4a server or forwards them |
 
-## 16. References
+## 16. pproxy Compatibility CLI Layer
+
+Eggress provides a pproxy compatibility CLI layer that translates pproxy-style
+command-line arguments into equivalent TOML configuration. This allows users
+familiar with pproxy to migrate incrementally without rewriting their mental
+model.
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `eggress pproxy translate` | Convert pproxy CLI args to TOML configuration |
+| `eggress pproxy check` | Validate translated configuration |
+| `eggress pproxy run` | Run eggress with pproxy-style arguments (translated internally) |
+
+### Supported Flags
+
+The compat layer translates: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-F`,
+`--rulefile`, `--certfile`, `--keyfile`, `--reuse`, `--daemon`, `-v`.
+
+Flags without a direct mapping (e.g., `--daemon`) emit a warning but do not
+fail translation.
+
+### Migration Guidance
+
+For detailed migration instructions, see [`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).
+
+## 17. References
 
 - [pproxy GitHub repository](https://github.com/nimlang/pproxy)
 - [RFC 1928 — SOCKS Protocol Version 5](https://datatracker.ietf.org/doc/html/rfc1928)
@@ -424,3 +451,4 @@ The following items need further investigation or testing to confirm behavior:
 - [Trojan Protocol](https://trojan-gfw.github.io/trojan/)
 - [Eggress Parity Matrix](./PARITY_MATRIX.md)
 - [Eggress Differential Tests](../crates/eggress-cli/tests/differential_pproxy.rs)
+- [pproxy Migration Guide](./PPROXY_MIGRATION.md)

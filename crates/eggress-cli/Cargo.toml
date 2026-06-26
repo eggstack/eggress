@@ -19,6 +19,7 @@ eggress-runtime.workspace = true
 eggress-metrics.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
+eggress-pproxy-compat.workspace = true
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -26,6 +27,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 serde_json.workspace = true
 serde.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 eggress-testkit.workspace = true
@@ -33,7 +35,6 @@ eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
-tempfile.workspace = true
 
 [lints]
 workspace = true
