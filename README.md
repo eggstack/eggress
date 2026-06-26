@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
+> Status: Phase 6 complete — hardening: property tests for codecs/parsers (proptest), fuzz harness smoke foundation, runtime lifecycle invariant tests, observability/metrics/admin tests, security invariant tests, pproxy differential tests (gated), benchmarks (criterion) and load tests, deny.toml explicit dependency bans, and comprehensive documentation (CI_STATUS, SECURITY_REVIEW, PARITY_MATRIX, CONFIG_REFERENCE, METRICS, OPERATIONS, TESTING, RELEASE_READINESS). Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -342,8 +342,11 @@ Legend:
 - [ ] DNS rebinding-aware routing
 - [ ] Secret zeroization where practical
 - [ ] Unsafe-code audit
-- [x] Dependency audit in CI
-- [ ] Fuzzing corpus
+- [x] Dependency audit in CI (deny.toml with explicit bans: openssl-sys, native-tls, aws-lc-sys, cmake)
+- [x] Property tests for codecs/parsers
+- [x] Fuzz harness smoke foundation
+- [x] Security invariant tests
+- [ ] Fuzzing corpus (seed corpus)
 - [ ] Long-running soak tests
 - [ ] Resource-exhaustion tests
 - [ ] Security disclosure process
@@ -401,6 +404,8 @@ Preferred foundations include:
 
 Native dependencies and platform FFI are reserved for operating-system facilities such as transparent proxying and system-proxy configuration.
 
+Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `cargo deny check` to block banned crates (openssl-sys, native-tls, aws-lc-sys, cmake) and audit advisories.
+
 ## Documentation
 
 - [Full roadmap](docs/ROADMAP.md)
@@ -410,6 +415,14 @@ Native dependencies and platform FFI are reserved for operating-system facilitie
 - [Phase 3 completion](docs/PHASE_3_COMPLETION.md)
 - [Phase 4 UDP upstream relay](docs/PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md)
 - [Phase 5 upstream protocol parity](docs/PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md)
+- [Testing](docs/TESTING.md)
+- [Security review](docs/SECURITY_REVIEW.md)
+- [Parity matrix](docs/PARITY_MATRIX.md)
+- [Config reference](docs/CONFIG_REFERENCE.md)
+- [Metrics](docs/METRICS.md)
+- [Operations](docs/OPERATIONS.md)
+- [Release readiness](docs/RELEASE_READINESS.md)
+- [CI status](docs/CI_STATUS.md)
 - [Protocol: HTTP CONNECT](docs/protocols/HTTP_CONNECT.md)
 - [Protocol: SOCKS4](docs/protocols/SOCKS4.md)
 - [Protocol: Shadowsocks](docs/protocols/SHADOWSOCKS.md)

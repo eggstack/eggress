@@ -31,7 +31,16 @@ highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
 allow = []
-deny = []
+deny = [
+    # No OpenSSL — project is ring-only via rustls
+    { name = "openssl-sys", wrappers = ["openssl"] },
+    # No native-tls — project is ring-only via rustls
+    { name = "native-tls", wrappers = ["native-tls"] },
+    # No aws-lc-sys — project uses ring for rustls crypto provider
+    { name = "aws-lc-sys" },
+    # No cmake builds in production dependency graph
+    { name = "cmake" },
+]
 skip = []
 skip-tree = []
 

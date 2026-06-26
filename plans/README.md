@@ -1,16 +1,10 @@
-# Plans Directory
+# Plans
 
-This directory contains active implementation handoff plans for the eggress project.
-
-## Policy
-
-- **Active plans** live directly under `plans/`.
-- **Completed plans** are retained under `plans/` as handoff/audit artifacts after their corresponding phase is closed.
-- Phase completion records are maintained in `docs/`.
-- Historical plans are never deleted; they serve as context for why changes were made.
-
-## Current Plans
-
-| File | Status |
-|------|--------|
-| `PHASE_4_FINAL_CLOSURE_PLAN.md` | Closure fixes applied — Phase 4 closed |
+| Plan | Status | Completion doc |
+|---|---|---|
+| PHASE_4_FINAL_CLOSURE_PLAN | Archived | docs/PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md |
+| PHASE_5_CORRECTIVE_CLOSURE_PLAN | Archived | docs/PHASE_5_CORRECTIVE_CLOSURE_COMPLETION.md |
+| PHASE_5_FINAL_FOLLOWUP_HANDOFF_PLAN | Archived | docs/PHASE_5_CORRECTIVE_CLOSURE_COMPLETION.md |
+| PHASE_5_UPSTREAM_PROTOCOL_PARITY_PLAN | Archived | docs/PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md |
+| PHASE_6_HARDENING_AND_PARITY_VALIDATION_PLAN | Superseded by execution plan | docs/PHASE_6_HARDENING_COMPLETION.md |
+| PHASE_6_HARDENING_EXECUTION_PLAN | Complete | docs/PHASE_6_HARDENING_COMPLETION.md |

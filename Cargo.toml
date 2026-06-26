@@ -1,3 +1,10 @@
+[package]
+name = "eggress-bench"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
 [workspace]
 resolver = "2"
 members = [
@@ -62,6 +69,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["loggin
 webpki-roots = "0.26"
 rustls-pemfile = "2"
 pkcs8 = "0.11"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 # Internal crates
 eggress-admin = { path = "crates/eggress-admin" }
@@ -80,6 +88,27 @@ eggress-server = { path = "crates/eggress-server" }
 eggress-udp = { path = "crates/eggress-udp" }
 eggress-cli = { path = "crates/eggress-cli" }
 eggress-runtime = { path = "crates/eggress-runtime" }
+
+[dependencies]
+criterion.workspace = true
+tokio.workspace = true
+eggress-core.workspace = true
+eggress-routing.workspace = true
+eggress-protocol-socks.workspace = true
+ipnet.workspace = true
+regex.workspace = true
+
+[[bench]]
+name = "tcp_relay"
+harness = false
+
+[[bench]]
+name = "udp_relay"
+harness = false
+
+[[bench]]
+name = "route_match"
+harness = false
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

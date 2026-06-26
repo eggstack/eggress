@@ -21,6 +21,41 @@ In `crates/eggress-runtime/tests/`:
 - `udp_upstream.rs` — SOCKS5 upstream relay, shutdown, metrics
 - `upstream_protocols.rs` — HTTP CONNECT, SOCKS4, SOCKS5, and
   unsupported-combo (HTTP/SOCKS4/Shadowsocks/Trojan + UDP) rejection
+- `lifecycle_invariants.rs` — runtime lifecycle invariants
+- `observability.rs` — metrics, admin, observability correctness
+- `security_invariants.rs` — security constraints and invariants
+- `load.rs` — `#[ignore]` load/stress tests (run with `-- --ignored`)
+
+### Property tests (proptest)
+Round-trip and invariant tests using `proptest`. Lives in per-crate `tests/` directories:
+- `crates/eggress-protocol-socks/tests/codec_properties.rs` — SOCKS codec round-trips
+- `crates/eggress-protocol-http/tests/connect_properties.rs` — HTTP CONNECT round-trips
+- `crates/eggress-protocol-trojan/tests/request_properties.rs` — Trojan request round-trips
+- `crates/eggress-routing/tests/properties.rs` — route match consistency
+
+Property tests generate random inputs and assert invariants hold. Use `proptest!` macro
+with `#[proptest]` attribute. Strategies should generate valid-but-random protocol inputs.
+
+### Fuzz testing
+Fuzz harnesses live in `fuzz/fuzz_targets/`:
+- `uri_parse.rs` — URI parser fuzz target
+- `socks5_udp_datagram.rs` — SOCKS5 UDP datagram codec fuzz target
+
+Run with `cargo fuzz run <target>`. Smoke tests in per-crate `tests/` exercise seed inputs
+without requiring `cargo-fuzz`:
+- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — seed corpus for SOCKS codec
+
+### Benchmarks
+Criterion benchmarks live in `benches/`:
+- `tcp_relay.rs` — TCP relay throughput
+- `udp_relay.rs` — UDP relay throughput
+- `route_match.rs` — route matching latency
+
+Run with `cargo bench --workspace`.
+
+### Load tests
+`#[ignore]`-annotated tests for stress/load scenarios:
+- `crates/eggress-runtime/tests/load.rs` — run with `cargo test -p eggress-runtime --test load -- --ignored`
 
 ### Protocol-crate tests
 Protocol-specific tests live alongside the implementation:
@@ -36,6 +71,9 @@ Protocol-specific tests live alongside the implementation:
 ### Interoperability tests
 - `crates/eggress-cli/tests/interoperability_curl.rs` — curl-based
 - `crates/eggress-cli/tests/interoperability_pproxy.rs` — pproxy-based
+
+### Differential tests
+- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy
 
 ### CLI tests
 - `crates/eggress-cli/tests/cli_tests.rs` — argument parsing
@@ -55,6 +93,23 @@ cargo test --workspace
 cargo test -p eggress-runtime udp
 cargo test -p eggress-udp socks5_upstream
 
+# Property tests
+cargo test -p eggress-protocol-socks --test codec_properties
+cargo test -p eggress-routing --test properties
+
+# Fuzz smoke tests
+cargo test -p eggress-protocol-socks --test fuzz_smoke
+
+# Benchmarks
+cargo bench --workspace
+
+# Load tests (ignored by default)
+cargo test -p eggress-runtime --test load -- --ignored
+
+# Fuzz targets (requires cargo-fuzz)
+cargo fuzz run uri_parse
+cargo fuzz run socks5_udp_datagram
+
 # With output
 cargo test --workspace -- --nocapture
 ```
@@ -66,3 +121,7 @@ cargo test --workspace -- --nocapture
 - Prefer integration tests over unit tests for behavioral coverage
 - Test both success and failure paths
 - Test negative paths (bind conflict, invalid config, oversized identity)
+- For property tests: use `proptest!` macro, define strategies for valid inputs,
+  assert round-trip or invariant properties
+- For fuzz targets: add seed inputs to `fuzz_smoke.rs` tests for CI coverage
+- For load tests: annotate with `#[ignore]` and document the scenario

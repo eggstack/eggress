@@ -42,6 +42,37 @@ cargo test -p eggress-transport-tls
 # Run upstream protocol tests
 cargo test -p eggress-runtime upstream_protocols
 
+# Run property tests (proptest)
+cargo test -p eggress-protocol-socks --test codec_properties
+cargo test -p eggress-protocol-http --test connect_properties
+cargo test -p eggress-protocol-trojan --test request_properties
+cargo test -p eggress-routing --test properties
+
+# Run fuzz smoke tests
+cargo test -p eggress-protocol-socks --test fuzz_smoke
+
+# Run lifecycle invariant tests
+cargo test -p eggress-runtime --test lifecycle_invariants
+
+# Run observability tests
+cargo test -p eggress-runtime --test observability
+
+# Run security invariant tests
+cargo test -p eggress-runtime --test security_invariants
+
+# Run load tests (ignored by default)
+cargo test -p eggress-runtime --test load -- --ignored
+
+# Run pproxy differential tests (gated)
+cargo test -p eggress-cli --test differential_pproxy
+
+# Run benchmarks
+cargo bench --workspace
+
+# Run fuzz targets
+cargo fuzz run uri_parse
+cargo fuzz run socks5_udp_datagram
+
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
@@ -71,17 +102,27 @@ eggress/
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   └── eggress-testkit/   # Test utilities
+├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match)
+├── fuzz/                   # Fuzz harness smoke targets (uri_parse, socks5_udp_datagram)
 ├── plans/                  # Historical planning documents (reference only)
 ├── tests/
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)
 └── docs/
     ├── ARCHITECTURE.md
     ├── ROADMAP.md
+    ├── CI_STATUS.md
+    ├── CONFIG_REFERENCE.md
     ├── DEPENDENCY_POLICY.md
+    ├── METRICS.md
+    ├── OPERATIONS.md
+    ├── PARITY_MATRIX.md
     ├── PHASE_2_COMPLETION.md
     ├── PHASE_3_COMPLETION.md
     ├── PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md
     ├── PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md
+    ├── RELEASE_READINESS.md
+    ├── SECURITY_REVIEW.md
+    ├── TESTING.md
     ├── TRANSPORT_TLS_COMPLETION.md
     ├── URI_GRAMMAR.md
     └── protocols/
@@ -92,12 +133,18 @@ eggress/
 ```
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
-health, admin, reload, shutdown, pac_static, udp, udp_upstream, upstream_protocols).
+health, admin, reload, shutdown, pac_static, udp, udp_upstream, upstream_protocols,
+lifecycle_invariants, observability, security_invariants, load).
 They exercise the supervisor end to end and cover negative-path behaviors (bind
 conflict, invalid source, oversized identity, reload-time failure). UDP integration tests
 cover association lifecycle, TCP control close, echo relay, bind conflict,
 topology rejection, config reload, and SOCKS5 upstream relay. Upstream protocol tests
 cover HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection through the full stack.
+Property tests live in per-crate `tests/` directories (codec round-trips, parser
+round-trips, route match consistency). Fuzz smoke tests exercise seed inputs for
+`cargo fuzz` targets. Load tests are `#[ignore]` by default and require explicit opt-in.
+Differential tests against `pproxy` are gated and live in `crates/eggress-cli/tests/`.
+See `docs/TESTING.md` for comprehensive testing guidance.
 
 ## Code Conventions
 
@@ -114,18 +161,19 @@ cover HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection through the full sta
 
 ## CI / Status Visibility
 
-- `.github/workflows/ci.yml` and `.github/workflows/security.yml` exist.
+- `.github/workflows/ci.yml` exists with separate visible jobs: fmt, check,
+  test, clippy, deny, audit, interoperability.
 - Hosted CI run status is **not** currently visible via the
   `commits/{sha}/status` endpoint for `main` (returns `state: pending,
   statuses: []`). Recent runs surfaced via `gh run list` are reported as
   `completed failure` with billing-related annotations (no code execution).
 - Treat **local verification** (`cargo fmt`, `cargo test --workspace`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check`)
-  as the source of truth until hosted CI resumes. Record local verification
-  in completion docs; do not claim hosted CI visibility unless a workflow run
-  ID is observable on the commit.
-- See `docs/PHASE_5_CORRECTIVE_CLOSURE_COMPLETION.md` criterion 10 for the
-  detailed split between local and hosted CI.
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check`,
+  `cargo audit`) as the source of truth until hosted CI resumes. Record local
+  verification in completion docs; do not claim hosted CI visibility unless a
+  workflow run ID is observable on the commit.
+- See `docs/CI_STATUS.md` for detailed status, local verification commands,
+  and how to interpret completion docs when CI is unavailable.
 
 ## Key Architecture Facts
 
