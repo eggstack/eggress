@@ -300,6 +300,10 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    use crate::address::encode_address;
+    use eggress_core::{TargetAddr, TargetHost};
+    use sha2::Digest;
+
     #[tokio::test]
     async fn roundtrip_small_data() {
         let (client, server) = tokio::io::duplex(4096);
@@ -458,5 +462,143 @@ mod tests {
         let result = server_stream.read(&mut buf).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn tampered_length_chunk_fails() {
+        // Verify that modifying the ciphertext payload causes AEAD authentication failure.
+        // We use a real TCP pair: server sends salt + encrypted addr + tampered data frame,
+        // client reads salt, wraps remaining stream in ShadowsocksAeadStream, and fails to read.
+        use crate::aead::aead_encrypt_raw;
+
+        let method = CipherMethod::Aes256Gcm;
+        let password = b"test-password";
+        let ikm = sha2::Sha256::digest(password);
+        let salt = vec![0xAAu8; method.salt_size()];
+        let hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(&salt), &ikm);
+        let mut subkey = vec![0u8; method.key_size()];
+        hk.expand(b"ss-subkey", &mut subkey).unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let salt_clone = salt.clone();
+        let subkey_clone = subkey.clone();
+
+        // Server task: send salt + encrypted addr header + tampered data frame
+        let server_handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            // Send salt
+            stream.write_all(&salt_clone).await.unwrap();
+
+            // Send encrypted address header (nonce 0)
+            let target = encode_address(&TargetAddr {
+                host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))),
+                port: 1234,
+            });
+            let addr_nonce = vec![0u8; method.nonce_size()];
+            let enc_addr = aead_encrypt_raw(method, &subkey_clone, &addr_nonce, &target).unwrap();
+            stream.write_all(&enc_addr).await.unwrap();
+
+            // Encrypt a data chunk with correct nonce (counter=1)
+            let mut data_nonce = vec![0u8; method.nonce_size()];
+            data_nonce[method.nonce_size() - 1] = 1;
+            let data_ct = aead_encrypt_raw(method, &subkey_clone, &data_nonce, b"secret").unwrap();
+
+            // Tamper: flip a bit in the ciphertext payload
+            let mut tampered_ct = data_ct;
+            tampered_ct[0] ^= 0xFF;
+            let tampered_len = tampered_ct.len() as u16;
+
+            // Send the tampered frame
+            stream.write_all(&tampered_len.to_be_bytes()).await.unwrap();
+            stream.write_all(&tampered_ct).await.unwrap();
+            stream.flush().await.unwrap();
+        });
+
+        // Client: connect, read salt, wrap remaining stream, try to read data
+        let mut raw_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+        // Read salt
+        let mut client_salt = vec![0u8; method.salt_size()];
+        raw_stream.read_exact(&mut client_salt).await.unwrap();
+        assert_eq!(client_salt, salt);
+
+        // Derive subkey
+        let client_ikm = sha2::Sha256::digest(password);
+        let client_hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(&client_salt), &client_ikm);
+        let mut client_subkey = vec![0u8; method.key_size()];
+        client_hk.expand(b"ss-subkey", &mut client_subkey).unwrap();
+
+        // Wrap remaining stream in AEAD stream adapter
+        let mut aead_stream = ShadowsocksAeadStream::new(raw_stream, method, client_subkey);
+
+        // Reading should fail — the address header (nonce 0) will decrypt OK,
+        // but the tampered data chunk (nonce 1) will fail AEAD authentication.
+        let mut buf = vec![0u8; 4096];
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            aead_stream.read(&mut buf),
+        )
+        .await;
+
+        // The read should fail — either an error, timeout, or zero bytes (connection closed)
+        match result {
+            Ok(Ok(0)) => {} // EOF — connection closed after auth failure
+            Ok(Ok(_)) => {
+                panic!("expected decryption failure from tampered ciphertext, but got data");
+            }
+            Ok(Err(_)) => {} // IO error — expected
+            Err(_) => {}     // Timeout — connection hung after auth failure
+        }
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tampered_payload_fails() {
+        // Verify that modifying the ciphertext payload causes AEAD authentication failure.
+        use crate::aead::aead_encrypt_raw;
+
+        let method = CipherMethod::Aes256Gcm;
+        let subkey = vec![0x42u8; 32];
+        let plaintext = b"hello world";
+
+        // Encrypt
+        let nonce = vec![0u8; method.nonce_size()];
+        let ciphertext = aead_encrypt_raw(method, &subkey, &nonce, plaintext).unwrap();
+
+        // Tamper: flip a bit in the ciphertext
+        let mut tampered = ciphertext.clone();
+        tampered[0] ^= 0x01;
+
+        // Decrypt the tampered ciphertext — should fail (AEAD tag mismatch)
+        let result = crate::aead::aead_decrypt_raw(method, &subkey, &nonce, &tampered);
+        assert!(
+            result.is_err(),
+            "decryption of tampered ciphertext should fail"
+        );
+    }
+
+    #[tokio::test]
+    async fn wrong_key_fails() {
+        use crate::aead::aead_encrypt_raw;
+
+        let method = CipherMethod::Aes256Gcm;
+        let correct_key = vec![0x42u8; 32];
+        let wrong_key = vec![0x99u8; 32];
+        let plaintext = b"secret data";
+
+        let nonce = vec![0u8; method.nonce_size()];
+        let ciphertext = aead_encrypt_raw(method, &correct_key, &nonce, plaintext).unwrap();
+
+        // Decrypt with wrong key — should fail
+        let result = crate::aead::aead_decrypt_raw(method, &wrong_key, &nonce, &ciphertext);
+        assert!(result.is_err(), "decryption with wrong key should fail");
+
+        // Decrypt with correct key — should succeed
+        let result = crate::aead::aead_decrypt_raw(method, &correct_key, &nonce, &ciphertext);
+        assert!(result.is_ok(), "decryption with correct key should succeed");
+        assert_eq!(result.unwrap(), plaintext);
     }
 }

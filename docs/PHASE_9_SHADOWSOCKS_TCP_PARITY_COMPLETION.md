@@ -17,7 +17,7 @@
 
 ## Test List
 
-### Unit tests (53 in `eggress-protocol-shadowsocks`)
+### Unit tests (56 in `eggress-protocol-shadowsocks`)
 
 | Area | Count | Details |
 |------|-------|---------|
@@ -26,18 +26,21 @@
 | Address encode/decode | 8 | IPv4, IPv6, domain, edge cases |
 | Nonce counter | 4 | Increment, overflow detection, wrap |
 | Stream adapter roundtrips | 8 | Small/large data, bidirectional, EOF, flush, multi-chunk |
+| Stream adapter tamper/wrong-key | 3 | Tampered ciphertext, tampered length header, wrong key |
 | TCP connect/accept with AEAD wrapping | 5 | Full handshake, data relay, error paths |
 | UDP encode/decode | 9 | Unchanged from Phase 6 |
 
-### Runtime integration tests (5 in `eggress-runtime/tests/shadowsocks_tcp.rs`)
+### Runtime integration tests (7 in `eggress-runtime/tests/shadowsocks_tcp.rs`)
 
 | Test | Description |
 |------|-------------|
 | `shadowsocks_upstream_routes_tcp_echo` | Full SOCKS5 → SS → echo roundtrip |
+| `http_connect_inbound_routes_tcp_echo` | HTTP CONNECT inbound → SS → echo roundtrip |
 | `shadowsocks_upstream_wrong_password_fails` | Wrong password causes connection failure |
 | `shadowsocks_upstream_all_methods` | Tests all 3 AEAD methods end-to-end |
 | `shadowsocks_upstream_unsupported_method_rejected` | Unsupported method is rejected |
-| `shadowsocks_upstream_direct_route_does_not_use_ss` | Direct routes bypass SS transport |
+| `shadowsocks_upstream_direct_route_bypasses_ss` | Direct routes bypass SS transport via `direct = true` rule |
+| `shadowsocks_upstream_metrics_increment` | Verifies `upstream_open_total{protocol="shadowsocks",outcome="success"}` after relay |
 
 ## Interop Evidence
 
