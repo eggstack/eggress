@@ -17,27 +17,36 @@ enforces a pure-Rust dependency policy with the following constraints:
 - `openssl-sys` / `native-tls` — C library dependencies
 - Any dependency requiring cmake, autoconf, or external C compilers
 
-### Rustls Configuration
+### Rustls + tokio-rustls Configuration
 
-The workspace `Cargo.toml` configures rustls to exclude native build deps:
+The workspace `Cargo.toml` configures both rustls and tokio-rustls to exclude
+native build deps:
 
 ```toml
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12"] }
 ```
 
-`default-features = false` disables the `aws_lc_rs` default feature. The `ring`
-feature enables the ring crypto provider. `ring` contains platform-specific
-assembly but does not require cmake or external build tools.
+`default-features = false` on both crates disables the `aws_lc_rs` default
+feature. `tokio-rustls` v0.26 includes `aws_lc_rs` in its defaults, which
+propagates to `rustls` and pulls in `aws-lc-sys` + `cmake`. Disabling defaults
+on `tokio-rustls` is required to maintain a native-dep-free build.
+
+The `ring` feature on `rustls` enables the ring crypto provider. `ring` contains
+platform-specific assembly but does not require cmake or external build tools.
 
 ### Verification
 
-To verify no native deps are present:
+To verify no native build deps are present in production builds:
 
 ```bash
-cargo tree -i aws-lc-sys 2>&1  # should show nothing or error
-cargo tree -i cmake 2>&1        # should show nothing or error
-cargo tree -i openssl-sys 2>&1  # should show nothing or error
+cargo tree -i aws-lc-sys -e normal 2>&1  # should show nothing or error
+cargo tree -i cmake -e normal 2>&1        # should show nothing or error
+cargo tree -i openssl-sys -e normal 2>&1  # should show nothing or error
 ```
+
+Note: `aws-lc-sys` may appear in dev-dependencies (via `rcgen` for test certs)
+but is not compiled into production builds.
 
 ### Rationale
 
