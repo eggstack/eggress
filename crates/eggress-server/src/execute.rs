@@ -245,6 +245,35 @@ struct OpenedRoute {
     selection_reason: Option<eggress_routing::SelectionReason>,
 }
 
+fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str {
+    chain
+        .hops
+        .first()
+        .and_then(|h| h.protocols.first())
+        .map(|p| match p {
+            eggress_uri::ProtocolSpec::Http => "http",
+            eggress_uri::ProtocolSpec::Socks4 => "socks4",
+            eggress_uri::ProtocolSpec::Socks5 => "socks5",
+            eggress_uri::ProtocolSpec::Shadowsocks => "shadowsocks",
+            eggress_uri::ProtocolSpec::Trojan => "trojan",
+        })
+        .unwrap_or("unknown")
+}
+
+fn failure_reason_label(error: &SessionOpenError) -> &'static str {
+    match error {
+        SessionOpenError::Dns => "dns",
+        SessionOpenError::Refused => "connection_refused",
+        SessionOpenError::NetworkUnreachable => "network_unreachable",
+        SessionOpenError::HostUnreachable => "host_unreachable",
+        SessionOpenError::Timeout => "timeout",
+        SessionOpenError::UpstreamAuthentication => "auth_failed",
+        SessionOpenError::PolicyDenied => "policy_denied",
+        SessionOpenError::Hop { .. } => "handshake",
+        SessionOpenError::Other(_) => "io",
+    }
+}
+
 async fn open_route(
     config: &ConnectionConfig,
     request: &RouteRequest<'_>,
@@ -267,6 +296,11 @@ async fn open_route(
         metrics.record_route_decision(rule_str, action_str, "selected");
     }
 
+    let upstream_protocol = match &selected {
+        SelectedRoute::Upstream { chain, .. } => Some(upstream_protocol_label(chain)),
+        SelectedRoute::Direct { .. } => None,
+    };
+
     let result = tokio::time::timeout(config.connect_timeout, async {
         match selected {
             SelectedRoute::Direct { .. } => {
@@ -288,17 +322,34 @@ async fn open_route(
     .await;
 
     match result {
-        Ok(Ok((stream, active_lease))) => Ok(OpenedRoute {
-            stream,
-            active_lease,
-            route_description: route,
-            rule_id,
-            upstream_group,
-            upstream_id,
-            selection_reason,
-        }),
-        Ok(Err(e)) => Err(e),
-        Err(_timeout) => Err(SessionOpenError::Timeout),
+        Ok(Ok((stream, active_lease))) => {
+            if let (Some(metrics), Some(protocol)) = (&config.metrics, upstream_protocol) {
+                metrics.record_upstream_open(protocol, "success");
+            }
+            Ok(OpenedRoute {
+                stream,
+                active_lease,
+                route_description: route,
+                rule_id,
+                upstream_group,
+                upstream_id,
+                selection_reason,
+            })
+        }
+        Ok(Err(e)) => {
+            if let (Some(metrics), Some(protocol)) = (&config.metrics, upstream_protocol) {
+                metrics.record_upstream_failure(protocol, failure_reason_label(&e));
+            }
+            Err(e)
+        }
+        Err(_timeout) => {
+            if let Some(metrics) = &config.metrics {
+                if let Some(protocol) = upstream_protocol {
+                    metrics.record_upstream_failure(protocol, "timeout");
+                }
+            }
+            Err(SessionOpenError::Timeout)
+        }
     }
 }
 

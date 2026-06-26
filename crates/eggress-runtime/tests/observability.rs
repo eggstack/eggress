@@ -454,6 +454,17 @@ enabled = true
         connections_active, 0.0,
         "eggress_connections_active should be 0 after session close, got {connections_active}"
     );
+    // Direct routes must NOT increment upstream-open counters.
+    let upstream_open = metric_value(&body, "eggress_upstream_open_total");
+    assert!(
+        upstream_open.is_none() || upstream_open == Some(0.0),
+        "direct route should not increment upstream_open_total, got {upstream_open:?}"
+    );
+    let upstream_failures = metric_value(&body, "eggress_upstream_open_failures_total");
+    assert!(
+        upstream_failures.is_none() || upstream_failures == Some(0.0),
+        "direct route should not increment upstream_open_failures_total, got {upstream_failures:?}"
+    );
 
     token.cancel();
     jh.await.ok();
@@ -664,16 +675,19 @@ enabled = true
         connections_total >= 1.0,
         "eggress_connections_total should be >= 1 after upstream relay, got {connections_total}"
     );
-    // eggress_upstream_open_total is registered (HELP+TYPE present) but not
-    // yet wired into the TCP chain executor; assert registration here and
-    // leave value-side wiring as a tracked gap.
-    assert!(
-        body.contains("# HELP eggress_upstream_open_total"),
-        "metrics should register eggress_upstream_open_total"
+    // eggress_upstream_open_total is wired into the TCP chain executor;
+    // assert the counter incremented for the socks5 upstream open.
+    let upstream_open_success = metric_value_with_labels(
+        &body,
+        "eggress_upstream_open_total",
+        &[("protocol", "socks5"), ("outcome", "success")],
+    )
+    .expect(
+        "eggress_upstream_open_total{protocol=\"socks5\",outcome=\"success\"} should be present",
     );
     assert!(
-        body.contains("# TYPE eggress_upstream_open_total counter"),
-        "eggress_upstream_open_total should be declared as a counter"
+        upstream_open_success >= 1.0,
+        "upstream open success count should be >= 1 after upstream relay, got {upstream_open_success}"
     );
 
     token.cancel();
@@ -760,9 +774,8 @@ enabled = true
         body.contains("# HELP eggress_route_decisions_total"),
         "metrics should register eggress_route_decisions_total"
     );
-    // eggress_upstream_open_total is registered (HELP+TYPE present) but not
-    // yet wired into the TCP chain executor; assert registration here and
-    // leave value-side wiring as a tracked gap.
+    // eggress_upstream_open_total is registered for TCP upstream opens.
+    // UDP associations use their own metrics path; assert registration here.
     assert!(
         body.contains("# HELP eggress_upstream_open_total"),
         "metrics should register eggress_upstream_open_total"
@@ -777,6 +790,98 @@ enabled = true
     );
 
     drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 4b. Upstream failure counter increments for refused upstream
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn upstream_failure_counter_increments_for_refused() {
+    let echo_addr = start_tcp_echo().await;
+
+    // Point upstream at a port that will refuse connections.
+    let refuse_port = 1; // port 1 is almost certainly not listening
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "bad-up"
+uri = "socks5://127.0.0.1:{refuse_port}"
+
+[[upstream_groups]]
+id = "bad-grp"
+scheduler = "first-available"
+members = ["bad-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "bad-grp"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Connect through eggress SOCKS5 -> bad upstream (should fail)
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    // The CONNECT should fail since the upstream is unreachable
+    let mut reply = [0u8; 10];
+    let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_exact(&mut reply)).await;
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // Upstream failure counter should have incremented
+    let upstream_failure = metric_value(&body, "eggress_upstream_open_failures_total")
+        .expect("eggress_upstream_open_failures_total should be present");
+    assert!(
+        upstream_failure >= 1.0,
+        "upstream failure count should be >= 1 after refused upstream, got {upstream_failure}"
+    );
+
     token.cancel();
     jh.await.ok();
 }

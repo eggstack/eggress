@@ -17,6 +17,8 @@ pub trait SessionMetrics: Send + Sync {
     fn record_session_start(&self);
     fn record_session(&self, report: &SessionReport);
     fn record_route_decision(&self, rule: &str, action: &str, outcome: &str);
+    fn record_upstream_open(&self, protocol: &str, outcome: &str);
+    fn record_upstream_failure(&self, protocol: &str, reason: &str);
 }
 
 /// Handle returned by UdpService::create_association.

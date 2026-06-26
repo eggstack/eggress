@@ -34,6 +34,10 @@ All metrics are prefixed with `eggress_`.
 
 ### Upstream Connection Metrics
 
+These metrics are recorded by the TCP chain executor at the upstream-open
+boundary. Protocol crates remain metrics-free; the `SessionMetrics` trait
+bridges the call into `MetricsRegistry`.
+
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `eggress_upstream_open_total` | Counter | `protocol`, `outcome` | Upstream connection attempts by protocol and outcome |
@@ -138,6 +142,9 @@ eggress_udp_associations_active 0
 # HELP eggress_upstream_open_total Total upstream connection attempts.
 # TYPE eggress_upstream_open_total counter
 eggress_upstream_open_total{protocol="socks5",outcome="success"} 12
+# HELP eggress_upstream_open_failures_total Total upstream connection failures.
+# TYPE eggress_upstream_open_failures_total counter
+eggress_upstream_open_failures_total{protocol="socks5",reason="connection_refused"} 2
 ```
 
 ## Bridged UDP Metrics

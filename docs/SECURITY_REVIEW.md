@@ -129,6 +129,10 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Metrics use fixed-label sets derived from config names and protocol IDs.
 - No user-controlled data enters metric labels directly.
 - Route rule IDs are validated as non-empty strings.
+- Upstream failure metrics use bounded reason labels (`dns`,
+  `connection_refused`, `timeout`, `handshake`, `auth_failed`, `io`, etc.)
+  derived from structured error variants, never raw error strings or
+  client/target addresses.
 
 **Connection Limits**:
 - Per-listener `connection_limit` field available in config (not enforced by default).

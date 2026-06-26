@@ -126,7 +126,7 @@ binary artifacts**:
 
 ## Observability / Lifecycle Test Depth
 
-### Observability Tests (9)
+### Observability Tests (10)
 
 All observability tests are **semantic**: they parse the Prometheus output
 and assert on counter/gauge values, not just string presence. Helpers
@@ -140,18 +140,22 @@ Specifics:
   `eggress_connections_total`, `eggress_connection_failures_total`,
   `eggress_bytes_upstream_total`, `eggress_connections_active` and asserts
   the values reflect the session (≥ 1 connection, ≥ 5 bytes upstream,
-  failures == 0, active == 0 after close).
+  failures == 0, active == 0 after close). Also asserts upstream-open
+  counters are **not** incremented for direct routes.
 - `metrics_renders_after_udp_direct_association`: parses
   `eggress_udp_associations_total`, `eggress_udp_packets_up_total`,
   `eggress_udp_packets_down_total` and asserts ≥ 1 each.
 - `metrics_renders_after_upstream_relay`: parses
   `eggress_route_decisions_total{outcome="selected"}` and
-  `eggress_connections_total` and asserts ≥ 1; verifies
-  `eggress_upstream_open_total` is registered (HELP+TYPE present).
+  `eggress_connections_total` and asserts ≥ 1; asserts
+  `eggress_upstream_open_total{protocol="socks5",outcome="success"}` ≥ 1
+  (value-based, not registration-only).
 - `metrics_renders_with_upstream_group_for_udp`: parses
   `eggress_udp_associations_total` and asserts ≥ 1; verifies
   `eggress_route_decisions_total` and `eggress_upstream_open_total` are
-  registered.
+  registered (UDP uses its own metrics path, not TCP upstream-open).
+- `upstream_failure_counter_increments_for_refused`: connects through a
+  refusing upstream and asserts `eggress_upstream_open_failures_total` ≥ 1.
 - `route_decision_counters_increment`: parses
   `eggress_route_decisions_total{outcome="selected"}` and
   `eggress_route_decisions_total{action="direct"}` and asserts ≥ 1 each.
@@ -196,20 +200,18 @@ the previous `sleep(200ms..500ms)` baseline that was an upper-bound only).
 ### Known Production Wiring Gaps Surfaced
 
 The strengthened observability tests surfaced one real pre-Phase-6 wiring gap
-that is now tracked for a follow-up phase:
+that is now **closed** by the final polish pass:
 
-- `eggress_upstream_open_total` is **registered** in the metrics registry
-  with HELP/TYPE comments but **not yet called** from the TCP chain executor
-  (`record_upstream_open` is only exercised by unit tests in
-  `eggress-metrics/src/lib.rs`). The HTTP CONNECT, SOCKS5, SOCKS4, Trojan,
-  and Shadowsocks chain handlers do not increment it after a successful
-  upstream connect.
-- `eggress_upstream_open_failures_total` has the same gap
-  (`record_upstream_failure` is only exercised by unit tests).
-
-The observability tests assert HELP/TYPE registration for these metrics;
-a future phase should wire the call sites and promote the assertions to
-value-based checks.
+- `eggress_upstream_open_total` is now wired into the TCP chain executor
+  via the `SessionMetrics` trait. The `open_route()` function calls
+  `record_upstream_open(protocol, "success")` after a successful upstream
+  connect. Observability tests assert **value increments**, not mere
+  HELP/TYPE registration.
+- `eggress_upstream_open_failures_total` is similarly wired.
+  `record_upstream_failure(protocol, reason)` is called on failed upstream
+  opens with bounded reason labels (`dns`, `connection_refused`,
+  `timeout`, `handshake`, `auth_failed`, `io`, etc.). Observability tests
+  assert value increments for failure cases.
 
 ## CI Test Coverage
 
@@ -266,3 +268,14 @@ None. Phase 6 definition of done is satisfied:
 12. All normal verification commands pass locally
 13. No unsupported protocol promoted to supported
 14. No unsafe Rust, OpenSSL/native-tls, or unapproved native build dependency introduced
+
+## Final polish closure
+
+Implemented by commit(s):
+
+- `upstream-open success/failure metrics wired into TCP upstream-open boundary`
+- `observability value assertions and docs cleanup`
+
+The previously documented upstream-open metrics wiring gap is closed. Success
+and failure counters are live, value-tested, and use bounded labels. Hosted CI
+remains unavailable (billing-blocked); local verification passed on 2026-06-26.

@@ -21,6 +21,14 @@ impl eggress_server::SessionMetrics for MetricsRegistry {
     fn record_route_decision(&self, rule: &str, action: &str, outcome: &str) {
         MetricsRegistry::record_route_decision(self, rule, action, outcome);
     }
+
+    fn record_upstream_open(&self, protocol: &str, outcome: &str) {
+        MetricsRegistry::record_upstream_open(self, protocol, outcome);
+    }
+
+    fn record_upstream_failure(&self, protocol: &str, reason: &str) {
+        MetricsRegistry::record_upstream_failure(self, protocol, reason);
+    }
 }
 
 #[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
