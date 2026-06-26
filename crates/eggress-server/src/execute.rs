@@ -792,9 +792,12 @@ impl HopHandler for HttpHopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a eggress_uri::CredentialSpec>,
+        hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
-        let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+        let auth = hop
+            .credentials
+            .as_ref()
+            .map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
             eggress_protocol_http::http_connect(stream, target, auth, &Default::default())
                 .await
@@ -814,10 +817,13 @@ impl HopHandler for Socks5HopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a eggress_uri::CredentialSpec>,
+        hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
         let socks_addr = target_to_socks_addr(target);
-        let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+        let auth = hop
+            .credentials
+            .as_ref()
+            .map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
             eggress_protocol_socks::socks5::client::socks5_connect(stream, &socks_addr, auth)
                 .await
@@ -837,9 +843,9 @@ impl HopHandler for Socks4HopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a eggress_uri::CredentialSpec>,
+        hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
-        let user_id = credentials.map(|c| c.username.as_str());
+        let user_id = hop.credentials.as_ref().map(|c| c.username.as_str());
         Box::pin(async move {
             eggress_protocol_socks::socks4_connect(stream, target, user_id)
                 .await
@@ -859,10 +865,10 @@ impl HopHandler for ShadowsocksHopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a eggress_uri::CredentialSpec>,
+        hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
         Box::pin(async move {
-            let creds = credentials.ok_or_else(|| {
+            let creds = hop.credentials.as_ref().ok_or_else(|| {
                 Box::new(eggress_protocol_shadowsocks::ShadowsocksError::Other(
                     "shadowsocks requires credentials (method:password)".to_string(),
                 )) as Box<dyn std::error::Error + Send + Sync>
@@ -896,25 +902,26 @@ impl HopHandler for TrojanHopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a eggress_uri::CredentialSpec>,
+        hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
         let tls_config = self.tls_config.clone();
+        let password = hop.credentials.as_ref().map(|c| c.password.clone());
+        let server_name = hop
+            .server_name
+            .clone()
+            .unwrap_or_else(|| hop.endpoint.host.clone());
         Box::pin(async move {
-            let creds = credentials.ok_or_else(|| {
+            let password = password.ok_or_else(|| {
                 Box::new(eggress_protocol_trojan::TrojanError::Protocol(
-                    "trojan requires credentials (password as username, server_name as password)"
-                        .to_string(),
+                    "trojan requires credentials (password)".to_string(),
                 )) as Box<dyn std::error::Error + Send + Sync>
             })?;
-
-            let server_name = &creds.password;
-            let password = &creds.username;
 
             eggress_protocol_trojan::trojan_connect(
                 stream,
                 target,
-                password,
-                server_name,
+                &password,
+                &server_name,
                 tls_config,
             )
             .await

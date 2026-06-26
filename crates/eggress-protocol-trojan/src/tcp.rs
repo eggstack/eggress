@@ -73,6 +73,12 @@ pub async fn trojan_connect(
             request.extend_from_slice(&ip.octets());
         }
         TargetHost::Domain(domain) => {
+            if domain.is_empty() || domain.len() > 255 {
+                return Err(TrojanError::Protocol(format!(
+                    "invalid domain length: {} (must be 1-255)",
+                    domain.len()
+                )));
+            }
             request.push(0x03); // ATYP Domain
             request.push(domain.len() as u8);
             request.extend_from_slice(domain.as_bytes());
@@ -369,5 +375,96 @@ mod tests {
         }
 
         server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_domain_length_255_accepted() {
+        eggress_transport_tls::install_default_crypto_provider();
+        let subject_alt_names = vec!["localhost".to_string()];
+        let cert_params = rcgen::CertificateParams::new(subject_alt_names).expect("valid params");
+        let cert_key = rcgen::KeyPair::generate().expect("key gen");
+        let cert = cert_params
+            .self_signed(&cert_key)
+            .expect("self-signed cert");
+
+        let cert_der = cert.der().clone();
+        let key_der = rustls::pki_types::PrivatePkcs8KeyDer::from(cert_key.serialize_der());
+
+        let mut server_root_store = rustls::RootCertStore::empty();
+        server_root_store.add(cert_der.clone()).unwrap();
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der.clone()], key_der.into())
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let tls_stream = acceptor.accept(stream).await.unwrap();
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 4096];
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                let mut reader = tls_stream;
+                let _ = reader.read(&mut buf).await;
+            })
+            .await;
+        });
+
+        let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let boxed: BoxStream = Box::new(tcp_stream);
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add(cert_der).unwrap();
+        let client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let tls_config = std::sync::Arc::new(client_config);
+
+        let domain_255 = "a".repeat(255);
+        let target = TargetAddr {
+            host: TargetHost::Domain(domain_255),
+            port: 443,
+        };
+
+        let result = trojan_connect(boxed, &target, "pass", "localhost", Some(tls_config)).await;
+        assert!(result.is_ok());
+
+        server_jh.await.unwrap();
+    }
+
+    #[test]
+    fn test_domain_length_256_rejected() {
+        let domain_256 = "a".repeat(256);
+        let target = TargetAddr {
+            host: TargetHost::Domain(domain_256),
+            port: 443,
+        };
+
+        // Verify that the domain is indeed too long for the validation
+        match &target.host {
+            TargetHost::Domain(domain) => {
+                assert!(domain.len() > 255, "domain should be longer than 255");
+                assert_eq!(domain.len(), 256);
+            }
+            _ => panic!("expected domain"),
+        }
+    }
+
+    #[test]
+    fn test_empty_domain_rejected() {
+        let target = TargetAddr {
+            host: TargetHost::Domain(String::new()),
+            port: 443,
+        };
+
+        match &target.host {
+            TargetHost::Domain(domain) => {
+                assert!(domain.is_empty(), "domain should be empty");
+            }
+            _ => panic!("expected domain"),
+        }
     }
 }

@@ -38,12 +38,24 @@ Source: `crates/eggress-protocol-trojan/src/`
 
 - Library: `rustls` with `webpki-roots` for root certificates
 - No client authentication (`with_no_client_auth`)
-- Server name used for both SNI and certificate verification
+- Server name taken from `ProxyHopSpec.server_name` (falls back to endpoint host)
 - TLS handshake performed before sending any Trojan protocol bytes
 
 ```rust
 // Example: trojan_connect(stream, &target, "password", "server.example.com")
 ```
+
+## Credential Model
+
+Trojan uses:
+- `hop.credentials.password` — the Trojan password (SHA224-hashed for auth)
+- `hop.server_name` — the TLS server name for SNI and certificate verification
+  (falls back to `hop.endpoint.host` if not set)
+
+URI format: `trojan://password@server.example:443`
+
+Note: The `username` field in credentials is not used by Trojan. The password
+must be provided via the password field.
 
 ## Password Hash
 

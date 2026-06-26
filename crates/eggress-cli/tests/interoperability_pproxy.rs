@@ -13,7 +13,7 @@ use eggress_protocol_http::connect::client::http_connect;
 use eggress_protocol_socks::socks5::client::socks5_connect;
 use eggress_protocol_socks::socks5::server::SocksAddr;
 use eggress_routing::{RouteActionSpec, RouteService, Router};
-use eggress_uri::{CredentialSpec, EndpointSpec, ProtocolSpec, ProxyHopSpec};
+use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyHopSpec};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
@@ -37,9 +37,12 @@ impl HopHandler for HttpHopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a CredentialSpec>,
+        hop: &'a ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
-        let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+        let auth = hop
+            .credentials
+            .as_ref()
+            .map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
             http_connect(stream, target, auth, &Default::default())
                 .await
@@ -59,10 +62,13 @@ impl HopHandler for Socks5HopHandler {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a CredentialSpec>,
+        hop: &'a ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
         let socks_addr = target_to_socks_addr(target);
-        let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+        let auth = hop
+            .credentials
+            .as_ref()
+            .map(|c| (c.username.as_str(), c.password.as_str()));
         Box::pin(async move {
             socks5_connect(stream, &socks_addr, auth)
                 .await

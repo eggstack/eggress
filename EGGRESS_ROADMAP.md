@@ -302,8 +302,9 @@ Partial capabilities should remain explicitly marked as partial.
 | 1 | Core TCP proxy foundation | Mixed HTTP/SOCKS listener, direct and chained TCP, initial compatible CLI |
 | 2 | Routing, health, and operations | Rules, scheduling, health checks, metrics, configuration, admin endpoints |
 | 3 | UDP foundation | Direct UDP, SOCKS5 UDP, association lifecycle, UDP routing |
-| 4 | TLS and secure transports | rustls wrapping, HTTPS proxy transport, secure certificate policy |
-| 5 | Shadowsocks and Trojan | SS TCP/UDP, AEAD, legacy compatibility, Trojan |
+| 4 | UDP upstream relay | one-hop SOCKS5 UDP upstream relay with capability classification |
+| 5 | Upstream protocol parity | HTTP/SOCKS4/SOCKS5 polish, Shadowsocks/Trojan foundations, capability classifier |
+| 5A | TLS transport (corrective) | rustls wrapping, HTTPS proxy transport, secure certificate policy |
 | 6 | WebSocket, raw tunnels, and SSH | WS tunnels, fixed forwarding, SSH channels, connection reuse |
 | 7 | HTTP/2 and multiplexed streams | H2 CONNECT client/server, pooling, stream adapters |
 | 8 | QUIC and HTTP/3 | QUIC tunnels, H3 CONNECT, datagrams, multiplexing |
@@ -483,41 +484,34 @@ SOCKS5 UDP operates through direct and SOCKS5 upstream routes under packet loss,
 
 ---
 
-# Phase 4: TLS and secure transports
+# Phase 4: UDP upstream relay
 
 ## Objective
 
-Introduce reusable TLS wrapping without coupling TLS to individual proxy protocols.
+Extend direct UDP forwarding to one-hop SOCKS5 upstream relay with capability classification.
 
 ## Included
 
-- [x] rustls client and server wrappers;
-- [x] certificate and private-key loading;
-- [x] system roots;
-- [x] custom CA roots;
-- [x] SNI;
-- [x] ALPN;
-- [x] secure verification default;
-- [x] explicit insecure compatibility mode;
-- [x] HTTPS proxy client and server;
-- [x] TLS-wrapped SOCKS and custom protocol stacks;
-- [x] handshake limits and timeouts;
-- [ ] certificate reload (deferred);
-- [x] redacted diagnostics.
+- [x] UDP capability model (UdpRelayCapability);
+- [x] SOCKS5 upstream client (handshake, auth, UDP ASSOCIATE);
+- [x] Flow model (UdpFlowKind, UdpFlowKey, per-target upstream association);
+- [x] Relay integration (handle_client_datagram refactor);
+- [x] Upstream metrics and admin visibility;
+- [x] Codec rename with backward-compatible wrappers;
+- [x] Synthetic test server (Socks5UdpTestServer);
+- [x] Integration tests (socks5_upstream, udp_upstream).
 
 ## Exit criteria
 
-Any stream protocol implemented to date can be layered over TLS where the URI grammar permits it.
+SOCKS5 UDP operates through direct and SOCKS5 upstream routes under packet loss, reordering, IPv4, IPv6, and domain destinations.
 
 ## Status
 
-Phase 4 core complete. All items except certificate reload are implemented and tested.
-New crate `eggress-transport-tls` provides the shared TLS layer.
-Listener TLS, upstream TLS, and Trojan refactoring all verified with 30+ TLS-specific tests.
+Phase 4 complete. All items implemented and tested.
 
 ---
 
-# Phase 5: Shadowsocks and Trojan
+# Phase 5: Upstream protocol parity
 
 ## Objective
 
@@ -558,6 +552,12 @@ Pure Rust crypto via RustCrypto (aes-gcm, chacha20poly1305, hkdf, sha2).
 Upstream protocol parity for all five supported protocols (HTTP, SOCKS4,
 SOCKS5, Shadowsocks, Trojan) with capability classification, metrics,
 and protocol docs.
+
+---
+
+## Phase 5A: TLS transport (corrective)
+
+TLS transport work was originally planned as Phase 4 but was reclassified as a corrective sub-phase after Phase 5. A shared `eggress-transport-tls` crate provides rustls client/server wrappers, certificate loading, SNI, ALPN, HTTPS proxy transport, and TLS-wrapped SOCKS/custom protocols. Certificate reload remains deferred.
 
 ---
 

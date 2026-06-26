@@ -2,8 +2,26 @@
 
 ## Overview
 
-Shadowsocks proxy protocol with AEAD cipher support for both TCP and UDP.
-Uses HKDF-SHA256 for key derivation from a password.
+Shadowsocks proxy protocol with AEAD cipher support. This implementation is
+**experimental** and should not be considered production-ready.
+
+### TCP Status: Experimental
+
+The TCP client sends an encrypted address header but does NOT encrypt
+subsequent bidirectional data. This means:
+- The target address is encrypted in the initial payload
+- All subsequent data flows as plaintext through the connection
+- This does NOT provide Shadowsocks TCP privacy/confidentiality
+
+Full TCP stream encryption requires a bidirectional AEAD stream adapter
+with independent read/write nonce sequences, which is not yet implemented.
+
+### UDP Status: Experimental
+
+The UDP packet format uses `nonce + encrypted(address + payload)` instead
+of the standard Shadowsocks AEAD UDP format (`salt + encrypted(address + payload)`).
+This format is non-interoperable with standard Shadowsocks servers (e.g.,
+`shadowsocks-rust`, `ssserver`).
 
 Source: `crates/eggress-protocol-shadowsocks/src/`
 
@@ -112,9 +130,11 @@ Test count: 38 tests across `eggress-protocol-shadowsocks`.
 
 ## Limitations
 
+- **TCP stream encryption not implemented** — only the address header is encrypted; subsequent data is plaintext
+- **UDP format non-interoperable** — uses `nonce + ciphertext` instead of standard `salt + ciphertext`
 - No legacy stream ciphers (RC4, etc.) -- only AEAD methods
 - No plugin transport modes (simple-obfs, v2ray-plugin, etc.)
 - No multi-hop UDP (single Shadowsocks hop only)
-- TCP bidirectional encryption not yet implemented (address header only)
 - No server-side implementation (client/upstream only)
 - Maximum frame size: 65,535 bytes
+- Marked as experimental in capability classifier — not selected by default in routing

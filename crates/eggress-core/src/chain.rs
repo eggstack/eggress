@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use eggress_uri::{CredentialSpec, EndpointSpec, ProtocolSpec, ProxyHopSpec};
+use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyHopSpec};
 
 use crate::connector::{Connector, DirectConnector};
 use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
@@ -80,7 +80,7 @@ pub trait HopHandler: Send + Sync {
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
-        credentials: Option<&'a CredentialSpec>,
+        hop: &'a ProxyHopSpec,
     ) -> HandshakeFuture<'a>;
 }
 
@@ -234,7 +234,7 @@ impl ChainExecutor {
             let handler = find_handler(&self.handlers, &hop.protocols)?;
 
             current_stream = handler
-                .handshake(current_stream, &next_target, hop.credentials.as_ref())
+                .handshake(current_stream, &next_target, hop)
                 .await
                 .map_err(|e| ChainError::HandshakeFailed {
                     hop_index: i,
@@ -317,6 +317,7 @@ fn format_protocols(protocols: &[ProtocolSpec]) -> String {
 mod tests {
     use super::*;
     use crate::TargetHost;
+    use eggress_uri::CredentialSpec;
     use std::sync::Arc;
 
     /// A mock handler that records the target and returns a successful result.
@@ -347,7 +348,7 @@ mod tests {
             &'a self,
             stream: BoxStream,
             target: &'a TargetAddr,
-            _credentials: Option<&'a CredentialSpec>,
+            _hop: &'a ProxyHopSpec,
         ) -> HandshakeFuture<'a> {
             Box::pin(async move {
                 *self.captured_target.lock().unwrap() = Some(target.clone());
@@ -371,7 +372,7 @@ mod tests {
             &'a self,
             _stream: BoxStream,
             _target: &'a TargetAddr,
-            _credentials: Option<&'a CredentialSpec>,
+            _hop: &'a ProxyHopSpec,
         ) -> HandshakeFuture<'a> {
             let msg = self.error_message.clone();
             Box::pin(async move { Err(msg.into()) })
@@ -827,10 +828,10 @@ mod tests {
                 &'a self,
                 stream: BoxStream,
                 _target: &'a TargetAddr,
-                credentials: Option<&'a CredentialSpec>,
+                hop: &'a ProxyHopSpec,
             ) -> HandshakeFuture<'a> {
                 Box::pin(async move {
-                    if let Some(creds) = credentials {
+                    if let Some(creds) = hop.credentials.as_ref() {
                         *self.captured_creds.lock().unwrap() = Some(creds.clone());
                     }
                     Ok(stream)
@@ -1099,7 +1100,7 @@ mod tests {
                 &'a self,
                 stream: BoxStream,
                 target: &'a TargetAddr,
-                _credentials: Option<&'a CredentialSpec>,
+                _hop: &'a ProxyHopSpec,
             ) -> HandshakeFuture<'a> {
                 let targets = self.targets.clone();
                 let target_clone = target.clone();
@@ -1177,7 +1178,7 @@ mod tests {
                 &'a self,
                 stream: BoxStream,
                 target: &'a TargetAddr,
-                _credentials: Option<&'a CredentialSpec>,
+                _hop: &'a ProxyHopSpec,
             ) -> HandshakeFuture<'a> {
                 let targets = self.targets.clone();
                 let target_clone = target.clone();

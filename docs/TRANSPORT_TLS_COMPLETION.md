@@ -1,8 +1,8 @@
-# Phase 4: TLS Transport Layer — Completion Record
+# TLS Transport Layer — Completion Record
 
 ## Summary
 
-Phase 4 adds a shared, reusable TLS transport layer to eggress. A new crate
+This phase adds a shared, reusable TLS transport layer to eggress. A new crate
 `eggress-transport-tls` provides TLS configuration builders, transport wrappers,
 and root certificate loading. This enables any protocol (HTTP, SOCKS, Shadowsocks,
 Trojan) to operate over TLS without duplicating crypto setup code.

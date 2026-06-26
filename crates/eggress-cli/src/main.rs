@@ -417,7 +417,7 @@ fn build_test_chain_executor() -> ChainExecutor {
             &'a self,
             stream: BoxStream,
             target: &'a TargetAddr,
-            credentials: Option<&'a eggress_uri::CredentialSpec>,
+            hop: &'a eggress_uri::ProxyHopSpec,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -426,7 +426,10 @@ fn build_test_chain_executor() -> ChainExecutor {
                     + 'a,
             >,
         > {
-            let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+            let auth = hop
+                .credentials
+                .as_ref()
+                .map(|c| (c.username.as_str(), c.password.as_str()));
             Box::pin(async move {
                 eggress_protocol_http::http_connect(stream, target, auth, &Default::default())
                     .await
@@ -446,7 +449,7 @@ fn build_test_chain_executor() -> ChainExecutor {
             &'a self,
             stream: BoxStream,
             target: &'a TargetAddr,
-            credentials: Option<&'a eggress_uri::CredentialSpec>,
+            hop: &'a eggress_uri::ProxyHopSpec,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -456,7 +459,10 @@ fn build_test_chain_executor() -> ChainExecutor {
             >,
         > {
             let socks_addr = target_to_socks_addr(target);
-            let auth = credentials.map(|c| (c.username.as_str(), c.password.as_str()));
+            let auth = hop
+                .credentials
+                .as_ref()
+                .map(|c| (c.username.as_str(), c.password.as_str()));
             Box::pin(async move {
                 eggress_protocol_socks::socks5::client::socks5_connect(stream, &socks_addr, auth)
                     .await
@@ -476,7 +482,7 @@ fn build_test_chain_executor() -> ChainExecutor {
             &'a self,
             stream: BoxStream,
             target: &'a TargetAddr,
-            credentials: Option<&'a eggress_uri::CredentialSpec>,
+            hop: &'a eggress_uri::ProxyHopSpec,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -485,7 +491,7 @@ fn build_test_chain_executor() -> ChainExecutor {
                     + 'a,
             >,
         > {
-            let user_id = credentials.map(|c| c.username.as_str());
+            let user_id = hop.credentials.as_ref().map(|c| c.username.as_str());
             Box::pin(async move {
                 eggress_protocol_socks::socks4_connect(stream, target, user_id)
                     .await

@@ -1494,6 +1494,7 @@ mod tests {
         ));
     }
 
+    #[ignore = "Shadowsocks UDP is experimental and not yet supported"]
     #[tokio::test]
     async fn relay_shadowsocks_upstream_encrypts_and_relay() {
         use crate::udp_capability::udp_capability;

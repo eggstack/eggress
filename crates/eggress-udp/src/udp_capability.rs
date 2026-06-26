@@ -16,6 +16,7 @@ pub enum UdpRelayCapability {
     UnsupportedMultiHop,
 }
 
+#[allow(dead_code)]
 fn extract_shadowsocks_creds(
     hop: &eggress_uri::ProxyHopSpec,
 ) -> Option<(eggress_protocol_shadowsocks::CipherMethod, String)> {
@@ -42,15 +43,10 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
             if hop.protocols.len() == 1 {
                 match &hop.protocols[0] {
                     ProtocolSpec::Socks5 => UdpRelayCapability::SupportedSocks5,
-                    ProtocolSpec::Shadowsocks => {
-                        if let Some((method, password)) = extract_shadowsocks_creds(hop) {
-                            UdpRelayCapability::SupportedShadowsocks { method, password }
-                        } else {
-                            UdpRelayCapability::UnsupportedProtocol {
-                                protocol: "Shadowsocks (missing credentials)".to_string(),
-                            }
-                        }
-                    }
+                    ProtocolSpec::Shadowsocks => UdpRelayCapability::UnsupportedProtocol {
+                        protocol: "Shadowsocks (experimental — UDP format non-interoperable)"
+                            .to_string(),
+                    },
                     other => UdpRelayCapability::UnsupportedProtocol {
                         protocol: format!("{:?}", other),
                     },
@@ -69,21 +65,8 @@ pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
     let caps = classify_upstream_chain(chain);
     match caps.udp_associate {
         CapabilityResult::Supported => {
-            if chain.hops.len() == 1 {
-                if let Some((method, password)) = extract_shadowsocks_creds(&chain.hops[0]) {
-                    UdpRelayCapability::SupportedShadowsocks { method, password }
-                } else if chain.hops[0].protocols.len() == 1
-                    && chain.hops[0].protocols[0] == ProtocolSpec::Shadowsocks
-                {
-                    UdpRelayCapability::UnsupportedProtocol {
-                        protocol: "Shadowsocks (missing credentials)".to_string(),
-                    }
-                } else {
-                    UdpRelayCapability::SupportedSocks5
-                }
-            } else {
-                UdpRelayCapability::SupportedSocks5
-            }
+            // Only SOCKS5 single-hop reaches here now (Shadowsocks is UnsupportedProtocol)
+            UdpRelayCapability::SupportedSocks5
         }
         CapabilityResult::UnsupportedProtocol { protocol } => {
             UdpRelayCapability::UnsupportedProtocol { protocol }

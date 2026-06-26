@@ -137,7 +137,7 @@ Legend:
 | HTTP CONNECT | yes | no | 5 |
 | SOCKS4/SOCKS4a | yes | no | 5 |
 | SOCKS5 | yes | one-hop yes | 4 |
-| Shadowsocks | TCP yes | UDP one-hop yes | 5 |
+| Shadowsocks | experimental (header only) | experimental (non-interoperable) | 5 |
 | Trojan | TCP yes (rustls) | no | 5 |
 
 ### UDP
@@ -160,7 +160,7 @@ Legend:
 - [x] SOCKS5 UDP ASSOCIATE server
 - [x] Direct UDP forwarding
 - [x] UDP through one-hop SOCKS5 upstream
-- [x] UDP through one-hop Shadowsocks upstream
+- [ ] UDP through one-hop Shadowsocks upstream (experimental — non-interoperable format)
 - [ ] UDP through Trojan upstream
 - [ ] UDP through multi-hop proxy chains
 - [ ] UDP through HTTP/MASQUE/CONNECT-UDP
@@ -183,11 +183,11 @@ Legend:
 
 ### Shadowsocks
 
-- [x] Shadowsocks TCP client
+- [ ] Shadowsocks TCP client (experimental — sends encrypted header only, no stream encryption)
 - [ ] Shadowsocks TCP server
-- [x] Shadowsocks UDP client
+- [ ] Shadowsocks UDP client (experimental — non-interoperable packet format)
 - [ ] Shadowsocks UDP server
-- [x] AEAD cipher support
+- [x] AEAD cipher support (individual encrypt/decrypt operations)
 - [x] Modern default cipher suite
 - [ ] Legacy stream cipher compatibility
 - [ ] OTA compatibility

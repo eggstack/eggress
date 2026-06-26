@@ -39,6 +39,9 @@ cargo test -p eggress-protocol-trojan
 # Run TLS transport tests
 cargo test -p eggress-transport-tls
 
+# Run upstream protocol tests
+cargo test -p eggress-runtime upstream_protocols
+
 # Run the CLI
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
@@ -74,10 +77,12 @@ eggress/
 └── docs/
     ├── ARCHITECTURE.md
     ├── ROADMAP.md
+    ├── DEPENDENCY_POLICY.md
     ├── PHASE_2_COMPLETION.md
     ├── PHASE_3_COMPLETION.md
     ├── PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md
     ├── PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md
+    ├── TRANSPORT_TLS_COMPLETION.md
     ├── URI_GRAMMAR.md
     └── protocols/
         ├── HTTP_CONNECT.md
@@ -87,11 +92,12 @@ eggress/
 ```
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
-health, admin, reload, shutdown, pac_static, udp, udp_upstream). They exercise
-the supervisor end to end and cover negative-path behaviors (bind conflict,
-invalid source, oversized identity, reload-time failure). UDP integration tests
+health, admin, reload, shutdown, pac_static, udp, udp_upstream, upstream_protocols).
+They exercise the supervisor end to end and cover negative-path behaviors (bind
+conflict, invalid source, oversized identity, reload-time failure). UDP integration tests
 cover association lifecycle, TCP control close, echo relay, bind conflict,
-topology rejection, config reload, and SOCKS5 upstream relay.
+topology rejection, config reload, and SOCKS5 upstream relay. Upstream protocol tests
+cover HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection through the full stack.
 
 ## Code Conventions
 
@@ -112,6 +118,7 @@ topology rejection, config reload, and SOCKS5 upstream relay.
 - **Streams are boxed** at protocol/transport boundaries (`BoxStream`) — don't propagate generic stream types
 - **Protocol detection** uses ordered `ProtocolDetector` implementations; mixed-protocol listeners are the norm
 - **Chain executor** folds over hop list with protocol-specific handlers — validate chain capabilities before executing
+- **HopHandler trait** accepts `&ProxyHopSpec` (not just credentials) — handlers extract what they need from the hop
 - **Credentials are never logged** — URI display uses redacted format
 - **Routing**: compiled rule AST with first-match-wins evaluation; recursive TOML matchers (`all`, `any_of`, `not`)
 - **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only routing/upstreams/groups/health are hot-reloadable, not listener topology
