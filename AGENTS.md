@@ -20,6 +20,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 # Security audit
 cargo deny check
+cargo audit
 
 # Run UDP-focused tests
 cargo test -p eggress-udp
@@ -69,9 +70,20 @@ cargo test -p eggress-cli --test differential_pproxy
 # Run benchmarks
 cargo bench --workspace
 
-# Run fuzz targets
-cargo fuzz run uri_parse
-cargo fuzz run socks5_udp_datagram
+# Run fuzz targets (standalone `fuzz/` workspace; libfuzzer-sys based)
+cargo check --manifest-path fuzz/Cargo.toml --bins
+cargo test --manifest-path fuzz/Cargo.toml --no-run
+
+# Fuzz targets available:
+#   socks5_udp_datagram, socks5_handshake, http_connect_response,
+#   trojan_request, route_match, uri_parse
+# Smoke examples (require cargo-fuzz):
+cargo fuzz run uri_parse -- -runs=1000
+cargo fuzz run socks5_udp_datagram -- -runs=1000
+cargo fuzz run socks5_handshake -- -runs=1000
+cargo fuzz run http_connect_response -- -runs=1000
+cargo fuzz run trojan_request -- -runs=1000
+cargo fuzz run route_match -- -runs=1000
 
 # Run the CLI
 cargo run --bin eggress -- --help
@@ -102,8 +114,8 @@ eggress/
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   └── eggress-testkit/   # Test utilities
-├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match)
-├── fuzz/                   # Fuzz harness smoke targets (uri_parse, socks5_udp_datagram)
+├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
+├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
 ├── plans/                  # Historical planning documents (reference only)
 ├── tests/
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)

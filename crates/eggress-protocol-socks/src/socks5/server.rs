@@ -107,6 +107,140 @@ impl SocksAddr {
     }
 }
 
+/// Parse the SOCKS5 method negotiation bytes synchronously.
+///
+/// Returns `(methods, remaining)` on success, or a [`Socks5Error`] if the
+/// buffer is truncated or the version byte is wrong. Exposed for fuzzing.
+pub fn parse_method_negotiation(buf: &[u8]) -> Result<(Vec<u8>, &[u8]), Socks5Error> {
+    if buf.is_empty() {
+        return Err(Socks5Error::UnexpectedEof);
+    }
+    let version = buf[0];
+    if version != 0x05 {
+        return Err(Socks5Error::UnsupportedVersion(version));
+    }
+    if buf.len() < 2 {
+        return Err(Socks5Error::UnexpectedEof);
+    }
+    let nmethods = buf[1] as usize;
+    if buf.len() < 2 + nmethods {
+        return Err(Socks5Error::UnexpectedEof);
+    }
+    Ok((buf[2..2 + nmethods].to_vec(), &buf[2 + nmethods..]))
+}
+
+/// Parse a SOCKS5 CONNECT request synchronously.
+///
+/// Returns `(target, remaining)` on success. Exposed for fuzzing.
+pub fn parse_connect_request(buf: &[u8]) -> Result<(SocksAddr, &[u8]), Socks5Error> {
+    if buf.len() < 4 {
+        return Err(Socks5Error::UnexpectedEof);
+    }
+    let version = buf[0];
+    if version != 0x05 {
+        return Err(Socks5Error::UnsupportedVersion(version));
+    }
+    let cmd = buf[1];
+    if cmd != CMD_CONNECT {
+        return Err(Socks5Error::UnsupportedCommand(cmd));
+    }
+    let _rsv = buf[2];
+    let atyp = buf[3];
+
+    let (addr, rest) = match atyp {
+        ATYP_IPV4 => {
+            if buf.len() < 4 + 4 + 2 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let mut octets = [0u8; 4];
+            octets.copy_from_slice(&buf[4..8]);
+            let port = u16::from_be_bytes([buf[8], buf[9]]);
+            (SocksAddr::IPv4(octets, port), &buf[10..])
+        }
+        ATYP_DOMAIN => {
+            if buf.len() < 5 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let len = buf[4] as usize;
+            if buf.len() < 5 + len + 2 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let domain_bytes = &buf[5..5 + len];
+            let domain = String::from_utf8(domain_bytes.to_vec())
+                .map_err(|e| Socks5Error::MalformedMessage(format!("invalid domain: {e}")))?;
+            let port = u16::from_be_bytes([buf[5 + len], buf[5 + len + 1]]);
+            (SocksAddr::Domain(domain, port), &buf[5 + len + 2..])
+        }
+        ATYP_IPV6 => {
+            if buf.len() < 4 + 16 + 2 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&buf[4..20]);
+            let port = u16::from_be_bytes([buf[20], buf[21]]);
+            (SocksAddr::IPv6(octets, port), &buf[22..])
+        }
+        _ => return Err(Socks5Error::UnsupportedAddressType(atyp)),
+    };
+
+    Ok((addr, rest))
+}
+
+/// Parse a SOCKS5 generic request synchronously (CONNECT, BIND, or UDP_ASSOCIATE).
+///
+/// Returns `(command, target, remaining)`. Exposed for fuzzing.
+pub fn parse_socks5_request(buf: &[u8]) -> Result<(Socks5Command, SocksAddr, &[u8]), Socks5Error> {
+    if buf.len() < 4 {
+        return Err(Socks5Error::UnexpectedEof);
+    }
+    let version = buf[0];
+    if version != 0x05 {
+        return Err(Socks5Error::UnsupportedVersion(version));
+    }
+    let cmd = buf[1];
+    let command = parse_command(cmd)?;
+    let _rsv = buf[2];
+    let atyp = buf[3];
+
+    let (addr, rest) = match atyp {
+        ATYP_IPV4 => {
+            if buf.len() < 4 + 4 + 2 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let mut octets = [0u8; 4];
+            octets.copy_from_slice(&buf[4..8]);
+            let port = u16::from_be_bytes([buf[8], buf[9]]);
+            (SocksAddr::IPv4(octets, port), &buf[10..])
+        }
+        ATYP_DOMAIN => {
+            if buf.len() < 5 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let len = buf[4] as usize;
+            if buf.len() < 5 + len + 2 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let domain_bytes = &buf[5..5 + len];
+            let domain = String::from_utf8(domain_bytes.to_vec())
+                .map_err(|e| Socks5Error::MalformedMessage(format!("invalid domain: {e}")))?;
+            let port = u16::from_be_bytes([buf[5 + len], buf[5 + len + 1]]);
+            (SocksAddr::Domain(domain, port), &buf[5 + len + 2..])
+        }
+        ATYP_IPV6 => {
+            if buf.len() < 4 + 16 + 2 {
+                return Err(Socks5Error::UnexpectedEof);
+            }
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&buf[4..20]);
+            let port = u16::from_be_bytes([buf[20], buf[21]]);
+            (SocksAddr::IPv6(octets, port), &buf[22..])
+        }
+        _ => return Err(Socks5Error::UnsupportedAddressType(atyp)),
+    };
+
+    Ok((command, addr, rest))
+}
+
 /// Read a complete method negotiation message from the client.
 ///
 /// Returns the list of methods the client supports.

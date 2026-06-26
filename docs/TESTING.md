@@ -22,6 +22,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 # Security audit
 cargo deny check
+cargo audit
 ```
 
 ## Focused Test Commands
@@ -108,18 +109,33 @@ Tests cover: HTTP CONNECT, SOCKS4, SOCKS5, multi-hop chains, authentication, and
 
 ## Fuzz Smoke Testing
 
-Fuzz targets live in `fuzz/`:
+Fuzz targets live in `fuzz/` (standalone workspace, `libfuzzer-sys` based):
 
 | Target | What it fuzzes |
 |--------|----------------|
 | `fuzz_targets/uri_parse.rs` | URI parser with arbitrary input |
 | `fuzz_targets/socks5_udp_datagram.rs` | SOCKS5 UDP datagram codec with arbitrary input |
+| `fuzz_targets/socks5_handshake.rs` | SOCKS5 method negotiation + CONNECT/UDP_ASSOCIATE request parsers |
+| `fuzz_targets/http_connect_response.rs` | HTTP CONNECT status line, authority, header, basic-auth parsers |
+| `fuzz_targets/trojan_request.rs` | Trojan password hash + request encoder across IP / domain targets |
+| `fuzz_targets/route_match.rs` | Route matcher evaluation with constructed routers and requests |
 
-Run fuzz smoke testing:
+Run fuzz smoke testing (requires `cargo-fuzz`):
 
 ```bash
-cargo fuzz run uri_parse
-cargo fuzz run socks5_udp_datagram
+cargo fuzz run uri_parse -- -runs=1000
+cargo fuzz run socks5_udp_datagram -- -runs=1000
+cargo fuzz run socks5_handshake -- -runs=1000
+cargo fuzz run http_connect_response -- -runs=1000
+cargo fuzz run trojan_request -- -runs=1000
+cargo fuzz run route_match -- -runs=1000
+```
+
+Fuzz targets can also be smoke-compiled without `cargo-fuzz`:
+
+```bash
+cargo check --manifest-path fuzz/Cargo.toml --bins
+cargo test --manifest-path fuzz/Cargo.toml --no-run
 ```
 
 ## Ignored Load Tests
@@ -143,6 +159,7 @@ cargo bench
 | `tcp_relay` | TCP bidirectional relay throughput |
 | `udp_relay` | UDP datagram relay throughput |
 | `route_match` | Routing rule matching latency |
+| `http_connect_upstream` | HTTP CONNECT upstream open latency (no auth, basic auth, 407 rejection) |
 
 ## Security Invariant Tests
 

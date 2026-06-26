@@ -494,6 +494,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "eggress-core",
+ "eggress-protocol-http",
  "eggress-protocol-socks",
  "eggress-routing",
  "ipnet",

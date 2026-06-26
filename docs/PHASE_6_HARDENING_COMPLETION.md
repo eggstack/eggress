@@ -5,7 +5,9 @@
 Phase 6 hardened the existing supported protocol subset with property tests, fuzz
 harnesses, runtime lifecycle invariants, observability tests, security reviews,
 benchmarks, load tests, and comprehensive documentation. No new protocols were
-added. All 11 workstreams are complete.
+added. All 11 workstreams are complete. A follow-up commit closed the four
+to-acceptance-criteria gaps (full fuzz coverage, HTTP CONNECT upstream latency
+benchmark, `cargo audit` recorded, property-test count corrected).
 
 ## Commit List
 
@@ -19,6 +21,7 @@ added. All 11 workstreams are complete.
 8. Bench/load tests (WS8)
 9. Docs and release readiness (WS9)
 10. README, AGENTS.md, skills updates
+11. Gap closure: full fuzz target coverage (socks5_handshake, http_connect_response, route_match, trojan_request), HTTP CONNECT upstream latency benchmark, `cargo audit` recorded, property-test count corrected to 58
 
 ## Final Parity Matrix
 
@@ -38,7 +41,7 @@ See [PARITY_MATRIX.md](PARITY_MATRIX.md) for full feature-by-feature comparison.
 
 ## Property/Fuzz Coverage Summary
 
-### Property Tests (54 total)
+### Property Tests (58 total)
 - `codec_properties.rs` (14): SOCKS5 UDP encode/decode round-trip, FRAG/RSV rejection, domain length
 - `connect_properties.rs` (12): HTTP CONNECT credential validation, control char rejection
 - `request_properties.rs` (8): Trojan password hash (56 hex chars, deterministic, hex-only)
@@ -47,8 +50,12 @@ See [PARITY_MATRIX.md](PARITY_MATRIX.md) for full feature-by-feature comparison.
 
 ### Fuzz Harnesses
 - `fuzz/fuzz_targets/socks5_udp_datagram.rs` — SOCKS5 UDP codec fuzzing
+- `fuzz/fuzz_targets/socks5_handshake.rs` — SOCKS5 method negotiation + CONNECT/UDP_ASSOCIATE request parsing
+- `fuzz/fuzz_targets/http_connect_response.rs` — HTTP CONNECT response status / authority / header parsing
+- `fuzz/fuzz_targets/trojan_request.rs` — Trojan request encoder + password_hash
+- `fuzz/fuzz_targets/route_match.rs` — Route matcher evaluation with constructed routers and requests
 - `fuzz/fuzz_targets/uri_parse.rs` — URI parser fuzzing
-- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — smoke test
+- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — smoke test (UDP codec + handshake parsers)
 - `crates/eggress-uri/tests/fuzz_smoke.rs` — smoke test
 
 ### Smoke Tests
@@ -109,7 +116,8 @@ See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for full review.
   - `cargo test --workspace` — 1094 passed, 11 ignored (load/differential/shadowsocks)
   - `cargo clippy --workspace --all-targets -- -D warnings` — clean
   - `cargo deny check` — ok
-  - `cargo bench --no-run` — compiles
+  - `cargo audit` — exit 0; one unmaintained warning (rustls-pemfile 2.2.0, RUSTSEC-2025-0134); no vulnerabilities
+  - `cargo bench --no-run` — compiles (4 benches: tcp_relay, udp_relay, route_match, http_connect_upstream)
 
 ## Remaining Release Blockers
 

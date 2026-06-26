@@ -153,7 +153,10 @@ async fn read_connect_request(stream: &mut BoxStream) -> Result<ConnectRequest, 
 }
 
 /// Parse an authority-form target (host:port).
-fn parse_authority(authority: &str) -> Result<TargetAddr, HttpError> {
+/// Parse an authority string (`host:port` or `[ipv6]:port`) into a [`TargetAddr`].
+///
+/// Exposed for fuzzing. Returns [`HttpError::TargetParseError`] on malformed input.
+pub fn parse_authority(authority: &str) -> Result<TargetAddr, HttpError> {
     // Handle IPv6 bracketed addresses: [::1]:port
     if authority.starts_with('[') {
         let bracket_end = authority.find(']').ok_or_else(|| {
@@ -222,7 +225,9 @@ fn parse_authority(authority: &str) -> Result<TargetAddr, HttpError> {
 }
 
 /// Parse a header line into (name, value).
-fn parse_header_line(line: &str) -> Option<(String, String)> {
+///
+/// Exposed for fuzzing. Returns `None` if the line lacks a colon.
+pub fn parse_header_line(line: &str) -> Option<(String, String)> {
     let colon_pos = line.find(':')?;
     let name = line[..colon_pos].trim().to_string();
     let value = line[colon_pos + 1..].trim().to_string();
@@ -230,7 +235,9 @@ fn parse_header_line(line: &str) -> Option<(String, String)> {
 }
 
 /// Parse Basic authentication from a Proxy-Authorization header value.
-fn parse_basic_auth(value: &str) -> Option<(String, String)> {
+///
+/// Exposed for fuzzing. Returns `None` if the value is not a Basic auth header.
+pub fn parse_basic_auth(value: &str) -> Option<(String, String)> {
     let value = value.trim();
     if !value.starts_with("Basic ") {
         return None;

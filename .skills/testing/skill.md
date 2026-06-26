@@ -37,19 +37,31 @@ Property tests generate random inputs and assert invariants hold. Use `proptest!
 with `#[proptest]` attribute. Strategies should generate valid-but-random protocol inputs.
 
 ### Fuzz testing
-Fuzz harnesses live in `fuzz/fuzz_targets/`:
+Fuzz harnesses live in `fuzz/fuzz_targets/` (standalone workspace, libfuzzer-sys based):
 - `uri_parse.rs` — URI parser fuzz target
 - `socks5_udp_datagram.rs` — SOCKS5 UDP datagram codec fuzz target
+- `socks5_handshake.rs` — SOCKS5 method negotiation + CONNECT / UDP_ASSOCIATE request parsers
+- `http_connect_response.rs` — HTTP CONNECT status line, authority, header, basic-auth parsers
+- `trojan_request.rs` — Trojan password hash + request encoder
+- `route_match.rs` — Route matcher evaluation with constructed routers and requests
 
 Run with `cargo fuzz run <target>`. Smoke tests in per-crate `tests/` exercise seed inputs
 without requiring `cargo-fuzz`:
-- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — seed corpus for SOCKS codec
+- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — seed corpus for SOCKS UDP codec and handshake parsers
+- `crates/eggress-uri/tests/fuzz_smoke.rs` — seed corpus for URI parser
+
+Fuzz targets can also be smoke-compiled without `cargo-fuzz`:
+```bash
+cargo check --manifest-path fuzz/Cargo.toml --bins
+cargo test --manifest-path fuzz/Cargo.toml --no-run
+```
 
 ### Benchmarks
 Criterion benchmarks live in `benches/`:
 - `tcp_relay.rs` — TCP relay throughput
 - `udp_relay.rs` — UDP relay throughput
 - `route_match.rs` — route matching latency
+- `http_connect_upstream.rs` — HTTP CONNECT upstream open latency (no auth, basic auth, 407 rejection)
 
 Run with `cargo bench --workspace`.
 
@@ -109,6 +121,10 @@ cargo test -p eggress-runtime --test load -- --ignored
 # Fuzz targets (requires cargo-fuzz)
 cargo fuzz run uri_parse
 cargo fuzz run socks5_udp_datagram
+cargo fuzz run socks5_handshake
+cargo fuzz run http_connect_response
+cargo fuzz run trojan_request
+cargo fuzz run route_match
 
 # With output
 cargo test --workspace -- --nocapture

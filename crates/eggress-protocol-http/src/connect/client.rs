@@ -161,7 +161,11 @@ async fn read_response_head(
 }
 
 /// Parse the HTTP status code from a response head string.
-fn parse_status_code(response: &str, limits: &HttpConnectLimits) -> Result<u16, HttpError> {
+///
+/// Exposed for fuzzing; takes the full response head (status line + headers)
+/// and returns the numeric status code from the first whitespace-separated
+/// token after the HTTP version.
+pub fn parse_status_code(response: &str, limits: &HttpConnectLimits) -> Result<u16, HttpError> {
     let first_line = response
         .lines()
         .next()

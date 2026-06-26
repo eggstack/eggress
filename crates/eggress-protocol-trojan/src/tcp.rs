@@ -14,10 +14,7 @@ use eggress_core::{BoxStream, TargetAddr, TargetHost};
 /// Layout: `hash(56) + CRLF + CONNECT(1) + ATYP + addr + port(2) + CRLF`.
 /// Domain targets must be 1-255 bytes; other lengths return
 /// [`TrojanError::Protocol`].
-pub(crate) fn encode_trojan_request(
-    target: &TargetAddr,
-    password: &str,
-) -> Result<Vec<u8>, TrojanError> {
+pub fn encode_trojan_request(target: &TargetAddr, password: &str) -> Result<Vec<u8>, TrojanError> {
     let mut request = Vec::new();
 
     let hash = password_hash(password);

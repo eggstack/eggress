@@ -1,3 +1,6 @@
+use eggress_protocol_socks::socks5::server::{
+    parse_connect_request, parse_method_negotiation, parse_socks5_request,
+};
 use eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram;
 
 #[test]
@@ -25,4 +28,50 @@ fn fuzz_smoke_socks5_udp_codec() {
     for pattern in patterns {
         let _ = decode_socks5_udp_datagram(pattern);
     }
+}
+
+#[test]
+fn fuzz_smoke_socks5_handshake_parsers() {
+    // Method negotiation: version=5, nmethods=2, methods=[0,2]
+    let valid = [0x05, 0x02, 0x00, 0x02];
+    let (methods, rest) = parse_method_negotiation(&valid).unwrap();
+    assert_eq!(methods, vec![0x00, 0x02]);
+    assert!(rest.is_empty());
+
+    // Bad version rejected.
+    let bad_version = [0x04, 0x01, 0x00];
+    assert!(parse_method_negotiation(&bad_version).is_err());
+
+    // Truncated rejected.
+    assert!(parse_method_negotiation(&[0x05]).is_err());
+    assert!(parse_method_negotiation(&[0x05, 0x05, 0x00]).is_err());
+
+    // Empty rejected.
+    assert!(parse_method_negotiation(&[]).is_err());
+
+    // CONNECT request: IPv4 target.
+    let connect_v4 = [0x05, 0x01, 0x00, 0x01, 0x7f, 0x00, 0x00, 0x01, 0x00, 0x50];
+    let (addr, _) = parse_connect_request(&connect_v4).unwrap();
+    assert_eq!(addr.host_str(), "127.0.0.1");
+    assert_eq!(addr.port(), 80);
+
+    // CONNECT request: domain target.
+    let connect_domain = [
+        0x05, 0x01, 0x00, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o',
+        b'm', 0x01, 0xbb,
+    ];
+    let (addr, _) = parse_connect_request(&connect_domain).unwrap();
+    assert_eq!(addr.host_str(), "example.com");
+    assert_eq!(addr.port(), 443);
+
+    // CONNECT request: bad command (BIND instead of CONNECT) rejected.
+    let bad_cmd = [0x05, 0x02, 0x00, 0x01, 0x7f, 0x00, 0x00, 0x01, 0x00, 0x50];
+    assert!(parse_connect_request(&bad_cmd).is_err());
+
+    // SOCKS5 generic request: BIND allowed, CONNECT allowed.
+    let (cmd, _, _) = parse_socks5_request(&bad_cmd).unwrap();
+    assert_eq!(
+        cmd,
+        eggress_protocol_socks::socks5::server::Socks5Command::Bind
+    );
 }

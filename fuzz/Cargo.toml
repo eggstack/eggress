@@ -7,12 +7,58 @@ publish = false
 [dependencies]
 libfuzzer-sys = "0.4"
 
+[dependencies.eggress-protocol-socks]
+path = "../crates/eggress-protocol-socks"
+
+[dependencies.eggress-core]
+path = "../crates/eggress-core"
+
+[dependencies.eggress-protocol-http]
+path = "../crates/eggress-protocol-http"
+
+[dependencies.eggress-protocol-trojan]
+path = "../crates/eggress-protocol-trojan"
+
+[dependencies.eggress-uri]
+path = "../crates/eggress-uri"
+
+[dependencies.eggress-routing]
+path = "../crates/eggress-routing"
+
 [workspace]
 members = ["."]
 
 [[bin]]
 name = "socks5_udp_datagram"
 path = "fuzz_targets/socks5_udp_datagram.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "socks5_handshake"
+path = "fuzz_targets/socks5_handshake.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_connect_response"
+path = "fuzz_targets/http_connect_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trojan_request"
+path = "fuzz_targets/trojan_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "route_match"
+path = "fuzz_targets/route_match.rs"
 test = false
 doc = false
 bench = false
