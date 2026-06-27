@@ -1,0 +1,59 @@
+name: Build Python Wheels
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+          - os: ubuntu-latest
+            target: aarch64
+          - os: macos-latest
+            target: x86_64
+          - os: macos-latest
+            target: aarch64
+          - os: windows-latest
+            target: x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'aarch64' && (startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu') || '' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build wheel
+        run: maturin build --release --target ${{ matrix.target }}-unknown-${{ startsWith(matrix.os, 'macos') && 'apple-darwin' || (startsWith(matrix.os, 'windows') && 'pc-windows-msvc' || 'linux-gnu') }} --out dist
+        working-directory: crates/eggress-python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: crates/eggress-python/dist/*.whl
+
+  build_sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build sdist
+        run: maturin sdist --out dist
+        working-directory: crates/eggress-python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: crates/eggress-python/dist/*.tar.gz

@@ -1,0 +1,39 @@
+name: Python Tests
+
+on:
+  pull_request:
+    paths:
+      - 'crates/eggress-python/**'
+      - 'python/**'
+      - '.github/workflows/python-test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/eggress-python/**'
+      - 'python/**'
+      - '.github/workflows/python-test.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build and install
+        run: maturin develop
+        working-directory: crates/eggress-python
+      - name: Install test dependencies
+        run: pip install pytest
+      - name: Run tests
+        run: python -m pytest python/tests -v

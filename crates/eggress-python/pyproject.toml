@@ -4,15 +4,38 @@ build-backend = "maturin"
 
 [project]
 name = "eggress"
+version = "0.1.0"
 requires-python = ">=3.9"
 description = "Python bindings for the eggress proxy"
+readme = "../../python/README.md"
 license = {text = "MIT OR Apache-2.0"}
-dynamic = ["version"]
+authors = [{name = "eggstack"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: Proxy Servers",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/eggstack/eggress"
+Repository = "https://github.com/eggstack/eggress"
+Documentation = "https://github.com/eggstack/eggress#readme"
+Changelog = "https://github.com/eggstack/eggress/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/eggstack/eggress/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "../../python"
 module-name = "eggress._eggress"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+include = ["eggress/**/*.py", "eggress/py.typed"]

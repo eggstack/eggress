@@ -61,6 +61,7 @@ Legend:
 - [x] Embeddable library API (eggress-server crate)
 - [x] `eggress-embed` library API
 - [x] Python bindings (PyO3)
+- [x] PyPI package and wheels (Phase 15)
 - [x] `pproxy`-compatible CLI shell
 - [x] Typed URI parser
 - [x] Multi-hop chain parser
@@ -381,6 +382,9 @@ Legend:
 - [ ] SBOM
 - [ ] Crates.io packages
 - [ ] Migration guide from Python `pproxy`
+- [x] Python package on PyPI (wheels for Linux/macOS/Windows)
+- [x] PyPI release workflow (GitHub Actions)
+- [x] PyPI release documentation
 
 ### pproxy compatibility
 
@@ -458,6 +462,9 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Phase 7 pproxy parity spec](docs/PHASE_7_PPROXY_PARITY_SPEC_COMPLETION.md)
 - [Failure semantics](docs/FAILURE_SEMANTICS.md)
 - [Phase 12 scheduler/chain/failure parity](docs/PHASE_12_SCHEDULER_CHAIN_FAILURE_PARITY_COMPLETION.md)
+- [Python bindings](docs/PYTHON_BINDINGS.md)
+- [PyPI release procedure](docs/PYPI_RELEASE.md)
+- [Wheel artifact audit](docs/WHEEL_AUDIT.md)
 
 ## Status discipline
 

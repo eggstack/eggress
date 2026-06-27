@@ -54,6 +54,33 @@ Previously ran duplicate `cargo-deny` and `cargo-audit` jobs using older
 action versions. Superseded by the Deny and Audit jobs in `ci.yml`. Removed
 to avoid confusion and wasted billing minutes.
 
+### python-test.yml
+
+Runs Python tests on push to `main` and pull requests affecting Python code.
+
+| Job | Runner | What it checks |
+|-----|--------|----------------|
+| Test (matrix) | ubuntu-latest, macos-latest × Python 3.9/3.12/3.13 | `maturin develop` + `pytest python/tests` |
+
+### python-wheels.yml
+
+Builds platform wheels on version tags (`v*`).
+
+| Job | Runner | What it builds |
+|-----|--------|----------------|
+| build_wheels (matrix) | ubuntu/macos/windows × x86_64/aarch64 | Platform-specific wheel |
+| build_sdist | ubuntu-latest | Source distribution |
+
+### publish-pypi.yml
+
+Publishes to PyPI or TestPyPI via manual dispatch. Uses trusted publishing (OIDC).
+
+| Input | Options | Default |
+|-------|---------|---------|
+| repository | `testpypi`, `pypi` | `testpypi` |
+
+**Note:** All Python workflows are subject to the same billing limitations as `ci.yml`. Local verification remains the source of truth.
+
 ## How to Interpret Completion Docs
 
 When hosted CI is unavailable, completion documents (e.g.

@@ -132,3 +132,21 @@ python -m pytest python/tests
 ```
 
 See `docs/PYTHON_BINDINGS.md` for full reference.
+
+### PyPI packaging
+
+To build a distributable wheel:
+
+```bash
+cd crates/eggress-python
+maturin build --release --out ../../dist
+pip install --force-reinstall ../../dist/eggress-*.whl
+```
+
+To test the wheel in a clean environment:
+
+```bash
+./scripts/test_wheel.sh
+```
+
+See `docs/PYPI_RELEASE.md` for the full release procedure.

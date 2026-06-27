@@ -23,6 +23,20 @@ maturin build --release --target x86_64-apple-darwin   # adjust target
 pip install --force-reinstall target/wheels/eggress-*.whl
 ```
 
+### From PyPI (recommended)
+
+```bash
+pip install eggress
+```
+
+### From a wheel file
+
+```bash
+pip install dist/eggress-*.whl
+```
+
+No Rust toolchain is required when installing from a pre-built wheel.
+
 ### Requirements
 
 - Python >= 3.9

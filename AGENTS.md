@@ -102,6 +102,18 @@ cd crates/eggress-python && maturin build --target x86_64-apple-darwin
 pip install --force-reinstall target/wheels/eggress-0.1.0-*.whl
 python -m pytest python/tests
 
+# Build and test Python wheel
+maturin build --release --out dist
+python -m venv .venv-wheel-test
+. .venv-wheel-test/bin/activate
+pip install dist/eggress-*.whl
+pip install pytest
+python -m pytest python/tests
+deactivate
+
+# Or use the helper script
+./scripts/test_wheel.sh
+
 # Run fuzz targets (standalone `fuzz/` workspace; libfuzzer-sys based)
 cargo check --manifest-path fuzz/Cargo.toml --bins
 cargo test --manifest-path fuzz/Cargo.toml --no-run
@@ -151,6 +163,7 @@ eggress/
 │   └── eggress-testkit/   # Test utilities
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
+├── scripts/                # Helper scripts (test_wheel.sh)
 ├── plans/                  # Historical planning documents (reference only)
 ├── tests/
 │   └── interoperability/  # Cross-implementation tests (curl, pproxy)
@@ -257,6 +270,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP capability downgraded to `UnsupportedProtocol` in `capability.rs`. Completion docs updated with corrective notices and gated-test status.
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Blocking path spawns a dedicated thread; async path uses `spawn_blocking`. Handle owns state/token and cleans up on drop. See `docs/EMBED_API.md`.
 - **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. See `docs/PYTHON_BINDINGS.md`.
+- **PyPI packaging**: Wheels built with maturin for Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64. See `docs/PYPI_RELEASE.md`.
 
 ## Skills
 

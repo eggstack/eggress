@@ -1,0 +1,38 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Target repository (testpypi or pypi)"
+        required: true
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.repository == 'pypi' && 'pypi' || 'testpypi' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build wheel and sdist
+        run: |
+          maturin build --release --out dist
+          maturin sdist --out dist
+        working-directory: crates/eggress-python
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: crates/eggress-python/dist/
+          repository-url: ${{ inputs.repository == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}

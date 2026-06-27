@@ -92,6 +92,21 @@ All five commands must pass cleanly before tagging a release.
 - No C dependencies, no OpenSSL. Uses `rustls` with `ring` crypto provider.
 - See [DEPENDENCY_POLICY.md](DEPENDENCY_POLICY.md) for the full policy.
 
+## Platform Support
+
+| Platform | Wheel Target | Status | Notes |
+|----------|-------------|--------|-------|
+| Linux x86_64 | `manylinux` | Supported | Primary CI target |
+| Linux aarch64 | `manylinux` | Supported | Cross-compiled or native CI |
+| macOS arm64 | `macos-arm64` | Supported | Apple Silicon |
+| macOS x86_64 | `macos-x86_64` | Supported | Intel Macs |
+| Windows x86_64 | `win-amd64` | Supported | MSVC toolchain |
+| musllinux x86_64 | `musllinux` | Not built | May be added later |
+| musllinux aarch64 | `musllinux` | Not built | May be added later |
+| Windows arm64 | `win-arm64` | Not built | May be added later |
+
+Unsupported platforms will receive a clear error at install time if no compatible wheel is available. Building from source requires a Rust toolchain.
+
 ## Release Checklist
 
 - [ ] `cargo fmt --all -- --check` passes
