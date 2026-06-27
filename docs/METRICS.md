@@ -73,6 +73,11 @@ bridges the call into `MetricsRegistry`.
 | `eggress_udp_upstream_bytes_down_total` | Counter | Total UDP bytes received from upstream |
 | `eggress_udp_upstream_failures_total` | Counter | Total UDP upstream failures |
 
+**Shadowsocks UDP upstream traffic** increments the UDP upstream metrics above.
+Shadowsocks TCP upstream traffic increments the TCP upstream connection metrics
+(`eggress_upstream_open_total` with `protocol="shadowsocks"`) instead. The two
+transport modes are distinguished by which metric family receives the counters.
+
 ## Labels and Cardinality Policy
 
 ### What IS labeled

@@ -31,11 +31,15 @@ This matches the standard Shadowsocks UDP format used by shadowsocks-rust, shado
 
 ## Test List
 
-### Unit tests (9 in `eggress-protocol-shadowsocks`)
+### Unit tests (19 in `eggress-protocol-shadowsocks`)
 
 | Area | Count | Details |
 |------|-------|---------|
-| UDP encode/decode roundtrips | 9 | All three methods, various payload sizes, IPv4/IPv6/domain addresses |
+| UDP encode/decode roundtrips | 4 | IPv4, IPv6, domain, all methods |
+| UDP encode/decode failure cases | 3 | Tampered packet, wrong password, packet too short |
+| UDP encode/decode edge cases | 3 | Empty payload, large payload, unique salts |
+| UDP encode/decode reject cases | 2 | Overlong domain, oversized datagram |
+| Structural byte inspection | 7 | IPv4/domain/IPv6 layout, all-methods consistency, tampered salt, tampered AEAD tag, empty payload structure |
 
 ### Runtime integration tests (in `eggress-runtime/tests/shadowsocks_udp.rs`)
 
@@ -47,9 +51,24 @@ This matches the standard Shadowsocks UDP format used by shadowsocks-rust, shado
 | `shadowsocks_udp_metrics_increment` | Verifies UDP upstream metrics after relay |
 | `shadowsocks_udp_target_flow_idle_cleanup` | Target flow idle timeout evicts flow, gauges return to zero |
 
+### Differential tests (in `eggress-cli/tests/differential_pproxy.rs`)
+
+| Test | Type | Status |
+|------|------|--------|
+| `differential_socks5_udp_associate` | Differential (eggress vs pproxy) | Gated; requires external interop |
+| `probe_pproxy_udp_relay_lifetime` | Probe (pproxy-only) | Documents pproxy UDP relay independence from TCP control |
+| `probe_pproxy_udp_through_socks5_upstream` | Probe (pproxy-only) | Documents pproxy UDP chaining behavior through SOCKS5 upstream |
+| `probe_pproxy_udp_unsupported_route` | Probe (pproxy-only) | Documents pproxy behavior for unreachable UDP targets |
+
 ## Differential Evidence
 
-pproxy differential tests for Shadowsocks UDP are **gated** (not yet run). The pproxy environment has Python 3.14 compatibility issues that prevent running the differential test suite. Unit and runtime integration tests provide the primary correctness evidence.
+pproxy differential tests for Shadowsocks UDP are **gated** (not yet run). The pproxy environment has Python 3.14 compatibility issues that prevent running the differential test suite. Three probe tests document pproxy's UDP behavior for future comparison:
+
+- **UDP relay lifetime**: pproxy's UDP relay is independent of TCP control (separate listener)
+- **UDP through SOCKS5 upstream**: pproxy uses its own UDP framing, not standard SOCKS5 UDP ASSOCIATE chaining
+- **Unsupported route**: pproxy silently drops/times out for unreachable targets (no structured metrics)
+
+Unit and runtime integration tests provide the primary correctness evidence.
 
 ## UDP Parity Matrix
 

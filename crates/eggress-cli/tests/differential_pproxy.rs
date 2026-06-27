@@ -1598,3 +1598,148 @@ async fn probe_pproxy_udp_relay_lifetime() {
     let _ = pproxy_child.wait();
     udp_jh.abort();
 }
+
+/// Probe: How does pproxy handle UDP through a SOCKS5 upstream?
+///
+/// pproxy's UDP relay uses its own framing protocol (not SOCKS5 UDP ASSOCIATE).
+/// When `-r socks5://UPSTREAM:PORT` is used, pproxy establishes a SOCKS5 TCP
+/// connection for the control channel but sends UDP through its own protocol.
+/// This test documents pproxy's behavior for comparison purposes.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn probe_pproxy_udp_through_socks5_upstream() {
+    skip_if_unavailable();
+
+    // Start a UDP echo server
+    let (udp_echo_addr, udp_jh) = start_udp_echo().await;
+
+    // Start pproxy as the upstream SOCKS5 server (direct mode)
+    let upstream_port = eggress_testkit::get_free_port().await;
+    let upstream_listen = format!("socks5://127.0.0.1:{}", upstream_port);
+    let mut upstream_child = std::process::Command::new("python3")
+        .args(["-m", "pproxy", "-l", &upstream_listen, "-r", "direct"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy upstream");
+    assert!(
+        wait_for_port(upstream_port, Duration::from_secs(5)).await,
+        "pproxy upstream failed to start"
+    );
+
+    // Start pproxy as the client-facing proxy chaining through the upstream
+    let client_tcp_port = eggress_testkit::get_free_port().await;
+    let client_udp_port = eggress_testkit::get_free_port().await;
+    let client_listen_tcp = format!("socks5://127.0.0.1:{}", client_tcp_port);
+    let client_listen_udp = format!("socks5://127.0.0.1:{}", client_udp_port);
+    let upstream_ref = format!("socks5://127.0.0.1:{}", upstream_port);
+    let mut client_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &client_listen_tcp,
+            "-ul",
+            &client_listen_udp,
+            "-r",
+            &upstream_ref,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy client");
+    assert!(
+        wait_for_port(client_tcp_port, Duration::from_secs(5)).await,
+        "pproxy client failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send UDP through the chained pproxy relay
+    let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let packet = build_socks5_udp_packet(udp_echo_addr, b"chained-udp-test");
+    let _ = udp_sock
+        .send_to(&packet, ("127.0.0.1", client_udp_port))
+        .await;
+    let response = recv_udp_response(&udp_sock, Duration::from_secs(3)).await;
+
+    eprintln!("=== probe_pproxy_udp_through_socks5_upstream ===");
+    eprintln!("upstream port: {upstream_port}");
+    match &response {
+        Some(payload) => {
+            eprintln!("pproxy chained UDP responded: {} bytes", payload.len());
+        }
+        None => {
+            eprintln!("pproxy chained UDP did not respond (expected: pproxy uses its own UDP framing, not SOCKS5 UDP ASSOCIATE chaining)");
+        }
+    }
+
+    let _ = client_child.kill();
+    let _ = client_child.wait();
+    let _ = upstream_child.kill();
+    let _ = upstream_child.wait();
+    udp_jh.abort();
+}
+
+/// Probe: How does pproxy handle UDP to an unsupported destination?
+///
+/// Documents the coarse failure behavior when pproxy cannot reach a UDP target.
+/// pproxy may silently drop, return an error, or time out — this probe records
+/// the behavior for comparison with eggress's `unsupported_transport_total` counter.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn probe_pproxy_udp_unsupported_route() {
+    skip_if_unavailable();
+
+    // Start pproxy with direct mode
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let listen_tcp = format!("socks5://127.0.0.1:{}", pproxy_tcp_port);
+    let listen_udp = format!("socks5://127.0.0.1:{}", pproxy_udp_port);
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &listen_tcp,
+            "-ul",
+            &listen_udp,
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send UDP to a target that is unreachable (port 1 on loopback — likely refused or filtered)
+    let unreachable_target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 1);
+    let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let packet = build_socks5_udp_packet(unreachable_target, b"unsupported-test");
+    let _ = udp_sock
+        .send_to(&packet, ("127.0.0.1", pproxy_udp_port))
+        .await;
+    let response = recv_udp_response(&udp_sock, Duration::from_secs(2)).await;
+
+    eprintln!("=== probe_pproxy_udp_unsupported_route ===");
+    match &response {
+        Some(payload) => {
+            eprintln!(
+                "pproxy responded to unreachable target: {} bytes (may indicate relay accepted the packet)",
+                payload.len()
+            );
+        }
+        None => {
+            eprintln!("pproxy did not respond to unreachable target (silent drop or timeout)");
+        }
+    }
+    // pproxy may or may not respond — the key point is that it does not
+    // increment a structured metric like eggress's `unsupported_transport_total`.
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+}

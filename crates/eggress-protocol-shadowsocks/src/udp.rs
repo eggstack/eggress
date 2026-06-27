@@ -348,4 +348,207 @@ mod tests {
         let oversized = vec![0u8; MAX_UDP_PACKET_SIZE + 1];
         assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password, &oversized).is_err());
     }
+
+    // ===== Structural byte inspection tests =====
+    // These verify the raw packet layout without relying on roundtrip helpers.
+
+    #[test]
+    fn test_packet_layout_ipv4_structure() {
+        let method = CipherMethod::Aes256Gcm;
+        let password = test_password();
+        let salt = test_salt();
+        let target = TargetAddr {
+            host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+        let payload = b"structure test";
+
+        let packet = encode_udp_packet(method, password, &target, payload, &salt).unwrap();
+
+        let salt_size = method.salt_size();
+        let tag_size = method.tag_size();
+
+        // Total length: salt + (address + payload + tag)
+        // IPv4 address: ATYP(1) + IP(4) + PORT(2) = 7 bytes
+        let addr_len = 7;
+        let expected_ciphertext_len = addr_len + payload.len() + tag_size;
+        assert_eq!(
+            packet.len(),
+            salt_size + expected_ciphertext_len,
+            "packet length mismatch"
+        );
+
+        // Salt at offset 0
+        assert_eq!(&packet[..salt_size], &salt, "salt not at offset 0");
+
+        // Ciphertext follows immediately after salt
+        assert_eq!(packet.len() - salt_size, expected_ciphertext_len);
+    }
+
+    #[test]
+    fn test_packet_layout_domain_structure() {
+        let method = CipherMethod::Aes256Gcm;
+        let password = test_password();
+        let salt = test_salt();
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".to_string()),
+            port: 443,
+        };
+        let payload = b"domain structure";
+
+        let packet = encode_udp_packet(method, password, &target, payload, &salt).unwrap();
+
+        let salt_size = method.salt_size();
+        let tag_size = method.tag_size();
+
+        // Domain address: ATYP(1) + LEN(1) + domain(11) + PORT(2) = 15 bytes
+        let addr_len = 1 + 1 + "example.com".len() + 2;
+        let expected_ciphertext_len = addr_len + payload.len() + tag_size;
+        assert_eq!(
+            packet.len(),
+            salt_size + expected_ciphertext_len,
+            "packet length mismatch for domain"
+        );
+
+        // Salt at offset 0
+        assert_eq!(&packet[..salt_size], &salt);
+    }
+
+    #[test]
+    fn test_packet_layout_ipv6_structure() {
+        let method = CipherMethod::ChaCha20IetfPoly1305;
+        let password = test_password();
+        let salt = [0xAAu8; 16];
+        let target = TargetAddr {
+            host: TargetHost::Ip("::1".parse().unwrap()),
+            port: 8080,
+        };
+        let payload = b"ipv6 struct";
+
+        let packet = encode_udp_packet(method, password, &target, payload, &salt).unwrap();
+
+        let salt_size = method.salt_size();
+        let tag_size = method.tag_size();
+
+        // IPv6 address: ATYP(1) + IP(16) + PORT(2) = 19 bytes
+        let addr_len = 19;
+        let expected_ciphertext_len = addr_len + payload.len() + tag_size;
+        assert_eq!(
+            packet.len(),
+            salt_size + expected_ciphertext_len,
+            "packet length mismatch for IPv6"
+        );
+
+        // Salt at offset 0
+        assert_eq!(&packet[..salt_size], &salt);
+    }
+
+    #[test]
+    fn test_packet_layout_all_methods_consistent() {
+        let methods = [
+            CipherMethod::Aes128Gcm,
+            CipherMethod::Aes256Gcm,
+            CipherMethod::ChaCha20IetfPoly1305,
+        ];
+        let password = test_password();
+        let salt = test_salt();
+        let target = TargetAddr {
+            host: TargetHost::Ip("192.168.1.1".parse().unwrap()),
+            port: 12345,
+        };
+        let payload = b"method consistency";
+
+        for method in methods.iter() {
+            let packet = encode_udp_packet(*method, password, &target, payload, &salt).unwrap();
+
+            let salt_size = method.salt_size();
+            let tag_size = method.tag_size();
+
+            // All methods use 16-byte salt
+            assert_eq!(salt_size, 16, "method {} salt_size != 16", method);
+
+            // IPv4 address: 7 bytes
+            let addr_len = 7;
+            let expected_ciphertext_len = addr_len + payload.len() + tag_size;
+            assert_eq!(
+                packet.len(),
+                salt_size + expected_ciphertext_len,
+                "method {} packet length mismatch",
+                method
+            );
+
+            // Salt at offset 0 matches input
+            assert_eq!(
+                &packet[..salt_size],
+                &salt,
+                "method {} salt mismatch",
+                method
+            );
+        }
+    }
+
+    #[test]
+    fn test_tampered_salt_fails() {
+        let password = test_password();
+        let salt = test_salt();
+        let target = TargetAddr {
+            host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+        let payload = b"salt tamper";
+
+        let mut packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt).unwrap();
+
+        // Flip a byte in the salt
+        packet[0] ^= 0xFF;
+
+        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).is_err());
+    }
+
+    #[test]
+    fn test_tampered_ciphertext_tag_fails() {
+        let password = test_password();
+        let salt = test_salt();
+        let target = TargetAddr {
+            host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+        let payload = b"tag tamper";
+
+        let mut packet =
+            encode_udp_packet(CipherMethod::Aes256Gcm, password, &target, payload, &salt).unwrap();
+
+        // Flip a byte in the AEAD tag (last 16 bytes)
+        let tag_start = packet.len() - 16;
+        packet[tag_start] ^= 0xFF;
+
+        assert!(decode_udp_packet(CipherMethod::Aes256Gcm, password, &packet).is_err());
+    }
+
+    #[test]
+    fn test_empty_payload_produces_valid_packet() {
+        let method = CipherMethod::Aes256Gcm;
+        let password = test_password();
+        let salt = test_salt();
+        let target = TargetAddr {
+            host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+
+        let packet = encode_udp_packet(method, password, &target, b"", &salt).unwrap();
+
+        let salt_size = method.salt_size();
+        let tag_size = method.tag_size();
+
+        // Empty payload: packet = salt + AEAD(address + empty) = salt + (7 + 0 + 16)
+        let expected_ciphertext_len = 7 + tag_size;
+        assert_eq!(packet.len(), salt_size + expected_ciphertext_len);
+
+        // Verify roundtrip works
+        let (decoded_target, decoded_payload) =
+            decode_udp_packet(method, password, &packet).unwrap();
+        assert_eq!(decoded_target, target);
+        assert!(decoded_payload.is_empty());
+    }
 }
