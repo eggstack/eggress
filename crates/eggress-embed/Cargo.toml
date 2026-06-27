@@ -1,0 +1,28 @@
+[package]
+name = "eggress-embed"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "Stable Rust embed API for eggress proxy"
+publish = false
+
+[dependencies]
+eggress-config = { workspace = true }
+eggress-core = { workspace = true }
+eggress-metrics = { workspace = true }
+eggress-runtime = { workspace = true }
+eggress-server = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+tokio-test = { workspace = true }
+
+[lints]
+workspace = true

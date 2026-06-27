@@ -740,6 +740,32 @@ Every advertised reference capability is implemented, explicitly documented as i
 
 ---
 
+# Phase 13: Rust embed API stabilization
+
+## Objective
+
+Create a stable Rust library surface for embedding eggress in another Rust process.
+Python bindings (PyO3) in later phases will wrap this API.
+
+## Included
+
+- `eggress-embed` crate with public error types
+- Config constructors (`from_toml_str`, `from_toml_file`, `source_toml`)
+- Async start (`start().await`) and blocking start (`start_blocking()`)
+- `EggressHandle` with bound address discovery, status, metrics, reload, and shutdown
+- Integration tests (start/stop, proxy traffic, reload, metrics, error redaction)
+- Documentation (`EMBED_API.md`)
+
+## Non-goals
+
+- Python bindings (Phase 14)
+- PyPI packaging
+- New proxy protocols
+- Shadowsocks TCP standard rework
+- unsafe Rust
+
+---
+
 # Phase 12: Hardening and parity release
 
 ## Objective

@@ -565,6 +565,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "eggress-embed"
+version = "0.1.0"
+dependencies = [
+ "eggress-config",
+ "eggress-core",
+ "eggress-metrics",
+ "eggress-runtime",
+ "eggress-server",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tokio-util",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "eggress-metrics"
 version = "0.1.0"
 dependencies = [

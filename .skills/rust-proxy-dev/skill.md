@@ -49,3 +49,18 @@ The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-
 - [ ] Credentials never logged (use redacted Display)
 - [ ] Bounded parsers/handshake timeouts
 - [ ] Capability classifier reflects actual wire compatibility (not just internal code existence)
+
+## Embed API (eggress-embed)
+
+For embedding eggress in another Rust process, use the `eggress-embed` crate:
+
+- `EggressConfig::from_toml_str()` / `from_toml_file()` — parse and validate config
+- `EggressService::new(config).start_blocking()` — blocking start, returns `EggressHandle`
+- `EggressService::new(config).start().await` — async start within a Tokio runtime
+- `handle.bound_addresses()` — discover listener ports (supports port-0)
+- `handle.status()` — generation, readiness, uptime, active connections
+- `handle.metrics_text()` — Prometheus metrics without HTTP
+- `handle.reload_toml_str()` — hot-reload routing/upstreams
+- `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown
+
+See `docs/EMBED_API.md` for full reference.

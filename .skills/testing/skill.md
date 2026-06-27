@@ -161,3 +161,17 @@ cargo test --workspace -- --nocapture
   assert round-trip or invariant properties
 - For fuzz targets: add seed inputs to `fuzz_smoke.rs` tests for CI coverage
 - For load tests: annotate with `#[ignore]` and document the scenario
+
+## Embed API tests
+
+The `eggress-embed` crate has integration tests in `crates/eggress-embed/tests/`:
+
+- `start_stop.rs` — blocking/async start and shutdown, multiple listeners, config errors
+- `proxy_traffic.rs` — SOCKS5 TCP echo through embed API, port-0 discovery
+- `reload.rs` — reload generation increment, invalid config, bind change rejection
+- `metrics_status.rs` — Prometheus counters, status fields, metrics after session
+- `error_redaction.rs` — no credentials in error messages, error categories
+
+Run: `cargo test -p eggress-embed`
+
+Tests use local TCP echo servers (no public internet required).

@@ -78,6 +78,9 @@ cargo test -p eggress-cli --test differential_pproxy
 # Run pproxy compatibility tests
 cargo test -p eggress-pproxy-compat
 
+# Run embed API tests
+cargo test -p eggress-embed
+
 # Run scheduler parity tests
 cargo test -p eggress-routing scheduler_parity
 cargo test -p eggress-runtime scheduler_runtime
@@ -138,6 +141,7 @@ eggress/
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   ├── eggress-pproxy-compat/ # pproxy compatibility: URI translation, config migration
+│   ├── eggress-embed/      # Stable Rust embed API: config, service, handle, errors
 │   └── eggress-testkit/   # Test utilities
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
@@ -242,6 +246,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH, Unix, redir) produce structured diagnostics
 - **Shadowsocks TCP framing**: Non-standard (single AEAD operation per chunk with cleartext length prefix). Not wire-compatible with standard Shadowsocks implementations. Classified as Experimental in parity matrix. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md`.
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP capability downgraded to `UnsupportedProtocol` in `capability.rs`. Completion docs updated with corrective notices and gated-test status.
+- **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Blocking path spawns a dedicated thread; async path uses `spawn_blocking`. Handle owns state/token and cleans up on drop. See `docs/EMBED_API.md`.
 
 ## Skills
 

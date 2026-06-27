@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 8: pproxy-compatible CLI and URI translation (complete)
+Phase 13: Rust embed API stabilization (complete)
 
 ## Completed Milestones
 
@@ -99,9 +99,19 @@ Phase 8: pproxy-compatible CLI and URI translation (complete)
 - [x] 8.6: Migration guide (`docs/PPROXY_MIGRATION.md`)
 - [x] 8.7: CLI integration tests for pproxy subcommands
 
+### Phase 13: Rust embed API stabilization — complete
+
+- [x] 13.1: `eggress-embed` crate skeleton with public error types
+- [x] 13.2: Config constructors (`from_toml_str`, `from_toml_file`, `source_toml`)
+- [x] 13.3: Async start/handle/status/bound-address API
+- [x] 13.4: Blocking owned-runtime API (`start_blocking`, `shutdown_blocking`)
+- [x] 13.5: Metrics, status, and reload APIs
+- [x] 13.6: Integration tests (start/stop, proxy traffic, reload, metrics, error redaction)
+- [x] 13.7: Documentation (`EMBED_API.md`) and workspace updates
+
 ## Remaining Work
 
-None — Phases 1–8 are complete.
+None — Phases 1–8, 13 are complete.
 
 ## Next Phase
 
