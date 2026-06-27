@@ -45,3 +45,146 @@ protocols = ["http"]
         other => panic!("expected Startup error, got: {other}"),
     }
 }
+
+#[test]
+fn unsupported_feature_error_category() {
+    let err = eggress_embed::EggressError::UnsupportedFeature {
+        feature: "masque".to_string(),
+        message: "not yet implemented".to_string(),
+    };
+    assert_eq!(err.category(), "unsupported_feature");
+    assert!(err.to_string().contains("masque"));
+}
+
+#[test]
+fn to_redacted_toml_hides_listener_password() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = "super_secret_123"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    assert!(
+        !redacted.contains("super_secret_123"),
+        "redacted TOML should not contain password"
+    );
+    assert!(
+        redacted.contains("****"),
+        "redacted TOML should contain placeholder"
+    );
+    // Username is not a secret, should remain
+    assert!(
+        redacted.contains("admin"),
+        "redacted TOML should still contain username"
+    );
+}
+
+#[test]
+fn to_redacted_toml_hides_password_env() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+password_env = "MY_SECRET_ENV_VAR"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    assert!(
+        !redacted.contains("MY_SECRET_ENV_VAR"),
+        "redacted TOML should not contain password_env"
+    );
+    assert!(redacted.contains("****"));
+}
+
+#[test]
+fn to_redacted_toml_hides_upstream_uri_credentials() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[upstreams]]
+id = "up1"
+uri = "socks5://myuser:my_password_42@10.0.0.1:1080"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    assert!(
+        !redacted.contains("my_password_42"),
+        "redacted TOML should not contain URI password"
+    );
+    assert!(
+        !redacted.contains("myuser"),
+        "redacted TOML should not contain URI username"
+    );
+    assert!(redacted.contains("****:****@"));
+    assert!(redacted.contains("10.0.0.1:1080"));
+}
+
+#[test]
+fn to_redacted_toml_preserves_uri_without_credentials() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[upstreams]]
+id = "up1"
+uri = "socks5://10.0.0.1:1080"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    assert!(redacted.contains("socks5://10.0.0.1:1080"));
+}
+
+#[test]
+fn to_redacted_toml_is_valid_toml() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = "secret"
+
+[[upstreams]]
+id = "up1"
+uri = "socks5://user:pass@10.0.0.1:1080"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    // Should parse without error
+    let parsed: toml::Value = toml::from_str(&redacted).unwrap();
+    assert_eq!(parsed["version"].as_integer(), Some(1));
+}

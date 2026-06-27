@@ -91,6 +91,50 @@ protocols = ["socks5"]
     assert_eq!(status.active_connections, 0);
     assert!(status.uptime_secs < 60);
     assert_eq!(status.listener_count, 1);
+    assert_eq!(status.udp_associations_active, 0);
+    assert_eq!(status.upstream_count, 0);
+
+    // ListenerStatus details
+    assert_eq!(status.listeners.len(), 1);
+    let ls = &status.listeners[0];
+    assert_eq!(ls.name, "test");
+    assert!(ls.local_addr.port() > 0);
+    assert_eq!(ls.protocols, vec!["socks5".to_string()]);
+    assert!(!ls.udp_enabled);
+
+    handle.shutdown_blocking().unwrap();
+}
+
+#[test]
+fn status_with_multiple_listeners() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"#,
+    )
+    .unwrap();
+
+    let handle = eggress_embed::EggressService::new(config)
+        .start_blocking()
+        .unwrap();
+
+    let status = handle.status();
+    assert_eq!(status.listener_count, 2);
+    assert_eq!(status.listeners.len(), 2);
+    assert_eq!(status.listeners[0].name, "http-in");
+    assert_eq!(status.listeners[0].protocols, vec!["http".to_string()]);
+    assert_eq!(status.listeners[1].name, "socks-in");
+    assert_eq!(status.listeners[1].protocols, vec!["socks5".to_string()]);
 
     handle.shutdown_blocking().unwrap();
 }

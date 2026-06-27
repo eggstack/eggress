@@ -14,7 +14,8 @@ The `eggress-embed` crate provides:
 - **`EggressService`** — pre-start builder
 - **`EggressHandle`** — post-start handle for status, metrics, reload, and shutdown
 - **`BoundAddresses`** — discovered listener and admin addresses
-- **`ServiceStatus`** — generation, readiness, uptime, active connections
+- **`ListenerStatus`** — detailed per-listener status (name, bind, protocols, UDP)
+- **`ServiceStatus`** — generation, readiness, uptime, connections, UDP associations, upstreams
 - **`ReloadOutcome`** — result of a config reload attempt
 - **`EggressError`** — stable error type for PyO3 mapping
 
@@ -95,6 +96,36 @@ assert!(addr.port() > 0);
 # handle.shutdown_blocking().unwrap();
 ```
 
+## Redacted config output
+
+`EggressConfig::to_redacted_toml()` returns the TOML source with credentials
+replaced by placeholders. Suitable for logging or display:
+
+```rust
+let config = eggress_embed::EggressConfig::from_toml_str(r#"
+    version = 1
+
+    [[listeners]]
+    name = "socks"
+    bind = "127.0.0.1:0"
+    protocols = ["socks5"]
+
+    [listeners.auth]
+    type = "password"
+    username = "admin"
+    password = "super_secret_123"
+"#).unwrap();
+
+let redacted = config.to_redacted_toml().unwrap();
+assert!(!redacted.contains("super_secret_123"));
+assert!(redacted.contains("****"));
+// Username is not a secret, remains visible
+assert!(redacted.contains("admin"));
+```
+
+Upstream URI credentials are also redacted:
+`socks5://user:pass@host:port` → `socks5://****:****@host:port`.
+
 ## Reload
 
 Reload configuration without restarting the process. Only routing, upstreams,
@@ -150,6 +181,9 @@ assert!(metrics.contains("eggress_connections_total"));
 let status = handle.status();
 assert!(status.readiness);
 assert_eq!(status.generation, 0);
+assert_eq!(status.udp_associations_active, 0);
+assert_eq!(status.upstream_count, 0);
+assert_eq!(status.listeners.len(), 1);
 # handle.shutdown_blocking().unwrap();
 ```
 
@@ -173,6 +207,7 @@ included in error messages.
 | `Startup` | Listener bind or readiness timeout |
 | `Reload` | Config reload parse, validation, or topology rejection |
 | `Shutdown` | Runtime shutdown error |
+| `UnsupportedFeature` | Feature not supported by the embed API |
 | `Internal` | Unexpected internal error |
 
 Use `error.category()` to get a short label for programmatic matching.
@@ -198,10 +233,11 @@ This API is designed for thin PyO3 wrappers:
 
 | Type | Methods |
 |------|---------|
-| `EggressConfig` | `from_toml_str`, `from_toml_file`, `source_toml` |
+| `EggressConfig` | `from_toml_str`, `from_toml_file`, `source_toml`, `to_redacted_toml` |
 | `EggressService` | `new`, `from_toml_str`, `from_toml_file`, `start`, `start_blocking` |
 | `EggressHandle` | `bound_addresses`, `status`, `metrics_text`, `reload_toml_str`, `reload_toml_file`, `shutdown`, `shutdown_blocking` |
 | `BoundAddresses` | `listener` (lookup by name) |
-| `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count` |
+| `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count`, `listeners`, `udp_associations_active`, `upstream_count` |
+| `ListenerStatus` | `name`, `bind`, `local_addr`, `protocols`, `udp_enabled` |
 | `ReloadOutcome` | `Applied { generation, upstreams }` |
-| `EggressError` | `Config`, `Runtime`, `Startup`, `Reload`, `Shutdown`, `Internal` |
+| `EggressError` | `Config`, `Runtime`, `Startup`, `Reload`, `Shutdown`, `UnsupportedFeature`, `Internal` |

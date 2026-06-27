@@ -102,6 +102,20 @@ impl EggressConfig {
     pub fn source_toml(&self) -> &str {
         &self.source_toml
     }
+
+    /// Return the TOML source with credentials redacted.
+    ///
+    /// Listener auth passwords and upstream URI credentials are replaced with
+    /// `****` / `****:****@` placeholders. The result is suitable for logging
+    /// or display without leaking secrets.
+    pub fn to_redacted_toml(&self) -> Result<String, EggressError> {
+        let mut value: toml::Value =
+            toml::from_str(&self.source_toml).map_err(|e| EggressError::Config(e.to_string()))?;
+
+        redact_toml_value(&mut value);
+
+        toml::to_string_pretty(&value).map_err(|e| EggressError::Internal(e.to_string()))
+    }
 }
 
 /// Pre-start service builder.
@@ -319,12 +333,39 @@ impl EggressHandle {
     pub fn status(&self) -> ServiceStatus {
         let state = self.state.as_ref().expect("handle consumed");
         let snap = state.snapshot.load();
+        let addrs = state.listener_addrs.lock().unwrap();
+
+        let listeners: Vec<ListenerStatus> = snap
+            .listeners
+            .iter()
+            .enumerate()
+            .map(|(idx, lcfg)| ListenerStatus {
+                name: lcfg.name.clone(),
+                bind: lcfg.bind.clone(),
+                local_addr: addrs.get(idx).copied().unwrap_or_else(|| {
+                    lcfg.bind
+                        .parse()
+                        .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap())
+                }),
+                protocols: lcfg.protocols.iter().map(|p| format!("{p}")).collect(),
+                udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
+            })
+            .collect();
+
+        let udp_active = state
+            .udp_metrics
+            .associations_active
+            .load(Ordering::Relaxed);
+
         ServiceStatus {
             generation: snap.generation,
             readiness: state.readiness.load(Ordering::Relaxed),
             active_connections: state.active_connections.load(Ordering::Relaxed),
             uptime_secs: state.start_time.elapsed().as_secs(),
             listener_count: snap.listeners.len(),
+            listeners,
+            udp_associations_active: udp_active,
+            upstream_count: snap.upstreams.len(),
         }
     }
 
@@ -509,6 +550,21 @@ pub struct ListenerAddress {
     pub addr: std::net::SocketAddr,
 }
 
+/// Detailed status of a single listener.
+#[derive(Debug, Clone)]
+pub struct ListenerStatus {
+    /// Listener name from config.
+    pub name: String,
+    /// Configured bind address.
+    pub bind: String,
+    /// Actual bound socket address (reflects port-0 resolution).
+    pub local_addr: std::net::SocketAddr,
+    /// Protocols served by this listener.
+    pub protocols: Vec<String>,
+    /// Whether UDP relay is enabled on this listener.
+    pub udp_enabled: bool,
+}
+
 /// Current service status.
 #[derive(Debug, Clone)]
 pub struct ServiceStatus {
@@ -522,6 +578,12 @@ pub struct ServiceStatus {
     pub uptime_secs: u64,
     /// Number of configured listeners.
     pub listener_count: usize,
+    /// Detailed status for each listener.
+    pub listeners: Vec<ListenerStatus>,
+    /// Number of active UDP associations.
+    pub udp_associations_active: u64,
+    /// Number of configured upstreams.
+    pub upstream_count: usize,
 }
 
 /// Outcome of a configuration reload attempt.
@@ -534,6 +596,58 @@ pub enum ReloadOutcome {
         /// Number of upstreams in the new config.
         upstreams: usize,
     },
+}
+
+/// Redact credential fields in a dynamic TOML value tree.
+fn redact_toml_value(value: &mut toml::Value) {
+    // Redact listener auth passwords
+    if let Some(listeners) = value.get_mut("listeners").and_then(|v| v.as_array_mut()) {
+        for listener in listeners {
+            if let Some(auth) = listener.get_mut("auth").and_then(|v| v.as_table_mut()) {
+                if auth.contains_key("password") {
+                    auth.insert(
+                        "password".to_string(),
+                        toml::Value::String("****".to_string()),
+                    );
+                }
+                if auth.contains_key("password_env") {
+                    auth.insert(
+                        "password_env".to_string(),
+                        toml::Value::String("****".to_string()),
+                    );
+                }
+            }
+        }
+    }
+
+    // Redact upstream URIs (replace user:pass@ with ****:****@)
+    if let Some(upstreams) = value.get_mut("upstreams").and_then(|v| v.as_array_mut()) {
+        for upstream in upstreams {
+            if let Some(uri_val) = upstream.get_mut("uri") {
+                if let Some(s) = uri_val.as_str() {
+                    let redacted = redact_uri(s);
+                    *uri_val = toml::Value::String(redacted);
+                }
+            }
+        }
+    }
+}
+
+/// Redact credentials embedded in a proxy URI.
+///
+/// Transforms `proto://user:pass@host:port` into `proto://****:****@host:port`.
+/// If no credentials are present, the URI is returned unchanged.
+fn redact_uri(uri: &str) -> String {
+    if let Some(scheme_end) = uri.find("://") {
+        let rest = &uri[scheme_end + 3..];
+        if let Some(at_pos) = rest.find('@') {
+            let authority = &rest[..at_pos];
+            if authority.contains(':') {
+                return format!("{}://****:****@{}", &uri[..scheme_end], &rest[at_pos + 1..]);
+            }
+        }
+    }
+    uri.to_string()
 }
 
 /// Write config to a temporary file for the supervisor.

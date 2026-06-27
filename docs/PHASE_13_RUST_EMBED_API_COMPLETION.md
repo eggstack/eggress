@@ -15,7 +15,8 @@ callers to manage sockets, async networking, routing, or runtime details.
 | `EggressHandle` | Post-start handle for status, metrics, reload, shutdown |
 | `BoundAddresses` | Discovered listener and admin addresses |
 | `ListenerAddress` | Single listener name + socket address |
-| `ServiceStatus` | Generation, readiness, uptime, active connections |
+| `ListenerStatus` | Detailed per-listener status (name, bind, protocols, UDP) |
+| `ServiceStatus` | Generation, readiness, uptime, connections, UDP associations, upstreams |
 | `ReloadOutcome` | Result of a config reload attempt |
 | `EggressError` | Stable error type with category labels |
 
@@ -23,7 +24,7 @@ callers to manage sockets, async networking, routing, or runtime details.
 
 | Type | Methods |
 |------|---------|
-| `EggressConfig` | `from_toml_str`, `from_toml_file`, `source_toml` |
+| `EggressConfig` | `from_toml_str`, `from_toml_file`, `source_toml`, `to_redacted_toml` |
 | `EggressService` | `new`, `from_toml_str`, `from_toml_file`, `start`, `start_blocking` |
 | `EggressHandle` | `bound_addresses`, `status`, `metrics_text`, `reload_toml_str`, `reload_toml_file`, `shutdown`, `shutdown_blocking` |
 | `BoundAddresses` | `listener` (lookup by name) |
@@ -48,8 +49,9 @@ by listener name.
 Metrics are available as Prometheus text without HTTP scraping:
 `handle.metrics_text()` returns the full Prometheus exposition format.
 
-Status provides generation, readiness, active connections, uptime, and
-listener count without requiring the admin HTTP server.
+Status provides generation, readiness, active connections, uptime,
+listener count, per-listener details (name, bind, protocols, UDP enabled),
+active UDP associations, and upstream count without requiring the admin HTTP server.
 
 ## Reload
 
@@ -69,10 +71,10 @@ never included in error messages. Variants are stable for PyO3 mapping.
 | `start_stop.rs` | 6 | Blocking/async start, multiple listeners, config errors |
 | `proxy_traffic.rs` | 2 | SOCKS5 TCP echo, port-0 discovery |
 | `reload.rs` | 5 | Generation increment, invalid config, bind rejection |
-| `metrics_status.rs` | 3 | Prometheus counters, status fields, metrics after session |
-| `error_redaction.rs` | 3 | No credentials in errors, error categories |
+| `metrics_status.rs` | 4 | Prometheus counters, status fields, metrics after session, multi-listener status |
+| `error_redaction.rs` | 9 | No credentials in errors, error categories, `to_redacted_toml` redaction |
 
-Total: 21 tests (including doc-tests), all passing.
+Total: 28 tests (including doc-tests), all passing.
 
 ## Documentation
 
@@ -89,7 +91,8 @@ Total: 21 tests (including doc-tests), all passing.
 cargo fmt --all -- --check        # PASS
 cargo check --workspace --all-targets  # PASS
 cargo clippy --workspace --all-targets -- -D warnings  # PASS
-cargo test -p eggress-embed       # 21/21 PASS
+cargo test -p eggress-embed       # 28/28 PASS
+cargo test --workspace            # all PASS
 cargo test -p eggress-runtime --test startup --test reload --test shutdown  # PASS
 ```
 
@@ -99,6 +102,13 @@ cargo test -p eggress-runtime --test startup --test reload --test shutdown  # PA
 - `ServiceSupervisor::run()` creates its own Tokio runtime internally.
 - Listener bind changes require a full restart (not reloadable).
 - No logging initialization unless explicitly configured in TOML.
+
+## Plan deviations
+
+- **`metrics_text()`, `reload_toml_str()`, `reload_toml_file()`** are synchronous
+  instead of async as originally specified. This simplifies PyO3 wrapping since
+  no Tokio runtime handle is needed in Python. The operations do not perform
+  I/O and complete instantly.
 
 ## Readiness for Phase 14
 

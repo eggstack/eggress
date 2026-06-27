@@ -24,6 +24,15 @@ pub enum EggressError {
     #[error("shutdown error: {0}")]
     Shutdown(String),
 
+    /// Attempted to use a feature not supported by the embed API.
+    #[error("unsupported feature: {feature}: {message}")]
+    UnsupportedFeature {
+        /// Feature name.
+        feature: String,
+        /// Human-readable explanation.
+        message: String,
+    },
+
     /// Internal error (should not occur in normal usage).
     #[error("internal error: {0}")]
     Internal(String),
@@ -38,6 +47,7 @@ impl EggressError {
             EggressError::Startup(_) => "startup",
             EggressError::Reload(_) => "reload",
             EggressError::Shutdown(_) => "shutdown",
+            EggressError::UnsupportedFeature { .. } => "unsupported_feature",
             EggressError::Internal(_) => "internal",
         }
     }
