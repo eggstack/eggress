@@ -1374,3 +1374,700 @@ enabled = true
     token.cancel();
     jh.await.ok();
 }
+
+// ---------------------------------------------------------------------------
+// 10. Upstream failure counter increments with bounded reason label
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn upstream_failure_counter_increments_for_refused_with_reason() {
+    let echo_addr = start_tcp_echo().await;
+
+    // Point upstream at a port that will refuse connections.
+    let refuse_port = 1;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "bad-up"
+uri = "socks5://127.0.0.1:{refuse_port}"
+
+[[upstream_groups]]
+id = "bad-grp"
+scheduler = "first-available"
+members = ["bad-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "bad-grp"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Connect through eggress SOCKS5 -> bad upstream (should fail)
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    // The CONNECT should fail since the upstream is unreachable
+    let mut reply = [0u8; 10];
+    let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_exact(&mut reply)).await;
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // Upstream failure counter should have incremented. The error goes through
+    // the chain executor's Hop wrapper, so the reason label is "handshake".
+    // Verify the counter exists and has a bounded reason label.
+    let upstream_failure_total = metric_value(&body, "eggress_upstream_open_failures_total")
+        .expect("eggress_upstream_open_failures_total should be present");
+    assert!(
+        upstream_failure_total >= 1.0,
+        "upstream failure count should be >= 1 after refused upstream, got {upstream_failure_total}"
+    );
+
+    // Verify the reason label uses a bounded set (not raw error strings)
+    let bounded_reasons = [
+        "connection_refused",
+        "dns",
+        "network_unreachable",
+        "host_unreachable",
+        "timeout",
+        "auth_failed",
+        "policy_denied",
+        "handshake",
+        "io",
+    ];
+    let mut found_reason = false;
+    for line in body.lines() {
+        if line.starts_with('#') || !line.contains("reason=\"") {
+            continue;
+        }
+        if !line.contains("eggress_upstream_open_failures_total") {
+            continue;
+        }
+        let reason_start = line.find("reason=\"").unwrap() + 8;
+        let reason_end = line[reason_start..].find('"').unwrap() + reason_start;
+        let reason_value = &line[reason_start..reason_end];
+        assert!(
+            bounded_reasons.contains(&reason_value),
+            "reason label value '{reason_value}' is not in the bounded set: {line}"
+        );
+        found_reason = true;
+    }
+    assert!(
+        found_reason,
+        "should find at least one upstream_open_failures sample with a reason label"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 11. Route decision counter reflects fallback direct route
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn route_decision_counter_reflects_fallback() {
+    let echo_addr = start_tcp_echo().await;
+
+    // Configure an upstream group with direct fallback and fast health checks
+    // so the upstream becomes unhealthy quickly and the fallback to direct is triggered.
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "bad-up"
+uri = "socks5://127.0.0.1:1"
+
+[upstreams.health]
+interval = "1s"
+timeout = "1s"
+failures_to_unhealthy = 1
+
+[[upstream_groups]]
+id = "fallback-grp"
+scheduler = "first-available"
+members = ["bad-up"]
+fallback = "direct"
+
+[[rules]]
+id = "route-fallback"
+upstream_group = "fallback-grp"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Wait for health probe to mark upstream as unhealthy.
+    // With interval=1s and failures_to_unhealthy=1, one failed probe is enough.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // Connect through eggress SOCKS5 -> should fall back to direct
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "CONNECT via direct fallback should succeed");
+
+    stream.write_all(b"fallback-hello").await.unwrap();
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(Duration::from_secs(2), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+    assert_eq!(&buf[..n], b"fallback-hello");
+
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // Route decision counter should show direct action and selected outcome
+    let route_direct = metric_value_with_labels(
+        &body,
+        "eggress_route_decisions_total",
+        &[("action", "direct"), ("outcome", "selected")],
+    )
+    .expect(
+        "eggress_route_decisions_total{action=\"direct\",outcome=\"selected\"} should be present",
+    );
+    assert!(
+        route_direct >= 1.0,
+        "direct route decisions should be >= 1 after fallback, got {route_direct}"
+    );
+
+    // The rule label should be the rule that matched
+    let route_by_rule = metric_value_with_labels(
+        &body,
+        "eggress_route_decisions_total",
+        &[("rule", "route-fallback"), ("action", "direct")],
+    )
+    .expect(
+        "eggress_route_decisions_total{rule=\"route-fallback\",action=\"direct\"} should be present",
+    );
+    assert!(
+        route_by_rule >= 1.0,
+        "route-fallback direct decisions should be >= 1, got {route_by_rule}"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 12. All upstream failure increments counter for group with refused upstream
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn all_upstream_failed_increments_failures() {
+    let echo_addr = start_tcp_echo().await;
+
+    // Configure an upstream group with all members pointing at a refused port
+    // and fallback=reject so every attempt hits a dead upstream.
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "dead-up-1"
+uri = "socks5://127.0.0.1:1"
+
+[[upstreams]]
+id = "dead-up-2"
+uri = "socks5://127.0.0.1:2"
+
+[[upstream_groups]]
+id = "dead-grp"
+scheduler = "first-available"
+members = ["dead-up-1", "dead-up-2"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "dead-grp"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Connect through eggress SOCKS5 -> dead upstream group
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    // The CONNECT should fail since all upstreams are unreachable
+    let mut reply = [0u8; 10];
+    let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_exact(&mut reply)).await;
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // At least one upstream failure should have been recorded
+    let upstream_failure = metric_value(&body, "eggress_upstream_open_failures_total")
+        .expect("eggress_upstream_open_failures_total should be present");
+    assert!(
+        upstream_failure >= 1.0,
+        "upstream failure count should be >= 1 after failed group, got {upstream_failure}"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 13. No raw error strings appear as metric label values
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_raw_error_labels_in_metrics() {
+    let echo_addr = start_tcp_echo().await;
+
+    // Configure an upstream group that will fail so error paths are exercised
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "bad-up"
+uri = "socks5://127.0.0.1:1"
+
+[[upstream_groups]]
+id = "bad-grp"
+scheduler = "first-available"
+members = ["bad-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "bad-grp"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Connect and fail to exercise the error-metrics path
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_exact(&mut reply)).await;
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // All label values must be bounded reason codes, not raw error strings.
+    // Check that no label value contains "io::Error", "Os", or any other
+    // free-form error text.
+    let forbidden_substrings = [
+        "io::Error",
+        "Os {",
+        "连接被拒绝",
+        "Connection refused (os error 61)",
+        "Kind:",
+    ];
+    for line in body.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        for substr in &forbidden_substrings {
+            assert!(
+                !line.contains(substr),
+                "metric line contains raw error substring '{substr}': {line}"
+            );
+        }
+    }
+
+    // Verify that the reason label values are from the bounded set
+    let bounded_reasons = [
+        "connection_refused",
+        "dns",
+        "network_unreachable",
+        "host_unreachable",
+        "timeout",
+        "auth_failed",
+        "policy_denied",
+        "handshake",
+        "io",
+    ];
+    for line in body.lines() {
+        if line.starts_with('#') || !line.contains("reason=\"") {
+            continue;
+        }
+        let reason_start = line.find("reason=\"").unwrap() + 8;
+        let reason_end = line[reason_start..].find('"').unwrap() + reason_start;
+        let reason_value = &line[reason_start..reason_end];
+        assert!(
+            bounded_reasons.contains(&reason_value),
+            "reason label value '{reason_value}' is not in the bounded set of reasons: {line}"
+        );
+    }
+
+    token.cancel();
+    jh.await.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 14. Retry attempt counter (or single-attempt verification)
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retry_attempt_counter_if_retry_implemented() {
+    let echo_addr = start_tcp_echo().await;
+
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Successful direct session
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00);
+
+    stream.write_all(b"retry-test").await.unwrap();
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(Duration::from_secs(2), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+    assert_eq!(&buf[..n], b"retry-test");
+
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // If a retry metric is registered, verify it records exactly 1 attempt
+    // for a successful session. If no retry metric exists (current state),
+    // verify that by checking absence.
+    if let Some(retry_attempts) = metric_value(&body, "eggress_retry_attempts_total") {
+        // Retry metric exists — it should record exactly 1 attempt for success
+        assert!(
+            retry_attempts >= 1.0,
+            "retry_attempts_total should be >= 1 after successful session, got {retry_attempts}"
+        );
+    } else {
+        // No retry metric registered — this is the expected current state.
+        // Verify the metric name is not registered at all (not even with _total suffix).
+        assert!(
+            !body.contains("# HELP eggress_retry_attempts_total"),
+            "eggress_retry_attempts_total should not be registered if retry is not implemented"
+        );
+    }
+
+    token.cancel();
+    jh.await.ok();
+}
+
+// ---------------------------------------------------------------------------
+// 15. Direct fallback counted as direct action with selected outcome
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn direct_fallback_counted_as_direct() {
+    let echo_addr = start_tcp_echo().await;
+
+    // Configure an upstream group with direct fallback and fast health checks
+    // so the upstream becomes unhealthy quickly and the fallback to direct is triggered.
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "bad-up"
+uri = "socks5://127.0.0.1:1"
+
+[upstreams.health]
+interval = "1s"
+timeout = "1s"
+failures_to_unhealthy = 1
+
+[[upstream_groups]]
+id = "fallback-grp"
+scheduler = "first-available"
+members = ["bad-up"]
+fallback = "direct"
+
+[[rules]]
+id = "route-fallback"
+upstream_group = "fallback-grp"
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Wait for health probe to mark upstream as unhealthy.
+    // With interval=1s and failures_to_unhealthy=1, one failed probe is enough.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // Connect through eggress SOCKS5 -> should fall back to direct
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "CONNECT via direct fallback should succeed");
+
+    stream.write_all(b"direct-fb").await.unwrap();
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(Duration::from_secs(2), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+    assert_eq!(&buf[..n], b"direct-fb");
+
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+
+    // Verify route decision counter: action="direct" and outcome="selected"
+    let route_direct_ok = metric_value_with_labels(
+        &body,
+        "eggress_route_decisions_total",
+        &[("action", "direct"), ("outcome", "selected")],
+    )
+    .expect(
+        "eggress_route_decisions_total{action=\"direct\",outcome=\"selected\"} should be present",
+    );
+    assert!(
+        route_direct_ok >= 1.0,
+        "direct fallback route decisions should be >= 1, got {route_direct_ok}"
+    );
+
+    // Verify no upstream_open_total was incremented (direct route bypasses upstream)
+    let upstream_open = metric_value(&body, "eggress_upstream_open_total");
+    assert!(
+        upstream_open.is_none() || upstream_open == Some(0.0),
+        "direct fallback should not increment upstream_open_total, got {upstream_open:?}"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}

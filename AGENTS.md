@@ -72,6 +72,19 @@ cargo test -p eggress-cli --test differential_pproxy
 # Run pproxy compatibility tests
 cargo test -p eggress-pproxy-compat
 
+# Run scheduler parity tests
+cargo test -p eggress-routing scheduler_parity
+cargo test -p eggress-runtime scheduler_runtime
+
+# Run multi-hop TCP chain tests
+cargo test -p eggress-runtime multihop_tcp
+
+# Run failure semantics tests
+cargo test -p eggress-runtime failure_semantics
+
+# Run retry/fallback tests
+cargo test -p eggress-runtime retry_fallback
+
 # Run benchmarks
 cargo bench --workspace
 
@@ -213,6 +226,8 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
 - **UDP**: direct forwarding, one-hop SOCKS5 upstream relay, and one-hop Shadowsocks upstream relay (standard AEAD format); no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
+- **Scheduler parity**: Round-robin uses global atomic cursor; least-connections uses active+in_flight; first-available returns first eligible; health filtering excludes Unhealthy/Disabled
+- **Failure semantics**: SOCKS5/HTTP/SOCKS4 reply codes documented in `docs/FAILURE_SEMANTICS.md`; timeout→504/0x06, refused→502/0x05, policy→403/0x02
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service

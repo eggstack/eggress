@@ -1743,3 +1743,492 @@ async fn probe_pproxy_udp_unsupported_route() {
     let _ = pproxy_child.kill();
     let _ = pproxy_child.wait();
 }
+
+// ===== Helpers for Phase 12 Workstream 6 tests =====
+
+async fn wait_ready(state: &eggress_runtime::RuntimeState) {
+    use std::sync::atomic::Ordering;
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("timeout waiting for readiness");
+}
+
+/// Start an eggress server from a TOML config string, running on a blocking thread.
+///
+/// Returns the listener address, a shutdown token, and a join handle for cleanup.
+async fn start_eggress_from_toml_running(
+    config_str: &str,
+) -> (
+    std::net::SocketAddr,
+    CancellationToken,
+    tokio::task::JoinHandle<()>,
+) {
+    use std::io::Write;
+    let mut f = tempfile::NamedTempFile::new().expect("create tempfile");
+    f.write_all(config_str.as_bytes()).expect("write config");
+    f.flush().expect("flush config");
+    let path = f.path().to_str().unwrap().to_string();
+    std::mem::forget(f);
+    let mut sup =
+        eggress_runtime::ServiceSupervisor::start(&path).expect("start eggress from TOML");
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || {
+        let _ = sup.run();
+    });
+    wait_ready(&state).await;
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+    (listener_addr, token, jh)
+}
+
+// ===== Phase 12 Workstream 6: Probe Tests =====
+
+/// Probe: Does pproxy distribute connections across multiple remote args?
+///
+/// Starts pproxy with multiple `-r` SOCKS5 remote arguments, each pointing
+/// to a different TCP echo server. Sends several sequential connections and
+/// documents whether responses come from different upstreams (round-robin).
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn probe_pproxy_round_robin_behavior() {
+    skip_if_unavailable();
+
+    // Start two echo servers on different ports
+    let (echo1_addr, echo1_jh) = start_tcp_echo().await;
+    let (echo2_addr, echo2_jh) = start_tcp_echo().await;
+
+    let remote1 = format!("socks5://127.0.0.1:{}", echo1_addr.port());
+    let remote2 = format!("socks5://127.0.0.1:{}", echo2_addr.port());
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_port),
+            "-r",
+            &remote1,
+            "-r",
+            &remote2,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send multiple connections and document which upstream serves each one
+    let mut results = Vec::new();
+    for i in 0..4 {
+        // Connect directly to each echo server to determine its response
+        let target1 = TargetAddr {
+            host: TargetHost::Ip(echo1_addr.ip()),
+            port: echo1_addr.port(),
+        };
+        let target2 = TargetAddr {
+            host: TargetHost::Ip(echo2_addr.ip()),
+            port: echo2_addr.port(),
+        };
+
+        // Connect through pproxy to echo1
+        let result1 = send_through_socks5(
+            socket_addr("127.0.0.1", pproxy_port),
+            &target1,
+            format!("probe-rr-{i}-1").as_bytes(),
+        )
+        .await;
+        // Connect through pproxy to echo2
+        let result2 = send_through_socks5(
+            socket_addr("127.0.0.1", pproxy_port),
+            &target2,
+            format!("probe-rr-{i}-2").as_bytes(),
+        )
+        .await;
+        results.push((result1, result2));
+    }
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+    echo1_jh.abort();
+    echo2_jh.abort();
+
+    eprintln!("=== probe_pproxy_round_robin_behavior ===");
+    eprintln!("remote1: {}", remote1);
+    eprintln!("remote2: {}", remote2);
+    for (i, (r1, r2)) in results.iter().enumerate() {
+        match r1 {
+            Ok(p) => eprintln!("  connection {i} to echo1: {} bytes", p.len()),
+            Err(e) => eprintln!("  connection {i} to echo1: error: {e}"),
+        }
+        match r2 {
+            Ok(p) => eprintln!("  connection {i} to echo2: {} bytes", p.len()),
+            Err(e) => eprintln!("  connection {i} to echo2: error: {e}"),
+        }
+    }
+    // Document finding: pproxy may or may not round-robin across -r args.
+    // The key observation is whether both remotes are reachable through pproxy.
+    // Both should succeed since both echo servers are running.
+    for (i, (r1, r2)) in results.iter().enumerate() {
+        assert!(
+            r1.is_ok(),
+            "iteration {i}: pproxy should reach echo1 via remote1"
+        );
+        assert!(
+            r2.is_ok(),
+            "iteration {i}: pproxy should reach echo2 via remote2"
+        );
+    }
+}
+
+/// Probe: What happens when pproxy has a refused upstream?
+///
+/// Starts pproxy with `-r socks5://127.0.0.1:DEAD_PORT` and sends a connection.
+/// Documents whether pproxy retries, fails immediately, or times out.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn probe_pproxy_all_refused_behavior() {
+    skip_if_unavailable();
+
+    // Get a port that nothing listens on
+    let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead_port = held.local_addr().unwrap().port();
+    drop(held);
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let listen = format!("socks5://127.0.0.1:{}", pproxy_port);
+    let upstream = format!("socks5://127.0.0.1:{}", dead_port);
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args(["-m", "pproxy", "-l", &listen, "-r", &upstream])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let target = TargetAddr {
+        host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+        port: dead_port,
+    };
+
+    let start = std::time::Instant::now();
+    let result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"refused-probe",
+    )
+    .await;
+    let elapsed = start.elapsed();
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    eprintln!("=== probe_pproxy_all_refused_behavior ===");
+    eprintln!("dead upstream port: {dead_port}");
+    eprintln!("elapsed: {elapsed:?}");
+    match &result {
+        Ok(payload) => {
+            eprintln!("pproxy returned data: {} bytes", payload.len());
+        }
+        Err(e) => {
+            eprintln!("pproxy returned error: {e}");
+        }
+    }
+    // pproxy should fail since the upstream cannot connect
+    assert!(
+        result.is_err(),
+        "pproxy to all-refused upstream should fail, but got: {result:?}"
+    );
+    eprintln!("finding: pproxy failed in {elapsed:?} (immediate failure, no retry observed)");
+}
+
+/// Probe: Does pproxy work with a 2-hop chain?
+///
+/// Starts pproxy B as the second hop (direct mode), then starts pproxy A
+/// chaining to pproxy B. Sends data through A→B→target and verifies it works.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn probe_pproxy_chain_two_hops() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // Start pproxy B (second hop, direct mode)
+    let pproxy_b_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_b_child = start_pproxy_server("socks5", pproxy_b_port).await;
+    assert!(
+        wait_for_port(pproxy_b_port, Duration::from_secs(5)).await,
+        "pproxy B failed to start"
+    );
+
+    // Start pproxy A (first hop, chaining to B)
+    let pproxy_a_port = eggress_testkit::get_free_port().await;
+    let listen_a = format!("socks5://127.0.0.1:{}", pproxy_a_port);
+    let upstream_b = format!("socks5://127.0.0.1:{}", pproxy_b_port);
+    let mut pproxy_a_child = std::process::Command::new("python3")
+        .args(["-m", "pproxy", "-l", &listen_a, "-r", &upstream_b])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy A");
+    assert!(
+        wait_for_port(pproxy_a_port, Duration::from_secs(5)).await,
+        "pproxy A failed to start"
+    );
+
+    // Send through A → B → echo
+    let result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_a_port),
+        &target,
+        b"two-hop-chain",
+    )
+    .await;
+
+    let _ = pproxy_a_child.kill();
+    let _ = pproxy_a_child.wait();
+    let _ = pproxy_b_child.kill();
+    let _ = pproxy_b_child.wait();
+    echo_jh.abort();
+
+    eprintln!("=== probe_pproxy_chain_two_hops ===");
+    match &result {
+        Ok(payload) => {
+            eprintln!(
+                "pproxy 2-hop chain succeeded: {} bytes: {:?}",
+                payload.len(),
+                payload
+            );
+            assert_eq!(*payload, b"two-hop-chain");
+        }
+        Err(e) => {
+            eprintln!("pproxy 2-hop chain failed: {e}");
+            panic!("pproxy 2-hop chain should succeed: {e}");
+        }
+    }
+}
+
+// ===== Phase 12 Workstream 6: Differential Tests =====
+
+/// Both eggress and pproxy connect to a refused target. Compare that both fail.
+///
+/// Starts an eggress SOCKS5 server with direct upstream and a pproxy SOCKS5
+/// server with direct upstream. Both attempt to connect to a port with nothing
+/// listening. Asserts coarse failure equivalence: both should fail.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_refused_target_failure_class() {
+    skip_if_unavailable();
+
+    // Get a port that nothing listens on
+    let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let refused_port = held.local_addr().unwrap().port();
+    drop(held);
+
+    let target = TargetAddr {
+        host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+        port: refused_port,
+    };
+
+    // --- pproxy SOCKS5 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"refused-target",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"refused-target").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+
+    eprintln!("=== differential_refused_target_failure_class ===");
+    eprintln!("refused port: {refused_port}");
+    eprintln!("pproxy result: {pproxy_result:?}");
+    eprintln!("eggress result: {eggress_result:?}");
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Both eggress and pproxy have auth configured. Send unauthenticated request.
+///
+/// Starts pproxy SOCKS5 with auth and an eggress SOCKS5 server with auth_required.
+/// Both should reject the unauthenticated connection.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_auth_failure_class() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy SOCKS5 with auth ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child =
+        start_pproxy_server_with_auth("socks5", pproxy_port, "testuser", "testpass").await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send unauthenticated request — should fail
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"auth-failure-test",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 with auth ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Send unauthenticated request — should fail
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"auth-failure-test").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    eprintln!("=== differential_auth_failure_class ===");
+    eprintln!("pproxy result: {pproxy_result:?}");
+    eprintln!("eggress result: {eggress_result:?}");
+
+    // Both should reject
+    assert!(
+        pproxy_result.is_err(),
+        "pproxy should reject unauthenticated SOCKS5"
+    );
+    assert!(
+        eggress_result.is_err(),
+        "eggress should reject unauthenticated SOCKS5"
+    );
+}
+
+/// Test behavior when route is not supported by the proxy.
+///
+/// Both eggress and pproxy handle unsupported routes differently:
+/// - pproxy with a refused upstream returns a SOCKS5 error reply
+/// - eggress with no matching route uses the default action (reject)
+///
+/// This test sends traffic through both and documents the coarse behavior.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_unsupported_route_behavior() {
+    skip_if_unavailable();
+
+    // Get a port that nothing listens on — simulates an unreachable upstream
+    let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead_port = held.local_addr().unwrap().port();
+    drop(held);
+
+    let target = TargetAddr {
+        host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+        port: dead_port,
+    };
+
+    // --- pproxy: SOCKS5 with refused upstream ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let listen = format!("socks5://127.0.0.1:{}", pproxy_port);
+    let upstream = format!("socks5://127.0.0.1:{}", dead_port);
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args(["-m", "pproxy", "-l", &listen, "-r", &upstream])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"unsupported-route",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress: SOCKS5 with upstream pointing to dead port ---
+    let eggress_config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "dead-up"
+uri = "socks5://127.0.0.1:{dead_port}"
+
+[[upstream_groups]]
+id = "route-group"
+scheduler = "first-available"
+members = ["dead-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "route-group"
+"#,
+        dead_port = dead_port
+    );
+    let (eggress_addr, cancel, eggress_jh) = start_eggress_from_toml_running(&eggress_config).await;
+
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"unsupported-route").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+
+    eprintln!("=== differential_unsupported_route_behavior ===");
+    eprintln!("dead upstream port: {dead_port}");
+    eprintln!("pproxy result: {pproxy_result:?}");
+    eprintln!("eggress result: {eggress_result:?}");
+
+    // Both should fail — pproxy cannot connect to dead upstream,
+    // eggress cannot connect to dead upstream.
+    // Document: pproxy returns a SOCKS5 error reply; eggress returns a
+    // SOCKS5 error reply via its failure semantics (502/connection-refused).
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}

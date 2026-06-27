@@ -88,6 +88,7 @@ transport modes are distinguished by which metric family receives the counters.
 - **Upstream failures**: `protocol`, `reason` (dns_resolution/tls_handshake/connection_refused/etc.)
 - **Unsupported transport**: `protocol`, `transport` (udp/quic), `reason`
 - **UDP decode errors**: `kind` (too_short/etc.)
+- **Upstream failure reasons**: `reason` (bounded set: `dns_resolution`, `tls_handshake`, `connection_refused`, `connection_timeout`, `auth_failed`, `io_error`, `protocol_error`, `policy_denied`, `other`)
 
 All label values come from **configuration-defined names** (rule IDs, upstream IDs, group IDs) or **protocol constants** (protocol names). None are derived from network input.
 

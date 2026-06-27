@@ -131,6 +131,37 @@ Fields `target`, `listener`, `protocol` are required. `source` and `identity` ar
 
 Admin endpoints expose only metadata (generation, uptime, rule IDs, listener names, health states, protocol names). Upstream URIs with credentials are **never** exposed. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for details.
 
+## Scheduler Behavior
+
+Eggress supports four scheduling algorithms for upstream group selection:
+
+| Scheduler | Config value | Behavior |
+|-----------|-------------|----------|
+| Round-robin | `round-robin` (default) | Cycles through upstreams in order; skips ineligible |
+| First-available | `first-available` | Returns first eligible upstream |
+| Random | `random` | Randomly selects from eligible upstreams |
+| Least-connections | `least-connections` | Selects upstream with fewest active+in-flight connections |
+
+### Fallback modes
+
+| Mode | Config value | Behavior |
+|------|-------------|----------|
+| Reject | `reject` (default) | Return error when no eligible upstream |
+| Direct | `direct` | Fall back to direct connection |
+| Use-unhealthy | `use-unhealthy` | Include unhealthy upstreams as last resort |
+
+### Health-aware filtering
+
+Upstreams in Unhealthy or Disabled states are excluded from selection. Only
+Unknown, Healthy, Suspect, and Recovering states are eligible.
+
+### Retry behavior
+
+Eggress makes a single upstream selection per request. If the connection fails,
+the error is returned to the client. No automatic retry across upstreams is
+performed. This keeps behavior predictable and avoids amplifying load during
+outages.
+
 ## Defaults and Recommendations
 
 | Setting | Default | Recommendation |

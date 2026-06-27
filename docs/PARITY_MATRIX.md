@@ -69,11 +69,15 @@ or document supported-but-unverified functionality.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Round-robin | default for multiple remotes | supported | Supported | integration tests | none | Different default policies |
-| First-available | via rulefile | supported | Supported | integration tests | none | |
-| Random | N/A | supported | Supported | integration tests | none | Eggress-specific |
-| Least-connections | N/A | supported | Supported | integration tests | none | Eggress-specific |
-| Fallback | `-F` flag | direct fallback or reject | Partial | integration tests | none | Different fallback model |
+| Round-robin | default for multiple remotes (`-s rr`) | default for groups | Compatible | `scheduler_runtime.rs` | none | Eggress uses global atomic cursor; pproxy resets on reload |
+| First-available | via `-s fa` | `FirstAvailable` scheduler | Compatible | `scheduler_runtime.rs` | none | Both return first eligible upstream |
+| Random | not default | `Random` scheduler | Supported | `scheduler_runtime.rs` | none | Eggress-specific; deterministic variant for testing |
+| Least-connections | not available | `LeastConnections` scheduler | Supported | `scheduler_runtime.rs` | none | Uses active + in_flight count |
+| Health-aware skip | implicit via alive check | explicit health state machine | Compatible | `scheduler_runtime.rs` | none | Eggress: hysteresis state machine |
+| Fallback on all fail | `-F` flag (direct only) | `GroupFallback`: reject/direct/use-unhealthy | Partial | `scheduler_runtime.rs` | none | Eggress offers more granular control |
+| Retry within group | not documented | not implemented | Compatible | none | none | Single attempt per request |
+| Active lease tracking | not documented | `PendingLease`/`ActiveLease` two-phase | Supported | `scheduler_runtime.rs` | none | Precise connection accounting |
+| Scheduler state persistence | resets on reload | persists across reloads | Intentional non-parity | none | none | Eggress preserves cursor for unchanged groups |
 
 ### Authentication Behavior
 

@@ -145,6 +145,23 @@ tested in `crates/eggress-runtime/tests/integration.rs` for up to 3 hops.
 | Least-connections | Not available | Supported (`LeastConnections` scheduler) |
 | First-available | Not available | Supported (`FirstAvailable` scheduler) |
 
+### Scheduler Behavior Audit (Phase 12)
+
+Detailed behavior comparison for scheduler implementations:
+
+| Behavior | pproxy | Eggress | Notes |
+|----------|--------|---------|-------|
+| Round-robin default | Yes (`-s rr`) | Yes (default for groups) | Different defaults: pproxy defaults to first-available for single remote |
+| Round-robin state persistence | Per-connection | Global atomic cursor | Eggress cursor persists across connections (correct behavior) |
+| Round-robin skips unhealthy | Implicit | Explicit health filtering | Eggress filters by health state |
+| First-available | `-s fa` | `FirstAvailable` scheduler | Returns first eligible candidate |
+| Random | Not default | `Random` scheduler | Pluggable RNG; deterministic variant for testing |
+| Least-connections | Not available | `LeastConnections` scheduler | Uses active + in_flight count |
+| Health-aware skip | Implicit via alive check | Explicit health state machine | Eggress: Unknown/Healthy/Suspect/Recovering are eligible |
+| Fallback when all fail | `-F` flag (direct) | `GroupFallback` enum: Reject/Direct/UseUnhealthy | More granular control |
+| Retry within group | Not documented | Not implemented (single attempt) | Eggress makes one selection per request |
+| Active lease tracking | Not documented | PendingLease/ActiveLease two-phase | Precise connection accounting |
+
 pproxy's `--rulefile` uses a line-based format with regex patterns and
 destination actions. Eggress uses a TOML-based rule engine with structured
 matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`).
@@ -474,3 +491,67 @@ For detailed migration instructions, see [`docs/PPROXY_MIGRATION.md`](./PPROXY_M
 - [Eggress Parity Matrix](./PARITY_MATRIX.md)
 - [Eggress Differential Tests](../crates/eggress-cli/tests/differential_pproxy.rs)
 - [pproxy Migration Guide](./PPROXY_MIGRATION.md)
+
+## 18. Scheduler Semantics (Phase 12)
+
+### Round-Robin
+
+pproxy uses round-robin as the default scheduler when multiple `-r` arguments are
+provided. The scheduler cycles through upstreams in order.
+
+Eggress implements round-robin with a global atomic cursor that persists across
+connections. Each `select()` call advances the cursor and returns the next eligible
+upstream. Ineligible upstreams (disabled or unhealthy) are skipped.
+
+Key difference: pproxy resets its scheduling state on reload; eggress preserves
+cursor state across config reloads for unchanged upstream groups.
+
+### First-Available
+
+pproxy supports first-available via `-s fa`. The first healthy upstream in the
+list is used.
+
+Eggress matches this behavior with `FirstAvailableScheduler`, which returns the
+first candidate passing eligibility checks (enabled + healthy/suspect/recovering/unknown).
+
+### Least-Connections
+
+pproxy does not support least-connections scheduling.
+
+Eggress implements `LeastConnectionsScheduler` which selects the upstream with
+the minimum `current_load()` (active connections + in-flight connections). Ties
+are broken by earlier position in the candidate list.
+
+### Health-Aware Filtering
+
+pproxy performs alive checks (`-a` flag) and removes failed upstreams from
+rotation temporarily.
+
+Eggress uses a state machine with hysteresis:
+- Unknown → Healthy (after N consecutive successes)
+- Healthy → Suspect → Unhealthy (after M consecutive failures)
+- Unhealthy → Recovering → Healthy (after successes)
+- Disabled is terminal (ignores probes)
+
+Only Unknown, Healthy, Suspect, and Recovering states are eligible for selection.
+Unhealthy and Disabled states are filtered out.
+
+### Fallback Behavior
+
+pproxy uses `-F` flag to enable direct fallback when all upstreams fail.
+
+Eggress provides three fallback modes via `GroupFallback`:
+- `Reject`: Return error if no eligible upstream (default)
+- `Direct`: Fall back to direct connection
+- `UseUnhealthy`: Include unhealthy-but-enabled members as last resort
+
+### Retry Behavior
+
+pproxy does not document explicit retry behavior for failed connections within
+a group. Based on observation, pproxy makes a single connection attempt per
+request.
+
+Eggress matches this behavior: a single upstream is selected per request. If
+the connection fails, the error is returned to the client. No automatic retry
+across upstreams is performed. This avoids amplifying load during upstream
+outages and keeps behavior predictable.
