@@ -57,6 +57,7 @@ async fn start_eggress_server(
                 authentication: eggress_server::accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;

@@ -86,6 +86,9 @@ Protocol-specific tests live alongside the implementation:
 
 ### Differential tests
 - `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy
+- `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
+
+Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.
 
 ### Differential test harness primitives
 
@@ -130,6 +133,10 @@ cargo bench --workspace
 
 # Load tests (ignored by default)
 cargo test -p eggress-runtime --test load -- --ignored
+
+# Gated differential/interop tests (requires external tools)
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
 
 # Fuzz targets (requires cargo-fuzz)
 cargo fuzz run uri_parse

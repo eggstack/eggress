@@ -45,6 +45,12 @@ cargo test -p eggress-transport-tls
 # Run upstream protocol tests
 cargo test -p eggress-runtime upstream_protocols
 
+# Run Shadowsocks interop tests (gated)
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
+
+# Run pproxy differential tests (gated, requires Python 3.11/3.12)
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
+
 # Run property tests (proptest)
 cargo test -p eggress-protocol-socks --test codec_properties
 cargo test -p eggress-protocol-http --test connect_properties
@@ -179,7 +185,9 @@ round-trips, route match consistency). Fuzz smoke tests exercise seed inputs for
 `cargo fuzz` targets. Load tests are `#[ignore]` by default and require explicit opt-in.
 Differential tests against `pproxy` are gated and live in `crates/eggress-cli/tests/`.
 pproxy compat tests live in `crates/eggress-pproxy-compat/src/tests.rs` and cover protocol aliases, unsupported scheme diagnostics, and credential redaction.
+Shadowsocks interop tests live in `crates/eggress-cli/tests/interoperability_shadowsocks.rs` (gated; TCP tests fail due to non-standard framing).
 See `docs/TESTING.md` for comprehensive testing guidance.
+See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability test details.
 
 ## Code Conventions
 
@@ -232,6 +240,8 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
 - **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH, Unix, redir) produce structured diagnostics
+- **Shadowsocks TCP framing**: Non-standard (single AEAD operation per chunk with cleartext length prefix). Not wire-compatible with standard Shadowsocks implementations. Classified as Experimental in parity matrix. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md`.
+- **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP capability downgraded to `UnsupportedProtocol` in `capability.rs`. Completion docs updated with corrective notices and gated-test status.
 
 ## Skills
 

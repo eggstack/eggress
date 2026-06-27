@@ -77,6 +77,13 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+## Corrective Audit Notice
+
+Differential tests in `crates/eggress-cli/tests/differential_pproxy.rs` are
+gated (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`) and have not yet been run
+end-to-end. The pproxy environment requires Python 3.11/3.12 (not compatible
+with Python 3.14). See `docs/DIFFERENTIAL_TESTING.md` for details.
+
 ## Remaining Items for Phase 9
 
 - Probe undocumented pproxy behaviors (SOCKS5 BIND, UDP ASSOCIATE as server, etc.)

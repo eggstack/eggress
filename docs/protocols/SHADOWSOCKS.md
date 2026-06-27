@@ -3,17 +3,20 @@
 ## Overview
 
 Shadowsocks proxy protocol with AEAD cipher support. TCP upstream is
-**supported** with full bidirectional AEAD stream encryption.
+**experimental** with non-standard AEAD framing.
 
-### TCP Status: Supported
+### TCP Status: Experimental (Non-Standard Framing)
 
-Full bidirectional AEAD stream encryption is implemented via
-`ShadowsocksAeadStream`, a stream adapter that maintains independent
-read/write nonce sequences. The server helper `shadowsocks_accept`
-performs the initial handshake and returns the encrypted stream.
+Bidirectional AEAD stream encryption is implemented via
+`ShadowsocksAeadStream`, but the TCP framing is **not wire-compatible** with
+standard Shadowsocks implementations (shadowsocks-rust, shadowsocks-libev).
+Eggress uses a single AEAD operation per chunk with a cleartext 2-byte length
+prefix, instead of the standard two separate AEAD operations (encrypted length
+chunk + encrypted payload chunk). See [TCP Audit](SHADOWSOCKS_TCP_AUDIT.md)
+for details.
 
-The TCP client sends an encrypted address header and all subsequent
-bidirectional data is encrypted with per-direction AEAD nonces.
+The implementation is self-consistent (Eggress client ↔ Eggress server) but
+will not interoperate with standard Shadowsocks servers or clients.
 
 ### UDP Status: Supported
 
@@ -130,4 +133,6 @@ integration tests in `shadowsocks_tcp.rs`.
 - No plugin transport modes (simple-obfs, v2ray-plugin, etc.)
 - No multi-hop UDP (single Shadowsocks hop only)
 - No server-side implementation (client/upstream only)
-- Maximum frame size: 65,535 bytes
+- Maximum frame size: 65,517 bytes (reduced due to non-standard framing)
+- TCP framing is non-standard: not wire-compatible with shadowsocks-rust,
+  shadowsocks-libev, or other standard implementations

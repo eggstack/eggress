@@ -1,5 +1,15 @@
 # Phase 9: Shadowsocks TCP Parity — Completion Record
 
+> **CORRECTIVE AUDIT NOTICE**: A corrective audit of the TCP AEAD framing
+> found that the implementation uses non-standard chunk framing (single AEAD
+> operation per chunk with cleartext length prefix instead of two separate AEAD
+> operations). The TCP framing is **not wire-compatible** with standard
+> Shadowsocks implementations (shadowsocks-rust, shadowsocks-libev). This
+> completion record should be read with that caveat. The TCP Shadowsocks client
+> has been downgraded from "Supported" to "Experimental (Non-Standard Framing)"
+> in documentation. UDP remains standard-compliant. See
+> `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md` for the full audit.
+
 ## Supported Methods
 
 - `aes-128-gcm` (16-byte key)
@@ -48,10 +58,10 @@
 - Client (`shadowsocks_connect`) and server (`shadowsocks_accept`/`server.rs`) use separate decryption paths
 - pproxy differential tests deferred (pproxy incompatible with Python 3.14 on this system)
 
-## Remaining UDP Blockers
+## Remaining Issues
 
-- UDP wire format uses `nonce + ciphertext` instead of standard `salt + ciphertext`
-- UDP is Phase 10 work, not in scope for Phase 9
+- TCP framing is non-standard (see corrective audit notice above)
+- UDP wire format uses standard AEAD format (`salt + AEAD(address + payload, nonce=0)`) — interoperable with standard implementations
 
 ## Intentional Non-parity
 

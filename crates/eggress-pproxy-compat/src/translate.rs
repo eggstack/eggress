@@ -304,7 +304,13 @@ pub fn translate_from_uris(
     if !upstreams.is_empty() {
         let group_id = "pproxy-chain".to_string();
         let member_ids: Vec<String> = upstreams.iter().map(|u| u.id.clone()).collect();
-        let scheduler = scheduler_override.unwrap_or_else(|| "first-available".to_string());
+        let scheduler = scheduler_override.unwrap_or_else(|| {
+            if upstreams.len() > 1 {
+                "round-robin".to_string()
+            } else {
+                "first-available".to_string()
+            }
+        });
 
         upstream_groups.push(UpstreamGroupToml {
             id: group_id.clone(),
@@ -472,7 +478,7 @@ mod tests {
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.toml.contains("pproxy-upstream-0"));
         assert!(output.toml.contains("pproxy-upstream-1"));
-        assert!(output.toml.contains("first-available"));
+        assert!(output.toml.contains("round-robin"));
     }
 
     #[test]
@@ -663,5 +669,20 @@ mod tests {
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.toml.contains("first-available"));
+    }
+
+    #[test]
+    fn test_scheduler_default_round_robin_for_multiple_remotes() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://proxy1:8080".into(),
+            "-r".into(),
+            "socks5://proxy2:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("round-robin"));
     }
 }

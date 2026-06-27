@@ -31,7 +31,7 @@ client-visible failure semantics.
 | HTTP → SOCKS5 | Yes | End-to-end echo verified |
 | SOCKS4 → SOCKS5 | Yes | End-to-end echo verified |
 | SOCKS5 → SOCKS4 | Yes | End-to-end echo verified |
-| SOCKS5 → Trojan | No | TLS cert trust issue; needs insecure upstream flag |
+| SOCKS5 → Trojan | Yes | Self-signed cert + insecure TLS client config (test-only) |
 | SOCKS5 → Shadowsocks | Yes | Tested in shadowsocks_tcp.rs |
 | 3-hop (SOCKS5 → HTTP → SOCKS5) | Yes | End-to-end echo verified |
 
@@ -53,7 +53,7 @@ client-visible failure semantics.
 |------|-------|---------|
 | `crates/eggress-routing/tests/scheduler_parity.rs` | 10 | Scheduler behavior at routing crate level |
 | `crates/eggress-runtime/tests/scheduler_runtime.rs` | 6 | Scheduler behavior through full runtime |
-| `crates/eggress-runtime/tests/multihop_tcp.rs` | 7 | Multi-hop TCP chain end-to-end |
+| `crates/eggress-runtime/tests/multihop_tcp.rs` | 9 | Multi-hop TCP chain end-to-end (including Trojan) |
 | `crates/eggress-runtime/tests/retry_fallback.rs` | 10 | Retry and fallback behavior |
 | `crates/eggress-runtime/tests/observability.rs` | +6 | Extended observability tests |
 | `crates/eggress-cli/tests/differential_pproxy.rs` | +6 | Extended differential tests |
@@ -97,6 +97,5 @@ client-visible failure semantics.
 
 ## Blockers for Phase 13
 
-- Trojan multi-hop chain test needs insecure upstream TLS flag
 - Persistent HTTP forwarding not yet implemented
 - No Python library/embedding API

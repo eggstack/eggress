@@ -48,3 +48,4 @@ The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-
 - [ ] No new `unsafe` code
 - [ ] Credentials never logged (use redacted Display)
 - [ ] Bounded parsers/handshake timeouts
+- [ ] Capability classifier reflects actual wire compatibility (not just internal code existence)

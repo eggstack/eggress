@@ -128,3 +128,12 @@ No blockers. Phase 11 is complete.
 - [x] Security/dependency policy remains intact
 - [x] Docs and parity matrix are current
 - [x] Workspace checks pass locally
+
+## Corrective Audit Notice
+
+pproxy differential tests are gated (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`) and
+have not yet been run end-to-end. The pproxy environment requires Python
+3.11/3.12 (not compatible with Python 3.14). The Shadowsocks upstream
+classification was updated from "Supported" to "Experimental" due to non-standard
+TCP AEAD framing (see `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md`). UDP remains
+standard-compliant. See `docs/DIFFERENTIAL_TESTING.md` for details.

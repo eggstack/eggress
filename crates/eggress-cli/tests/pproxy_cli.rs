@@ -224,5 +224,5 @@ fn translate_chain_of_two_upstreams() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("pproxy-upstream-0"));
     assert!(stdout.contains("pproxy-upstream-1"));
-    assert!(stdout.contains("first-available"));
+    assert!(stdout.contains("round-robin"));
 }

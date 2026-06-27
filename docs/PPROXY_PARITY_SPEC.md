@@ -151,7 +151,7 @@ Detailed behavior comparison for scheduler implementations:
 
 | Behavior | pproxy | Eggress | Notes |
 |----------|--------|---------|-------|
-| Round-robin default | Yes (`-s rr`) | Yes (default for groups) | Different defaults: pproxy defaults to first-available for single remote |
+| Round-robin default | Yes (`-s rr`) | Yes (default for groups) | Compat layer now correctly defaults to round-robin for multiple remotes; first-available for single remote |
 | Round-robin state persistence | Per-connection | Global atomic cursor | Eggress cursor persists across connections (correct behavior) |
 | Round-robin skips unhealthy | Implicit | Explicit health filtering | Eggress filters by health state |
 | First-available | `-s fa` | `FirstAvailable` scheduler | Returns first eligible candidate |
@@ -505,6 +505,9 @@ upstream. Ineligible upstreams (disabled or unhealthy) are skipped.
 
 Key difference: pproxy resets its scheduling state on reload; eggress preserves
 cursor state across config reloads for unchanged upstream groups.
+
+The eggress pproxy compat layer now correctly defaults to round-robin when
+translating multiple `-r` arguments (previously defaulted to first-available).
 
 ### First-Available
 

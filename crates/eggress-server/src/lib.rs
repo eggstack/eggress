@@ -68,6 +68,10 @@ pub struct ConnectionConfig {
     pub authentication: accept::InboundAuthentication,
     pub metrics: Option<Arc<dyn SessionMetrics>>,
     pub udp: Option<Arc<dyn UdpService>>,
+    /// Optional TLS client config override for upstream connections (e.g., Trojan).
+    /// When `None`, the chain executor builds a config with system root CAs.
+    /// Intended for test-only use (e.g., insecure TLS for self-signed certs).
+    pub tls_client_config: Option<Arc<rustls::ClientConfig>>,
 }
 
 /// Handle a single inbound connection.
@@ -195,6 +199,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -256,6 +261,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -424,6 +430,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -474,6 +481,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -529,6 +537,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -573,6 +582,7 @@ mod tests {
             authentication: accept::InboundAuthentication::None,
             metrics: None,
             udp: None,
+            tls_client_config: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -599,6 +609,7 @@ mod tests {
             authentication: accept::InboundAuthentication::None,
             metrics: None,
             udp: None,
+            tls_client_config: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -626,6 +637,7 @@ mod tests {
             authentication: accept::InboundAuthentication::None,
             metrics: None,
             udp: None,
+            tls_client_config: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -659,6 +671,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -720,6 +733,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -770,6 +784,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -822,6 +837,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -878,6 +894,7 @@ mod tests {
             authentication: accept::InboundAuthentication::None,
             metrics: None,
             udp: None,
+            tls_client_config: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -1039,6 +1056,7 @@ mod tests {
                 authentication: auth,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1096,6 +1114,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1144,6 +1163,7 @@ mod tests {
                 authentication: accept::InboundAuthentication::None,
                 metrics: None,
                 udp: None,
+                tls_client_config: None,
             };
             serve_connection(boxed, config).await
         });

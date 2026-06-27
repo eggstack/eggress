@@ -277,6 +277,7 @@ pub struct ServiceSupervisor {
     admin_tasks: TaskTracker,
     shutdown_grace: Duration,
     rt_config: eggress_config::compile::RuntimeConfig,
+    tls_client_config: Option<std::sync::Arc<rustls::ClientConfig>>,
 }
 
 impl ServiceSupervisor {
@@ -367,6 +368,7 @@ impl ServiceSupervisor {
             admin_tasks: TaskTracker::new(),
             shutdown_grace,
             rt_config,
+            tls_client_config: None,
         })
     }
 
@@ -376,6 +378,14 @@ impl ServiceSupervisor {
 
     pub fn shutdown_token(&self) -> CancellationToken {
         self.cancel.clone()
+    }
+
+    /// Override the TLS client config used for upstream connections (e.g., Trojan).
+    /// Intended for test-only use (e.g., insecure TLS for self-signed certs).
+    #[allow(dead_code)]
+    pub fn with_tls_client_config(mut self, config: std::sync::Arc<rustls::ClientConfig>) -> Self {
+        self.tls_client_config = Some(config);
+        self
     }
 
     /// Classify whether a reload is supported given old and new listener configs.
@@ -510,6 +520,7 @@ impl ServiceSupervisor {
         let snapshot = self.state.snapshot.clone();
         let state_ref = self.state.clone();
         let rt_config = self.rt_config.clone();
+        let tls_client_config = self.tls_client_config.clone();
 
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
@@ -629,6 +640,7 @@ impl ServiceSupervisor {
                 let state = state_ref.clone();
                 let conn_tasks = connection_tasks.clone();
                 let conn_cancel = connection_cancel.clone();
+                let tls_client_config = tls_client_config.clone();
 
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> =
@@ -647,6 +659,7 @@ impl ServiceSupervisor {
                         };
 
                         let routing = routing.clone();
+                        let tls_client_config = tls_client_config.clone();
                         let peer = conn.peer_addr;
                         let listener_str = prepared_listener.name.clone();
                         let conn_id =
@@ -719,6 +732,7 @@ impl ServiceSupervisor {
                                 authentication: conn_auth,
                                 metrics: Some(conn_metrics),
                                 udp: udp_svc,
+                                tls_client_config: tls_client_config.clone(),
                             };
 
                             let report = tokio::select! {

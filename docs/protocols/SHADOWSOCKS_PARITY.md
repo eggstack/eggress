@@ -16,11 +16,13 @@ pproxy 2.7.9 supports Shadowsocks AEAD ciphers with a standard wire format:
   directions
 - Password-based key derivation via HKDF
 
-Eggress matches this behavior for AEAD methods. The current Eggress
-implementation encrypts the initial address header and supports chunk
-encryption primitives (`encrypt_chunk` / `decrypt_chunk` in `aead.rs`).
-Full bidirectional stream encryption is specified here as the target behavior
-and is in progress.
+Eggress matches this behavior for AEAD methods. The initial address header
+encryption and bidirectional stream encryption are implemented via
+`ShadowsocksAeadStream`. However, the TCP framing uses a **non-standard**
+format (single AEAD operation per chunk with cleartext length prefix) that is
+not wire-compatible with standard Shadowsocks implementations. See the
+[TCP Audit](SHADOWSOCKS_TCP_AUDIT.md) for details. UDP uses the standard
+AEAD format and is interoperable.
 
 Source: `crates/eggress-protocol-shadowsocks/src/`
 
@@ -609,8 +611,8 @@ cargo test -p eggress-protocol-shadowsocks test_encrypt_decrypt_roundtrip_aes256
 |-----------|--------|-------|
 | Address header encryption | **Implemented** | Single-shot AEAD encrypt in `shadowsocks_connect` |
 | Chunk encryption/decryption | **Implemented** | `encrypt_chunk` / `decrypt_chunk` in `aead.rs` |
-| Full bidirectional stream encryption | **In progress** | Requires wrapping stream adapter with read/write nonce counters |
-| UDP (standard AEAD format) | **Experimental** | Uses non-standard nonce prefix instead of salt prefix |
+| Full bidirectional stream encryption (TCP) | **Implemented (non-standard framing)** | `ShadowsocksAeadStream` wraps stream with read/write nonce counters; TCP framing uses single AEAD operation per chunk with cleartext length prefix — not wire-compatible with standard Shadowsocks (see TCP audit) |
+| UDP (standard AEAD format) | **Supported** | Standard AEAD format: salt + AEAD(address + payload, nonce=0); interoperable with standard Shadowsocks implementations |
 
 ### Source Files
 
@@ -620,7 +622,7 @@ cargo test -p eggress-protocol-shadowsocks test_encrypt_decrypt_roundtrip_aes256
 | `src/aead.rs` | Frame and chunk AEAD encrypt/decrypt |
 | `src/tcp.rs` | TCP connect handshake, initial payload construction |
 | `src/address.rs` | Shadowsocks address encoding/decoding |
-| `src/udp.rs` | UDP packet encrypt/decrypt (non-standard format) |
+| `src/udp.rs` | UDP packet encrypt/decrypt (standard AEAD format) |
 | `src/error.rs` | Error types |
 
 ## 19. References

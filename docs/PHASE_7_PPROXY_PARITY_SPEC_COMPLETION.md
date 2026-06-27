@@ -66,6 +66,14 @@ Phase 7 created the formal compatibility contract for pproxy parity. No new prot
 | `--rulefile` format details | Exact syntax for rule entries |
 | SOCKS4a domain resolution | Server-side vs. forwarded resolution |
 
+## Corrective Audit Notice
+
+The parity specification was produced from documentation review and black-box
+probing of pproxy 2.7.9. Full differential verification against a running
+pproxy instance is gated (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`) and requires
+Python 3.11/3.12 (not compatible with Python 3.14). Differential tests have
+not yet been run end-to-end; see `docs/DIFFERENTIAL_TESTING.md` for details.
+
 ## Definition of Done Checklist
 
 - [x] `docs/PPROXY_PARITY_SPEC.md` exists and names inspected pproxy version

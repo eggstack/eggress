@@ -33,6 +33,7 @@ tempfile.workspace = true
 eggress-testkit.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
+eggress-protocol-shadowsocks.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 

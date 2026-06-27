@@ -653,12 +653,204 @@ upstream_group = "chain"
 // ---------------------------------------------------------------------------
 // 5. socks5_to_trojan_chain: SOCKS5 inbound -> Trojan upstream -> echo target
 //
-// NOTE: This test is omitted because the chain executor builds a TLS client
-// config with system root CAs. A self-signed cert from the test upstream
-// won't be trusted, and there is no config-level insecure flag for Trojan
-// upstreams. If insecure TLS support is added to upstream configuration,
-// this test can be added back.
+// Uses a self-signed cert and an insecure TLS client config (test-only).
+// The ServiceSupervisor is configured with `with_tls_client_config` to
+// inject an insecure verifier so the self-signed cert is accepted.
 // ---------------------------------------------------------------------------
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn socks5_to_trojan_chain() {
+    use std::sync::Arc;
+
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+    let expected_password = "test-trojan-password";
+
+    // Generate a self-signed cert for the Trojan server
+    let subject_alt_names = vec!["localhost".to_string()];
+    let cert_params = rcgen::CertificateParams::new(subject_alt_names).expect("valid params");
+    let cert_key = rcgen::KeyPair::generate().expect("key gen");
+    let cert = cert_params
+        .self_signed(&cert_key)
+        .expect("self-signed cert");
+    let cert_der = cert.der().clone();
+    let key_der = rustls::pki_types::PrivatePkcs8KeyDer::from(cert_key.serialize_der());
+
+    // Build TLS server config for the Trojan server
+    let server_tls_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert_der], key_der.into())
+        .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_tls_config));
+
+    // Start a Trojan server that accepts TLS, parses the Trojan header,
+    // and forwards to the target (the echo server).
+    let trojan_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let trojan_addr = trojan_listener.local_addr().unwrap();
+    let expected_hash = eggress_protocol_trojan::hash::password_hash(expected_password);
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match trojan_listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let acceptor = acceptor.clone();
+            let expected_hash = expected_hash.clone();
+            let echo_addr = echo_addr;
+            tokio::spawn(async move {
+                let tls_stream = match acceptor.accept(stream).await {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+
+                // Read the Trojan header: hash(56) + CRLF + CMD(1) + ATYP + addr + port(2) + CRLF
+                let mut buf = vec![0u8; 4096];
+                let mut reader = tls_stream;
+                let n = match reader.read(&mut buf).await {
+                    Ok(n) if n > 0 => n,
+                    _ => return,
+                };
+                buf.truncate(n);
+
+                // Verify the password hash
+                if buf.len() < 68 {
+                    return;
+                }
+                let received_hash = match std::str::from_utf8(&buf[..56]) {
+                    Ok(h) => h,
+                    Err(_) => return,
+                };
+                if received_hash != expected_hash {
+                    return; // Wrong password — drop connection (Trojan behavior)
+                }
+                if &buf[56..58] != b"\r\n" {
+                    return;
+                }
+
+                // Parse target address from the Trojan header
+                let cmd = buf[58];
+                if cmd != 0x01 {
+                    return; // Only CONNECT supported
+                }
+                let atyp = buf[59];
+                let (_target_ip, _target_port) = match atyp {
+                    0x01 => {
+                        // IPv4
+                        if buf.len() < 66 {
+                            return;
+                        }
+                        let ip = std::net::Ipv4Addr::new(buf[60], buf[61], buf[62], buf[63]);
+                        let port = u16::from_be_bytes([buf[64], buf[65]]);
+                        (std::net::IpAddr::V4(ip), port)
+                    }
+                    0x03 => {
+                        // Domain
+                        let len = buf[60] as usize;
+                        if buf.len() < 61 + len + 2 {
+                            return;
+                        }
+                        let _domain = match std::str::from_utf8(&buf[61..61 + len]) {
+                            Ok(d) => d.to_string(),
+                            Err(_) => return,
+                        };
+                        let port = u16::from_be_bytes([buf[61 + len], buf[61 + len + 1]]);
+                        (std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), port)
+                    }
+                    _ => return,
+                };
+
+                // For this test, we connect directly to the echo server
+                let target_addr = format!("{}:{}", echo_addr.ip(), echo_addr.port());
+                let target = match tokio::net::TcpStream::connect(&target_addr).await {
+                    Ok(t) => t,
+                    Err(_) => return,
+                };
+
+                let (mut cr, mut cw) = tokio::io::split(reader);
+                let (mut tr, mut tw) = tokio::io::split(target);
+                let c2t = tokio::spawn(async move {
+                    let _ = tokio::io::copy(&mut cr, &mut tw).await;
+                    let _ = tw.shutdown().await;
+                });
+                let t2c = tokio::spawn(async move {
+                    let _ = tokio::io::copy(&mut tr, &mut cw).await;
+                    let _ = cw.shutdown().await;
+                });
+                let _ = tokio::join!(c2t, t2c);
+            });
+        }
+    });
+
+    // Build an insecure TLS client config (test-only — accepts any cert)
+    let insecure_tls_config = eggress_transport_tls::TlsClientConfigBuilder::new()
+        .with_insecure()
+        .build()
+        .unwrap();
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "trojan-up"
+uri = "trojan://x:{password}@127.0.0.1:{trojan_port}"
+
+[[upstream_groups]]
+id = "chain"
+scheduler = "first-available"
+members = ["trojan-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "chain"
+"#,
+        password = expected_password,
+        trojan_port = trojan_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path)
+        .unwrap()
+        .with_tls_client_config(insecure_tls_config);
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let ok = socks5_connect(&mut stream, echo_addr).await;
+    assert!(ok, "SOCKS5 CONNECT should succeed via Trojan upstream");
+
+    stream.write_all(b"socks5-trojan-hello").await.unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut buf))
+        .await
+        .expect("timeout")
+        .expect("read");
+    assert_eq!(&buf[..n], b"socks5-trojan-hello");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
 
 // ---------------------------------------------------------------------------
 // 6. three_hop_chain: SOCKS5 -> HTTP -> SOCKS5 -> echo target

@@ -199,7 +199,7 @@ Legend:
 
 ### Shadowsocks
 
-- [x] Shadowsocks TCP client (full AEAD stream encryption; aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
+- [!] Shadowsocks TCP client (non-standard AEAD framing; not wire-compatible with standard implementations; aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [ ] Shadowsocks TCP server
 - [x] Shadowsocks UDP client (standard AEAD format: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [ ] Shadowsocks UDP server
@@ -208,8 +208,8 @@ Legend:
 - [ ] Legacy stream cipher compatibility
 - [ ] OTA compatibility
 - [x] Password/key derivation compatibility
-- [ ] Interoperability with `shadowsocks-rust`
-- [x] Interoperability with Python `pproxy`
+- [ ] Interoperability with `shadowsocks-rust` (TCP framing is non-standard; UDP is standard)
+- [!] Interoperability with Python `pproxy` (synthetic-tested only; not wire-compatible for TCP)
 
 ### ShadowsocksR
 

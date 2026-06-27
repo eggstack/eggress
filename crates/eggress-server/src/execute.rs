@@ -301,6 +301,8 @@ async fn open_route(
         SelectedRoute::Direct { .. } => None,
     };
 
+    let tls_override = config.tls_client_config.as_ref();
+
     let result = tokio::time::timeout(config.connect_timeout, async {
         match selected {
             SelectedRoute::Direct { .. } => {
@@ -312,7 +314,7 @@ async fn open_route(
                 pending_lease,
                 ..
             } => {
-                let executor = build_chain_executor();
+                let executor = build_chain_executor(tls_override);
                 let stream = executor.execute(&chain.hops, request.target).await?;
                 let active_lease = pending_lease.established();
                 Ok::<_, SessionOpenError>((stream, Some(active_lease)))
@@ -788,15 +790,20 @@ async fn execute_udp_associate(
     }
 }
 
-fn build_chain_executor() -> ChainExecutor {
+fn build_chain_executor(
+    tls_override: Option<&std::sync::Arc<rustls::ClientConfig>>,
+) -> ChainExecutor {
     // Build shared TLS client config for upstream hops
-    let shared_tls_config = {
-        let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-        match builder.with_system_roots().and_then(|b| b.build()) {
-            Ok(config) => Some(config),
-            Err(e) => {
-                tracing::warn!("failed to build shared TLS config: {e}");
-                None
+    let shared_tls_config = match tls_override {
+        Some(config) => Some(config.clone()),
+        None => {
+            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+            match builder.with_system_roots().and_then(|b| b.build()) {
+                Ok(config) => Some(config),
+                Err(e) => {
+                    tracing::warn!("failed to build shared TLS config: {e}");
+                    None
+                }
             }
         }
     };
@@ -813,14 +820,26 @@ fn build_chain_executor() -> ChainExecutor {
         }),
     ];
 
-    // Set up TLS wrapper using system roots by default
-    let tls_wrapper: eggress_core::chain::TlsWrapper = Box::new(|stream, server_name| {
+    // Set up TLS wrapper using system roots by default, or the override if provided
+    let tls_wrapper_override = tls_override.cloned();
+    let tls_wrapper: eggress_core::chain::TlsWrapper = Box::new(move |stream, server_name| {
+        let config_override = tls_wrapper_override.clone();
         Box::pin(async move {
-            let config = eggress_transport_tls::TlsClientConfigBuilder::new()
-                .with_system_roots()
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })?
-                .build()
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })?;
+            let config = match config_override {
+                Some(c) => c,
+                None => {
+                    let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+                    builder
+                        .with_system_roots()
+                        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                            Box::new(e) as _
+                        })?
+                        .build()
+                        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                            Box::new(e) as _
+                        })?
+                }
+            };
             eggress_transport_tls::tls_connect(stream, config, &server_name)
                 .await
                 .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })

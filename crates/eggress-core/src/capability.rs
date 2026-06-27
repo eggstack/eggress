@@ -40,6 +40,8 @@ impl UpstreamCapabilities {
 /// - HTTP upstream: TCP CONNECT supported; UDP unsupported
 /// - SOCKS4 upstream: TCP CONNECT supported; UDP unsupported
 /// - SOCKS5 upstream: TCP CONNECT supported; UDP supported for one-hop only
+/// - Shadowsocks upstream: TCP not advertised (non-standard AEAD framing);
+///   UDP supported (standard AEAD format)
 /// - Multi-hop: TCP may be supported; UDP unsupported
 pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
     match chain.hops.len() {
@@ -94,7 +96,12 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
             udp_associate: CapabilityResult::Supported,
         },
         ProtocolSpec::Shadowsocks => UpstreamCapabilities {
-            tcp_connect: CapabilityResult::Supported,
+            // Non-standard AEAD framing (cleartext length prefix, single AEAD
+            // operation per chunk) — not wire-compatible with standard
+            // Shadowsocks implementations.  UDP uses standard AEAD format.
+            tcp_connect: CapabilityResult::UnsupportedProtocol {
+                protocol: "Shadowsocks-tcp-nonstandard-framing".to_string(),
+            },
             udp_associate: CapabilityResult::Supported,
         },
         ProtocolSpec::Trojan => UpstreamCapabilities {
@@ -199,9 +206,15 @@ mod tests {
     fn single_shadowsocks_hop() {
         let c = chain(vec![hop(vec![ProtocolSpec::Shadowsocks])]);
         let caps = classify_upstream_chain(&c);
-        assert!(caps.is_tcp_supported());
+        // TCP: non-standard AEAD framing — not advertised as supported
+        assert!(!caps.is_tcp_supported());
         assert!(caps.is_udp_supported());
-        assert_eq!(caps.tcp_connect, CapabilityResult::Supported);
+        assert_eq!(
+            caps.tcp_connect,
+            CapabilityResult::UnsupportedProtocol {
+                protocol: "Shadowsocks-tcp-nonstandard-framing".to_string()
+            }
+        );
         assert_eq!(caps.udp_associate, CapabilityResult::Supported);
     }
 

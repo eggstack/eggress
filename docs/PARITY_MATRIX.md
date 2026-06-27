@@ -26,7 +26,7 @@ or document supported-but-unverified functionality.
 | SOCKS4/4a | server + client | server + client | Supported | integration tests | none | Separate unit tests; no differential |
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo` | Byte-exact payload match |
 | SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing, not SOCKS5 UDP ASSOCIATE as server |
-| Shadowsocks TCP | full AEAD + stream | client/upstream only | Partial | none | none | No inbound listener; upstream has full AEAD stream encryption |
+| Shadowsocks TCP | full AEAD + stream | client/upstream only (non-standard framing) | Experimental | none | none | No inbound listener; upstream has non-standard AEAD framing (not wire-compatible with standard Shadowsocks); see TCP audit |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
 ### Inbound UDP Protocols
@@ -44,7 +44,7 @@ or document supported-but-unverified functionality.
 | HTTP CONNECT upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_http_upstream` | Chain payloads match |
 | SOCKS4/SOCKS4a upstream | supported | supported | Supported | integration tests | none | Unit tested |
 | SOCKS5 upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_socks5_upstream` | Chain payloads match |
-| Shadowsocks upstream | supported | supported | Compatible | `shadowsocks_tcp.rs` | none | Full AEAD stream encryption: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305 |
+| Shadowsocks upstream | supported | supported | Experimental | `shadowsocks_tcp.rs` | none | TCP: non-standard AEAD framing (not wire-compatible); UDP: standard AEAD format |
 | Trojan upstream | supported | supported (client only) | Partial | unit tests | none | No server side |
 | Direct upstream | supported | supported | Compatible | integration tests | implicit in echo tests | Both connect directly |
 
@@ -133,7 +133,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `socks4://` | upstream | TCP | User ID | Supported | **Supported** | Unit tested |
 | `socks4a://` | upstream | TCP | User ID | Supported | **Supported** | Alias for `socks4` |
 | `socks5://` | upstream | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
-| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **Compatible** | Full AEAD stream encryption; standard AEAD UDP format |
+| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **Experimental** | TCP: non-standard AEAD framing (not wire-compatible); UDP: standard AEAD format |
 | `trojan://` | upstream | TCP | Password (SHA224) | Supported | **Supported** | Client-only; no server side |
 | `ssh://` | upstream | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH transport is out-of-scope for a proxy |
 | `direct://` | upstream | TCP+UDP | None | Supported | **Compatible** | Direct connection, no proxy |
@@ -222,7 +222,7 @@ All diagnostic messages redact credentials.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
 - **CLI (Compatible / Partial)**: `-l` and `-r` flags share syntax. `-ul` and `-ur` are unsupported (Eggress uses SOCKS5 UDP ASSOCIATE). `--daemon` is not yet implemented.
-- **Shadowsocks / Trojan (Partial / Supported)**: Shadowsocks TCP upstream has full AEAD stream encryption (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305). Shadowsocks UDP uses standard AEAD format. Trojan is client-only. Neither has differential coverage.
+- **Shadowsocks / Trojan (Experimental / Partial / Supported)**: Shadowsocks TCP upstream has non-standard AEAD framing (not wire-compatible with standard implementations; see TCP audit). Shadowsocks UDP uses standard AEAD format and is interoperable. Trojan is client-only. Neither has differential coverage.
 - **Python bindings (Unsupported)**: Not started; planned for later phases.
 
 ## Limitations

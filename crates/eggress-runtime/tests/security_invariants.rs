@@ -296,7 +296,8 @@ fn unsupported_protocol_combinations_not_silent() {
     use eggress_core::capability::{classify_upstream_chain, CapabilityResult};
     use eggress_uri::*;
 
-    // Shadowsocks is now supported for both TCP and UDP
+    // Shadowsocks: TCP is not advertised (non-standard AEAD framing);
+    // UDP is supported (standard AEAD format)
     let chain = ProxyChainSpec {
         hops: vec![ProxyHopSpec {
             protocols: vec![ProtocolSpec::Shadowsocks],
@@ -312,9 +313,12 @@ fn unsupported_protocol_combinations_not_silent() {
         }],
     };
     let caps = classify_upstream_chain(&chain);
-    assert!(caps.is_tcp_supported());
+    assert!(!caps.is_tcp_supported());
     assert!(caps.is_udp_supported());
-    assert_eq!(caps.tcp_connect, CapabilityResult::Supported);
+    assert!(matches!(
+        caps.tcp_connect,
+        CapabilityResult::UnsupportedProtocol { .. }
+    ));
     assert_eq!(caps.udp_associate, CapabilityResult::Supported);
 
     // HTTP does not support UDP
