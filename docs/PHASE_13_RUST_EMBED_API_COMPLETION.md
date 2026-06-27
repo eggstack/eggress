@@ -69,12 +69,12 @@ never included in error messages. Variants are stable for PyO3 mapping.
 | File | Tests | Description |
 |------|-------|-------------|
 | `start_stop.rs` | 6 | Blocking/async start, multiple listeners, config errors |
-| `proxy_traffic.rs` | 2 | SOCKS5 TCP echo, port-0 discovery |
+| `proxy_traffic.rs` | 3 | SOCKS5 TCP echo, HTTP CONNECT TCP echo, port-0 discovery |
 | `reload.rs` | 5 | Generation increment, invalid config, bind rejection |
 | `metrics_status.rs` | 4 | Prometheus counters, status fields, metrics after session, multi-listener status |
 | `error_redaction.rs` | 9 | No credentials in errors, error categories, `to_redacted_toml` redaction |
 
-Total: 28 tests (including doc-tests), all passing.
+Total: 29 tests (including doc-tests), all passing.
 
 ## Documentation
 
@@ -91,7 +91,7 @@ Total: 28 tests (including doc-tests), all passing.
 cargo fmt --all -- --check        # PASS
 cargo check --workspace --all-targets  # PASS
 cargo clippy --workspace --all-targets -- -D warnings  # PASS
-cargo test -p eggress-embed       # 28/28 PASS
+cargo test -p eggress-embed       # 29/29 PASS
 cargo test --workspace            # all PASS
 cargo test -p eggress-runtime --test startup --test reload --test shutdown  # PASS
 ```

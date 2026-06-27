@@ -2,6 +2,43 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+/// Perform an HTTP CONNECT handshake to connect to target.
+fn http_connect(proxy_addr: std::net::SocketAddr, target: std::net::SocketAddr) -> TcpStream {
+    let mut stream = TcpStream::connect(proxy_addr).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+
+    let connect_req = format!(
+        "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+        target.ip(),
+        target.port(),
+        target.ip(),
+        target.port()
+    );
+    stream.write_all(connect_req.as_bytes()).unwrap();
+
+    let mut response = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let n = stream.read(&mut buf).unwrap();
+        response.extend_from_slice(&buf[..n]);
+        if response.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+    }
+    let response_str = String::from_utf8_lossy(&response);
+    assert!(
+        response_str.starts_with("HTTP/1.1 200"),
+        "HTTP CONNECT should succeed, got: {response_str}"
+    );
+
+    stream
+}
+
 /// Start a simple TCP echo server.
 fn start_echo_server() -> std::net::SocketAddr {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -87,6 +124,40 @@ protocols = ["socks5"]
     let mut stream = socks5_connect(proxy_addr, echo_addr);
 
     let msg = b"hello from embed API";
+    stream.write_all(msg).unwrap();
+
+    let mut response = vec![0u8; msg.len()];
+    stream.read_exact(&mut response).unwrap();
+    assert_eq!(&response, msg);
+
+    handle.shutdown_blocking().unwrap();
+}
+
+#[test]
+fn http_connect_proxy_tcp_echo() {
+    let echo_addr = start_echo_server();
+
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "proxy"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#,
+    )
+    .unwrap();
+
+    let handle = eggress_embed::EggressService::new(config)
+        .start_blocking()
+        .unwrap();
+
+    let proxy_addr = handle.bound_addresses().listener("proxy").unwrap();
+
+    let mut stream = http_connect(proxy_addr, echo_addr);
+
+    let msg = b"hello from http connect";
     stream.write_all(msg).unwrap();
 
     let mut response = vec![0u8; msg.len()];
