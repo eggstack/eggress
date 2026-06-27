@@ -64,3 +64,71 @@ For embedding eggress in another Rust process, use the `eggress-embed` crate:
 - `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown
 
 See `docs/EMBED_API.md` for full reference.
+
+## Python bindings (eggress-python)
+
+For Python embedding, use the `eggress-python` crate and `python/eggress` package:
+
+- `EggressConfig.from_toml(toml)` / `from_file(path)` — parse and validate config
+- `EggressService.from_toml(toml)` / `from_file(path)` — create a service
+- `service.start()` — blocking start, returns `EggressHandle`
+- `handle.bound_addresses` — listener name to address mapping
+- `handle.status()` — generation, readiness, uptime, connections
+- `handle.metrics_text()` — Prometheus metrics text
+- `handle.reload_toml(toml)` — hot-reload routing/upstreams
+- `handle.shutdown()` — graceful shutdown (idempotent)
+- `with handle:` — context manager shuts down on exit
+
+### Building
+
+```bash
+cd crates/eggress-python
+maturin build --release --target x86_64-apple-darwin
+pip install --force-reinstall target/wheels/eggress-*.whl
+```
+
+### PyO3 binding pattern
+
+Each Python class wraps a Rust inner type from `eggress-embed`:
+
+```rust
+#[pyclass]
+struct PyEggressHandle {
+    inner: Option<eggress_embed::EggressHandle>,
+}
+```
+
+Methods use `py.detach(|| ...)` to release the GIL during blocking Rust calls:
+
+```rust
+fn shutdown(&mut self, py: Python<'_>) -> PyResult<()> {
+    if let Some(handle) = self.inner.take() {
+        py.detach(|| handle.shutdown_blocking())
+            .map_err(|e| map_error(py, e))?;
+    }
+    Ok(())
+}
+```
+
+### Error mapping
+
+`eggress_embed::EggressError` variants map to Python exception subclasses:
+
+| Rust variant | Python exception |
+|---|---|
+| `Config(_)` | `ConfigError` |
+| `Startup(_)` | `StartupError` |
+| `Reload(_)` | `ReloadError` |
+| `Shutdown(_)` | `ShutdownError` |
+| `UnsupportedFeature { .. }` | `UnsupportedFeatureError` |
+| `Runtime(_)`, `Internal(_)` | `InternalError` |
+
+All inherit from `EggressError` → `Exception`.
+
+### Testing
+
+```bash
+python -m pytest python/tests
+```
+
+See `docs/PYTHON_BINDINGS.md` for full reference.

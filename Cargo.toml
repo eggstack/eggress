@@ -26,6 +26,7 @@ members = [
     "crates/eggress-testkit",
     "crates/eggress-pproxy-compat",
     "crates/eggress-embed",
+    "crates/eggress-python",
 ]
 
 [workspace.package]

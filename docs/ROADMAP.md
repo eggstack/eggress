@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 13: Rust embed API stabilization (complete)
+Phase 14: Python bindings (complete)
 
 ## Completed Milestones
 
@@ -109,12 +109,22 @@ Phase 13: Rust embed API stabilization (complete)
 - [x] 13.6: Integration tests (start/stop, proxy traffic, reload, metrics, error redaction)
 - [x] 13.7: Documentation (`EMBED_API.md`) and workspace updates
 
+### Phase 14: Python bindings — complete
+
+- [x] 14.1: `eggress-python` crate with PyO3 native module (`_eggress`)
+- [x] 14.2: `EggressConfig`, `EggressService`, `EggressHandle` Python classes
+- [x] 14.3: Exception hierarchy (`EggressError` and five subclasses)
+- [x] 14.4: GIL release via `py.detach()` on all blocking Rust calls
+- [x] 14.5: Context manager protocol on `EggressHandle`
+- [x] 14.6: Python test suite (14 tests, 5 files)
+- [x] 14.7: Documentation (`PYTHON_BINDINGS.md`) and workspace updates
+
 ## Remaining Work
 
-None — Phases 1–8, 13 are complete.
+None — Phases 1–8, 13–14 are complete.
 
 ## Next Phase
 
-Phase 9: (to be determined)
+Phase 15: (to be determined)
 
 See the main roadmap for detailed descriptions of each phase.

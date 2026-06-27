@@ -4,3 +4,9 @@ fuzz/target/
 *.swp
 *.swo
 *~
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+*.so

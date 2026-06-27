@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "eggress"
+requires-python = ">=3.9"
+description = "Python bindings for the eggress proxy"
+license = {text = "MIT OR Apache-2.0"}
+dynamic = ["version"]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "eggress"
+module-name = "eggress._eggress"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
