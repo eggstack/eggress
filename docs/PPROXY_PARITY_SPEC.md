@@ -179,6 +179,7 @@ Auth failure behavior:
 | UDP ASSOCIATE (server) | Not supported as server | Supported (full RFC 1928) |
 | UDP ASSOCIATE (client) | Supported when connecting through upstream | Supported |
 | Direct UDP forwarding | `-r direct` | Supported |
+| Shadowsocks UDP upstream | supported | Supported (standard AEAD; single-hop) |
 
 pproxy's UDP relay protocol:
 - Listen on a separate UDP socket specified by `-ul`.

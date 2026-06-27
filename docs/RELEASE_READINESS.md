@@ -60,8 +60,8 @@ All five commands must pass cleanly before tagging a release.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Shadowsocks TCP | Experimental | AEAD methods only; no UDP |
-| Shadowsocks UDP | Not supported | Validation rejects config with UDP listener + Shadowsocks upstream |
+| Shadowsocks TCP | Supported | AEAD methods only |
+| Shadowsocks UDP | Supported | Standard AEAD format; single-hop upstream only |
 | Trojan TCP | Experimental | Foundation only |
 | Trojan UDP | Not supported | Validation rejects config with UDP listener + Trojan upstream |
 

@@ -1022,7 +1022,7 @@ upstream_group = "udp-upstream"
         "Shadowsocks upstream with UDP listener should now be accepted: {:?}",
         result.err()
     );
-    if let Ok(mut sup) = result {
+    if let Ok(sup) = result {
         sup.shutdown_token().cancel();
     }
 }

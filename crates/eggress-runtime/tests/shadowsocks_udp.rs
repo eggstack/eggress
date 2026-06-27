@@ -516,3 +516,113 @@ enabled = true
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shadowsocks_udp_target_flow_idle_cleanup() {
+    eggress_transport_tls::install_default_crypto_provider();
+
+    let echo_addr = start_udp_echo().await;
+    let ss_addr = start_shadowsocks_udp_echo(CipherMethod::Aes256Gcm, "test-secret").await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+udp_enabled = true
+
+[listeners.udp]
+target_idle_timeout = "150ms"
+
+[[upstreams]]
+id = "ss-proxy"
+uri = "shadowsocks://aes-256-gcm:test-secret@127.0.0.1:{ss_port}"
+
+[[upstream_groups]]
+id = "main"
+members = ["ss-proxy"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+
+[rules.match]
+all = [
+  {{ transport = "udp" }}
+]
+"#,
+        ss_port = ss_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0]
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    let reply = socks5_udp_associate(&mut stream)
+        .await
+        .expect("udp associate");
+    assert_eq!(reply[1], 0x00, "udp associate should succeed");
+
+    let relay_port = u16::from_be_bytes([reply[8], reply[9]]);
+    let relay_addr = format!("127.0.0.1:{relay_port}");
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(&relay_addr).await.unwrap();
+
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"idle-timeout-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("timeout waiting for response")
+    .expect("recv");
+
+    let resp = eggress_udp::codec::decode_packet(
+        &recv_buf[..n],
+        &eggress_udp::limits::UdpLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(resp.payload, b"idle-timeout-test");
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let flows_after_send = state
+        .udp_metrics
+        .target_flows_active
+        .load(Ordering::Relaxed);
+    assert_eq!(flows_after_send, 1, "should have one active target flow");
+
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let flows_after_idle = state
+        .udp_metrics
+        .target_flows_active
+        .load(Ordering::Relaxed);
+    assert_eq!(
+        flows_after_idle, 0,
+        "target flow should be evicted after idle timeout"
+    );
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}

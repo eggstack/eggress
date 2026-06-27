@@ -41,10 +41,11 @@ This matches the standard Shadowsocks UDP format used by shadowsocks-rust, shado
 
 | Test | Description |
 |------|-------------|
-| `shadowsocks_udp_upstream_echo` | Full SOCKS5 UDP ASSOCIATE → SS UDP → echo roundtrip |
-| `shadowsocks_udp_upstream_all_methods` | Tests all 3 AEAD methods end-to-end |
-| `shadowsocks_udp_upstream_wrong_password_fails` | Wrong password causes decode failure |
-| `shadowsocks_udp_upstream_metrics_increment` | Verifies UDP upstream metrics after relay |
+| `shadowsocks_udp_upstream_routes_udp_echo` | Full SOCKS5 UDP ASSOCIATE → SS UDP → echo roundtrip |
+| `shadowsocks_udp_wrong_password_drops` | Wrong password causes decode failure |
+| `shadowsocks_udp_unsupported_method_rejected` | Unsupported method drops packets |
+| `shadowsocks_udp_metrics_increment` | Verifies UDP upstream metrics after relay |
+| `shadowsocks_udp_target_flow_idle_cleanup` | Target flow idle timeout evicts flow, gauges return to zero |
 
 ## Differential Evidence
 
