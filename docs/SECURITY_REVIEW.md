@@ -112,6 +112,13 @@ Adversaries may include malicious clients on the network, compromised upstream p
   - HTTP and SOCKS4 for UDP
 - Config validation rejects UDP listeners when no UDP-capable upstreams exist.
 
+**Unsupported Protocol Diagnostics** (`eggress-pproxy-compat/src/translate.rs`):
+- Unsupported schemes (SSH, Unix, redir) produce `UnsupportedFeature` errors with scheme name.
+- Shadowsocks listeners are rejected with clear diagnostic (upstream-only).
+- Trojan listeners are rejected with clear diagnostic (upstream-only).
+- Legacy stream cipher URIs are rejected at parse time.
+- All diagnostic messages redact credentials.
+
 **Shadowsocks TCP Security Properties**:
 - Full AEAD stream encryption (not just header encryption); each direction is independently encrypted.
 - Nonces are per-direction counters starting at 1, preventing nonce reuse.
@@ -167,6 +174,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 10. **No `unsafe` code**: Workspace-wide `unsafe_code = "forbid"` prevents memory safety issues.
 11. **No OpenSSL dependency**: Uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface.
 12. **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only hot-reloadable fields are swapped.
+13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH, Unix, redir, and other unsupported protocols. No silent fallback to direct or different protocols.
 
 ## Residual Risks
 

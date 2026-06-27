@@ -138,7 +138,47 @@ pub fn translate_from_uris(
                 );
                 continue;
             }
-            "http" | "socks4" | "socks5" => {}
+            "ssh" => {
+                output = output.with_unsupported(
+                    "ssh-listener",
+                    format!(
+                        "SSH listener '{}': SSH transport is not supported",
+                        local.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "unix" => {
+                output = output.with_unsupported(
+                    "unix-listener",
+                    format!(
+                        "Unix socket listener '{}': Unix domain sockets are not supported",
+                        local.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "redir" => {
+                output = output.with_unsupported(
+                    "redir-listener",
+                    format!(
+                        "Redir listener '{}': transparent proxy redirect is not supported",
+                        local.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "direct" => {
+                output = output.with_unsupported(
+                    "direct-listener",
+                    format!(
+                        "Direct listener '{}': 'direct' is not a valid listener protocol",
+                        local.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "http" | "https" | "socks4" | "socks4a" | "socks5" => {}
             other => {
                 output = output.with_unsupported(
                     "scheme",
@@ -156,8 +196,8 @@ pub fn translate_from_uris(
         };
 
         let protocols = match local.scheme.as_str() {
-            "http" => vec!["http".to_string()],
-            "socks4" => vec!["socks4".to_string()],
+            "http" | "https" => vec!["http".to_string()],
+            "socks4" | "socks4a" => vec!["socks4".to_string()],
             "socks5" => vec!["socks5".to_string()],
             _ => unreachable!(),
         };
@@ -206,16 +246,39 @@ pub fn translate_from_uris(
         // Check for unsupported upstream protocols
         match remote.scheme.as_str() {
             "ss" | "shadowsocks" => {
+                // Shadowsocks upstream is fully supported (AEAD methods only)
+            }
+            "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
+            "ssh" => {
                 output = output.with_unsupported(
-                    "shadowsocks-upstream",
+                    "ssh-upstream",
                     format!(
-                        "Shadowsocks upstream '{}': Shadowsocks upstream is experimental",
+                        "SSH upstream '{}': SSH transport is not supported",
                         remote.redacted_display()
                     ),
                 );
                 continue;
             }
-            "http" | "socks4" | "socks5" | "trojan" => {}
+            "unix" => {
+                output = output.with_unsupported(
+                    "unix-upstream",
+                    format!(
+                        "Unix socket upstream '{}': Unix domain sockets are not supported",
+                        remote.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "redir" => {
+                output = output.with_unsupported(
+                    "redir-upstream",
+                    format!(
+                        "Redir upstream '{}': transparent proxy redirect is not supported as upstream",
+                        remote.redacted_display()
+                    ),
+                );
+                continue;
+            }
             other => {
                 output = output.with_unsupported(
                     "scheme",
@@ -266,18 +329,26 @@ pub fn translate_from_uris(
 }
 
 fn build_config_uri(remote: &PproxyUri) -> String {
+    let scheme = if remote.scheme == "https" {
+        "http".to_string()
+    } else if remote.scheme == "socks4a" {
+        "socks4".to_string()
+    } else {
+        remote.scheme.clone()
+    };
     let cred_str = match (&remote.username, &remote.password) {
         (Some(user), Some(pass)) => format!("{}:{}@", user, pass),
         _ => String::new(),
     };
-    let tls_suffix = if remote.tls { "+tls" } else { "" };
+    let tls = remote.tls || remote.scheme == "https";
+    let tls_suffix = if tls { "+tls" } else { "" };
     let rule_str = match &remote.rule {
         Some(r) => format!("?rule={}", r),
         None => String::new(),
     };
     format!(
         "{}://{}{}:{}{}{}",
-        remote.scheme, cred_str, remote.host, remote.port, tls_suffix, rule_str,
+        scheme, cred_str, remote.host, remote.port, tls_suffix, rule_str,
     )
 }
 

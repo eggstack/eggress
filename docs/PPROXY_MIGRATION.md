@@ -27,10 +27,13 @@ eggress pproxy run -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 | Scheme | As Local Listener | As Upstream |
 |--------|------------------|-------------|
 | `http://` | Yes | Yes |
+| `https://` | Yes (TLS) | Yes (HTTP+TLS) |
 | `socks4://` | Yes | Yes |
+| `socks4a://` | Yes | Yes |
 | `socks5://` | Yes | Yes |
 | `trojan://` | No (upstream-only) | Yes |
-| `shadowsocks://` | No | Experimental |
+| `shadowsocks://` | No | Yes (AEAD methods only) |
+| `direct://` | No | Yes (direct connection) |
 
 ### URI Format
 
@@ -104,14 +107,24 @@ upstream_group = "chain"
 
 The following pproxy features are explicitly unsupported:
 
-- **Shadowsocks listeners** -- Shadowsocks is experimental as upstream only
+- **Shadowsocks listeners** -- Shadowsocks is upstream-only (AEAD methods: `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`)
+- **Trojan listeners** -- Trojan is upstream-only
 - **`--daemon` mode** -- Use systemd or a process manager instead
 - **`-ul` / `-ur` UDP flags** -- Eggress uses SOCKS5 UDP ASSOCIATE instead
 - **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
 - **`-b` block regex rules** -- Use eggress TOML routing rules
+- **`--rulefile`** -- Use eggress TOML routing rules
+- **`--reuse`** -- Connection pooling not implemented
+- **`--log`** -- Use `RUST_LOG=debug` environment variable
+- **`--sys`** -- System proxy configuration not supported
 - **Multi-hop UDP** -- Not supported
-- **SSH protocol** -- Not supported
+- **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
+- **Unix domain sockets** -- Not supported
 - **Transparent/system proxy mode** -- Not supported
+- **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods)
+- **ShadowsocksR** -- Not supported (non-standard extension)
+
+Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
 
 ## Parity Tiers
 

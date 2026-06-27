@@ -311,7 +311,7 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
     for p in &parts {
         match *p {
             "http" => protocols.push(ProtocolSpec::Http),
-            "socks4" => protocols.push(ProtocolSpec::Socks4),
+            "socks4" | "socks4a" => protocols.push(ProtocolSpec::Socks4),
             "socks5" => protocols.push(ProtocolSpec::Socks5),
             "shadowsocks" | "ss" => protocols.push(ProtocolSpec::Shadowsocks),
             "trojan" => protocols.push(ProtocolSpec::Trojan),
@@ -771,6 +771,12 @@ mod tests {
         let redacted = RedactedUri::new(&spec).to_string();
         assert_eq!(redacted, original);
     }
+
+    #[test]
+    fn test_socks4a_scheme() {
+        let result = parse_proxy_chain("socks4a://host:1080").unwrap();
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Socks4]);
+    }
 }
 
 #[cfg(test)]
@@ -784,6 +790,7 @@ mod proptest_tests {
             Just(ProtocolSpec::Socks4),
             Just(ProtocolSpec::Socks5),
             Just(ProtocolSpec::Shadowsocks),
+            Just(ProtocolSpec::Trojan),
         ]
     }
 

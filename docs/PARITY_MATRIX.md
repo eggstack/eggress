@@ -101,6 +101,88 @@ or document supported-but-unverified functionality.
 | pproxy URI translation | N/A | `eggress pproxy translate` | Compatible | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
 | `--reuse` | supported | N/A | Intentional non-parity | none | none | Connection pooling not implemented |
 
+## Remaining Protocol Audit
+
+This section classifies every remaining pproxy protocol/scheme for Phase 11.
+
+### Inbound Listener Protocols
+
+| Scheme | pproxy role | TCP/UDP | Auth/Encryption | Eggress status | Decision | Rationale |
+|--------|-------------|---------|-----------------|----------------|----------|-----------|
+| `http://` | inbound | TCP | Basic auth, optional TLS | Supported | **Compatible** | Full parity with differential tests |
+| `https://` | inbound | TCP | TLS + Basic auth | Supported | **Compatible** | Maps to `http+tls` in eggress |
+| `socks4://` | inbound | TCP | User ID | Supported | **Supported** | Separate unit tests; no differential |
+| `socks4a://` | inbound | TCP | User ID | Supported | **Compatible** | Alias for `socks4` in eggress |
+| `socks5://` | inbound | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
+| `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
+| `trojan://` | inbound | TCP | Password (SHA224) | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
+| `redir://` | inbound | TCP | None | Rejected | **Intentional non-parity** | Requires root, kernel hooks (`SO_ORIGINAL_DST`) |
+| `unix://` | inbound | TCP | None | Rejected | **Intentional non-parity** | Not in scope |
+| `ssh://` | inbound | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH is not a proxy protocol |
+
+### Upstream Protocols
+
+| Scheme | pproxy role | TCP/UDP | Auth/Encryption | Eggress status | Decision | Rationale |
+|--------|-------------|---------|-----------------|----------------|----------|-----------|
+| `http://` | upstream | TCP | Basic auth | Supported | **Compatible** | Full parity with differential tests |
+| `https://` | upstream | TCP | TLS + Basic auth | Supported | **Compatible** | Maps to `http+tls` in eggress |
+| `socks4://` | upstream | TCP | User ID | Supported | **Supported** | Unit tested |
+| `socks4a://` | upstream | TCP | User ID | Supported | **Supported** | Alias for `socks4` |
+| `socks5://` | upstream | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
+| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **Compatible** | Full AEAD stream encryption; standard AEAD UDP format |
+| `trojan://` | upstream | TCP | Password (SHA224) | Supported | **Supported** | Client-only; no server side |
+| `ssh://` | upstream | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH transport is out-of-scope for a proxy |
+| `direct://` | upstream | TCP+UDP | None | Supported | **Compatible** | Direct connection, no proxy |
+
+### Transport/Wrapping
+
+| Feature | pproxy support | Eggress status | Decision | Rationale |
+|---------|---------------|----------------|----------|-----------|
+| `+tls` suffix | `socks5+tls://` etc. | Supported | **Compatible** | Maps to TLS wrapper via `eggress-transport-tls` |
+| Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported |
+| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | No authentication; vulnerable to bit-flipping |
+| ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Non-standard extension; no RFC |
+| QUIC transport | Not in pproxy | Rejected | **Intentional non-parity** | Out of scope |
+| HTTP/3 | Not in pproxy | Rejected | **Intentional non-parity** | Out of scope |
+| WebSocket tunnels | Not in pproxy | Rejected | **Intentional non-parity** | Transport wrapper; not a proxy protocol |
+
+### CLI/Config Features
+
+| Feature | pproxy support | Eggress status | Decision | Rationale |
+|---------|---------------|----------------|----------|-----------|
+| `-l` listen flag | Supported | Supported | **Compatible** | Same syntax |
+| `-r` remote flag | Supported | Supported | **Compatible** | Same syntax |
+| `-ul` UDP listen | Supported | Rejected | **Intentional non-parity** | Uses SOCKS5 UDP ASSOCIATE instead |
+| `-ur` UDP remote | Supported | Rejected | **Intentional non-parity** | Uses SOCKS5 upstream instead |
+| `--daemon` | Supported | Rejected | **Intentional non-parity** | Use systemd or process manager |
+| `--ssl` TLS listener | Supported | Rejected | **Intentional non-parity** | Configure TLS in eggress TOML |
+| `-b` block rules | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
+| `--reuse` | Supported | Rejected | **Intentional non-parity** | Connection pooling not implemented |
+| `--log` | Supported | Rejected | **Intentional non-parity** | Use tracing-subscriber |
+| `--sys` | Supported | Rejected | **Intentional non-parity** | System proxy config not supported |
+| `--rulefile` | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
+| Multi-hop UDP chains | Supported | Rejected | **Intentional non-parity** | One-hop only |
+| Persistent HTTP forwarding | Supported | Partial | **Partial** | Single-exchange forward only |
+| Python library | `pproxy.Server()` API | Rejected | **Intentional non-parity** | Not in scope; standalone binary |
+
+### Diagnostics for Unsupported Features
+
+When an unsupported protocol or feature is encountered in pproxy compat mode, eggress produces structured diagnostics:
+
+| Input | Diagnostic type | Error message |
+|-------|----------------|---------------|
+| `ssh://...` as upstream | `UnsupportedFeature` | "SSH transport is not supported" |
+| `unix://...` as upstream | `UnsupportedFeature` | "Unix domain sockets are not supported" |
+| `redir://...` as upstream | `UnsupportedFeature` | "Transparent/redir proxy is not supported" |
+| `ss://...` as listener | `UnsupportedFeature` | "Shadowsocks listener: not supported as local protocol" |
+| `trojan://...` as listener | `UnsupportedFeature` | "Trojan listener: Trojan is upstream-only, not a local listener" |
+| Legacy stream cipher URI | `UnsupportedFeature` | "Legacy stream ciphers are not supported; use AEAD methods" |
+| `--daemon` flag | `UnsupportedFeature` | "--daemon mode is not supported; use systemd or process manager" |
+| `-ul`/`-ur` flags | `UnsupportedFeature` | "-ul/-ur UDP relay uses SOCKS5 UDP ASSOCIATE instead" |
+| Unknown URI scheme | `CompatError` | "unsupported protocol: {scheme}" |
+
+All diagnostic messages redact credentials.
+
 ### URI Compatibility
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |

@@ -38,12 +38,15 @@ Eggress support status:
 | Protocol | Eggress | Notes |
 |----------|---------|-------|
 | HTTP CONNECT | supported | `eggress-protocol-http` |
-| SOCKS4/SOCKS4a | supported | `eggress-protocol-socks` |
+| HTTPS (HTTP+TLS) | supported | `eggress-protocol-http` + `eggress-transport-tls` |
+| SOCKS4 | supported | `eggress-protocol-socks` |
+| SOCKS4a | supported | `eggress-protocol-socks` (alias for SOCKS4) |
 | SOCKS5 | supported | `eggress-protocol-socks` |
-| Shadowsocks | supported | `eggress-protocol-shadowsocks` |
-| Trojan | supported | `eggress-protocol-trojan` |
+| Shadowsocks | **rejected** | No inbound listener; upstream-only |
+| Trojan | **rejected** | No inbound listener; upstream-only |
 | Redir | **rejected** | Requires root, kernel hooks (`SO_ORIGINAL_DST`) |
 | Unix socket | **rejected** | Not in scope |
+| SSH | **rejected** | Not in scope |
 
 ## 3. Remote/Upstream Protocols
 
@@ -65,9 +68,10 @@ Eggress support status:
 | Protocol | Eggress | Notes |
 |----------|---------|-------|
 | HTTP CONNECT | supported | `eggress-protocol-http` client |
+| HTTPS (HTTP+TLS) | supported | `eggress-protocol-http` client + TLS wrapper |
 | SOCKS4/SOCKS4a | supported | `eggress-protocol-socks` client |
 | SOCKS5 | supported | `eggress-protocol-socks` client |
-| Shadowsocks | supported | `eggress-protocol-shadowsocks` client |
+| Shadowsocks | supported | `eggress-protocol-shadowsocks` client (AEAD methods only) |
 | Trojan | supported | `eggress-protocol-trojan` client |
 | SSH | **rejected** | Not in scope (SSH transport is out-of-scope for a proxy) |
 | Direct | supported | `DirectConnector` |
@@ -79,15 +83,15 @@ pproxy URIs follow the pattern: `scheme://[user:pass@]host:port`
 | Scheme | Example | Notes |
 |--------|---------|-------|
 | `http://` | `http://proxy:8080` | HTTP forward proxy |
-| `https://` | `https://proxy:8443` | HTTP over TLS |
+| `https://` | `https://proxy:8443` | HTTP over TLS (maps to `http+tls`) |
 | `socks4://` | `socks4://proxy:1080` | SOCKS4, host must be IPv4 |
-| `socks4a://` | `socks4a://proxy:1080` | SOCKS4a, supports domain targets |
+| `socks4a://` | `socks4a://proxy:1080` | SOCKS4a, supports domain targets (alias for socks4) |
 | `socks5://` | `socks5://proxy:1080` | SOCKS5 |
 | `ss://` | `ss://aes-256-gcm:pass@:8388` | Shadowsocks, cipher:password in userinfo |
 | `trojan://` | `trojan://pass@server:443` | Trojan, password is the auth token |
 | `direct://` | `direct://` | Direct connection, no proxy |
-| `ssh://` | `ssh://user@host:22` | SSH tunnel |
-| `unix://` | `unix:///path/to/socket` | Unix domain socket |
+| `ssh://` | `ssh://user@host:22` | SSH tunnel (not supported) |
+| `unix://` | `unix:///path/to/socket` | Unix domain socket (not supported) |
 
 **Shadowsocks URI format**: `ss://method:password@host:port`
 - The `method` and `password` are concatenated with `:` in the userinfo section.
@@ -401,6 +405,20 @@ policy, architecture, or scope.
 | Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
 | Insecure TLS defaults | `--insecure` flag | Eggress requires TLS verification by default. Insecure mode is API-only, not configurable via TOML. |
+
+## 14.5 Remaining Protocol Audit
+
+Phase 11 classified every remaining pproxy protocol/scheme. The complete audit is in `docs/PARITY_MATRIX.md` under "Remaining Protocol Audit".
+
+### Summary
+
+- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, Shadowsocks upstream (AEAD), Trojan upstream, direct upstream
+- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, Python library, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Partial**: Persistent HTTP forwarding (single-exchange only), Shadowsocks inbound listener, Trojan inbound listener
+
+### Diagnostic behavior
+
+When an unsupported protocol or feature is encountered in pproxy compat mode, eggress produces structured `UnsupportedFeature` or `CompatError` diagnostics. See `PARITY_MATRIX.md` for the complete diagnostic table.
 
 ## 15. Open Items and Probes
 

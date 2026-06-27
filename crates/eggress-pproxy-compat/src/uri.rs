@@ -88,7 +88,8 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
 
     // Validate known schemes
     match scheme.as_str() {
-        "http" | "socks4" | "socks5" | "trojan" | "ss" | "shadowsocks" => {}
+        "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss" | "shadowsocks"
+        | "direct" | "ssh" | "unix" | "redir" => {}
         other => {
             return Err(CompatError::UnsupportedProtocol(other.to_string()));
         }
@@ -256,9 +257,9 @@ mod tests {
 
     #[test]
     fn test_unsupported_scheme() {
-        let err = parse_pproxy_uri("ssh://host:22").unwrap_err();
+        let err = parse_pproxy_uri("ftp://host:22").unwrap_err();
         match err {
-            CompatError::UnsupportedProtocol(p) => assert_eq!(p, "ssh"),
+            CompatError::UnsupportedProtocol(p) => assert_eq!(p, "ftp"),
             _ => panic!("expected UnsupportedProtocol"),
         }
     }

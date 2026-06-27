@@ -16,7 +16,7 @@ fn test_translate_produces_valid_toml_for_all_supported_local_protocols() {
 
 #[test]
 fn test_translate_all_supported_upstream_protocols() {
-    for scheme in &["http", "socks4", "socks5", "trojan"] {
+    for scheme in &["http", "socks4", "socks5", "trojan", "ss"] {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -93,4 +93,89 @@ fn test_direct_mode_warning() {
     let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into()]).unwrap();
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output.warnings.iter().any(|w| w.category == "direct-mode"));
+}
+
+#[test]
+fn test_socks4a_upstream_translates() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "socks4a://proxy:1080".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let upstreams = parsed["upstreams"].as_array().unwrap();
+    assert_eq!(upstreams.len(), 1);
+    assert!(upstreams[0]["uri"].as_str().unwrap().contains("socks4://"));
+}
+
+#[test]
+fn test_https_upstream_translates_to_http_tls() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "https://proxy:443".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let upstreams = parsed["upstreams"].as_array().unwrap();
+    assert_eq!(upstreams.len(), 1);
+    let uri = upstreams[0]["uri"].as_str().unwrap();
+    assert!(uri.starts_with("http://"));
+    assert!(uri.contains("+tls"));
+}
+
+#[test]
+fn test_ssh_upstream_unsupported() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "ssh://proxy:22".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "ssh-upstream"));
+}
+
+#[test]
+fn test_unix_upstream_unsupported() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "unix://host:1080".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "unix-upstream"));
+}
+
+#[test]
+fn test_redir_upstream_unsupported() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "redir://proxy:8080".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "redir-upstream"));
 }

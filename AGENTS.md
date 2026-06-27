@@ -165,6 +165,7 @@ Property tests live in per-crate `tests/` directories (codec round-trips, parser
 round-trips, route match consistency). Fuzz smoke tests exercise seed inputs for
 `cargo fuzz` targets. Load tests are `#[ignore]` by default and require explicit opt-in.
 Differential tests against `pproxy` are gated and live in `crates/eggress-cli/tests/`.
+pproxy compat tests live in `crates/eggress-pproxy-compat/src/tests.rs` and cover protocol aliases, unsupported scheme diagnostics, and credential redaction.
 See `docs/TESTING.md` for comprehensive testing guidance.
 
 ## Code Conventions
@@ -215,6 +216,7 @@ See `docs/TESTING.md` for comprehensive testing guidance.
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
+- **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH, Unix, redir) produce structured diagnostics
 
 ## Skills
 
