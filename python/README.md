@@ -6,8 +6,14 @@ Python bindings for the [eggress](https://github.com/eggstack/eggress) proxy fra
 
 ```bash
 pip install maturin
-maturin develop
+cd crates/eggress-python
+maturin build --target x86_64-apple-darwin   # adjust target for your platform
+pip install --force-reinstall target/wheels/eggress-*.whl
 ```
+
+> **Note:** `maturin develop` installs the native extension to the wrong module
+> path (`_eggress/_eggress.so` instead of `eggress/_eggress.so`). Use
+> `maturin build` + `pip install` instead.
 
 ## Quick start
 

@@ -1,5 +1,20 @@
 import pytest
+import eggress
 from eggress import EggressConfig, ConfigError
+
+
+def test_import():
+    """Verify package imports cleanly and exposes expected public API."""
+    assert hasattr(eggress, "EggressConfig")
+    assert hasattr(eggress, "EggressService")
+    assert hasattr(eggress, "EggressHandle")
+    assert hasattr(eggress, "EggressError")
+    assert hasattr(eggress, "ConfigError")
+    assert hasattr(eggress, "StartupError")
+    assert hasattr(eggress, "ReloadError")
+    assert hasattr(eggress, "ShutdownError")
+    assert hasattr(eggress, "UnsupportedFeatureError")
+    assert hasattr(eggress, "InternalError")
 
 VALID_TOML = """
 version = 1

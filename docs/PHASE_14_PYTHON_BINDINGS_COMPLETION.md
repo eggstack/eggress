@@ -46,15 +46,16 @@ Pythonic API layer.
 
 ## Tests
 
-14 Python tests across 5 test files, all passing:
+20 Python tests across 6 test files, all passing:
 
 | File | Tests | Coverage |
 |---|---|---|
-| `test_config.py` | 4 | `from_toml`, `redacted_toml`, invalid TOML, invalid version |
+| `test_config.py` | 5 | `from_toml`, `redacted_toml`, invalid TOML, invalid version, import smoke test |
 | `test_service.py` | 3 | `from_toml`, start/stop lifecycle, context manager shutdown |
-| `test_errors.py` | 3 | `ConfigError` raised, `EggressError` base catch, idempotent shutdown |
+| `test_errors.py` | 5 | `ConfigError` raised, `EggressError` base catch, idempotent shutdown, credential redaction, error message no-leak |
 | `test_metrics.py` | 2 | Prometheus text output, status dict fields |
 | `test_reload.py` | 2 | Applied reload returns generation, bad reload preserves service |
+| `test_threading.py` | 3 | GIL released during start, concurrent handle operations, shutdown returns promptly |
 
 ## Limitations
 
