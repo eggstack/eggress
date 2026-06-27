@@ -47,6 +47,9 @@ release documentation.
 ### Workstream 8: Supply-Chain and Artifact Audit
 - Created `docs/WHEEL_AUDIT.md` with audit checklist and commands
 - `cargo deny check` passes (advisories ok, bans ok, licenses ok, sources ok)
+- `cargo audit` passes (1 allowed warning: `rustls-pemfile` unmaintained RUSTSEC-2025-0134)
+- `check-wheel-contents dist/*.whl` passes (OK)
+- Wheel contains expected files only; no secrets, no `.env`, no unexpected libraries
 
 ### Workstream 9: Documentation Updates
 - Updated `README.md`: PyPI capability, packaging items, documentation links
@@ -64,6 +67,8 @@ release documentation.
 | `cargo test --workspace` | PASS |
 | `cargo clippy --workspace --all-targets -- -D warnings` | PASS |
 | `cargo deny check` | PASS |
+| `cargo audit` | PASS (1 allowed warning: rustls-pemfile unmaintained) |
+| `check-wheel-contents dist/*.whl` | PASS |
 | `python -m pytest python/tests` | PASS (20/20) |
 | Wheel build (`maturin build --release`) | PASS |
 | Wheel install in clean venv | PASS |
@@ -88,6 +93,7 @@ dist/eggress-0.1.0-cp314-cp314-macosx_10_12_x86_64.whl
 - Local verification is the source of truth
 - Wheel built for macOS x86_64 only (local platform); CI would build all targets
 - TestPyPI/production PyPI upload not executed (requires credentials)
+- Cross-platform validation (Linux, Windows, macOS arm64) requires CI or other machines
 - maturin `python-source` requires explicit `include` patterns for cross-directory builds
 
 ## Blockers for Phase 16

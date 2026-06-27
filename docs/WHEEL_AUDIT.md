@@ -90,22 +90,41 @@ python -m zipfile -l dist/*.whl | grep py.typed
 python -m zipfile -l dist/*.whl | grep -i license
 ```
 
+## Audit Results (v0.1.0)
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| `cargo deny check` | ✅ PASS | advisories ok, bans ok, licenses ok, sources ok |
+| `cargo audit` | ✅ PASS | 1 allowed warning: `rustls-pemfile` unmaintained (RUSTSEC-2025-0134) |
+| Wheel contains `eggress/_eggress.*.so` | ✅ | `eggress/_eggress.cpython-314-darwin.so` (8.5 MB) |
+| Wheel contains `eggress/__init__.py` | ✅ | 522 bytes |
+| Wheel contains `eggress/py.typed` | ✅ | 0 bytes (marker file) |
+| Wheel contains `eggress/config.py` and `eggress/service.py` | ✅ | 950 and 2267 bytes |
+| Wheel does NOT contain `.env` files | ✅ | None found |
+| Wheel does NOT contain private keys | ✅ | None found |
+| Wheel does NOT contain test-only config | ✅ | None found |
+| Wheel does NOT contain unexpected shared libraries | ✅ | Only native extension present |
+| Native extension loads without errors | ✅ | `import eggress._eggress` succeeds |
+| `check-wheel-contents` reports no issues | ✅ | `OK` |
+| License file included | ✅ | MIT AND Apache-2.0 |
+| README included | ✅ | Via maturin metadata |
+
 ## Audit Checklist
 
-- [ ] `cargo deny check` passes
-- [ ] `cargo audit` passes (or known advisories documented)
-- [ ] Wheel contains `eggress/_eggress.*.so` (or platform equivalent)
-- [ ] Wheel contains `eggress/__init__.py`
-- [ ] Wheel contains `eggress/py.typed`
-- [ ] Wheel contains `eggress/config.py` and `eggress/service.py`
-- [ ] Wheel does NOT contain `.env` files
-- [ ] Wheel does NOT contain private keys (`.pem`, `.key`)
-- [ ] Wheel does NOT contain test-only configuration files
-- [ ] Wheel does NOT contain unexpected shared libraries
-- [ ] Native extension loads without errors
-- [ ] `check-wheel-contents` reports no issues
-- [ ] License file is included
-- [ ] README is included
+- [x] `cargo deny check` passes
+- [x] `cargo audit` passes (or known advisories documented)
+- [x] Wheel contains `eggress/_eggress.*.so` (or platform equivalent)
+- [x] Wheel contains `eggress/__init__.py`
+- [x] Wheel contains `eggress/py.typed`
+- [x] Wheel contains `eggress/config.py` and `eggress/service.py`
+- [x] Wheel does NOT contain `.env` files
+- [x] Wheel does NOT contain private keys (`.pem`, `.key`)
+- [x] Wheel does NOT contain test-only configuration files
+- [x] Wheel does NOT contain unexpected shared libraries
+- [x] Native extension loads without errors
+- [x] `check-wheel-contents` reports no issues
+- [x] License file is included
+- [x] README is included
 
 ## Known Acceptable Dependencies
 
@@ -114,3 +133,9 @@ The following are expected dynamic dependencies for the native extension:
 - Standard C runtime
 
 No OpenSSL, no libssl, no libcrypto, no native-tls.
+
+## Known Acceptable Advisories
+
+- `rustls-pemfile` 2.2.0 (RUSTSEC-2025-0134): unmaintained. This is a dev/read-only dependency
+  used only for certificate parsing in tests. Not a runtime dependency of the built wheel.
+  Acceptable until an actively maintained alternative is adopted upstream.
