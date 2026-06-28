@@ -13,8 +13,9 @@ This document covers building, testing, and publishing the `eggress` Python pack
 ## Version Policy
 
 - Python package version is aligned with the Rust workspace version
-- Current version: see `python/pyproject.toml`
+- Current version: see `crates/eggress-python/pyproject.toml` (authoritative)
 - Release tags use the format `vX.Y.Z`
+- `python/pyproject.toml` is a local-dev convenience only; builds for PyPI use `crates/eggress-python/pyproject.toml`
 
 ## Local Build and Test
 
@@ -60,6 +61,10 @@ Check that:
 ## TestPyPI Release
 
 TestPyPI is recommended for validating the upload/install pipeline before production.
+
+**Status: Not yet published.** The package name `eggress` must be reserved on
+TestPyPI before the first pre-release upload. This is a pre-release RC task,
+not a GA requirement.
 
 ```bash
 # Build

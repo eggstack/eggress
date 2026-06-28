@@ -37,11 +37,19 @@ All changes in this phase are documentation corrections and audit artifacts. No 
 
 ## Go / No-Go Status
 
-**GO.** Release candidate is ready for pre-release tagging.
+**GO for pre-release RC.** Release candidate is ready for pre-release tagging (not GA).
 
-## Release Blockers
+## Pre-release RC Blockers
 
 None identified.
+
+## GA Blockers (remain)
+
+- Hosted CI must run successfully or have a documented release fallback
+- TestPyPI install must be verified
+- At least core pproxy differential tests should run or be explicitly scoped out
+- Formal wheel install tests on supported platforms
+- Security residuals triaged for GA
 
 ## Unrun Gated Checks
 

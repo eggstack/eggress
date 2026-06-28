@@ -1,4 +1,7 @@
-__version__ = "0.1.0"
+try:
+    from eggress._eggress import __version__ as __version__
+except ImportError:
+    __version__ = "0.1.0"
 
 from typing import Sequence
 

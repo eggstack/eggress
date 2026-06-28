@@ -294,6 +294,30 @@ impl EggressService {
 ///
 /// Provides access to bound addresses, status, metrics, reload, and shutdown.
 /// Dropping the handle cancels the shutdown token, initiating graceful shutdown.
+///
+/// # Thread ownership
+///
+/// The handle owns exactly one of two mutually exclusive thread models:
+///
+/// **Async path** (`start()`):
+/// - A Tokio blocking-pool thread runs the startup sequence and then blocks on
+///   `run_result.join()` for the lifetime of the service.
+/// - A dedicated OS thread (`"eggress-embed-rt"`) owns `ServiceSupervisor::run()`.
+/// - `_runtime_task` wraps the blocking task's JoinHandle as a Tokio task.
+///
+/// **Blocking path** (`start_blocking()`):
+/// - An outer OS thread (`"eggress-embed-rt"`) handles startup, sends results
+///   through a channel, and terminates.
+/// - An inner OS thread (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
+/// - `_run_handle` holds the inner thread's JoinHandle directly.
+///
+/// # Drop behavior
+///
+/// Dropping the handle cancels the shutdown token and performs a best-effort
+/// join: the blocking path joins the run thread directly; the async path
+/// creates a throwaway Tokio runtime and awaits the task with a 5-second
+/// timeout. Explicit `shutdown()` or `shutdown_blocking()` is preferred to
+/// guarantee orderly teardown.
 pub struct EggressHandle {
     state: Option<Arc<eggress_runtime::RuntimeState>>,
     token: Option<tokio_util::sync::CancellationToken>,
@@ -501,6 +525,13 @@ impl EggressHandle {
 }
 
 impl Drop for EggressHandle {
+    /// Cancel the shutdown token and best-effort join the supervisor.
+    ///
+    /// This is a fallback for callers who do not call `shutdown()` explicitly.
+    /// The async path creates a throwaway Tokio runtime to await the task with
+    /// a 5-second timeout; if the timeout expires, the task is abandoned.
+    /// Prefer explicit `shutdown()` or `shutdown_blocking()` for guaranteed
+    /// orderly teardown.
     fn drop(&mut self) {
         if let Some(token) = self.token.take() {
             token.cancel();

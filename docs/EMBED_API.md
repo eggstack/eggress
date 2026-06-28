@@ -189,10 +189,32 @@ assert_eq!(status.listeners.len(), 1);
 
 ## Lifecycle and shutdown
 
-- **Dropping `EggressHandle`** cancels the shutdown token and waits for
-  graceful shutdown (with a 5-second timeout on the async task).
+### Thread ownership model
+
+The handle owns exactly one of two mutually exclusive thread models:
+
+**Async path** (`start()`):
+- A Tokio blocking-pool thread runs the startup sequence and then blocks on
+  `run_result.join()` for the lifetime of the service.
+- A dedicated OS thread (`"eggress-embed-rt"`) owns `ServiceSupervisor::run()`.
+- `_runtime_task` wraps the blocking task's JoinHandle as a Tokio task.
+
+**Blocking path** (`start_blocking()`):
+- An outer OS thread (`"eggress-embed-rt"`) handles startup, sends results
+  through a channel, and terminates.
+- An inner OS thread (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
+- `_run_handle` holds the inner thread's JoinHandle directly.
+
+No extra orchestration thread remains after startup in either path.
+
+### Shutdown behavior
+
 - **`shutdown()`** (async) and **`shutdown_blocking()`** perform orderly
-  shutdown: readiness=false, stop listeners, drain connections, stop admin.
+  shutdown: cancel token → join supervisor → clean temp config. These are
+  idempotent (second call is a no-op).
+- **Dropping `EggressHandle`** cancels the shutdown token and performs a
+  best-effort join with a 5-second timeout on the async path. Explicit
+  `shutdown()` or `shutdown_blocking()` is preferred for guaranteed teardown.
 - The service is deterministic: no background threads leak after shutdown.
 
 ## Error model

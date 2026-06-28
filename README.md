@@ -473,6 +473,7 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Python bindings](docs/PYTHON_BINDINGS.md)
 - [Phase 16 Python pproxy library parity](docs/PHASE_16_PYTHON_PPROXY_LIBRARY_PARITY_COMPLETION.md)
 - [Phase 17 true pproxy parity release candidate](docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md)
+- [Phase 17 RC polish](docs/PHASE_17_RC_POLISH_COMPLETION.md)
 - [True pproxy parity release candidate](docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md)
 - [PyPI release procedure](docs/PYPI_RELEASE.md)
 - [Wheel artifact audit](docs/WHEEL_AUDIT.md)

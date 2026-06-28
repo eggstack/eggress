@@ -224,6 +224,50 @@ All Rust calls that perform blocking I/O or CPU work release the GIL via
 - Service startup (`start()`) blocks the calling thread while the Rust runtime
   initializes, but does not hold the GIL.
 
+## Lifecycle management
+
+**Always use explicit lifecycle management.** Do not rely on Python garbage
+collection or `__del__` to shut down the service. Object destruction is a
+best-effort fallback, not the lifecycle API.
+
+### Context manager (recommended)
+
+```python
+with EggressService.from_toml(toml).start() as handle:
+    print("Listening on", handle.bound_addresses)
+    # ... use the proxy ...
+# service is shut down automatically on exit
+```
+
+### Explicit start/stop
+
+```python
+handle = EggressService.from_toml(toml).start()
+try:
+    print(handle.status())
+finally:
+    handle.shutdown()
+```
+
+### Async context manager
+
+```python
+async with await EggressService.from_toml(TOML).astart() as handle:
+    print("Listening on", await handle.bound_addresses)
+# service is shut down automatically on exit
+```
+
+### Why explicit lifecycle?
+
+- `shutdown()` is idempotent: calling it twice is safe.
+- `__exit__` calls `shutdown()` and returns `False` (exceptions propagate).
+- `__aexit__` awaits `shutdown()` and returns `False`.
+- Rust `Drop` cancels the shutdown token and attempts a best-effort join with
+  a 5-second timeout. If the process exits before the timeout, cleanup may be
+  incomplete. Relying on `Drop` for lifecycle management is unreliable.
+- After `shutdown()` or `__exit__`, subsequent calls to `status()`,
+  `bound_addresses()`, etc. raise a clear error ("handle consumed").
+
 ## Metrics and status
 
 ```python
@@ -312,6 +356,9 @@ with start_pproxy(["-l", "socks5://:1080"]) as handle:
 - **pproxy compat**: Shadowsocks TCP is experimental/non-standard. No inbound
   Shadowsocks or Trojan listeners. No legacy stream ciphers. No SSH/unix/redir
   transport. No pproxy daemon mode. Multiple remotes default to round-robin.
+- **mypy**: PyO3 native types (`_inner` attribute) are invisible to mypy,
+  producing ~20 expected false-positive errors. This is known pre-release
+  typing debt. A future release will add `.pyi` stubs or type wrappers.
 
 ## Relationship to pproxy compatibility
 

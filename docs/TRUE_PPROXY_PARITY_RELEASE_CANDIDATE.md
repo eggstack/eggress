@@ -71,7 +71,7 @@ Release claim:
 
 ## 5. pproxy-Compatible Features
 
-These features match pproxy behavior and are verified by differential or runtime tests:
+These features match pproxy behavior. Evidence labels indicate verification method:
 
 | Feature | Evidence |
 |---------|----------|
@@ -254,11 +254,22 @@ Criterion benchmarks run on macOS (Apple Silicon). No pproxy comparison availabl
 
 ## 17. Release Blockers
 
-**None identified.** All verification commands pass. No high-severity security findings. Documentation is internally consistent after Phase 17 corrections.
+**Pre-release RC blockers: None identified.**
+
+All verification commands pass. No high-severity security findings. Documentation is internally consistent after Phase 17 corrections.
+
+**GA blockers remain and are listed below:**
+
+- Hosted CI must run successfully or have a documented release fallback
+- TestPyPI install must be verified
+- At least core pproxy differential tests should run or be explicitly scoped out
+- Shadowsocks UDP interop should hard-fail on failure if claimed standard-compatible
+- Formal wheel install tests on supported platforms
+- Security residuals (mTLS, protocol detection timeout, global connection limit) triaged for GA
 
 ## 18. Go / No-Go Recommendation
 
-**GO.** The release candidate is ready for pre-release tagging. Recommendations:
+**GO for pre-release RC.** The release candidate is ready for pre-release tagging (not GA). Recommendations:
 
 1. Tag as `v0.1.0-rc.1` or similar pre-release identifier
 2. Run gated differential tests when pproxy environment is available

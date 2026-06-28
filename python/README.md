@@ -54,8 +54,13 @@ asyncio.run(main())
 - `handle.status()` — generation, readiness, uptime, connections
 - `handle.metrics_text()` — Prometheus metrics
 - `handle.reload_toml(toml)` — hot-reload config
-- `handle.shutdown()` — graceful shutdown
+- `handle.shutdown()` — graceful shutdown (idempotent; safe to call twice)
 - Context manager support: `with service.start() as handle: ...`
+
+**Always use explicit lifecycle management.** Prefer context managers or
+explicit `handle.shutdown()` in a `finally` block. Do not rely on Python
+garbage collection to shut down the service — object destruction is a
+best-effort fallback, not the lifecycle API.
 
 ## Migrating from pproxy
 
