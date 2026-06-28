@@ -551,6 +551,11 @@ fn validate_match_expr(
                         &format!("{}.destination_port_range", path),
                         "must have exactly 2 elements [start, end]",
                     ));
+                } else if range[0] > range[1] {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.destination_port_range", path),
+                        &format!("start ({}) must be <= end ({})", range[0], range[1]),
+                    ));
                 }
             }
             if let Some(ref ports) = leaf.destination_port_set {
@@ -594,9 +599,18 @@ fn parse_duration(s: &str) -> Result<std::time::Duration, String> {
         "us" | "μs" => Ok(std::time::Duration::from_micros(value)),
         "ms" => Ok(std::time::Duration::from_millis(value)),
         "s" => Ok(std::time::Duration::from_secs(value)),
-        "m" => Ok(std::time::Duration::from_secs(value * 60)),
-        "h" => Ok(std::time::Duration::from_secs(value * 3600)),
-        "d" => Ok(std::time::Duration::from_secs(value * 86400)),
+        "m" => value
+            .checked_mul(60)
+            .map(std::time::Duration::from_secs)
+            .ok_or_else(|| format!("duration overflow: {}m", value)),
+        "h" => value
+            .checked_mul(3600)
+            .map(std::time::Duration::from_secs)
+            .ok_or_else(|| format!("duration overflow: {}h", value)),
+        "d" => value
+            .checked_mul(86400)
+            .map(std::time::Duration::from_secs)
+            .ok_or_else(|| format!("duration overflow: {}d", value)),
         _ => Err(format!("unknown duration unit: {}", unit)),
     }
 }

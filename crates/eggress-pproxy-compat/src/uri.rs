@@ -30,6 +30,9 @@ impl PproxyUri {
         let tls_suffix = if self.tls { "+tls" } else { "" };
         let host_display = if self.host.is_empty() {
             String::new()
+        } else if self.host.contains(':') {
+            // IPv6 — wrap in brackets per RFC 3986
+            format!("[{}]", self.host)
         } else {
             self.host.clone()
         };

@@ -80,7 +80,7 @@ impl HealthCell {
 
     pub fn observe_success(&self, latency: Duration, config: &HealthConfig) {
         let mut snap = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        snap.consecutive_successes += 1;
+        snap.consecutive_successes = snap.consecutive_successes.saturating_add(1);
         snap.consecutive_failures = 0;
         snap.last_checked_at = Some(SystemTime::now());
         snap.last_success_at = Some(SystemTime::now());
@@ -111,7 +111,7 @@ impl HealthCell {
 
     pub fn observe_failure(&self, error: Option<String>, config: &HealthConfig) {
         let mut snap = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        snap.consecutive_failures += 1;
+        snap.consecutive_failures = snap.consecutive_failures.saturating_add(1);
         snap.consecutive_successes = 0;
         snap.last_checked_at = Some(SystemTime::now());
         snap.last_failure_at = Some(SystemTime::now());
@@ -234,13 +234,12 @@ impl HealthManager {
 
                     let base = config.interval;
                     let jitter_pct = 0.2;
-                    let jitter_ms = (base.as_millis() as f64
-                        * jitter_pct
-                        * (fastrand::f64() * 2.0 - 1.0)) as u64;
-                    let delay = if jitter_ms < base.as_millis() as u64 {
-                        base + Duration::from_millis(jitter_ms)
+                    let jitter_signed =
+                        (base.as_millis() as f64 * jitter_pct) * (fastrand::f64() * 2.0 - 1.0);
+                    let delay = if jitter_signed >= 0.0 {
+                        base + Duration::from_millis(jitter_signed as u64)
                     } else {
-                        base
+                        base.saturating_sub(Duration::from_millis((-jitter_signed) as u64))
                     };
 
                     if let Ok(()) = tokio::time::timeout(delay, cancel.cancelled()).await {

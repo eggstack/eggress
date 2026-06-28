@@ -392,7 +392,12 @@ async fn handle_client_datagram(
 
             let recv_task = tokio::spawn(async move {
                 let mut recv_buf = [0u8; 65535];
-                while let Ok(n) = flow_socket.recv(&mut recv_buf).await {
+                while let Ok(Ok(n)) = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    flow_socket.recv(&mut recv_buf),
+                )
+                .await
+                {
                     let payload = recv_buf[..n].to_vec();
                     let _ = flow_response_tx.send(ResponseMsg {
                         target: target_addr_clone.clone(),
@@ -555,6 +560,19 @@ fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
         }
         (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
             a_addr == b_addr && a_port == b_port
+        }
+        (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
+            // Check for IPv4-mapped IPv6: ::ffff:x.x.x.x
+            matches!(
+                std::net::IpAddr::from(*b_addr),
+                std::net::IpAddr::V4(v4) if v4.octets() == *a_addr && a_port == b_port
+            )
+        }
+        (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
+            matches!(
+                std::net::IpAddr::from(*a_addr),
+                std::net::IpAddr::V4(v4) if v4.octets() == *b_addr && a_port == b_port
+            )
         }
         (SocksAddr::Domain(a_dom, a_port), SocksAddr::Domain(b_dom, b_port)) => {
             a_dom == b_dom && a_port == b_port

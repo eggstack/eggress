@@ -1,30 +1,6 @@
-use std::sync::atomic::AtomicU64;
-
 use tokio::io::{self, AsyncWriteExt};
 
 use crate::BoxStream;
-
-/// Statistics for a relay operation.
-#[derive(Debug)]
-pub struct RelayStats {
-    pub bytes_upstream: AtomicU64,
-    pub bytes_downstream: AtomicU64,
-}
-
-impl Default for RelayStats {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RelayStats {
-    pub fn new() -> Self {
-        Self {
-            bytes_upstream: AtomicU64::new(0),
-            bytes_downstream: AtomicU64::new(0),
-        }
-    }
-}
 
 /// Reason the relay terminated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,7 +59,7 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
         (true, true) => TerminationReason::BothClosed,
         (true, false) => TerminationReason::ServerClosed,
         (false, true) => TerminationReason::ClientClosed,
-        (false, false) => TerminationReason::ClientClosed,
+        (false, false) => TerminationReason::BothClosed,
     };
 
     RelayResult {

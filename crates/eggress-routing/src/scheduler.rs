@@ -35,6 +35,9 @@ impl RandomIndex for DeterministicRandom {
     fn index(&self, upper: usize) -> usize {
         let idx = self.counter.fetch_add(1, Ordering::Relaxed);
         let values = self.values.lock().unwrap_or_else(|e| e.into_inner());
+        if values.is_empty() {
+            return 0;
+        }
         values[idx % values.len()] % upper
     }
 }

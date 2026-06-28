@@ -90,6 +90,60 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
 /// - UDP bind changes are restart-required.
 /// - UDP advertise address changes are restart-required if socket bind changes.
 /// - Route changes apply immediately to future UDP packets.
+///
+/// Classify whether a reload is supported given old and new listener
+/// configs. Returns `Ok(())` if the reload is safe, or `Err(reason)`
+/// if it should be rejected.
+fn classify_listeners(
+    old_listeners: &[eggress_config::compile::ListenerConfig],
+    new_listeners: &[eggress_config::compile::ListenerConfig],
+) -> Result<(), String> {
+    if old_listeners.len() != new_listeners.len() {
+        return Err(format!(
+            "listener count changed ({} -> {}); restart required",
+            old_listeners.len(),
+            new_listeners.len()
+        ));
+    }
+
+    for (old, new) in old_listeners.iter().zip(new_listeners.iter()) {
+        if old.name != new.name {
+            return Err(format!(
+                "listener name changed ('{}' -> '{}'); restart required",
+                old.name, new.name
+            ));
+        }
+        if old.bind != new.bind {
+            return Err(format!(
+                "listener bind address changed for '{}': '{}' -> '{}'; restart required",
+                old.name, old.bind, new.bind
+            ));
+        }
+        match (&old.udp, &new.udp) {
+            (Some(old_udp), Some(new_udp)) => {
+                if old_udp.bind != new_udp.bind {
+                    return Err(format!(
+                        "UDP bind address changed for '{}': '{}' -> '{}'; restart required",
+                        old.name, old_udp.bind, new_udp.bind
+                    ));
+                }
+            }
+            (None, Some(new_udp)) => {
+                if !new_udp.bind.ip().is_unspecified() {
+                    return Err(format!(
+                        "UDP bind address added for '{}': '{}'; restart required",
+                        new.name, new_udp.bind
+                    ));
+                }
+            }
+            (Some(_old_udp), None) => {}
+            (None, None) => {}
+        }
+    }
+
+    Ok(())
+}
+
 struct PreparedListener {
     name: String,
     bind: String,
@@ -404,56 +458,7 @@ impl ServiceSupervisor {
         &self,
         new_config: &eggress_config::compile::RuntimeConfig,
     ) -> Result<(), String> {
-        let old_listeners = &self.rt_config.listeners;
-        let new_listeners = &new_config.listeners;
-
-        if old_listeners.len() != new_listeners.len() {
-            return Err(format!(
-                "listener count changed ({} -> {}); restart required",
-                old_listeners.len(),
-                new_listeners.len()
-            ));
-        }
-
-        for (old, new) in old_listeners.iter().zip(new_listeners.iter()) {
-            if old.name != new.name {
-                return Err(format!(
-                    "listener name changed ('{}' -> '{}'); restart required",
-                    old.name, new.name
-                ));
-            }
-            if old.bind != new.bind {
-                return Err(format!(
-                    "listener bind address changed for '{}': '{}' -> '{}'; restart required",
-                    old.name, old.bind, new.bind
-                ));
-            }
-            // UDP bind changes require restart
-            match (&old.udp, &new.udp) {
-                (Some(old_udp), Some(new_udp)) => {
-                    if old_udp.bind != new_udp.bind {
-                        return Err(format!(
-                            "UDP bind address changed for '{}': '{}' -> '{}'; restart required",
-                            old.name, old_udp.bind, new_udp.bind
-                        ));
-                    }
-                }
-                (None, Some(new_udp)) => {
-                    if !new_udp.bind.ip().is_unspecified() {
-                        return Err(format!(
-                            "UDP bind address added for '{}': '{}'; restart required",
-                            new.name, new_udp.bind
-                        ));
-                    }
-                }
-                (Some(_old_udp), None) => {
-                    // UDP removed - no restart required, new associations just won't use UDP
-                }
-                (None, None) => {}
-            }
-        }
-
-        Ok(())
+        classify_listeners(&self.rt_config.listeners, &new_config.listeners)
     }
 
     /// Attempt to reload configuration. Encapsulates the full reload transaction:
@@ -849,65 +854,9 @@ impl ServiceSupervisor {
                                 Ok(Ok(new_rt_config)) => {
                                     // Classify unsupported changes: reject if listener topology changed
                                     let old_listeners = &snapshot.load().listeners;
-                                    let new_listeners = &new_rt_config.listeners;
-                                    let mut rejected = false;
-                                    if old_listeners.len() != new_listeners.len() {
-                                        tracing::error!(
-                                            "reload rejected: listener count changed ({} -> {}); restart required",
-                                            old_listeners.len(),
-                                            new_listeners.len()
-                                        );
+                                    if let Err(reason) = classify_listeners(old_listeners, &new_rt_config.listeners) {
+                                        tracing::error!("reload rejected: {reason}");
                                         metrics.record_reload(false);
-                                        rejected = true;
-                                    } else {
-                                        for (old, new) in old_listeners.iter().zip(new_listeners.iter()) {
-                                            if old.name != new.name {
-                                                tracing::error!(
-                                                    "reload rejected: listener name changed ('{}' -> '{}'); restart required",
-                                                    old.name, new.name
-                                                );
-                                                metrics.record_reload(false);
-                                                rejected = true;
-                                                break;
-                                            }
-                                            if old.bind != new.bind {
-                                                tracing::error!(
-                                                    "reload rejected: listener bind changed for '{}': '{}' -> '{}'; restart required",
-                                                    old.name, old.bind, new.bind
-                                                );
-                                                metrics.record_reload(false);
-                                                rejected = true;
-                                                break;
-                                            }
-                                            // UDP bind changes require restart
-                                            match (&old.udp, &new.udp) {
-                                                (Some(old_udp), Some(new_udp)) => {
-                                                    if old_udp.bind != new_udp.bind {
-                                                        tracing::error!(
-                                                            "reload rejected: UDP bind changed for '{}': '{}' -> '{}'; restart required",
-                                                            old.name, old_udp.bind, new_udp.bind
-                                                        );
-                                                        metrics.record_reload(false);
-                                                        rejected = true;
-                                                        break;
-                                                    }
-                                                }
-                                                (None, Some(new_udp))
-                                                    if !new_udp.bind.ip().is_unspecified() =>
-                                                {
-                                                    tracing::error!(
-                                                        "reload rejected: UDP bind added for '{}': '{}'; restart required",
-                                                        new.name, new_udp.bind
-                                                    );
-                                                    metrics.record_reload(false);
-                                                    rejected = true;
-                                                    break;
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                    if rejected {
                                         continue;
                                     }
                                     match compile_runtime_snapshot(&new_rt_config, prev_ref) {

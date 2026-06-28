@@ -5,6 +5,7 @@ pub struct UdpMetrics {
     pub associations_active: AtomicU64,
     pub associations_total: AtomicU64,
     pub association_failures: AtomicU64,
+    pub association_timeouts: AtomicU64,
     pub packets_up: AtomicU64,
     pub packets_down: AtomicU64,
     pub bytes_up: AtomicU64,
@@ -69,7 +70,7 @@ impl UdpMetrics {
     }
 
     pub fn record_association_timeout(&self) {
-        self.association_failures.fetch_add(1, Ordering::Relaxed);
+        self.association_timeouts.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_target_flow_timeout(&self) {
@@ -216,7 +217,7 @@ mod tests {
         metrics.record_association_created();
         assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 1);
         metrics.record_association_timeout();
-        assert_eq!(metrics.association_failures.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.association_timeouts.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 1);
     }
 

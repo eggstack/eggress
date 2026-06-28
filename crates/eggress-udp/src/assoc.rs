@@ -22,13 +22,6 @@ pub struct UdpAssociationMeta {
     pub generation: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UdpAssociationState {
-    Open,
-    Closing,
-    Closed,
-}
-
 pub struct UdpAssociation {
     pub id: UdpAssociationId,
     pub meta: Arc<UdpAssociationMeta>,

@@ -219,13 +219,14 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
     let mut remaining = hop_str;
 
     // Parse local bind modifier (trailing `@<bind>`)
+    // We look for the LAST '@' after "://". If what follows is a bare
+    // host or host:port (no scheme), it is treated as a bind address.
+    // The earlier '@' (if any) is the credentials separator.
     let local_bind = if let Some(at_pos) = find_last_at_outside_scheme(remaining) {
-        // Make sure this isn't the credentials `@`
         let after_at = &remaining[at_pos + 1..];
-        // Check if there's a scheme:// before this
         let before_at = &remaining[..at_pos];
-        if before_at.contains("://") || after_at.contains(':') {
-            // This is likely credentials or part of endpoint
+        if before_at.contains("://") || after_at.contains('/') || after_at.contains('?') {
+            // Has scheme prefix, slash, or query after — not a bind
             None
         } else {
             let bind = after_at.to_string();
@@ -444,17 +445,28 @@ fn find_at_outside_brackets(s: &str) -> Option<usize> {
     None
 }
 
-/// Find last '@' that's outside brackets and not part of a scheme
+/// Find last '@' that's outside brackets and not part of a scheme.
+/// Returns the position of the last '@' after `://` that could be the
+/// bind separator. The caller must still check whether the part after
+/// the '@' looks like a bare address (no colon → bind) vs. a
+/// `user:pass` credential pair (contains colon).
 fn find_last_at_outside_scheme(s: &str) -> Option<usize> {
-    // If there's already a ://, don't treat @ after it as a bind
-    if let Some(scheme_end) = s.find("://") {
-        let after_scheme = &s[scheme_end + 3..];
-        // In the part after ://, find the first @ for credentials
-        if let Some(at_pos) = find_at_outside_brackets(after_scheme) {
-            return Some(scheme_end + 3 + at_pos);
+    let scheme_end = s.find("://")?;
+    let after_scheme = &s[scheme_end + 3..];
+    // Find the LAST '@' in the part after ://, outside brackets
+    let mut last_at: Option<usize> = None;
+    let mut bracket_depth = 0u32;
+    for (i, c) in after_scheme.char_indices() {
+        match c {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '@' if bracket_depth == 0 => {
+                last_at = Some(scheme_end + 3 + i);
+            }
+            _ => {}
         }
     }
-    None
+    last_at
 }
 
 fn add_hop_context(mut err: UriParseError, hop_index: usize) -> UriParseError {

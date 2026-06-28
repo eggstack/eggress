@@ -33,4 +33,7 @@ pub enum Socks4Error {
 
     #[error("domain name exceeds maximum length")]
     DomainTooLong,
+
+    #[error("unsupported address type for SOCKS4")]
+    UnsupportedAddressType,
 }

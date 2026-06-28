@@ -338,6 +338,21 @@ pub fn translate_from_uris(
         .with_unsupported_features(output.unsupported))
 }
 
+fn percent_encode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                result.push(b as char);
+            }
+            _ => {
+                result.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    result
+}
+
 fn build_config_uri(remote: &PproxyUri) -> String {
     let scheme = if remote.scheme == "https" {
         "http".to_string()
@@ -347,7 +362,16 @@ fn build_config_uri(remote: &PproxyUri) -> String {
         remote.scheme.clone()
     };
     let cred_str = match (&remote.username, &remote.password) {
-        (Some(user), Some(pass)) => format!("{}:{}@", user, pass),
+        (Some(user), Some(pass)) => {
+            format!("{}:{}@", percent_encode(user), percent_encode(pass))
+        }
+        (Some(user), None) => {
+            format!("{}:{}", percent_encode(user), "")
+        }
+        (None, Some(pass)) => {
+            // Password-only format (e.g., trojan://password@host:port)
+            format!("{}@", percent_encode(pass))
+        }
         _ => String::new(),
     };
     let tls = remote.tls || remote.scheme == "https";

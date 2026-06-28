@@ -86,8 +86,8 @@ pub async fn shadowsocks_accept(
         buf_len += n;
 
         // Try decrypting with increasing ciphertext lengths.
-        // Minimum plaintext: ATYP(1) + IPv4(4) + port(2) = 7 → min ciphertext = 7 + tag_size
-        let min_ct = 7 + tag_size;
+        // Minimum plaintext: ATYP(1) + len(1) + domain(1) + port(2) = 5 → min ciphertext = 5 + tag_size
+        let min_ct = 5 + tag_size;
         for ct_len in min_ct..=buf_len {
             if let Ok(plaintext) = aead_decrypt_raw(method, &subkey, &nonce_bytes, &buf[..ct_len]) {
                 let (target_addr, _consumed) = decode_address(&plaintext)?;

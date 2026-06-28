@@ -179,10 +179,10 @@ impl EggressService {
                     break;
                 }
                 if started.elapsed() > timeout {
+                    token.cancel();
                     let _ = ready_tx.send(Err(EggressError::Startup(
                         "readiness timeout".to_string(),
                     )));
-                    token.cancel();
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(5));
@@ -219,6 +219,7 @@ impl EggressService {
             _run_handle: None,
             _config_path: Some(config_path),
             _runtime_task: Some(join),
+            reload_mutex: std::sync::Mutex::new(()),
         })
     }
 
@@ -271,9 +272,15 @@ impl EggressService {
                         break;
                     }
                     if started.elapsed() > timeout {
+                        // On timeout, cancel and clean up immediately
+                        token.cancel();
+                        match run_handle.join() {
+                            Ok(()) => {}
+                            Err(_) => tracing::debug!("runtime thread panicked"),
+                        }
+                        let _ = std::fs::remove_file(&config_path_clone);
                         let _ =
                             ready_tx.send(Err(EggressError::Startup("readiness timeout".into())));
-                        token.cancel();
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(5));
@@ -291,6 +298,7 @@ impl EggressService {
             _run_handle: Some(run_handle),
             _config_path: Some(config_path),
             _runtime_task: None,
+            reload_mutex: std::sync::Mutex::new(()),
         })
     }
 }
@@ -329,6 +337,7 @@ pub struct EggressHandle {
     _run_handle: Option<std::thread::JoinHandle<()>>,
     _config_path: Option<String>,
     _runtime_task: Option<tokio::task::JoinHandle<Result<(), EggressError>>>,
+    reload_mutex: std::sync::Mutex<()>,
 }
 
 impl EggressHandle {
@@ -418,6 +427,10 @@ impl EggressHandle {
     /// Returns the outcome of the reload attempt. On success, the generation
     /// is incremented. On rejection, the old configuration remains active.
     pub fn reload_toml_str(&self, input: &str) -> Result<ReloadOutcome, EggressError> {
+        let _guard = self
+            .reload_mutex
+            .lock()
+            .map_err(|_| EggressError::Reload("concurrent reload in progress".to_string()))?;
         let state = self.state.as_ref().expect("handle consumed");
 
         // Parse and validate the new config

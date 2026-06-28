@@ -44,6 +44,7 @@ pub async fn handle_request(
                         "name": l.name,
                         "bind": l.bind,
                         "protocols": l.protocols,
+                        "udp_enabled": l.udp_enabled,
                     })
                 })
                 .collect();

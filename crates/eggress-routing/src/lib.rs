@@ -626,10 +626,14 @@ impl SharedRoutingService {
 }
 
 impl RouteService for SharedRoutingService {
+    /// **Note:** Using `decide()` and `select()` separately on `SharedRoutingService`
+    /// is racy under config reload. Prefer `route()` for atomic decide+select.
     fn decide(&self, request: &RouteRequest<'_>) -> RouteDecision {
         self.inner.load().router.decide(request)
     }
 
+    /// **Note:** Using `decide()` and `select()` separately on `SharedRoutingService`
+    /// is racy under config reload. Prefer `route()` for atomic decide+select.
     fn select(
         &self,
         decision: &RouteDecision,
@@ -652,12 +656,18 @@ pub struct CompatRegexRule {
 
 impl CompatRegexRule {
     pub fn parse_line(line: &str) -> Result<Option<Self>, RegexError> {
+        Self::parse_line_at(line, 0)
+    }
+
+    pub fn parse_line_at(line: &str, line_num: usize) -> Result<Option<Self>, RegexError> {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             return Ok(None);
         }
-        let re = regex::Regex::new(trimmed)
-            .map_err(|e| RegexError::InvalidRegex { line: 0, source: e })?;
+        let re = regex::Regex::new(trimmed).map_err(|e| RegexError::InvalidRegex {
+            line: line_num,
+            source: e,
+        })?;
         Ok(Some(Self { pattern: re }))
     }
 

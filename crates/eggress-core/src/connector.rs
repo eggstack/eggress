@@ -18,11 +18,11 @@ impl Connector for DirectConnector {
         let addr: SocketAddr = match &target.host {
             TargetHost::Ip(ip) => SocketAddr::new(*ip, target.port),
             TargetHost::Domain(domain) => {
-                use std::net::ToSocketAddrs;
                 let lookup = format!("{}:{}", domain, target.port);
-                lookup
-                    .to_socket_addrs()
-                    .map_err(|e| ConnectError::DnsResolution(e.to_string()))?
+                let mut addrs = tokio::net::lookup_host(&lookup)
+                    .await
+                    .map_err(|e| ConnectError::DnsResolution(e.to_string()))?;
+                addrs
                     .next()
                     .ok_or_else(|| ConnectError::DnsResolution("no addresses found".to_string()))?
             }

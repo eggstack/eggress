@@ -336,6 +336,12 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
                 "must have exactly 2 elements [start, end]",
             ));
         }
+        if range[0] > range[1] {
+            return Err(ConfigError::validation(
+                "destination_port_range",
+                &format!("start ({}) must be <= end ({})", range[0], range[1]),
+            ));
+        }
         matchers.push(eggress_routing::MatchExpr::DestinationPort(
             eggress_routing::PortMatcher::Range {
                 start: range[0],
@@ -868,6 +874,12 @@ fn compile_rules(config: &ConfigFile) -> Result<Vec<eggress_routing::CompiledRul
     }
 
     if let Some(ref rules_file_path) = config.rules_file {
+        if group_ids.len() > 1 {
+            return Err(ConfigError::validation(
+                "rules_file",
+                "rules_file routes all rules to a single group; multiple groups are not supported with rules_file — use explicit [[rules]] instead",
+            ));
+        }
         let content = std::fs::read_to_string(rules_file_path).map_err(|e| {
             ConfigError::validation(
                 "rules_file",

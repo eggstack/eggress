@@ -93,8 +93,10 @@ impl SocksAddr {
             }
             SocksAddr::Domain(domain, port) => {
                 buf.push(ATYP_DOMAIN);
-                buf.push(domain.len() as u8);
-                buf.extend_from_slice(domain.as_bytes());
+                // SOCKS5 spec limits domain to 255 bytes; clamp to prevent silent truncation
+                let len = domain.len().min(255) as u8;
+                buf.push(len);
+                buf.extend_from_slice(&domain.as_bytes()[..len as usize]);
                 buf.extend_from_slice(&port.to_be_bytes());
             }
             SocksAddr::IPv6(addr, port) => {

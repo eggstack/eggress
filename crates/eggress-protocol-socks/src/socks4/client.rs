@@ -39,8 +39,7 @@ pub async fn socks4_connect(
             request.extend_from_slice(&ip.octets());
         }
         TargetHost::Ip(IpAddr::V6(_)) => {
-            // IPv6 not supported in SOCKS4; use 0.0.0.1 for SOCKS4a-style
-            request.extend_from_slice(&[0, 0, 0, 1]);
+            return Err(Socks4Error::UnsupportedAddressType);
         }
         TargetHost::Domain(_) => {
             // SOCKS4a: IP = 0.0.0.1, domain appended after user ID

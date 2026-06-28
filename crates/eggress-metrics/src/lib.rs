@@ -83,6 +83,7 @@ pub struct MetricsRegistry {
     udp_associations_active: Gauge,
     udp_associations_total: Counter,
     udp_association_failures: Counter,
+    udp_association_timeouts: Counter,
     udp_packets_up_total: Counter,
     udp_packets_down_total: Counter,
     udp_bytes_up_total: Counter,
@@ -109,6 +110,7 @@ pub struct MetricsRegistry {
 struct BridgedUdpSnapshot {
     associations_total: u64,
     association_failures: u64,
+    association_timeouts: u64,
     packets_up: u64,
     packets_down: u64,
     bytes_up: u64,
@@ -217,6 +219,13 @@ impl MetricsRegistry {
             "eggress_udp_association_failures_total",
             "Total UDP association creation failures",
             udp_association_failures.clone(),
+        );
+
+        let udp_association_timeouts = Counter::default();
+        registry.register(
+            "eggress_udp_association_timeouts_total",
+            "Total UDP association idle timeouts",
+            udp_association_timeouts.clone(),
         );
 
         let udp_packets_up_total = Counter::default();
@@ -367,6 +376,7 @@ impl MetricsRegistry {
             udp_associations_active,
             udp_associations_total,
             udp_association_failures,
+            udp_association_timeouts,
             udp_packets_up_total,
             udp_packets_down_total,
             udp_bytes_up_total,
@@ -399,6 +409,9 @@ impl MetricsRegistry {
                 .load(std::sync::atomic::Ordering::Relaxed),
             association_failures: metrics
                 .association_failures
+                .load(std::sync::atomic::Ordering::Relaxed),
+            association_timeouts: metrics
+                .association_timeouts
                 .load(std::sync::atomic::Ordering::Relaxed),
             packets_up: metrics
                 .packets_up
@@ -536,6 +549,13 @@ impl MetricsRegistry {
                 self.udp_association_failures.inc_by(delta);
             }
             prev.association_failures = cur;
+
+            let cur = metrics.association_timeouts.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.association_timeouts);
+            if delta > 0 {
+                self.udp_association_timeouts.inc_by(delta);
+            }
+            prev.association_timeouts = cur;
 
             let cur = metrics.packets_up.load(Ordering::Relaxed);
             let delta = cur.saturating_sub(prev.packets_up);

@@ -197,7 +197,9 @@ impl PyEggressHandle {
         _traceback: &Bound<'_, PyAny>,
     ) -> PyResult<bool> {
         if let Some(handle) = self.inner.take() {
-            let _ = py.detach(|| handle.shutdown_blocking());
+            if let Err(e) = py.detach(|| handle.shutdown_blocking()) {
+                eprintln!("shutdown error in __exit__: {e}");
+            }
         }
         Ok(false)
     }
