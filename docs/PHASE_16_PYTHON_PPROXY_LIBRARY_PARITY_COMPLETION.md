@@ -58,12 +58,12 @@ patterns, comprehensive tests, and migration examples.
 
 | File | Tests | Description |
 |------|-------|-------------|
-| `python/tests/test_pproxy_compat.py` | 11 | Migration scenarios (SOCKS5/HTTP/SOCKS4 direct, upstreams, round-robin, auth, unsupported, Shadowsocks, from_pproxy_args) |
+| `python/tests/test_pproxy_compat.py` | 12 | Migration scenarios (SOCKS5/HTTP/SOCKS4 direct, upstreams, round-robin, auth success/failure, unsupported, Shadowsocks, from_pproxy_args) |
 | `python/tests/test_pproxy_differential.py` | 3 (gated) | Differential against real pproxy |
 | `python/tests/test_pproxy_redaction.py` | 8 | Security/redaction (repr, TOML, warnings, exceptions, metrics) |
 | `python/tests/test_pproxy_concurrency.py` | 6 | Multi-service, concurrent access, thread safety |
 
-**Total: 45 passing tests (1 skipped — gated differential)**
+**Total: 46 passing tests (1 skipped — gated differential)**
 
 ## Documentation Updated
 

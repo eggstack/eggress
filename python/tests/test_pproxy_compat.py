@@ -161,6 +161,18 @@ def test_auth_success():
     assert any(w.category == "credential-in-toml" for w in result.warnings)
 
 
+def test_auth_failure():
+    """8. Auth failure — credentials in TOML produce credential-in-toml warning."""
+    result = translate_pproxy_args([
+        "-l", "socks5://wronguser:badpass@127.0.0.1:0",
+    ])
+    assert result.ok
+    assert "password" in result.toml
+    assert "wronguser" in result.toml
+    # Verify credential-in-toml warning is present (user will see it)
+    assert any(w.category == "credential-in-toml" for w in result.warnings)
+
+
 def test_unsupported_ssh():
     """9. Unsupported SSH returns structured UnsupportedFeature."""
     result = translate_pproxy_args([

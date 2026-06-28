@@ -7,6 +7,7 @@ Requires:
 These tests are skipped by default.
 """
 
+import asyncio
 import os
 import socket
 import subprocess
