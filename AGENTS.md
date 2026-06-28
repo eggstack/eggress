@@ -201,6 +201,9 @@ eggress/
     ├── EMBED_API.md
     ├── PYTHON_BINDINGS.md
     ├── PHASE_14_PYTHON_BINDINGS_COMPLETION.md
+    ├── PHASE_16_PYTHON_PPROXY_LIBRARY_PARITY_COMPLETION.md
+    ├── PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md
+    ├── TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md
     ├── URI_GRAMMAR.md
     └── protocols/
         ├── HTTP_CONNECT.md
@@ -283,6 +286,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Blocking path spawns a dedicated thread; async path uses `spawn_blocking`. Handle owns state/token and cleans up on drop. See `docs/EMBED_API.md`.
 - **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. See `docs/PYTHON_BINDINGS.md`.
 - **PyPI packaging**: Wheels built with maturin for Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64. See `docs/PYPI_RELEASE.md`.
+- **Release candidate audit (Phase 17)**: Final parity matrix audit, Rust/Python release audits, security/redaction audit including Python binding surface, documentation consistency pass. Release candidate document at `docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`. All verification commands pass; go recommendation issued. See `docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md`.
 
 ## Skills
 

@@ -167,7 +167,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `--rulefile` | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
 | Multi-hop UDP chains | Supported | Rejected | **Intentional non-parity** | One-hop only |
 | Persistent HTTP forwarding | Supported | Partial | **Partial** | Single-exchange forward only |
-| Python library | `pproxy.Server()` API | Rejected | **Intentional non-parity** | Not in scope; standalone binary |
+| Python library | `pproxy.Server()` API | `eggress` package via PyO3 | **Supported** | Python bindings wrap `eggress-embed` API | Not a 1:1 API match; see Python Bindings doc |
 
 ### Diagnostics for Unsupported Features
 
@@ -211,8 +211,8 @@ All diagnostic messages redact credentials.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Python library | `pproxy.Server()` API | not started | Unsupported | none | none | Phase 13-14 target |
-| PyPI package | `pip install pproxy` | not started | Unsupported | none | none | Phase 15 target |
+| Python library | `pproxy.Server()` API | `eggress` package (PyO3) | Supported | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py` | none | `EggressService`, `EggressHandle`, `start_pproxy`, translation helpers |
+| PyPI package | `pip install pproxy` | `pip install eggress` | Supported | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
 
 ## Coverage Summary
 
@@ -223,7 +223,7 @@ All diagnostic messages redact credentials.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
 - **CLI (Compatible / Partial)**: `-l` and `-r` flags share syntax. `-ul` and `-ur` are unsupported (Eggress uses SOCKS5 UDP ASSOCIATE). `--daemon` is not yet implemented.
 - **Shadowsocks / Trojan (Experimental / Partial / Supported)**: Shadowsocks TCP upstream has non-standard AEAD framing (not wire-compatible with standard implementations; see TCP audit). Shadowsocks UDP uses standard AEAD format and is interoperable. Trojan is client-only. Neither has differential coverage.
-- **Python bindings (Unsupported)**: Not started; planned for later phases.
+- **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. See `docs/PYTHON_BINDINGS.md`.
 
 ## Limitations
 

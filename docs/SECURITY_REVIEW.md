@@ -139,6 +139,25 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - `NeedMore` result prevents premature protocol selection.
 - No fallback to a default protocol if detection fails; connections are rejected.
 
+### Python Binding Surface
+
+**Exception Strings** (`eggress-python`):
+- Python exceptions wrap Rust error types; no raw Rust error strings leak to Python.
+- `repr()` output uses Python class names, not Rust type paths.
+
+**Translation Warnings** (`eggress-pproxy-compat`):
+- pproxy translation warnings and unsupported-feature diagnostics redact credentials.
+- Generated TOML uses `RedactedUri` for display; actual credentials are in config only.
+
+**Context Manager Cleanup**:
+- `EggressHandle.__exit__` calls `shutdown()` which triggers graceful drain.
+- `AsyncEggressHandle.__aexit__` calls `shutdown()` asynchronously.
+- Drop without explicit shutdown triggers cleanup via Rust `Drop` impl.
+
+**No Import-Time Side Effects**:
+- `import eggress` does not start services, bind ports, or log.
+- Native module (`_eggress`) loads on import but performs no I/O.
+
 ### Resource Management
 
 **Task Leaks on Malformed Clients**:
@@ -175,6 +194,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 11. **No OpenSSL dependency**: Uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface.
 12. **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only hot-reloadable fields are swapped.
 13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH, Unix, redir, and other unsupported protocols. No silent fallback to direct or different protocols.
+14. **Python binding security**: Exception strings do not leak raw Rust errors; `repr()` uses Python class names; translation warnings redact credentials; no import-time side effects; context manager ensures cleanup.
 
 ## Residual Risks
 

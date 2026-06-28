@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 14: Python bindings (complete)
+Phase 17: True pproxy parity release candidate audit (complete)
 
 ## Completed Milestones
 
@@ -119,12 +119,37 @@ Phase 14: Python bindings (complete)
 - [x] 14.6: Python test suite (14 tests, 5 files)
 - [x] 14.7: Documentation (`PYTHON_BINDINGS.md`) and workspace updates
 
+### Phase 15: PyPI/wheel release pipeline — complete
+
+- [x] 15.1: Wheel build infrastructure (maturin, platform targets)
+- [x] 15.2: Wheel testing script and CI integration
+- [x] 15.3: PyPI release documentation (`PYPI_RELEASE.md`)
+- [x] 15.4: Supply chain checks (`cargo deny`, `cargo audit`)
+
+### Phase 16: Python pproxy library helpers — complete
+
+- [x] 16.1: `translate_pproxy_args`, `translate_pproxy_uri`, `check_pproxy_args`
+- [x] 16.2: `start_pproxy`, `EggressService.from_pproxy_args` convenience APIs
+- [x] 16.3: Async lifecycle (`astart`, `AsyncEggressHandle`)
+- [x] 16.4: pproxy compat tests, redaction tests, concurrency tests (45 passing)
+
+### Phase 17: True pproxy parity release candidate audit — complete
+
+- [x] 17.1: Final parity matrix audit and evidence taxonomy
+- [x] 17.2: Rust runtime release audit (all tests pass)
+- [x] 17.3: Python package release audit
+- [x] 17.4: Differential/interop evidence audit
+- [x] 17.5: Security/redaction audit (Python binding surface)
+- [x] 17.6: Packaging/supply-chain audit
+- [x] 17.7: Documentation consistency pass
+- [x] 17.8: Release candidate document (`TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`)
+
 ## Remaining Work
 
-None — Phases 1–8, 13–14 are complete.
+None — Phases 1–8, 13–17 are complete.
 
 ## Next Phase
 
-Phase 15: (to be determined)
+Phase 18: (to be determined)
 
 See the main roadmap for detailed descriptions of each phase.

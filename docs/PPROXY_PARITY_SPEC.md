@@ -71,7 +71,7 @@ Eggress support status:
 | HTTPS (HTTP+TLS) | supported | `eggress-protocol-http` client + TLS wrapper |
 | SOCKS4/SOCKS4a | supported | `eggress-protocol-socks` client |
 | SOCKS5 | supported | `eggress-protocol-socks` client |
-| Shadowsocks | supported | `eggress-protocol-shadowsocks` client (AEAD methods only) |
+| Shadowsocks | supported | `eggress-protocol-shadowsocks` client (AEAD methods only; TCP has non-standard AEAD framing — not wire-compatible with standard Shadowsocks) |
 | Trojan | supported | `eggress-protocol-trojan` client |
 | SSH | **rejected** | Not in scope (SSH transport is out-of-scope for a proxy) |
 | Direct | supported | `DirectConnector` |
@@ -140,7 +140,7 @@ tested in `crates/eggress-runtime/tests/integration.rs` for up to 3 hops.
 | Round-robin | Default for multiple `-r` args | Supported (`RoundRobin` scheduler) |
 | Rule-based routing | `--rulefile` (regex rules) | TOML rules with matchers |
 | Fallback | `-F` flag | `RouteActionSpec::Fallback` with group members |
-| Connection reuse | `--reuse` | Supported (persistent upstream connections) |
+| Connection reuse | `--reuse` | Not implemented | **Intentional non-parity** | pproxy pools upstream connections across sessions; Eggress uses one upstream connection per proxy session |
 | Random | Not default | Supported (`Random` scheduler) |
 | Least-connections | Not available | Supported (`LeastConnections` scheduler) |
 | First-available | Not available | Supported (`FirstAvailable` scheduler) |
@@ -324,10 +324,13 @@ Key API surface:
 - `pproxy.serve([uri])` — convenience function to start a server.
 - Protocol handlers are registered internally by the server based on URI scheme.
 
-Eggress does not expose a Python library API. It is a standalone Rust binary
-with a TOML configuration interface. This is an intentional architectural
-difference: Eggress targets production deployments with config-driven operation,
-not scripting/embedding.
+Eggress exposes a Python library API via the `eggress` package (PyO3 bindings
+wrapping `eggress-embed`). This provides `EggressConfig`, `EggressService`,
+`EggressHandle`, pproxy translation helpers (`translate_pproxy_args`,
+`translate_pproxy_uri`), and convenience APIs (`start_pproxy`,
+`from_pproxy_args`). The Python API is not a 1:1 match for pproxy's
+`pproxy.Server()` — it uses explicit lifecycle management (start/shutdown)
+rather than asyncio server objects.
 
 ## 12. Error and Failure Behavior
 
@@ -430,7 +433,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 ### Summary
 
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, Shadowsocks upstream (AEAD), Trojan upstream, direct upstream
-- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, Python library, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Persistent HTTP forwarding (single-exchange only), Shadowsocks inbound listener, Trojan inbound listener
 
 ### Diagnostic behavior
