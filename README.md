@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 14 complete — Python bindings via PyO3 wrapping `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, GIL release, context manager support, and 14 passing tests. Phase 13 complete — Rust embed API stabilization with `eggress-embed` crate providing stable blocking/async start, bound address discovery, metrics/status, reload, error redaction, and comprehensive integration tests. Phase 12 complete — scheduler parity audit, multi-hop TCP chain tests, failure semantics documentation, retry/fallback behavior tests, observability semantics tests, and differential test extensions. Phase 11 complete — remaining protocol parity: all pproxy protocols classified, lightweight aliases (socks4a, https), Shadowsocks upstream fully supported, unsupported feature diagnostics, and comprehensive documentation. Phase 8 complete — pproxy compatibility CLI with URI-mode command translation, configuration migration support, and differential tests against Python `pproxy`. Phase 7 complete — pproxy parity specification with compatibility tier taxonomy, expanded parity matrix, refactored differential test harness with reusable primitives, and black-box probe tests. Phase 6 complete — hardening: property tests for codecs/parsers (proptest), fuzz harness smoke foundation, runtime lifecycle invariant tests, observability/metrics/admin tests, security invariant tests, pproxy differential tests (gated), benchmarks (criterion) and load tests, deny.toml explicit dependency bans, and comprehensive documentation (CI_STATUS, SECURITY_REVIEW, PARITY_MATRIX, CONFIG_REFERENCE, METRICS, OPERATIONS, TESTING, RELEASE_READINESS). Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
+> Status: Phase 16 complete — Python pproxy library parity: pproxy translation helpers (translate_pproxy_args, translate_pproxy_uri), from_pproxy_args/start_pproxy convenience APIs, async lifecycle (astart, AsyncEggressHandle), 45 passing tests (pproxy-compat, redaction, concurrency, differential gated), examples, and documentation. Phase 14 complete — Python bindings via PyO3 wrapping `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, GIL release, context manager support, and 14 passing tests. Phase 13 complete — Rust embed API stabilization with `eggress-embed` crate providing stable blocking/async start, bound address discovery, metrics/status, reload, error redaction, and comprehensive integration tests. Phase 12 complete — scheduler parity audit, multi-hop TCP chain tests, failure semantics documentation, retry/fallback behavior tests, observability semantics tests, and differential test extensions. Phase 11 complete — remaining protocol parity: all pproxy protocols classified, lightweight aliases (socks4a, https), Shadowsocks upstream fully supported, unsupported feature diagnostics, and comprehensive documentation. Phase 8 complete — pproxy compatibility CLI with URI-mode command translation, configuration migration support, and differential tests against Python `pproxy`. Phase 7 complete — pproxy parity specification with compatibility tier taxonomy, expanded parity matrix, refactored differential test harness with reusable primitives, and black-box probe tests. Phase 6 complete — hardening: property tests for codecs/parsers (proptest), fuzz harness smoke foundation, runtime lifecycle invariant tests, observability/metrics/admin tests, security invariant tests, pproxy differential tests (gated), benchmarks (criterion) and load tests, deny.toml explicit dependency bans, and comprehensive documentation (CI_STATUS, SECURITY_REVIEW, PARITY_MATRIX, CONFIG_REFERENCE, METRICS, OPERATIONS, TESTING, RELEASE_READINESS). Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -27,6 +27,8 @@ The `eggress-pproxy-compat` crate provides:
 - CLI flag translation with structured warnings for unsupported features
 - Structured diagnostics for unsupported protocols (SSH, Unix, redir)
 - Differential tests verifying behavioral parity with Python `pproxy`
+- Python bindings for translation helpers (`translate_pproxy_args`, `translate_pproxy_uri`)
+- Python convenience API (`start_pproxy`, `EggressService.from_pproxy_args`)
 
 ## Usage
 
@@ -393,6 +395,12 @@ Legend:
 - [x] Differential tests against Python `pproxy` (gated)
 - [x] Behavioral parity for common listener patterns
 - [x] Complete URI option coverage (all pproxy flags)
+- [x] Python pproxy translation helpers (`translate_pproxy_args`, `translate_pproxy_uri`)
+- [x] Python convenience API (`start_pproxy`, `from_pproxy_args`)
+- [x] Python async lifecycle (`astart`, `AsyncEggressHandle`)
+- [x] Python pproxy compat tests (45 passing)
+- [x] Python security/redaction tests
+- [x] Python concurrency tests
 
 ### Phase 1 limitations
 
@@ -463,6 +471,7 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Failure semantics](docs/FAILURE_SEMANTICS.md)
 - [Phase 12 scheduler/chain/failure parity](docs/PHASE_12_SCHEDULER_CHAIN_FAILURE_PARITY_COMPLETION.md)
 - [Python bindings](docs/PYTHON_BINDINGS.md)
+- [Phase 16 Python pproxy library parity](docs/PHASE_16_PYTHON_PPROXY_LIBRARY_PARITY_COMPLETION.md)
 - [PyPI release procedure](docs/PYPI_RELEASE.md)
 - [Wheel artifact audit](docs/WHEEL_AUDIT.md)
 

@@ -1,6 +1,6 @@
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyModule, PyModuleMethods};
+use pyo3::types::{PyDict, PyList, PyModule, PyModuleMethods, PySequence};
 pyo3::create_exception!(_eggress, EggressError, PyException);
 pyo3::create_exception!(_eggress, ConfigError, EggressError);
 pyo3::create_exception!(_eggress, StartupError, EggressError);
@@ -203,11 +203,176 @@ impl PyEggressHandle {
     }
 }
 
+// --- pproxy compatibility translation helpers ---
+
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct PyTranslationWarning {
+    inner: eggress_pproxy_compat::CompatWarning,
+}
+
+#[pymethods]
+impl PyTranslationWarning {
+    #[getter]
+    fn category(&self) -> &str {
+        self.inner.category
+    }
+
+    #[getter]
+    fn message(&self) -> &str {
+        &self.inner.message
+    }
+
+    fn __repr__(&self) -> String {
+        format!("[{}] {}", self.inner.category, self.inner.message)
+    }
+}
+
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct PyUnsupportedFeature {
+    inner: eggress_pproxy_compat::UnsupportedFeature,
+}
+
+#[pymethods]
+impl PyUnsupportedFeature {
+    #[getter]
+    fn feature(&self) -> &str {
+        self.inner.feature
+    }
+
+    #[getter]
+    fn message(&self) -> &str {
+        &self.inner.detail
+    }
+
+    fn __repr__(&self) -> String {
+        format!("unsupported {}: {}", self.inner.feature, self.inner.detail)
+    }
+}
+
+#[pyclass]
+struct PyTranslationResult {
+    output: eggress_pproxy_compat::TranslationOutput,
+}
+
+#[pymethods]
+impl PyTranslationResult {
+    #[getter]
+    fn toml(&self) -> &str {
+        &self.output.toml
+    }
+
+    #[getter]
+    fn warnings(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        let list = PyList::empty(py);
+        for w in &self.output.warnings {
+            list.append(PyTranslationWarning { inner: w.clone() })?;
+        }
+        Ok(list.into())
+    }
+
+    #[getter]
+    fn unsupported(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        let list = PyList::empty(py);
+        for u in &self.output.unsupported {
+            list.append(PyUnsupportedFeature { inner: u.clone() })?;
+        }
+        Ok(list.into())
+    }
+
+    #[getter]
+    fn ok(&self) -> bool {
+        !self.output.has_unsupported()
+    }
+
+    fn config(&self, py: Python<'_>) -> PyResult<PyEggressConfig> {
+        let config = py
+            .detach(|| eggress_embed::EggressConfig::from_toml_str(&self.output.toml))
+            .map_err(|e| map_error(py, e))?;
+        Ok(PyEggressConfig { inner: config })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TranslationResult(warnings={}, unsupported={})",
+            self.output.warnings.len(),
+            self.output.unsupported.len()
+        )
+    }
+}
+
+#[pyfunction]
+fn translate_pproxy_args(
+    py: Python<'_>,
+    args: &Bound<'_, PySequence>,
+) -> PyResult<PyTranslationResult> {
+    let len = args.len()?;
+    let raw: Vec<String> = (0..len)
+        .map(|i| args.get_item(i)?.extract::<String>())
+        .collect::<PyResult<_>>()?;
+
+    let parsed = eggress_pproxy_compat::PproxyArgs::parse(&raw).map_err(|e| {
+        UnsupportedFeatureError::new_err(format!("failed to parse pproxy args: {e}"))
+    })?;
+
+    let output = py
+        .detach(|| eggress_pproxy_compat::translate_pproxy_args(&parsed))
+        .map_err(|e| UnsupportedFeatureError::new_err(format!("translation failed: {e}")))?;
+
+    Ok(PyTranslationResult { output })
+}
+
+#[pyfunction]
+fn translate_pproxy_uri(
+    py: Python<'_>,
+    local: &str,
+    remotes: Option<&Bound<'_, PySequence>>,
+) -> PyResult<PyTranslationResult> {
+    let local_uri = eggress_pproxy_compat::uri::parse_pproxy_uri(local)
+        .map_err(|e| UnsupportedFeatureError::new_err(format!("invalid local URI: {e}")))?;
+
+    let remote_uris: Vec<eggress_pproxy_compat::PproxyUri> = match remotes {
+        Some(seq) => {
+            let len = seq.len()?;
+            (0..len)
+                .map(|i| {
+                    let s: String = seq.get_item(i)?.extract()?;
+                    eggress_pproxy_compat::uri::parse_pproxy_uri(&s).map_err(|e| {
+                        UnsupportedFeatureError::new_err(format!("invalid remote URI: {e}"))
+                    })
+                })
+                .collect::<PyResult<_>>()?
+        }
+        None => Vec::new(),
+    };
+
+    let output = py
+        .detach(|| eggress_pproxy_compat::translate_from_uris(&[local_uri], &remote_uris, &[]))
+        .map_err(|e| UnsupportedFeatureError::new_err(format!("translation failed: {e}")))?;
+
+    Ok(PyTranslationResult { output })
+}
+
+#[pyfunction]
+fn check_pproxy_args(
+    py: Python<'_>,
+    args: &Bound<'_, PySequence>,
+) -> PyResult<PyTranslationResult> {
+    translate_pproxy_args(py, args)
+}
+
 #[pymodule]
 fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEggressConfig>()?;
     m.add_class::<PyEggressService>()?;
     m.add_class::<PyEggressHandle>()?;
+    m.add_class::<PyTranslationWarning>()?;
+    m.add_class::<PyUnsupportedFeature>()?;
+    m.add_class::<PyTranslationResult>()?;
+    m.add_function(wrap_pyfunction!(translate_pproxy_args, m)?)?;
+    m.add_function(wrap_pyfunction!(translate_pproxy_uri, m)?)?;
+    m.add_function(wrap_pyfunction!(check_pproxy_args, m)?)?;
     m.add("EggressError", m.py().get_type::<EggressError>())?;
     m.add("ConfigError", m.py().get_type::<ConfigError>())?;
     m.add("StartupError", m.py().get_type::<StartupError>())?;

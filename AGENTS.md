@@ -102,6 +102,18 @@ cd crates/eggress-python && maturin build --target x86_64-apple-darwin
 pip install --force-reinstall target/wheels/eggress-0.1.0-*.whl
 python -m pytest python/tests
 
+# Run Python pproxy compat tests
+python -m pytest python/tests/test_pproxy_compat.py -v
+
+# Run Python pproxy redaction tests
+python -m pytest python/tests/test_pproxy_redaction.py -v
+
+# Run Python pproxy concurrency tests
+python -m pytest python/tests/test_pproxy_concurrency.py -v
+
+# Run Python pproxy differential tests (gated, requires pproxy package)
+EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python -m pytest python/tests/test_pproxy_differential.py -v
+
 # Build and test Python wheel
 maturin build --release --out dist
 python -m venv .venv-wheel-test

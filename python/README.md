@@ -32,6 +32,19 @@ with EggressService.from_toml("""
     print(handle.metrics_text())
 ```
 
+### Async usage
+
+```python
+import asyncio
+from eggress import EggressService
+
+async def main():
+    async with await EggressService.from_toml(TOML).astart() as handle:
+        print("Listening on", await handle.bound_addresses)
+
+asyncio.run(main())
+```
+
 ## API
 
 - `EggressConfig.from_toml(toml)` / `EggressConfig.from_file(path)` — parse config
@@ -43,6 +56,27 @@ with EggressService.from_toml("""
 - `handle.reload_toml(toml)` — hot-reload config
 - `handle.shutdown()` — graceful shutdown
 - Context manager support: `with service.start() as handle: ...`
+
+## Migrating from pproxy
+
+```python
+from eggress import start_pproxy
+
+# Same arguments you'd pass to pproxy
+with start_pproxy(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle:
+    print(handle.bound_addresses)
+```
+
+Or inspect the translation first:
+
+```python
+from eggress import translate_pproxy_args
+
+result = translate_pproxy_args(["-l", "socks5://:1080", "-r", "http://proxy:8080"])
+print(result.toml)         # generated eggress TOML
+print(result.warnings)     # partial-behavior notes
+print(result.unsupported)  # unsupported features
+```
 
 ## Error model
 
@@ -62,3 +96,14 @@ with EggressService.from_toml("""
 - Requires Python >= 3.9
 - Listener bind changes require restart (not reloadable)
 - No logging initialization unless configured in TOML
+
+## Non-parity with pproxy
+
+- Shadowsocks TCP is experimental (non-standard AEAD framing)
+- No inbound Shadowsocks or Trojan listeners (upstream-only)
+- No legacy stream ciphers (aes-ctr, aes-cfb, rc4-md5, etc.)
+- No SSH, Unix socket, or transparent proxy (redir) transport
+- No pproxy daemon mode (`--daemon`)
+- No `-ul`/`-ur` standalone UDP relay (uses SOCKS5 UDP ASSOCIATE)
+- Multiple remotes default to round-robin (matches pproxy behavior)
+- Direct fallback requires explicit config

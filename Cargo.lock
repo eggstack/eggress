@@ -674,6 +674,7 @@ name = "eggress-python"
 version = "0.1.0"
 dependencies = [
  "eggress-embed",
+ "eggress-pproxy-compat",
  "pyo3",
  "serde_json",
  "tokio",

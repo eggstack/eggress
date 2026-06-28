@@ -65,6 +65,28 @@ with EggressService.from_toml(toml).start() as handle:
 # service is shut down automatically
 ```
 
+### Async context manager
+
+```python
+import asyncio
+from eggress import EggressService
+
+TOML = """
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"""
+
+async def main():
+    async with await EggressService.from_toml(TOML).astart() as handle:
+        print("Listening on", await handle.bound_addresses)
+
+asyncio.run(main())
+```
+
 ### Explicit start/stop
 
 ```python
@@ -88,6 +110,29 @@ config = EggressConfig.from_file("config.toml")
 handle = EggressService(config).start()
 ```
 
+### Starting from pproxy arguments
+
+```python
+from eggress import EggressService
+
+svc = EggressService.from_pproxy_args([
+    "-l", "socks5://127.0.0.1:1080",
+    "-r", "http://proxy:8080",
+])
+
+with svc.start() as handle:
+    print("Listening on", handle.bound_addresses)
+```
+
+Or use the convenience function:
+
+```python
+from eggress import start_pproxy
+
+with start_pproxy(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle:
+    print(handle.bound_addresses)
+```
+
 ## API reference
 
 ### `EggressConfig`
@@ -109,7 +154,9 @@ Pre-start service builder. Consumed by `start()`.
 | `EggressService(config)` | Create from an `EggressConfig` |
 | `EggressService.from_toml(toml: str)` | Parse TOML and create a service |
 | `EggressService.from_file(path: str \| PathLike)` | Load file and create a service |
+| `EggressService.from_pproxy_args(args, allow_partial=False)` | Create from pproxy-style CLI arguments |
 | `service.start() -> EggressHandle` | Start the service (blocking) |
+| `service.astart() -> AsyncEggressHandle` | Start the service asynchronously |
 
 ### `EggressHandle`
 
@@ -123,6 +170,19 @@ Handle to a running service. Supports the context manager protocol.
 | `handle.reload_toml(toml: str) -> dict` | Hot-reload routing/upstreams; returns `{generation, upstreams}` |
 | `handle.shutdown()` | Graceful shutdown (idempotent) |
 | `with handle:` | Context manager — calls `shutdown()` on exit |
+
+### `AsyncEggressHandle`
+
+Async handle to a running service. All methods return awaitables.
+
+| Method | Description |
+|---|---|
+| `await handle.bound_addresses` | Listener name to address mapping |
+| `await handle.status() -> dict` | Current service status |
+| `await handle.metrics_text() -> str` | Prometheus metrics text |
+| `await handle.reload_toml(toml: str) -> dict` | Hot-reload routing |
+| `await handle.shutdown()` | Graceful shutdown |
+| `async with handle:` | Async context manager |
 
 ## Error model
 
@@ -205,6 +265,37 @@ print(f"Generation: {result['generation']}")
 
 A failed reload leaves the service running with the previous configuration.
 
+## pproxy compatibility
+
+The Python bindings expose the `eggress-pproxy-compat` translation layer directly.
+Translate pproxy-style arguments without subprocesses:
+
+```python
+from eggress import translate_pproxy_args, translate_pproxy_uri, check_pproxy_args
+
+# Translate CLI args
+result = translate_pproxy_args(["-l", "socks5://:1080", "-r", "http://proxy:8080"])
+print(result.toml)
+print(result.warnings)
+print(result.unsupported)
+
+# Translate URI strings
+result = translate_pproxy_uri("socks5://:1080", ["http://proxy:8080"])
+
+# Start a service directly from pproxy args
+from eggress import start_pproxy
+with start_pproxy(["-l", "socks5://:1080"]) as handle:
+    ...
+```
+
+### Translation result types
+
+| Type | Description |
+|---|---|
+| `TranslationResult` | Result with `.toml`, `.warnings`, `.unsupported`, `.ok`, `.config()` |
+| `TranslationWarning` | `.category` and `.message` describing a partial-behavior note |
+| `UnsupportedFeature` | `.feature` and `.message` for unsupported pproxy features |
+
 ## Limitations
 
 - **Blocking only**: `start()` is synchronous. Async Python usage requires
@@ -218,15 +309,17 @@ A failed reload leaves the service running with the previous configuration.
   built wheel.
 - **No embedded async API**: The Python bindings use the blocking `start_blocking`
   path only. An async Python API is not yet available.
+- **pproxy compat**: Shadowsocks TCP is experimental/non-standard. No inbound
+  Shadowsocks or Trojan listeners. No legacy stream ciphers. No SSH/unix/redir
+  transport. No pproxy daemon mode. Multiple remotes default to round-robin.
 
 ## Relationship to pproxy compatibility
 
-The Python bindings wrap the same `eggress-embed` API as the Rust embed API. They
-do not use the `eggress-pproxy-compat` translation layer. For pproxy URI
-translation from Python, use the CLI:
+The Python bindings now expose the `eggress-pproxy-compat` translation layer
+directly via `translate_pproxy_args`, `translate_pproxy_uri`, and
+`check_pproxy_args`. See the [pproxy compatibility](#pproxy-compatibility)
+section above. For CLI-based translation, you can still use:
 
 ```bash
 python -m eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
-
-Or use the `eggress-pproxy-compat` Rust crate directly in your own PyO3 bindings.
