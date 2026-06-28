@@ -812,11 +812,16 @@ impl ServiceSupervisor {
             #[cfg(unix)]
             {
                 let mut sigterm =
-                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                        .expect("failed to register SIGTERM handler");
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
                 let mut sighup =
-                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-                        .expect("failed to register SIGHUP handler");
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup());
+
+                if let Err(ref e) = sigterm {
+                    tracing::warn!("failed to register SIGTERM handler: {e}");
+                }
+                if let Err(ref e) = sighup {
+                    tracing::warn!("failed to register SIGHUP handler: {e}");
+                }
 
                 loop {
                     tokio::select! {
@@ -828,19 +833,20 @@ impl ServiceSupervisor {
                             tracing::info!("shutdown signal received");
                             break;
                         }
-                        _ = sigterm.recv() => {
+                        _ = async { sigterm.as_mut().ok()?.recv().await }, if sigterm.is_ok() => {
                             tracing::info!("shutdown signal received");
                             break;
                         }
-                        _ = sighup.recv() => {
+                        _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() => {
                             tracing::info!("reload signal received, reloading config from {config_path}");
-                            // Reload is performed inside the async block via a mutable reference
-                            // captured from the outer scope. We use a helper that mirrors
-                            // reload_config but operates on the async-captured state.
                             let prev_snapshot = snapshot.load();
                             let prev_ref: Option<&CompiledRuntimeSnapshot> = Some(&prev_snapshot);
-                            match eggress_config::compile::load_and_compile(&config_path) {
-                                Ok(new_rt_config) => {
+                            let config_path_clone = config_path.clone();
+                            let load_result = tokio::task::spawn_blocking(move || {
+                                eggress_config::compile::load_and_compile(&config_path_clone)
+                            }).await;
+                            match load_result {
+                                Ok(Ok(new_rt_config)) => {
                                     // Classify unsupported changes: reject if listener topology changed
                                     let old_listeners = &snapshot.load().listeners;
                                     let new_listeners = &new_rt_config.listeners;
@@ -946,9 +952,13 @@ impl ServiceSupervisor {
                                         }
                                     }
                                 }
-                                Err(e) => {
+                                Ok(Err(e)) => {
                                     metrics.record_reload(false);
                                     tracing::error!("reload failed (config load): {e}");
+                                }
+                                Err(join_err) => {
+                                    metrics.record_reload(false);
+                                    tracing::error!("reload task panicked: {join_err}");
                                 }
                             }
                         }

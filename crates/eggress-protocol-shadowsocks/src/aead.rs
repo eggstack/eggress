@@ -22,7 +22,7 @@ pub fn encrypt_frame(
     rand::thread_rng().fill_bytes(&mut salt);
 
     // Derive subkey
-    let subkey = method.derive_key(key, &salt);
+    let subkey = method.derive_key(key, &salt)?;
 
     // Generate nonce (12 bytes, starts at 0)
     let nonce_bytes = vec![0u8; nonce_size];
@@ -61,7 +61,7 @@ pub fn decrypt_frame(
     let ciphertext = &data[salt_size..];
 
     // Derive subkey
-    let subkey = method.derive_key(key, salt);
+    let subkey = method.derive_key(key, salt)?;
 
     // Generate nonce (12 bytes, starts at 0)
     let nonce_bytes = vec![0u8; nonce_size];

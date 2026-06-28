@@ -24,7 +24,7 @@ pub async fn shadowsocks_connect(
     let mut salt = vec![0u8; method.salt_size()];
     rand::thread_rng().fill_bytes(&mut salt);
 
-    let subkey = method.derive_key(password.as_bytes(), &salt);
+    let subkey = method.derive_key(password.as_bytes(), &salt)?;
 
     let address = encode_address(target)?;
     let nonce_bytes = vec![0u8; method.nonce_size()];
@@ -57,7 +57,7 @@ pub async fn shadowsocks_accept(
     let mut salt = vec![0u8; method.salt_size()];
     stream.read_exact(&mut salt).await?;
 
-    let subkey = method.derive_key(password.as_bytes(), &salt);
+    let subkey = method.derive_key(password.as_bytes(), &salt)?;
 
     let nonce_bytes = vec![0u8; method.nonce_size()];
     let tag_size = method.tag_size();

@@ -47,13 +47,13 @@ impl CipherMethod {
     }
 
     /// Derive an AEAD subkey from password and salt using HKDF-SHA256.
-    pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Vec<u8> {
+    pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
         let ikm = Sha256::digest(password);
         let hk = Hkdf::<Sha256>::new(Some(salt), &ikm);
         let mut key = vec![0u8; self.key_size()];
         hk.expand(b"ss-subkey", &mut key)
-            .expect("HKDF expand failed");
-        key
+            .map_err(|e| ShadowsocksError::Other(format!("HKDF expand failed: {e}")))?;
+        Ok(key)
     }
 }
 
@@ -130,8 +130,8 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let password = b"test-password";
         let salt = b"0123456789abcdef";
-        let key1 = method.derive_key(password, salt);
-        let key2 = method.derive_key(password, salt);
+        let key1 = method.derive_key(password, salt).unwrap();
+        let key2 = method.derive_key(password, salt).unwrap();
         assert_eq!(key1, key2);
         assert_eq!(key1.len(), 32);
     }
@@ -140,8 +140,8 @@ mod tests {
     fn test_derive_key_different_salts() {
         let method = CipherMethod::Aes256Gcm;
         let password = b"test-password";
-        let key1 = method.derive_key(password, b"0000000000000000");
-        let key2 = method.derive_key(password, b"1111111111111111");
+        let key1 = method.derive_key(password, b"0000000000000000").unwrap();
+        let key2 = method.derive_key(password, b"1111111111111111").unwrap();
         assert_ne!(key1, key2);
     }
 

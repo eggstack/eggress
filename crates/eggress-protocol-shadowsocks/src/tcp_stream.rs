@@ -231,7 +231,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
         this.write_nonce.advance().map_err(io::Error::other)?;
 
         // Wire frame: [2-byte ciphertext_length] [ciphertext]
-        let ct_len = ct.len() as u16;
+        let ct_len = u16::try_from(ct.len()).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("ciphertext too large for u16: {e}"),
+            )
+        })?;
         this.write_buf.extend_from_slice(&ct_len.to_be_bytes());
         this.write_buf.extend_from_slice(&ct);
 

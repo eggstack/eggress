@@ -32,7 +32,7 @@ pub fn encode_udp_packet(
     }
 
     // Derive subkey from password and salt
-    let subkey = method.derive_key(password, salt);
+    let subkey = method.derive_key(password, salt)?;
 
     // Validate domain length before encoding
     if let TargetHost::Domain(ref domain) = target.host {
@@ -96,7 +96,7 @@ pub fn decode_udp_packet(
 
     // Extract salt and derive subkey
     let salt = &packet[..salt_size];
-    let subkey = method.derive_key(password, salt);
+    let subkey = method.derive_key(password, salt)?;
 
     // Decrypt ciphertext with nonce=0
     let ciphertext = &packet[salt_size..];

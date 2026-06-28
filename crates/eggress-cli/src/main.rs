@@ -1074,10 +1074,15 @@ async fn main() {
         #[cfg(unix)]
         {
             let mut sigterm =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("failed to register SIGTERM handler");
-            let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-                .expect("failed to register SIGHUP handler");
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+            let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup());
+
+            if let Err(ref e) = sigterm {
+                tracing::warn!("failed to register SIGTERM handler: {e}");
+            }
+            if let Err(ref e) = sighup {
+                tracing::warn!("failed to register SIGHUP handler: {e}");
+            }
 
             loop {
                 tokio::select! {
@@ -1086,12 +1091,12 @@ async fn main() {
                         token.cancel();
                         break;
                     }
-                    _ = sigterm.recv() => {
+                    _ = async { sigterm.as_mut().ok()?.recv().await }, if sigterm.is_ok() => {
                         tracing::info!("shutdown signal received");
                         token.cancel();
                         break;
                     }
-                    _ = sighup.recv() => {
+                    _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() => {
                         tracing::warn!("SIGHUP received but no config file specified in compatibility mode, ignoring");
                     }
                 }
