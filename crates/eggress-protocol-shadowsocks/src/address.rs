@@ -8,7 +8,7 @@ const ATYP_DOMAIN: u8 = 0x03;
 const ATYP_IPV6: u8 = 0x04;
 
 /// Encode a TargetAddr into Shadowsocks wire format.
-pub fn encode_address(target: &TargetAddr) -> Vec<u8> {
+pub fn encode_address(target: &TargetAddr) -> Result<Vec<u8>, ShadowsocksError> {
     let mut buf = Vec::with_capacity(1 + 4 + 2); // ATYP + max IP + port
     match &target.host {
         TargetHost::Ip(std::net::IpAddr::V4(ip)) => {
@@ -20,13 +20,19 @@ pub fn encode_address(target: &TargetAddr) -> Vec<u8> {
             buf.extend_from_slice(&ip.octets());
         }
         TargetHost::Domain(domain) => {
+            if domain.len() > 255 {
+                return Err(ShadowsocksError::InvalidAddress(format!(
+                    "domain too long: {} bytes (max 255)",
+                    domain.len()
+                )));
+            }
             buf.push(ATYP_DOMAIN);
             buf.push(domain.len() as u8);
             buf.extend_from_slice(domain.as_bytes());
         }
     }
     buf.extend_from_slice(&target.port.to_be_bytes());
-    buf
+    Ok(buf)
 }
 
 /// Decode a Shadowsocks address from a byte slice.
@@ -102,7 +108,7 @@ mod tests {
             host: TargetHost::Ip("192.168.1.1".parse().unwrap()),
             port: 8080,
         };
-        let encoded = encode_address(&target);
+        let encoded = encode_address(&target).unwrap();
         assert_eq!(encoded[0], ATYP_IPV4);
         let (decoded, consumed) = decode_address(&encoded).unwrap();
         assert_eq!(decoded, target);
@@ -115,7 +121,7 @@ mod tests {
             host: TargetHost::Ip("::1".parse().unwrap()),
             port: 443,
         };
-        let encoded = encode_address(&target);
+        let encoded = encode_address(&target).unwrap();
         assert_eq!(encoded[0], ATYP_IPV6);
         let (decoded, consumed) = decode_address(&encoded).unwrap();
         assert_eq!(decoded, target);
@@ -128,7 +134,7 @@ mod tests {
             host: TargetHost::Domain("example.com".to_string()),
             port: 443,
         };
-        let encoded = encode_address(&target);
+        let encoded = encode_address(&target).unwrap();
         assert_eq!(encoded[0], ATYP_DOMAIN);
         assert_eq!(encoded[1], 11); // "example.com".len()
         let (decoded, consumed) = decode_address(&encoded).unwrap();
@@ -165,7 +171,7 @@ mod tests {
                 host: TargetHost::Ip("10.0.0.1".parse().unwrap()),
                 port,
             };
-            let encoded = encode_address(&target);
+            let encoded = encode_address(&target).unwrap();
             let (decoded, _) = decode_address(&encoded).unwrap();
             assert_eq!(decoded.port, port);
         }

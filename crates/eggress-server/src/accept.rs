@@ -541,7 +541,10 @@ async fn accept_http(
             }
             match found_auth {
                 Some((user, pass)) => {
-                    if user != *username || pass != *password {
+                    use subtle::ConstantTimeEq;
+                    let user_ok: bool = user.as_bytes().ct_eq(username.as_bytes()).into();
+                    let pass_ok: bool = pass.as_bytes().ct_eq(password.as_bytes()).into();
+                    if !user_ok || !pass_ok {
                         // Reconstruct stream and send 407
                         let mut stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
                         let _ = write_proxy_auth_required(&mut stream).await;
@@ -684,7 +687,10 @@ async fn read_connect_request_from_stream(
     if let InboundAuthentication::UsernamePassword { username, password } = auth {
         match proxy_auth {
             Some((user, pass)) => {
-                if user != *username || pass != *password {
+                use subtle::ConstantTimeEq;
+                let user_ok: bool = user.as_bytes().ct_eq(username.as_bytes()).into();
+                let pass_ok: bool = pass.as_bytes().ct_eq(password.as_bytes()).into();
+                if !user_ok || !pass_ok {
                     let _ = write_proxy_auth_required(stream).await;
                     return Err(AcceptError::AuthenticationFailed);
                 }

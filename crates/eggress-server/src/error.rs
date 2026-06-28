@@ -28,11 +28,9 @@ impl From<eggress_core::ConnectError> for SessionOpenError {
         match e {
             eggress_core::ConnectError::ConnectionRefused => SessionOpenError::Refused,
             eggress_core::ConnectError::Timeout => SessionOpenError::Timeout,
-            eggress_core::ConnectError::DnsResolution(msg) => {
-                SessionOpenError::Other(format!("DNS: {msg}"))
-            }
-            eggress_core::ConnectError::TlsHandshake(msg) => {
-                SessionOpenError::Other(format!("TLS: {msg}"))
+            eggress_core::ConnectError::DnsResolution(_) => SessionOpenError::Dns,
+            eggress_core::ConnectError::TlsHandshake(_) => {
+                SessionOpenError::Other("TLS handshake failed".into())
             }
             eggress_core::ConnectError::Io(io) => SessionOpenError::Other(io.to_string()),
         }

@@ -224,7 +224,14 @@ async fn handle_client_datagram(
                             return Ok(());
                         }
                     }
-                    _ => unreachable!(),
+                    other => {
+                        tracing::error!(
+                            "unexpected flow kind for Socks5Upstream key: {:?}",
+                            std::mem::discriminant(other)
+                        );
+                        config.udp_metrics.record_dropped();
+                        return Ok(());
+                    }
                 }
 
                 config
@@ -333,7 +340,14 @@ async fn handle_client_datagram(
                             return Ok(());
                         }
                     }
-                    _ => unreachable!(),
+                    other => {
+                        tracing::error!(
+                            "unexpected flow kind for ShadowsocksUpstream key: {:?}",
+                            std::mem::discriminant(other)
+                        );
+                        config.udp_metrics.record_dropped();
+                        return Ok(());
+                    }
                 }
 
                 config

@@ -495,7 +495,8 @@ mod tests {
             let target = encode_address(&TargetAddr {
                 host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))),
                 port: 1234,
-            });
+            })
+            .unwrap();
             let addr_nonce = vec![0u8; method.nonce_size()];
             let enc_addr = aead_encrypt_raw(method, &subkey_clone, &addr_nonce, &target).unwrap();
             stream.write_all(&enc_addr).await.unwrap();

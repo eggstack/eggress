@@ -30,18 +30,16 @@ impl UdpAssociationRegistry {
         identity: eggress_core::ClientIdentity,
         generation: u64,
     ) -> Result<Arc<UdpAssociation>, UdpError> {
-        {
-            let assocs = self.associations.read().await;
-            if assocs.len() >= self.limits.max_associations_global {
-                return Err(UdpError::AssociationLimitExceeded);
-            }
-            let listener_count = assocs
-                .values()
-                .filter(|a| a.meta.listener == listener)
-                .count();
-            if listener_count >= self.limits.max_associations_per_listener {
-                return Err(UdpError::ListenerAssociationLimitExceeded);
-            }
+        let mut assocs = self.associations.write().await;
+        if assocs.len() >= self.limits.max_associations_global {
+            return Err(UdpError::AssociationLimitExceeded);
+        }
+        let listener_count = assocs
+            .values()
+            .filter(|a| a.meta.listener == listener)
+            .count();
+        if listener_count >= self.limits.max_associations_per_listener {
+            return Err(UdpError::ListenerAssociationLimitExceeded);
         }
 
         let id = UdpAssociationId(self.next_id.fetch_add(1, Ordering::Relaxed));
@@ -53,7 +51,7 @@ impl UdpAssociationRegistry {
             generation,
         ));
 
-        self.associations.write().await.insert(id, assoc.clone());
+        assocs.insert(id, assoc.clone());
         Ok(assoc)
     }
 

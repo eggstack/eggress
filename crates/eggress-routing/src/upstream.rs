@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use once_cell::sync::Lazy;
+
 use eggress_core::UpstreamId;
 
 use crate::health::{HealthCell, HealthConfig, HealthProbe, HealthState};
@@ -11,8 +13,11 @@ use eggress_uri::ProxyChainSpec;
 
 const UPSTREAM_ID_PATTERN: &str = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$";
 
+static UPSTREAM_ID_RE: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(UPSTREAM_ID_PATTERN).unwrap());
+
 pub fn validate_upstream_id(id: &str) -> Result<(), String> {
-    if !regex::Regex::new(UPSTREAM_ID_PATTERN).unwrap().is_match(id) {
+    if !UPSTREAM_ID_RE.is_match(id) {
         return Err(format!(
             "upstream ID '{id}' must match {UPSTREAM_ID_PATTERN}"
         ));

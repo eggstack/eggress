@@ -484,7 +484,8 @@ impl MetricsRegistry {
     }
 
     pub fn set_config_generation(&self, generation: u64) {
-        self.config_generation.set(generation as i64);
+        self.config_generation
+            .set(generation.min(i64::MAX as u64) as i64);
     }
 
     pub fn record_reload(&self, success: bool) {
@@ -502,12 +503,24 @@ impl MetricsRegistry {
         // Prometheus gauges/counters before encoding.
         if let Some((metrics, prev)) = self.bridged_udp_metrics.lock().unwrap().as_mut() {
             // Gauges: set directly (active counts are current-state, not cumulative)
-            self.udp_associations_active
-                .set(metrics.associations_active.load(Ordering::Relaxed) as i64);
-            self.udp_target_flows_active
-                .set(metrics.target_flows_active.load(Ordering::Relaxed) as i64);
-            self.udp_upstream_associations_active
-                .set(metrics.upstream_associations_active.load(Ordering::Relaxed) as i64);
+            self.udp_associations_active.set(
+                metrics
+                    .associations_active
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
+            self.udp_target_flows_active.set(
+                metrics
+                    .target_flows_active
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
+            self.udp_upstream_associations_active.set(
+                metrics
+                    .upstream_associations_active
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
 
             // Counters: increment by delta since last render
             let cur_total = metrics.associations_total.load(Ordering::Relaxed);

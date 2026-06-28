@@ -43,7 +43,10 @@ pub async fn handle_connect(
         match &request.proxy_auth {
             Some((user, pass)) => {
                 if let Some((valid_user, valid_pass)) = valid_credentials {
-                    if user != valid_user || pass != valid_pass {
+                    use subtle::ConstantTimeEq;
+                    let user_ok: bool = user.as_bytes().ct_eq(valid_user.as_bytes()).into();
+                    let pass_ok: bool = pass.as_bytes().ct_eq(valid_pass.as_bytes()).into();
+                    if !user_ok || !pass_ok {
                         write_error_response(&mut stream, 407, "Proxy Authentication Required")
                             .await?;
                         return Err(HttpError::AuthRequired);

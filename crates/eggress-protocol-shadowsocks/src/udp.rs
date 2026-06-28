@@ -1,6 +1,3 @@
-#[allow(unused_imports)]
-use rand::RngCore;
-
 use crate::address::{decode_address, encode_address};
 use crate::aead::{aead_decrypt_raw, aead_encrypt_raw};
 use crate::error::ShadowsocksError;
@@ -49,7 +46,7 @@ pub fn encode_udp_packet(
     }
 
     // Build plaintext: address + payload
-    let address = encode_address(target);
+    let address = encode_address(target)?;
     let mut plaintext = Vec::with_capacity(address.len() + payload.len());
     plaintext.extend_from_slice(&address);
     plaintext.extend_from_slice(payload);

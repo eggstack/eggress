@@ -369,7 +369,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         let ip = match addr.ip() {
             std::net::IpAddr::V4(v4) => v4.octets(),
-            _ => unreachable!(),
+            _ => panic!("SOCKS4 test requires IPv4 address, got: {addr}"),
         };
         stream.write_all(&ip).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

@@ -540,6 +540,11 @@ pub async fn forward_response(
                     return Ok(ForwardResponseReport { bytes_forwarded });
                 }
                 size_line.push(temp[0]);
+                if size_line.len() > 32 {
+                    return Err(HttpError::MalformedResponse(
+                        "chunk size line exceeds maximum length".into(),
+                    ));
+                }
                 if size_line.len() >= 2 && &size_line[size_line.len() - 2..] == b"\r\n" {
                     break;
                 }

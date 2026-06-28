@@ -39,7 +39,11 @@ pub struct RuntimeAdminListenerInfos {
 impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
     fn snapshot(&self) -> AdminSnapshot {
         let snap = self.state.snapshot.load();
-        let addrs = self.state.listener_addrs.lock().unwrap();
+        let addrs = self
+            .state
+            .listener_addrs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let listeners: Vec<ListenerInfo> = snap
             .listeners
             .iter()
@@ -534,7 +538,7 @@ impl ServiceSupervisor {
         let result = rt.block_on(async move {
             // Start health probes inside the runtime context
             {
-                let mut guard = health_for_run.lock().unwrap();
+                let mut guard = health_for_run.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(ref mut hm) = *guard {
                     let upstream_runtimes: Vec<Arc<UpstreamRuntime>> =
                         snapshot.load().upstreams.values().cloned().collect();
@@ -632,7 +636,7 @@ impl ServiceSupervisor {
             {
                 let addrs: Vec<std::net::SocketAddr> =
                     prepared.iter().map(|p| p.local_addr).collect();
-                *state_ref.listener_addrs.lock().unwrap() = addrs;
+                *state_ref.listener_addrs.lock().unwrap_or_else(|e| e.into_inner()) = addrs;
             }
 
             for prepared_listener in prepared {
@@ -786,7 +790,7 @@ impl ServiceSupervisor {
                                 }
                             };
                         if let Ok(addr) = server.local_addr() {
-                            *state_ref.admin_local_addr.lock().unwrap() = Some(addr);
+                            *state_ref.admin_local_addr.lock().unwrap_or_else(|e| e.into_inner()) = Some(addr);
                         }
                         let admin_state = eggress_admin::AdminState {
                             metrics: state_ref.metrics.clone(),

@@ -206,8 +206,11 @@ impl EggressService {
             .map_err(|_| EggressError::Startup("startup channel dropped".into()))??;
 
         let join = tokio::task::spawn(async move {
-            let _ = join.await;
-            Ok::<_, EggressError>(())
+            match join.await {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => Err(EggressError::Startup(format!("startup failed: {e}"))),
+                Err(e) => Err(EggressError::Startup(format!("startup task panicked: {e}"))),
+            }
         });
 
         Ok(EggressHandle {
@@ -246,7 +249,9 @@ impl EggressService {
                 let run_handle = std::thread::Builder::new()
                     .name("eggress-embed-run".into())
                     .spawn(move || {
-                        let _ = sup.run();
+                        if let Err(e) = sup.run() {
+                            tracing::error!("supervisor exited with error: {e}");
+                        }
                     });
 
                 let run_handle = match run_handle {
@@ -330,8 +335,14 @@ impl EggressHandle {
     /// Get the addresses the service is listening on.
     pub fn bound_addresses(&self) -> BoundAddresses {
         let state = self.state.as_ref().expect("handle consumed");
-        let addrs = state.listener_addrs.lock().unwrap();
-        let admin = state.admin_local_addr.lock().unwrap();
+        let addrs = state
+            .listener_addrs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let admin = state
+            .admin_local_addr
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let snap = state.snapshot.load();
         let listeners: Vec<ListenerAddress> = snap
             .listeners
@@ -357,7 +368,10 @@ impl EggressHandle {
     pub fn status(&self) -> ServiceStatus {
         let state = self.state.as_ref().expect("handle consumed");
         let snap = state.snapshot.load();
-        let addrs = state.listener_addrs.lock().unwrap();
+        let addrs = state
+            .listener_addrs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         let listeners: Vec<ListenerStatus> = snap
             .listeners

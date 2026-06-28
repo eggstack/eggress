@@ -199,7 +199,11 @@ pub fn translate_from_uris(
             "http" | "https" => vec!["http".to_string()],
             "socks4" | "socks4a" => vec!["socks4".to_string()],
             "socks5" => vec!["socks5".to_string()],
-            _ => unreachable!(),
+            other => {
+                return Err(CompatError::InvalidArgs {
+                    message: format!("unsupported scheme: {other}"),
+                })
+            }
         };
 
         let mut listener_entry = ListenerToml {

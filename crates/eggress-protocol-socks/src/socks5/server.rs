@@ -314,7 +314,12 @@ pub async fn read_auth_request<R: AsyncRead + Unpin>(
     reader.read_exact(&mut password_bytes).await?;
 
     let password_str = String::from_utf8_lossy(&password_bytes);
-    if password_str != expected_password {
+    use subtle::ConstantTimeEq;
+    let passwords_match: bool = password_str
+        .as_bytes()
+        .ct_eq(expected_password.as_bytes())
+        .into();
+    if !passwords_match {
         return Err(Socks5Error::AuthFailed);
     }
 

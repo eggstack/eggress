@@ -618,6 +618,7 @@ dependencies = [
  "http",
  "httparse",
  "proptest",
+ "subtle",
  "thiserror",
  "tokio",
 ]
@@ -647,6 +648,7 @@ dependencies = [
  "eggress-core",
  "eggress-testkit",
  "proptest",
+ "subtle",
  "thiserror",
  "tokio",
 ]
@@ -689,6 +691,7 @@ dependencies = [
  "eggress-uri",
  "fastrand",
  "ipnet",
+ "once_cell",
  "proptest",
  "regex",
  "serde",
@@ -741,6 +744,7 @@ dependencies = [
  "eggress-udp",
  "eggress-uri",
  "rustls",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-util",

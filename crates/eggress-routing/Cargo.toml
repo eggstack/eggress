@@ -10,6 +10,7 @@ eggress-core.workspace = true
 eggress-uri.workspace = true
 thiserror.workspace = true
 regex.workspace = true
+once_cell.workspace = true
 ipnet.workspace = true
 fastrand.workspace = true
 arc-swap.workspace = true

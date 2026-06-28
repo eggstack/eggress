@@ -71,15 +71,15 @@ impl HealthCell {
     }
 
     pub fn snapshot(&self) -> HealthSnapshot {
-        self.inner.read().unwrap().clone()
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn state(&self) -> HealthState {
-        self.inner.read().unwrap().state
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).state
     }
 
     pub fn observe_success(&self, latency: Duration, config: &HealthConfig) {
-        let mut snap = self.inner.write().unwrap();
+        let mut snap = self.inner.write().unwrap_or_else(|e| e.into_inner());
         snap.consecutive_successes += 1;
         snap.consecutive_failures = 0;
         snap.last_checked_at = Some(SystemTime::now());
@@ -110,7 +110,7 @@ impl HealthCell {
     }
 
     pub fn observe_failure(&self, error: Option<String>, config: &HealthConfig) {
-        let mut snap = self.inner.write().unwrap();
+        let mut snap = self.inner.write().unwrap_or_else(|e| e.into_inner());
         snap.consecutive_failures += 1;
         snap.consecutive_successes = 0;
         snap.last_checked_at = Some(SystemTime::now());

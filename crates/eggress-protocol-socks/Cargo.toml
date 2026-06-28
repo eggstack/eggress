@@ -10,6 +10,7 @@ eggress-core.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+subtle.workspace = true
 
 [dev-dependencies]
 eggress-testkit.workspace = true

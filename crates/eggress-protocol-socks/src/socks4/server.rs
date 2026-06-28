@@ -89,7 +89,8 @@ pub async fn read_socks4_request<S: tokio::io::AsyncRead + Unpin>(
         user_id_bytes.push(buf[0]);
     }
 
-    let user_id = String::from_utf8_lossy(&user_id_bytes).into_owned();
+    let user_id = String::from_utf8(user_id_bytes)
+        .map_err(|_| Socks4Error::MalformedRequest("invalid UTF-8 in user ID".into()))?;
 
     // SOCKS4a: if IP is 0.0.0.x (x != 0), read domain after user ID.
     let domain =
@@ -111,7 +112,8 @@ pub async fn read_socks4_request<S: tokio::io::AsyncRead + Unpin>(
                 }
                 domain_bytes.push(buf[0]);
             }
-            let domain = String::from_utf8_lossy(&domain_bytes).into_owned();
+            let domain = String::from_utf8(domain_bytes)
+                .map_err(|_| Socks4Error::MalformedRequest("invalid UTF-8 in domain".into()))?;
             if domain.is_empty() {
                 return Err(Socks4Error::MalformedRequest(
                     "empty domain in SOCKS4a request".into(),

@@ -81,7 +81,12 @@ pub fn encrypt_chunk(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
     // Prepend length (2 bytes big-endian)
-    let len = plaintext.len() as u16;
+    let len: u16 = plaintext.len().try_into().map_err(|_| {
+        ShadowsocksError::Other(format!(
+            "plaintext too large for AEAD chunk: {} bytes (max 65535)",
+            plaintext.len()
+        ))
+    })?;
     let mut payload = Vec::with_capacity(2 + plaintext.len());
     payload.extend_from_slice(&len.to_be_bytes());
     payload.extend_from_slice(plaintext);

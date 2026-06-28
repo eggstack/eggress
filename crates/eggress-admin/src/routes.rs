@@ -137,7 +137,13 @@ pub async fn handle_request(
                     })
                 })
                 .collect();
-            build_json_response(200, serde_json::to_string(&groups).unwrap())
+            build_json_response(
+                200,
+                match serde_json::to_string(&groups) {
+                    Ok(s) => s,
+                    Err(e) => return build_json_response(500, format!("serialization error: {e}")),
+                },
+            )
         }
         "/-/config" => {
             let snap = state.snapshot();
@@ -302,7 +308,13 @@ pub async fn handle_request(
                 transport: eggress_routing::TransportKind::Tcp,
             };
             let explanation = router.explain(&request, snap.generation);
-            build_json_response(200, serde_json::to_string(&explanation).unwrap())
+            build_json_response(
+                200,
+                match serde_json::to_string(&explanation) {
+                    Ok(s) => s,
+                    Err(e) => return build_json_response(500, format!("serialization error: {e}")),
+                },
+            )
         }
         "/metrics" => build_response(
             200,

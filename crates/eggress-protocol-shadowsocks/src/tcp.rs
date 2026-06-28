@@ -26,7 +26,7 @@ pub async fn shadowsocks_connect(
 
     let subkey = method.derive_key(password.as_bytes(), &salt);
 
-    let address = encode_address(target);
+    let address = encode_address(target)?;
     let nonce_bytes = vec![0u8; method.nonce_size()];
     let encrypted_addr = aead_encrypt_raw(method, &subkey, &nonce_bytes, &address)?;
 
