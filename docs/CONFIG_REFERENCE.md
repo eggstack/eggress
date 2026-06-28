@@ -208,6 +208,10 @@ First-match-wins routing rules. Each rule matches a condition and selects an act
 
 ### `[rules.match]` — Recursive Match Expressions
 
+Recursive match expressions are bounded to a maximum depth of 10 and 100 total
+matcher nodes. Configurations exceeding either limit are rejected at compile
+time.
+
 Composite matchers:
 
 ```toml

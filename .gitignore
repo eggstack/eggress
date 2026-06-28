@@ -1,5 +1,6 @@
 /target
 /dist
+crates/eggress-python/dist/
 fuzz/target/
 .DS_Store
 *.swp

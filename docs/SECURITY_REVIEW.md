@@ -87,7 +87,8 @@ Adversaries may include malicious clients on the network, compromised upstream p
 **Route Expression Complexity** (`eggress-config/src/lib.rs`):
 - Regex patterns in routing rules are validated at config load time.
 - Invalid regex is rejected with a clear error message.
-- Recursive matchers (`all`, `any_of`, `not`) are supported but no depth limit is enforced.
+- Recursive matchers (`all`, `any_of`, `not`) are supported with a maximum
+  depth of 10 and a maximum of 100 matcher nodes per expression.
 
 **Configuration Validation** (`eggress-config/src/validate.rs`):
 - Duplicate listener names, upstream IDs, and group IDs are rejected.
@@ -202,10 +203,9 @@ Adversaries may include malicious clients on the network, compromised upstream p
 2. **No per-connection timeout for protocol detection**: A client that connects but sends no data will hold a connection indefinitely (until TCP keepalive or OS timeout).
 3. **No global connection limit**: Only per-listener limits are configurable; no cross-listener cap.
 4. **Route expression DoS**: Complex regex or deeply nested matchers could cause high CPU usage during evaluation. No regex timeout is enforced.
-5. **UDP datagram size not validated on receive**: `max_datagram_size` is enforced on send, but malformed oversized datagrams from clients may be partially processed before rejection.
-6. **No rate limiting**: No request rate limiting on any protocol or admin endpoint.
-7. **Logging level sensitivity**: At `debug` level, connection metadata is logged; operators should be cautious about log retention in sensitive environments.
-8. **No credential rotation**: Credentials are static in config; no support for dynamic credential rotation without restart/reload.
+5. **No rate limiting**: No request rate limiting on any protocol or admin endpoint.
+6. **Logging level sensitivity**: At `debug` level, connection metadata is logged; operators should be cautious about log retention in sensitive environments.
+7. **No credential rotation**: Credentials are static in config; no support for dynamic credential rotation without restart/reload.
 
 ## Deferred Items
 

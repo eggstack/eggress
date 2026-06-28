@@ -48,6 +48,7 @@
 
 mod error;
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -214,7 +215,7 @@ impl EggressService {
         });
 
         Ok(EggressHandle {
-            state: Some(state),
+            state,
             token: Some(token),
             _run_handle: None,
             _config_path: Some(config_path),
@@ -293,7 +294,7 @@ impl EggressService {
             .map_err(|_| EggressError::Startup("startup channel dropped".into()))??;
 
         Ok(EggressHandle {
-            state: Some(state),
+            state,
             token: Some(token),
             _run_handle: Some(run_handle),
             _config_path: Some(config_path),
@@ -332,7 +333,7 @@ impl EggressService {
 /// timeout. Explicit `shutdown()` or `shutdown_blocking()` is preferred to
 /// guarantee orderly teardown.
 pub struct EggressHandle {
-    state: Option<Arc<eggress_runtime::RuntimeState>>,
+    state: Arc<eggress_runtime::RuntimeState>,
     token: Option<tokio_util::sync::CancellationToken>,
     _run_handle: Option<std::thread::JoinHandle<()>>,
     _config_path: Option<String>,
@@ -343,28 +344,24 @@ pub struct EggressHandle {
 impl EggressHandle {
     /// Get the addresses the service is listening on.
     pub fn bound_addresses(&self) -> BoundAddresses {
-        let state = self.state.as_ref().expect("handle consumed");
-        let addrs = state
+        let addrs = self
+            .state
             .listener_addrs
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let admin = state
+        let admin = self
+            .state
             .admin_local_addr
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let snap = state.snapshot.load();
+        let snap = self.state.snapshot.load();
         let listeners: Vec<ListenerAddress> = snap
             .listeners
             .iter()
             .enumerate()
             .map(|(idx, lcfg)| ListenerAddress {
                 name: lcfg.name.clone(),
-                addr: addrs.get(idx).copied().unwrap_or_else(|| {
-                    // Fallback: parse from config (shouldn't happen in normal operation)
-                    lcfg.bind
-                        .parse()
-                        .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap())
-                }),
+                addr: listener_addr_or_configured(&addrs, idx, &lcfg.bind),
             })
             .collect();
         BoundAddresses {
@@ -375,9 +372,9 @@ impl EggressHandle {
 
     /// Get the current service status.
     pub fn status(&self) -> ServiceStatus {
-        let state = self.state.as_ref().expect("handle consumed");
-        let snap = state.snapshot.load();
-        let addrs = state
+        let snap = self.state.snapshot.load();
+        let addrs = self
+            .state
             .listener_addrs
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -389,26 +386,23 @@ impl EggressHandle {
             .map(|(idx, lcfg)| ListenerStatus {
                 name: lcfg.name.clone(),
                 bind: lcfg.bind.clone(),
-                local_addr: addrs.get(idx).copied().unwrap_or_else(|| {
-                    lcfg.bind
-                        .parse()
-                        .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap())
-                }),
+                local_addr: listener_addr_or_configured(&addrs, idx, &lcfg.bind),
                 protocols: lcfg.protocols.iter().map(|p| format!("{p}")).collect(),
                 udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
             })
             .collect();
 
-        let udp_active = state
+        let udp_active = self
+            .state
             .udp_metrics
             .associations_active
             .load(Ordering::Relaxed);
 
         ServiceStatus {
             generation: snap.generation,
-            readiness: state.readiness.load(Ordering::Relaxed),
-            active_connections: state.active_connections.load(Ordering::Relaxed),
-            uptime_secs: state.start_time.elapsed().as_secs(),
+            readiness: self.state.readiness.load(Ordering::Relaxed),
+            active_connections: self.state.active_connections.load(Ordering::Relaxed),
+            uptime_secs: self.state.start_time.elapsed().as_secs(),
             listener_count: snap.listeners.len(),
             listeners,
             udp_associations_active: udp_active,
@@ -418,8 +412,7 @@ impl EggressHandle {
 
     /// Render Prometheus metrics text.
     pub fn metrics_text(&self) -> Result<String, EggressError> {
-        let state = self.state.as_ref().expect("handle consumed");
-        Ok(state.metrics.render_prometheus())
+        Ok(self.state.metrics.render_prometheus())
     }
 
     /// Reload configuration from a TOML string.
@@ -431,7 +424,6 @@ impl EggressHandle {
             .reload_mutex
             .lock()
             .map_err(|_| EggressError::Reload("concurrent reload in progress".to_string()))?;
-        let state = self.state.as_ref().expect("handle consumed");
 
         // Parse and validate the new config
         let config: eggress_config::model::ConfigFile =
@@ -454,7 +446,7 @@ impl EggressHandle {
             .map_err(|e| EggressError::Reload(e.to_string()))?;
 
         // Classify reload
-        let prev_snapshot = state.snapshot.load();
+        let prev_snapshot = self.state.snapshot.load();
         let old_listeners = &prev_snapshot.listeners;
         let new_listeners = &new_rt_config.listeners;
 
@@ -489,11 +481,11 @@ impl EggressHandle {
         let gen = new_snapshot.generation;
         let upstreams = new_snapshot.upstreams.len();
 
-        state.routing.swap_arc(new_snapshot.router.clone());
-        state.snapshot.store(Arc::new(new_snapshot));
+        self.state.routing.swap_arc(new_snapshot.router.clone());
+        self.state.snapshot.store(Arc::new(new_snapshot));
 
-        state.metrics.set_config_generation(gen);
-        state.metrics.record_reload(true);
+        self.state.metrics.set_config_generation(gen);
+        self.state.metrics.record_reload(true);
 
         Ok(ReloadOutcome::Applied {
             generation: gen,
@@ -578,6 +570,22 @@ impl Drop for EggressHandle {
             let _ = std::fs::remove_file(&path);
         }
     }
+}
+
+fn listener_addr_or_configured(
+    bound_addrs: &[SocketAddr],
+    idx: usize,
+    configured_bind: &str,
+) -> SocketAddr {
+    bound_addrs
+        .get(idx)
+        .copied()
+        .or_else(|| configured_bind.parse().ok())
+        .unwrap_or_else(default_listener_addr)
+}
+
+fn default_listener_addr() -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
 }
 
 /// Addresses the service is listening on.
@@ -718,4 +726,39 @@ fn write_temp_config(config: &EggressConfig) -> Result<String, EggressError> {
     std::fs::write(&path, &config.source_toml)
         .map_err(|e| EggressError::Config(format!("failed to write temp config: {e}")))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::SocketAddr;
+
+    use super::{default_listener_addr, listener_addr_or_configured};
+
+    #[test]
+    fn listener_addr_prefers_bound_address() {
+        let bound: SocketAddr = "127.0.0.1:1234".parse().unwrap();
+
+        assert_eq!(
+            listener_addr_or_configured(&[bound], 0, "127.0.0.1:5678"),
+            bound
+        );
+    }
+
+    #[test]
+    fn listener_addr_falls_back_to_configured_bind() {
+        let configured: SocketAddr = "127.0.0.1:5678".parse().unwrap();
+
+        assert_eq!(
+            listener_addr_or_configured(&[], 0, "127.0.0.1:5678"),
+            configured
+        );
+    }
+
+    #[test]
+    fn listener_addr_uses_default_for_invalid_configured_bind() {
+        assert_eq!(
+            listener_addr_or_configured(&[], 0, "not an address"),
+            default_listener_addr()
+        );
+    }
 }

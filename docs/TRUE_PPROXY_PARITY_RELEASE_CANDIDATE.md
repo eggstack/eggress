@@ -184,7 +184,7 @@ Note: Gated tests are not run during this audit. They require external dependenc
 
 - **No release blockers identified**
 - 14 implemented mitigations covering credential redaction, header injection prevention, UDP amplification prevention, input size limits, config validation, capability classification, TLS verification, admin loopback, no unsafe code, no OpenSSL, atomic reload, unsupported protocol diagnostics, and Python binding security
-- 8 residual risks documented (no admin auth, no protocol detection timeout, no global connection limit, regex DoS, UDP datagram size, no rate limiting, logging sensitivity, no credential rotation)
+- 7 residual risks documented (no admin auth, no protocol detection timeout, no global connection limit, regex DoS, no rate limiting, logging sensitivity, no credential rotation)
 - All deferred items are documented in `SECURITY_REVIEW.md`
 - Python binding surface reviewed: exception strings, repr output, translation warnings, generated TOML, context manager cleanup, no import-time side effects
 

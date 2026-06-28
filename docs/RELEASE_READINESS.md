@@ -21,8 +21,8 @@ All five commands must pass cleanly before tagging a release.
 ## Security Review Status
 
 - [SECURITY_REVIEW.md](SECURITY_REVIEW.md) exists and covers all reviewed surfaces.
-- **No release blockers identified.** The security review documents 12 implemented mitigations and 8 residual risks, all appropriate for the current release scope (single-operator, controlled-network deployments).
-- Key mitigations: credential redaction, HTTP header injection prevention, UDP amplification prevention, client pinning, input size limits, config validation, capability classification, TLS certificate verification, admin loopback default, no unsafe code, no OpenSSL.
+- **No release blockers identified.** The security review documents 14 implemented mitigations and 7 residual risks, all appropriate for the current release scope (single-operator, controlled-network deployments).
+- Key mitigations: credential redaction, HTTP header injection prevention, UDP amplification prevention, client pinning, input size limits, config validation, capability classification, TLS certificate verification, admin loopback default, no unsafe code, no OpenSSL, atomic reload, unsupported protocol diagnostics, Python binding security.
 - See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) Deferred Items for planned security enhancements.
 
 ## Parity Matrix Status
@@ -83,7 +83,6 @@ All five commands must pass cleanly before tagging a release.
 4. **No dynamic credential rotation**: Credentials are static in config.
 5. **No regex evaluation timeout**: Complex regex rules could cause high CPU usage.
 6. **No per-connection timeout for protocol detection**: Silent clients hold connections indefinitely.
-7. **UDP datagram size not validated on receive**: Oversized datagrams may be partially processed before rejection.
 
 ## Dependency Policy Enforcement
 
