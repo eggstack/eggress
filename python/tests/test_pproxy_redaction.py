@@ -7,9 +7,7 @@ import pytest
 from eggress import (
     EggressConfig,
     EggressService,
-    TranslationResult,
     translate_pproxy_args,
-    translate_pproxy_uri,
 )
 
 

@@ -2,11 +2,11 @@ import pytest
 from eggress import (
     EggressError,
     ConfigError,
-    StartupError,
-    ReloadError,
-    ShutdownError,
-    UnsupportedFeatureError,
-    InternalError,
+    StartupError,  # noqa: F401
+    ReloadError,  # noqa: F401
+    ShutdownError,  # noqa: F401
+    UnsupportedFeatureError,  # noqa: F401
+    InternalError,  # noqa: F401
 )
 
 VALID_TOML = """

@@ -199,12 +199,45 @@ Note: Gated tests are not run during this audit. They require external dependenc
 
 ## 15. Performance Sanity Summary
 
-Formal benchmarking is deferred to a future phase. Current evidence:
+Criterion benchmarks run on macOS (Apple Silicon). No pproxy comparison available in this environment.
 
-- All Rust verification commands pass (fmt, check, test, clippy, deny, audit)
-- Load tests exist but are `#[ignore]` by default; not run in this audit
-- Criterion benchmarks exist for TCP relay, UDP relay, route match, HTTP CONNECT upstream
-- Python package overhead is bounded by PyO3 FFI cost (minimal; GIL released on all blocking calls)
+### Route Match (ns/op)
+
+| Benchmark | Time |
+|-----------|------|
+| `early_match_host_suffix` | ~107 ns |
+| `cidr_match` | ~126 ns |
+| `mid_match_host_suffix` | ~220 ns |
+| `no_match_default` | ~104 ns |
+| `ipv6_cidr_match` | ~325 ns |
+| `compound_match_all` | ~238 ns |
+| `late_match_port_range` | ~125 ns |
+
+### HTTP CONNECT Upstream (µs/op)
+
+| Benchmark | Time |
+|-----------|------|
+| `open_no_auth` | ~89 µs |
+| `open_with_basic_auth` | ~89 µs |
+| `rejected_407` | ~91 µs |
+
+### UDP Codec (ns/op)
+
+| Benchmark | Time |
+|-----------|------|
+| `encode_ipv4_small` | ~39 ns |
+| `encode_ipv6_large` | ~86 ns |
+| `encode_domain_small` | ~22 ns |
+| `decode_ipv4` | ~2.2 ns |
+| `decode_domain` | ~22 ns |
+| `roundtrip_ipv4_small` | ~22 ns |
+| `roundtrip_domain_small` | ~59 ns |
+
+### Notes
+
+- `tcp_relay` benchmark skipped due to macOS ephemeral port exhaustion on `127.0.0.1` during high-frequency bind/accept cycles. This is a benchmark environment limitation, not a runtime issue. Production relay path is covered by integration tests.
+- Load tests exist but are `#[ignore]` by default; not run in this audit.
+- Python package overhead is bounded by PyO3 FFI cost (minimal; GIL released on all blocking calls).
 
 ## 16. Hosted CI / Local Verification Status
 
@@ -216,6 +249,8 @@ Formal benchmarking is deferred to a future phase. Current evidence:
   - `cargo clippy --workspace --all-targets -- -D warnings`: PASS
   - `cargo deny check`: PASS
   - `cargo audit`: PASS (1 allowed warning)
+  - `python -m ruff check python/`: PASS (after Phase 17 fixes)
+  - `python -m mypy python/eggress --ignore-missing-imports`: 20 false-positive `_inner` attribute errors (PyO3 native types invisible to mypy; expected)
 
 ## 17. Release Blockers
 

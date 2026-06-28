@@ -1,5 +1,5 @@
 import pytest
-from eggress import EggressService, ReloadError
+from eggress import EggressService
 
 INITIAL_TOML = """
 version = 1

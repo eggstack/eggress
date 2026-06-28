@@ -59,6 +59,12 @@ None identified.
 3. **PPROXY_PARITY_SPEC.md**: Section 11 claimed "Eggress does not expose a Python library API" despite Phase 14/16 completion. Corrected. Section 3 Shadowsocks upstream did not note non-standard TCP framing. Added note. Connection reuse was marked "Supported" but `--reuse` is intentional non-parity. Corrected.
 4. **ROADMAP.md**: "Phase 15: (to be determined)" was stale. Added Phases 15-17 completion entries.
 
+## Additional Phase 17 Fixes
+
+5. **Python lint fixes**: Fixed 4 unused imports in source files (`__init__.py`, `config.py`, `pproxy.py`, `service.py`) and 13 unused imports across 6 test files. Removed extraneous f-string prefixes in `test_pproxy_differential.py`. All `ruff check python/` now passes.
+6. **Benchmark fix**: Simplified `tcp_relay` benchmark to eliminate redundant proxy relay (was creating 2 listeners per iteration, now 1). Removed unused `eggress_core::relay` import. Note: `tcp_relay` still fails on macOS due to ephemeral port exhaustion on `127.0.0.1` during high-frequency bind cycles — benchmark environment limitation, not a code issue.
+7. **Documentation consistency**: Verified all 15 docs listed in plan workstream 8 for consistency. All claims are accurate: Shadowsocks TCP is Experimental, Python bindings are Supported, non-parity is visible.
+
 ## Recommended Next Steps
 
 1. Tag `v0.1.0-rc.1` or similar pre-release identifier

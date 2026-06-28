@@ -5,7 +5,6 @@ from os import PathLike
 from typing import Any, Optional, Sequence, Union
 
 from eggress._eggress import (
-    PyEggressConfig,
     PyEggressService,
     PyEggressHandle,
     UnsupportedFeatureError,

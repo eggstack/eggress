@@ -1,10 +1,8 @@
 """Concurrency and multi-service behavior tests for pproxy compat layer."""
 
 import threading
-import time
 
-import pytest
-from eggress import EggressService, EggressConfig
+from eggress import EggressService
 
 
 VALID_TOML = """

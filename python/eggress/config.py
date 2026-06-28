@@ -3,7 +3,7 @@ from __future__ import annotations
 from os import PathLike
 from typing import Union
 
-from eggress._eggress import PyEggressConfig, ConfigError
+from eggress._eggress import PyEggressConfig
 
 
 class EggressConfig:

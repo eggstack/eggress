@@ -5,8 +5,6 @@ from typing import Sequence
 
 from eggress._eggress import (
     PyTranslationResult,
-    PyTranslationWarning,
-    PyUnsupportedFeature,
     translate_pproxy_args as _translate_pproxy_args,
     translate_pproxy_uri as _translate_pproxy_uri,
     check_pproxy_args as _check_pproxy_args,

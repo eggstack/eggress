@@ -10,10 +10,7 @@ These tests are skipped by default.
 import asyncio
 import os
 import socket
-import subprocess
-import sys
 import threading
-import time
 
 import pytest
 
@@ -21,7 +18,7 @@ GATE = os.environ.get("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL", "0") != "0"
 
 pproxy = pytest.importorskip("pproxy", reason="pproxy not installed")
 
-from eggress import start_pproxy, EggressService, translate_pproxy_args
+from eggress import translate_pproxy_args  # noqa: E402
 
 
 def _echo_server():
@@ -108,7 +105,7 @@ def test_pproxy_http_vs_eggress_http():
     echo_srv, echo_port = _echo_server()
     try:
         # Verify eggress can translate HTTP listener
-        result = translate_pproxy_args(["-l", f"http://127.0.0.1:0", "-r", f"direct://"])
+        result = translate_pproxy_args(["-l", "http://127.0.0.1:0", "-r", "direct://"])
         assert result.ok
         assert "http" in result.toml
     finally:

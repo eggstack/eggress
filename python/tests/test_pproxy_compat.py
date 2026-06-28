@@ -1,13 +1,10 @@
 import socket
 import threading
-import time
 
 import pytest
 from eggress import (
     EggressService,
-    EggressConfig,
     translate_pproxy_args,
-    translate_pproxy_uri,
     UnsupportedFeatureError,
 )
 
