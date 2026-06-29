@@ -448,139 +448,204 @@ async fn execute_tunnel(
     }
 }
 
-/// Execute an HTTP forward-proxy session.
+/// Execute an HTTP forward-proxy session with persistent connection support.
+///
+/// Loops over requests on the client connection, forwarding each to the
+/// appropriate upstream. Supports HTTP/1.1 keep-alive semantics: the
+/// connection persists until the client sends `Connection: close` or the
+/// upstream signals close.
+#[allow(unused_assignments)]
 async fn execute_http_forward(
-    mut pending: PendingHttpForward,
+    pending: PendingHttpForward,
     config: &ConnectionConfig,
-    target: Option<String>,
+    _target: Option<String>,
 ) -> SessionReport {
     tracing::info!("forward proxy to {}", pending.target);
 
-    let request = RouteRequest {
-        target: &pending.target,
-        source: config.context.source,
-        listener: &config.context.listener,
-        inbound_protocol: eggress_core::ProtocolId::Http,
-        identity: &pending.identity,
-        transport: eggress_routing::TransportKind::Tcp,
-    };
+    let mut client = pending.client;
+    let mut total_bytes_upstream: u64 = 0;
+    let mut total_bytes_downstream: u64 = 0;
+    let mut last_target: Option<String> = None;
+    let mut last_rule_id: Option<String> = None;
+    let mut last_upstream_group: Option<String> = None;
+    let mut last_upstream_id: Option<String> = None;
+    let mut last_selection_reason: Option<eggress_routing::SelectionReason> = None;
+    let mut last_route = String::new();
 
-    match open_route(config, &request).await {
-        Ok(mut opened) => {
-            let route = opened.route_description;
-            let rule_id = opened.rule_id;
-            let upstream_group = opened.upstream_group;
-            let upstream_id = opened.upstream_id;
-            let selection_reason = opened.selection_reason;
-            let _active_lease = opened.active_lease;
-            let origin_req = eggress_protocol_http::build_origin_request(&pending.request);
-            let head_bytes = origin_req.len() as u64;
+    // Process the first request (already parsed in pending)
+    let mut request = pending.request;
+    let mut client_close = request.connection_close;
 
-            if let Err(e) = opened.stream.write_all(origin_req.as_bytes()).await {
-                let _ = reply::send_http_forward_failure(
-                    &mut pending.client,
-                    &SessionOpenError::Other(e.to_string()),
-                )
-                .await;
-                return SessionReport::open_failed(
-                    SessionOpenError::Other(e.to_string()),
-                    None,
-                    target,
-                    route,
-                );
-            }
-            if let Err(e) = opened.stream.flush().await {
-                let _ = reply::send_http_forward_failure(
-                    &mut pending.client,
-                    &SessionOpenError::Other(e.to_string()),
-                )
-                .await;
-                return SessionReport::open_failed(
-                    SessionOpenError::Other(e.to_string()),
-                    None,
-                    target.clone(),
-                    route.clone(),
-                );
-            }
+    loop {
+        let target_addr = request.target.clone();
+        last_target = Some(target_addr.to_string());
 
-            let body_report = match eggress_protocol_http::copy_request_body(
-                &mut pending.client,
-                &mut opened.stream,
-                pending.body_kind,
-                &eggress_protocol_http::BodyCopyLimits::default(),
-            )
-            .await
-            {
-                Ok(report) => report,
-                Err(_e) => {
+        let route_request = RouteRequest {
+            target: &target_addr,
+            source: config.context.source,
+            listener: &config.context.listener,
+            inbound_protocol: eggress_core::ProtocolId::Http,
+            identity: &pending.identity,
+            transport: eggress_routing::TransportKind::Tcp,
+        };
+
+        match open_route(config, &route_request).await {
+            Ok(mut opened) => {
+                last_route = opened.route_description;
+                last_rule_id = opened.rule_id;
+                last_upstream_group = opened.upstream_group;
+                last_upstream_id = opened.upstream_id;
+                last_selection_reason = opened.selection_reason;
+                let _active_lease = opened.active_lease;
+
+                let origin_req = eggress_protocol_http::build_origin_request(&request);
+                let head_bytes = origin_req.len() as u64;
+
+                if let Err(e) = opened.stream.write_all(origin_req.as_bytes()).await {
+                    let _ = reply::send_http_forward_failure(
+                        &mut client,
+                        &SessionOpenError::Other(e.to_string()),
+                    )
+                    .await;
                     return SessionReport {
                         protocol: None,
-                        target,
-                        route,
-                        bytes_upstream: 0,
-                        bytes_downstream: 0,
-                        outcome: SessionOutcome::ClientProtocolError,
-                        failure: Some(FailureCategory::Protocol),
-                        rule_id,
-                        upstream_group,
-                        upstream_id,
-                        selection_reason,
-                    };
-                }
-            };
-
-            let bytes_upstream = head_bytes + body_report.wire_bytes;
-
-            let response_report = match eggress_protocol_http::forward_response(
-                &mut opened.stream,
-                &mut pending.client,
-            )
-            .await
-            {
-                Ok(report) => report,
-                Err(_e) => {
-                    return SessionReport {
-                        protocol: None,
-                        target,
-                        route,
-                        bytes_upstream,
-                        bytes_downstream: 0,
+                        target: last_target,
+                        route: last_route,
+                        bytes_upstream: total_bytes_upstream + head_bytes,
+                        bytes_downstream: total_bytes_downstream,
                         outcome: SessionOutcome::RelayFailed,
                         failure: Some(FailureCategory::Relay),
-                        rule_id,
-                        upstream_group,
-                        upstream_id,
-                        selection_reason,
+                        rule_id: last_rule_id,
+                        upstream_group: last_upstream_group,
+                        upstream_id: last_upstream_id,
+                        selection_reason: last_selection_reason,
                     };
                 }
-            };
+                if let Err(e) = opened.stream.flush().await {
+                    let _ = reply::send_http_forward_failure(
+                        &mut client,
+                        &SessionOpenError::Other(e.to_string()),
+                    )
+                    .await;
+                    return SessionReport {
+                        protocol: None,
+                        target: last_target,
+                        route: last_route,
+                        bytes_upstream: total_bytes_upstream + head_bytes,
+                        bytes_downstream: total_bytes_downstream,
+                        outcome: SessionOutcome::RelayFailed,
+                        failure: Some(FailureCategory::Relay),
+                        rule_id: last_rule_id,
+                        upstream_group: last_upstream_group,
+                        upstream_id: last_upstream_id,
+                        selection_reason: last_selection_reason,
+                    };
+                }
 
-            SessionReport {
-                protocol: None,
-                target,
-                route,
-                bytes_upstream,
-                bytes_downstream: response_report.bytes_forwarded,
-                outcome: SessionOutcome::Completed,
-                failure: None,
-                rule_id,
-                upstream_group,
-                upstream_id,
-                selection_reason,
+                let body_report = match eggress_protocol_http::copy_request_body(
+                    &mut client,
+                    &mut opened.stream,
+                    request.body_kind(),
+                    &eggress_protocol_http::BodyCopyLimits::default(),
+                )
+                .await
+                {
+                    Ok(report) => report,
+                    Err(_e) => {
+                        return SessionReport {
+                            protocol: None,
+                            target: last_target,
+                            route: last_route,
+                            bytes_upstream: total_bytes_upstream + head_bytes,
+                            bytes_downstream: total_bytes_downstream,
+                            outcome: SessionOutcome::ClientProtocolError,
+                            failure: Some(FailureCategory::Protocol),
+                            rule_id: last_rule_id,
+                            upstream_group: last_upstream_group,
+                            upstream_id: last_upstream_id,
+                            selection_reason: last_selection_reason,
+                        };
+                    }
+                };
+
+                total_bytes_upstream += head_bytes + body_report.wire_bytes;
+
+                let forward_result =
+                    match eggress_protocol_http::forward_response(&mut opened.stream, &mut client)
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(_e) => {
+                            return SessionReport {
+                                protocol: None,
+                                target: last_target,
+                                route: last_route,
+                                bytes_upstream: total_bytes_upstream,
+                                bytes_downstream: total_bytes_downstream,
+                                outcome: SessionOutcome::RelayFailed,
+                                failure: Some(FailureCategory::Relay),
+                                rule_id: last_rule_id,
+                                upstream_group: last_upstream_group,
+                                upstream_id: last_upstream_id,
+                                selection_reason: last_selection_reason,
+                            };
+                        }
+                    };
+
+                total_bytes_downstream += forward_result.report.bytes_forwarded;
+
+                // Determine whether to continue the session
+                let should_close = client_close
+                    || forward_result.client_should_close
+                    || !forward_result.upstream_alive;
+
+                if should_close {
+                    break;
+                }
+
+                // Read the next request from the client
+                match eggress_protocol_http::forward_request_stream(&mut client).await {
+                    Ok(next_request) => {
+                        client_close = next_request.connection_close;
+                        request = next_request;
+                    }
+                    Err(eggress_protocol_http::HttpError::Io(ref e))
+                        if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                    {
+                        // Client closed the connection
+                        break;
+                    }
+                    Err(_) => {
+                        // Malformed next request — close with error
+                        break;
+                    }
+                }
+            }
+            Err(SessionOpenError::PolicyDenied) => {
+                let _ =
+                    reply::send_http_forward_failure(&mut client, &SessionOpenError::PolicyDenied)
+                        .await;
+                return SessionReport::rejected(None, last_target, "reject".to_string());
+            }
+            Err(error) => {
+                let _ = reply::send_http_forward_failure(&mut client, &error).await;
+                return SessionReport::open_failed(error, None, last_target, "error".to_string());
             }
         }
-        Err(SessionOpenError::PolicyDenied) => {
-            let _ = reply::send_http_forward_failure(
-                &mut pending.client,
-                &SessionOpenError::PolicyDenied,
-            )
-            .await;
-            SessionReport::rejected(None, target, "reject".to_string())
-        }
-        Err(error) => {
-            let _ = reply::send_http_forward_failure(&mut pending.client, &error).await;
-            SessionReport::open_failed(error, None, target, "error".to_string())
-        }
+    }
+
+    SessionReport {
+        protocol: None,
+        target: last_target,
+        route: last_route,
+        bytes_upstream: total_bytes_upstream,
+        bytes_downstream: total_bytes_downstream,
+        outcome: SessionOutcome::Completed,
+        failure: None,
+        rule_id: last_rule_id,
+        upstream_group: last_upstream_group,
+        upstream_id: last_upstream_id,
+        selection_reason: last_selection_reason,
     }
 }
 

@@ -2233,3 +2233,1222 @@ upstream_group = "route-group"
     // SOCKS5 error reply via its failure semantics (502/connection-refused).
     assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
 }
+
+// ===== Expanded HTTP CONNECT Differential Tests =====
+
+/// Send data through an HTTP CONNECT proxy with Basic auth credentials.
+async fn send_through_http_with_auth(
+    proxy_addr: std::net::SocketAddr,
+    target: &TargetAddr,
+    payload: &[u8],
+    username: &str,
+    password: &str,
+) -> Result<Vec<u8>, String> {
+    let stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    let boxed: BoxStream = Box::new(stream);
+    let mut conn = http_connect(
+        boxed,
+        target,
+        Some((username, password)),
+        &Default::default(),
+    )
+    .await
+    .map_err(|e| format!("http connect handshake failed: {e}"))?;
+    conn.write_all(payload)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    conn.shutdown()
+        .await
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+    let mut buf = Vec::new();
+    conn.read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(buf)
+}
+
+/// Send data through a SOCKS5 proxy with auth credentials.
+async fn send_through_socks5_with_auth(
+    proxy_addr: std::net::SocketAddr,
+    target: &TargetAddr,
+    payload: &[u8],
+    username: &str,
+    password: &str,
+) -> Result<Vec<u8>, String> {
+    let stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    let boxed: BoxStream = Box::new(stream);
+    let socks_addr = target_to_socks_addr(target);
+    let mut conn = socks5_connect(boxed, &socks_addr, Some((username, password)))
+        .await
+        .map_err(|e| format!("socks5 handshake failed: {e}"))?;
+    conn.write_all(payload)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    conn.shutdown()
+        .await
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+    let mut buf = Vec::new();
+    conn.read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(buf)
+}
+
+/// Send data through a SOCKS4 proxy using raw protocol bytes.
+async fn send_through_socks4(
+    proxy_addr: std::net::SocketAddr,
+    target: std::net::SocketAddr,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    let mut stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    // SOCKS4 CONNECT request
+    let mut req = vec![0x04, 0x01]; // VER=4, CMD=CONNECT
+    req.extend_from_slice(&target.port().to_be_bytes());
+    match target.ip() {
+        std::net::IpAddr::V4(ip) => req.extend_from_slice(&ip.octets()),
+        std::net::IpAddr::V6(_) => return Err("SOCKS4 does not support IPv6 targets".into()),
+    }
+    req.push(0x00); // user ID terminator
+    stream
+        .write_all(&req)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    let mut reply = [0u8; 8];
+    stream
+        .read_exact(&mut reply)
+        .await
+        .map_err(|e| format!("read reply failed: {e}"))?;
+    assert_eq!(reply[0], 0x00, "SOCKS4 version mismatch");
+    assert_eq!(reply[1], 0x5A, "SOCKS4 connect failed: {}", reply[1]);
+    // Now relay data
+    stream
+        .write_all(payload)
+        .await
+        .map_err(|e| format!("write payload failed: {e}"))?;
+    stream
+        .shutdown()
+        .await
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+    let mut buf = Vec::new();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(buf)
+}
+
+/// Build a TOML config for eggress with HTTP auth.
+fn eggress_http_config_with_auth(port: u16) -> String {
+    format!(
+        r#"
+listen = "http://127.0.0.1:{port}"
+[authentication]
+username = "user"
+password = "pass"
+"#
+    )
+}
+
+/// Both pproxy and eggress with HTTP Basic auth succeed.
+///
+/// Starts pproxy with HTTP auth and eggress from TOML config with auth.
+/// Connects through both with correct credentials, compares payload.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_auth_success() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP with auth ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server_with_auth("http", pproxy_port, "user", "pass").await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http_with_auth(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"http-auth-success",
+        "user",
+        "pass",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP with auth (TOML) ---
+    let eggress_port = eggress_testkit::get_free_port().await;
+    let config = eggress_http_config_with_auth(eggress_port);
+    let (eggress_addr, cancel, eggress_jh) = start_eggress_from_toml_running(&config).await;
+
+    let eggress_result =
+        send_through_http_with_auth(eggress_addr, &target, b"http-auth-success", "user", "pass")
+            .await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Both pproxy and eggress reject without auth when auth is required.
+///
+/// Starts pproxy with HTTP auth and eggress from TOML config with auth.
+/// Connects through both without credentials; both should fail.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_auth_missing() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP with auth ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server_with_auth("http", pproxy_port, "user", "pass").await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Connect WITHOUT auth → should fail
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"should-fail",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP with auth (TOML) ---
+    let eggress_port = eggress_testkit::get_free_port().await;
+    let config = eggress_http_config_with_auth(eggress_port);
+    let (eggress_addr, cancel, eggress_jh) = start_eggress_from_toml_running(&config).await;
+
+    // Connect WITHOUT auth → should fail
+    let eggress_result = send_through_http(eggress_addr, &target, b"should-fail").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Both pproxy and eggress fail on a refused target via HTTP CONNECT.
+///
+/// Uses a target port that has nothing listening. Both should fail.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_refused_target() {
+    skip_if_unavailable();
+
+    // Bind a port, get its number, then close it so nothing is listening
+    let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let refused_port = held.local_addr().unwrap().port();
+    drop(held);
+
+    let target = TargetAddr {
+        host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+        port: refused_port,
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"refused-http",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"refused-http").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// IPv4 target works through both pproxy and eggress HTTP CONNECT.
+///
+/// Uses an IPv4 echo server target. Both should succeed and return
+/// the same echoed payload.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_ipv4_target() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"http-ipv4-target",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"http-ipv4-target").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Domain target works through both pproxy and eggress HTTP CONNECT.
+///
+/// Uses a domain target that resolves to 127.0.0.1. Both should succeed.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_domain_target() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Domain("localhost".to_string()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"http-domain-target",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"http-domain-target").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// IPv6 target works through both pproxy and eggress HTTP CONNECT.
+///
+/// Uses an IPv6 echo server on ::1. Both should succeed and return
+/// the same echoed payload.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_ipv6_target() {
+    skip_if_unavailable();
+
+    // Bind an IPv6 echo server
+    let ipv6_listener = match tokio::net::TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("IPv6 not available on this host: {e}");
+            return;
+        }
+    };
+    let ipv6_addr = ipv6_listener.local_addr().unwrap();
+    let echo_jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match ipv6_listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match stream.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = stream.write_all(&buf[..n]).await;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(ipv6_addr.ip()),
+        port: ipv6_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"http-ipv6-target",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"http-ipv6-target").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+// ===== Expanded SOCKS4/4a Differential Tests =====
+
+/// SOCKS4 CONNECT echo through pproxy and eggress.
+///
+/// Starts pproxy SOCKS4 and eggress SOCKS5 (SOCKS4 is not supported by eggress
+/// natively, so we test pproxy SOCKS4 against a direct connection for comparison).
+/// Verifies that pproxy SOCKS4 can connect to an IPv4 echo target.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4_connect_tcp_echo() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+
+    // --- pproxy SOCKS4 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks4(
+        socket_addr("127.0.0.1", pproxy_port),
+        echo_addr,
+        b"socks4-echo",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 for comparison ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"socks4-echo").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    // Both should succeed and echo the payload
+    compare_tcp_echo(
+        "pproxy-socks4",
+        &pproxy_result,
+        "eggress-socks5",
+        &eggress_result,
+    );
+}
+
+/// SOCKS4a domain CONNECT through pproxy.
+///
+/// Starts pproxy SOCKS4a and connects to a domain target.
+/// Verifies that pproxy SOCKS4a can resolve and connect to a domain.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4a_connect_domain() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+
+    // --- pproxy SOCKS4a ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4a", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Connect to pproxy SOCKS4a with a domain target.
+    // SOCKS4a sends the domain name in the request instead of an IP.
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+
+    // SOCKS4a CONNECT request with domain
+    // VER=4, CMD=CONNECT, PORT
+    // For SOCKS4a: IP = 0.0.0.1 (SOCKS4a indicator), then domain, then port
+    let mut req = vec![0x04, 0x01];
+    req.extend_from_slice(&echo_addr.port().to_be_bytes());
+    // SOCKS4a indicator: IP = 0.0.0.x where x != 0
+    req.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+    req.push(0x00); // user ID terminator
+                    // Domain name
+    req.extend_from_slice(b"localhost");
+    req.push(0x00); // domain terminator
+
+    stream.write_all(&req).await.expect("write failed");
+    let mut reply = [0u8; 8];
+    stream
+        .read_exact(&mut reply)
+        .await
+        .expect("read reply failed");
+
+    let pproxy_result = if reply[0] == 0x00 && reply[1] == 0x5A {
+        stream
+            .write_all(b"socks4a-domain")
+            .await
+            .expect("write payload failed");
+        stream.shutdown().await.expect("shutdown failed");
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.expect("read failed");
+        Ok(buf) as Result<Vec<u8>, String>
+    } else {
+        Err(format!("SOCKS4a connect failed: reply={:?}", reply))
+    };
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 with domain target for comparison ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let domain_target = TargetAddr {
+        host: TargetHost::Domain("localhost".to_string()),
+        port: echo_addr.port(),
+    };
+    let eggress_result = send_through_socks5(eggress_addr, &domain_target, b"socks4a-domain").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo(
+        "pproxy-socks4a",
+        &pproxy_result,
+        "eggress-socks5",
+        &eggress_result,
+    );
+}
+
+// ===== Expanded SOCKS5 Differential Tests =====
+
+/// SOCKS5 with IPv6 target through pproxy and eggress.
+///
+/// Both should succeed connecting to an IPv6 echo server.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_connect_ipv6() {
+    skip_if_unavailable();
+
+    // Bind an IPv6 echo server
+    let ipv6_listener = match tokio::net::TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("IPv6 not available on this host: {e}");
+            return;
+        }
+    };
+    let ipv6_addr = ipv6_listener.local_addr().unwrap();
+    let echo_jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match ipv6_listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match stream.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = stream.write_all(&buf[..n]).await;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(ipv6_addr.ip()),
+        port: ipv6_addr.port(),
+    };
+
+    // --- pproxy SOCKS5 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"socks5-ipv6",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"socks5-ipv6").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// SOCKS5 with domain target through pproxy and eggress.
+///
+/// Both should succeed connecting to a domain target (localhost).
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_connect_domain() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Domain("localhost".to_string()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy SOCKS5 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"socks5-domain",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"socks5-domain").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// SOCKS5 refused target through pproxy and eggress.
+///
+/// Both should fail when the target port has nothing listening.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_refused_target() {
+    skip_if_unavailable();
+
+    // Bind a port, get its number, then close it so nothing is listening
+    let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let refused_port = held.local_addr().unwrap().port();
+    drop(held);
+
+    let target = TargetAddr {
+        host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+        port: refused_port,
+    };
+
+    // --- pproxy SOCKS5 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"socks5-refused",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"socks5-refused").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+// ===== HTTP Forward-Proxy Helpers =====
+
+/// Start a minimal HTTP origin server that records the request and returns a fixed response.
+async fn start_http_origin() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 4096];
+                let mut total = 0;
+                let mut headers_done = false;
+                while !headers_done {
+                    let n = stream.read(&mut buf[total..]).await.unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    total += n;
+                    if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                        headers_done = true;
+                    }
+                }
+                let head = String::from_utf8_lossy(&buf[..total]);
+                let has_body = head.to_lowercase().contains("content-length:");
+                if has_body {
+                    loop {
+                        let n = stream.read(&mut buf[total..]).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        total += n;
+                    }
+                }
+                let response = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, origin!";
+                let _ = stream.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    (addr, jh)
+}
+
+/// Send an HTTP request through a forward proxy and return the raw response bytes.
+async fn send_http_forward(
+    proxy_addr: std::net::SocketAddr,
+    request: &[u8],
+) -> Result<Vec<u8>, String> {
+    let mut stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    stream
+        .write_all(request)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    // Shutdown write side so the proxy sees EOF if it reads until EOF.
+    let _ = stream.shutdown().await;
+    let mut buf = Vec::new();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(buf)
+}
+
+// ===== HTTP Forward-Proxy Differential Tests =====
+
+/// GET request through both HTTP forward proxies.
+///
+/// Sends an absolute-form GET request through pproxy and eggress to a local
+/// HTTP origin. Both should return 200 OK with the origin's body.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_get() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let request = format!(
+        "GET http://127.0.0.1:{}/path HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    // Both should succeed and return the origin response
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p), Ok(e)) = (&pproxy_result, &eggress_result) {
+        let p_body = extract_http_body(p);
+        let e_body = extract_http_body(e);
+        assert_eq!(
+            p_body, e_body,
+            "response body mismatch: pproxy={p_body:?}, eggress={e_body:?}"
+        );
+    }
+}
+
+/// POST request with a body through both HTTP forward proxies.
+///
+/// Sends an absolute-form POST with Content-Length through both proxies.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_post_with_body() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let body = "hello from client";
+    let request = format!(
+        "POST http://127.0.0.1:{}/submit HTTP/1.1\r\n\
+         Host: 127.0.0.1:{}\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\
+         \r\n\
+         {}",
+        origin_addr.port(),
+        origin_addr.port(),
+        body.len(),
+        body,
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p), Ok(e)) = (&pproxy_result, &eggress_result) {
+        let p_status = extract_http_status(p);
+        let e_status = extract_http_status(e);
+        assert_eq!(p_status, e_status, "HTTP status mismatch");
+        let p_body = extract_http_body(p);
+        let e_body = extract_http_body(e);
+        assert_eq!(p_body, e_body, "response body mismatch");
+    }
+}
+
+/// Client sends Connection: close — both proxies should close after response.
+///
+/// Verifies the connection-close behavior is equivalent.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_connection_close() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let request = format!(
+        "GET http://127.0.0.1:{}/close HTTP/1.1\r\n\
+         Host: 127.0.0.1:{}\r\n\
+         Connection: close\r\n\r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p), Ok(e)) = (&pproxy_result, &eggress_result) {
+        let p_status = extract_http_status(p);
+        let e_status = extract_http_status(e);
+        assert_eq!(
+            p_status, e_status,
+            "HTTP status mismatch on Connection: close"
+        );
+    }
+}
+
+/// Two sequential GET requests on the same TCP connection through both proxies.
+///
+/// Validates persistent-connection support on both proxies.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_persistent_connection() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // --- pproxy: two requests on one connection ---
+    let pproxy_result = send_two_requests_on_one_connection(
+        socket_addr("127.0.0.1", pproxy_port),
+        origin_addr.port(),
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress: two requests on one connection ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result =
+        send_two_requests_on_one_connection(eggress_addr, origin_addr.port()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p_bodies), Ok(e_bodies)) = (&pproxy_result, &eggress_result) {
+        assert_eq!(
+            p_bodies.len(),
+            e_bodies.len(),
+            "number of response bodies mismatch"
+        );
+        for (i, (p, e)) in p_bodies.iter().zip(e_bodies.iter()).enumerate() {
+            assert_eq!(p, e, "response body {i} mismatch");
+        }
+    }
+}
+
+/// HEAD request through both HTTP forward proxies.
+///
+/// Both should return the same status code and headers (no body in HEAD).
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_head() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let request = format!(
+        "HEAD http://127.0.0.1:{}/head-test HTTP/1.1\r\n\
+         Host: 127.0.0.1:{}\r\n\
+         Connection: close\r\n\r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p), Ok(e)) = (&pproxy_result, &eggress_result) {
+        let p_status = extract_http_status(p);
+        let e_status = extract_http_status(e);
+        assert_eq!(p_status, e_status, "HEAD status code mismatch");
+    }
+}
+
+/// Chunked request body through both HTTP forward proxies.
+///
+/// Sends a request with `Transfer-Encoding: chunked`. pproxy may or may not
+/// accept it; we compare coarse success/failure equivalence.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_chunked_body() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Chunked body: "hello" in one chunk
+    let request = format!(
+        "POST http://127.0.0.1:{}/chunked HTTP/1.1\r\n\
+         Host: 127.0.0.1:{}\r\n\
+         Transfer-Encoding: chunked\r\n\
+         Connection: close\r\n\
+         \r\n\
+         5\r\n\
+         hello\r\n\
+         0\r\n\
+         \r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    // Both may succeed or fail; we check coarse equivalence.
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+// ===== HTTP Response Parsing Helpers =====
+
+/// Extract the HTTP status line (e.g., "HTTP/1.1 200 OK") from a raw response.
+fn extract_http_status(response: &[u8]) -> String {
+    let text = String::from_utf8_lossy(response);
+    text.lines().next().unwrap_or("").to_string()
+}
+
+/// Extract the body from a raw HTTP response (after the double-CRLF header terminator).
+fn extract_http_body(response: &[u8]) -> String {
+    let text = String::from_utf8_lossy(response);
+    if let Some(pos) = text.find("\r\n\r\n") {
+        text[pos + 4..].to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+/// Send two GET requests on a single TCP connection through a forward proxy.
+///
+/// Returns a `Result` with the list of response bodies, or an error string.
+async fn send_two_requests_on_one_connection(
+    proxy_addr: std::net::SocketAddr,
+    origin_port: u16,
+) -> Result<Vec<String>, String> {
+    let mut stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+
+    let req1 = format!(
+        "GET http://127.0.0.1:{}/first HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+        origin_port, origin_port,
+    );
+    stream
+        .write_all(req1.as_bytes())
+        .await
+        .map_err(|e| format!("write request 1 failed: {e}"))?;
+
+    let resp1 = read_http_response(&mut stream)
+        .await
+        .map_err(|e| format!("read response 1 failed: {e}"))?;
+
+    let req2 = format!(
+        "GET http://127.0.0.1:{}/second HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+        origin_port, origin_port,
+    );
+    stream
+        .write_all(req2.as_bytes())
+        .await
+        .map_err(|e| format!("write request 2 failed: {e}"))?;
+
+    let resp2 = read_http_response(&mut stream)
+        .await
+        .map_err(|e| format!("read response 2 failed: {e}"))?;
+
+    Ok(vec![resp1, resp2])
+}
+
+/// Read a single HTTP response from a TCP stream.
+///
+/// Reads until the connection is closed or the body is fully consumed.
+async fn read_http_response(stream: &mut tokio::net::TcpStream) -> Result<String, std::io::Error> {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    let mut headers_done = false;
+    let mut content_length: Option<usize> = None;
+
+    loop {
+        let n = stream.read(&mut tmp).await?;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&tmp[..n]);
+
+        if !headers_done {
+            if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n\r\n") {
+                headers_done = true;
+                let head = String::from_utf8_lossy(&buf[..pos]);
+                for line in head.lines() {
+                    if let Some(val) = line.strip_prefix("Content-Length:") {
+                        content_length = val.trim().parse::<usize>().ok();
+                    }
+                }
+                if let Some(len) = content_length {
+                    let body_start = pos + 4;
+                    if buf.len() >= body_start + len {
+                        break;
+                    }
+                }
+            }
+        } else if let Some(len) = content_length {
+            let body_start = buf
+                .windows(4)
+                .position(|w| w == b"\r\n\r\n")
+                .map(|p| p + 4)
+                .unwrap_or(0);
+            if buf.len() >= body_start + len {
+                break;
+            }
+        }
+    }
+
+    Ok(String::from_utf8_lossy(&buf).to_string())
+}

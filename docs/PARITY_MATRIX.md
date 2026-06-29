@@ -22,9 +22,9 @@ or document supported-but-unverified functionality.
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | HTTP CONNECT | server + client | server + client | Compatible | integration tests | `differential_http_connect_tcp_echo` | Byte-exact payload match |
-| HTTP forward proxy | ordinary HTTP request handling | single-exchange forward | Partial | integration tests | none | Eggress: one request per connection; pproxy: persistent |
-| SOCKS4/4a | server + client | server + client | Supported | integration tests | none | Separate unit tests; no differential |
-| SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo` | Byte-exact payload match |
+| HTTP forward proxy | ordinary HTTP request handling | persistent session forward | Compatible | integration tests | `differential_http_forward_get` | Persistent session model implemented (19.1). Differential tests added (19.3). |
+| SOCKS4/4a | server + client | server + client | Compatible | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
+| SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
 | SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing, not SOCKS5 UDP ASSOCIATE as server |
 | Shadowsocks TCP | full AEAD + stream | client/upstream only (non-standard framing) | Experimental | none | none | No inbound listener; upstream has non-standard AEAD framing (not wire-compatible with standard Shadowsocks); see TCP audit |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
@@ -115,8 +115,8 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 |--------|-------------|---------|-----------------|----------------|----------|-----------|
 | `http://` | inbound | TCP | Basic auth, optional TLS | Supported | **Compatible** | Full parity with differential tests |
 | `https://` | inbound | TCP | TLS + Basic auth | Supported | **Compatible** | Maps to `http+tls` in eggress |
-| `socks4://` | inbound | TCP | User ID | Supported | **Supported** | Separate unit tests; no differential |
-| `socks4a://` | inbound | TCP | User ID | Supported | **Compatible** | Alias for `socks4` in eggress |
+| `socks4://` | inbound | TCP | User ID | Supported | **Compatible** | Differential tests with pproxy 2.7.9 |
+| `socks4a://` | inbound | TCP | User ID | Supported | **Compatible** | Differential tests with pproxy 2.7.9 |
 | `socks5://` | inbound | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
 | `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
 | `trojan://` | inbound | TCP | Password (SHA224) | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
@@ -166,7 +166,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `--sys` | Supported | Rejected | **Intentional non-parity** | System proxy config not supported |
 | `--rulefile` | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
 | Multi-hop UDP chains | Supported | Rejected | **Intentional non-parity** | One-hop only |
-| Persistent HTTP forwarding | Supported | Partial | **Partial** | Single-exchange forward only |
+| Persistent HTTP forwarding | Supported | Supported | **Compatible** | Persistent session model with HTTP/1.1 keep-alive |
 | Python library | `pproxy.Server()` API | `eggress` package via PyO3 | **Supported** | Python bindings wrap `eggress-embed` API | Not a 1:1 API match; see Python Bindings doc |
 
 ### Diagnostics for Unsupported Features
@@ -217,8 +217,8 @@ All diagnostic messages redact credentials.
 
 ## Coverage Summary
 
-- **TCP proxying (Compatible)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, and direct upstream — differential tests produce byte-exact echo payloads.
-- **TCP proxying (Supported)**: SOCKS4/4a and SOCKS5 UDP ASSOCIATE inbound are fully implemented; unit tested but not differentially verified against pproxy.
+- **TCP proxying (Compatible)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, SOCKS4/4a, HTTP forward proxy, and direct upstream — differential tests produce byte-exact echo payloads.
+- **TCP proxying (Supported)**: SOCKS5 UDP ASSOCIATE inbound is fully implemented; unit tested but not differentially verified against pproxy.
 - **UDP relay (Partial)**: Both relay UDP datagrams successfully; pproxy uses its own UDP framing vs. SOCKS5 UDP ASSOCIATE headers. Framing differs but relay behavior matches.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
@@ -234,7 +234,7 @@ All diagnostic messages redact credentials.
 4. **Shadowsocks/Trojan**: Not covered in differential tests — pproxy supports Shadowsocks but eggress's Shadowsocks and Trojan are tested via their own unit/integration test suites.
 5. **TLS transport**: Not covered in differential tests — pproxy TLS requires certificate files; tested separately in `eggress-transport-tls` tests.
 6. **Multi-hop chains beyond 2**: Only single-hop chains through pproxy are tested. Multi-hop chains within eggress are tested in `integration.rs`.
-7. **HTTP forward proxy**: pproxy supports persistent HTTP forward proxy (multiple requests per connection); eggress implements single-exchange forward only.
+7. **HTTP forward proxy**: Eggress now supports persistent HTTP forward proxy (multiple requests per connection) matching pproxy behavior (Phase 19).
 8. **Hot reload scope**: Eggress reloads routing, upstreams, groups, and health config atomically via `ArcSwap`. Listener topology changes require restart. pproxy reloads its full config on SIGHUP.
 9. **Fallback model**: pproxy uses `-F` flag for fallback; eggress falls back to direct connection or rejects based on route rules. Different semantics.
 10. **Multi-hop UDP chains**: Not implemented. pproxy supports multi-hop UDP chains; eggress supports single-hop only.
@@ -272,8 +272,10 @@ Per-crate property tests validate codec round-trips, parser round-trips, and rou
 
 ## Compatibility Evidence Discipline
 
-Phase 18 establishes machine-verified compatibility evidence. All compatibility claims
-must be backed by a manifest entry in `tests/compat/pproxy_manifest.toml`.
+Phase 18 establishes machine-verified compatibility evidence. Phase 19 expands coverage
+with persistent HTTP forwarding and differential tests for HTTP CONNECT, SOCKS4/4a, and
+SOCKS5. All compatibility claims must be backed by a manifest entry in
+`tests/compat/pproxy_manifest.toml`.
 
 ### Evidence Levels
 

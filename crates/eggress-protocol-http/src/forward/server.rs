@@ -399,11 +399,14 @@ pub fn build_origin_request(request: &ForwardRequest) -> String {
 /// Parsed HTTP response from an upstream server.
 #[derive(Debug)]
 pub struct ForwardResponse {
+    pub version: String,
     pub status: u16,
     pub reason: String,
     pub headers: Vec<(String, String)>,
     pub content_length: Option<u64>,
     pub is_chunked: bool,
+    /// True if the upstream sent `Connection: close`.
+    pub connection_close: bool,
 }
 
 /// Read and parse an HTTP response head from the upstream.
@@ -449,6 +452,7 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
         )));
     }
 
+    let version = parts[0].to_string();
     let status: u16 = parts[1]
         .parse()
         .map_err(|e| HttpError::MalformedResponse(format!("invalid status code: {}", e)))?;
@@ -458,6 +462,7 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
     let mut headers = Vec::new();
     let mut content_length = None;
     let mut is_chunked = false;
+    let mut connection_close = false;
 
     for line in lines {
         if line.is_empty() {
@@ -470,18 +475,34 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
                 && value.eq_ignore_ascii_case("chunked")
             {
                 is_chunked = true;
+            } else if name.eq_ignore_ascii_case("Connection") {
+                // Check for "close" token (case-insensitive)
+                connection_close = value
+                    .split(',')
+                    .any(|t| t.trim().eq_ignore_ascii_case("close"));
             }
             headers.push((name, value));
         }
     }
 
     Ok(ForwardResponse {
+        version,
         status,
         reason,
         headers,
         content_length,
         is_chunked,
+        connection_close,
     })
+}
+
+/// Result of forwarding a response, including upstream connection state.
+pub struct ForwardResult {
+    pub report: ForwardResponseReport,
+    /// True if the upstream connection is still usable (no `Connection: close`).
+    pub upstream_alive: bool,
+    /// True if the response status indicates the client should not retry.
+    pub client_should_close: bool,
 }
 
 /// Forward the upstream response back to the client stream.
@@ -491,7 +512,7 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
 pub async fn forward_response(
     upstream: &mut BoxStream,
     client: &mut BoxStream,
-) -> Result<ForwardResponseReport, HttpError> {
+) -> Result<ForwardResult, HttpError> {
     let response = read_response_head(upstream).await?;
     let mut bytes_forwarded: u64 = 0;
 
@@ -537,7 +558,11 @@ pub async fn forward_response(
             loop {
                 let n = upstream.read(&mut temp).await?;
                 if n == 0 {
-                    return Ok(ForwardResponseReport { bytes_forwarded });
+                    return Ok(ForwardResult {
+                        report: ForwardResponseReport { bytes_forwarded },
+                        upstream_alive: false,
+                        client_should_close: true,
+                    });
                 }
                 size_line.push(temp[0]);
                 if size_line.len() > 32 {
@@ -570,7 +595,11 @@ pub async fn forward_response(
                 let to_read = remaining.min(buf.len());
                 let n = upstream.read(&mut buf[..to_read]).await?;
                 if n == 0 {
-                    return Ok(ForwardResponseReport { bytes_forwarded });
+                    return Ok(ForwardResult {
+                        report: ForwardResponseReport { bytes_forwarded },
+                        upstream_alive: false,
+                        client_should_close: true,
+                    });
                 }
                 client.write_all(&buf[..n]).await?;
                 bytes_forwarded += n as u64;
@@ -590,7 +619,27 @@ pub async fn forward_response(
         }
     }
 
-    Ok(ForwardResponseReport { bytes_forwarded })
+    // Determine upstream alive: HTTP/1.1 default is keep-alive, HTTP/1.0 default is close
+    let upstream_alive = if response.connection_close {
+        false
+    } else if response.version.contains("1.1") {
+        true
+    } else {
+        // HTTP/1.0: alive only if explicitly requested via Keep-Alive
+        response
+            .headers
+            .iter()
+            .any(|(n, v)| n.eq_ignore_ascii_case("Keep-Alive") && !v.is_empty())
+    };
+
+    // Client should close if the upstream said close
+    let client_should_close = response.connection_close;
+
+    Ok(ForwardResult {
+        report: ForwardResponseReport { bytes_forwarded },
+        upstream_alive,
+        client_should_close,
+    })
 }
 
 /// A parsed HTTP request ready for forwarding.
@@ -604,6 +653,21 @@ pub struct ForwardRequest {
     pub has_body: bool,
     pub content_length: Option<u64>,
     pub is_chunked: bool,
+    /// True if the client sent `Connection: close`.
+    pub connection_close: bool,
+}
+
+impl ForwardRequest {
+    /// Compute the request body kind from parsed fields.
+    pub fn body_kind(&self) -> RequestBodyKind {
+        if self.is_chunked {
+            RequestBodyKind::Chunked
+        } else if let Some(len) = self.content_length {
+            RequestBodyKind::ContentLength(len)
+        } else {
+            RequestBodyKind::None
+        }
+    }
 }
 
 /// Forward an HTTP request from a client to the target server.
@@ -621,6 +685,14 @@ pub async fn forward_request(
 ) -> Result<(ForwardRequest, BoxStream), HttpError> {
     let request = read_forward_request(&mut stream).await?;
     Ok((request, stream))
+}
+
+/// Read and parse an HTTP forward request from an existing stream.
+///
+/// Unlike [`forward_request`], this borrows the stream rather than
+/// consuming it, enabling persistent-session loops.
+pub async fn forward_request_stream(stream: &mut BoxStream) -> Result<ForwardRequest, HttpError> {
+    read_forward_request(stream).await
 }
 
 /// Read and parse an HTTP forward request with absolute-form target.
@@ -706,6 +778,12 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
         RequestBodyKind::Chunked => (true, None, true),
     };
 
+    // Determine Connection: close
+    let connection_close = headers.iter().any(|(n, v)| {
+        n.eq_ignore_ascii_case("Connection")
+            && v.split(',').any(|t| t.trim().eq_ignore_ascii_case("close"))
+    });
+
     Ok(ForwardRequest {
         method,
         path,
@@ -715,6 +793,7 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
         has_body,
         content_length,
         is_chunked,
+        connection_close,
     })
 }
 

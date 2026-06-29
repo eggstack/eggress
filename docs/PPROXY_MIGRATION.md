@@ -103,6 +103,19 @@ any = true
 upstream_group = "chain"
 ```
 
+## Supported Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| HTTP CONNECT | Compatible | Byte-exact payload match with differential tests |
+| HTTP forward proxy | Compatible | Persistent session model with HTTP/1.1 keep-alive (Phase 19) |
+| SOCKS4/4a | Compatible | Differential tests with pproxy 2.7.9 added (Phase 19) |
+| SOCKS5 CONNECT | Compatible | Expanded differential evidence: auth, IPv6, domain, refused targets (Phase 19) |
+| SOCKS5 UDP ASSOCIATE | Supported | Framing differs; relay success matches |
+| Shadowsocks upstream | Experimental | TCP: non-standard AEAD framing; UDP: standard AEAD format |
+| Trojan upstream | Partial | Client-only; no Trojan server |
+| Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
+
 ## Unsupported Features
 
 The following pproxy features are explicitly unsupported:

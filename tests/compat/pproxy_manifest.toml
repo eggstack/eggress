@@ -33,31 +33,31 @@ external_dependency = "pproxy==2.7.9"
 id = "http_forward_proxy"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "partial"
-evidence_level = "implemented_synthetic"
-tests = ["integration_tests"]
-divergence = "Eggress: single-exchange forward only; pproxy: persistent connections"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_forward_get"]
+divergence = "Persistent session model implemented"
 external_dependency = "pproxy==2.7.9"
 
 [[features]]
 id = "socks4_server"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["unit_tests"]
-divergence = "No differential test against pproxy"
-external_dependency = null
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_socks4_connect_tcp_echo"]
+divergence = "Differential tests with pproxy 2.7.9 added (Phase 19)"
+external_dependency = "pproxy==2.7.9"
 
 [[features]]
 id = "socks4a_server"
 category = "protocol"
 pproxy_version = "2.7.9"
 egress_status = "compatible"
-evidence_level = "implemented_synthetic"
-tests = ["unit_tests"]
-divergence = "Alias for socks4 in eggress"
-external_dependency = null
+evidence_level = "compatible"
+tests = ["differential_socks4a_connect_domain"]
+divergence = "Differential tests with pproxy 2.7.9 added (Phase 19)"
+external_dependency = "pproxy==2.7.9"
 
 [[features]]
 id = "socks5_connect_server"
@@ -65,8 +65,8 @@ category = "protocol"
 pproxy_version = "2.7.9"
 egress_status = "compatible"
 evidence_level = "compatible"
-tests = ["differential_socks5_connect_tcp_echo"]
-divergence = "Byte-exact payload match verified"
+tests = ["differential_socks5_connect_tcp_echo", "differential_socks5_connect_ipv6", "differential_socks5_connect_domain", "differential_socks5_refused_target"]
+divergence = "Byte-exact payload match verified; expanded differential coverage (Phase 19)"
 external_dependency = "pproxy==2.7.9"
 
 [[features]]
@@ -681,4 +681,166 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["wheel_tests"]
 divergence = "Wheels for Linux/macOS/Windows"
+external_dependency = null
+
+# ─── Phase 19: HTTP/SOCKS Baseline Closure ──────────────────────────
+
+[[features]]
+id = "http_connect_auth_success"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_connect_auth_success"]
+divergence = "Auth success matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_connect_auth_rejection"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_connect_auth_missing"]
+divergence = "Auth rejection matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_connect_ipv4_target"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_connect_ipv4_target"]
+divergence = "IPv4 target matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_connect_domain_target"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_connect_domain_target"]
+divergence = "Domain target matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_connect_ipv6_target"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_connect_ipv6_target"]
+divergence = "IPv6 target matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_connect_refused_target"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_connect_refused_target"]
+divergence = "Refused target error matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_forward_persistent_connection"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_forward_persistent_connection"]
+divergence = "Persistent connection matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_forward_post_body"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_forward_post_with_body"]
+divergence = "POST body forwarding matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_forward_head"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_forward_head"]
+divergence = "HEAD request forwarding matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "http_forward_connection_close"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_http_forward_connection_close"]
+divergence = "Connection: close handling matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "socks4_connect"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_socks4_connect_tcp_echo"]
+divergence = "SOCKS4 CONNECT matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "socks4a_domain_connect"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_socks4a_connect_domain"]
+divergence = "SOCKS4a domain resolution matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "socks5_connect_ipv6"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_socks5_connect_ipv6"]
+divergence = "SOCKS5 IPv6 target matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "socks5_connect_domain"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_socks5_connect_domain"]
+divergence = "SOCKS5 domain target matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "socks5_refused_target"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["differential_socks5_refused_target"]
+divergence = "SOCKS5 refused target error matches pproxy behavior"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "socks_bind_deferred"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
+tests = []
+divergence = "BIND command not implemented; returns REP_COMMAND_NOT_SUPPORTED (0x07)"
 external_dependency = null

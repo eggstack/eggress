@@ -852,6 +852,7 @@ fn test_build_origin_request() {
         has_body: false,
         content_length: None,
         is_chunked: false,
+        connection_close: false,
     };
 
     let origin = build_origin_request(&request);

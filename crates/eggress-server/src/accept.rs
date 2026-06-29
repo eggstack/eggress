@@ -65,15 +65,11 @@ pub struct PendingTunnel {
     pub identity: ClientIdentity,
 }
 
-/// Re-export RequestBodyKind from the HTTP protocol crate.
-pub use eggress_protocol_http::forward::RequestBodyKind;
-
 /// A pending HTTP forward-proxy request.
 pub struct PendingHttpForward {
     pub target: TargetAddr,
     pub client: BoxStream,
     pub request: eggress_protocol_http::forward::ForwardRequest,
-    pub body_kind: RequestBodyKind,
     pub identity: ClientIdentity,
 }
 
@@ -575,18 +571,10 @@ async fn accept_http(
             .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
 
         let target = request.target.clone();
-        let body_kind = if request.is_chunked {
-            RequestBodyKind::Chunked
-        } else if let Some(len) = request.content_length {
-            RequestBodyKind::ContentLength(len)
-        } else {
-            RequestBodyKind::None
-        };
         Ok(AcceptedSession::HttpForward(PendingHttpForward {
             target,
             client: client_stream,
             request,
-            body_kind,
             identity,
         }))
     }
@@ -1729,6 +1717,323 @@ mod tests {
             .await
             .unwrap();
         stream.write_all(&0u16.to_be_bytes()).await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    // === Mixed-protocol listener robustness tests ===
+
+    #[tokio::test]
+    async fn test_fragmented_first_byte_http() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let session = accept(boxed, &all_protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::HttpForward(pending) => {
+                    assert_eq!(pending.request.method, "GET");
+                }
+                _ => panic!("expected http forward"),
+            }
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // Send HTTP GET fragmented into individual bytes
+        stream.write_all(b"G").await.unwrap();
+        stream.write_all(b"E").await.unwrap();
+        stream.write_all(b"T").await.unwrap();
+        stream
+            .write_all(b" http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            .await
+            .unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_garbage_bytes_rejected() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let result = accept(boxed, &all_protocols, &InboundAuthentication::None).await;
+            assert!(result.is_err());
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream.write_all(&[0xAA, 0xBB, 0xCC, 0xDD]).await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_slow_socks5_detection() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let session = accept(boxed, &all_protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(pending.target.port, 443);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // Send first byte (version) then delay
+        stream.write_all(&[0x05]).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Send rest of method negotiation
+        stream.write_all(&[0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        // Send CONNECT request
+        stream
+            .write_all(&[0x05, 0x01, 0x00, 0x01, 10, 0, 0, 1])
+            .await
+            .unwrap();
+        stream.write_all(&443u16.to_be_bytes()).await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_http_connect_and_socks5_same_listener() {
+        let protocols: Vec<ProtocolId> = vec![ProtocolId::Http, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // First connection: HTTP CONNECT
+        let client_jh1 = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream
+                .write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let (stream1, _) = listener.accept().await.unwrap();
+        let p = protocols.clone();
+        let server_jh1 = tokio::spawn(async move {
+            let boxed: BoxStream = Box::new(stream1);
+            let session = accept(boxed, &p, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::HttpConnect);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        client_jh1.await.unwrap();
+        server_jh1.await.unwrap();
+
+        // Second connection: SOCKS5
+        let client_jh2 = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+            let mut response = [0u8; 2];
+            stream.read_exact(&mut response).await.unwrap();
+            assert_eq!(response, [0x05, 0x00]);
+
+            stream
+                .write_all(&[0x05, 0x01, 0x00, 0x01, 10, 0, 0, 1])
+                .await
+                .unwrap();
+            stream.write_all(&443u16.to_be_bytes()).await.unwrap();
+        });
+
+        let (stream2, _) = listener.accept().await.unwrap();
+        let server_jh2 = tokio::spawn(async move {
+            let boxed: BoxStream = Box::new(stream2);
+            let session = accept(boxed, &protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(pending.target.port, 443);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        client_jh2.await.unwrap();
+        server_jh2.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_http_forward_and_socks4_same_listener() {
+        let protocols: Vec<ProtocolId> = vec![ProtocolId::Http, ProtocolId::Socks4];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // First connection: HTTP forward
+        let client_jh1 = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream
+                .write_all(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let (stream1, _) = listener.accept().await.unwrap();
+        let p = protocols.clone();
+        let server_jh1 = tokio::spawn(async move {
+            let boxed: BoxStream = Box::new(stream1);
+            let session = accept(boxed, &p, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::HttpForward(pending) => {
+                    assert_eq!(pending.request.method, "GET");
+                    assert_eq!(pending.target.port, 80);
+                }
+                _ => panic!("expected http forward"),
+            }
+        });
+
+        client_jh1.await.unwrap();
+        server_jh1.await.unwrap();
+
+        // Second connection: SOCKS4
+        let client_jh2 = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            // SOCKS4 CONNECT: version=0x04, cmd=0x01, port=443, addr=0.0.0.1, userid=0
+            stream.write_all(&[0x04, 0x01]).await.unwrap();
+            stream.write_all(&443u16.to_be_bytes()).await.unwrap();
+            stream.write_all(&[10, 0, 0, 1]).await.unwrap();
+            stream.write_all(&[0x00]).await.unwrap();
+        });
+
+        let (stream2, _) = listener.accept().await.unwrap();
+        let server_jh2 = tokio::spawn(async move {
+            let boxed: BoxStream = Box::new(stream2);
+            let session = accept(boxed, &protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks4);
+                    assert_eq!(pending.target.port, 443);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        client_jh2.await.unwrap();
+        server_jh2.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_fragmented_socks5_handshake() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let session = accept(boxed, &all_protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(pending.target.port, 443);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // Send version byte separately from method negotiation
+        stream.write_all(&[0x05]).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        stream.write_all(&[0x01, 0x00]).await.unwrap();
+
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        // Now send CONNECT request, also fragmented
+        stream
+            .write_all(&[0x05, 0x01, 0x00, 0x01, 10, 0, 0, 1])
+            .await
+            .unwrap();
+        stream.write_all(&443u16.to_be_bytes()).await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_malformed_http_request_rejected() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let result = accept(boxed, &all_protocols, &InboundAuthentication::None).await;
+            assert!(result.is_err());
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // Send a partial HTTP request that never completes headers
+        stream
+            .write_all(b"GET http://example.com HTTP/1.1\r\n")
+            .await
+            .unwrap();
+        // Never send the final \r\n to end headers, then close the connection
+        stream.shutdown().await.unwrap();
+
+        server_jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_empty_connection_closed() {
+        let all_protocols: Vec<ProtocolId> =
+            vec![ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let boxed: BoxStream = Box::new(stream);
+            let result = accept(boxed, &all_protocols, &InboundAuthentication::None).await;
+            assert!(result.is_err());
+        });
+
+        let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // Close immediately without sending anything
+        drop(stream);
 
         server_jh.await.unwrap();
     }
