@@ -401,6 +401,9 @@ Legend:
 - [x] Python pproxy compat tests (45 passing)
 - [x] Python security/redaction tests
 - [x] Python concurrency tests
+- Compatibility manifest tracking all parity features with evidence levels (`tests/compat/pproxy_manifest.toml`)
+- Oracle process runner for real pproxy differential testing (`eggress-testkit`)
+- Machine-readable parity reports generated after differential test runs
 
 ### Phase 1 limitations
 
@@ -475,6 +478,7 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Phase 17 true pproxy parity release candidate](docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md)
 - [Phase 17 RC polish](docs/PHASE_17_RC_POLISH_COMPLETION.md)
 - [True pproxy parity release candidate](docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md)
+- [Phase 18 pproxy oracle and evidence harness](plans/PHASE_18_PPROXY_ORACLE_AND_EVIDENCE_HARNESS.md)
 - [PyPI release procedure](docs/PYPI_RELEASE.md)
 - [Wheel artifact audit](docs/WHEEL_AUDIT.md)
 

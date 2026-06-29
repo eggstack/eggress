@@ -107,6 +107,25 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 
 Tests cover: HTTP CONNECT, SOCKS4, SOCKS5, multi-hop chains, authentication, and binary payload transfer.
 
+### pproxy Compatibility Harness (Phase 18)
+
+The compatibility harness launches real pproxy processes and compares behavior
+with eggress. It requires `pproxy==2.7.9` to be installed.
+
+Run with:
+```bash
+cargo test -p eggress-testkit pproxy_oracle -- --ignored
+```
+
+The harness uses:
+- `tests/compat/pproxy_target.toml` — pinned pproxy version and timeouts
+- `tests/compat/pproxy_manifest.toml` — feature evidence index
+- `eggress-testkit` — oracle runner, fixtures, case model, report generator
+
+Parity reports are generated at:
+- `target/compat/pproxy-parity-report.json`
+- `target/compat/pproxy-parity-report.md`
+
 ## Fuzz Smoke Testing
 
 Fuzz targets live in `fuzz/` (standalone workspace, `libfuzzer-sys` based):

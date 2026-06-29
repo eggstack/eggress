@@ -1,0 +1,10 @@
+[target]
+package = "pproxy"
+version = "2.7.9"
+python = "python3"
+
+[oracle]
+startup_timeout_ms = 5000
+shutdown_timeout_ms = 5000
+connect_timeout_ms = 3000
+io_timeout_ms = 3000

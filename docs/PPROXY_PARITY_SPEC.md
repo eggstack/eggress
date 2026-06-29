@@ -18,6 +18,16 @@ behavior. Any behavioral difference discovered during differential testing that
 contradicts this spec should be treated as a bug in this document, not in
 Eggress.
 
+## Compatibility Oracle
+
+The pinned compatibility oracle is `pproxy==2.7.9`. All differential tests
+and the compatibility manifest target this specific version. The harness
+verifies the installed pproxy version matches and fails loudly on mismatch
+unless an override is provided.
+
+Target configuration: `tests/compat/pproxy_target.toml`
+Compatibility manifest: `tests/compat/pproxy_manifest.toml`
+
 ## 2. Local/Listener Protocols
 
 pproxy accepts inbound connections on the following protocols:

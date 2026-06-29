@@ -755,9 +755,16 @@ dependencies = [
 name = "eggress-testkit"
 version = "0.1.0"
 dependencies = [
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
+ "tokio-rustls",
  "tokio-test",
+ "toml",
 ]
 
 [[package]]

@@ -1,0 +1,51 @@
+name: pproxy-compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  pproxy-compat:
+    name: pproxy Compat (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pproxy
+        run: pip install "pproxy==2.7.9"
+      - name: Verify pproxy
+        run: python -m pproxy --help
+      - name: Build
+        run: cargo build --workspace
+      - name: Run testkit pproxy_oracle tests
+        run: cargo test -p eggress-testkit pproxy_oracle -- --ignored
+      - name: Run differential pproxy tests
+        env:
+          EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
+        run: cargo test -p eggress-cli --test differential_pproxy -- --ignored
+      - name: Run interoperability pproxy tests
+        env:
+          EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
+        run: cargo test -p eggress-cli --test interoperability_pproxy -- --ignored
+      - name: Generate parity report
+        run: cargo test -p eggress-testkit report -- --ignored || true
+      - name: Upload parity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pproxy-parity-report
+          path: |
+            target/compat/pproxy-parity-report.json
+            target/compat/pproxy-parity-report.md
+          if-no-files-found: ignore

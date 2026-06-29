@@ -78,6 +78,12 @@ cargo test -p eggress-cli --test differential_pproxy
 # Run pproxy compatibility tests
 cargo test -p eggress-pproxy-compat
 
+# Run pproxy oracle tests (Phase 18, requires pproxy==2.7.9)
+cargo test -p eggress-testkit pproxy_oracle -- --ignored
+
+# Run pproxy differential tests (gated, requires pproxy==2.7.9)
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
+
 # Run embed API tests
 cargo test -p eggress-embed
 

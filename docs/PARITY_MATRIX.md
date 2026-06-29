@@ -269,3 +269,38 @@ Config reload tests are in `crates/eggress-runtime/tests/reload.rs`.
 ### Property and Fuzz Tests
 
 Per-crate property tests validate codec round-trips, parser round-trips, and route match consistency. Fuzz smoke tests exercise seed inputs for `cargo fuzz` targets. See `docs/TESTING.md` for the full testing guidance.
+
+## Compatibility Evidence Discipline
+
+Phase 18 establishes machine-verified compatibility evidence. All compatibility claims
+must be backed by a manifest entry in `tests/compat/pproxy_manifest.toml`.
+
+### Evidence Levels
+
+| Level | Meaning |
+|-------|---------|
+| `unimplemented` | Not implemented in eggress |
+| `implemented_synthetic` | Implemented but only tested without real pproxy |
+| `implemented_differential` | Tested against real pproxy differential behavior |
+| `implemented_interop` | Tested via external protocol interop |
+| `compatible` | Real pproxy differential or interop evidence |
+| `intentional_non_parity` | Deliberately not replicated with rationale |
+
+### Rules
+
+- A feature may only be marked `compatible` in this matrix if it has a matching
+  manifest entry with `compatible` or `implemented_interop` evidence level.
+- `implemented_synthetic` is not sufficient for compatibility claims.
+- `intentional_non_parity` requires a rationale and user-visible diagnostic.
+- The parity report at `target/compat/pproxy-parity-report.json` is the
+  machine-readable source of truth for evidence levels.
+
+### Parity Report
+
+After running differential tests, a parity report is generated:
+
+- JSON: `target/compat/pproxy-parity-report.json`
+- Markdown: `target/compat/pproxy-parity-report.md`
+
+The report includes: eggress commit, pproxy version, OS, Rust/Python versions,
+per-feature evidence levels, test results, and suggested evidence updates.

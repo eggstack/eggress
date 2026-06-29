@@ -111,6 +111,11 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - Echo server, half-close server
 - Temporary port allocator
 - UDP echo server and SOCKS5 UDP test server (`testkit` module in `eggress-udp`)
+- pproxy oracle runner (`pproxy_oracle` module) — start/supervise real pproxy processes
+- eggress runner (`eggress_runner` module) — start eggress from TOML or CLI args
+- Fixture servers (`fixtures` module) — TCP/UDP echo, HTTP origin, HTTP CONNECT upstream, SOCKS4/5 upstream, TLS echo
+- Differential case model (`case_model` module) — `PproxyCase`, `CaseOutcome`, comparison helpers
+- Parity report generator (`report` module) — JSON and markdown reports from manifest + test results
 
 ## Running tests
 ```bash
@@ -137,6 +142,9 @@ cargo test -p eggress-runtime --test load -- --ignored
 # Gated differential/interop tests (requires external tools)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
+
+# pproxy oracle tests (Phase 18, requires pproxy==2.7.9)
+cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
 # Fuzz targets (requires cargo-fuzz)
 cargo fuzz run uri_parse
@@ -175,3 +183,21 @@ The `eggress-embed` crate has integration tests in `crates/eggress-embed/tests/`
 Run: `cargo test -p eggress-embed`
 
 Tests use local TCP echo servers (no public internet required).
+
+## pproxy compatibility harness (Phase 18)
+
+Compatibility evidence is tracked in `tests/compat/pproxy_manifest.toml`. Each feature
+has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_differential`,
+`implemented_interop`, `compatible`, or `intentional_non_parity`.
+
+Only `compatible` or `implemented_interop` evidence levels support compatibility claims.
+`implemented_synthetic` means tested without real pproxy.
+
+Run the oracle harness:
+```bash
+cargo test -p eggress-testkit pproxy_oracle -- --ignored
+```
+
+Parity reports are generated at:
+- `target/compat/pproxy-parity-report.json`
+- `target/compat/pproxy-parity-report.md`
