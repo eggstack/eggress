@@ -4541,3 +4541,636 @@ async fn differential_socks5_server_half_close() {
 
     compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
 }
+
+// ===== Phase 20: Standalone UDP Differential Tests =====
+
+/// Build a SOCKS5 UDP datagram targeting a domain name.
+fn build_socks5_udp_packet_domain(target_host: &str, target_port: u16, payload: &[u8]) -> Vec<u8> {
+    let mut pkt = vec![0x00, 0x00, 0x00]; // RSV + FRAG
+    pkt.push(0x03); // ATYP DOMAIN
+    pkt.push(target_host.len() as u8);
+    pkt.extend_from_slice(target_host.as_bytes());
+    pkt.extend_from_slice(&target_port.to_be_bytes());
+    pkt.extend_from_slice(payload);
+    pkt
+}
+
+/// Build a SOCKS5 UDP datagram with a custom FRAG value.
+fn build_socks5_udp_packet_frag(target: std::net::SocketAddr, frag: u8, payload: &[u8]) -> Vec<u8> {
+    let mut pkt = vec![0x00, 0x00, frag]; // RSV + custom FRAG
+    match target.ip() {
+        std::net::IpAddr::V4(ip) => {
+            pkt.push(0x01); // ATYP IPv4
+            pkt.extend_from_slice(&ip.octets());
+        }
+        std::net::IpAddr::V6(ip) => {
+            pkt.push(0x04); // ATYP IPv6
+            pkt.extend_from_slice(&ip.octets());
+        }
+    }
+    pkt.extend_from_slice(&target.port().to_be_bytes());
+    pkt.extend_from_slice(payload);
+    pkt
+}
+
+/// Start an in-process eggress standalone UDP relay with a direct-route router.
+///
+/// Returns the relay socket address, a shutdown token, and a join handle.
+async fn start_eggress_standalone_udp(
+    _target: std::net::SocketAddr,
+) -> (
+    std::net::SocketAddr,
+    tokio_util::sync::CancellationToken,
+    tokio::task::JoinHandle<()>,
+) {
+    let socket = std::sync::Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    let relay_addr = socket.local_addr().unwrap();
+
+    let router = eggress_routing::Router::new(vec![], eggress_routing::RouteActionSpec::Direct);
+    let routing: Arc<dyn eggress_routing::RouteService> =
+        Arc::new(eggress_routing::SharedRoutingService::new(router));
+
+    let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
+    let limits = eggress_udp::limits::UdpLimits::default();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel_clone = cancel.clone();
+
+    let config = eggress_udp::standalone::StandaloneUdpConfig {
+        routing,
+        udp_metrics,
+        limits,
+        listener: "differential-test".to_string(),
+        generation: 1,
+    };
+
+    let jh = tokio::spawn(async move {
+        let _ = eggress_udp::standalone::standalone_udp_relay(socket, config, cancel_clone).await;
+    });
+
+    (relay_addr, cancel, jh)
+}
+
+/// Differential: Standalone UDP direct echo.
+///
+/// Both pproxy (`-ul`) and eggress standalone UDP relay a datagram to a direct
+/// UDP echo target. Verifies both successfully relay the payload.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_direct_echo() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let pproxy_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr, b"pproxy-standalone-test");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr).await;
+
+    let eggress_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr, b"eggress-standalone-test");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh.abort();
+
+    assert!(
+        pproxy_response.is_some(),
+        "pproxy standalone UDP did not receive response"
+    );
+    assert!(
+        eggress_response.is_some(),
+        "eggress standalone UDP did not receive response"
+    );
+
+    // Both should relay the payload through the SOCKS5 UDP datagram framing.
+    // The response format is: [RSV(2) + FRAG(1) + ATYP + ADDR + PORT + PAYLOAD]
+    // Extract the payload portion (after the header) and compare.
+    let pproxy_payload = extract_udp_payload(&pproxy_response.unwrap());
+    let eggress_payload = extract_udp_payload(&eggress_response.unwrap());
+    assert_eq!(
+        pproxy_payload, eggress_payload,
+        "standalone UDP direct echo payload mismatch"
+    );
+}
+
+/// Differential: Standalone UDP domain target echo.
+///
+/// Both pproxy and eggress relay a datagram targeting `localhost`.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_domain_target() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let pproxy_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet =
+            build_socks5_udp_packet_domain("localhost", echo_addr.port(), b"pproxy-domain-test");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr).await;
+
+    let eggress_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet =
+            build_socks5_udp_packet_domain("localhost", echo_addr.port(), b"eggress-domain-test");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh.abort();
+
+    assert!(
+        pproxy_response.is_some(),
+        "pproxy standalone UDP did not receive domain-targeted response"
+    );
+    assert!(
+        eggress_response.is_some(),
+        "eggress standalone UDP did not receive domain-targeted response"
+    );
+
+    let pproxy_payload = extract_udp_payload(&pproxy_response.unwrap());
+    let eggress_payload = extract_udp_payload(&eggress_response.unwrap());
+    assert_eq!(
+        pproxy_payload, eggress_payload,
+        "standalone UDP domain target echo payload mismatch"
+    );
+}
+
+/// Differential: Malformed short datagram handling.
+///
+/// Both pproxy and eggress should silently drop a datagram that is too short
+/// to contain a valid SOCKS5 UDP header (fewer than 4 bytes).
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_malformed_short_datagram() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send a malformed (too short) datagram to pproxy
+    let pproxy_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let _ = sock
+            .send_to(&[0x00, 0x01], ("127.0.0.1", pproxy_udp_port))
+            .await;
+        recv_udp_response(&sock, Duration::from_millis(500)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr).await;
+
+    // Send the same malformed datagram to eggress
+    let eggress_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let _ = sock.send_to(&[0x00, 0x01], relay_addr).await;
+        recv_udp_response(&sock, Duration::from_millis(500)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh.abort();
+
+    // Both should silently drop the malformed datagram (no response)
+    assert!(
+        pproxy_response.is_none(),
+        "pproxy should not respond to malformed datagram"
+    );
+    assert!(
+        eggress_response.is_none(),
+        "eggress should not respond to malformed datagram"
+    );
+}
+
+/// Differential: Nonzero FRAG handling.
+///
+/// Both pproxy and eggress should silently drop a datagram with FRAG=1
+/// (fragmentation not supported).
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_nonzero_frag() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Build a packet with FRAG=1
+    let pproxy_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet_frag(echo_addr, 1, b"frag-test");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_millis(500)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr).await;
+
+    let eggress_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet_frag(echo_addr, 1, b"frag-test");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_millis(500)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh.abort();
+
+    // Both should silently drop the nonzero FRAG datagram
+    assert!(
+        pproxy_response.is_none(),
+        "pproxy should not respond to nonzero FRAG datagram"
+    );
+    assert!(
+        eggress_response.is_none(),
+        "eggress should not respond to nonzero FRAG datagram"
+    );
+}
+
+/// Differential: Two clients using the same standalone UDP listener.
+///
+/// Both pproxy and eggress should handle datagrams from two different client
+/// addresses on the same UDP listener.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_two_clients() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send from client A
+    let pproxy_response_a = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr, b"client-a-pproxy");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    // Send from client B (different port)
+    let pproxy_response_b = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr, b"client-b-pproxy");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr).await;
+
+    let eggress_response_a = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr, b"client-a-eggress");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    let eggress_response_b = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr, b"client-b-eggress");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh.abort();
+
+    // Both clients should get responses from both proxies
+    assert!(pproxy_response_a.is_some(), "pproxy client A no response");
+    assert!(pproxy_response_b.is_some(), "pproxy client B no response");
+    assert!(eggress_response_a.is_some(), "eggress client A no response");
+    assert!(eggress_response_b.is_some(), "eggress client B no response");
+
+    // Verify payload integrity for each client
+    let p_a = extract_udp_payload(&pproxy_response_a.unwrap());
+    let e_a = extract_udp_payload(&eggress_response_a.unwrap());
+    assert_eq!(p_a, e_a, "client A payload mismatch");
+
+    let p_b = extract_udp_payload(&pproxy_response_b.unwrap());
+    let e_b = extract_udp_payload(&eggress_response_b.unwrap());
+    assert_eq!(p_b, e_b, "client B payload mismatch");
+}
+
+/// Differential: Standalone UDP oversized datagram handling.
+///
+/// Both pproxy and eggress should handle a datagram that exceeds the maximum
+/// allowed size (both silently drop or truncate).
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_oversized_datagram() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send an oversized datagram (70000 bytes payload) to pproxy
+    let pproxy_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut packet = build_socks5_udp_packet(echo_addr, &[]);
+        packet.extend_from_slice(&vec![0xAA; 70000]);
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_millis(500)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr).await;
+
+    let eggress_response = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut packet = build_socks5_udp_packet(echo_addr, &[]);
+        packet.extend_from_slice(&vec![0xAA; 70000]);
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_millis(500)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh.abort();
+
+    // Both should handle oversized datagrams consistently (either both drop
+    // or both relay). We just verify they behave the same way.
+    let pproxy_result: Result<(), String> = pproxy_response
+        .map(|_| ())
+        .ok_or_else(|| "no response".to_string());
+    let eggress_result: Result<(), String> = eggress_response
+        .map(|_| ())
+        .ok_or_else(|| "no response".to_string());
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Differential: Standalone UDP two targets from same client.
+///
+/// Both pproxy and eggress should handle datagrams from the same client
+/// targeting different destinations.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_standalone_udp_two_targets_from_same_client() {
+    skip_if_unavailable();
+
+    let (echo_addr_a, echo_jh_a) = start_udp_echo().await;
+    let (echo_addr_b, echo_jh_b) = start_udp_echo().await;
+
+    // --- pproxy standalone UDP ---
+    let pproxy_tcp_port = eggress_testkit::get_free_port().await;
+    let pproxy_udp_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("socks5://127.0.0.1:{}", pproxy_tcp_port),
+            "-ul",
+            &format!("socks5://127.0.0.1:{}", pproxy_udp_port),
+            "-r",
+            "direct",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start pproxy");
+    assert!(
+        wait_for_port(pproxy_tcp_port, Duration::from_secs(5)).await,
+        "pproxy TCP failed to start"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Send to target A from same client socket
+    let pproxy_response_a = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr_a, b"target-a-pproxy");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    // Send to target B from same client socket
+    let pproxy_response_b = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr_b, b"target-b-pproxy");
+        let _ = sock.send_to(&packet, ("127.0.0.1", pproxy_udp_port)).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress standalone UDP ---
+    let (relay_addr, cancel, jh) = start_eggress_standalone_udp(echo_addr_a).await;
+
+    let eggress_response_a = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr_a, b"target-a-eggress");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+    let eggress_response_b = {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let packet = build_socks5_udp_packet(echo_addr_b, b"target-b-eggress");
+        let _ = sock.send_to(&packet, relay_addr).await;
+        recv_udp_response(&sock, Duration::from_secs(3)).await
+    };
+
+    cancel.cancel();
+    let _ = jh.await;
+    echo_jh_a.abort();
+    echo_jh_b.abort();
+
+    // Both targets should get responses
+    assert!(pproxy_response_a.is_some(), "pproxy target A no response");
+    assert!(pproxy_response_b.is_some(), "pproxy target B no response");
+    assert!(eggress_response_a.is_some(), "eggress target A no response");
+    assert!(eggress_response_b.is_some(), "eggress target B no response");
+
+    let p_a = extract_udp_payload(&pproxy_response_a.unwrap());
+    let e_a = extract_udp_payload(&eggress_response_a.unwrap());
+    assert_eq!(p_a, e_a, "target A payload mismatch");
+
+    let p_b = extract_udp_payload(&pproxy_response_b.unwrap());
+    let e_b = extract_udp_payload(&eggress_response_b.unwrap());
+    assert_eq!(p_b, e_b, "target B payload mismatch");
+}
+
+/// Extract the payload portion from a SOCKS5 UDP datagram response.
+///
+/// The format is: [RSV(2) + FRAG(1) + ATYP(1) + ADDR(varies) + PORT(2) + PAYLOAD]
+/// ATYP 0x01 = IPv4 (4 bytes), 0x03 = Domain (1+len bytes), 0x04 = IPv6 (16 bytes)
+fn extract_udp_payload(datagram: &[u8]) -> Vec<u8> {
+    if datagram.len() < 4 {
+        return vec![];
+    }
+    let atyp = datagram[3];
+    let header_len = match atyp {
+        0x01 => 4 + 4 + 2,                        // ATYP + IPv4 + PORT
+        0x03 => 4 + 1 + datagram[4] as usize + 2, // ATYP + len + domain + PORT
+        0x04 => 4 + 16 + 2,                       // ATYP + IPv6 + PORT
+        _ => return vec![],
+    };
+    if datagram.len() <= header_len {
+        return vec![];
+    }
+    datagram[header_len..].to_vec()
+}

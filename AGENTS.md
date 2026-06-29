@@ -55,6 +55,9 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interopera
 # Run pproxy differential tests (gated, requires Python 3.11/3.12)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 
+# Run pproxy standalone UDP differential tests only
+./scripts/compat_udp_pproxy.sh
+
 # Run property tests (proptest)
 cargo test -p eggress-protocol-socks --test codec_properties
 cargo test -p eggress-protocol-http --test connect_properties
