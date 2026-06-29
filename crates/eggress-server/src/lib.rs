@@ -72,6 +72,7 @@ pub struct ConnectionConfig {
     /// When `None`, the chain executor builds a config with system root CAs.
     /// Intended for test-only use (e.g., insecure TLS for self-signed certs).
     pub tls_client_config: Option<Arc<rustls::ClientConfig>>,
+    pub shadowsocks: Option<accept::InboundShadowsocksConfig>,
 }
 
 /// Handle a single inbound connection.
@@ -85,7 +86,12 @@ pub async fn serve_connection(
 
     let accepted = tokio::time::timeout(
         config.handshake_timeout,
-        accept::accept(client, &config.protocols, &config.authentication),
+        accept::accept(
+            client,
+            &config.protocols,
+            &config.authentication,
+            config.shadowsocks.as_ref(),
+        ),
     )
     .await;
 
@@ -200,6 +206,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -262,6 +269,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -431,6 +439,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -482,6 +491,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -538,6 +548,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -583,6 +594,7 @@ mod tests {
             metrics: None,
             udp: None,
             tls_client_config: None,
+            shadowsocks: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -610,6 +622,7 @@ mod tests {
             metrics: None,
             udp: None,
             tls_client_config: None,
+            shadowsocks: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -638,6 +651,7 @@ mod tests {
             metrics: None,
             udp: None,
             tls_client_config: None,
+            shadowsocks: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -672,6 +686,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -734,6 +749,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -785,6 +801,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -838,6 +855,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -895,6 +913,7 @@ mod tests {
             metrics: None,
             udp: None,
             tls_client_config: None,
+            shadowsocks: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -1057,6 +1076,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1115,6 +1135,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1164,6 +1185,7 @@ mod tests {
                 metrics: None,
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
             serve_connection(boxed, config).await
         });

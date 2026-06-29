@@ -118,14 +118,11 @@ pub fn translate_from_uris(
         // Check for unsupported local protocols
         match local.scheme.as_str() {
             "ss" | "shadowsocks" => {
-                output = output.with_unsupported(
-                    "shadowsocks-listener",
-                    format!(
-                        "Shadowsocks listener '{}': not supported as local protocol",
-                        local.redacted_display()
-                    ),
+                // Shadowsocks listener is supported (requires explicit protocol mode)
+                tracing::debug!(
+                    "shadowsocks listener '{}' accepted (explicit protocol mode)",
+                    local.redacted_display()
                 );
-                continue;
             }
             "trojan" => {
                 output = output.with_unsupported(
@@ -198,6 +195,7 @@ pub fn translate_from_uris(
             "http" | "https" => vec!["http".to_string()],
             "socks4" | "socks4a" => vec!["socks4".to_string()],
             "socks5" => vec!["socks5".to_string()],
+            "ss" | "shadowsocks" => vec!["shadowsocks".to_string()],
             other => {
                 return Err(CompatError::InvalidArgs {
                     message: format!("unsupported scheme: {other}"),
@@ -211,10 +209,28 @@ pub fn translate_from_uris(
             protocols,
             auth: None,
             udp: None,
+            shadowsocks: None,
         };
 
         // Handle auth on listener
-        if let Some(ref user) = local.username {
+        if local.scheme.as_str() == "ss" || local.scheme.as_str() == "shadowsocks" {
+            // For Shadowsocks, username = method, password = password
+            if let Some(ref method) = local.username {
+                if let Some(ref pass) = local.password {
+                    listener_entry.shadowsocks = Some(ShadowsocksToml {
+                        method: method.clone(),
+                        password: pass.clone(),
+                    });
+                    output = output.with_warning(
+                        "credential-in-toml",
+                        format!(
+                            "Listener '{}' has plaintext credentials in generated TOML",
+                            listener_name
+                        ),
+                    );
+                }
+            }
+        } else if let Some(ref user) = local.username {
             if let Some(ref pass) = local.password {
                 listener_entry.auth = Some(AuthToml {
                     r#type: "password".to_string(),
@@ -264,6 +280,7 @@ pub fn translate_from_uris(
                     mode: Some("standalone_pproxy_udp".to_string()),
                     bind: Some(parse_udp_listen_addr(addr)),
                 }),
+                shadowsocks: None,
             });
             output = output.with_warning(
                 "ul-no-listener",
@@ -517,6 +534,14 @@ struct ListenerToml {
     auth: Option<AuthToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     udp: Option<UdpToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shadowsocks: Option<ShadowsocksToml>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ShadowsocksToml {
+    method: String,
+    password: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -664,11 +689,17 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_shadowsocks_unsupported() {
+    fn test_translate_shadowsocks_listener_supported() {
         let args =
             PproxyArgs::parse(&["-l".into(), "ss://aes-256-gcm:secret@proxy:8388".into()]).unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
+        assert!(
+            !output
+                .unsupported
+                .iter()
+                .any(|u| u.feature == "shadowsocks-listener"),
+            "shadowsocks listener should be supported"
+        );
     }
 
     #[test]

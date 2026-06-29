@@ -240,7 +240,7 @@ round-trips, route match consistency). Fuzz smoke tests exercise seed inputs for
 `cargo fuzz` targets. Load tests are `#[ignore]` by default and require explicit opt-in.
 Differential tests against `pproxy` are gated and live in `crates/eggress-cli/tests/`.
 pproxy compat tests live in `crates/eggress-pproxy-compat/src/tests.rs` and cover protocol aliases, unsupported scheme diagnostics, and credential redaction.
-Shadowsocks interop tests live in `crates/eggress-cli/tests/interoperability_shadowsocks.rs` (gated; TCP tests fail due to non-standard framing).
+Shadowsocks interop tests live in `crates/eggress-cli/tests/interoperability_shadowsocks.rs` (gated).
 See `docs/TESTING.md` for comprehensive testing guidance.
 See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability test details.
 
@@ -288,15 +288,15 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Shared runtime snapshot**: `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
-- **UDP**: direct forwarding, one-hop SOCKS5 upstream relay, one-hop Shadowsocks upstream relay (standard AEAD format), and standalone UDP relay (`mode = "standalone_pproxy_udp"`); no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection (or standalone in pproxy-compatible mode). Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
+- **UDP**: direct forwarding, one-hop SOCKS5 upstream relay, one-hop Shadowsocks upstream relay (standard AEAD format), and standalone UDP relay (`mode = "standalone_pproxy_udp"`); no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection (or standalone in pproxy-compatible mode). Client pinning enabled by default. Shadowsocks has inbound TCP listener support and full AEAD stream encryption.
 - **Scheduler parity**: Round-robin uses global atomic cursor; least-connections uses active+in_flight; first-available returns first eligible; health filtering excludes Unhealthy/Disabled
 - **Failure semantics**: SOCKS5/HTTP/SOCKS4 reply codes documented in `docs/FAILURE_SEMANTICS.md`; timeout→504/0x06, refused→502/0x05, policy→403/0x02
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
 - **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH, Unix, redir) produce structured diagnostics
-- **Shadowsocks TCP framing**: Non-standard (single AEAD operation per chunk with cleartext length prefix). Not wire-compatible with standard Shadowsocks implementations. Classified as Experimental in parity matrix. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md`.
-- **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP capability downgraded to `UnsupportedProtocol` in `capability.rs`. Completion docs updated with corrective notices and gated-test status.
+- **Shadowsocks TCP framing**: Standard SIP003 AEAD (two AEAD operations per chunk, encrypted length). Wire-compatible with standard Shadowsocks implementations. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS.md`.
+- **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP framing standardized to SIP003 AEAD in Phase 21. Completion docs updated with corrective notices and gated-test status.
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Thread ownership: async path uses a Tokio blocking-pool thread + dedicated OS thread (`eggress-embed-rt`); blocking path uses an outer startup thread + inner run thread (`eggress-embed-run`). Handle owns state/token and cleans up on drop (5-second timeout on async path). `shutdown()` and `shutdown_blocking()` are idempotent. See `docs/EMBED_API.md`.
 - **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. Version sourced from native module's `CARGO_PKG_VERSION`. Lifecycle: always prefer explicit `shutdown()` or context manager; object destruction is best-effort fallback. See `docs/PYTHON_BINDINGS.md`.
 - **PyPI packaging**: Wheels built with maturin for Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64. See `docs/PYPI_RELEASE.md`.

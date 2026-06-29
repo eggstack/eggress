@@ -167,6 +167,7 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
                 crate::accept::TunnelProtocol::HttpConnect => "http".to_string(),
                 crate::accept::TunnelProtocol::Socks4 => "socks4".to_string(),
                 crate::accept::TunnelProtocol::Socks5 => "socks5".to_string(),
+                crate::accept::TunnelProtocol::Shadowsocks => "shadowsocks".to_string(),
             });
             let target = Some(pending.target.to_string());
             execute_tunnel(pending, config, protocol, target).await
@@ -372,6 +373,7 @@ async fn execute_tunnel(
             crate::accept::TunnelProtocol::HttpConnect => eggress_core::ProtocolId::Http,
             crate::accept::TunnelProtocol::Socks4 => eggress_core::ProtocolId::Socks4,
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
+            crate::accept::TunnelProtocol::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
         },
         identity: &pending.identity,
         transport: eggress_routing::TransportKind::Tcp,

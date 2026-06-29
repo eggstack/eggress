@@ -18,11 +18,10 @@ pproxy 2.7.9 supports Shadowsocks AEAD ciphers with a standard wire format:
 
 Eggress matches this behavior for AEAD methods. The initial address header
 encryption and bidirectional stream encryption are implemented via
-`ShadowsocksAeadStream`. However, the TCP framing uses a **non-standard**
-format (single AEAD operation per chunk with cleartext length prefix) that is
-not wire-compatible with standard Shadowsocks implementations. See the
-[TCP Audit](SHADOWSOCKS_TCP_AUDIT.md) for details. UDP uses the standard
-AEAD format and is interoperable.
+`ShadowsocksAeadStream` using standard SIP003 AEAD framing (two separate AEAD
+operations per chunk: encrypted length + encrypted payload). The TCP path is
+wire-compatible with standard Shadowsocks implementations. UDP uses the same
+standard AEAD format and is interoperable.
 
 Source: `crates/eggress-protocol-shadowsocks/src/`
 
@@ -124,11 +123,10 @@ encrypted data chunks:
 ### Complete Wire Format
 
 ```
-+--------+---------------------------+-----------+-------------------+-----+
-|  Salt  |  Encrypted Address Header | Len Chunk | Payload Chunk     | ... |
-|        |                           | + Payload |                   |     |
-+--------+---------------------------+-----------+-------------------+-----+
- 16 bytes      variable              variable      variable
++--------+-----------------------------------------------+------------------------------------+------------------------------------+-----+
+|  Salt  |  AEAD( address_header, nonce=0 )             |  AEAD( len, nonce=N )             |  AEAD( payload, nonce=N+1 )       | ... |
++--------+-----------------------------------------------+------------------------------------+------------------------------------+-----+
+ 16 bytes           variable                          18 bytes                           variable + 16 bytes
 ```
 
 ### Phase 1: Initial Handshake (first bytes on the wire)
@@ -146,15 +144,19 @@ encrypted data chunks:
 
 ### Phase 2: Data Chunks (repeated until close)
 
+Each data chunk consists of **two** separate AEAD operations:
+
 ```
-+-------------------------------------------+------------------------------------+
-|  AEAD( len=2 + payload, nonce=write_N )  |  AEAD( payload, nonce=write_N+1 ) |
-+-------------------------------------------+------------------------------------+
++-----------------------------------------------+------------------------------------+
+|  AEAD( len=2 bytes, nonce=write_N )          |  AEAD( payload, nonce=write_N+1 ) |
++-----------------------------------------------+------------------------------------+
+  2 bytes plaintext + 16 bytes tag = 18 bytes      variable + 16 bytes tag
 ```
 
-Each chunk is a pair of AEAD operations:
-1. **Length chunk**: 2-byte big-endian payload length + AEAD tag
-2. **Payload chunk**: The actual data + AEAD tag
+1. **Length chunk**: 2-byte big-endian payload length, AEAD-encrypted (18 bytes on wire)
+2. **Payload chunk**: The actual data, AEAD-encrypted with the next nonce
+
+Nonces increment by **2** per chunk (one for length, one for payload).
 
 ## 7. Length Chunk Encryption
 
@@ -174,10 +176,9 @@ Each data chunk begins with an AEAD-encrypted length field:
 
 ```rust
 let len = plaintext.len() as u16;
-let mut payload = Vec::with_capacity(2 + plaintext.len());
-payload.extend_from_slice(&len.to_be_bytes());
-payload.extend_from_slice(plaintext);
-// AEAD-encrypt `payload` with the current write nonce
+// AEAD-encrypt the 2-byte length with the current write nonce
+let encrypted_len = aead_encrypt(key, write_nonce, &len.to_be_bytes())?;
+// write_nonce increments by 1 after this operation
 ```
 
 ### Constraints
@@ -186,12 +187,12 @@ payload.extend_from_slice(plaintext);
 - **Minimum**: 0 bytes (empty chunk for keepalive/probe)
 - **Big-endian**: Network byte order (MSB first)
 
-Source: `crates/eggress-protocol-shadowsocks/src/aead.rs:77`
+Source: `crates/eggress-protocol-shadowsocks/src/aead.rs`
 
 ## 8. Payload Chunk Encryption
 
 After the encrypted length chunk, the payload itself is AEAD-encrypted
-with the next nonce:
+with the **next** nonce:
 
 ### Wire Format
 
@@ -213,9 +214,9 @@ Payload chunk: AEAD( payload, nonce = N + 1 )
 ```
 
 Where N is the current write nonce counter (starting at 0 for the first
-data chunk).
+data chunk, after the address header consumed nonce 0).
 
-Source: `crates/eggress-protocol-shadowsocks/src/aead.rs:96`
+Source: `crates/eggress-protocol-shadowsocks/src/aead.rs`
 
 ## 9. Nonce Sequencing
 
@@ -246,9 +247,9 @@ Nonce[2]  = 0x000000000000000000000002  (first payload chunk)
 
 - **Independent counters**: Read and write nonce counters are completely
   independent. Each direction maintains its own counter starting at 0.
-- **Starting value**: Both counters begin at 0
-- **Increment**: After each AEAD encrypt or decrypt operation, the
-  corresponding counter increments by 1
+- **Starting value**: Both counters begin at 0 (address header)
+- **Increment by 2 per chunk**: Each data chunk consumes two nonces — one
+  for the length AEAD operation, one for the payload AEAD operation
 - **Ordering**: Nonces must be used in strictly increasing order within each
   direction. Skipping a nonce is a protocol error.
 - **No wrap**: With 12-byte (96-bit) nonces and 16-byte tags, the birthday
@@ -258,13 +259,14 @@ Nonce[2]  = 0x000000000000000000000002  (first payload chunk)
 ### Nonce Counter State Machine
 
 ```
-         encrypt/decrypt
-    ┌─────────────────────────┐
-    │                         │
-    ▼                         │
- [nonce=0] ──────────────► [nonce=1] ──────────────► [nonce=2] ──► ...
-                                                        
+          encrypt/decrypt
+     ┌─────────────────────────┐
+     │                         │
+     ▼                         │
+  [nonce=0] ──────────────► [nonce=1] ──────────────► [nonce=2] ──► ...
+
   Each AEAD operation increments the counter by 1.
+  Each data chunk consumes two nonces (length + payload).
   Read and write directions have independent counters.
 ```
 
@@ -276,10 +278,10 @@ Nonce[2]  = 0x000000000000000000000002  (first payload chunk)
 | Maximum encrypted length chunk | 18 bytes | 2 bytes plaintext + 16 bytes AEAD tag |
 | Maximum encrypted payload chunk | 65,551 bytes | 65,535 bytes plaintext + 16 bytes AEAD tag |
 
-The `MAX_FRAME_SIZE` constant is defined in `tcp.rs:9`:
+The `MAX_CHUNK_PAYLOAD` constant is:
 
 ```rust
-pub const MAX_FRAME_SIZE: usize = 65535;
+pub const MAX_CHUNK_PAYLOAD: usize = 65535;
 ```
 
 Implementations may send chunks smaller than 65,535 bytes. The receiver must
@@ -387,15 +389,15 @@ Source: `crates/eggress-protocol-shadowsocks/src/address.rs`
 7. Begin chunked data transfer:
    a. For each data chunk:
       - Split data into ≤ 65535-byte segments
-      - AEAD-encrypt length (2 bytes big-endian) with write_nonce
-      - Increment write_nonce
+      - AEAD-encrypt length (2 bytes big-endian) with write_nonce → 18 bytes
+      - Increment write_nonce by 1
       - AEAD-encrypt payload with write_nonce
-      - Increment write_nonce
+      - Increment write_nonce by 1
    b. For each received chunk:
-      - AEAD-decrypt length chunk with read_nonce
-      - Increment read_nonce
+      - AEAD-decrypt length chunk with read_nonce → get payload length
+      - Increment read_nonce by 1
       - AEAD-decrypt payload chunk with read_nonce
-      - Increment read_nonce
+      - Increment read_nonce by 1
 8. On EOF: send final chunks, close write side
 9. On read EOF: drain remaining chunks, close connection
 ```
@@ -406,7 +408,7 @@ Source: `crates/eggress-protocol-shadowsocks/src/address.rs`
 1. Accept TCP connection
 2. Read 16-byte salt from client
 3. Derive subkey = HKDF-SHA256(password, salt, "ss-subkey")
-4. AEAD-decrypt first chunk (address header) with nonce=0x000...0
+4. AEAD-decrypt address header with nonce=0x000...0
 5. Parse target address from decrypted data
 6. TCP connect to target
 7. Begin bidirectional encrypted relay (same chunk framing)
@@ -455,15 +457,16 @@ Wire bytes (hex, conceptual):
 [salt: 16 bytes random]
 [encrypted_addr: AEAD(addr, nonce=0) → ciphertext + tag]
 
-[encrypted_len_chunk_0: AEAD(len0, nonce=1) → ciphertext + tag]
+[encrypted_len_chunk_0: AEAD(len0, nonce=1) → ciphertext + tag]      (18 bytes)
 [encrypted_payload_chunk_0: AEAD(data0, nonce=2) → ciphertext + tag]
 
-[encrypted_len_chunk_1: AEAD(len1, nonce=3) → ciphertext + tag]
+[encrypted_len_chunk_1: AEAD(len1, nonce=3) → ciphertext + tag]      (18 bytes)
 [encrypted_payload_chunk_1: AEAD(data1, nonce=4) → ciphertext + tag]
 
 ...
 
 [encrypted_len_chunk_N: AEAD(0x0000, nonce=2N+1) → ciphertext + tag]  (empty = close)
+[encrypted_payload_chunk_N: AEAD(empty, nonce=2N+2) → ciphertext + tag]
 ```
 
 ## 15. Error Handling
@@ -475,7 +478,7 @@ Wire bytes (hex, conceptual):
 | `UnsupportedMethod` | Unknown cipher method in URI or config | Connection rejected; method name logged |
 | `DecryptionFailed` | AEAD tag mismatch, truncated ciphertext, wrong key | Connection reset immediately |
 | `InvalidAddress` | Malformed ATYP, truncated address, unknown ATYP byte | Connection reset; no partial processing |
-| `FrameTooLarge` | Chunk exceeds `MAX_FRAME_SIZE` (65535 bytes) | Connection reset |
+| `FrameTooLarge` | Chunk exceeds `MAX_CHUNK_PAYLOAD` (65535 bytes) | Connection reset |
 | `InvalidKeyLength` | Derived key does not match method's expected size | Connection rejected at setup |
 | `PasswordTooLong` | Password exceeds internal buffer limits | Connection rejected at setup |
 | `Io` | TCP read/write failure | Connection closed; error propagated |
@@ -611,8 +614,9 @@ cargo test -p eggress-protocol-shadowsocks test_encrypt_decrypt_roundtrip_aes256
 |-----------|--------|-------|
 | Address header encryption | **Implemented** | Single-shot AEAD encrypt in `shadowsocks_connect` |
 | Chunk encryption/decryption | **Implemented** | `encrypt_chunk` / `decrypt_chunk` in `aead.rs` |
-| Full bidirectional stream encryption (TCP) | **Implemented (non-standard framing)** | `ShadowsocksAeadStream` wraps stream with read/write nonce counters; TCP framing uses single AEAD operation per chunk with cleartext length prefix — not wire-compatible with standard Shadowsocks (see TCP audit) |
-| UDP (standard AEAD format) | **Supported** | Standard AEAD format: salt + AEAD(address + payload, nonce=0); interoperable with standard Shadowsocks implementations |
+| Full bidirectional stream encryption (TCP) | **Standard** | `ShadowsocksAeadStream` wraps stream with read/write nonce counters; standard SIP003 AEAD framing (two AEAD operations per chunk); wire-compatible with standard Shadowsocks implementations |
+| UDP (standard AEAD format) | **Standard** | Standard AEAD format: salt + AEAD(address + payload, nonce=0); interoperable with standard Shadowsocks implementations |
+| Inbound listener (TCP) | **Supported** | Explicit `protocol = "shadowsocks"` declaration; not auto-detected in mixed-protocol listeners |
 
 ### Source Files
 

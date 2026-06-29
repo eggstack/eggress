@@ -115,13 +115,14 @@ Adversaries may include malicious clients on the network, compromised upstream p
 
 **Unsupported Protocol Diagnostics** (`eggress-pproxy-compat/src/translate.rs`):
 - Unsupported schemes (SSH, Unix, redir) produce `UnsupportedFeature` errors with scheme name.
-- Shadowsocks listeners are rejected with clear diagnostic (upstream-only).
+- Shadowsocks listeners are now supported as an explicit protocol mode (no mixed-listener auto-detection).
 - Trojan listeners are rejected with clear diagnostic (upstream-only).
 - Legacy stream cipher URIs are rejected at parse time.
 - All diagnostic messages redact credentials.
 
 **Shadowsocks TCP Security Properties**:
 - Full AEAD stream encryption (not just header encryption); each direction is independently encrypted.
+- Standard TCP framing: encrypted length prefix + encrypted payload, compatible with standard Shadowsocks implementations.
 - Nonces are per-direction counters starting at 1, preventing nonce reuse.
 - Per-connection subkeys derived via HKDF-SHA256 from the shared secret and a random salt.
 - Only AEAD methods are supported (`aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream ciphers are rejected.

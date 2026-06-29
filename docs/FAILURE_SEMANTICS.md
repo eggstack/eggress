@@ -99,6 +99,22 @@ For HTTP forward proxy (non-CONNECT) requests, failures are reported via:
 +----+----+----+----+----------+----------+
 ```
 
+## Shadowsocks Failure Modes
+
+Shadowsocks does not define application-layer error codes. All failure
+conditions result in immediate connection close without a reply message.
+
+| Condition | Client-observed behavior |
+|-----------|--------------------------|
+| Decrypt failure (wrong key, corrupted data) | Connection closed |
+| Unsupported cipher method | Connection closed |
+| Invalid address encoding | Connection closed |
+| Upstream connect failure | Connection closed |
+
+Shadowsocks AEAD framing uses encrypted length fields, so the proxy cannot
+distinguish between truncation and other network errors. The client observes
+a connection reset or timeout.
+
 ## Failure Propagation Through Chains
 
 When a request traverses a multi-hop chain, failures at intermediate hops

@@ -91,6 +91,14 @@ pub struct ListenerConfig {
     pub udp: Option<ListenerUdpConfig>,
     #[serde(default)]
     pub tls: Option<ListenerTlsConfig>,
+    #[serde(default)]
+    pub shadowsocks: Option<ShadowsocksListenerConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ShadowsocksListenerConfig {
+    pub method: String,
+    pub password: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

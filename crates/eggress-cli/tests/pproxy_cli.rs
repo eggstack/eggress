@@ -159,7 +159,7 @@ fn check_compatible_tier() {
 }
 
 #[test]
-fn check_partial_tier_for_shadowsocks() {
+fn check_compatible_tier_for_shadowsocks() {
     let output = eggress_bin()
         .args([
             "pproxy",
@@ -172,7 +172,7 @@ fn check_partial_tier_for_shadowsocks() {
         .expect("failed to run eggress");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("parity tier: Partial"));
+    assert!(stdout.contains("parity tier: Compatible"));
 }
 
 #[test]

@@ -26,7 +26,7 @@ or document supported-but-unverified functionality.
 | SOCKS4/4a | server + client | server + client | Compatible | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
 | SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Compatible | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing; standalone mode now provides compatible behavior without TCP control |
-| Shadowsocks TCP | full AEAD + stream | client/upstream only (non-standard framing) | Experimental | none | none | No inbound listener; upstream has non-standard AEAD framing (not wire-compatible with standard Shadowsocks); see TCP audit |
+| Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Explicit protocol mode only (no mixed-listener auto-detection); standard AEAD framing |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
 ### Inbound UDP Protocols
@@ -45,7 +45,7 @@ or document supported-but-unverified functionality.
 | HTTP CONNECT upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_http_upstream` | Chain payloads match |
 | SOCKS4/SOCKS4a upstream | supported | supported | Supported | integration tests | none | Unit tested |
 | SOCKS5 upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_socks5_upstream` | Chain payloads match |
-| Shadowsocks upstream | supported | supported | Experimental | `shadowsocks_tcp.rs` | none | TCP: non-standard AEAD framing (not wire-compatible); UDP: standard AEAD format |
+| Shadowsocks upstream | supported | supported | Supported | `shadowsocks_tcp.rs` | none | Standard AEAD framing; interoperable with standard Shadowsocks |
 | Trojan upstream | supported | supported (client only) | Partial | unit tests | none | No server side |
 | Direct upstream | supported | supported | Compatible | integration tests | implicit in echo tests | Both connect directly |
 
@@ -119,7 +119,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `socks4://` | inbound | TCP | User ID | Supported | **Compatible** | Differential tests with pproxy 2.7.9 |
 | `socks4a://` | inbound | TCP | User ID | Supported | **Compatible** | Differential tests with pproxy 2.7.9 |
 | `socks5://` | inbound | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
-| `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
+| `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Supported | **Supported** | Explicit protocol mode only; no mixed-listener auto-detection |
 | `trojan://` | inbound | TCP | Password (SHA224) | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
 | `redir://` | inbound | TCP | None | Rejected | **Intentional non-parity** | Requires root, kernel hooks (`SO_ORIGINAL_DST`) |
 | `unix://` | inbound | TCP | None | Rejected | **Intentional non-parity** | Not in scope |
@@ -134,7 +134,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `socks4://` | upstream | TCP | User ID | Supported | **Supported** | Unit tested |
 | `socks4a://` | upstream | TCP | User ID | Supported | **Supported** | Alias for `socks4` |
 | `socks5://` | upstream | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
-| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **Experimental** | TCP: non-standard AEAD framing (not wire-compatible); UDP: standard AEAD format |
+| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **Supported** | Standard AEAD framing; interoperable with standard Shadowsocks |
 | `trojan://` | upstream | TCP | Password (SHA224) | Supported | **Supported** | Client-only; no server side |
 | `ssh://` | upstream | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH transport is out-of-scope for a proxy |
 | `direct://` | upstream | TCP+UDP | None | Supported | **Compatible** | Direct connection, no proxy |
@@ -144,7 +144,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | Feature | pproxy support | Eggress status | Decision | Rationale |
 |---------|---------------|----------------|----------|-----------|
 | `+tls` suffix | `socks5+tls://` etc. | Supported | **Compatible** | Maps to TLS wrapper via `eggress-transport-tls` |
-| Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported |
+| Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported; standard TCP framing |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | No authentication; vulnerable to bit-flipping |
 | ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Non-standard extension; no RFC |
 | QUIC transport | Not in pproxy | Rejected | **Intentional non-parity** | Out of scope |
@@ -179,7 +179,7 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 | `ssh://...` as upstream | `UnsupportedFeature` | "SSH transport is not supported" |
 | `unix://...` as upstream | `UnsupportedFeature` | "Unix domain sockets are not supported" |
 | `redir://...` as upstream | `UnsupportedFeature` | "Transparent/redir proxy is not supported" |
-| `ss://...` as listener | `UnsupportedFeature` | "Shadowsocks listener: not supported as local protocol" |
+| `ss://...` as listener | N/A | Now supported as explicit protocol mode |
 | `trojan://...` as listener | `UnsupportedFeature` | "Trojan listener: Trojan is upstream-only, not a local listener" |
 | Legacy stream cipher URI | `UnsupportedFeature` | "Legacy stream ciphers are not supported; use AEAD methods" |
 | `--daemon` flag | `UnsupportedFeature` | "--daemon mode is not supported; use systemd or process manager" |
@@ -223,7 +223,7 @@ All diagnostic messages redact credentials.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
 - **CLI (Compatible / Partial)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax. `--daemon` is not yet implemented.
-- **Shadowsocks / Trojan (Experimental / Partial / Supported)**: Shadowsocks TCP upstream has non-standard AEAD framing (not wire-compatible with standard implementations; see TCP audit). Shadowsocks UDP uses standard AEAD format and is interoperable. Trojan is client-only. Neither has differential coverage.
+- **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan is client-only. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
 - **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. See `docs/PYTHON_BINDINGS.md`.
 
 ## Limitations
@@ -231,7 +231,7 @@ All diagnostic messages redact credentials.
 1. **UDP protocol framing**: pproxy's UDP relay uses a custom framing protocol, not SOCKS5 UDP ASSOCIATE headers. The differential test verifies relay success (payload reaches echo and returns), not wire-level equivalence.
 2. **SOCKS5 UDP ASSOCIATE**: pproxy does not implement SOCKS5 UDP ASSOCIATE as a server — it uses its own `-ul` UDP relay. The test verifies eggress's SOCKS5 UDP ASSOCIATE independently, with pproxy as a comparison point for UDP relay capability. Standalone mode now provides compatible behavior.
 3. **Auth credential exchange**: pproxy embeds credentials in the listen URI fragment; eggress uses config-level auth. The differential tests verify rejection behavior, not credential exchange wire format.
-4. **Shadowsocks/Trojan**: Not covered in differential tests — pproxy supports Shadowsocks but eggress's Shadowsocks and Trojan are tested via their own unit/integration test suites.
+4. **Trojan**: Not covered in differential tests — Trojan is client-only and tested via its own unit/integration test suite.
 5. **TLS transport**: Not covered in differential tests — pproxy TLS requires certificate files; tested separately in `eggress-transport-tls` tests.
 6. **Multi-hop chains beyond 2**: Only single-hop chains through pproxy are tested. Multi-hop chains within eggress are tested in `integration.rs`.
 7. **HTTP forward proxy**: Eggress now supports persistent HTTP forward proxy (multiple requests per connection) matching pproxy behavior (Phase 19).

@@ -70,7 +70,7 @@ Each listener defines a TCP bind address and accepted protocols.
 |-------|------|----------|-------------|
 | `name` | string | yes | Unique listener identifier |
 | `bind` | `"host:port"` | yes | Socket address to bind |
-| `protocols` | `["http", "socks4", "socks5"]` | yes | Accepted protocol list |
+| `protocols` | `["http", "socks4", "socks5", "shadowsocks"]` | yes | Accepted protocol list |
 | `connection_limit` | u32 | 1024 | Max concurrent connections (semaphore) |
 | `auth` | table | none | Inbound authentication policy |
 | `udp_enabled` | bool | false | Legacy UDP flag (compatibility sugar) |
@@ -178,6 +178,19 @@ uri = "shadowsocks://aes-256-gcm:password@192.168.1.1:8388"
 
 # Shadowsocks with ChaCha20
 uri = "shadowsocks://chacha20-ietf-poly1305:password@192.168.1.1:8388"
+```
+
+**Shadowsocks Inbound Listener**: Shadowsocks can be configured as an inbound listener. It must be the only protocol on the listener (no mixed-mode auto-detection). Requires a `[listeners.shadowsocks]` section with method and password.
+
+```toml
+[[listeners]]
+name = "ss-inbound"
+bind = "0.0.0.0:8388"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+method = "aes-256-gcm"
+password = "my-secret-password"
 ```
 
 Shadowsocks UDP uses standard AEAD format (`salt + encrypted(address + payload)`).

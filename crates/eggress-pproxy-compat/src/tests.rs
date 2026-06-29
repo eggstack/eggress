@@ -53,15 +53,17 @@ fn test_credentials_never_in_warnings_display() {
 }
 
 #[test]
-fn test_unsupported_shadowsocks_returns_feature_not_panic() {
+fn test_shadowsocks_listener_is_supported() {
     let args =
         PproxyArgs::parse(&["-l".into(), "ss://aes-256-gcm:pass@proxy:8388".into()]).unwrap();
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(output.has_unsupported());
-    assert!(output
-        .unsupported
-        .iter()
-        .any(|u| u.feature == "shadowsocks-listener"));
+    assert!(
+        !output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "shadowsocks-listener"),
+        "shadowsocks listener should no longer be unsupported"
+    );
 }
 
 #[test]

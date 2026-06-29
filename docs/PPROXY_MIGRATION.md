@@ -32,7 +32,7 @@ eggress pproxy run -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 | `socks4a://` | Yes | Yes |
 | `socks5://` | Yes | Yes |
 | `trojan://` | No (upstream-only) | Yes |
-| `shadowsocks://` | No | Yes (AEAD methods only) |
+| `shadowsocks://` | Yes (AEAD methods only) | Yes (AEAD methods only) |
 | `direct://` | No | Yes (direct connection) |
 
 ### URI Format
@@ -113,7 +113,7 @@ upstream_group = "chain"
 | SOCKS5 CONNECT | Compatible | Expanded differential evidence: auth, IPv6, domain, refused targets (Phase 19) |
 | SOCKS5 UDP ASSOCIATE | Supported | Framing differs; relay success matches |
 | Standalone UDP (`-ul`/`-ur`) | Compatible | pproxy-compatible standalone UDP relay mode (Phase 20) |
-| Shadowsocks upstream | Experimental | TCP: non-standard AEAD framing; UDP: standard AEAD format |
+| Shadowsocks upstream | Supported | Standard AEAD framing; interoperable with standard Shadowsocks |
 | Trojan upstream | Partial | Client-only; no Trojan server |
 | Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
 
@@ -121,7 +121,6 @@ upstream_group = "chain"
 
 The following pproxy features are explicitly unsupported:
 
-- **Shadowsocks listeners** -- Shadowsocks is upstream-only (AEAD methods: `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`)
 - **Trojan listeners** -- Trojan is upstream-only
 - **`--daemon` mode** -- Use systemd or a process manager instead
 - **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly

@@ -520,6 +520,7 @@ dependencies = [
  "eggress-runtime",
  "eggress-server",
  "eggress-testkit",
+ "eggress-udp",
  "eggress-uri",
  "predicates",
  "serde",

@@ -154,6 +154,7 @@ struct PreparedListener {
     handshake_timeout: Duration,
     udp: Option<eggress_config::compile::CompiledListenerUdpConfig>,
     tls: Option<eggress_config::compile::CompiledListenerTlsConfig>,
+    shadowsocks: Option<eggress_config::model::ShadowsocksListenerConfig>,
 }
 
 /// Compute the advertised IP for the SOCKS5 UDP ASSOCIATE reply.
@@ -622,6 +623,7 @@ impl ServiceSupervisor {
                     handshake_timeout,
                     udp: lcfg.udp.clone(),
                     tls: lcfg.tls.clone(),
+                    shadowsocks: lcfg.shadowsocks.clone(),
                 });
             }
 
@@ -683,6 +685,7 @@ impl ServiceSupervisor {
                         active.fetch_add(1, Ordering::Relaxed);
 
                         let tls_config = prepared_listener.tls.clone();
+                        let ss_config = prepared_listener.shadowsocks.clone();
 
                         let udp_svc = if let Some(ref udp_config) = prepared_listener.udp {
                             Some(Arc::new(RuntimeUdpService {
@@ -742,6 +745,12 @@ impl ServiceSupervisor {
                                 metrics: Some(conn_metrics),
                                 udp: udp_svc,
                                 tls_client_config: tls_client_config.clone(),
+                                shadowsocks: ss_config.map(
+                                    |ss| eggress_server::accept::InboundShadowsocksConfig {
+                                        method: ss.method,
+                                        password: ss.password,
+                                    },
+                                ),
                             };
 
                             let report = tokio::select! {

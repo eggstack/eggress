@@ -1293,6 +1293,7 @@ async fn run_listener(
                 metrics: Some(conn_metrics),
                 udp: None,
                 tls_client_config: None,
+                shadowsocks: None,
             };
 
             let report = eggress_server::serve_connection(conn.stream, config)
@@ -1373,6 +1374,7 @@ mod tests {
                     metrics: None,
                     udp: None,
                     tls_client_config: None,
+                    shadowsocks: None,
                 };
                 tokio::spawn(async move {
                     let _ = eggress_server::serve_connection(conn.stream, config).await;

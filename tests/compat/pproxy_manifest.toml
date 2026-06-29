@@ -83,10 +83,10 @@ external_dependency = "pproxy==2.7.9"
 id = "shadowsocks_tcp_upstream"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "experimental"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["shadowsocks_tcp_tests"]
-divergence = "Non-standard AEAD framing; not wire-compatible with standard Shadowsocks"
+divergence = "Standard SIP003 AEAD framing; wire-compatible with standard Shadowsocks"
 external_dependency = null
 
 [[features]]
@@ -167,10 +167,10 @@ external_dependency = "pproxy==2.7.9"
 id = "shadowsocks_upstream"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "experimental"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["shadowsocks_tcp_tests"]
-divergence = "Non-standard AEAD framing for TCP; standard for UDP"
+divergence = "Standard SIP003 AEAD framing for TCP; standard for UDP"
 external_dependency = null
 
 [[features]]

@@ -1,5 +1,20 @@
 # Shadowsocks TCP AEAD Framing — Corrective Audit
 
+## Standardization Complete (Phase 21)
+
+The non-standard TCP AEAD framing identified in this audit has been corrected
+as of Phase 21. Eggress now implements standard SIP003-compatible AEAD TCP
+stream framing:
+
+- Length chunks are AEAD-encrypted (18 bytes on wire)
+- Payload chunks are separately AEAD-encrypted
+- Nonce increments by 2 per chunk
+- MAX_CHUNK_PAYLOAD = 65535 bytes
+
+The TCP path is now wire-compatible with standard Shadowsocks implementations.
+
+---
+
 This document records a corrective audit of the Eggress Shadowsocks TCP AEAD
 framing implementation, performed against the standard Shadowsocks AEAD TCP
 format as defined in [SIP003](https://shadowsocks.org/en/spec/SIP003-AEAD-Ciphers.html)

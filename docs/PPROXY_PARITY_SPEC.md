@@ -52,7 +52,7 @@ Eggress support status:
 | SOCKS4 | supported | `eggress-protocol-socks` |
 | SOCKS4a | supported | `eggress-protocol-socks` (alias for SOCKS4) |
 | SOCKS5 | supported | `eggress-protocol-socks` |
-| Shadowsocks | **rejected** | No inbound listener; upstream-only |
+| Shadowsocks | supported | Explicit protocol mode only; no mixed-listener auto-detection |
 | Trojan | **rejected** | No inbound listener; upstream-only |
 | Redir | **rejected** | Requires root, kernel hooks (`SO_ORIGINAL_DST`) |
 | Unix socket | **rejected** | Not in scope |
@@ -81,7 +81,7 @@ Eggress support status:
 | HTTPS (HTTP+TLS) | supported | `eggress-protocol-http` client + TLS wrapper |
 | SOCKS4/SOCKS4a | supported | `eggress-protocol-socks` client |
 | SOCKS5 | supported | `eggress-protocol-socks` client |
-| Shadowsocks | supported | `eggress-protocol-shadowsocks` client (AEAD methods only; TCP has non-standard AEAD framing — not wire-compatible with standard Shadowsocks) |
+| Shadowsocks | supported | `eggress-protocol-shadowsocks` client (AEAD methods only; standard TCP framing) |
 | Trojan | supported | `eggress-protocol-trojan` client |
 | SSH | **rejected** | Not in scope (SSH transport is out-of-scope for a proxy) |
 | Direct | supported | `DirectConnector` |
@@ -450,9 +450,9 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 
 ### Summary
 
-- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
+- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream and inbound listener (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
 - **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
-- **Partial**: Shadowsocks inbound listener, Trojan inbound listener
+- **Partial**: Trojan inbound listener
 
 ### Diagnostic behavior
 
@@ -466,7 +466,6 @@ The following items need further investigation or testing to confirm behavior:
 |------|--------|-------|
 | pproxy SOCKS5 BIND command support | `needs-probe` | pproxy may support BIND (0x02) — not tested |
 | pproxy UDP ASSOCIATE as SOCKS5 server | `needs-probe` | pproxy does not appear to support UDP ASSOCIATE as a SOCKS5 server command; uses standalone `-ul` instead |
-| pproxy Shadowsocks AEAD key derivation | `needs-probe` | Salt, key derivation function, and key size need confirmation for each cipher |
 | pproxy Trojan password hashing | `needs-probe` | Whether pproxy uses SHA224 (standard Trojan) or a variant |
 | pproxy HTTP forward proxy (non-CONNECT) | resolved | pproxy supports plain HTTP forwarding with persistent connections; eggress now matches (Phase 19) |
 | pproxy multi-hop chain behavior | `needs-probe` | Behavior for chains longer than 2 hops (error handling, protocol negotiation) |

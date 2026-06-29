@@ -40,9 +40,13 @@ cargo test -p eggress-udp socks5_upstream
 cargo test -p eggress-runtime udp_upstream
 
 # Protocol-specific tests
-cargo test -p eggress-protocol-shadowsocks
 cargo test -p eggress-protocol-trojan
 cargo test -p eggress-transport-tls
+
+# Shadowsocks protocol tests
+cargo test -p eggress-protocol-shadowsocks
+cargo test -p eggress-runtime shadowsocks_tcp
+cargo test -p eggress-runtime shadowsocks_udp
 
 # Upstream protocol tests
 cargo test -p eggress-runtime upstream_protocols
@@ -69,6 +73,8 @@ Integration tests live in `crates/eggress-runtime/tests/` and exercise the super
 | `udp.rs` | UDP association lifecycle, TCP control close, echo relay, bind conflict, topology rejection, config reload |
 | `udp_upstream.rs` | SOCKS5 upstream relay through full stack |
 | `upstream_protocols.rs` | HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection |
+| `shadowsocks_tcp.rs` | Shadowsocks TCP relay through full stack |
+| `shadowsocks_udp.rs` | Shadowsocks UDP relay through full stack |
 
 Negative-path tests cover: bind conflict, invalid source, oversized identity, reload-time failure.
 

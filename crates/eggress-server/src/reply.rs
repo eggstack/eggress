@@ -33,6 +33,9 @@ pub async fn send_tunnel_success(
             )
             .await?;
         }
+        (TunnelProtocol::Shadowsocks, ReplyContext::Shadowsocks) => {
+            // Shadowsocks has no success reply - the server starts relaying immediately
+        }
         _ => {
             return Err("mismatched protocol and reply context".into());
         }
@@ -67,6 +70,10 @@ pub async fn send_tunnel_failure(
                 &bind_addr,
             )
             .await?;
+        }
+        (TunnelProtocol::Shadowsocks, ReplyContext::Shadowsocks) => {
+            // Shadowsocks has no failure reply - just close the connection
+            pending.client.shutdown().await.ok();
         }
         _ => {
             return Err("mismatched protocol and reply context".into());

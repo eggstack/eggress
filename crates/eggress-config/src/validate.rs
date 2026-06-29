@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::error::ConfigError;
 use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig};
 
-const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5"];
+const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5", "shadowsocks"];
 
 const VALID_SCHEDULERS: &[&str] = &[
     "first-available",

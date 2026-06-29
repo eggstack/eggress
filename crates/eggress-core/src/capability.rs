@@ -96,12 +96,7 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
             udp_associate: CapabilityResult::Supported,
         },
         ProtocolSpec::Shadowsocks => UpstreamCapabilities {
-            // Non-standard AEAD framing (cleartext length prefix, single AEAD
-            // operation per chunk) — not wire-compatible with standard
-            // Shadowsocks implementations.  UDP uses standard AEAD format.
-            tcp_connect: CapabilityResult::UnsupportedProtocol {
-                protocol: "Shadowsocks-tcp-nonstandard-framing".to_string(),
-            },
+            tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::Supported,
         },
         ProtocolSpec::Trojan => UpstreamCapabilities {
@@ -206,15 +201,9 @@ mod tests {
     fn single_shadowsocks_hop() {
         let c = chain(vec![hop(vec![ProtocolSpec::Shadowsocks])]);
         let caps = classify_upstream_chain(&c);
-        // TCP: non-standard AEAD framing — not advertised as supported
-        assert!(!caps.is_tcp_supported());
+        assert!(caps.is_tcp_supported());
         assert!(caps.is_udp_supported());
-        assert_eq!(
-            caps.tcp_connect,
-            CapabilityResult::UnsupportedProtocol {
-                protocol: "Shadowsocks-tcp-nonstandard-framing".to_string()
-            }
-        );
+        assert_eq!(caps.tcp_connect, CapabilityResult::Supported);
         assert_eq!(caps.udp_associate, CapabilityResult::Supported);
     }
 

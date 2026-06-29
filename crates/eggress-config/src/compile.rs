@@ -95,6 +95,7 @@ pub struct ListenerConfig {
     pub auth: Option<crate::model::AuthConfig>,
     pub udp: Option<CompiledListenerUdpConfig>,
     pub tls: Option<CompiledListenerTlsConfig>,
+    pub shadowsocks: Option<crate::model::ShadowsocksListenerConfig>,
 }
 
 /// Compiled TLS configuration for a listener.
@@ -155,6 +156,7 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "http" => Ok(ProtocolId::Http),
         "socks4" => Ok(ProtocolId::Socks4),
         "socks5" => Ok(ProtocolId::Socks5),
+        "shadowsocks" => Ok(ProtocolId::Shadowsocks),
         _ => Err(ConfigError::validation(
             "protocols",
             &format!("unknown protocol: {}", s),
@@ -582,6 +584,7 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 auth: l.auth.clone(),
                 udp,
                 tls,
+                shadowsocks: l.shadowsocks.clone(),
             })
         })
         .collect()
