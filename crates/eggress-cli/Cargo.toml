@@ -36,6 +36,7 @@ eggress-protocol-socks.workspace = true
 eggress-protocol-shadowsocks.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
+base64 = "0.22"
 
 [lints]
 workspace = true

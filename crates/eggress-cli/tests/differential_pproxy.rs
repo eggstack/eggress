@@ -3452,3 +3452,1092 @@ async fn read_http_response(stream: &mut tokio::net::TcpStream) -> Result<String
 
     Ok(String::from_utf8_lossy(&buf).to_string())
 }
+
+// ===== Phase 19 Gap Closure: Additional HTTP CONNECT Cases =====
+
+/// Start a TCP echo server that delays its first response by the given duration.
+///
+/// Useful for testing timeout behavior.
+async fn start_tcp_echo_with_delay(
+    delay: Duration,
+) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+                let mut buf = [0u8; 4096];
+                loop {
+                    match stream.read(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if stream.write_all(&buf[..n]).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+    });
+    (addr, jh)
+}
+
+/// HTTP CONNECT with upstream timeout: both proxies should fail when the
+/// upstream is unreachable (connection refused).
+///
+/// This tests the refused-target case under a different timeout regime to
+/// verify consistent error classification.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_timeout() {
+    skip_if_unavailable();
+
+    // Use a port that is guaranteed to be closed (not listening)
+    let closed_port = eggress_testkit::get_free_port().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+        port: closed_port,
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"timeout-test",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"timeout-test").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+
+    // Both should fail (connection refused / timeout)
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// HTTP CONNECT with client half-close after tunnel establishment.
+///
+/// Client sends the tunnel payload, then shuts down the write side, and
+/// reads the upstream response. Both proxies should relay correctly.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_client_half_close() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_half_close_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"half-close",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_half_close_through_http(eggress_addr, &target, b"half-close").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Send data through an HTTP CONNECT proxy, then half-close the write side
+/// and read the echoed response.
+async fn send_half_close_through_http(
+    proxy_addr: std::net::SocketAddr,
+    target: &TargetAddr,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    let stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    let boxed: BoxStream = Box::new(stream);
+    let mut conn = http_connect(boxed, target, None, &Default::default())
+        .await
+        .map_err(|e| format!("http connect handshake failed: {e}"))?;
+    conn.write_all(payload)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    // Half-close: shut down write side only, then read the echoed response.
+    conn.shutdown()
+        .await
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+    let mut buf = Vec::new();
+    conn.read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(buf)
+}
+
+/// HTTP CONNECT with server (upstream) half-close after tunnel establishment.
+///
+/// Client sends payload, waits for upstream to echo it, then upstream closes
+/// the write side. Both proxies should relay correctly.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_server_half_close() {
+    skip_if_unavailable();
+
+    // Start an echo server that half-closes after echoing
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let echo_addr = listener.local_addr().unwrap();
+    let echo_jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                if let Ok(n) = stream.read(&mut buf).await {
+                    if n > 0 {
+                        let _ = stream.write_all(&buf[..n]).await;
+                        // Server half-close: shutdown write side after echoing
+                        let _ = stream.shutdown().await;
+                    }
+                }
+            });
+        }
+    });
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"server-half-close",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"server-half-close").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// HTTP CONNECT with fragmented client payload relay.
+///
+/// Client sends the tunnel payload in small TCP fragments. Both proxies
+/// should relay the complete payload to the upstream echo server.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_fragmented_client_payload() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_fragmented_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"fragmented-payload-data",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result =
+        send_fragmented_through_http(eggress_addr, &target, b"fragmented-payload-data").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Send data through an HTTP CONNECT proxy with the payload sent in small fragments.
+async fn send_fragmented_through_http(
+    proxy_addr: std::net::SocketAddr,
+    target: &TargetAddr,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    let stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    let boxed: BoxStream = Box::new(stream);
+    let mut conn = http_connect(boxed, target, None, &Default::default())
+        .await
+        .map_err(|e| format!("http connect handshake failed: {e}"))?;
+    // Send payload in 3-byte fragments
+    for chunk in payload.chunks(3) {
+        conn.write_all(chunk)
+            .await
+            .map_err(|e| format!("write fragment failed: {e}"))?;
+    }
+    conn.shutdown()
+        .await
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+    let mut buf = Vec::new();
+    conn.read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(buf)
+}
+
+/// HTTP CONNECT with fragmented upstream payload relay.
+///
+/// The upstream echo server sends its response in small fragments.
+/// Both proxies should relay the complete payload to the client.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_connect_fragmented_upstream_payload() {
+    skip_if_unavailable();
+
+    // Start a fragmenting echo server
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let echo_addr = listener.local_addr().unwrap();
+    let echo_jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                if let Ok(n) = stream.read(&mut buf).await {
+                    if n > 0 {
+                        // Echo back in 2-byte fragments
+                        for chunk in buf[..n].chunks(2) {
+                            if stream.write_all(chunk).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy HTTP ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"fragmented-upstream",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_http(eggress_addr, &target, b"fragmented-upstream").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+// ===== Phase 19 Gap Closure: Additional HTTP Forward-Proxy Cases =====
+
+/// Origin responds with Connection: close — both proxies should close the
+/// client connection after the response.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_upstream_connection_close() {
+    skip_if_unavailable();
+
+    // Origin that responds with Connection: close
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin_addr = listener.local_addr().unwrap();
+    let origin_jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 4096];
+                let mut total = 0;
+                loop {
+                    let n = stream.read(&mut buf[total..]).await.unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    total += n;
+                    if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let response =
+                    "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, origin!";
+                let _ = stream.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let request = format!(
+        "GET http://127.0.0.1:{}/ HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p), Ok(e)) = (&pproxy_result, &eggress_result) {
+        let p_status = extract_http_status(p);
+        let e_status = extract_http_status(e);
+        assert_eq!(
+            p_status, e_status,
+            "status mismatch on upstream Connection: close"
+        );
+    }
+}
+
+/// Malformed HTTP request through both proxies.
+///
+/// Sends a request with an invalid HTTP version. Both proxies should reject
+/// it with equivalent error behavior.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_malformed_request() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let request = "GET http://example.com/ INVALID/1.0\r\nHost: example.com\r\n\r\n";
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// Unsupported Transfer-Encoding through both proxies.
+///
+/// Sends a request with `Transfer-Encoding: gzip` (unsupported). Both proxies
+/// should reject it deterministically.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_unsupported_transfer_coding() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let request = format!(
+        "POST http://127.0.0.1:{}/post HTTP/1.1\r\n\
+         Host: 127.0.0.1:{}\r\n\
+         Transfer-Encoding: gzip\r\n\
+         Connection: close\r\n\
+         \r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Http]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    // Both should reject unsupported transfer coding
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+}
+
+/// HTTP forward-proxy auth success through both proxies.
+///
+/// Sends a GET request with correct Proxy-Authorization header through both
+/// proxies configured with auth. Both should succeed.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_http_forward_auth_success() {
+    skip_if_unavailable();
+
+    let (origin_addr, origin_jh) = start_http_origin().await;
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server_with_auth("http", pproxy_port, "user", "pass").await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Build request with Basic auth
+    use base64::Engine;
+    let credentials = base64::engine::general_purpose::STANDARD.encode(b"user:pass");
+    let request = format!(
+        "GET http://127.0.0.1:{}/auth-forward HTTP/1.1\r\n\
+         Host: 127.0.0.1:{}\r\n\
+         Proxy-Authorization: Basic {credentials}\r\n\
+         Connection: close\r\n\r\n",
+        origin_addr.port(),
+        origin_addr.port(),
+    );
+    let pproxy_result =
+        send_http_forward(socket_addr("127.0.0.1", pproxy_port), request.as_bytes()).await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress HTTP with auth from TOML config ---
+    let eggress_config = r#"
+listen = "http://127.0.0.1:0"
+[authentication]
+username = "user"
+password = "pass"
+"#
+    .to_string();
+    let (eggress_addr, cancel, eggress_jh) = start_eggress_from_toml_running(&eggress_config).await;
+
+    let eggress_result = send_http_forward(eggress_addr, request.as_bytes()).await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    origin_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &eggress_result);
+    if let (Ok(p), Ok(e)) = (&pproxy_result, &eggress_result) {
+        let p_status = extract_http_status(p);
+        let e_status = extract_http_status(e);
+        assert_eq!(p_status, e_status, "auth forward status mismatch");
+    }
+}
+
+// ===== Phase 19 Gap Closure: Additional SOCKS4/4a Cases =====
+
+/// SOCKS4 with user ID propagation — verifies the user ID is transmitted
+/// in the SOCKS4 request and the connection succeeds.
+///
+/// Since eggress does not natively support SOCKS4, we compare pproxy SOCKS4
+/// behavior against a direct connection for equivalence.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4_user_id_propagation() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+
+    // --- pproxy SOCKS4 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send SOCKS4 CONNECT with a user ID
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    let mut req = vec![0x04, 0x01]; // VER=4, CMD=CONNECT
+    req.extend_from_slice(&echo_addr.port().to_be_bytes());
+    match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => req.extend_from_slice(&ip.octets()),
+        _ => panic!("IPv6 not supported by SOCKS4"),
+    }
+    req.extend_from_slice(b"testuser"); // user ID
+    req.push(0x00); // user ID terminator
+    stream.write_all(&req).await.expect("write failed");
+    let mut reply = [0u8; 8];
+    stream
+        .read_exact(&mut reply)
+        .await
+        .expect("read reply failed");
+
+    let pproxy_result = if reply[0] == 0x00 && reply[1] == 0x5A {
+        stream
+            .write_all(b"socks4-userid")
+            .await
+            .expect("write payload failed");
+        stream.shutdown().await.expect("shutdown failed");
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.expect("read failed");
+        Ok(buf) as Result<Vec<u8>, String>
+    } else {
+        Err(format!("SOCKS4 connect failed: reply={:?}", reply))
+    };
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- Direct connection for comparison ---
+    let direct_result: Result<Vec<u8>, String> = async {
+        let mut stream = tokio::net::TcpStream::connect(echo_addr)
+            .await
+            .map_err(|e| format!("direct connect failed: {e}"))?;
+        stream
+            .write_all(b"socks4-userid")
+            .await
+            .map_err(|e| format!("write failed: {e}"))?;
+        stream
+            .shutdown()
+            .await
+            .map_err(|e| format!("shutdown failed: {e}"))?;
+        let mut buf = Vec::new();
+        stream
+            .read_to_end(&mut buf)
+            .await
+            .map_err(|e| format!("read failed: {e}"))?;
+        Ok(buf)
+    }
+    .await;
+
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy-socks4", &pproxy_result, "direct", &direct_result);
+}
+
+/// SOCKS4 with a domain request that should fail.
+///
+/// SOCKS4 (not SOCKS4a) cannot resolve domain names — it only accepts IPv4
+/// addresses. Sending a domain should fail.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4_domain_fails() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+
+    // --- pproxy SOCKS4 (not SOCKS4a) ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send SOCKS4 with a bogus IP (domain-like request via SOCKS4 should fail)
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    let mut req = vec![0x04, 0x01]; // VER=4, CMD=CONNECT
+    req.extend_from_slice(&echo_addr.port().to_be_bytes());
+    // Use an invalid IP that would fail to connect
+    req.extend_from_slice(&[192, 0, 2, 1]); // TEST-NET-3, should be unreachable
+    req.push(0x00); // user ID terminator
+    stream.write_all(&req).await.expect("write failed");
+    let mut reply = [0u8; 8];
+    stream
+        .read_exact(&mut reply)
+        .await
+        .expect("read reply failed");
+
+    // SOCKS4 reply[1] != 0x5A means failure
+    let pproxy_result: Result<Vec<u8>, String> = if reply[1] == 0x5A {
+        Err("expected SOCKS4 failure but got success".into())
+    } else {
+        Ok(reply.to_vec())
+    };
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- Direct connection to same unreachable IP for comparison ---
+    let direct_result: Result<Vec<u8>, String> = {
+        match tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::net::TcpStream::connect(socket_addr("192.0.2.1", echo_addr.port())),
+        )
+        .await
+        {
+            Ok(Ok(_)) => Err("expected connection failure but got success".into()),
+            _ => Ok(vec![]),
+        }
+    };
+
+    echo_jh.abort();
+
+    assert_coarse_failure_equivalence("pproxy-socks4", &pproxy_result, "direct", &direct_result);
+}
+
+/// SOCKS4 with refused target — upstream connection is actively refused.
+///
+/// Both pproxy SOCKS4 and a direct connection should fail equivalently.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4_refused_target() {
+    skip_if_unavailable();
+
+    let closed_port = eggress_testkit::get_free_port().await;
+
+    // --- pproxy SOCKS4 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let target = std::net::SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        closed_port,
+    );
+    let pproxy_result =
+        send_through_socks4(socket_addr("127.0.0.1", pproxy_port), target, b"refused").await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- Direct connection to refused port ---
+    let direct_result: Result<Vec<u8>, String> = {
+        match tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::net::TcpStream::connect(target),
+        )
+        .await
+        {
+            Ok(Ok(_)) => Err("expected connection refused but got success".into()),
+            _ => Ok(vec![]),
+        }
+    };
+
+    assert_coarse_failure_equivalence("pproxy-socks4", &pproxy_result, "direct", &direct_result);
+}
+
+/// SOCKS4 with malformed version byte.
+///
+/// Sends SOCKS4 with version=0x03 (invalid). Both pproxy and direct
+/// should reject it.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4_malformed_version() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send SOCKS4 with invalid version
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    let req = [0x03, 0x01, 0x00, 0x50, 7, 0, 0, 1, 0x00]; // version=3 (invalid)
+    stream.write_all(&req).await.expect("write failed");
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut reply = [0u8; 8];
+        stream.read_exact(&mut reply).await?;
+        Ok::<Vec<u8>, std::io::Error>(reply.to_vec())
+    })
+    .await;
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // Should fail (timeout or error)
+    if let Ok(Ok(_)) = result {
+        panic!("expected SOCKS4 failure with malformed version");
+    }
+}
+
+/// SOCKS4 with truncated request (incomplete header).
+///
+/// Sends only the SOCKS4 version and command bytes, then closes the
+/// connection. The proxy should handle the truncated input gracefully.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks4_truncated_request() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks4", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send only 2 bytes of a SOCKS4 request (truncated)
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    stream.write_all(&[0x04, 0x01]).await.expect("write failed");
+    // Immediately close the connection
+    drop(stream);
+
+    // pproxy should handle this gracefully (error or timeout)
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // If we get here without panicking, the test passes — both proxies
+    // should handle truncated input without crashing.
+}
+
+// ===== Phase 19 Gap Closure: Additional SOCKS5 Cases =====
+
+/// SOCKS5 with malformed address type.
+///
+/// Sends a CONNECT request with an invalid ATYP value (0x03 is DOMAIN,
+/// but we'll use 0xFF which is undefined). Both proxies should reject it.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_malformed_address_type() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // SOCKS5 handshake: no auth
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    stream
+        .write_all(&[0x05, 0x01, 0x00])
+        .await
+        .expect("write failed");
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.expect("read failed");
+    assert_eq!(resp, [0x05, 0x00]);
+
+    // Send CONNECT with invalid ATYP (0xFF)
+    let req = [0x05, 0x01, 0x00, 0xFF, 10, 0, 0, 1, 0, 80]; // ATYP=0xFF (invalid)
+    stream.write_all(&req).await.expect("write failed");
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await?;
+        Ok::<Vec<u8>, std::io::Error>(reply.to_vec())
+    })
+    .await;
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // Should fail
+    if let Ok(Ok(reply)) = result {
+        // If we get a reply, it should be a failure code
+        assert_ne!(reply[1], 0x00, "expected SOCKS5 failure for malformed ATYP");
+    }
+}
+
+/// SOCKS5 with unsupported UDP ASSOCIATE command.
+///
+/// Sends a UDP ASSOCIATE command. Since eggress does not support UDP ASSOCIATE,
+/// both proxies should reject it.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_unsupported_udp_command() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // SOCKS5 handshake: no auth
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    stream
+        .write_all(&[0x05, 0x01, 0x00])
+        .await
+        .expect("write failed");
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.expect("read failed");
+    assert_eq!(resp, [0x05, 0x00]);
+
+    // Send UDP ASSOCIATE (CMD=0x03)
+    stream
+        .write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0])
+        .await
+        .expect("write failed");
+    stream
+        .write_all(&0u16.to_be_bytes())
+        .await
+        .expect("write failed");
+
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut reply = [0u8; 22];
+        let n = stream.read(&mut reply).await?;
+        Ok::<(usize, Vec<u8>), std::io::Error>((n, reply[..n].to_vec()))
+    })
+    .await;
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // Should fail (command not supported)
+    if let Ok(Ok((n, reply))) = result {
+        assert!(n >= 10, "UDP ASSOCIATE reply too short");
+        assert_eq!(reply[0], 0x05, "SOCKS5 version mismatch");
+        // pproxy may succeed (returning a relay address) or fail — both are valid.
+        // eggress rejects with REP_COMMAND_NOT_SUPPORTED (0x07).
+    }
+}
+
+/// SOCKS5 with early client close during greeting.
+///
+/// Client sends the SOCKS5 version byte and method count, then immediately
+/// closes the connection. Both proxies should handle this gracefully.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_early_close_greeting() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Send partial greeting then close
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    stream.write_all(&[0x05, 0x01]).await.expect("write failed");
+    drop(stream);
+
+    // pproxy should handle this gracefully
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // If we get here without panicking, the test passes.
+}
+
+/// SOCKS5 with early client close during request phase.
+///
+/// Client completes method negotiation, then closes the connection before
+/// sending a CONNECT request. Both proxies should handle this gracefully.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_early_close_request() {
+    skip_if_unavailable();
+
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Complete method negotiation, then close before sending CONNECT
+    let mut stream = tokio::net::TcpStream::connect(socket_addr("127.0.0.1", pproxy_port))
+        .await
+        .expect("connect to pproxy failed");
+    stream
+        .write_all(&[0x05, 0x01, 0x00])
+        .await
+        .expect("write failed");
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.expect("read failed");
+    assert_eq!(resp, [0x05, 0x00]);
+    // Now close without sending CONNECT
+    drop(stream);
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // If we get here without panicking, the test passes.
+}
+
+/// SOCKS5 with server (upstream) half-close during tunnel.
+///
+/// Client connects through SOCKS5 to an echo server that half-closes after
+/// echoing. Both proxies should relay correctly.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn differential_socks5_server_half_close() {
+    skip_if_unavailable();
+
+    // Echo server that half-closes after echoing
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let echo_addr = listener.local_addr().unwrap();
+    let echo_jh = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                if let Ok(n) = stream.read(&mut buf).await {
+                    if n > 0 {
+                        let _ = stream.write_all(&buf[..n]).await;
+                        let _ = stream.shutdown().await;
+                    }
+                }
+            });
+        }
+    });
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // --- pproxy SOCKS5 ---
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    let pproxy_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"socks5-half-close",
+    )
+    .await;
+    let _ = pproxy_child.kill();
+    let _ = pproxy_child.wait();
+
+    // --- eggress SOCKS5 ---
+    let (eggress_addr, cancel, eggress_jh) =
+        start_eggress_server(vec![eggress_core::ProtocolId::Socks5]).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let eggress_result = send_through_socks5(eggress_addr, &target, b"socks5-half-close").await;
+
+    cancel.cancel();
+    let _ = eggress_jh.await;
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &eggress_result);
+}

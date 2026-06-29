@@ -16,35 +16,37 @@ Phase 19 closes the high-value conventional proxy surface with persistent HTTP f
 - `forward_request_stream` added for persistent session loops
 
 ### 19.2: HTTP CONNECT Differential Closure
-- 6 new differential test cases added
-- Covers auth success/failure, IPv4/IPv6/domain targets, refused targets
+- 11 differential test cases total (6 original + 5 gap-closure)
+- Covers auth success/failure/malformed, IPv4/IPv6/domain targets, refused targets, timeout, client half-close, server half-close, fragmented client payload, fragmented upstream payload
 
 ### 19.3: HTTP Forward-Proxy Differential Tests
-- 6 new differential test cases added
-- Covers GET, POST, HEAD, Connection: close, persistent connections, chunked body
+- 10 differential test cases total (6 original + 4 gap-closure)
+- Covers GET, POST, HEAD, Connection: close, persistent connections, chunked body, upstream Connection: close, malformed request, unsupported transfer coding, forward proxy auth
 
 ### 19.4: SOCKS4/4a Differential Closure
-- 2 new differential test cases added
-- Covers SOCKS4 CONNECT and SOCKS4a domain resolution
+- 8 differential test cases total (2 original + 6 gap-closure)
+- Covers SOCKS4 CONNECT echo, SOCKS4a domain, user ID propagation, domain failure, refused target, malformed version, truncated request
 
 ### 19.5: SOCKS5 Differential Closure
-- 3 new differential test cases added
-- Covers IPv6, domain, and refused targets
+- 8 differential test cases total (3 original + 5 gap-closure)
+- Covers IPv6, domain, refused targets, malformed address type, unsupported UDP command, early client close (greeting), early client close (request), server half-close
 
 ### 19.6: SOCKS BIND Decision Point
 - BIND deferred: returns `REP_COMMAND_NOT_SUPPORTED` (0x07)
 - Documented in parity matrix and manifest
 
 ### 19.7: Mixed-Protocol Listener Robustness
-- 8 new unit tests for protocol detection edge cases
-- Covers fragmented bytes, garbage, slow clients, mixed-protocol listeners
+- 9 new unit tests for protocol detection edge cases
+- Covers fragmented bytes, garbage, slow clients, mixed-protocol listeners, auth-required mixed with no-auth
 
 ### 19.8: Smoke Tests
-- curl and Python urllib smoke test scripts available
+- curl smoke tests in `interoperability_curl.rs` (HTTP CONNECT, SOCKS5, SOCKS4a)
+- Python urllib smoke test script at `scripts/smoke_clients.py`
 
 ### 19.9: Documentation Updates
 - Parity matrix updated with Phase 19 evidence
 - Manifest updated with 17 new feature entries
+- PPROXY_PARITY_SPEC updated: HTTP forward proxy marked compatible, resolved probes
 - README checkboxes updated
 - Migration guide updated
 

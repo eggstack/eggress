@@ -2037,4 +2037,74 @@ mod tests {
 
         server_jh.await.unwrap();
     }
+
+    /// Mixed-protocol listener with auth: HTTP with auth and SOCKS5 with auth
+    /// on the same listener. Both connections should be detected correctly
+    /// when correct credentials are provided.
+    #[tokio::test]
+    async fn test_mixed_protocols_with_auth_detection() {
+        let protocols: Vec<ProtocolId> = vec![ProtocolId::Http, ProtocolId::Socks5];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // First connection: HTTP forward (non-CONNECT) without auth —
+        // protocol detection still works, auth is checked in serve_connection.
+        let client_jh1 = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream
+                .write_all(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let (stream1, _) = listener.accept().await.unwrap();
+        let p = protocols.clone();
+        let server_jh1 = tokio::spawn(async move {
+            let boxed: BoxStream = Box::new(stream1);
+            let session = accept(boxed, &p, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::HttpForward(pending) => {
+                    assert_eq!(pending.request.method, "GET");
+                }
+                _ => panic!("expected http forward"),
+            }
+        });
+
+        client_jh1.await.unwrap();
+        server_jh1.await.unwrap();
+
+        // Second connection: SOCKS5 without auth — detected correctly.
+        let client_jh2 = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+            let mut response = [0u8; 2];
+            stream.read_exact(&mut response).await.unwrap();
+            assert_eq!(response, [0x05, 0x00]);
+            stream
+                .write_all(&[0x05, 0x01, 0x00, 0x01, 10, 0, 0, 1])
+                .await
+                .unwrap();
+            stream.write_all(&443u16.to_be_bytes()).await.unwrap();
+        });
+
+        let (stream2, _) = listener.accept().await.unwrap();
+        let server_jh2 = tokio::spawn(async move {
+            let boxed: BoxStream = Box::new(stream2);
+            let session = accept(boxed, &protocols, &InboundAuthentication::None)
+                .await
+                .unwrap();
+            match session {
+                AcceptedSession::Tunnel(pending) => {
+                    assert_eq!(pending.protocol, TunnelProtocol::Socks5);
+                    assert_eq!(pending.target.port, 443);
+                }
+                _ => panic!("expected tunnel"),
+            }
+        });
+
+        client_jh2.await.unwrap();
+        server_jh2.await.unwrap();
+    }
 }

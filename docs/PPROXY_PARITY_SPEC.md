@@ -444,9 +444,9 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 
 ### Summary
 
-- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, Shadowsocks upstream (AEAD), Trojan upstream, direct upstream
+- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream (AEAD), Trojan upstream, direct upstream
 - **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
-- **Partial**: Persistent HTTP forwarding (single-exchange only), Shadowsocks inbound listener, Trojan inbound listener
+- **Partial**: Shadowsocks inbound listener, Trojan inbound listener
 
 ### Diagnostic behavior
 
@@ -462,11 +462,11 @@ The following items need further investigation or testing to confirm behavior:
 | pproxy UDP ASSOCIATE as SOCKS5 server | `needs-probe` | pproxy does not appear to support UDP ASSOCIATE as a SOCKS5 server command; uses standalone `-ul` instead |
 | pproxy Shadowsocks AEAD key derivation | `needs-probe` | Salt, key derivation function, and key size need confirmation for each cipher |
 | pproxy Trojan password hashing | `needs-probe` | Whether pproxy uses SHA224 (standard Trojan) or a variant |
-| pproxy HTTP forward proxy (non-CONNECT) | `needs-probe` | Whether pproxy supports plain HTTP forwarding (GET through proxy) vs. only CONNECT tunnels |
+| pproxy HTTP forward proxy (non-CONNECT) | resolved | pproxy supports plain HTTP forwarding with persistent connections; eggress now matches (Phase 19) |
 | pproxy multi-hop chain behavior | `needs-probe` | Behavior for chains longer than 2 hops (error handling, protocol negotiation) |
 | pproxy connection reuse semantics | `needs-probe` | How `--reuse` interacts with chained upstreams and health state |
 | pproxy `--rulefile` format details | `needs-probe` | Exact syntax for rule-file entries and regex patterns |
-| pproxy SOCKS4a domain resolution | `needs-probe` | Whether pproxy resolves domains at the SOCKS4a server or forwards them |
+| pproxy SOCKS4a domain resolution | resolved | pproxy resolves domains at the SOCKS4a server; eggress matches (Phase 19) |
 
 ## 16. pproxy Compatibility CLI Layer
 
