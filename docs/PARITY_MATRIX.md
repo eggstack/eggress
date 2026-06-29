@@ -25,7 +25,7 @@ or document supported-but-unverified functionality.
 | HTTP forward proxy | ordinary HTTP request handling | persistent session forward | Compatible | integration tests | `differential_http_forward_get` | Persistent session model implemented (19.1). Differential tests added (19.3). |
 | SOCKS4/4a | server + client | server + client | Compatible | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
-| SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing, not SOCKS5 UDP ASSOCIATE as server |
+| SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Compatible | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing; standalone mode now provides compatible behavior without TCP control |
 | Shadowsocks TCP | full AEAD + stream | client/upstream only (non-standard framing) | Experimental | none | none | No inbound listener; upstream has non-standard AEAD framing (not wire-compatible with standard Shadowsocks); see TCP audit |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
@@ -34,8 +34,9 @@ or document supported-but-unverified functionality.
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | SOCKS5 UDP ASSOCIATE relay | own UDP framing protocol | SOCKS5 UDP ASSOCIATE | Partial | `udp.rs` | `differential_socks5_udp_associate` | Framing differs; relay success matches |
+| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | Compatible | `udp.rs` | `differential_socks5_udp_associate` | pproxy-compatible standalone UDP mode; no TCP control connection required |
 | Shadowsocks UDP | supported | standard AEAD format | Supported | `shadowsocks_udp.rs` | none | Interoperable with standard Shadowsocks |
-| Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE | Supported | `udp.rs` | none | Different entry points |
+| Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE or standalone mode | Supported | `udp.rs` | none | Both entry points supported |
 
 ### Upstream TCP Protocols
 
@@ -95,8 +96,8 @@ or document supported-but-unverified functionality.
 |---|---|---|---|---|---|---|
 | `-l` listen flag | supported | supported | Compatible | cli_tests | none | Same syntax |
 | `-r` remote flag | supported | supported | Compatible | cli_tests | none | Same syntax |
-| `-ul` UDP listen | supported | rejected | Intentional non-parity | none | none | Eggress uses SOCKS5 UDP ASSOCIATE instead |
-| `-ur` UDP remote | supported | rejected | Intentional non-parity | none | none | Eggress uses SOCKS5 UDP ASSOCIATE instead |
+| `-ul` UDP listen | supported | supported | Compatible | cli_tests | none | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
+| `-ur` UDP remote | supported | supported | Compatible | cli_tests | none | Generates UDP upstream config with transport-matching rule |
 | `--config` TOML | supported | supported | Supported | integration tests | none | Different schema |
 | `--rulefile` | supported | rejected | Intentional non-parity | cli_tests | none | Use eggress TOML routing rules |
 | `--daemon` | supported | rejected | Intentional non-parity | none | none | Use systemd or a process manager |
@@ -156,8 +157,8 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 |---------|---------------|----------------|----------|-----------|
 | `-l` listen flag | Supported | Supported | **Compatible** | Same syntax |
 | `-r` remote flag | Supported | Supported | **Compatible** | Same syntax |
-| `-ul` UDP listen | Supported | Rejected | **Intentional non-parity** | Uses SOCKS5 UDP ASSOCIATE instead |
-| `-ur` UDP remote | Supported | Rejected | **Intentional non-parity** | Uses SOCKS5 upstream instead |
+| `-ul` UDP listen | Supported | Supported | **Compatible** | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
+| `-ur` UDP remote | Supported | Supported | **Compatible** | Generates UDP upstream config with transport-matching rule |
 | `--daemon` | Supported | Rejected | **Intentional non-parity** | Use systemd or process manager |
 | `--ssl` TLS listener | Supported | Rejected | **Intentional non-parity** | Configure TLS in eggress TOML |
 | `-b` block rules | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
@@ -182,7 +183,6 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 | `trojan://...` as listener | `UnsupportedFeature` | "Trojan listener: Trojan is upstream-only, not a local listener" |
 | Legacy stream cipher URI | `UnsupportedFeature` | "Legacy stream ciphers are not supported; use AEAD methods" |
 | `--daemon` flag | `UnsupportedFeature` | "--daemon mode is not supported; use systemd or process manager" |
-| `-ul`/`-ur` flags | `UnsupportedFeature` | "-ul/-ur UDP relay uses SOCKS5 UDP ASSOCIATE instead" |
 | `--rulefile` flag | `UnsupportedFeature` | "--rulefile is not supported; use eggress TOML routing rules" |
 | Unknown URI scheme | `CompatError` | "unsupported protocol: {scheme}" |
 
@@ -219,17 +219,17 @@ All diagnostic messages redact credentials.
 
 - **TCP proxying (Compatible)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, SOCKS4/4a, HTTP forward proxy, and direct upstream — differential tests produce byte-exact echo payloads.
 - **TCP proxying (Supported)**: SOCKS5 UDP ASSOCIATE inbound is fully implemented; unit tested but not differentially verified against pproxy.
-- **UDP relay (Partial)**: Both relay UDP datagrams successfully; pproxy uses its own UDP framing vs. SOCKS5 UDP ASSOCIATE headers. Framing differs but relay behavior matches.
+- **UDP relay (Supported)**: Both relay UDP datagrams successfully. Standalone UDP mode (`mode = "standalone_pproxy_udp"`) provides pproxy-compatible behavior without TCP control connection. SOCKS5 UDP ASSOCIATE is also supported for TCP-controlled UDP relay.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
-- **CLI (Compatible / Partial)**: `-l` and `-r` flags share syntax. `-ul` and `-ur` are unsupported (Eggress uses SOCKS5 UDP ASSOCIATE). `--daemon` is not yet implemented.
+- **CLI (Compatible / Partial)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax. `--daemon` is not yet implemented.
 - **Shadowsocks / Trojan (Experimental / Partial / Supported)**: Shadowsocks TCP upstream has non-standard AEAD framing (not wire-compatible with standard implementations; see TCP audit). Shadowsocks UDP uses standard AEAD format and is interoperable. Trojan is client-only. Neither has differential coverage.
 - **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. See `docs/PYTHON_BINDINGS.md`.
 
 ## Limitations
 
 1. **UDP protocol framing**: pproxy's UDP relay uses a custom framing protocol, not SOCKS5 UDP ASSOCIATE headers. The differential test verifies relay success (payload reaches echo and returns), not wire-level equivalence.
-2. **SOCKS5 UDP ASSOCIATE**: pproxy does not implement SOCKS5 UDP ASSOCIATE as a server — it uses its own `-ul` UDP relay. The test verifies eggress's SOCKS5 UDP ASSOCIATE independently, with pproxy as a comparison point for UDP relay capability.
+2. **SOCKS5 UDP ASSOCIATE**: pproxy does not implement SOCKS5 UDP ASSOCIATE as a server — it uses its own `-ul` UDP relay. The test verifies eggress's SOCKS5 UDP ASSOCIATE independently, with pproxy as a comparison point for UDP relay capability. Standalone mode now provides compatible behavior.
 3. **Auth credential exchange**: pproxy embeds credentials in the listen URI fragment; eggress uses config-level auth. The differential tests verify rejection behavior, not credential exchange wire format.
 4. **Shadowsocks/Trojan**: Not covered in differential tests — pproxy supports Shadowsocks but eggress's Shadowsocks and Trojan are tested via their own unit/integration test suites.
 5. **TLS transport**: Not covered in differential tests — pproxy TLS requires certificate files; tested separately in `eggress-transport-tls` tests.

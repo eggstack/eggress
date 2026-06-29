@@ -206,13 +206,14 @@ Auth failure behavior:
 
 | Feature | pproxy | Eggress |
 |---------|--------|---------|
-| UDP relay listen | `-ul` / `--udp` flag | SOCKS5 UDP ASSOCIATE listener |
-| UDP framing | Custom pproxy protocol | SOCKS5 UDP ASSOCIATE header (RFC 1928) |
-| UDP upstream | `-ur` flag or chained upstreams | SOCKS5 upstream UDP ASSOCIATE |
+| UDP relay listen | `-ul` / `--udp` flag | SOCKS5 UDP ASSOCIATE + standalone UDP (`mode = "standalone_pproxy_udp"`) |
+| UDP framing | Custom pproxy protocol | SOCKS5-compatible datagram header |
+| UDP upstream | `-ur` flag or chained upstreams | Direct, SOCKS5 upstream, Shadowsocks upstream |
 | UDP ASSOCIATE (server) | Not supported as server | Supported (full RFC 1928) |
 | UDP ASSOCIATE (client) | Supported when connecting through upstream | Supported |
 | Direct UDP forwarding | `-r direct` | Supported |
 | Shadowsocks UDP upstream | supported | Supported (standard AEAD; single-hop) |
+| Standalone UDP mode | `-ul` without TCP control | Supported (`mode = "standalone_pproxy_udp"`) |
 
 pproxy's UDP relay protocol:
 - Listen on a separate UDP socket specified by `-ul`.
@@ -224,13 +225,16 @@ pproxy's UDP relay protocol:
 Eggress's UDP relay:
 - SOCKS5 UDP ASSOCIATE requires a TCP control connection that sends the
   `UDP ASSOCIATE` command (0x03). The server replies with a relay address.
-- UDP datagrams use the standard SOCKS5 UDP ASSOCIATE framing.
-- This is a meaningful protocol difference: pproxy's UDP relay is a standalone
-  relay, while Eggress's is tied to a SOCKS5 session.
+- Standalone UDP mode (`mode = "standalone_pproxy_udp"`) accepts
+  SOCKS5-framed UDP datagrams directly on the UDP socket without requiring
+  a SOCKS5 TCP control connection, matching pproxy's `-ul` behavior.
+- UDP datagrams use the standard SOCKS5 UDP ASSOCIATE framing in both modes.
+- The standalone mode is fully compatible with pproxy's standalone UDP relay.
 
 **Differential test result**: Both relay UDP successfully. The wire framing is
-the same for the datagram payload, but the setup mechanism differs (standalone
-vs. SOCKS5 session). See `differential_socks5_udp_associate` test.
+the same for the datagram payload. With standalone mode enabled, the setup
+mechanism is also compatible (no TCP control connection required).
+See `differential_socks5_udp_associate` test.
 
 ## 9. Encryption
 
@@ -296,8 +300,8 @@ pproxy -l socks5://user:pass@:1080 -r direct
 |------|-------------|-------------------|
 | `-l` | Listen address (URI) | `[[listeners]]` in TOML config |
 | `-r` | Remote/upstream address (URI) | `[[upstreams]]` in TOML config |
-| `-ul` | UDP listen address | `[[listeners]]` with `protocol = "socks5"` + UDP config |
-| `-ur` | UDP remote address | UDP upstream config |
+| `-ul` | UDP listen address | `[[listeners]]` with `mode = "standalone_pproxy_udp"` + UDP config |
+| `-ur` | UDP remote address | UDP upstream config with transport-matching rule |
 | `-b` | Block regex rules (filter hostnames) | Not supported; use eggress TOML routing rules |
 | `-s` | Scheduling algorithm (`fa`, `rr`, `rc`, `lc`) | `scheduler` in upstream group TOML |
 | `-a` | Alive check interval (seconds) | Health probe config in TOML |
@@ -382,11 +386,13 @@ The following behaviors are confirmed by the 7 differential tests in
 ### 13.3 SOCKS5 UDP ASSOCIATE
 
 - **Test**: `differential_socks5_udp_associate`
-- **Result**: Both relay UDP successfully; framing differs.
+- **Result**: Both relay UDP successfully; compatible in standalone mode.
 - **Details**: pproxy uses its own UDP relay protocol (standalone `-ul` socket),
-  while Eggress uses SOCKS5 UDP ASSOCIATE (TCP-controlled). Both deliver the
+  while Eggress supports both SOCKS5 UDP ASSOCIATE (TCP-controlled) and
+  standalone mode (`mode = "standalone_pproxy_udp"`). Both deliver the
   UDP payload to the echo server and receive the echo back. The datagram
-  framing (header bytes) is compatible, but the setup mechanism differs.
+  framing (header bytes) is compatible. In standalone mode, the setup
+  mechanism is also compatible (no TCP control connection required).
 
 ### 13.4 SOCKS5 → HTTP Chain
 
@@ -444,8 +450,8 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 
 ### Summary
 
-- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream (AEAD), Trojan upstream, direct upstream
-- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
+- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Shadowsocks inbound listener, Trojan inbound listener
 
 ### Diagnostic behavior
@@ -488,9 +494,11 @@ model.
 The compat layer translates: `-l`, `-r`, `-s`, `-v`, `-a`.
 
 Flags with direct mapping produce TOML configuration. Flags without a direct
-mapping (e.g., `--daemon`, `--ssl`, `-b`, `-ul`, `-ur`) emit a warning or
+mapping (e.g., `--daemon`, `--ssl`, `-b`) emit a warning or
 unsupported feature diagnostic. Unknown flags emit an `unknown-flag` warning.
 Translation exits nonzero when unsupported features are present.
+The `-ul` and `-ur` flags are now supported and generate standalone UDP
+configuration with `mode = "standalone_pproxy_udp"`.
 
 ### Migration Guidance
 

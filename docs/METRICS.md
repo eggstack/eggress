@@ -78,6 +78,20 @@ Shadowsocks TCP upstream traffic increments the TCP upstream connection metrics
 (`eggress_upstream_open_total` with `protocol="shadowsocks"`) instead. The two
 transport modes are distinguished by which metric family receives the counters.
 
+### Standalone UDP Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `eggress_standalone_udp_flows_active` | Gauge | Currently active standalone UDP flows |
+| `eggress_standalone_udp_flows_total` | Counter | Total standalone UDP flows created |
+| `eggress_standalone_udp_packets_in_total` | Counter | Total standalone UDP packets received |
+| `eggress_standalone_udp_packets_out_total` | Counter | Total standalone UDP packets sent |
+| `eggress_standalone_udp_bytes_in_total` | Counter | Total standalone UDP bytes received |
+| `eggress_standalone_udp_bytes_out_total` | Counter | Total standalone UDP bytes sent |
+| `eggress_standalone_udp_malformed_total` | Counter | Total malformed standalone UDP datagrams |
+| `eggress_standalone_udp_rejected_total` | Counter | Total rejected standalone UDP datagrams |
+| `eggress_standalone_udp_flow_reaps_total` | Counter | Total standalone UDP flow reaps |
+
 ## Labels and Cardinality Policy
 
 ### What IS labeled

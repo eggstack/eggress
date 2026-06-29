@@ -112,6 +112,7 @@ upstream_group = "chain"
 | SOCKS4/4a | Compatible | Differential tests with pproxy 2.7.9 added (Phase 19) |
 | SOCKS5 CONNECT | Compatible | Expanded differential evidence: auth, IPv6, domain, refused targets (Phase 19) |
 | SOCKS5 UDP ASSOCIATE | Supported | Framing differs; relay success matches |
+| Standalone UDP (`-ul`/`-ur`) | Compatible | pproxy-compatible standalone UDP relay mode (Phase 20) |
 | Shadowsocks upstream | Experimental | TCP: non-standard AEAD framing; UDP: standard AEAD format |
 | Trojan upstream | Partial | Client-only; no Trojan server |
 | Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
@@ -123,7 +124,6 @@ The following pproxy features are explicitly unsupported:
 - **Shadowsocks listeners** -- Shadowsocks is upstream-only (AEAD methods: `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`)
 - **Trojan listeners** -- Trojan is upstream-only
 - **`--daemon` mode** -- Use systemd or a process manager instead
-- **`-ul` / `-ur` UDP flags** -- Eggress uses SOCKS5 UDP ASSOCIATE instead
 - **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
 - **`-b` block regex rules** -- Use eggress TOML routing rules
 - **`--rulefile`** -- Use eggress TOML routing rules

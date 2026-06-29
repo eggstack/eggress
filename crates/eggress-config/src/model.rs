@@ -67,6 +67,7 @@ pub struct TimeoutConfig {
 #[serde(deny_unknown_fields)]
 pub struct ListenerUdpConfig {
     pub enabled: Option<bool>,
+    pub mode: Option<String>,
     pub bind: Option<String>,
     pub advertise: Option<String>,
     pub idle_timeout: Option<String>,

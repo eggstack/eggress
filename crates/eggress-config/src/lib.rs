@@ -1897,4 +1897,181 @@ uri = "socks5+tls://proxy.example:1080"
         assert_eq!(hop.protocols, vec![eggress_uri::ProtocolSpec::Socks5]);
         assert_eq!(hop.endpoint.host, "proxy.example");
     }
+
+    // === UDP mode tests ===
+
+    #[test]
+    fn udp_mode_default_is_socks5() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "UDP config should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert_eq!(udp.mode, eggress_udp::UdpMode::Socks5UdpAssociate);
+    }
+
+    #[test]
+    fn udp_mode_socks5_udp_associate_explicit() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "socks5_udp_associate"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "Explicit socks5_udp_associate mode should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert_eq!(udp.mode, eggress_udp::UdpMode::Socks5UdpAssociate);
+    }
+
+    #[test]
+    fn udp_mode_socks5_alias() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "socks5"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "socks5 alias should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert_eq!(udp.mode, eggress_udp::UdpMode::Socks5UdpAssociate);
+    }
+
+    #[test]
+    fn udp_mode_standalone_pproxy_udp() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "pproxy-in"
+bind = "127.0.0.1:8080"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "standalone_pproxy_udp"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "standalone_pproxy_udp mode should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert_eq!(udp.mode, eggress_udp::UdpMode::StandalonePproxyUdp);
+    }
+
+    #[test]
+    fn udp_mode_standalone_alias() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "pproxy-in"
+bind = "127.0.0.1:8080"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "standalone"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "standalone alias should compile: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert_eq!(udp.mode, eggress_udp::UdpMode::StandalonePproxyUdp);
+    }
+
+    #[test]
+    fn udp_mode_invalid_value_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "bogus"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(result.is_err(), "invalid UDP mode should be rejected");
+    }
+
+    #[test]
+    fn udp_mode_standalone_does_not_require_socks5() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[listeners.udp]
+mode = "standalone_pproxy_udp"
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        assert!(
+            result.is_ok(),
+            "standalone_pproxy_udp should not require socks5: {:?}",
+            result.err()
+        );
+        let rt = result.unwrap();
+        let udp = rt.listeners[0].udp.as_ref().unwrap();
+        assert_eq!(udp.mode, eggress_udp::UdpMode::StandalonePproxyUdp);
+    }
 }

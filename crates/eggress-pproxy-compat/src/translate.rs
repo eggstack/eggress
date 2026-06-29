@@ -8,7 +8,10 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
     let local_uris = args.parse_local_uris()?;
     let remote_uris = args.parse_remote_uris()?;
 
-    if local_uris.is_empty() {
+    // Allow empty local_uris when -ul is present (standalone UDP mode)
+    let has_udp_listen = args.raw_flags.iter().any(|f| f.starts_with("udp-listen="));
+
+    if local_uris.is_empty() && !has_udp_listen {
         return Err(CompatError::InvalidArgs {
             message: "no local listener specified (use -l or positional args)".to_string(),
         });
@@ -37,6 +40,8 @@ pub fn translate_from_uris(
 
     // Check for unsupported flags and handle supported ones
     let mut scheduler_override = None;
+    let mut udp_listen_addr: Option<String> = None;
+    let mut udp_remotes: Vec<String> = Vec::new();
     for flag in flags {
         if flag == "daemon" {
             output = output.with_unsupported(
@@ -44,17 +49,11 @@ pub fn translate_from_uris(
                 "--daemon mode is not supported; use systemd or process manager",
             );
         }
-        if flag.starts_with("udp-listen=") {
-            output = output.with_unsupported(
-                "udp-listen",
-                "-ul UDP relay uses standalone mode; eggress requires SOCKS5 UDP ASSOCIATE",
-            );
+        if let Some(addr) = flag.strip_prefix("udp-listen=") {
+            udp_listen_addr = Some(addr.to_string());
         }
-        if flag.starts_with("udp-remote=") {
-            output = output.with_unsupported(
-                "udp-remote",
-                "-ur UDP remote is not supported; use SOCKS5 upstream",
-            );
+        if let Some(remote) = flag.strip_prefix("udp-remote=") {
+            udp_remotes.push(remote.to_string());
         }
         if flag.starts_with("rulefile=") {
             output = output.with_unsupported(
@@ -211,6 +210,7 @@ pub fn translate_from_uris(
             bind,
             protocols,
             auth: None,
+            udp: None,
         };
 
         // Handle auth on listener
@@ -233,14 +233,41 @@ pub fn translate_from_uris(
 
         listeners.push(listener_entry);
 
-        // If no remotes, create a direct rule
-        if remote_uris.is_empty() {
+        // If no remotes and no UDP remotes, create a direct rule
+        if remote_uris.is_empty() && udp_remotes.is_empty() {
             output = output.with_warning(
                 "direct-mode",
                 format!(
                     "Listener '{}' has no upstream; traffic will be direct",
                     listener_name
                 ),
+            );
+        }
+    }
+
+    // If -ul is specified, add standalone UDP config to the first listener
+    if let Some(ref addr) = udp_listen_addr {
+        let bind = parse_udp_listen_addr(addr);
+        if let Some(listener) = listeners.first_mut() {
+            listener.udp = Some(UdpToml {
+                mode: Some("standalone_pproxy_udp".to_string()),
+                bind: Some(bind),
+            });
+        } else {
+            // No listener created (all were unsupported schemes); add a default SOCKS5 listener
+            listeners.push(ListenerToml {
+                name: "pproxy-local-0".to_string(),
+                bind: "0.0.0.0:1080".to_string(),
+                protocols: vec!["socks5".to_string()],
+                auth: None,
+                udp: Some(UdpToml {
+                    mode: Some("standalone_pproxy_udp".to_string()),
+                    bind: Some(parse_udp_listen_addr(addr)),
+                }),
+            });
+            output = output.with_warning(
+                "ul-no-listener",
+                "-ul specified without a compatible -l listener; added default SOCKS5 listener on :1080",
             );
         }
     }
@@ -304,12 +331,51 @@ pub fn translate_from_uris(
         });
     }
 
-    // Build upstream groups and rules
-    if !upstreams.is_empty() {
+    // Process UDP remote upstreams
+    let mut udp_upstream_ids = Vec::new();
+    for (idx, remote_str) in udp_remotes.iter().enumerate() {
+        let remote_uri =
+            crate::uri::parse_pproxy_uri(remote_str).map_err(|e| CompatError::InvalidArgs {
+                message: format!("invalid UDP remote URI '{}': {}", remote_str, e),
+            })?;
+
+        // Check for unsupported upstream protocols
+        match remote_uri.scheme.as_str() {
+            "ss" | "shadowsocks" => {}
+            "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
+            other => {
+                output = output.with_unsupported(
+                    "scheme",
+                    format!("unknown scheme '{}' in UDP upstream URI", other),
+                );
+                continue;
+            }
+        }
+
+        let upstream_id = format!("pproxy-udp-upstream-{}", idx);
+        let config_uri = build_config_uri(&remote_uri);
+
+        upstreams.push(UpstreamToml {
+            id: upstream_id.clone(),
+            uri: config_uri,
+        });
+        udp_upstream_ids.push(upstream_id);
+    }
+
+    // Build upstream groups and rules for TCP
+    if !upstreams.is_empty()
+        && upstreams
+            .iter()
+            .any(|u| u.id.starts_with("pproxy-upstream-"))
+    {
         let group_id = "pproxy-chain".to_string();
-        let member_ids: Vec<String> = upstreams.iter().map(|u| u.id.clone()).collect();
+        let member_ids: Vec<String> = upstreams
+            .iter()
+            .filter(|u| u.id.starts_with("pproxy-upstream-"))
+            .map(|u| u.id.clone())
+            .collect();
         let scheduler = scheduler_override.unwrap_or_else(|| {
-            if upstreams.len() > 1 {
+            if member_ids.len() > 1 {
                 "round-robin".to_string()
             } else {
                 "first-available".to_string()
@@ -327,6 +393,33 @@ pub fn translate_from_uris(
             id: "pproxy-default".to_string(),
             any: true,
             upstream_group: group_id,
+            r#match: None,
+        });
+    }
+
+    // Build upstream groups and rules for UDP
+    if !udp_upstream_ids.is_empty() {
+        let group_id = "pproxy-udp-chain".to_string();
+        let scheduler = if udp_upstream_ids.len() > 1 {
+            "round-robin".to_string()
+        } else {
+            "first-available".to_string()
+        };
+
+        upstream_groups.push(UpstreamGroupToml {
+            id: group_id.clone(),
+            scheduler,
+            members: udp_upstream_ids,
+            fallback: "reject".to_string(),
+        });
+
+        rules.push(RuleToml {
+            id: "pproxy-udp-default".to_string(),
+            any: false,
+            upstream_group: group_id,
+            r#match: Some(MatchToml {
+                transport: "udp".to_string(),
+            }),
         });
     }
 
@@ -336,6 +429,35 @@ pub fn translate_from_uris(
     Ok(TranslationOutput::new(toml_str)
         .with_warnings(output.warnings)
         .with_unsupported_features(output.unsupported))
+}
+
+/// Parse a `-ul` address value into a bind address.
+///
+/// Handles formats: `:1081`, `0.0.0.0:1081`, `127.0.0.1:1081`, `socks5://:1081`, plain port `1081`.
+fn parse_udp_listen_addr(addr: &str) -> String {
+    // If it's a URI like socks5://:1081, extract host:port after ://
+    if let Some(rest) = addr.find("://") {
+        let endpoint = &addr[rest + 3..];
+        if endpoint.is_empty() || endpoint == ":" {
+            return "0.0.0.0:0".to_string();
+        }
+        if endpoint.starts_with(':') {
+            return format!("0.0.0.0{}", endpoint);
+        }
+        return endpoint.to_string();
+    }
+
+    // Plain address formats
+    if addr.is_empty() || addr == ":" {
+        "0.0.0.0:0".to_string()
+    } else if addr.starts_with(':') {
+        format!("0.0.0.0{}", addr)
+    } else if addr.contains(':') {
+        addr.to_string()
+    } else {
+        // Just a port number
+        format!("0.0.0.0:{}", addr)
+    }
 }
 
 fn percent_encode(s: &str) -> String {
@@ -393,6 +515,16 @@ struct ListenerToml {
     protocols: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     auth: Option<AuthToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    udp: Option<UdpToml>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct UdpToml {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bind: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -424,6 +556,14 @@ struct RuleToml {
     id: String,
     any: bool,
     upstream_group: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "match")]
+    r#match: Option<MatchToml>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct MatchToml {
+    transport: String,
 }
 
 #[derive(serde::Serialize)]
@@ -726,5 +866,156 @@ mod tests {
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.toml.contains("round-robin"));
+    }
+
+    #[test]
+    fn test_translate_ul_generates_standalone_udp() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            ":1081".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        assert!(output.toml.contains("standalone_pproxy_udp"));
+        assert!(output.toml.contains("0.0.0.0:1081"));
+    }
+
+    #[test]
+    fn test_translate_ur_generates_upstream() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            ":1081".into(),
+            "-ur".into(),
+            "socks5://proxy:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        assert!(output.toml.contains("pproxy-udp-upstream-0"));
+        assert!(output.toml.contains("pproxy-udp-chain"));
+        assert!(output.toml.contains("socks5://proxy:1080"));
+        assert!(output.toml.contains("transport = \"udp\""));
+    }
+
+    #[test]
+    fn test_translate_ul_and_ur_together() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://tcp-proxy:8080".into(),
+            "-ul".into(),
+            ":1081".into(),
+            "-ur".into(),
+            "socks5://udp-proxy:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        // TCP upstream group
+        assert!(output.toml.contains("pproxy-upstream-0"));
+        assert!(output.toml.contains("pproxy-chain"));
+        // UDP upstream group
+        assert!(output.toml.contains("pproxy-udp-upstream-0"));
+        assert!(output.toml.contains("pproxy-udp-chain"));
+        // UDP listener config
+        assert!(output.toml.contains("standalone_pproxy_udp"));
+        // Two rules: default (any) and UDP
+        assert!(output.toml.contains("pproxy-default"));
+        assert!(output.toml.contains("pproxy-udp-default"));
+    }
+
+    #[test]
+    fn test_ul_without_listen_adds_default_socks5() {
+        let args = PproxyArgs::parse(&["-ul".into(), ":1081".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        // Should have added a default SOCKS5 listener
+        assert!(output.toml.contains("pproxy-local-0"));
+        assert!(output.toml.contains("socks5"));
+        assert!(output.toml.contains("standalone_pproxy_udp"));
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "ul-no-listener"));
+    }
+
+    #[test]
+    fn test_ul_address_formats() {
+        // Test various -ul address formats
+        for (input, expected_bind) in &[
+            (":1081", "0.0.0.0:1081"),
+            ("0.0.0.0:1081", "0.0.0.0:1081"),
+            ("127.0.0.1:1081", "127.0.0.1:1081"),
+            ("1081", "0.0.0.0:1081"),
+            ("socks5://:1081", "0.0.0.0:1081"),
+        ] {
+            let args = PproxyArgs::parse(&[
+                "-l".into(),
+                "socks5://127.0.0.1:1080".into(),
+                "-ul".into(),
+                input.to_string(),
+            ])
+            .unwrap();
+            let output = translate_pproxy_args(&args).unwrap();
+            assert!(
+                output.toml.contains(expected_bind),
+                "expected bind '{}' for -ul input '{}', got:\n{}",
+                expected_bind,
+                input,
+                output.toml
+            );
+        }
+    }
+
+    #[test]
+    fn test_ul_no_tcp_direct_warning_when_ur_present() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            ":1081".into(),
+            "-ur".into(),
+            "socks5://proxy:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        // No direct-mode warning when UDP upstream is specified
+        assert!(!output.warnings.iter().any(|w| w.category == "direct-mode"));
+    }
+
+    #[test]
+    fn test_valid_toml_roundtrip_with_udp() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            ":1081".into(),
+            "-ur".into(),
+            "socks5://proxy:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert_eq!(parsed["version"].as_integer(), Some(1));
+        let listeners = parsed["listeners"].as_array().unwrap();
+        assert_eq!(listeners.len(), 1);
+        let udp = &listeners[0]["udp"];
+        assert_eq!(udp["mode"].as_str(), Some("standalone_pproxy_udp"));
+        assert_eq!(udp["bind"].as_str(), Some("0.0.0.0:1081"));
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams.len(), 1);
+        let groups = parsed["upstream_groups"].as_array().unwrap();
+        assert!(groups
+            .iter()
+            .any(|g| g["id"].as_str() == Some("pproxy-udp-chain")));
+        let rules = parsed["rules"].as_array().unwrap();
+        assert!(rules
+            .iter()
+            .any(|r| r["id"].as_str() == Some("pproxy-udp-default")));
     }
 }

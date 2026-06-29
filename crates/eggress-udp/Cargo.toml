@@ -12,6 +12,7 @@ eggress-protocol-shadowsocks.workspace = true
 eggress-routing.workspace = true
 eggress-uri.workspace = true
 bytes.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

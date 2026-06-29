@@ -9,6 +9,7 @@ pub struct UdpLimits {
     pub idle_timeout: Duration,
     pub client_pin: bool,
     pub target_idle_timeout: Duration,
+    pub max_standalone_flows: usize,
 }
 
 impl Default for UdpLimits {
@@ -21,6 +22,7 @@ impl Default for UdpLimits {
             idle_timeout: Duration::from_secs(60),
             client_pin: true,
             target_idle_timeout: Duration::from_secs(30),
+            max_standalone_flows: 0,
         }
     }
 }
@@ -46,6 +48,7 @@ impl UdpLimits {
             idle_timeout,
             client_pin,
             target_idle_timeout,
+            max_standalone_flows: 0,
         }
     }
 }
@@ -64,6 +67,7 @@ mod tests {
         assert_eq!(limits.idle_timeout, Duration::from_secs(60));
         assert!(limits.client_pin);
         assert_eq!(limits.target_idle_timeout, Duration::from_secs(30));
+        assert_eq!(limits.max_standalone_flows, 0);
     }
 
     #[test]
@@ -72,5 +76,6 @@ mod tests {
         let cloned = limits.clone();
         assert_eq!(cloned.max_associations_global, 1024);
         assert_eq!(cloned.idle_timeout, Duration::from_secs(60));
+        assert_eq!(cloned.max_standalone_flows, 0);
     }
 }

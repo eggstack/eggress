@@ -100,6 +100,15 @@ pub struct MetricsRegistry {
     udp_upstream_bytes_up_total: Counter,
     udp_upstream_bytes_down_total: Counter,
     udp_upstream_failures_total: Counter,
+    standalone_udp_flows_active: Gauge,
+    standalone_udp_flows_total: Counter,
+    standalone_udp_packets_in_total: Counter,
+    standalone_udp_packets_out_total: Counter,
+    standalone_udp_bytes_in_total: Counter,
+    standalone_udp_bytes_out_total: Counter,
+    standalone_udp_malformed_total: Counter,
+    standalone_udp_rejected_total: Counter,
+    standalone_udp_flow_reaps_total: Counter,
     upstream_open_total: Family<UpstreamOpenLabels, Counter>,
     upstream_open_failures_total: Family<UpstreamFailureLabels, Counter>,
     unsupported_transport_total: Family<UnsupportedTransportLabels, Counter>,
@@ -124,6 +133,14 @@ struct BridgedUdpSnapshot {
     upstream_bytes_up: u64,
     upstream_bytes_down: u64,
     upstream_failures: u64,
+    standalone_flows_total: u64,
+    standalone_packets_in: u64,
+    standalone_packets_out: u64,
+    standalone_bytes_in: u64,
+    standalone_bytes_out: u64,
+    standalone_malformed_datagrams: u64,
+    standalone_rejected_datagrams: u64,
+    standalone_flow_reaps: u64,
 }
 
 impl MetricsRegistry {
@@ -340,6 +357,69 @@ impl MetricsRegistry {
             udp_upstream_failures_total.clone(),
         );
 
+        let standalone_udp_flows_active = Gauge::default();
+        registry.register(
+            "eggress_standalone_udp_flows_active",
+            "Currently active standalone UDP flows",
+            standalone_udp_flows_active.clone(),
+        );
+
+        let standalone_udp_flows_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_flows_total",
+            "Total standalone UDP flows created",
+            standalone_udp_flows_total.clone(),
+        );
+
+        let standalone_udp_packets_in_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_packets_in_total",
+            "Total standalone UDP packets received from clients",
+            standalone_udp_packets_in_total.clone(),
+        );
+
+        let standalone_udp_packets_out_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_packets_out_total",
+            "Total standalone UDP packets sent to clients",
+            standalone_udp_packets_out_total.clone(),
+        );
+
+        let standalone_udp_bytes_in_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_bytes_in_total",
+            "Total standalone UDP bytes received from clients",
+            standalone_udp_bytes_in_total.clone(),
+        );
+
+        let standalone_udp_bytes_out_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_bytes_out_total",
+            "Total standalone UDP bytes sent to clients",
+            standalone_udp_bytes_out_total.clone(),
+        );
+
+        let standalone_udp_malformed_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_malformed_total",
+            "Total standalone UDP malformed datagrams",
+            standalone_udp_malformed_total.clone(),
+        );
+
+        let standalone_udp_rejected_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_rejected_total",
+            "Total standalone UDP rejected datagrams",
+            standalone_udp_rejected_total.clone(),
+        );
+
+        let standalone_udp_flow_reaps_total = Counter::default();
+        registry.register(
+            "eggress_standalone_udp_flow_reaps_total",
+            "Total standalone UDP flows reaped",
+            standalone_udp_flow_reaps_total.clone(),
+        );
+
         let upstream_open_total = Family::<UpstreamOpenLabels, Counter>::default();
         registry.register(
             "eggress_upstream_open_total",
@@ -393,6 +473,15 @@ impl MetricsRegistry {
             udp_upstream_bytes_up_total,
             udp_upstream_bytes_down_total,
             udp_upstream_failures_total,
+            standalone_udp_flows_active,
+            standalone_udp_flows_total,
+            standalone_udp_packets_in_total,
+            standalone_udp_packets_out_total,
+            standalone_udp_bytes_in_total,
+            standalone_udp_bytes_out_total,
+            standalone_udp_malformed_total,
+            standalone_udp_rejected_total,
+            standalone_udp_flow_reaps_total,
             upstream_open_total,
             upstream_open_failures_total,
             unsupported_transport_total,
@@ -449,6 +538,30 @@ impl MetricsRegistry {
                 .load(std::sync::atomic::Ordering::Relaxed),
             upstream_failures: metrics
                 .upstream_failures
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_flows_total: metrics
+                .standalone_flows_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_packets_in: metrics
+                .standalone_packets_in
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_packets_out: metrics
+                .standalone_packets_out
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_bytes_in: metrics
+                .standalone_bytes_in
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_bytes_out: metrics
+                .standalone_bytes_out
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_malformed_datagrams: metrics
+                .standalone_malformed_datagrams
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_rejected_datagrams: metrics
+                .standalone_rejected_datagrams
+                .load(std::sync::atomic::Ordering::Relaxed),
+            standalone_flow_reaps: metrics
+                .standalone_flow_reaps
                 .load(std::sync::atomic::Ordering::Relaxed),
         };
         *self.bridged_udp_metrics.lock().unwrap() = Some((metrics, snapshot));
@@ -652,6 +765,74 @@ impl MetricsRegistry {
                 self.udp_upstream_failures_total.inc_by(delta);
             }
             prev.upstream_failures = cur;
+
+            // Standalone UDP metrics
+            self.standalone_udp_flows_active.set(
+                metrics
+                    .standalone_flows_active
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
+
+            let cur = metrics.standalone_flows_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_flows_total);
+            if delta > 0 {
+                self.standalone_udp_flows_total.inc_by(delta);
+            }
+            prev.standalone_flows_total = cur;
+
+            let cur = metrics.standalone_packets_in.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_packets_in);
+            if delta > 0 {
+                self.standalone_udp_packets_in_total.inc_by(delta);
+            }
+            prev.standalone_packets_in = cur;
+
+            let cur = metrics.standalone_packets_out.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_packets_out);
+            if delta > 0 {
+                self.standalone_udp_packets_out_total.inc_by(delta);
+            }
+            prev.standalone_packets_out = cur;
+
+            let cur = metrics.standalone_bytes_in.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_bytes_in);
+            if delta > 0 {
+                self.standalone_udp_bytes_in_total.inc_by(delta);
+            }
+            prev.standalone_bytes_in = cur;
+
+            let cur = metrics.standalone_bytes_out.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_bytes_out);
+            if delta > 0 {
+                self.standalone_udp_bytes_out_total.inc_by(delta);
+            }
+            prev.standalone_bytes_out = cur;
+
+            let cur = metrics
+                .standalone_malformed_datagrams
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_malformed_datagrams);
+            if delta > 0 {
+                self.standalone_udp_malformed_total.inc_by(delta);
+            }
+            prev.standalone_malformed_datagrams = cur;
+
+            let cur = metrics
+                .standalone_rejected_datagrams
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_rejected_datagrams);
+            if delta > 0 {
+                self.standalone_udp_rejected_total.inc_by(delta);
+            }
+            prev.standalone_rejected_datagrams = cur;
+
+            let cur = metrics.standalone_flow_reaps.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.standalone_flow_reaps);
+            if delta > 0 {
+                self.standalone_udp_flow_reaps_total.inc_by(delta);
+            }
+            prev.standalone_flow_reaps = cur;
         }
 
         let mut buf = String::new();
@@ -816,6 +997,15 @@ mod tests {
         assert!(output.contains("eggress_udp_upstream_bytes_up_total"));
         assert!(output.contains("eggress_udp_upstream_bytes_down_total"));
         assert!(output.contains("eggress_udp_upstream_failures_total"));
+        assert!(output.contains("eggress_standalone_udp_flows_active"));
+        assert!(output.contains("eggress_standalone_udp_flows_total"));
+        assert!(output.contains("eggress_standalone_udp_packets_in_total"));
+        assert!(output.contains("eggress_standalone_udp_packets_out_total"));
+        assert!(output.contains("eggress_standalone_udp_bytes_in_total"));
+        assert!(output.contains("eggress_standalone_udp_bytes_out_total"));
+        assert!(output.contains("eggress_standalone_udp_malformed_total"));
+        assert!(output.contains("eggress_standalone_udp_rejected_total"));
+        assert!(output.contains("eggress_standalone_udp_flow_reaps_total"));
         assert!(output.contains("eggress_upstream_open_total"));
         assert!(output.contains("eggress_upstream_open_failures_total"));
         assert!(output.contains("eggress_unsupported_transport_total"));
@@ -1473,6 +1663,138 @@ mod tests {
                 value.parse::<f64>().is_ok(),
                 "non-numeric value in line: {trimmed}"
             );
+        }
+    }
+
+    #[test]
+    fn bridge_standalone_flow_metrics_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_standalone_flow_created();
+        udp.record_standalone_flow_created();
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_standalone_udp_flows_active"),
+            "missing standalone_udp_flows_active"
+        );
+        assert!(
+            output.contains("eggress_standalone_udp_flows_total"),
+            "missing standalone_udp_flows_total"
+        );
+
+        udp.record_standalone_flow_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_standalone_udp_flows_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 1.0, "standalone flows active should be 1");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_standalone_packet_metrics_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_standalone_packet_in(100);
+        udp.record_standalone_packet_in(200);
+        udp.record_standalone_packet_out(50);
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_standalone_udp_packets_in_total"),
+            "missing standalone_packets_in_total"
+        );
+        assert!(
+            output.contains("eggress_standalone_udp_packets_out_total"),
+            "missing standalone_packets_out_total"
+        );
+        assert!(
+            output.contains("eggress_standalone_udp_bytes_in_total"),
+            "missing standalone_bytes_in_total"
+        );
+        assert!(
+            output.contains("eggress_standalone_udp_bytes_out_total"),
+            "missing standalone_bytes_out_total"
+        );
+    }
+
+    #[test]
+    fn bridge_standalone_malformed_rejected_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_standalone_malformed();
+        udp.record_standalone_rejected();
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_standalone_udp_malformed_total"),
+            "missing standalone_malformed_total"
+        );
+        assert!(
+            output.contains("eggress_standalone_udp_rejected_total"),
+            "missing standalone_rejected_total"
+        );
+    }
+
+    #[test]
+    fn bridge_standalone_flow_reaps_appear_in_prometheus() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_standalone_flow_created();
+        udp.record_standalone_flow_reap();
+
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_standalone_udp_flow_reaps_total"),
+            "missing standalone_flow_reaps_total"
+        );
+    }
+
+    #[test]
+    fn bridge_standalone_active_gauge_returns_to_zero() {
+        let udp = Arc::new(UdpMetrics::new());
+        let m = MetricsRegistry::new();
+        m.set_udp_metrics(udp.clone());
+
+        udp.record_standalone_flow_created();
+        udp.record_standalone_flow_created();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_standalone_udp_flows_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 2.0, "should show 2 active standalone flows");
+                    }
+                }
+            }
+        }
+
+        udp.record_standalone_flow_closed();
+        udp.record_standalone_flow_closed();
+        let output = m.render_prometheus();
+        for line in output.lines() {
+            if line.contains("eggress_standalone_udp_flows_active") && !line.starts_with('#') {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(val) = parts.last() {
+                    if let Ok(n) = val.parse::<f64>() {
+                        assert_eq!(n, 0.0, "standalone flows active should return to 0");
+                    }
+                }
+            }
         }
     }
 }

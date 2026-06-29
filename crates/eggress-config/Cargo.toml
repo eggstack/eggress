@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 eggress-core.workspace = true
+eggress-udp.workspace = true
 eggress-uri.workspace = true
 eggress-routing.workspace = true
 eggress-admin.workspace = true

@@ -57,6 +57,7 @@ impl Default for TimeoutConfig {
 /// Compiled UDP listener configuration with resolved defaults.
 #[derive(Debug, Clone)]
 pub struct CompiledListenerUdpConfig {
+    pub mode: eggress_udp::UdpMode,
     pub enabled: bool,
     pub bind: std::net::SocketAddr,
     pub advertise: Option<std::net::IpAddr>,
@@ -71,6 +72,7 @@ pub struct CompiledListenerUdpConfig {
 impl Default for CompiledListenerUdpConfig {
     fn default() -> Self {
         Self {
+            mode: eggress_udp::UdpMode::Socks5UdpAssociate,
             enabled: true,
             bind: "127.0.0.1:0".parse().unwrap(),
             advertise: None,
@@ -605,15 +607,34 @@ fn compile_listener_udp_config(
     protocols: &[ProtocolId],
     path: &str,
 ) -> Result<CompiledListenerUdpConfig, ConfigError> {
-    if !protocols.contains(&ProtocolId::Socks5) {
+    let defaults = CompiledListenerUdpConfig::default();
+    let udp_path = format!("{}.udp", path);
+
+    let mode = match udp.mode.as_deref() {
+        Some("standalone_pproxy_udp") | Some("standalone") => {
+            eggress_udp::UdpMode::StandalonePproxyUdp
+        }
+        Some("socks5_udp_associate") | Some("socks5") | None => {
+            eggress_udp::UdpMode::Socks5UdpAssociate
+        }
+        Some(other) => {
+            return Err(ConfigError::validation(
+                &format!("{}.mode", udp_path),
+                &format!(
+                    "unknown UDP mode '{}'; expected 'socks5_udp_associate' or 'standalone_pproxy_udp'",
+                    other
+                ),
+            ));
+        }
+    };
+
+    if mode == eggress_udp::UdpMode::Socks5UdpAssociate && !protocols.contains(&ProtocolId::Socks5)
+    {
         return Err(ConfigError::validation(
             path,
             "UDP config requires socks5 protocol",
         ));
     }
-
-    let defaults = CompiledListenerUdpConfig::default();
-    let udp_path = format!("{}.udp", path);
 
     let enabled = udp.enabled.unwrap_or(defaults.enabled);
     if !enabled {
@@ -693,6 +714,7 @@ fn compile_listener_udp_config(
     let client_pin = udp.client_pin.unwrap_or(defaults.client_pin);
 
     Ok(CompiledListenerUdpConfig {
+        mode,
         enabled,
         bind,
         advertise,

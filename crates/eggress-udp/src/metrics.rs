@@ -22,6 +22,16 @@ pub struct UdpMetrics {
     pub upstream_bytes_down: AtomicU64,
     pub upstream_failures: AtomicU64,
     pub unsupported_upstream_total: AtomicU64,
+
+    pub standalone_flows_active: AtomicU64,
+    pub standalone_flows_total: AtomicU64,
+    pub standalone_packets_in: AtomicU64,
+    pub standalone_packets_out: AtomicU64,
+    pub standalone_bytes_in: AtomicU64,
+    pub standalone_bytes_out: AtomicU64,
+    pub standalone_malformed_datagrams: AtomicU64,
+    pub standalone_rejected_datagrams: AtomicU64,
+    pub standalone_flow_reaps: AtomicU64,
 }
 
 impl UdpMetrics {
@@ -106,6 +116,41 @@ impl UdpMetrics {
     pub fn record_unsupported_upstream(&self) {
         self.unsupported_upstream_total
             .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_flow_created(&self) {
+        self.standalone_flows_active.fetch_add(1, Ordering::Relaxed);
+        self.standalone_flows_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_flow_closed(&self) {
+        self.standalone_flows_active.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_packet_in(&self, bytes: u64) {
+        self.standalone_packets_in.fetch_add(1, Ordering::Relaxed);
+        self.standalone_bytes_in.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_packet_out(&self, bytes: u64) {
+        self.standalone_packets_out.fetch_add(1, Ordering::Relaxed);
+        self.standalone_bytes_out
+            .fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_malformed(&self) {
+        self.standalone_malformed_datagrams
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_rejected(&self) {
+        self.standalone_rejected_datagrams
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_standalone_flow_reap(&self) {
+        self.standalone_flows_active.fetch_sub(1, Ordering::Relaxed);
+        self.standalone_flow_reaps.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -294,5 +339,95 @@ mod tests {
             metrics.unsupported_upstream_total.load(Ordering::Relaxed),
             2
         );
+    }
+
+    #[test]
+    fn default_standalone_metrics_are_zero() {
+        let metrics = UdpMetrics::new();
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.standalone_flows_total.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.standalone_packets_in.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.standalone_packets_out.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.standalone_bytes_in.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.standalone_bytes_out.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            metrics
+                .standalone_malformed_datagrams
+                .load(Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .standalone_rejected_datagrams
+                .load(Ordering::Relaxed),
+            0
+        );
+        assert_eq!(metrics.standalone_flow_reaps.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn standalone_flow_metrics() {
+        let metrics = UdpMetrics::new();
+        metrics.record_standalone_flow_created();
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.standalone_flows_total.load(Ordering::Relaxed), 1);
+
+        metrics.record_standalone_flow_created();
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 2);
+        assert_eq!(metrics.standalone_flows_total.load(Ordering::Relaxed), 2);
+
+        metrics.record_standalone_flow_closed();
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.standalone_flows_total.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn standalone_packet_metrics() {
+        let metrics = UdpMetrics::new();
+        metrics.record_standalone_packet_in(100);
+        metrics.record_standalone_packet_in(200);
+        assert_eq!(metrics.standalone_packets_in.load(Ordering::Relaxed), 2);
+        assert_eq!(metrics.standalone_bytes_in.load(Ordering::Relaxed), 300);
+
+        metrics.record_standalone_packet_out(50);
+        assert_eq!(metrics.standalone_packets_out.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.standalone_bytes_out.load(Ordering::Relaxed), 50);
+    }
+
+    #[test]
+    fn standalone_malformed_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_standalone_malformed();
+        metrics.record_standalone_malformed();
+        assert_eq!(
+            metrics
+                .standalone_malformed_datagrams
+                .load(Ordering::Relaxed),
+            2
+        );
+    }
+
+    #[test]
+    fn standalone_rejected_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_standalone_rejected();
+        assert_eq!(
+            metrics
+                .standalone_rejected_datagrams
+                .load(Ordering::Relaxed),
+            1
+        );
+    }
+
+    #[test]
+    fn standalone_flow_reap_metric() {
+        let metrics = UdpMetrics::new();
+        metrics.record_standalone_flow_created();
+        metrics.record_standalone_flow_created();
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 2);
+
+        metrics.record_standalone_flow_reap();
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.standalone_flow_reaps.load(Ordering::Relaxed), 1);
     }
 }

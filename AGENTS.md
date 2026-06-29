@@ -27,6 +27,10 @@ cargo test -p eggress-udp
 cargo test -p eggress-runtime udp
 cargo test -p eggress-config udp
 
+# Run standalone UDP tests
+cargo test -p eggress-udp standalone
+cargo test -p eggress-runtime standalone_udp
+
 # Run UDP upstream tests
 cargo test -p eggress-udp socks5_upstream
 cargo test -p eggress-runtime udp_upstream
@@ -226,7 +230,7 @@ lifecycle_invariants, observability, security_invariants, load).
 They exercise the supervisor end to end and cover negative-path behaviors (bind
 conflict, invalid source, oversized identity, reload-time failure). UDP integration tests
 cover association lifecycle, TCP control close, echo relay, bind conflict,
-topology rejection, config reload, and SOCKS5 upstream relay. Upstream protocol tests
+topology rejection, config reload, SOCKS5 upstream relay, and standalone UDP mode. Upstream protocol tests
 cover HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection through the full stack.
 Property tests live in per-crate `tests/` directories (codec round-trips, parser
 round-trips, route match consistency). Fuzz smoke tests exercise seed inputs for
@@ -281,7 +285,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Shared runtime snapshot**: `CompiledRuntimeSnapshot` — one set of `Arc<UpstreamRuntime>` shared by router, health, admin, metrics
 - **Single generation source**: `CompiledRuntimeSnapshot.generation`; admin reads it via `AdminSnapshotProvider` instead of a duplicate atomic
 - **Health state machine** with hysteresis and active TCP probes; config per upstream from TOML
-- **UDP**: direct forwarding, one-hop SOCKS5 upstream relay, and one-hop Shadowsocks upstream relay (standard AEAD format); no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection. Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
+- **UDP**: direct forwarding, one-hop SOCKS5 upstream relay, one-hop Shadowsocks upstream relay (standard AEAD format), and standalone UDP relay (`mode = "standalone_pproxy_udp"`); no multi-hop chains, no HTTP/MASQUE. Association owned by TCP control connection (or standalone in pproxy-compatible mode). Client pinning enabled by default. Shadowsocks TCP upstream now has full AEAD stream encryption.
 - **Scheduler parity**: Round-robin uses global atomic cursor; least-connections uses active+in_flight; first-available returns first eligible; health filtering excludes Unhealthy/Disabled
 - **Failure semantics**: SOCKS5/HTTP/SOCKS4 reply codes documented in `docs/FAILURE_SEMANTICS.md`; timeout→504/0x06, refused→502/0x05, policy→403/0x02
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`

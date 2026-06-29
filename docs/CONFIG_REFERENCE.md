@@ -104,6 +104,36 @@ UDP ASSOCIATE support for SOCKS5 listeners. Requires `protocols` to include `"so
 
 The legacy `udp_enabled = true` without a `[listeners.udp]` section synthesizes default UDP config. If both are present and conflict, validation fails.
 
+### Standalone UDP Mode
+
+For pproxy-compatible standalone UDP relay (no TCP control connection required), set `mode = "standalone_pproxy_udp"` in the `[listeners.udp]` section:
+
+```toml
+[[listeners]]
+name = "proxy"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "standalone_pproxy_udp"
+bind = "0.0.0.0:1081"
+idle_timeout = "60s"
+max_associations = 1024
+```
+
+This mode accepts SOCKS5-framed UDP datagrams directly on the UDP socket without requiring a SOCKS5 TCP control connection.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mode` | string | `"socks5_udp_associate"` | UDP mode: `"socks5_udp_associate"` or `"standalone_pproxy_udp"` |
+| `bind` | `"host:port"` | `"127.0.0.1:0"` | UDP relay socket bind address |
+| `idle_timeout` | duration string | `"60s"` | Client flow idle timeout |
+| `target_idle_timeout` | duration string | `"30s"` | Per-target flow idle timeout |
+| `max_associations` | usize | 1024 | Max concurrent standalone flows |
+| `max_targets_per_association` | usize | 64 | Max target flows per client |
+| `max_datagram_size` | usize | 65535 | Max datagram size (257-65535) |
+| `client_pin` | bool | `true` | Pin flow to first client address |
+
 ### `[listeners.tls]`
 
 TLS termination on the listener (requires cert/key PEM files at startup).
