@@ -2,28 +2,30 @@ use crate::error::CompatError;
 use crate::uri::PproxyUri;
 use crate::warnings::{CompatWarning, TranslationOutput};
 
-/// Flags that the compat layer explicitly handles.
-const KNOWN_FLAGS: &[&str] = &[
-    "-l",
-    "--listen",
-    "-r",
-    "--remote",
-    "--daemon",
-    "-d",
-    "--log",
-    "-log",
-    "-ul",
-    "--udp-listen",
-    "-ur",
-    "--udp-remote",
-    "--rulefile",
-    "-rulefile",
-    "-v",
-    "-s",
-    "-a",
-    "--ssl",
-    "-b",
+/// Normalized raw flag keys that the compat layer explicitly handles.
+const KNOWN_RAW_FLAG_KEYS: &[&str] = &[
+    "daemon",
+    "log",
+    "udp-listen",
+    "udp-remote",
+    "rulefile",
+    "verbose",
+    "scheduler",
+    "alive",
+    "ssl",
+    "block",
 ];
+
+fn take_required_value(
+    raw: &[String],
+    index: &mut usize,
+    flag: &str,
+) -> Result<String, CompatError> {
+    *index += 1;
+    raw.get(*index)
+        .cloned()
+        .ok_or_else(|| CompatError::MissingArgument(format!("{flag} requires a value")))
+}
 
 /// Parsed pproxy-compatible CLI arguments.
 #[derive(Debug, Clone)]
@@ -48,94 +50,48 @@ impl PproxyArgs {
             let arg = &raw[i];
             match arg.as_str() {
                 "-l" | "--listen" => {
-                    i += 1;
-                    if i < raw.len() {
-                        local.push(raw[i].clone());
-                    } else {
-                        return Err(CompatError::MissingArgument(
-                            "-l requires a value".to_string(),
-                        ));
-                    }
+                    local.push(take_required_value(raw, &mut i, arg)?);
                 }
                 "-r" | "--remote" => {
-                    i += 1;
-                    if i < raw.len() {
-                        remotes.push(raw[i].clone());
-                    } else {
-                        return Err(CompatError::MissingArgument(
-                            "-r requires a value".to_string(),
-                        ));
-                    }
+                    remotes.push(take_required_value(raw, &mut i, arg)?);
                 }
                 "--daemon" | "-d" => {
                     raw_flags.push("daemon".to_string());
                 }
                 "--log" | "-log" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("log={}", raw[i]));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("log={value}"));
                 }
                 "-ul" | "--udp-listen" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("udp-listen={}", raw[i]));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("udp-listen={value}"));
                 }
                 "-ur" | "--udp-remote" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("udp-remote={}", raw[i]));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("udp-remote={value}"));
                 }
                 "--rulefile" | "-rulefile" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("rulefile={}", raw[i]));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("rulefile={value}"));
                 }
                 "-v" => {
                     raw_flags.push("verbose".to_string());
                 }
                 "-s" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("scheduler={}", raw[i]));
-                    } else {
-                        return Err(CompatError::MissingArgument(
-                            "-s requires a value".to_string(),
-                        ));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("scheduler={value}"));
                 }
                 "-a" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("alive={}", raw[i]));
-                    } else {
-                        return Err(CompatError::MissingArgument(
-                            "-a requires a value".to_string(),
-                        ));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("alive={value}"));
                 }
                 "--ssl" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("ssl={}", raw[i]));
-                    } else {
-                        return Err(CompatError::MissingArgument(
-                            "--ssl requires a value".to_string(),
-                        ));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("ssl={value}"));
                 }
                 "-b" => {
-                    i += 1;
-                    if i < raw.len() {
-                        raw_flags.push(format!("block={}", raw[i]));
-                    } else {
-                        return Err(CompatError::MissingArgument(
-                            "-b requires a value".to_string(),
-                        ));
-                    }
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("block={value}"));
                 }
                 other if other.starts_with('-') => {
                     raw_flags.push(other.to_string());
@@ -165,11 +121,7 @@ impl PproxyArgs {
         for flag in &self.raw_flags {
             // Check if this is a known structured flag (key=value form)
             let base_flag = flag.split('=').next().unwrap_or(flag);
-            let is_known = KNOWN_FLAGS.contains(&base_flag)
-                || matches!(
-                    base_flag,
-                    "verbose" | "scheduler" | "alive" | "ssl" | "block"
-                );
+            let is_known = KNOWN_RAW_FLAG_KEYS.contains(&base_flag);
             if !is_known {
                 warnings.push(CompatWarning {
                     category: "unknown-flag",
@@ -323,6 +275,49 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_log_flag() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--log".into(),
+            "access.log".into(),
+        ])
+        .unwrap();
+        assert!(args.raw_flags.contains(&"log=access.log".to_string()));
+    }
+
+    #[test]
+    fn test_parse_udp_flags() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-ul".into(),
+            "socks5://:1081".into(),
+            "-ur".into(),
+            "socks5://proxy:1080".into(),
+        ])
+        .unwrap();
+        assert!(args
+            .raw_flags
+            .contains(&"udp-listen=socks5://:1081".to_string()));
+        assert!(args
+            .raw_flags
+            .contains(&"udp-remote=socks5://proxy:1080".to_string()));
+    }
+
+    #[test]
+    fn test_parse_rulefile_flag() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--rulefile".into(),
+            "rules.txt".into(),
+        ])
+        .unwrap();
+        assert!(args.raw_flags.contains(&"rulefile=rules.txt".to_string()));
+    }
+
+    #[test]
     fn test_unknown_flag_warnings() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
@@ -349,6 +344,19 @@ mod tests {
             "rr".into(),
             "-a".into(),
             "10".into(),
+            "--daemon".into(),
+            "--log".into(),
+            "access.log".into(),
+            "-ul".into(),
+            "socks5://:1081".into(),
+            "-ur".into(),
+            "socks5://proxy:1080".into(),
+            "--rulefile".into(),
+            "rules.txt".into(),
+            "--ssl".into(),
+            "cert.pem,key.pem".into(),
+            "-b".into(),
+            ".*\\.example\\.com".into(),
         ])
         .unwrap();
         let warnings = args.unknown_flag_warnings();
@@ -359,6 +367,40 @@ mod tests {
     fn test_scheduler_missing_value() {
         let result =
             PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-s".into()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_log_missing_value() {
+        let result = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--log".into(),
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_udp_listen_missing_value() {
+        let result =
+            PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-ul".into()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_udp_remote_missing_value() {
+        let result =
+            PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-ur".into()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rulefile_missing_value() {
+        let result = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--rulefile".into(),
+        ]);
         assert!(result.is_err());
     }
 

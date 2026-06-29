@@ -672,6 +672,20 @@ mod tests {
     }
 
     #[test]
+    fn test_rulefile_flag_emits_unsupported_without_unknown_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--rulefile".into(),
+            "rules.txt".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.unsupported.iter().any(|u| u.feature == "rulefile"));
+        assert!(!output.warnings.iter().any(|w| w.category == "unknown-flag"));
+    }
+
+    #[test]
     fn test_unknown_flags_emitted_as_warnings() {
         let args = PproxyArgs::parse(&[
             "-l".into(),

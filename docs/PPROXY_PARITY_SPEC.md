@@ -138,9 +138,9 @@ tested in `crates/eggress-runtime/tests/integration.rs` for up to 3 hops.
 | Feature | pproxy | Eggress |
 |---------|--------|---------|
 | Round-robin | Default for multiple `-r` args | Supported (`RoundRobin` scheduler) |
-| Rule-based routing | `--rulefile` (regex rules) | TOML rules with matchers |
+| Rule-based routing | `--rulefile` (regex rules) | Not translated; use TOML rules with matchers |
 | Fallback | `-F` flag | `RouteActionSpec::Fallback` with group members |
-| Connection reuse | `--reuse` | Not implemented | **Intentional non-parity** | pproxy pools upstream connections across sessions; Eggress uses one upstream connection per proxy session |
+| Connection reuse | `--reuse` | Not implemented; intentional non-parity because pproxy pools upstream connections across sessions while Eggress uses one upstream connection per proxy session |
 | Random | Not default | Supported (`Random` scheduler) |
 | Least-connections | Not available | Supported (`LeastConnections` scheduler) |
 | First-available | Not available | Supported (`FirstAvailable` scheduler) |
@@ -164,7 +164,9 @@ Detailed behavior comparison for scheduler implementations:
 
 pproxy's `--rulefile` uses a line-based format with regex patterns and
 destination actions. Eggress uses a TOML-based rule engine with structured
-matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`).
+matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`). The
+pproxy compat translator reports `--rulefile` as an unsupported feature rather
+than attempting a lossy conversion.
 
 ## 7. Authentication
 
@@ -433,7 +435,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 ### Summary
 
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, Shadowsocks upstream (AEAD), Trojan upstream, direct upstream
-- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `-ul`/`-ur`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Persistent HTTP forwarding (single-exchange only), Shadowsocks inbound listener, Trojan inbound listener
 
 ### Diagnostic behavior

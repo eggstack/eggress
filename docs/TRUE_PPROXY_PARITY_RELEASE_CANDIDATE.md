@@ -82,7 +82,7 @@ These features match pproxy behavior. Evidence labels indicate verification meth
 | SOCKS5 auth rejection | `differential_socks5_auth_failure` |
 | HTTP auth rejection | `differential_http_auth_failure` |
 | `-l` / `-r` CLI flags | `cli_tests` |
-| `--rulefile` translation | `cli_tests` |
+| `--rulefile` unsupported diagnostic | `cli_tests` |
 | pproxy compat CLI (`translate`/`check`/`run`) | `cli_tests` |
 | Round-robin scheduling | `scheduler_runtime.rs` |
 | First-available scheduling | `scheduler_runtime.rs` |

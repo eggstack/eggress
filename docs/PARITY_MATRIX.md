@@ -95,11 +95,11 @@ or document supported-but-unverified functionality.
 |---|---|---|---|---|---|---|
 | `-l` listen flag | supported | supported | Compatible | cli_tests | none | Same syntax |
 | `-r` remote flag | supported | supported | Compatible | cli_tests | none | Same syntax |
-| `-ul` UDP listen | supported | unsupported | Unsupported | none | none | Eggress uses SOCKS5 UDP ASSOCIATE instead |
-| `-ur` UDP remote | supported | unsupported | Unsupported | none | none | Eggress uses SOCKS5 UDP ASSOCIATE instead |
+| `-ul` UDP listen | supported | rejected | Intentional non-parity | none | none | Eggress uses SOCKS5 UDP ASSOCIATE instead |
+| `-ur` UDP remote | supported | rejected | Intentional non-parity | none | none | Eggress uses SOCKS5 UDP ASSOCIATE instead |
 | `--config` TOML | supported | supported | Supported | integration tests | none | Different schema |
-| `--rulefile` | supported | translated to TOML | Compatible | cli_tests | none | pproxy compat layer translates rule file to `[[rules]]` |
-| `--daemon` | supported | not yet | Unsupported | none | none | |
+| `--rulefile` | supported | rejected | Intentional non-parity | cli_tests | none | Use eggress TOML routing rules |
+| `--daemon` | supported | rejected | Intentional non-parity | none | none | Use systemd or a process manager |
 | `-b` bind | supported | supported via `-l` | Partial | cli_tests | none | Different flag syntax |
 | pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | Compatible | cli_tests | none | Translates pproxy CLI args to TOML config |
 | pproxy URI translation | N/A | `eggress pproxy translate` | Compatible | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
@@ -183,6 +183,7 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 | Legacy stream cipher URI | `UnsupportedFeature` | "Legacy stream ciphers are not supported; use AEAD methods" |
 | `--daemon` flag | `UnsupportedFeature` | "--daemon mode is not supported; use systemd or process manager" |
 | `-ul`/`-ur` flags | `UnsupportedFeature` | "-ul/-ur UDP relay uses SOCKS5 UDP ASSOCIATE instead" |
+| `--rulefile` flag | `UnsupportedFeature` | "--rulefile is not supported; use eggress TOML routing rules" |
 | Unknown URI scheme | `CompatError` | "unsupported protocol: {scheme}" |
 
 All diagnostic messages redact credentials.
