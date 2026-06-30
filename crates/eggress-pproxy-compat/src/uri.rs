@@ -116,7 +116,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     // Validate known schemes
     match scheme.as_str() {
         "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss" | "shadowsocks"
-        | "direct" | "ssh" | "unix" | "redir" => {}
+        | "ssr" | "direct" | "ssh" | "unix" | "redir" => {}
         other => {
             return Err(CompatError::UnsupportedProtocol(other.to_string()));
         }
@@ -214,6 +214,25 @@ fn extract_rule(query: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Check if a Shadowsocks method name is a known legacy stream cipher.
+///
+/// Legacy stream ciphers lack authentication and are not supported by eggress.
+/// This function is used for diagnostic purposes in the pproxy compat layer.
+pub fn is_legacy_ss_method(method: &str) -> bool {
+    matches!(
+        method.to_lowercase().as_str(),
+        "aes-128-ctr"
+            | "aes-192-ctr"
+            | "aes-256-ctr"
+            | "aes-128-cfb"
+            | "aes-192-cfb"
+            | "aes-256-cfb"
+            | "rc4"
+            | "rc4-md5"
+            | "chacha20-ietf"
+    )
 }
 
 #[cfg(test)]

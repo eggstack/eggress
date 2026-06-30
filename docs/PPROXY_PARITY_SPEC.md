@@ -432,8 +432,8 @@ policy, architecture, or scope.
 | Feature | pproxy support | Reason for rejection |
 |---------|---------------|---------------------|
 | Transparent/redir proxy | `redir://` (Linux) | Requires root privileges and kernel hooks (`SO_ORIGINAL_DST`). Not portable. |
-| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | No authentication. Vulnerable to bit-flipping and replay attacks. Deprecated by the Shadowsocks community. |
-| ShadowsocksR (SSR) | Supported in some forks | Non-standard extension. No RFC. Conflicts with upstream Shadowsocks design. |
+| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | No authentication. Vulnerable to bit-flipping and replay attacks. Deprecated by the Shadowsocks community. Produces `LegacyMethodUnsupported` error with a message suggesting AEAD methods. |
+| ShadowsocksR (SSR) | Supported in some forks | Non-standard extension. No RFC. Conflicts with upstream Shadowsocks design. SSR URIs are parsed by the pproxy compat layer and produce `UnsupportedFeature` diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. |
 | QUIC transport | Not in pproxy (but mentioned) | Out of scope. HTTP/3 and QUIC are transport-layer concerns, not proxy protocol features. |
 | HTTP/3 | Not in pproxy (but mentioned) | Out of scope. Requires QUIC transport and different connection semantics. |
 | WebSocket tunnels | Not in pproxy | Out of scope. WebSocket is a transport wrapper; not a proxy protocol. |

@@ -143,6 +143,8 @@ Shadowsocks protocol implementation:
 - Shadowsocks address encoding/decoding (IPv4, IPv6, domain)
 - TCP CONNECT with encrypted address header
 - UDP packet encode/decode with random nonce
+- Legacy method detection (`is_legacy_method()`) producing `LegacyMethodUnsupported` errors
+- SSR detection producing `SsrUnsupported` errors
 - Synthetic server tests for all methods
 
 ### eggress-protocol-trojan

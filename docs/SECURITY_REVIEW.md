@@ -125,7 +125,8 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Standard TCP framing: encrypted length prefix + encrypted payload, compatible with standard Shadowsocks implementations.
 - Nonces are per-direction counters starting at 1, preventing nonce reuse.
 - Per-connection subkeys derived via HKDF-SHA256 from the shared secret and a random salt.
-- Only AEAD methods are supported (`aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream ciphers are rejected.
+- Only AEAD methods are supported (`aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream cipher URIs produce `LegacyMethodUnsupported` errors with a message suggesting AEAD methods.
+- SSR URIs (`ssr://`) produce `SsrUnsupported` errors. The pproxy compat layer produces `UnsupportedFeature` diagnostics for both legacy stream ciphers and SSR URIs.
 - Password is never logged; URI display uses the redacted `****:****@` format.
 
 **Shadowsocks UDP Security Properties** (`eggress-protocol-shadowsocks/src/udp.rs`):

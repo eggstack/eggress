@@ -124,6 +124,16 @@ pub fn translate_from_uris(
                     local.redacted_display()
                 );
             }
+            "ssr" => {
+                output = output.with_unsupported(
+                    "ssr-listener",
+                    format!(
+                        "ShadowsocksR (SSR) listener '{}': SSR protocol, obfs, and legacy features are not supported",
+                        local.redacted_display()
+                    ),
+                );
+                continue;
+            }
             "trojan" => {
                 output = output.with_unsupported(
                     "trojan-listener",
@@ -212,6 +222,17 @@ pub fn translate_from_uris(
         if local.scheme.as_str() == "ss" || local.scheme.as_str() == "shadowsocks" {
             // For Shadowsocks, username = method, password = password
             if let Some(ref method) = local.username {
+                // Check for legacy stream cipher methods
+                if crate::uri::is_legacy_ss_method(method) {
+                    output = output.with_unsupported(
+                        "legacy-cipher",
+                        format!(
+                            "Shadowsocks listener '{}': legacy stream cipher method '{}' is not supported; use an AEAD method (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)",
+                            local.redacted_display(),
+                            method
+                        ),
+                    );
+                }
                 if let Some(ref pass) = local.password {
                     listener_entry.shadowsocks = Some(ShadowsocksToml {
                         method: method.clone(),
@@ -292,6 +313,16 @@ pub fn translate_from_uris(
             "ss" | "shadowsocks" => {
                 // Shadowsocks upstream is fully supported (AEAD methods only)
             }
+            "ssr" => {
+                output = output.with_unsupported(
+                    "ssr-upstream",
+                    format!(
+                        "ShadowsocksR (SSR) upstream '{}': SSR protocol, obfs, and legacy features are not supported",
+                        remote.redacted_display()
+                    ),
+                );
+                continue;
+            }
             "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
             "ssh" => {
                 output = output.with_unsupported(
@@ -355,6 +386,16 @@ pub fn translate_from_uris(
         // Check for unsupported upstream protocols
         match remote_uri.scheme.as_str() {
             "ss" | "shadowsocks" => {}
+            "ssr" => {
+                output = output.with_unsupported(
+                    "ssr-upstream",
+                    format!(
+                        "ShadowsocksR (SSR) UDP upstream '{}': SSR protocol, obfs, and legacy features are not supported",
+                        remote_uri.redacted_display()
+                    ),
+                );
+                continue;
+            }
             "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
             other => {
                 output = output.with_unsupported(
@@ -893,6 +934,47 @@ mod tests {
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.unsupported.iter().any(|u| u.feature == "rulefile"));
         assert!(!output.warnings.iter().any(|w| w.category == "unknown-flag"));
+    }
+
+    #[test]
+    fn test_translate_ssr_listener_unsupported() {
+        let args = PproxyArgs::parse(&["-l".into(), "ssr://aes-256-ctr:secret@proxy:8388".into()])
+            .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "ssr-listener"));
+    }
+
+    #[test]
+    fn test_translate_ssr_upstream_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "ssr://aes-256-ctr:secret@proxy:8388".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "ssr-upstream"));
+    }
+
+    #[test]
+    fn test_translate_legacy_cipher_listener_unsupported() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "ss://aes-128-ctr:secret@proxy:8388".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "legacy-cipher"));
     }
 
     #[test]

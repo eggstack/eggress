@@ -9,6 +9,14 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 - Streams are boxed at protocol/transport boundaries (`BoxStream`) — never propagate generic stream types
 - No C deps, no OpenSSL, no `build.rs` files
 
+## SSR/legacy Shadowsocks handling
+
+SSR and legacy stream ciphers are intentionally unsupported. The codebase provides clear diagnostic errors:
+
+- `LegacyMethodUnsupported` error variant — produced when a legacy stream cipher method (e.g., `aes-*-ctr`, `aes-*-cfb`, `rc4`, `rc4-md5`, `chacha20-ietf`) is detected at parse time.
+- `SsrUnsupported` error variant — produced when an SSR URI (`ssr://`) is encountered.
+- `is_legacy_method()` in `eggress-protocol-shadowsocks::method` — detects known legacy methods.
+
 ## Adding a new protocol
 
 ### 1. Protocol detection

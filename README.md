@@ -212,24 +212,26 @@ Legend:
 - [x] Shadowsocks UDP server (inbound Shadowsocks UDP association listener)
 - [x] AEAD cipher support (individual encrypt/decrypt operations)
 - [x] Modern default cipher suite
-- [ ] Legacy stream cipher compatibility
-- [ ] OTA compatibility
+- [x] Legacy stream cipher diagnostics (rejected with clear error)
+- [x] OTA intentionally excluded (intentional non-parity)
 - [x] Password/key derivation compatibility
 - [x] Interoperability with `shadowsocks-rust` (TCP framing is standard SIP003 AEAD; UDP is standard)
 - [x] Interoperability with Python `pproxy` (standard SIP003 AEAD framing; wire-compatible)
 
-### ShadowsocksR
+### ShadowsocksR (SSR) — Intentionally Unsupported
 
-- [ ] SSR client
-- [ ] SSR server
-- [ ] SSR UDP
-- [ ] `plain`
-- [ ] `origin`
-- [ ] `http_simple`
-- [ ] `tls1.2_ticket_auth`
-- [ ] `verify_simple`
-- [ ] `verify_deflate`
-- [ ] SSR compatibility feature gate
+SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a non-standard extension with no RFC; eggress does not implement SSR. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
+
+- [ ] SSR client — not implemented; SSR URIs produce clear rejection
+- [ ] SSR server — not implemented
+- [ ] SSR UDP — not implemented
+- [ ] `plain` — not implemented
+- [ ] `origin` — not implemented
+- [ ] `http_simple` — not implemented
+- [ ] `tls1.2_ticket_auth` — not implemented
+- [ ] `verify_simple` — not implemented
+- [ ] `verify_deflate` — not implemented
+- [ ] SSR compatibility feature gate — not implemented
 
 ### Trojan
 

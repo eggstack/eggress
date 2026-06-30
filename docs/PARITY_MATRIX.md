@@ -145,8 +145,8 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 |---------|---------------|----------------|----------|-----------|
 | `+tls` suffix | `socks5+tls://` etc. | Supported | **Compatible** | Maps to TLS wrapper via `eggress-transport-tls` |
 | Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported; standard TCP framing |
-| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | No authentication; vulnerable to bit-flipping |
-| ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Non-standard extension; no RFC |
+| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
+| ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
 | QUIC transport | Not in pproxy | Rejected | **Intentional non-parity** | Out of scope |
 | HTTP/3 | Not in pproxy | Rejected | **Intentional non-parity** | Out of scope |
 | WebSocket tunnels | Not in pproxy | Rejected | **Intentional non-parity** | Transport wrapper; not a proxy protocol |

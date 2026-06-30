@@ -18,7 +18,13 @@ impl CipherMethod {
             "aes-128-gcm" => Ok(CipherMethod::Aes128Gcm),
             "aes-256-gcm" => Ok(CipherMethod::Aes256Gcm),
             "chacha20-ietf-poly1305" => Ok(CipherMethod::ChaCha20IetfPoly1305),
-            _ => Err(ShadowsocksError::UnsupportedMethod(s.to_string())),
+            _ => {
+                if is_legacy_method(s) {
+                    Err(ShadowsocksError::LegacyMethodUnsupported(s.to_string()))
+                } else {
+                    Err(ShadowsocksError::UnsupportedMethod(s.to_string()))
+                }
+            }
         }
     }
 
@@ -58,6 +64,48 @@ impl CipherMethod {
             .map_err(|e| ShadowsocksError::Other(format!("HKDF expand failed: {e}")))?;
         Ok(key)
     }
+}
+
+/// Known legacy Shadowsocks stream cipher method names.
+///
+/// These are recognized for diagnostic purposes but NOT supported.
+/// Legacy stream ciphers lack authentication and are vulnerable to bit-flipping attacks.
+pub fn is_legacy_method(name: &str) -> bool {
+    matches!(
+        name.to_lowercase().as_str(),
+        "aes-128-ctr"
+            | "aes-192-ctr"
+            | "aes-256-ctr"
+            | "aes-128-cfb"
+            | "aes-192-cfb"
+            | "aes-256-cfb"
+            | "aes-128-cfb1"
+            | "aes-192-cfb1"
+            | "aes-256-cfb1"
+            | "aes-128-cfb8"
+            | "aes-192-cfb8"
+            | "aes-256-cfb8"
+            | "aes-128-cfb11"
+            | "aes-192-cfb11"
+            | "aes-256-cfb11"
+            | "rc4"
+            | "rc4-md5"
+            | "rc4-md5-6"
+            | "chacha20-ietf"
+            | "xchacha20"
+            | "salsa20"
+            | "xsalsa20"
+            | "seed-cfb"
+            | "camellia-128-cfb"
+            | "camellia-192-cfb"
+            | "camellia-256-cfb"
+            | "bf-cfb"
+            | "cast5-cfb"
+            | "des-cfb"
+            | "idea-cfb"
+            | "rc2-cfb"
+            | "blowfish-cfb"
+    )
 }
 
 impl std::fmt::Display for CipherMethod {
@@ -128,8 +176,28 @@ mod tests {
 
     #[test]
     fn test_parse_unknown() {
-        assert!(CipherMethod::parse_method("rc4").is_err());
         assert!(CipherMethod::parse_method("").is_err());
+    }
+
+    #[test]
+    fn test_legacy_method_detection() {
+        assert!(is_legacy_method("aes-128-ctr"));
+        assert!(is_legacy_method("aes-256-cfb"));
+        assert!(is_legacy_method("rc4"));
+        assert!(is_legacy_method("rc4-md5"));
+        assert!(is_legacy_method("RC4"));
+        assert!(!is_legacy_method("aes-128-gcm"));
+        assert!(!is_legacy_method("aes-256-gcm"));
+        assert!(!is_legacy_method("chacha20-ietf-poly1305"));
+        assert!(!is_legacy_method("totally-unknown"));
+    }
+
+    #[test]
+    fn test_parse_legacy_method_gives_legacy_error() {
+        match CipherMethod::parse_method("aes-128-ctr") {
+            Err(ShadowsocksError::LegacyMethodUnsupported(m)) => assert_eq!(m, "aes-128-ctr"),
+            other => panic!("expected LegacyMethodUnsupported, got {:?}", other),
+        }
     }
 
     #[test]

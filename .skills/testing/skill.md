@@ -139,6 +139,10 @@ cargo bench --workspace
 # Load tests (ignored by default)
 cargo test -p eggress-runtime --test load -- --ignored
 
+# SSR/legacy rejection tests
+cargo test -p eggress-protocol-shadowsocks legacy
+cargo test -p eggress-pproxy-compat ssr
+
 # Gated differential/interop tests (requires external tools)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
