@@ -112,6 +112,16 @@ All features below have compatible status backed by differential evidence agains
 | `socks5_connect_domain` | Compatible | Differential (pproxy==2.7.9) | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 | `socks5_refused_target` | Compatible | Differential (pproxy==2.7.9) | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 
+## CLI Compatibility
+
+| Feature | Tier | Evidence | How to run |
+|---------|------|----------|------------|
+| `listen_flag` | Compatible | Synthetic | `cargo test -p eggress-cli` |
+| `remote_flag` | Compatible | Synthetic | `cargo test -p eggress-cli` |
+| `pproxy_translate_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
+| `pproxy_check_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
+| `pproxy_run_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
+
 ## Gated vs Ungated Tests
 
 **Gated tests** require all of:

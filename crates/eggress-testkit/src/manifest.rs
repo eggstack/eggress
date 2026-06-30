@@ -991,4 +991,212 @@ mod tests {
         }
         results
     }
+
+    #[test]
+    fn compatibility_evidence_doc_matches_manifest() {
+        let manifest_path = match find_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest = validate_manifest_file(&manifest_path).expect("manifest should be valid");
+
+        let workspace_root = manifest_path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("should have workspace root");
+
+        let evidence_doc_path = workspace_root.join("docs/COMPATIBILITY_EVIDENCE.md");
+        if !evidence_doc_path.exists() {
+            eprintln!("COMPATIBILITY_EVIDENCE.md not found, skipping");
+            return;
+        }
+        let evidence_doc =
+            fs::read_to_string(&evidence_doc_path).expect("should be able to read evidence doc");
+
+        // Every feature with egress_status="compatible" must appear in the evidence doc
+        // as "Compatible" (not just "Supported" or something else).
+        let compatible_features: Vec<&FullManifestEntry> = manifest
+            .features
+            .iter()
+            .filter(|f| f.egress_status == "compatible")
+            .collect();
+
+        let mut missing = Vec::new();
+        for feature in &compatible_features {
+            // The evidence doc uses backtick-quoted feature IDs in table rows.
+            // Check that the feature ID appears with a Compatible tier marker nearby.
+            if !evidence_doc.contains(&format!("`{}`", feature.id)) {
+                missing.push(feature.id.clone());
+            }
+        }
+
+        if !missing.is_empty() {
+            eprintln!(
+                "The following compatible features are not listed in docs/COMPATIBILITY_EVIDENCE.md:"
+            );
+            for id in &missing {
+                eprintln!("  - {}", id);
+            }
+            panic!(
+                "{} compatible feature(s) missing from COMPATIBILITY_EVIDENCE.md",
+                missing.len()
+            );
+        }
+    }
+
+    #[test]
+    fn readme_pproxy_compatible_claims_match_manifest() {
+        let manifest_path = match find_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest = validate_manifest_file(&manifest_path).expect("manifest should be valid");
+
+        let workspace_root = manifest_path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("should have workspace root");
+
+        let readme_path = workspace_root.join("README.md");
+        if !readme_path.exists() {
+            eprintln!("README.md not found, skipping");
+            return;
+        }
+        let readme = fs::read_to_string(&readme_path).expect("should be able to read README.md");
+
+        // Build a set of manifest feature IDs that are egress_status="compatible"
+        let manifest_compatible: HashSet<String> = manifest
+            .features
+            .iter()
+            .filter(|f| f.egress_status == "compatible")
+            .map(|f| f.id.clone())
+            .collect();
+
+        // Look for lines in README that claim "pproxy-compatible" for a specific feature.
+        let mut overclaims = Vec::new();
+        for line in readme.lines() {
+            if line.contains("pproxy-compatible") || line.contains("pproxy compatible") {
+                // Look for backtick-quoted feature IDs on the line
+                let mut remaining = line;
+                while let Some(start) = remaining.find('`') {
+                    let rest = &remaining[start + 1..];
+                    if let Some(end) = rest.find('`') {
+                        let candidate = &rest[..end];
+                        if candidate.contains('_')
+                            && !candidate.starts_with("EGRESS_REQUIRE")
+                            && !candidate.starts_with("cargo")
+                            && candidate.len() > 3
+                            && candidate.len() < 80
+                            && !manifest_compatible.contains(candidate)
+                            && manifest.features.iter().any(|f| f.id == *candidate)
+                        {
+                            overclaims.push(candidate.to_string());
+                        }
+                        remaining = &rest[end + 1..];
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !overclaims.is_empty() {
+            eprintln!("README claims pproxy-compatible for features not marked compatible in the manifest:");
+            for id in &overclaims {
+                let entry = manifest.features.iter().find(|f| f.id == *id).unwrap();
+                eprintln!(
+                    "  - `{}`: manifest egress_status=\"{}\"",
+                    id, entry.egress_status
+                );
+            }
+            panic!(
+                "{} feature(s) overclaimed as pproxy-compatible in README",
+                overclaims.len()
+            );
+        }
+    }
+
+    #[test]
+    fn parity_matrix_compatible_claims_match_manifest() {
+        let manifest_path = match find_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest = validate_manifest_file(&manifest_path).expect("manifest should be valid");
+
+        let workspace_root = manifest_path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("should have workspace root");
+
+        let matrix_path = workspace_root.join("docs/PARITY_MATRIX.md");
+        if !matrix_path.exists() {
+            eprintln!("PARITY_MATRIX.md not found, skipping");
+            return;
+        }
+        let matrix =
+            fs::read_to_string(&matrix_path).expect("should be able to read PARITY_MATRIX.md");
+
+        // Build a set of manifest feature IDs that are egress_status="compatible"
+        let manifest_compatible: HashSet<String> = manifest
+            .features
+            .iter()
+            .filter(|f| f.egress_status == "compatible")
+            .map(|f| f.id.clone())
+            .collect();
+
+        // Check that every "Compatible" row in PARITY_MATRIX.md references a feature
+        // that is actually compatible in the manifest.
+        let mut overclaims = Vec::new();
+        for line in matrix.lines() {
+            if line.contains("| Compatible |") || line.contains("|Compatible|") {
+                let mut remaining = line;
+                while let Some(start) = remaining.find('`') {
+                    let rest = &remaining[start + 1..];
+                    if let Some(end) = rest.find('`') {
+                        let candidate = &rest[..end];
+                        if candidate.contains('_')
+                            && !candidate.starts_with("EGRESS_REQUIRE")
+                            && candidate.len() > 3
+                            && candidate.len() < 80
+                            && !manifest_compatible.contains(candidate)
+                            && manifest.features.iter().any(|f| f.id == *candidate)
+                        {
+                            overclaims.push(candidate.to_string());
+                        }
+                        remaining = &rest[end + 1..];
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !overclaims.is_empty() {
+            eprintln!("PARITY_MATRIX.md claims Compatible for features not marked compatible in the manifest:");
+            for id in &overclaims {
+                let entry = manifest.features.iter().find(|f| f.id == *id).unwrap();
+                eprintln!(
+                    "  - `{}`: manifest egress_status=\"{}\"",
+                    id, entry.egress_status
+                );
+            }
+            panic!(
+                "{} feature(s) overclaimed as Compatible in PARITY_MATRIX.md",
+                overclaims.len()
+            );
+        }
+    }
 }

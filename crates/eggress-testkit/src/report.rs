@@ -1,8 +1,56 @@
+use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+
+/// Structured test outcome for parity reporting.
+///
+/// Distinguishes the reason for a skip so that reports cannot be
+/// mistaken for passing evidence when tests did not actually run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestStatus {
+    /// Test ran and passed.
+    Passed,
+    /// Test ran and failed.
+    Failed,
+    /// Test skipped because the env-var gate was not set (e.g. `EGRESS_REQUIRE_EXTERNAL_INTEROP`).
+    SkippedMissingGate,
+    /// Test skipped because the required external tool is not installed.
+    SkippedMissingTool,
+    /// Test was not run at all (e.g. CI job did not include this test group).
+    NotRun,
+}
+
+impl fmt::Display for TestStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Passed => write!(f, "passed"),
+            Self::Failed => write!(f, "failed"),
+            Self::SkippedMissingGate => write!(f, "skipped_missing_gate"),
+            Self::SkippedMissingTool => write!(f, "skipped_missing_tool"),
+            Self::NotRun => write!(f, "not_run"),
+        }
+    }
+}
+
+impl FromStr for TestStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "passed" => Ok(Self::Passed),
+            "failed" => Ok(Self::Failed),
+            "skipped_missing_gate" => Ok(Self::SkippedMissingGate),
+            "skipped_missing_tool" => Ok(Self::SkippedMissingTool),
+            "not_run" => Ok(Self::NotRun),
+            other => Err(format!("unknown test status: \"{}\"", other)),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ParityReport {
@@ -21,7 +69,7 @@ pub struct FeatureReport {
     pub category: String,
     pub manifest_evidence: String,
     pub tests_executed: Vec<String>,
-    pub status: String,
+    pub status: TestStatus,
     pub skip_reason: Option<String>,
     pub observed_divergence: Option<String>,
     pub suggested_evidence: String,
@@ -213,7 +261,7 @@ pub fn manifest_entry_to_feature(entry: &ManifestEntry) -> FeatureReport {
         category: entry.category.clone(),
         manifest_evidence: entry.evidence.clone(),
         tests_executed: entry.tests.clone(),
-        status: "skip".to_string(),
+        status: TestStatus::NotRun,
         skip_reason: None,
         observed_divergence: None,
         suggested_evidence: entry.evidence.clone(),
@@ -239,7 +287,7 @@ mod tests {
                     category: "protocol".to_string(),
                     manifest_evidence: "SOCKS5 supported".to_string(),
                     tests_executed: vec!["test_socks5_connect".to_string()],
-                    status: "pass".to_string(),
+                    status: TestStatus::Passed,
                     skip_reason: None,
                     observed_divergence: None,
                     suggested_evidence: "SOCKS5 supported".to_string(),
@@ -249,7 +297,7 @@ mod tests {
                     category: "protocol".to_string(),
                     manifest_evidence: "SS UDP supported".to_string(),
                     tests_executed: vec![],
-                    status: "skip".to_string(),
+                    status: TestStatus::SkippedMissingTool,
                     skip_reason: Some("pproxy not available".to_string()),
                     observed_divergence: None,
                     suggested_evidence: "SS UDP supported".to_string(),
@@ -275,8 +323,8 @@ mod tests {
         assert!(md.contains("| pproxy version | 1.1.4 |"));
         assert!(md.contains("| rust version | rustc 1.75.0 (82e1608df 2023-12-21) |"));
         assert!(md.contains("| python version | Python 3.12.0 |"));
-        assert!(md.contains("| socks5_tcp | protocol | pass |"));
-        assert!(md.contains("| shadowsocks_udp | protocol | skip |"));
+        assert!(md.contains("| socks5_tcp | protocol | passed |"));
+        assert!(md.contains("| shadowsocks_udp | protocol | skipped_missing_tool |"));
         assert!(md.contains("EGRESS_REQUIRE_SHADOWSOCKS_INTEROP"));
     }
 
@@ -310,7 +358,7 @@ tests = ["test_a", "test_b"]
         };
         let feature = manifest_entry_to_feature(&entry);
         assert_eq!(feature.feature_id, "conv_test");
-        assert_eq!(feature.status, "skip");
+        assert_eq!(feature.status, TestStatus::NotRun);
         assert_eq!(feature.manifest_evidence, "some evidence");
         assert_eq!(feature.suggested_evidence, "some evidence");
         assert!(feature.skip_reason.is_none());
@@ -363,5 +411,35 @@ tests = ["test_a", "test_b"]
         let content = fs::read_to_string(file.path()).unwrap();
         assert!(content.contains("# Eggress Parity Report"));
         assert!(content.contains("socks5_tcp"));
+    }
+
+    #[test]
+    fn test_status_roundtrip() {
+        for variant in &[
+            TestStatus::Passed,
+            TestStatus::Failed,
+            TestStatus::SkippedMissingGate,
+            TestStatus::SkippedMissingTool,
+            TestStatus::NotRun,
+        ] {
+            let s = variant.to_string();
+            let parsed: TestStatus = s.parse().unwrap();
+            assert_eq!(parsed, *variant);
+        }
+    }
+
+    #[test]
+    fn test_status_invalid_parse() {
+        let result = "bogus".parse::<TestStatus>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_status_serde() {
+        let status = TestStatus::SkippedMissingGate;
+        let json = serde_json::to_string(&status).unwrap();
+        assert_eq!(json, "\"skipped_missing_gate\"");
+        let parsed: TestStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, status);
     }
 }

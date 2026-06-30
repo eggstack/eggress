@@ -1,7 +1,8 @@
 //! Interoperability tests using curl as an external client/server.
 //!
 //! These tests verify that eggress works correctly with real-world tools.
-//! Tests skip gracefully if curl is not available.
+//! Gated by `EGRESS_REQUIRE_CURL_INTEROP=1` env var.
+//! When run with `--ignored`, tests panic if curl is unavailable.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,6 +12,12 @@ use eggress_routing::{RouteActionSpec, RouteService, Router};
 use eggress_server::ConnectionConfig;
 use tokio_util::sync::CancellationToken;
 
+fn require_curl_interop() {
+    if std::env::var("EGRESS_REQUIRE_CURL_INTEROP").is_err() {
+        panic!("EGRESS_REQUIRE_CURL_INTEROP not set");
+    }
+}
+
 fn curl_available() -> bool {
     std::process::Command::new("curl")
         .arg("--version")
@@ -19,6 +26,14 @@ fn curl_available() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn skip_if_unavailable() {
+    require_curl_interop();
+    if !curl_available() {
+        eprintln!("skipping: curl not available");
+        panic!("curl not available");
+    }
 }
 
 async fn start_eggress_server(
@@ -71,11 +86,9 @@ async fn start_eggress_server(
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_CURL_INTEROP=1 and curl"]
 async fn test_curl_http_connect() {
-    if !curl_available() {
-        eprintln!("curl not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (origin_addr, origin_jh) = eggress_testkit::start_http_origin_server().await;
     let (proxy_addr, cancel, proxy_jh) =
@@ -116,11 +129,9 @@ async fn test_curl_http_connect() {
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_CURL_INTEROP=1 and curl"]
 async fn test_curl_socks5() {
-    if !curl_available() {
-        eprintln!("curl not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
     let (proxy_addr, cancel, proxy_jh) =
@@ -168,11 +179,9 @@ async fn test_curl_socks5() {
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_CURL_INTEROP=1 and curl"]
 async fn test_curl_socks4a() {
-    if !curl_available() {
-        eprintln!("curl not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
     let (proxy_addr, cancel, proxy_jh) =

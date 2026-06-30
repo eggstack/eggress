@@ -1,7 +1,8 @@
 //! Interoperability tests using Python pproxy as an external proxy.
 //!
 //! These tests verify that eggress works correctly with pproxy.
-//! Tests skip gracefully if Python or pproxy is not available.
+//! Gated by `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` env var.
+//! When run with `--ignored`, tests panic if python3 or pproxy is unavailable.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -89,6 +90,12 @@ fn target_to_socks_addr(target: &TargetAddr) -> SocksAddr {
     }
 }
 
+fn require_external_interop() {
+    if std::env::var("EGRESS_REQUIRE_EXTERNAL_INTEROP").is_err() {
+        panic!("EGRESS_REQUIRE_EXTERNAL_INTEROP not set");
+    }
+}
+
 fn python_available() -> bool {
     std::process::Command::new("python3")
         .arg("--version")
@@ -107,6 +114,14 @@ fn pproxy_available() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn skip_if_unavailable() {
+    require_external_interop();
+    if !python_available() || !pproxy_available() {
+        eprintln!("skipping: python3 or pproxy not available");
+        panic!("python3 or pproxy not available");
+    }
 }
 
 async fn start_pproxy_server(protocol: &str, port: u16) -> std::process::Child {
@@ -134,11 +149,9 @@ async fn wait_for_port(port: u16, timeout: Duration) -> bool {
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
 async fn test_pproxy_http_server_eggress_client() {
-    if !python_available() || !pproxy_available() {
-        eprintln!("python3 or pproxy not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
     let pproxy_port = eggress_testkit::get_free_port().await;
@@ -149,7 +162,7 @@ async fn test_pproxy_http_server_eggress_client() {
         eprintln!("pproxy failed to start, skipping test");
         let _ = pproxy_child.kill();
         echo_jh.abort();
-        return;
+        panic!("pproxy failed to start on port {pproxy_port}");
     }
 
     // Connect through pproxy using eggress's chain executor
@@ -193,11 +206,9 @@ async fn test_pproxy_http_server_eggress_client() {
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
 async fn test_pproxy_socks5_server_eggress_client() {
-    if !python_available() || !pproxy_available() {
-        eprintln!("python3 or pproxy not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
     let pproxy_port = eggress_testkit::get_free_port().await;
@@ -208,7 +219,7 @@ async fn test_pproxy_socks5_server_eggress_client() {
         eprintln!("pproxy failed to start, skipping test");
         let _ = pproxy_child.kill();
         echo_jh.abort();
-        return;
+        panic!("pproxy failed to start on port {pproxy_port}");
     }
 
     // Connect through pproxy using eggress's chain executor
@@ -252,11 +263,9 @@ async fn test_pproxy_socks5_server_eggress_client() {
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
 async fn test_eggress_server_pproxy_socks5_client() {
-    if !python_available() || !pproxy_available() {
-        eprintln!("python3 or pproxy not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
 
@@ -342,11 +351,9 @@ async fn test_eggress_server_pproxy_socks5_client() {
 }
 
 #[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
 async fn test_eggress_server_pproxy_http_client() {
-    if !python_available() || !pproxy_available() {
-        eprintln!("python3 or pproxy not available, skipping test");
-        return;
-    }
+    skip_if_unavailable();
 
     let (origin_addr, origin_jh) = eggress_testkit::start_http_origin_server().await;
 

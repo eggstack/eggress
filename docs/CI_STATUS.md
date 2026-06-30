@@ -48,6 +48,31 @@ separate visible jobs:
 | Audit | ubuntu-latest | `cargo audit` (security advisories) |
 | Interoperability | ubuntu-latest | Cross-implementation tests (pproxy, curl) |
 
+### pproxy-compatibility.yml
+
+Triggers on pushes to `main`, pull requests to `main`, and manual dispatch.
+Runs the full pproxy compatibility suite:
+
+| Job | Runner | What it checks |
+|-----|--------|----------------|
+| pproxy Compat | ubuntu-latest | Manifest validation, pproxy oracle tests, differential tests, interoperability tests, parity report |
+
+Requires `pproxy==2.7.9` (Python). Manifest validation runs before differential
+tests. Parity report artifacts are uploaded on every run.
+
+### shadowsocks-interop.yml
+
+Triggers on pushes to `main`, pull requests to `main`, and manual dispatch.
+Runs Shadowsocks standard interop tests:
+
+| Job | Runner | What it checks |
+|-----|--------|----------------|
+| Shadowsocks Interop | ubuntu-latest | TCP/UDP interop with `ssserver`/`sslocal` from `shadowsocks-rust` |
+
+Requires `shadowsocks-rust` (installed via `cargo install`). Logs uploaded
+on failure. This is a manually-gated workflow — Shadowsocks interop claims
+cite this workflow but it is not required for merge.
+
 ### security.yml (legacy — removed)
 
 Previously ran duplicate `cargo-deny` and `cargo-audit` jobs using older
