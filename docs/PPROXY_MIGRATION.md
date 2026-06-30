@@ -133,8 +133,8 @@ The following pproxy features are explicitly unsupported:
 - **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
 - **Unix domain sockets** -- Not supported
 - **Transparent/system proxy mode** -- Not supported
-- **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods)
-- **ShadowsocksR** -- Not supported (non-standard extension)
+- **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
+- **ShadowsocksR** -- Not supported (non-standard extension). `ssr://` URIs are recognized and rejected with structured `UnsupportedFeature` diagnostics (categories: `ssr-listener`, `ssr-upstream`). See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
 
 Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
 

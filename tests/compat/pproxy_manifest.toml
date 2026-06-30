@@ -617,6 +617,16 @@ tests = []
 divergence = "No authentication; vulnerable to bit-flipping"
 external_dependency = null
 
+[[features]]
+id = "shadowsocks_r"
+category = "transport"
+pproxy_version = "2.7.9"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
+tests = ["pproxy_compat_tests"]
+divergence = "SSR URIs recognized and rejected with structured diagnostics; no protocol/obfs/cipher layers implemented"
+external_dependency = null
+
 # ─── Diagnostics ──────────────────────────────────────────────────────
 
 [[features]]
