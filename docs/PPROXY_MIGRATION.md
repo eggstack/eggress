@@ -34,6 +34,11 @@ eggress pproxy run -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 | `trojan://` | No (upstream-only) | Yes |
 | `shadowsocks://` | Yes (AEAD methods only) | Yes (AEAD methods only) |
 | `direct://` | No | Yes (direct connection) |
+| `h2://` | Yes | Yes (H2 CONNECT tunnel) |
+| `ws://` | Yes | Yes (WebSocket tunnel) |
+| `wss://` | Yes | Yes (WebSocket tunnel over TLS) |
+| `raw://` | Yes | Yes (raw fixed-target tunnel) |
+| `tunnel://` | Yes | Yes (alias for raw) |
 
 ### URI Format
 
@@ -115,6 +120,10 @@ upstream_group = "chain"
 | Standalone UDP (`-ul`/`-ur`) | Compatible | pproxy-compatible standalone UDP relay mode (Phase 20) |
 | Shadowsocks upstream | Supported | Standard AEAD framing; interoperable with standard Shadowsocks |
 | Trojan upstream | Partial | Client-only; no Trojan server |
+| HTTP/2 CONNECT | Supported | Synthetic tests; H2 CONNECT server and client implemented (Phase 26) |
+| WebSocket tunnel | Supported | Synthetic tests; WS/WSS tunnel server and client implemented (Phase 26) |
+| Raw fixed-target tunnel | Supported | Synthetic tests; raw TCP tunnel with no protocol negotiation (Phase 26) |
+| TLS ALPN | Supported | Configurable ALPN values for H2 and HTTP/1.1 (Phase 26) |
 | Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
 
 ## Unsupported Features
@@ -131,6 +140,7 @@ The following pproxy features are explicitly unsupported:
 - **`--sys`** -- System proxy configuration not supported
 - **Multi-hop UDP** -- Not supported
 - **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
+- **H3/QUIC transport** -- Deferred; pproxy H3 behavior is experimental and unstable. See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`.
 - **Unix domain sockets** -- Not supported
 - **Transparent/system proxy mode** -- Not supported
 - **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.

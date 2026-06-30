@@ -101,6 +101,28 @@ Adversaries may include malicious clients on the network, compromised upstream p
 
 ### Protocol Safety
 
+**H2 CONNECT Stream Handling** (`eggress-protocol-http/src/h2_connect.rs`):
+- H2 CONNECT accepts only `CONNECT` method; other methods receive `PROTOCOL_ERROR` reset.
+- Authority is validated as non-empty; missing authority triggers `H2` error.
+- Per-stream relay spawns independent tasks; one stream failure does not affect others.
+- Flow control is respected via `h2::SendStream::reserve_capacity` and `poll_capacity`.
+- GOAWAY and RST_STREAM are handled by the `h2` crate's connection driver.
+
+**WebSocket Tunnel Handling** (`eggress-protocol-websocket/src/lib.rs`):
+- Binary frames only; text frames are logged and skipped (no data processing).
+- `max_message_size` (default 16MB) enforced on inbound frames; oversized frames trigger IO error.
+- Close frames yield EOF to the reader; no data from close frames is processed.
+- Ping/pong frames are silently consumed; no application-level pong response.
+- `WebSocketStreamAdapter` implements `AsyncRead`/`AsyncWrite` — no direct buffer exposure.
+- WSS uses existing TLS transport layer; no separate TLS handling.
+
+**Raw Tunnel Handling** (`eggress-protocol-raw/src/tunnel.rs`):
+- No protocol negotiation or authentication; target is fixed by config at startup.
+- Target validation at config compile time (rejects missing target).
+- `copy_bidirectional` used for relay; no custom framing or buffer manipulation.
+- One connection per accepted TCP stream; no multiplexing.
+- **Warning**: Raw tunnels have no authentication or encryption. Target must be trusted. Network-level access control is the operator's responsibility.
+
 **TLS Insecure Mode** (`eggress-transport-tls/src/client.rs:49-51`):
 - `with_insecure()` creates an `InsecureVerifier` that accepts any certificate.
 - Documented as "for testing only — never use in production."
@@ -202,6 +224,11 @@ Adversaries may include malicious clients on the network, compromised upstream p
 16. **Transparent proxy loop prevention**: Connections destined to the proxy's own listen address are rejected to prevent forwarding loops.
 17. **Unix socket permissions**: Socket file permissions are configurable (default `0o660`); operator controls access via filesystem permissions and group membership.
 18. **Transparent proxy original destination trust**: The original destination is extracted from kernel socket options (`SO_ORIGINAL_DST`), which is trusted kernel-provided metadata. No spoofing risk from the network.
+19. **H2 CONNECT method validation**: Only `CONNECT` method accepted; non-CONNECT requests receive `PROTOCOL_ERROR` reset (Phase 26).
+20. **WebSocket frame size limits**: `max_message_size` enforced on inbound binary frames; oversized frames trigger IO error and connection closure (Phase 26).
+21. **WebSocket binary-only**: Text frames are logged and skipped; no text frame data is processed (Phase 26).
+22. **Raw tunnel fixed target**: Target is fixed by config at startup; no runtime target selection from client data (Phase 26).
+23. **Raw tunnel no-auth warning**: Documented that raw tunnels have no authentication or encryption; operator must control network access (Phase 26).
 
 ## Residual Risks
 

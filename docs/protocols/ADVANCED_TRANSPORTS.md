@@ -114,9 +114,9 @@ transport wrappers and protocol handlers in sequence.
 
 | Transport | Crate | Module |
 |-----------|-------|--------|
-| WebSocket tunnel | `eggress-transport-websocket` | `tunnel.rs` |
-| H2 CONNECT tunnel | `eggress-protocol-h2` | `connect.rs` |
-| Raw tunnel | `eggress-core` | `tunnel/raw.rs` |
+| WebSocket tunnel | `eggress-protocol-websocket` | `lib.rs` |
+| H2 CONNECT tunnel | `eggress-protocol-http` | `h2_connect.rs` |
+| Raw tunnel | `eggress-protocol-raw` | `tunnel.rs` |
 
 ## 7. Test Coverage
 

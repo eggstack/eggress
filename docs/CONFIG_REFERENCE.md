@@ -70,7 +70,7 @@ Each listener defines a TCP bind address and accepted protocols.
 |-------|------|----------|-------------|
 | `name` | string | yes | Unique listener identifier |
 | `bind` | `"host:port"` | yes | Socket address to bind |
-| `protocols` | `["http", "socks4", "socks5", "shadowsocks"]` | yes | Accepted protocol list |
+| `protocols` | `["http", "socks4", "socks5", "shadowsocks", "h2", "ws", "wss", "raw", "tunnel"]` | yes | Accepted protocol list |
 | `connection_limit` | u32 | 1024 | Max concurrent connections (semaphore) |
 | `auth` | table | none | Inbound authentication policy |
 | `udp_enabled` | bool | false | Legacy UDP flag (compatibility sugar) |
@@ -218,6 +218,26 @@ Supported ALPN values:
 
 ALPN is optional. If omitted, no protocol negotiation occurs during TLS handshake.
 
+### `[listeners.raw]`
+
+Raw fixed-target tunnel configuration. When configured, the listener accepts TCP connections and forwards them directly to the configured target without protocol negotiation.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | Fixed target address (`host:port`) |
+
+```toml
+[[listeners]]
+name = "raw-in"
+bind = "0.0.0.0:9090"
+protocols = ["raw"]
+
+[listeners.raw]
+target = "internal-server:8080"
+```
+
+Raw tunnels have no authentication or encryption. Target must be trusted. Network-level access control is the operator's responsibility.
+
 ---
 
 ## `[[upstreams]]`
@@ -234,7 +254,7 @@ ALPN is optional. If omitted, no protocol negotiation occurs during TLS handshak
 protocol://[user:pass@]host:port[/rule][+tls]
 ```
 
-**Protocols:** `http`, `socks4`, `socks5`, `shadowsocks`, `trojan`
+**Protocols:** `http`, `socks4`, `socks5`, `shadowsocks`, `trojan`, `h2`, `ws`, `wss`, `raw`, `tunnel`
 
 **TLS suffix:** `+tls` enables TLS on the connection (e.g., `socks5+tls://proxy:1080`)
 
@@ -282,6 +302,12 @@ members = ["ss-udp"]
 ```
 
 **Trojan URI:** `trojan://password@host:port`
+
+**H2 CONNECT URI:** `h2://host:port` — HTTP/2 CONNECT tunnel. Requires TLS with ALPN `h2`. See Phase 26 (Advanced Transports).
+
+**WebSocket URI:** `ws://host:port` or `wss://host:port` — WebSocket tunnel. `wss` requires TLS. See Phase 26 (Advanced Transports).
+
+**Raw tunnel URI:** `raw://host:port` or `tunnel://host:port` — Raw fixed-target TCP tunnel. No protocol negotiation; target is fixed by config. See Phase 26 (Advanced Transports).
 
 ### `[upstreams.health]`
 
