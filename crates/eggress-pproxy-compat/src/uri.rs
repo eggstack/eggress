@@ -27,23 +27,47 @@ impl PproxyUri {
         } else {
             ""
         };
-        let tls_suffix = if self.tls { "+tls" } else { "" };
-        let host_display = if self.host.is_empty() {
-            String::new()
-        } else if self.host.contains(':') {
-            // IPv6 — wrap in brackets per RFC 3986
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
         let rule_str = match &self.rule {
             Some(r) => format!("?rule={}", r),
             None => String::new(),
         };
         format!(
-            "{}://{}{}:{}{}{}",
-            self.scheme, cred_str, host_display, self.port, tls_suffix, rule_str,
+            "{}://{}{}{}",
+            self.scheme_with_tls(),
+            cred_str,
+            self.endpoint_display(),
+            rule_str,
         )
+    }
+
+    pub(crate) fn scheme_with_tls(&self) -> String {
+        if self.tls {
+            format!("{}+tls", self.scheme)
+        } else {
+            self.scheme.clone()
+        }
+    }
+
+    pub(crate) fn endpoint_display(&self) -> String {
+        format!("{}:{}", format_host_for_uri(&self.host), self.port)
+    }
+
+    pub(crate) fn bind_display(&self) -> String {
+        if self.host.is_empty() {
+            format!("0.0.0.0:{}", self.port)
+        } else {
+            self.endpoint_display()
+        }
+    }
+}
+
+fn format_host_for_uri(host: &str) -> String {
+    if host.is_empty() {
+        String::new()
+    } else if host.contains(':') {
+        format!("[{}]", host)
+    } else {
+        host.to_string()
     }
 }
 
@@ -289,5 +313,17 @@ mod tests {
         let uri = parse_pproxy_uri("socks5://127.0.0.1:1080").unwrap();
         let display = uri.redacted_display();
         assert_eq!(display, "socks5://127.0.0.1:1080");
+    }
+
+    #[test]
+    fn test_redacted_display_tls_suffix_in_scheme() {
+        let uri = parse_pproxy_uri("socks5+tls://proxy:1080").unwrap();
+        assert_eq!(uri.redacted_display(), "socks5+tls://proxy:1080");
+    }
+
+    #[test]
+    fn test_endpoint_display_brackets_ipv6() {
+        let uri = parse_pproxy_uri("socks5://[::1]:1080").unwrap();
+        assert_eq!(uri.endpoint_display(), "[::1]:1080");
     }
 }

@@ -127,8 +127,7 @@ fn test_https_upstream_translates_to_http_tls() {
     let upstreams = parsed["upstreams"].as_array().unwrap();
     assert_eq!(upstreams.len(), 1);
     let uri = upstreams[0]["uri"].as_str().unwrap();
-    assert!(uri.starts_with("http://"));
-    assert!(uri.contains("+tls"));
+    assert_eq!(uri, "http+tls://proxy:443");
 }
 
 #[test]

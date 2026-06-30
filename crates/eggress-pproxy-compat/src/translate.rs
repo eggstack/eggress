@@ -185,11 +185,7 @@ pub fn translate_from_uris(
         }
 
         let listener_name = format!("pproxy-local-{}", idx);
-        let bind = if local.host.is_empty() {
-            format!("0.0.0.0:{}", local.port)
-        } else {
-            format!("{}:{}", local.host, local.port)
-        };
+        let bind = local.bind_display();
 
         let protocols = match local.scheme.as_str() {
             "http" | "https" => vec!["http".to_string()],
@@ -453,15 +449,10 @@ pub fn translate_from_uris(
 /// Handles formats: `:1081`, `0.0.0.0:1081`, `127.0.0.1:1081`, `socks5://:1081`, plain port `1081`.
 fn parse_udp_listen_addr(addr: &str) -> String {
     // If it's a URI like socks5://:1081, extract host:port after ://
-    if let Some(rest) = addr.find("://") {
-        let endpoint = &addr[rest + 3..];
-        if endpoint.is_empty() || endpoint == ":" {
-            return "0.0.0.0:0".to_string();
-        }
-        if endpoint.starts_with(':') {
-            return format!("0.0.0.0{}", endpoint);
-        }
-        return endpoint.to_string();
+    if addr.contains("://") {
+        return crate::uri::parse_pproxy_uri(addr)
+            .map(|uri| uri.bind_display())
+            .unwrap_or_else(|_| "0.0.0.0:0".to_string());
     }
 
     // Plain address formats
@@ -493,19 +484,25 @@ fn percent_encode(s: &str) -> String {
 }
 
 fn build_config_uri(remote: &PproxyUri) -> String {
-    let scheme = if remote.scheme == "https" {
+    let mut scheme = if remote.scheme == "https" {
         "http".to_string()
     } else if remote.scheme == "socks4a" {
         "socks4".to_string()
     } else {
         remote.scheme.clone()
     };
+    if remote.tls || remote.scheme == "https" {
+        scheme.push_str("+tls");
+    }
     let cred_str = match (&remote.username, &remote.password) {
+        (Some(user), Some(pass)) if user.is_empty() => {
+            format!("{}@", percent_encode(pass))
+        }
         (Some(user), Some(pass)) => {
             format!("{}:{}@", percent_encode(user), percent_encode(pass))
         }
         (Some(user), None) => {
-            format!("{}:{}", percent_encode(user), "")
+            format!("{}@", percent_encode(user))
         }
         (None, Some(pass)) => {
             // Password-only format (e.g., trojan://password@host:port)
@@ -513,15 +510,16 @@ fn build_config_uri(remote: &PproxyUri) -> String {
         }
         _ => String::new(),
     };
-    let tls = remote.tls || remote.scheme == "https";
-    let tls_suffix = if tls { "+tls" } else { "" };
     let rule_str = match &remote.rule {
         Some(r) => format!("?rule={}", r),
         None => String::new(),
     };
     format!(
-        "{}://{}{}:{}{}{}",
-        scheme, cred_str, remote.host, remote.port, tls_suffix, rule_str,
+        "{}://{}{}{}",
+        scheme,
+        cred_str,
+        remote.endpoint_display(),
+        rule_str,
     )
 }
 
@@ -655,6 +653,47 @@ mod tests {
         assert!(output.toml.contains("pproxy-upstream-0"));
         assert!(output.toml.contains("pproxy-chain"));
         assert!(output.toml.contains("http://proxy:8080"));
+    }
+
+    #[test]
+    fn test_translate_explicit_tls_upstream_uses_scheme_suffix() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+tls://proxy:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("socks5+tls://proxy:1080"));
+        assert!(!output.toml.contains("proxy:1080+tls"));
+    }
+
+    #[test]
+    fn test_translate_ipv6_upstream_brackets_host() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://[::1]:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("socks5://[::1]:1080"));
+    }
+
+    #[test]
+    fn test_translate_trojan_password_only_upstream() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "trojan://secret@proxy:443".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("trojan://secret@proxy:443"));
+        assert!(!output.toml.contains("trojan://:secret@proxy:443"));
     }
 
     #[test]
@@ -984,6 +1023,8 @@ mod tests {
             ("127.0.0.1:1081", "127.0.0.1:1081"),
             ("1081", "0.0.0.0:1081"),
             ("socks5://:1081", "0.0.0.0:1081"),
+            ("socks5://[::1]:1081", "[::1]:1081"),
+            ("socks5://user:pass@[::1]:1081?ignored=true", "[::1]:1081"),
         ] {
             let args = PproxyArgs::parse(&[
                 "-l".into(),

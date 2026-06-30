@@ -260,7 +260,7 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         if let Some(at_pos) = find_at_outside_brackets(after_scheme) {
             let userinfo = &after_scheme[..at_pos];
             let rest = &after_scheme[at_pos + 1..];
-            let creds = parse_credentials(userinfo)?;
+            let creds = parse_credentials(userinfo, &protocols)?;
             (Some(creds), rest)
         } else {
             (None, after_scheme)
@@ -393,13 +393,23 @@ fn parse_port(port_str: &str) -> Result<u16, UriParseError> {
         .map_err(|e| UriParseError::InvalidPort(format!("{}: {}", port_str, e)))
 }
 
-fn parse_credentials(userinfo: &str) -> Result<CredentialSpec, UriParseError> {
-    let colon_pos = userinfo
-        .find(':')
-        .ok_or_else(|| UriParseError::InvalidFormat {
+fn parse_credentials(
+    userinfo: &str,
+    protocols: &[ProtocolSpec],
+) -> Result<CredentialSpec, UriParseError> {
+    let Some(colon_pos) = userinfo.find(':') else {
+        if protocols.contains(&ProtocolSpec::Trojan) && !userinfo.is_empty() {
+            return Ok(CredentialSpec {
+                username: String::new(),
+                password: userinfo.to_string(),
+            });
+        }
+
+        return Err(UriParseError::InvalidFormat {
             message: "missing ':' in credentials".to_string(),
             span: None,
-        })?;
+        });
+    };
 
     let username = userinfo[..colon_pos].to_string();
     let password = userinfo[colon_pos + 1..].to_string();
@@ -542,6 +552,22 @@ mod tests {
         let creds = result.hops[0].credentials.as_ref().unwrap();
         assert_eq!(creds.username, "user");
         assert_eq!(creds.password, "pass");
+    }
+
+    #[test]
+    fn test_trojan_password_only_credentials() {
+        let result = parse_proxy_chain("trojan://secret@proxy.example:443").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Trojan]);
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "");
+        assert_eq!(creds.password, "secret");
+    }
+
+    #[test]
+    fn test_password_only_credentials_rejected_for_non_trojan() {
+        let err = parse_proxy_chain("http://secret@proxy.example:8080").unwrap_err();
+        assert!(matches!(err, UriParseError::InvalidFormat { .. }));
     }
 
     #[test]
