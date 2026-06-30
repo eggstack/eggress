@@ -538,6 +538,29 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 }
             };
 
+            if let Some(ref udp_cfg) = udp {
+                if udp_cfg.mode == eggress_udp::UdpMode::ShadowsocksUdp {
+                    let ss = l.shadowsocks.as_ref().ok_or_else(|| {
+                        ConfigError::validation(
+                            &path,
+                            "shadowsocks_udp mode requires [listeners.shadowsocks] section with method and password",
+                        )
+                    })?;
+                    if ss.method.is_empty() {
+                        return Err(ConfigError::validation(
+                            &format!("{}.shadowsocks.method", path),
+                            "shadowsocks method must not be empty",
+                        ));
+                    }
+                    if ss.password.is_empty() {
+                        return Err(ConfigError::validation(
+                            &format!("{}.shadowsocks.password", path),
+                            "shadowsocks password must not be empty",
+                        ));
+                    }
+                }
+            }
+
             let tls = match l.tls.as_ref() {
                 Some(tls_cfg) => {
                     let cert_pem = std::fs::read(&tls_cfg.cert).map_err(|e| {
@@ -617,6 +640,7 @@ fn compile_listener_udp_config(
         Some("standalone_pproxy_udp") | Some("standalone") => {
             eggress_udp::UdpMode::StandalonePproxyUdp
         }
+        Some("shadowsocks_udp") | Some("shadowsocks") => eggress_udp::UdpMode::ShadowsocksUdp,
         Some("socks5_udp_associate") | Some("socks5") | None => {
             eggress_udp::UdpMode::Socks5UdpAssociate
         }
@@ -624,7 +648,7 @@ fn compile_listener_udp_config(
             return Err(ConfigError::validation(
                 &format!("{}.mode", udp_path),
                 &format!(
-                    "unknown UDP mode '{}'; expected 'socks5_udp_associate' or 'standalone_pproxy_udp'",
+                    "unknown UDP mode '{}'; expected 'socks5_udp_associate', 'standalone_pproxy_udp', or 'shadowsocks_udp'",
                     other
                 ),
             ));
@@ -637,6 +661,22 @@ fn compile_listener_udp_config(
             path,
             "UDP config requires socks5 protocol",
         ));
+    }
+
+    if mode == eggress_udp::UdpMode::ShadowsocksUdp {
+        let has_ss_section = protocols.contains(&ProtocolId::Shadowsocks);
+        if !has_ss_section {
+            return Err(ConfigError::validation(
+                path,
+                "shadowsocks_udp mode requires shadowsocks protocol",
+            ));
+        }
+        if !udp.client_pin.unwrap_or(true) {
+            return Err(ConfigError::validation(
+                &format!("{}.udp.client_pin", path),
+                "shadowsocks_udp mode requires client_pin = true for security",
+            ));
+        }
     }
 
     let enabled = udp.enabled.unwrap_or(defaults.enabled);

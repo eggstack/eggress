@@ -157,6 +157,69 @@ struct PreparedListener {
     shadowsocks: Option<eggress_config::model::ShadowsocksListenerConfig>,
 }
 
+type PreparedShadowsocksUdpRelay = (
+    Arc<tokio::net::UdpSocket>,
+    eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig,
+);
+
+async fn prepare_shadowsocks_udp_relay(
+    prepared_listener: &PreparedListener,
+    udp_cfg: &eggress_config::compile::CompiledListenerUdpConfig,
+    routing: Arc<dyn RouteService>,
+    state: &RuntimeState,
+) -> Result<PreparedShadowsocksUdpRelay, RuntimeError> {
+    let ss = prepared_listener.shadowsocks.as_ref().ok_or_else(|| {
+        RuntimeError::Other(format!(
+            "listener '{}' shadowsocks_udp mode requires shadowsocks config",
+            prepared_listener.name
+        ))
+    })?;
+    let method =
+        eggress_protocol_shadowsocks::CipherMethod::parse_method(&ss.method).map_err(|e| {
+            RuntimeError::Other(format!(
+                "listener '{}' has invalid shadowsocks method '{}': {}",
+                prepared_listener.name, ss.method, e
+            ))
+        })?;
+    let socket = Arc::new(
+        tokio::net::UdpSocket::bind(udp_cfg.bind)
+            .await
+            .map_err(|e| RuntimeError::ListenerBind {
+                addr: udp_cfg.bind.to_string(),
+                source: e,
+            })?,
+    );
+    let local_addr = socket
+        .local_addr()
+        .map_err(|e| RuntimeError::ListenerBind {
+            addr: udp_cfg.bind.to_string(),
+            source: e,
+        })?;
+    tracing::info!(
+        "shadowsocks UDP relay listening on {local_addr} ({})",
+        prepared_listener.name
+    );
+
+    let relay_config = eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig {
+        routing,
+        udp_metrics: state.udp_metrics.clone(),
+        limits: eggress_udp::limits::UdpLimits::from_listener_config(
+            udp_cfg.max_associations,
+            udp_cfg.max_targets_per_association,
+            udp_cfg.max_datagram_size,
+            udp_cfg.idle_timeout,
+            udp_cfg.client_pin,
+            udp_cfg.target_idle_timeout,
+        ),
+        listener: prepared_listener.name.clone(),
+        generation: state.snapshot.load().generation,
+        method,
+        password: ss.password.clone(),
+    };
+
+    Ok((socket, relay_config))
+}
+
 /// Compute the advertised IP for the SOCKS5 UDP ASSOCIATE reply.
 ///
 /// Derivation rules:
@@ -644,6 +707,42 @@ impl ServiceSupervisor {
                 let addrs: Vec<std::net::SocketAddr> =
                     prepared.iter().map(|p| p.local_addr).collect();
                 *state_ref.listener_addrs.lock().unwrap_or_else(|e| e.into_inner()) = addrs;
+            }
+
+            let mut shadowsocks_udp_relays = Vec::new();
+
+            for prepared_listener in &prepared {
+                if let Some(ref udp_cfg) = prepared_listener.udp {
+                    if udp_cfg.mode == eggress_udp::UdpMode::ShadowsocksUdp {
+                        shadowsocks_udp_relays.push(
+                            prepare_shadowsocks_udp_relay(
+                                prepared_listener,
+                                udp_cfg,
+                                routing.clone(),
+                                &state_ref,
+                            )
+                            .await?,
+                        );
+                    }
+                }
+            }
+
+            for (socket, relay_config) in shadowsocks_udp_relays {
+                let relay_cancel = cancel.clone();
+                tasks.spawn(async move {
+                    let result = eggress_udp::standalone_shadowsocks::shadowsocks_standalone_udp_relay(
+                        socket,
+                        relay_config,
+                        relay_cancel,
+                    )
+                    .await;
+                    if let Err(error) = result {
+                        tracing::debug!(
+                            %error,
+                            "Shadowsocks UDP relay ended with error"
+                        );
+                    }
+                });
             }
 
             for prepared_listener in prepared {

@@ -83,9 +83,9 @@ external_dependency = "pproxy==2.7.9"
 id = "shadowsocks_tcp_upstream"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["shadowsocks_tcp_tests"]
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
 divergence = "Standard SIP003 AEAD framing; wire-compatible with standard Shadowsocks"
 external_dependency = null
 
@@ -167,9 +167,9 @@ external_dependency = "pproxy==2.7.9"
 id = "shadowsocks_upstream"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["shadowsocks_tcp_tests"]
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
 divergence = "Standard SIP003 AEAD framing for TCP; standard for UDP"
 external_dependency = null
 
@@ -365,10 +365,10 @@ external_dependency = null
 id = "shadowsocks_password"
 category = "security"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["shadowsocks_tcp_tests"]
-divergence = "URI-embedded password"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
+divergence = "URI-embedded password; verified via interop tests"
 external_dependency = null
 
 # ─── CLI Compatibility ────────────────────────────────────────────────
@@ -549,10 +549,10 @@ external_dependency = null
 id = "ss_scheme"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["cli_tests"]
-divergence = "Supported as upstream"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["cli_tests", "interoperability_shadowsocks_tcp"]
+divergence = "Supported as upstream; standard SIP003 URI"
 external_dependency = null
 
 [[features]]
@@ -602,9 +602,9 @@ id = "shadowsocks_aead_ciphers"
 category = "transport"
 pproxy_version = "2.7.9"
 egress_status = "compatible"
-evidence_level = "implemented_synthetic"
-tests = ["shadowsocks_tcp_tests"]
-divergence = "All three AEAD methods supported"
+evidence_level = "compatible"
+tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
+divergence = "All three AEAD methods supported; standard framing"
 external_dependency = null
 
 [[features]]

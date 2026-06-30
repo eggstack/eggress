@@ -164,7 +164,8 @@ impl<S: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for PrependReader<S
 mod tests {
     use super::*;
     use eggress_core::TargetHost;
-    use tokio::io::AsyncReadExt;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
     async fn test_shadowsocks_connect_sends_payload() {
@@ -409,5 +410,110 @@ mod tests {
 
             server_jh.await.unwrap();
         }
+    }
+
+    /// Connect to a real ssserver (shadowsocks-rust) using our Shadowsocks client
+    /// to diagnose wire-level compatibility.
+    #[tokio::test]
+    async fn test_shadowsocks_connect_to_real_ssserver() {
+        use std::process::Command;
+
+        // Start TCP echo server
+        let echo_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let echo_addr = echo_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = echo_listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    loop {
+                        match stream.read(&mut buf).await {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                if stream.write_all(&buf[..n]).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+            }
+        });
+        eprintln!("[test] Echo server on {echo_addr}");
+
+        // Find a free port for ssserver
+        let ss_port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+
+        // Start ssserver
+        let mut child = Command::new("ssserver")
+            .args([
+                "-s",
+                &format!("127.0.0.1:{ss_port}"),
+                "-m",
+                "aes-256-gcm",
+                "-k",
+                "testpass",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to start ssserver");
+
+        // Wait for ssserver to be ready
+        for _ in 0..50 {
+            if tokio::net::TcpStream::connect(format!("127.0.0.1:{ss_port}"))
+                .await
+                .is_ok()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        eprintln!("[test] ssserver on {ss_port}");
+
+        // Connect to ssserver using our Shadowsocks client
+        let stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{ss_port}"))
+            .await
+            .unwrap();
+        let boxed: BoxStream = Box::new(stream);
+        let target = TargetAddr {
+            host: TargetHost::Ip(echo_addr.ip()),
+            port: echo_addr.port(),
+        };
+        let method = CipherMethod::Aes256Gcm;
+
+        let mut conn = shadowsocks_connect(boxed, &target, method, "testpass")
+            .await
+            .unwrap();
+        eprintln!("[test] Shadowsocks connect OK");
+
+        conn.write_all(b"hello world").await.unwrap();
+        conn.flush().await.unwrap();
+        eprintln!("[test] Data sent");
+
+        // Read response with timeout
+        let mut buf = vec![0u8; 1024];
+        let n = tokio::time::timeout(Duration::from_secs(3), conn.read(&mut buf))
+            .await
+            .expect("timeout waiting for response")
+            .expect("read error");
+        buf.truncate(n);
+        eprintln!("[test] Got {n} bytes: {:?}", String::from_utf8_lossy(&buf));
+
+        assert_eq!(buf, b"hello world");
+
+        // Read should return 0 (EOF) now
+        let n2 = tokio::time::timeout(Duration::from_secs(2), conn.read(&mut buf))
+            .await
+            .expect("timeout waiting for EOF")
+            .expect("read error on EOF");
+        assert_eq!(n2, 0, "expected EOF after echo response");
+
+        child.kill().ok();
+        child.wait().ok();
     }
 }

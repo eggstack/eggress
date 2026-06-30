@@ -6,7 +6,6 @@ use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
 
-use crate::codec::{decode_packet, encode_socks5_udp_datagram};
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
 use crate::flow::{
@@ -18,18 +17,21 @@ use crate::metrics::UdpMetrics;
 use crate::security::validate_target;
 use crate::udp_capability::{udp_capability, UdpRelayCapability};
 use crate::upstream_socks5::{open_socks5_udp_upstream, Socks5UdpUpstreamConfig};
-use eggress_core::{ClientIdentity, ProtocolId};
+use eggress_core::{ClientIdentity, ProtocolId, TargetAddr};
+use eggress_protocol_shadowsocks::udp::{decode_udp_packet, encode_udp_packet};
 use eggress_protocol_socks::socks5::server::SocksAddr;
 use eggress_routing::{
     RouteError, RouteRequest, RouteService, SelectedRoute, SelectionReason, TransportKind,
 };
 
-pub struct StandaloneUdpConfig {
+pub struct ShadowsocksStandaloneUdpConfig {
     pub routing: Arc<dyn RouteService>,
     pub udp_metrics: Arc<UdpMetrics>,
     pub limits: UdpLimits,
     pub listener: String,
     pub generation: u64,
+    pub method: eggress_protocol_shadowsocks::CipherMethod,
+    pub password: String,
 }
 
 struct ResponseMsg {
@@ -62,9 +64,9 @@ fn can_use_flow(
             && total_flows < max_standalone_flows(limits))
 }
 
-pub async fn standalone_udp_relay(
+pub async fn shadowsocks_standalone_udp_relay(
     socket: Arc<UdpSocket>,
-    config: StandaloneUdpConfig,
+    config: ShadowsocksStandaloneUdpConfig,
     cancel: CancellationToken,
 ) -> Result<(), UdpError> {
     let mut buf = vec![0u8; config.limits.max_datagram_size];
@@ -73,14 +75,30 @@ pub async fn standalone_udp_relay(
 
     let socket_clone = socket.clone();
     let metrics_clone = config.udp_metrics.clone();
+    let resp_method = config.method;
+    let resp_password = config.password.as_bytes().to_vec();
     tokio::spawn(async move {
         while let Some(msg) = response_rx.recv().await {
-            let mut out = Vec::new();
-            encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
-            if socket_clone.send_to(&out, msg.client).await.is_ok() {
-                metrics_clone.record_standalone_packet_out(out.len() as u64);
-            } else {
-                metrics_clone.record_dropped();
+            let target_addr = socks_to_target_addr(&msg.target);
+            let mut salt = vec![0u8; resp_method.salt_size()];
+            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
+            match encode_udp_packet(
+                resp_method,
+                &resp_password,
+                &target_addr,
+                &msg.payload,
+                &salt,
+            ) {
+                Ok(encoded) => {
+                    if socket_clone.send_to(&encoded, msg.client).await.is_ok() {
+                        metrics_clone.record_standalone_packet_out(encoded.len() as u64);
+                    } else {
+                        metrics_clone.record_dropped();
+                    }
+                }
+                Err(_) => {
+                    metrics_clone.record_dropped();
+                }
             }
         }
     });
@@ -97,7 +115,11 @@ pub async fn standalone_udp_relay(
 
                     let packet = &buf[..n];
 
-                    let request = match decode_packet(packet, &config.limits) {
+                    let (target_addr, payload) = match decode_udp_packet(
+                        config.method,
+                        config.password.as_bytes(),
+                        packet,
+                    ) {
                         Ok(r) => r,
                         Err(_) => {
                             config.udp_metrics.record_standalone_malformed();
@@ -105,19 +127,24 @@ pub async fn standalone_udp_relay(
                         }
                     };
 
-                    if validate_target(&request.target).is_err() {
+                    let target_socks = target_to_socks_addr(&target_addr);
+
+                    if validate_target(&target_socks).is_err() {
                         config.udp_metrics.record_standalone_rejected();
                         continue;
                     }
 
                     config.udp_metrics.record_standalone_packet_in(n as u64);
 
-                    let target_addr = socks_to_target_addr(&request.target);
+                    let route_target = TargetAddr {
+                        host: target_addr.host.clone(),
+                        port: target_addr.port,
+                    };
                     let route_request = RouteRequest {
-                        target: &target_addr,
+                        target: &route_target,
                         source: Some(client_addr),
                         listener: &config.listener,
-                        inbound_protocol: ProtocolId::Socks5,
+                        inbound_protocol: ProtocolId::Shadowsocks,
                         identity: &ClientIdentity::Anonymous,
                         transport: TransportKind::Udp,
                     };
@@ -143,13 +170,13 @@ pub async fn standalone_udp_relay(
                         } => {
                             if selection_reason == SelectionReason::DirectFallback {
                                 tracing::debug!(
-                                    target = %request.target.host_str(),
-                                    "UDP standalone using direct fallback"
+                                    target = %target_socks.host_str(),
+                                    "Shadowsocks UDP standalone using direct fallback"
                                 );
                             }
 
                             let key = UdpFlowKey::Direct {
-                                target: request.target.clone(),
+                                target: target_socks.clone(),
                             };
                             if !can_use_flow(state, &key, total_flows, &config.limits) {
                                 config.udp_metrics.record_standalone_rejected();
@@ -176,13 +203,13 @@ pub async fn standalone_udp_relay(
                                         continue;
                                     }
                                     state.target_flows.get_mut(&UdpFlowKey::Direct {
-                                        target: request.target.clone(),
+                                        target: target_socks.clone(),
                                     }).unwrap()
                                 }
                             };
 
                             if let UdpFlowKind::Direct(ref f) = entry.flow {
-                                if f.send(request.payload).await.is_err() {
+                                if f.send(&payload).await.is_err() {
                                     config.udp_metrics.record_standalone_rejected();
                                 }
                             } else {
@@ -200,7 +227,7 @@ pub async fn standalone_udp_relay(
                         } => match udp_capability(&chain) {
                             UdpRelayCapability::SupportedSocks5 => {
                                 let key = UdpFlowKey::Socks5Upstream {
-                                    target: request.target.clone(),
+                                    target: target_socks.clone(),
                                     upstream_id: upstream.clone(),
                                 };
                                 if !can_use_flow(state, &key, total_flows, &config.limits) {
@@ -226,7 +253,7 @@ pub async fn standalone_udp_relay(
                                         match open_socks5_udp_upstream(upstream_config, None).await {
                                             Ok(upstream_assoc) => {
                                                 let active_lease = pending_lease.established();
-                                                let target = request.target.clone();
+                                                let target = target_socks.clone();
                                                 let udp_socket = upstream_assoc.udp_socket.clone();
                                                 let relay_addr = upstream_assoc.relay_addr;
                                                 let upstream_id = upstream_assoc.upstream_id.clone();
@@ -267,7 +294,7 @@ pub async fn standalone_udp_relay(
         config.udp_metrics.record_standalone_flow_created();
 
                                                 let flow = crate::flow::Socks5UdpTargetFlow {
-                                                    target: request.target.clone(),
+                                                    target: target_socks.clone(),
                                                     upstream_id,
                                                     upstream_relay_addr: relay_addr,
                                                     udp_socket,
@@ -293,7 +320,7 @@ pub async fn standalone_udp_relay(
 
                                 match &entry.flow {
                                     UdpFlowKind::Socks5Upstream(f) => {
-                                        if let Err(_e) = f.send(&request.target, request.payload).await {
+                                        if let Err(_e) = f.send(&target_socks, &payload).await {
                                             config.udp_metrics.record_standalone_rejected();
                                             continue;
                                         }
@@ -310,11 +337,11 @@ pub async fn standalone_udp_relay(
 
                                 config
                                     .udp_metrics
-                                    .record_standalone_packet_in(request.payload.len() as u64);
+                                    .record_standalone_packet_in(payload.len() as u64);
                             }
                             UdpRelayCapability::SupportedShadowsocks { method, password } => {
                                 let key = UdpFlowKey::ShadowsocksUpstream {
-                                    target: request.target.clone(),
+                                    target: target_socks.clone(),
                                     upstream_id: upstream.clone(),
                                 };
                                 if !can_use_flow(state, &key, total_flows, &config.limits) {
@@ -344,7 +371,7 @@ pub async fn standalone_udp_relay(
                                         );
 
                                         let flow_response_tx = response_tx.clone();
-                                        let flow_target = request.target.clone();
+                                        let flow_target = target_socks.clone();
                                         let flow_socket = udp_socket.clone();
                                         let flow_method = method;
                                         let flow_password = password.as_bytes().to_vec();
@@ -359,7 +386,7 @@ pub async fn standalone_udp_relay(
                                             .await
                                             {
                                                 if let Ok((resp_target, resp_payload)) =
-                                                    eggress_protocol_shadowsocks::udp::decode_udp_packet(
+                                                    decode_udp_packet(
                                                         flow_method,
                                                         &flow_password,
                                                         &recv_buf[..n],
@@ -388,7 +415,7 @@ pub async fn standalone_udp_relay(
                                         config.udp_metrics.record_standalone_flow_created();
 
                                         let flow = crate::flow::ShadowsocksUdpTargetFlow {
-                                            target: request.target.clone(),
+                                            target: target_socks.clone(),
                                             upstream_id: upstream.clone(),
                                             upstream_addr,
                                             udp_socket,
@@ -407,7 +434,7 @@ pub async fn standalone_udp_relay(
 
                                 match &entry.flow {
                                     UdpFlowKind::ShadowsocksUpstream(f) => {
-                                        if let Err(_e) = f.send(&request.target, request.payload).await {
+                                        if let Err(_e) = f.send(&target_socks, &payload).await {
                                             config.udp_metrics.record_standalone_rejected();
                                             continue;
                                         }
@@ -424,7 +451,7 @@ pub async fn standalone_udp_relay(
 
                                 config
                                     .udp_metrics
-                                    .record_standalone_packet_in(request.payload.len() as u64);
+                                    .record_standalone_packet_in(payload.len() as u64);
                             }
                             UdpRelayCapability::UnsupportedProtocol { .. } => {
                                 config.udp_metrics.record_standalone_rejected();
@@ -486,7 +513,7 @@ pub async fn standalone_udp_relay(
 
 async fn handle_new_direct_flow(
     entry: std::collections::hash_map::VacantEntry<'_, UdpFlowKey, TargetFlowEntry>,
-    config: &StandaloneUdpConfig,
+    config: &ShadowsocksStandaloneUdpConfig,
     client_addr: SocketAddr,
     response_tx: &tokio::sync::mpsc::UnboundedSender<ResponseMsg>,
 ) -> Result<(), UdpError> {
@@ -530,7 +557,7 @@ mod tests {
     use super::*;
     use crate::limits::UdpLimits;
     use crate::metrics::UdpMetrics;
-    use eggress_core::{TargetAddr, TargetHost};
+    use eggress_core::TargetHost;
     use std::sync::atomic::Ordering;
 
     fn direct_router() -> Arc<dyn RouteService> {
@@ -554,35 +581,16 @@ mod tests {
         ))
     }
 
-    fn standalone_config(routing: Arc<dyn RouteService>) -> StandaloneUdpConfig {
-        StandaloneUdpConfig {
+    fn shadowsocks_config(routing: Arc<dyn RouteService>) -> ShadowsocksStandaloneUdpConfig {
+        ShadowsocksStandaloneUdpConfig {
             routing,
             udp_metrics: Arc::new(UdpMetrics::new()),
             limits: UdpLimits::default(),
-            listener: "test-standalone".to_string(),
+            listener: "test-shadowsocks-standalone".to_string(),
             generation: 1,
+            method: eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            password: "test-password-123456".to_string(),
         }
-    }
-
-    fn standalone_config_with_limits(
-        routing: Arc<dyn RouteService>,
-        limits: UdpLimits,
-    ) -> StandaloneUdpConfig {
-        StandaloneUdpConfig {
-            routing,
-            udp_metrics: Arc::new(UdpMetrics::new()),
-            limits,
-            listener: "test-standalone".to_string(),
-            generation: 1,
-        }
-    }
-
-    fn ipv4_socks5_packet(target: [u8; 4], port: u16, payload: &[u8]) -> Vec<u8> {
-        let mut pkt = vec![0x00, 0x00, 0x00, 0x01];
-        pkt.extend_from_slice(&target);
-        pkt.extend_from_slice(&port.to_be_bytes());
-        pkt.extend_from_slice(payload);
-        pkt
     }
 
     async fn start_udp_echo() -> SocketAddr {
@@ -597,26 +605,44 @@ mod tests {
         addr
     }
 
+    fn encode_ss_packet(
+        method: eggress_protocol_shadowsocks::CipherMethod,
+        password: &[u8],
+        target: &TargetAddr,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let salt = [0x42u8; 16];
+        encode_udp_packet(method, password, target, payload, &salt).unwrap()
+    }
+
     #[tokio::test]
-    async fn standalone_echo_ipv4() {
+    async fn shadowsocks_standalone_echo_ipv4() {
         let echo_addr = start_udp_echo().await;
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
-        let config = standalone_config(direct_router());
+        let config = shadowsocks_config(direct_router());
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"hello standalone");
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: echo_addr.port(),
+        };
+        let pkt = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"hello shadowsocks",
+        );
         client_socket.send(&pkt).await.unwrap();
 
         let mut recv_buf = [0u8; 65535];
@@ -626,35 +652,49 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
-        assert_eq!(resp.payload, b"hello standalone");
+        let (resp_target, resp_payload) = decode_udp_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &recv_buf[..n],
+        )
+        .unwrap();
+        assert_eq!(resp_payload, b"hello shadowsocks");
+        assert_eq!(resp_target.port, echo_addr.port());
 
         cancel.cancel();
         relay_handle.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn standalone_route_reject_drops_packet() {
+    async fn shadowsocks_standalone_route_reject_drops_packet() {
         let echo_addr = start_udp_echo().await;
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config(reject_router());
+        let mut config = shadowsocks_config(reject_router());
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"should be dropped");
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: echo_addr.port(),
+        };
+        let pkt = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"should be dropped",
+        );
         client_socket.send(&pkt).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -670,27 +710,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn standalone_records_metrics() {
+    async fn shadowsocks_standalone_records_metrics() {
         let echo_addr = start_udp_echo().await;
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config(direct_router());
+        let mut config = shadowsocks_config(direct_router());
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"metrics test");
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: echo_addr.port(),
+        };
+        let pkt = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"metrics test",
+        );
         client_socket.send(&pkt).await.unwrap();
 
         let mut recv_buf = [0u8; 65535];
@@ -700,8 +748,13 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
-        assert_eq!(resp.payload, b"metrics test");
+        let (_, resp_payload) = decode_udp_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &recv_buf[..n],
+        )
+        .unwrap();
+        assert_eq!(resp_payload, b"metrics test");
 
         assert!(udp_metrics.standalone_packets_in.load(Ordering::Relaxed) >= 1);
         assert!(udp_metrics.standalone_packets_out.load(Ordering::Relaxed) >= 1);
@@ -712,18 +765,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn standalone_closes_on_cancel() {
+    async fn shadowsocks_standalone_closes_on_cancel() {
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
 
-        let config = standalone_config(direct_router());
+        let config = shadowsocks_config(direct_router());
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         cancel.cancel();
@@ -733,178 +785,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn standalone_flow_reused_for_same_target() {
-        let echo_addr = start_udp_echo().await;
+    async fn shadowsocks_standalone_malformed_packet_recorded() {
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config(direct_router());
+        let mut config = shadowsocks_config(direct_router());
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"reuse1");
-        client_socket.send(&pkt).await.unwrap();
-
-        let mut recv_buf = [0u8; 65535];
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            client_socket.recv(&mut recv_buf).await
-        })
-        .await
-        .unwrap()
-        .unwrap();
-
-        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"reuse2");
-        client_socket.send(&pkt2).await.unwrap();
-
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            client_socket.recv(&mut recv_buf).await
-        })
-        .await
-        .unwrap()
-        .unwrap();
-
-        // Only one flow created despite two packets to the same target
-        assert_eq!(
-            udp_metrics.standalone_flows_active.load(Ordering::Relaxed),
-            1
-        );
-
-        cancel.cancel();
-        relay_handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn standalone_per_client_limit_enforced() {
-        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
-        let relay_addr = relay_socket.local_addr().unwrap();
-
-        let limits = UdpLimits {
-            max_targets_per_association: 1,
-            ..UdpLimits::default()
-        };
-        let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config_with_limits(direct_router(), limits);
-        config.udp_metrics = udp_metrics.clone();
-        let cancel = CancellationToken::new();
-
-        let relay_cancel = cancel.clone();
-        let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
-
-        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        client_socket.connect(relay_addr).await.unwrap();
-
-        // First packet to target 8081 should create a flow
-        let pkt1 = ipv4_socks5_packet([127, 0, 0, 1], 8081, b"first");
-        client_socket.send(&pkt1).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Second packet to different target should be dropped (limit = 1)
-        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], 8082, b"second");
-        client_socket.send(&pkt2).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        assert_eq!(
-            udp_metrics
-                .standalone_rejected_datagrams
-                .load(Ordering::Relaxed),
-            1
-        );
-
-        cancel.cancel();
-        relay_handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn standalone_per_client_limit_allows_reuse() {
-        let echo_addr = start_udp_echo().await;
-        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
-        let relay_addr = relay_socket.local_addr().unwrap();
-
-        let limits = UdpLimits {
-            max_targets_per_association: 1,
-            ..UdpLimits::default()
-        };
-        let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config_with_limits(direct_router(), limits);
-        config.udp_metrics = udp_metrics.clone();
-        let cancel = CancellationToken::new();
-
-        let relay_cancel = cancel.clone();
-        let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
-
-        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        client_socket.connect(relay_addr).await.unwrap();
-
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"first");
-        client_socket.send(&pkt).await.unwrap();
-        let mut recv_buf = [0u8; 65535];
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            client_socket.recv(&mut recv_buf).await
-        })
-        .await
-        .unwrap()
-        .unwrap();
-
-        let reuse = ipv4_socks5_packet([127, 0, 0, 1], echo_addr.port(), b"reuse");
-        client_socket.send(&reuse).await.unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            client_socket.recv(&mut recv_buf).await
-        })
-        .await
-        .unwrap()
-        .unwrap();
-
-        assert_eq!(
-            udp_metrics
-                .standalone_rejected_datagrams
-                .load(Ordering::Relaxed),
-            0
-        );
-
-        cancel.cancel();
-        relay_handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn standalone_decode_error_recorded() {
-        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
-        let relay_addr = relay_socket.local_addr().unwrap();
-
-        let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config(direct_router());
-        config.udp_metrics = udp_metrics.clone();
-        let cancel = CancellationToken::new();
-
-        let relay_cancel = cancel.clone();
-        let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
-
-        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        client_socket.connect(relay_addr).await.unwrap();
-
-        // Send a malformed packet (too short for SOCKS5 UDP header)
         client_socket.send(&[0x00, 0x00]).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -920,45 +818,193 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn standalone_target_flow_timeout() {
+    async fn shadowsocks_standalone_flow_reused_for_same_target() {
+        let echo_addr = start_udp_echo().await;
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
-        let limits = UdpLimits {
-            target_idle_timeout: std::time::Duration::from_millis(100),
-            idle_timeout: std::time::Duration::from_secs(10),
-            ..UdpLimits::default()
-        };
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config_with_limits(direct_router(), limits);
+        let mut config = shadowsocks_config(direct_router());
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        // Send a packet to create a flow
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"timeout test");
-        client_socket.send(&pkt).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: echo_addr.port(),
+        };
+        let pkt1 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"reuse1",
+        );
+        client_socket.send(&pkt1).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let pkt2 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"reuse2",
+        );
+        client_socket.send(&pkt2).await.unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
         assert_eq!(
             udp_metrics.standalone_flows_active.load(Ordering::Relaxed),
             1
         );
 
-        // Wait for target idle timeout
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn shadowsocks_standalone_per_client_limit_enforced() {
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let limits = UdpLimits {
+            max_targets_per_association: 1,
+            ..UdpLimits::default()
+        };
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = shadowsocks_config(direct_router());
+        config.limits = limits;
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let target1 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8081,
+        };
+        let pkt1 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target1,
+            b"first",
+        );
+        client_socket.send(&pkt1).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let target2 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8082,
+        };
+        let pkt2 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target2,
+            b"second",
+        );
+        client_socket.send(&pkt2).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         assert_eq!(
-            udp_metrics.standalone_flows_active.load(Ordering::Relaxed),
+            udp_metrics
+                .standalone_rejected_datagrams
+                .load(Ordering::Relaxed),
+            1
+        );
+
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn shadowsocks_standalone_per_client_limit_allows_reuse() {
+        let echo_addr = start_udp_echo().await;
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let relay_addr = relay_socket.local_addr().unwrap();
+
+        let limits = UdpLimits {
+            max_targets_per_association: 1,
+            ..UdpLimits::default()
+        };
+        let udp_metrics = Arc::new(UdpMetrics::new());
+        let mut config = shadowsocks_config(direct_router());
+        config.limits = limits;
+        config.udp_metrics = udp_metrics.clone();
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client_socket.connect(relay_addr).await.unwrap();
+
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: echo_addr.port(),
+        };
+        let pkt1 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"first",
+        );
+        client_socket.send(&pkt1).await.unwrap();
+
+        let mut recv_buf = [0u8; 65535];
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let pkt2 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target,
+            b"reuse",
+        );
+        client_socket.send(&pkt2).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            client_socket.recv(&mut recv_buf).await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            udp_metrics
+                .standalone_rejected_datagrams
+                .load(Ordering::Relaxed),
             0
         );
 
@@ -967,36 +1013,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn standalone_ipv6_target() {
+    async fn shadowsocks_standalone_wrong_password_fails() {
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config(direct_router());
+        let mut config = shadowsocks_config(direct_router());
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        // Send to a likely-unreachable IPv6 target - should not panic, just drop
-        let pkt = ipv4_socks5_packet([127, 0, 0, 1], 9999, b"v6 test");
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8080,
+        };
+        let pkt = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"wrong-password-xxxxx",
+            &target,
+            b"wrong password",
+        );
         client_socket.send(&pkt).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert_eq!(
+            udp_metrics
+                .standalone_malformed_datagrams
+                .load(Ordering::Relaxed),
+            1
+        );
 
         cancel.cancel();
         relay_handle.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn standalone_global_flow_cap_enforced() {
+    async fn shadowsocks_standalone_global_flow_cap_enforced() {
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
@@ -1006,34 +1066,59 @@ mod tests {
             ..UdpLimits::default()
         };
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config_with_limits(direct_router(), limits);
+        let mut config = shadowsocks_config(direct_router());
+        config.limits = limits;
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        // Create two flows (to different targets) from client1
-        let pkt1 = ipv4_socks5_packet([127, 0, 0, 1], 8081, b"flow1");
+        let target1 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8081,
+        };
+        let pkt1 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target1,
+            b"flow1",
+        );
         client_socket.send(&pkt1).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], 8082, b"flow2");
+        let target2 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8082,
+        };
+        let pkt2 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target2,
+            b"flow2",
+        );
         client_socket.send(&pkt2).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        // Third flow from a different client should be dropped (global cap = 2)
         let client2 = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client2.connect(relay_addr).await.unwrap();
 
-        let pkt3 = ipv4_socks5_packet([127, 0, 0, 1], 8083, b"flow3");
+        let target3 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8083,
+        };
+        let pkt3 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target3,
+            b"flow3",
+        );
         client2.send(&pkt3).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -1049,7 +1134,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn standalone_global_flow_cap_rejects_new_target_from_existing_client() {
+    async fn shadowsocks_standalone_global_flow_cap_rejects_new_target_from_existing_client() {
         let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let relay_addr = relay_socket.local_addr().unwrap();
 
@@ -1059,25 +1144,43 @@ mod tests {
             ..UdpLimits::default()
         };
         let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config_with_limits(direct_router(), limits);
+        let mut config = shadowsocks_config(direct_router());
+        config.limits = limits;
         config.udp_metrics = udp_metrics.clone();
         let cancel = CancellationToken::new();
 
         let relay_cancel = cancel.clone();
         let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
+        let relay_handle = tokio::spawn(async move {
+            shadowsocks_standalone_udp_relay(relay_sock, config, relay_cancel).await
+        });
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client_socket.connect(relay_addr).await.unwrap();
 
-        let pkt1 = ipv4_socks5_packet([127, 0, 0, 1], 8081, b"flow1");
+        let target1 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8081,
+        };
+        let pkt1 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target1,
+            b"flow1",
+        );
         client_socket.send(&pkt1).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], 8082, b"flow2");
+        let target2 = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 8082,
+        };
+        let pkt2 = encode_ss_packet(
+            eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
+            b"test-password-123456",
+            &target2,
+            b"flow2",
+        );
         client_socket.send(&pkt2).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -1090,126 +1193,5 @@ mod tests {
 
         cancel.cancel();
         relay_handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn standalone_flow_cap_allows_reuse() {
-        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
-        let relay_addr = relay_socket.local_addr().unwrap();
-
-        let limits = UdpLimits {
-            max_standalone_flows: 2,
-            max_targets_per_association: 10,
-            ..UdpLimits::default()
-        };
-        let udp_metrics = Arc::new(UdpMetrics::new());
-        let mut config = standalone_config_with_limits(direct_router(), limits);
-        config.udp_metrics = udp_metrics.clone();
-        let cancel = CancellationToken::new();
-
-        let relay_cancel = cancel.clone();
-        let relay_sock = relay_socket.clone();
-        let relay_handle =
-            tokio::spawn(
-                async move { standalone_udp_relay(relay_sock, config, relay_cancel).await },
-            );
-
-        let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        client_socket.connect(relay_addr).await.unwrap();
-
-        // Create two flows
-        let pkt1 = ipv4_socks5_packet([127, 0, 0, 1], 8081, b"flow1");
-        client_socket.send(&pkt1).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let pkt2 = ipv4_socks5_packet([127, 0, 0, 1], 8082, b"flow2");
-        client_socket.send(&pkt2).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Reuse of existing flow should succeed even at cap
-        let pkt1_reuse = ipv4_socks5_packet([127, 0, 0, 1], 8081, b"reuse");
-        client_socket.send(&pkt1_reuse).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // No dropped packets - reuse is allowed
-        assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 0);
-
-        cancel.cancel();
-        relay_handle.await.unwrap().unwrap();
-    }
-
-    #[test]
-    fn socks_to_target_addr_conversion() {
-        let ipv4 = SocksAddr::IPv4([192, 168, 1, 1], 8080);
-        let addr = socks_to_target_addr(&ipv4);
-        assert_eq!(addr.port, 8080);
-        assert_eq!(addr.host, TargetHost::Ip("192.168.1.1".parse().unwrap()));
-
-        let domain = SocksAddr::Domain("example.com".to_string(), 443);
-        let addr = socks_to_target_addr(&domain);
-        assert_eq!(addr.port, 443);
-        assert_eq!(addr.host, TargetHost::Domain("example.com".to_string()));
-    }
-
-    #[test]
-    fn socks_addr_equivalent_ipv4() {
-        let a = SocksAddr::IPv4([127, 0, 0, 1], 80);
-        let b = SocksAddr::IPv4([127, 0, 0, 1], 80);
-        assert!(socks_addr_equivalent(&a, &b));
-
-        let c = SocksAddr::IPv4([127, 0, 0, 1], 443);
-        assert!(!socks_addr_equivalent(&a, &c));
-    }
-
-    #[test]
-    fn socks_addr_equivalent_domain() {
-        let a = SocksAddr::Domain("example.com".to_string(), 443);
-        let b = SocksAddr::Domain("example.com".to_string(), 443);
-        assert!(socks_addr_equivalent(&a, &b));
-
-        let c = SocksAddr::Domain("other.com".to_string(), 443);
-        assert!(!socks_addr_equivalent(&a, &c));
-    }
-
-    #[test]
-    fn socks_addr_equivalent_mixed() {
-        let ipv4 = SocksAddr::IPv4([127, 0, 0, 1], 80);
-        let domain = SocksAddr::Domain("example.com".to_string(), 80);
-        assert!(!socks_addr_equivalent(&ipv4, &domain));
-    }
-
-    #[test]
-    fn target_to_socks_addr_roundtrip() {
-        let addr = TargetAddr {
-            host: TargetHost::Ip(std::net::IpAddr::V4("10.0.0.1".parse().unwrap())),
-            port: 9090,
-        };
-        let socks = target_to_socks_addr(&addr);
-        assert_eq!(socks, SocksAddr::IPv4([10, 0, 0, 1], 9090));
-
-        let addr = TargetAddr {
-            host: TargetHost::Domain("test.example".to_string()),
-            port: 443,
-        };
-        let socks = target_to_socks_addr(&addr);
-        assert_eq!(socks, SocksAddr::Domain("test.example".to_string(), 443));
-    }
-
-    #[test]
-    fn max_standalone_flows_default_uses_global() {
-        let limits = UdpLimits::default();
-        assert_eq!(
-            max_standalone_flows(&limits),
-            limits.max_associations_global
-        );
-    }
-
-    #[test]
-    fn max_standalone_flows_explicit() {
-        let limits = UdpLimits {
-            max_standalone_flows: 42,
-            ..UdpLimits::default()
-        };
-        assert_eq!(max_standalone_flows(&limits), 42);
     }
 }

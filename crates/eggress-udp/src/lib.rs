@@ -9,6 +9,7 @@ pub mod registry;
 pub mod relay;
 pub mod security;
 pub mod standalone;
+pub mod standalone_shadowsocks;
 pub mod testkit;
 pub mod udp_capability;
 pub mod upstream_socks5;
@@ -21,4 +22,5 @@ pub use udp_capability::*;
 pub enum UdpMode {
     Socks5UdpAssociate,
     StandalonePproxyUdp,
+    ShadowsocksUdp,
 }

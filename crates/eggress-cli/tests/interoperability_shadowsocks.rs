@@ -3,27 +3,15 @@
 //! These tests verify that eggress can interoperate with external Shadowsocks
 //! implementations (`ssserver`/`sslocal` from shadowsocks-rust or shadowsocks-libev).
 //!
-//! # TCP Tests: Expected to Fail
-//!
-//! The eggress Shadowsocks TCP implementation uses **non-standard AEAD framing**:
-//! - Standard: two separate AEAD operations per chunk (encrypted length + encrypted payload)
-//! - Eggress: single AEAD operation with cleartext 2-byte length prefix
-//!
-//! This means TCP interop tests against standard Shadowsocks servers will fail
-//! with AEAD decryption errors after the initial handshake. See
-//! `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md` for details.
-//!
-//! # UDP Tests: Standard-Compliant
-//!
-//! The eggress Shadowsocks UDP implementation uses standard AEAD format and has
-//! a better chance of interoperating with standard implementations.
+//! Both TCP and UDP use standard SIP003 AEAD framing and are wire-compatible
+//! with standard Shadowsocks implementations.
 //!
 //! # Running
 //!
 //! All tests are `#[ignore]` and gated behind `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1`.
 //!
 //! ```bash
-//! # TCP tests (expected to fail due to non-standard framing)
+//! # Run all interop tests
 //! EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
 //!
 //! # Run only UDP tests
@@ -185,14 +173,13 @@ async fn start_external_ssserver(
     let child = std::process::Command::new(ssserver_bin())
         .args([
             "-s",
-            "127.0.0.1",
-            "-p",
-            &port.to_string(),
+            &format!("127.0.0.1:{port}"),
             "-m",
             method,
             "-k",
             password,
-            "--no-delay",
+            "-U",
+            "--tcp-no-delay",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -205,6 +192,48 @@ async fn start_external_ssserver(
     if !wait_for_port(port, Duration::from_secs(5)).await {
         panic!("ssserver failed to start on port {port}");
     }
+
+    (addr, guard)
+}
+
+/// Start an external sslocal process using a config file.
+///
+/// Returns the local SOCKS5 address and a process guard that kills the client on drop.
+fn start_sslocal(
+    server_addr: std::net::SocketAddr,
+    password: &str,
+    method: &str,
+) -> (std::net::SocketAddr, ProcessGuard) {
+    // Bind a TCP port for the SOCKS5 local listener
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let socks_port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    // Write a temp config file for sslocal
+    let config = serde_json::json!({
+        "server": "127.0.0.1",
+        "server_port": server_addr.port(),
+        "password": password,
+        "method": method,
+        "local_address": "127.0.0.1",
+        "local_port": socks_port,
+    });
+    let mut config_file = tempfile::NamedTempFile::new().expect("create sslocal config tempfile");
+    std::io::Write::write_all(&mut config_file, config.to_string().as_bytes())
+        .expect("write sslocal config");
+    std::io::Write::flush(&mut config_file).expect("flush sslocal config");
+    let config_path = config_file.path().to_str().unwrap().to_string();
+    std::mem::forget(config_file);
+
+    let child = std::process::Command::new(sslocal_bin())
+        .args(["-c", &config_path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start sslocal");
+
+    let addr = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), socks_port);
+    let guard = ProcessGuard::new(child);
 
     (addr, guard)
 }
@@ -419,15 +448,6 @@ async fn send_udp_through_socks5(
 // ===== TCP Interop Tests =====
 
 /// TCP interop: eggress Shadowsocks upstream → external ssserver → TCP echo.
-///
-/// **Expected to FAIL** due to non-standard Shadowsocks TCP framing.
-///
-/// Eggress uses a single AEAD operation with cleartext length prefix, while
-/// standard Shadowsocks uses two separate AEAD operations (encrypted length +
-/// encrypted payload). The external ssserver will fail to decrypt Eggress's
-/// data chunks after the initial handshake.
-///
-/// See `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md` for the full audit.
 #[tokio::test]
 #[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver/sslocal"]
 async fn interop_shadowsocks_tcp_eggress_to_external_server() {
@@ -437,11 +457,9 @@ async fn interop_shadowsocks_tcp_eggress_to_external_server() {
     let password = "test-password-interop";
     let method = "aes-256-gcm";
 
-    // Start external ssserver (standard implementation)
     let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
 
-    // Start eggress with SOCKS5 inbound + Shadowsocks upstream → external ssserver
-    let ss_uri = format!("ss://{}@127.0.0.1:{}#{method}", password, ss_addr.port());
+    let ss_uri = format!("ss://{method}:{password}@127.0.0.1:{}", ss_addr.port());
     let config = format!(
         r#"
 version = 1
@@ -469,44 +487,23 @@ upstream_group = "route-group"
     let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Attempt TCP echo through eggress SOCKS5 → external ssserver → echo
-    // This is EXPECTED TO FAIL because eggress's Shadowsocks TCP framing is non-standard.
-    let result = send_through_socks5(
+    let payload = send_through_socks5(
         proxy_addr,
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"interop tcp test",
     )
-    .await;
+    .await
+    .expect("TCP interop failed");
+
+    assert_eq!(payload, b"interop tcp test");
 
     cancel.cancel();
     let _ = proxy_jh.await;
     echo_jh.abort();
-
-    // Document the expected failure rather than asserting it,
-    // since the behavior may change if the framing is fixed in the future.
-    match &result {
-        Ok(payload) => {
-            // Unexpected success — this would mean the framing is compatible
-            eprintln!("UNEXPECTED: TCP interop succeeded with payload: {payload:?}");
-        }
-        Err(e) => {
-            // Expected failure due to non-standard framing
-            eprintln!("EXPECTED FAILURE: TCP interop failed as anticipated: {e}");
-            eprintln!(
-                "This is expected because eggress uses non-standard Shadowsocks TCP framing."
-            );
-            eprintln!("See docs/protocols/SHADOWSOCKS_TCP_AUDIT.md");
-        }
-    }
 }
 
-/// TCP interop: external sslocal → eggress Shadowsocks server (via TOML config) → TCP echo.
-///
-/// **Expected to FAIL** due to non-standard framing.
-///
-/// A standard sslocal connecting to an eggress Shadowsocks server will fail
-/// because eggress's server-side framing is also non-standard.
+/// TCP interop: external sslocal → eggress Shadowsocks server → TCP echo.
 #[tokio::test]
 #[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver/sslocal"]
 async fn interop_shadowsocks_tcp_external_client_to_eggress() {
@@ -516,8 +513,6 @@ async fn interop_shadowsocks_tcp_external_client_to_eggress() {
     let password = "test-password-reverse";
     let method = "aes-256-gcm";
 
-    // Start eggress with inbound Shadowsocks server (via TOML config with ss:// URI)
-    // This uses eggress's SS server mode which is also non-standard.
     let ss_config = r#"
 version = 1
 
@@ -526,92 +521,47 @@ name = "ss-in"
 bind = "127.0.0.1:0"
 protocols = ["shadowsocks"]
 
-[[upstreams]]
-id = "direct"
-uri = "direct://"
-
-[[upstream_groups]]
-id = "route-group"
-scheduler = "first-available"
-members = ["direct"]
+[listeners.shadowsocks]
+method = "aes-256-gcm"
+password = "test-password-reverse"
 
 [[rules]]
 id = "route-all"
-upstream_group = "route-group"
+direct = true
 "#
     .to_string();
 
     let (ss_addr, cancel, ss_jh) = start_eggress_from_toml_running(&ss_config).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Start local sslocal pointing to our eggress SS server, exposing a SOCKS5 port
-    let socks_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let socks_port = socks_listener.local_addr().unwrap().port();
-    drop(socks_listener);
+    let (socks_addr, mut _sslocal_guard) = start_sslocal(ss_addr, password, method);
 
-    let sslocal_child = std::process::Command::new(sslocal_bin())
-        .args([
-            "-s",
-            &ss_addr.ip().to_string(),
-            "-p",
-            &ss_addr.port().to_string(),
-            "-m",
-            method,
-            "-k",
-            password,
-            "-l",
-            &socks_port.to_string(),
-            "-b",
-            "127.0.0.1",
-            "--no-delay",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to start sslocal");
-    let mut _sslocal_guard = ProcessGuard::new(sslocal_child);
-
-    if !wait_for_port(socks_port, Duration::from_secs(5)).await {
-        eprintln!("sslocal failed to start, skipping test");
+    if !wait_for_port(socks_addr.port(), Duration::from_secs(5)).await {
         cancel.cancel();
         let _ = ss_jh.await;
         echo_jh.abort();
-        return;
+        panic!("sslocal failed to start");
     }
 
-    // Attempt TCP echo through sslocal → eggress SS server → echo
-    // This is EXPECTED TO FAIL because eggress's framing is non-standard.
-    let result = send_through_socks5(
-        std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), socks_port),
+    let payload = send_through_socks5(
+        socks_addr,
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"interop tcp test reverse",
     )
-    .await;
+    .await
+    .expect("TCP interop (reverse) failed");
+
+    assert_eq!(payload, b"interop tcp test reverse");
 
     cancel.cancel();
     let _ = ss_jh.await;
     echo_jh.abort();
-
-    match &result {
-        Ok(payload) => {
-            eprintln!("UNEXPECTED: TCP interop succeeded with payload: {payload:?}");
-        }
-        Err(e) => {
-            eprintln!("EXPECTED FAILURE: TCP interop failed as anticipated: {e}");
-            eprintln!(
-                "This is expected because eggress uses non-standard Shadowsocks TCP framing."
-            );
-        }
-    }
 }
 
 // ===== UDP Interop Tests =====
 
 /// UDP interop: eggress Shadowsocks UDP → external ssserver → UDP echo.
-///
-/// Shadowsocks UDP is standard-compliant, so this test has a better chance of
-/// passing against standard implementations.
 #[tokio::test]
 #[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver"]
 async fn interop_shadowsocks_udp_eggress_to_external_server() {
@@ -623,12 +573,9 @@ async fn interop_shadowsocks_udp_eggress_to_external_server() {
     let cipher: eggress_protocol_shadowsocks::CipherMethod =
         eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
 
-    // Start external ssserver with UDP relay
     let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
 
-    // Build a Shadowsocks UDP packet and send it to the ssserver
     let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
-    // Use a fixed salt for testing (salt value doesn't affect correctness, only length matters)
     let salt = vec![0x42u8; cipher.salt_size()];
 
     let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
@@ -649,7 +596,6 @@ async fn interop_shadowsocks_udp_eggress_to_external_server() {
         .await
         .expect("send failed");
 
-    // Read response with timeout
     let mut buf = [0u8; 65535];
     let mut response = None;
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
@@ -663,37 +609,18 @@ async fn interop_shadowsocks_udp_eggress_to_external_server() {
         }
     }
 
-    match &response {
-        Some(data) => {
-            // Try to decode the response
-            match eggress_protocol_shadowsocks::udp::decode_udp_packet(
-                cipher,
-                password.as_bytes(),
-                data,
-            ) {
-                Ok((_target, payload)) => {
-                    assert_eq!(payload, b"interop udp test", "UDP payload mismatch");
-                }
-                Err(e) => {
-                    eprintln!("UDP decode failed: {e}");
-                    eprintln!("Raw response: {} bytes", data.len());
-                }
-            }
-        }
-        None => {
-            eprintln!("No UDP response received from external ssserver");
-            eprintln!("This may indicate framing incompatibility or ssserver not relaying UDP");
-        }
-    }
+    let data = response.expect("No UDP response received from external ssserver");
+    let (_target, payload) =
+        eggress_protocol_shadowsocks::udp::decode_udp_packet(cipher, password.as_bytes(), &data)
+            .expect("UDP decode failed");
+
+    assert_eq!(payload, b"interop udp test");
 
     _ss_guard.kill();
     udp_jh.abort();
 }
 
 /// UDP interop: verify UDP via full TOML-configured eggress stack.
-///
-/// Uses eggress's full runtime with a TOML-configured Shadowsocks upstream
-/// to test the complete path through SOCKS5 UDP ASSOCIATE.
 #[tokio::test]
 #[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver"]
 async fn interop_shadowsocks_udp_via_toml_config() {
@@ -703,10 +630,8 @@ async fn interop_shadowsocks_udp_via_toml_config() {
     let password = "test-password-toml";
     let method = "aes-256-gcm";
 
-    // Start external ssserver
     let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
 
-    // Configure eggress with SOCKS5 inbound and Shadowsocks upstream
     let config = format!(
         r#"
 version = 1
@@ -718,7 +643,7 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "ss-up"
-uri = "ss://{}@127.0.0.1:{}#{method}"
+uri = "ss://{method}:{password}@127.0.0.1:{}"
 
 [[upstream_groups]]
 id = "route-group"
@@ -729,29 +654,21 @@ members = ["ss-up"]
 id = "route-all"
 upstream_group = "route-group"
 "#,
-        password,
         ss_addr.port()
     );
 
     let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Send a UDP packet through eggress SOCKS5 → Shadowsocks UDP → echo
-    let result = send_udp_through_socks5(proxy_addr, udp_echo_addr, b"toml config udp test").await;
+    let payload = send_udp_through_socks5(proxy_addr, udp_echo_addr, b"toml config udp test")
+        .await
+        .expect("UDP interop via TOML config failed");
+
+    assert_eq!(payload, b"toml config udp test");
 
     cancel.cancel();
     let _ = proxy_jh.await;
     udp_jh.abort();
-
-    match &result {
-        Ok(payload) => {
-            assert_eq!(payload, b"toml config udp test", "UDP payload mismatch");
-        }
-        Err(e) => {
-            eprintln!("UDP interop via TOML config failed: {e}");
-            eprintln!("This may indicate UDP framing incompatibility with the external ssserver");
-        }
-    }
 }
 
 // ===== Wrong Password Tests =====
@@ -782,7 +699,7 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "ss-up"
-uri = "ss://{}@127.0.0.1:{}#{method}"
+uri = "ss://{method}:{}@127.0.0.1:{}"
 
 [[upstream_groups]]
 id = "route-group"
@@ -895,7 +812,7 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "ss-up"
-uri = "ss://{}@127.0.0.1:{}#{method}"
+uri = "ss://{method}:{password}@127.0.0.1:{}"
 
 [[upstream_groups]]
 id = "route-group"
@@ -906,30 +823,26 @@ members = ["ss-up"]
 id = "route-all"
 upstream_group = "route-group"
 "#,
-        password,
         ss_addr.port()
     );
 
     let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Expected to fail due to non-standard TCP framing
-    let result = send_through_socks5(
+    let payload = send_through_socks5(
         proxy_addr,
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"aes-128-gcm test",
     )
-    .await;
+    .await
+    .expect("TCP interop failed with aes-128-gcm");
+
+    assert_eq!(payload, b"aes-128-gcm test");
 
     cancel.cancel();
     let _ = proxy_jh.await;
     echo_jh.abort();
-
-    match &result {
-        Ok(p) => eprintln!("UNEXPECTED SUCCESS with aes-128-gcm: {p:?}"),
-        Err(e) => eprintln!("EXPECTED FAILURE with aes-128-gcm: {e}"),
-    }
 }
 
 /// Test TCP interop with chacha20-ietf-poly1305 method.
@@ -955,7 +868,7 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "ss-up"
-uri = "ss://{}@127.0.0.1:{}#{method}"
+uri = "ss://{method}:{password}@127.0.0.1:{}"
 
 [[upstream_groups]]
 id = "route-group"
@@ -966,30 +879,26 @@ members = ["ss-up"]
 id = "route-all"
 upstream_group = "route-group"
 "#,
-        password,
         ss_addr.port()
     );
 
     let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Expected to fail due to non-standard TCP framing
-    let result = send_through_socks5(
+    let payload = send_through_socks5(
         proxy_addr,
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"chacha20 test",
     )
-    .await;
+    .await
+    .expect("TCP interop failed with chacha20-ietf-poly1305");
+
+    assert_eq!(payload, b"chacha20 test");
 
     cancel.cancel();
     let _ = proxy_jh.await;
     echo_jh.abort();
-
-    match &result {
-        Ok(p) => eprintln!("UNEXPECTED SUCCESS with chacha20-ietf-poly1305: {p:?}"),
-        Err(e) => eprintln!("EXPECTED FAILURE with chacha20-ietf-poly1305: {e}"),
-    }
 }
 
 /// Test UDP interop with aes-128-gcm method.
@@ -1051,12 +960,12 @@ async fn interop_shadowsocks_udp_aes_128_gcm() {
                     assert_eq!(payload, b"aes-128-gcm udp test", "UDP payload mismatch");
                 }
                 Err(e) => {
-                    eprintln!("UDP decode failed: {e}");
+                    panic!("UDP decode failed: {e}");
                 }
             }
         }
         None => {
-            eprintln!("No UDP response received (may indicate incompatibility)");
+            panic!("No UDP response received from external ssserver");
         }
     }
 
@@ -1123,15 +1032,175 @@ async fn interop_shadowsocks_udp_chacha20_ietf_poly1305() {
                     assert_eq!(payload, b"chacha20 udp test", "UDP payload mismatch");
                 }
                 Err(e) => {
-                    eprintln!("UDP decode failed: {e}");
+                    panic!("UDP decode failed: {e}");
                 }
             }
         }
         None => {
-            eprintln!("No UDP response received (may indicate incompatibility)");
+            panic!("No UDP response received from external ssserver");
         }
     }
 
     _ss_guard.kill();
+    udp_jh.abort();
+}
+
+// ===== Inbound Shadowsocks UDP Tests =====
+
+/// Inbound Shadowsocks UDP: eggress receives encrypted packet, decrypts,
+/// forwards to UDP echo, re-encrypts response.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1"]
+async fn interop_shadowsocks_udp_inbound_echo() {
+    require_shadowsocks_interop();
+
+    let (udp_echo_addr, udp_jh) = start_udp_echo().await;
+    let password = "test-password-inbound-udp";
+    let method = "aes-256-gcm";
+    let cipher: eggress_protocol_shadowsocks::CipherMethod =
+        eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
+
+    let ss_config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "ss-in"
+bind = "127.0.0.1:0"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+method = "{method}"
+password = "{password}"
+
+[listeners.udp]
+mode = "shadowsocks_udp"
+client_pin = true
+
+[[rules]]
+id = "route-all"
+direct = true
+"#
+    );
+
+    let (ss_addr, cancel, ss_jh) = start_eggress_from_toml_running(&ss_config).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
+    let salt = vec![0x55u8; cipher.salt_size()];
+
+    let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
+        cipher,
+        password.as_bytes(),
+        &eggress_core::TargetAddr {
+            host: eggress_core::TargetHost::Ip(target.ip()),
+            port: target.port(),
+        },
+        b"inbound udp echo",
+        &salt,
+    )
+    .expect("encode failed");
+
+    let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    udp_sock
+        .send_to(&encoded, ss_addr)
+        .await
+        .expect("send failed");
+
+    let mut buf = [0u8; 65535];
+    let mut response = None;
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(200), udp_sock.recv_from(&mut buf)).await {
+            Ok(Ok((n, _))) => {
+                response = Some(buf[..n].to_vec());
+                break;
+            }
+            _ => continue,
+        }
+    }
+
+    let data = response.expect("No UDP response received from eggress inbound SS server");
+    let (_target, payload) =
+        eggress_protocol_shadowsocks::udp::decode_udp_packet(cipher, password.as_bytes(), &data)
+            .expect("UDP decode failed");
+
+    assert_eq!(payload, b"inbound udp echo");
+
+    cancel.cancel();
+    let _ = ss_jh.await;
+    udp_jh.abort();
+}
+
+/// Inbound Shadowsocks UDP: wrong password should produce no response.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1"]
+async fn interop_shadowsocks_udp_inbound_wrong_password() {
+    require_shadowsocks_interop();
+
+    let (udp_echo_addr, udp_jh) = start_udp_echo().await;
+    let correct_password = "correct-password-inbound";
+    let wrong_password = "wrong-password-inbound";
+    let method = "aes-256-gcm";
+    let cipher: eggress_protocol_shadowsocks::CipherMethod =
+        eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
+
+    let ss_config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "ss-in"
+bind = "127.0.0.1:0"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+method = "{method}"
+password = "{correct_password}"
+
+[listeners.udp]
+mode = "shadowsocks_udp"
+client_pin = true
+
+[[rules]]
+id = "route-all"
+direct = true
+"#
+    );
+
+    let (ss_addr, cancel, ss_jh) = start_eggress_from_toml_running(&ss_config).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
+    let salt = vec![0x56u8; cipher.salt_size()];
+
+    let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
+        cipher,
+        wrong_password.as_bytes(),
+        &eggress_core::TargetAddr {
+            host: eggress_core::TargetHost::Ip(target.ip()),
+            port: target.port(),
+        },
+        b"should fail",
+        &salt,
+    )
+    .expect("encode failed");
+
+    let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    udp_sock
+        .send_to(&encoded, ss_addr)
+        .await
+        .expect("send failed");
+
+    let mut buf = [0u8; 65535];
+    let result = tokio::time::timeout(Duration::from_secs(2), udp_sock.recv_from(&mut buf)).await;
+
+    assert!(
+        result.is_err(),
+        "wrong password should not produce a response, but got data"
+    );
+
+    cancel.cancel();
+    let _ = ss_jh.await;
     udp_jh.abort();
 }
