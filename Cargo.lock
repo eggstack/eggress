@@ -647,6 +647,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "eggress-protocol-reverse"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "eggress-core",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "eggress-protocol-shadowsocks"
 version = "0.1.0"
 dependencies = [

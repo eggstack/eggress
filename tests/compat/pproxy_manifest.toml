@@ -970,3 +970,68 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "pproxy raw:// and tunnel:// URI scheme support"
+
+# ─── Phase 27: Reverse/Backward Proxying (Captured) ─────────────────
+
+[[features]]
+id = "backward_tcp_control"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
+tests = []
+divergence = "Captured from pproxy 2.7.9 source; not implemented. Backward control channel establishes outbound TCP, sends auth, receives 1-byte handshake, then relays raw proxy streams."
+
+[[features]]
+id = "backward_auth"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
+tests = []
+divergence = "Simple raw-byte auth comparison on backward channel; no challenge-response. Plaintext by default."
+
+[[features]]
+id = "backward_reconnect"
+category = "platform"
+pproxy_version = "2.7.9"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
+tests = []
+divergence = "Exponential backoff: 0s, 0.1s, 0.23s, 0.4s, ... capped at 30s. Reset on success. Each backward connection carries one session; reconnects after session ends."
+
+[[features]]
+id = "backward_parallel_connections"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
+tests = []
+divergence = "Multiple +in tokens in URI create parallel backward control connections. Count of +in determines backward_num."
+
+[[features]]
+id = "backward_jump_chain"
+category = "protocol"
+pproxy_version = "2.7.9"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
+tests = []
+divergence = "Backward +in combined with __ jump chain: backward client receives streams, forwards through remaining hops."
+
+[[features]]
+id = "backward_tls"
+category = "transport"
+pproxy_version = "2.7.9"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
+tests = []
+divergence = "TLS wrapping available via +ssl modifier on backward URI."
+
+[[features]]
+id = "backward_no_udp"
+category = "udp"
+pproxy_version = "2.7.9"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
+tests = []
+divergence = "pproxy does not support UDP reverse proxying. Only TCP streams are multiplexed over backward control channel."

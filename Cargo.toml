@@ -29,6 +29,7 @@ members = [
     "crates/eggress-embed",
     "crates/eggress-python",
     "crates/eggress-protocol-websocket",
+    "crates/eggress-protocol-reverse",
 ]
 
 [workspace.package]
@@ -103,6 +104,7 @@ eggress-runtime = { path = "crates/eggress-runtime" }
 eggress-pproxy-compat = { path = "crates/eggress-pproxy-compat" }
 eggress-embed = { path = "crates/eggress-embed" }
 eggress-protocol-websocket = { path = "crates/eggress-protocol-websocket" }
+eggress-protocol-reverse = { path = "crates/eggress-protocol-reverse" }
 
 [dependencies]
 criterion.workspace = true

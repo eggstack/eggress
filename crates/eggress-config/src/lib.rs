@@ -318,6 +318,8 @@ protocols = ["http"]
             rules_file: None,
             routing: None,
             admin: None,
+            reverse_servers: None,
+            reverse_clients: None,
         };
         let rt = compile::compile_config(&config).unwrap();
         assert_eq!(rt.process.log_level, "info");
@@ -341,6 +343,8 @@ protocols = ["http"]
             rules_file: None,
             routing: None,
             admin: None,
+            reverse_servers: None,
+            reverse_clients: None,
         };
         let rt = compile::compile_config(&config).unwrap();
         assert!(rt.admin.is_none());

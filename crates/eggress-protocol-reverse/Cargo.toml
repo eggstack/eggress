@@ -1,0 +1,18 @@
+[package]
+name = "eggress-protocol-reverse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Reverse/backward proxy protocol for eggress (pproxy-compatible)"
+
+[dependencies]
+tokio.workspace = true
+tokio-util.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+bytes.workspace = true
+eggress-core.workspace = true
+
+[lints]
+workspace = true

@@ -440,7 +440,7 @@ policy, architecture, or scope.
 | QUIC transport | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. pproxy behavior experimental, dependency significant. |
 | HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
 | SSH transport | `ssh://` | Out of scope. SSH is a general-purpose encrypted tunnel, not a proxy protocol. Adds significant dependency weight. |
-| Reverse/backward proxying | Not in pproxy | Eggress is a forward proxy only. Reverse proxy is a different product category. |
+| Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with length-prefixed frame protocol (Phase 27). TCP only; no multiplexing in pproxy-compat mode. |
 | Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
 | Insecure TLS defaults | `--insecure` flag | Eggress requires TLS verification by default. Insecure mode is API-only, not configurable via TOML. |
@@ -531,6 +531,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream and inbound listener (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
 - **Implemented as supported**: Transparent TCP proxy (Linux, `redir://`), Unix domain socket listeners (Unix, `unix://`)
 - **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, WebSocket tunnels, Raw fixed-target tunnels, TLS ALPN negotiation
+- **Implemented as supported (Phase 27)**: Reverse/backward proxying (length-prefixed frame protocol, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
 - **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Trojan inbound listener
@@ -538,6 +539,119 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 ### Diagnostic behavior
 
 When an unsupported protocol or feature is encountered in pproxy compat mode, eggress produces structured `UnsupportedFeature` or `CompatError` diagnostics. See `PARITY_MATRIX.md` for the complete diagnostic table.
+
+## 14.6 Reverse/Backward Proxying (Phase 27)
+
+pproxy supports reverse proxying via `bind`, `listen`, `backward`, and `rebind`
+URI forms. In a reverse proxy topology, a **control client** establishes an
+outbound connection to a **reverse acceptor**, and the acceptor dispatches
+externally-accepted connections back through the control channel for the control
+client to handle. This enables a proxy behind NAT to serve remote clients
+without port forwarding.
+
+### Supported URI Forms
+
+| URI scheme | Role | Description |
+|------------|------|-------------|
+| `bind://` | Acceptor | Listen on a port and accept connections |
+| `listen://` | Acceptor | Alias for bind |
+| `backward://` | Control client | Dial out to acceptor; receive streams |
+| `rebind://` | Control client | Alias for backward |
+
+The `+in` modifier on any protocol scheme activates reverse/backward mode:
+
+```
+scheme+in://[auth@]host:port
+```
+
+Multiple `+in` tokens stack to create parallel control connections:
+
+```
+socks5+in+in://acceptor:1080    # 2 parallel backward connections
+socks5+in+in+in://acceptor:1080 # 3 parallel backward connections
+```
+
+### Authentication
+
+Authentication is optional and specified in the URI fragment:
+
+```
+socks5+in://user:pass@acceptor:1080
+```
+
+The control client sends raw `user:pass` bytes in the initial handshake. The
+acceptor compares these bytes against its configured credentials. No challenge-
+response or hashing is performed. TLS (`+ssl`) is available but not default.
+
+### Control Channel Protocol
+
+pproxy's reverse control protocol uses a minimal byte-exchange handshake
+followed by raw TCP relay:
+
+1. Control client connects to acceptor via TCP
+2. Control client sends auth credentials (raw bytes, no framing)
+3. Acceptor sends 1-byte response (`0x00` = reject, else = accept)
+4. If accepted, the channel becomes a raw TCP bidirectional relay
+
+**There is no stream multiplexing.** Each backward connection carries exactly
+one proxy session. When that session ends, the control connection closes and the
+backward client reconnects. To handle concurrent clients, multiple `+in` tokens
+create parallel control connections.
+
+### Limitations
+
+| Limitation | Notes |
+|-----------|-------|
+| TCP only | No UDP reverse proxying; UDP listeners operate independently |
+| No multiplexing | One proxy session per control connection; use `+in` stacking for concurrency |
+| No TLS by default | Control channel is plaintext; TLS available via `+ssl` |
+| No flow control | No per-stream backpressure |
+| No private network restrictions | Accepts any target address by default |
+
+### Configuration Model
+
+Eggress extends the pproxy reverse proxy model with TOML configuration:
+
+```toml
+# Reverse server (acceptor side)
+[[reverse_servers]]
+bind = "0.0.0.0:8443"
+protocol = "http"              # or "socks5", "socks4"
+allow_bind = ["127.0.0.1", "::1"]
+password = "secret"            # optional
+
+# Reverse client (control/initiator side)
+[[reverse_clients]]
+remote = "example.com:8443"
+password = "secret"
+tls = false                   # true for Eggress-native mode
+backoff_initial_ms = 1000
+backoff_max_ms = 30000
+```
+
+### Reconnect Behavior
+
+When the control connection drops, the backward client automatically reconnects
+with exponential backoff (initial 1s, max 30s, capped). On reconnect, the
+client re-authenticates and the control channel is re-established. There is no
+explicit listener re-registration — the acceptor accepts the new control
+connection and resumes dispatching.
+
+### Security Considerations
+
+| Property | Default | Notes |
+|----------|---------|-------|
+| Encryption | None | Control channel is plaintext TCP |
+| Authentication | Optional | Raw `user:pass` in URI, compared as bytes |
+| Listener bind | Configurable | Acceptor restricts bind addresses via `allow_bind` |
+| Private network | Not restricted | No ACL on target addresses by default |
+| Stream limit | Unbounded | No per-control limit on concurrent sessions |
+
+### References
+
+- `docs/protocols/REVERSE_PROXYING.md` — Full protocol specification
+- `docs/adr/ADR_reverse_backward_proxying.md` — Design decision record
+- `crates/eggress-protocol-reverse/` — Implementation
 
 ## 15. Open Items and Probes
 

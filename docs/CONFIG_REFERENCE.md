@@ -31,6 +31,8 @@ timeouts = { ... }
 listeners = [ ... ]
 upstreams = [ ... ]
 upstream_groups = [ ... ]
+reverse_servers = [ ... ]
+reverse_clients = [ ... ]
 rules = [ ... ]
 rules_file = "path/to/rules"
 routing = { ... }
@@ -333,6 +335,87 @@ members = ["ss-udp"]
 
 ---
 
+## `[[reverse_servers]]`
+
+A reverse server listens for incoming control connections from reverse clients and
+accepts tunneled streams. It presents the local service to remote clients over a
+persistent control channel with multiplexed streams.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Unique reverse server identifier |
+| `control_bind` | string | yes | Address to bind the control listener (`host:port`) |
+| `auth_username` | string | no | Authentication username for connecting clients |
+| `auth_password` | string | no | Authentication password (plaintext) |
+| `auth_password_env` | string | no | Environment variable containing the authentication password |
+| `max_streams` | integer | no | Max concurrent streams per client (default: 256) |
+| `heartbeat_interval` | duration string | no | Heartbeat interval to detect dead connections (default: `"30s"`) |
+
+```toml
+[[reverse_servers]]
+id = "rs-public"
+control_bind = "0.0.0.0:9443"
+auth_username = "tunnel"
+auth_password_env = "RS_AUTH_PASSWORD"
+max_streams = 512
+heartbeat_interval = "15s"
+```
+
+---
+
+## `[[reverse_clients]]`
+
+A reverse client connects to a reverse server and exposes local streams through
+the control channel. It maintains the connection with automatic reconnection
+and heartbeat keep-alive.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Unique reverse client identifier |
+| `server_addr` | string | yes | Address of the reverse server to connect to (`host:port`) |
+| `auth_username` | string | no | Authentication username |
+| `auth_password` | string | no | Authentication password (plaintext) |
+| `auth_password_env` | string | no | Environment variable containing the authentication password |
+| `reconnect_initial` | duration string | no | Initial reconnect backoff (default: `"1s"`) |
+| `reconnect_max` | duration string | no | Max reconnect backoff (default: `"60s"`) |
+| `heartbeat_interval` | duration string | no | Heartbeat interval to keep the control channel alive (default: `"30s"`) |
+
+```toml
+[[reverse_clients]]
+id = "rc-edge"
+server_addr = "rs-public:9443"
+auth_username = "tunnel"
+auth_password_env = "RC_AUTH_PASSWORD"
+reconnect_initial = "2s"
+reconnect_max = "30s"
+heartbeat_interval = "15s"
+```
+
+### Example: Reverse Server + Client Pair
+
+```toml
+# Server side — accepts control connections from remote clients
+[[reverse_servers]]
+id = "rs-datacenter"
+control_bind = "0.0.0.0:9443"
+auth_username = "tunnel"
+auth_password_env = "RS_PASSWORD"
+max_streams = 256
+heartbeat_interval = "30s"
+
+# Client side — connects to the server and tunnels local traffic
+[[reverse_clients]]
+id = "rc-office"
+server_addr = "datacenter.example.com:9443"
+auth_username = "tunnel"
+auth_password_env = "RC_PASSWORD"
+reconnect_initial = "1s"
+reconnect_max = "60s"
+heartbeat_interval = "30s"
+```
+
+---
+
 ## `[[rules]]`
 
 First-match-wins routing rules. Each rule matches a condition and selects an action.
@@ -488,6 +571,23 @@ id = "egress"
 scheduler = "round-robin"
 members = ["socks-proxy", "tls-proxy"]
 fallback = "direct"
+
+[[reverse_servers]]
+id = "rs-main"
+control_bind = "0.0.0.0:9443"
+auth_username = "tunnel"
+auth_password_env = "RS_PASSWORD"
+max_streams = 256
+heartbeat_interval = "30s"
+
+[[reverse_clients]]
+id = "rc-branch"
+server_addr = "hq.example.com:9443"
+auth_username = "tunnel"
+auth_password_env = "RC_PASSWORD"
+reconnect_initial = "1s"
+reconnect_max = "60s"
+heartbeat_interval = "30s"
 
 [[rules]]
 id = "block-ads"

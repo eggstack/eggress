@@ -312,12 +312,12 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 
 ### Reverse and backward proxying
 
-- [ ] Reverse endpoint registration
-- [ ] Authenticated control channel
+- [x] Reverse endpoint registration
+- [x] Authenticated control channel
 - [ ] Logical stream multiplexing
-- [ ] Heartbeats
-- [ ] Reconnect
-- [ ] Re-registration
+- [x] Heartbeats
+- [x] Reconnect
+- [x] Re-registration
 - [ ] Graceful draining
 - [ ] Reverse listener policy
 - [ ] Reverse UDP

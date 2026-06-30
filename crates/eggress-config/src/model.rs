@@ -48,6 +48,10 @@ pub struct ConfigFile {
     pub rules_file: Option<String>,
     pub routing: Option<RoutingConfig>,
     pub admin: Option<AdminConfig>,
+    #[serde(default)]
+    pub reverse_servers: Option<Vec<ReverseServerConfig>>,
+    #[serde(default)]
+    pub reverse_clients: Option<Vec<ReverseClientConfig>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -212,4 +216,52 @@ pub struct StaticContentToml {
     pub path: String,
     pub content_type: Option<String>,
     pub body: Option<String>,
+}
+
+/// Configuration for a reverse proxy server (acceptor side).
+///
+/// The reverse server accepts control connections from remote clients and
+/// dispatches accepted connections back through the control channel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReverseServerConfig {
+    /// Unique identifier for this reverse server.
+    pub id: String,
+    /// Address to bind the control listener on (e.g., "0.0.0.0:8443").
+    pub control_bind: String,
+    /// Optional username for authentication.
+    pub auth_username: Option<String>,
+    /// Optional password for authentication.
+    pub auth_password: Option<String>,
+    /// Optional password environment variable.
+    pub auth_password_env: Option<String>,
+    /// Maximum concurrent streams per control client.
+    pub max_streams: Option<u32>,
+    /// Heartbeat interval (e.g., "30s").
+    pub heartbeat_interval: Option<String>,
+}
+
+/// Configuration for a reverse proxy control client.
+///
+/// The control client connects to a remote reverse server and services
+/// incoming stream-open requests by connecting to local targets.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReverseClientConfig {
+    /// Unique identifier for this reverse client.
+    pub id: String,
+    /// Address of the reverse server to connect to.
+    pub server_addr: String,
+    /// Optional username for authentication.
+    pub auth_username: Option<String>,
+    /// Optional password for authentication.
+    pub auth_password: Option<String>,
+    /// Optional password environment variable.
+    pub auth_password_env: Option<String>,
+    /// Reconnect backoff initial delay (e.g., "1s").
+    pub reconnect_initial: Option<String>,
+    /// Reconnect backoff max delay (e.g., "30s").
+    pub reconnect_max: Option<String>,
+    /// Heartbeat interval (e.g., "30s").
+    pub heartbeat_interval: Option<String>,
 }

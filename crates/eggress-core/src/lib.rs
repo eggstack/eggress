@@ -28,6 +28,7 @@ pub enum ProtocolId {
     Http2,
     WebSocket,
     Raw,
+    Reverse,
 }
 
 impl fmt::Display for ProtocolId {
@@ -41,6 +42,7 @@ impl fmt::Display for ProtocolId {
             ProtocolId::Http2 => write!(f, "h2"),
             ProtocolId::WebSocket => write!(f, "websocket"),
             ProtocolId::Raw => write!(f, "raw"),
+            ProtocolId::Reverse => write!(f, "reverse"),
         }
     }
 }
