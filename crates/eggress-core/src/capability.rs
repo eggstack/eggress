@@ -105,6 +105,24 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
                 protocol: "Trojan".to_string(),
             },
         },
+        ProtocolSpec::Http2 => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "Http2".to_string(),
+            },
+        },
+        ProtocolSpec::WebSocket => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "WebSocket".to_string(),
+            },
+        },
+        ProtocolSpec::Raw => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "Raw".to_string(),
+            },
+        },
     }
 }
 

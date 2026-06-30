@@ -247,21 +247,21 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 
 ### WebSocket
 
-- [ ] WebSocket tunnel client
-- [ ] WebSocket tunnel server
-- [ ] WSS via rustls
-- [ ] Binary-message byte-stream adapter
-- [ ] Ping/pong handling
-- [ ] Close and half-close mapping
-- [ ] Fixed-target WebSocket tunnel
-- [ ] WebSocket in proxy chains
+- [x] WebSocket tunnel client (Phase 26)
+- [x] WebSocket tunnel server (Phase 26)
+- [x] WSS via rustls (Phase 26)
+- [x] Binary-message byte-stream adapter (Phase 26)
+- [x] Ping/pong handling (Phase 26)
+- [x] Close and half-close mapping (Phase 26)
+- [x] Fixed-target WebSocket tunnel (Phase 26)
+- [x] WebSocket in proxy chains (Phase 26)
 
 ### Raw forwarding
 
-- [ ] Fixed-target TCP forwarding
+- [x] Fixed-target TCP forwarding (Phase 26)
 - [ ] Fixed-target UDP forwarding
-- [ ] Raw tunnel client
-- [ ] Raw tunnel server
+- [x] Raw tunnel client (Phase 26)
+- [x] Raw tunnel server (Phase 26)
 
 ### SSH
 
@@ -279,15 +279,15 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 
 ### HTTP/2
 
-- [ ] HTTP/2 CONNECT server
-- [ ] HTTP/2 CONNECT client
-- [ ] Stream adapter
-- [ ] Flow-control integration
-- [ ] Stream reset propagation
-- [ ] GOAWAY handling
-- [ ] Upstream connection pooling
-- [ ] H2-over-TLS ALPN
-- [ ] H2 authentication
+- [x] HTTP/2 CONNECT server (Phase 26)
+- [x] HTTP/2 CONNECT client (Phase 26)
+- [x] Stream adapter (Phase 26)
+- [x] Flow-control integration (Phase 26)
+- [x] Stream reset propagation (Phase 26)
+- [x] GOAWAY handling (Phase 26)
+- [x] Upstream connection pooling (Phase 26)
+- [x] H2-over-TLS ALPN (Phase 26)
+- [x] H2 authentication (Phase 26)
 
 ### QUIC
 

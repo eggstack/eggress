@@ -7,6 +7,7 @@ pub mod connect;
 pub mod detect;
 pub mod error;
 pub mod forward;
+pub mod h2_connect;
 
 pub use connect::{
     handle_connect, http_connect, validate_credentials, ConnectRequest, HttpConnectLimits,
@@ -18,6 +19,7 @@ pub use forward::{
     forward_request, forward_request_stream, forward_response, BodyCopyLimits, BodyCopyReport,
     ForwardRequest, ForwardResponse, ForwardResponseReport, ForwardResult, RequestBodyKind,
 };
+pub use h2_connect::{h2_connect_relay, handle_h2_connect, H2ConnectError};
 
 #[cfg(test)]
 mod tests {

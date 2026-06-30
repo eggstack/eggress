@@ -140,7 +140,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     // Validate known schemes
     match scheme.as_str() {
         "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss" | "shadowsocks"
-        | "ssr" | "direct" | "ssh" | "unix" | "redir" => {}
+        | "ssr" | "direct" | "ssh" | "unix" | "redir" | "h2" | "ws" | "wss" | "raw" | "tunnel" => {}
         other => {
             return Err(CompatError::UnsupportedProtocol(other.to_string()));
         }

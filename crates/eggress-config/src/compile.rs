@@ -183,6 +183,9 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "socks4" => Ok(ProtocolId::Socks4),
         "socks5" => Ok(ProtocolId::Socks5),
         "shadowsocks" => Ok(ProtocolId::Shadowsocks),
+        "h2" => Ok(ProtocolId::Http2),
+        "websocket" | "ws" | "wss" => Ok(ProtocolId::WebSocket),
+        "raw" | "tunnel" => Ok(ProtocolId::Raw),
         _ => Err(ConfigError::validation(
             "protocols",
             &format!("unknown protocol: {}", s),
@@ -602,15 +605,20 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                         )
                     })?;
                     // Validate PEM at compile time
-                    eggress_transport_tls::TlsServerConfigBuilder::new()
+                    let mut builder = eggress_transport_tls::TlsServerConfigBuilder::new()
                         .with_certificate_pem(&cert_pem)
-                        .and_then(|b| b.with_key_pem(&key_pem))
-                        .map_err(|e| {
-                            ConfigError::validation(
-                                &format!("{}.tls", path),
-                                &format!("invalid TLS config: {}", e),
-                            )
-                        })?;
+                        .and_then(|b| b.with_key_pem(&key_pem));
+                    if let Some(ref alpn) = tls_cfg.alpn {
+                        let alpn_bytes: Vec<Vec<u8>> =
+                            alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
+                        builder = builder.map(|b| b.with_alpn(alpn_bytes));
+                    }
+                    builder.map_err(|e| {
+                        ConfigError::validation(
+                            &format!("{}.tls", path),
+                            &format!("invalid TLS config: {}", e),
+                        )
+                    })?;
                     let alpn = tls_cfg
                         .alpn
                         .as_ref()

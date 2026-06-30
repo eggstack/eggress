@@ -41,6 +41,9 @@ pub enum ProtocolSpec {
     Socks5,
     Shadowsocks,
     Trojan,
+    Http2,
+    WebSocket,
+    Raw,
 }
 
 /// Endpoint address specification.
@@ -104,6 +107,9 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::Socks5 => "socks5",
                         ProtocolSpec::Shadowsocks => "shadowsocks",
                         ProtocolSpec::Trojan => "trojan",
+                        ProtocolSpec::Http2 => "h2",
+                        ProtocolSpec::WebSocket => "ws",
+                        ProtocolSpec::Raw => "raw",
                     })
                     .collect();
                 if hop.tls {
@@ -316,6 +322,9 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
             "socks5" => protocols.push(ProtocolSpec::Socks5),
             "shadowsocks" | "ss" => protocols.push(ProtocolSpec::Shadowsocks),
             "trojan" => protocols.push(ProtocolSpec::Trojan),
+            "h2" => protocols.push(ProtocolSpec::Http2),
+            "ws" | "wss" => protocols.push(ProtocolSpec::WebSocket),
+            "raw" | "tunnel" => protocols.push(ProtocolSpec::Raw),
             "tls" => tls = true,
             _ => return Err(UriParseError::UnsupportedProtocol(p.to_string())),
         }
@@ -829,6 +838,9 @@ mod proptest_tests {
             Just(ProtocolSpec::Socks5),
             Just(ProtocolSpec::Shadowsocks),
             Just(ProtocolSpec::Trojan),
+            Just(ProtocolSpec::Http2),
+            Just(ProtocolSpec::WebSocket),
+            Just(ProtocolSpec::Raw),
         ]
     }
 

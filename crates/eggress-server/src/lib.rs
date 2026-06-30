@@ -191,6 +191,9 @@ mod tests {
             eggress_core::ProtocolId::Http,
             eggress_core::ProtocolId::Socks4,
             eggress_core::ProtocolId::Socks5,
+            eggress_core::ProtocolId::Http2,
+            eggress_core::ProtocolId::WebSocket,
+            eggress_core::ProtocolId::Raw,
         ])
     }
 

@@ -851,3 +851,122 @@ evidence_level = "implemented_differential"
 tests = ["differential_standalone_udp_malformed_short_datagram", "differential_standalone_udp_nonzero_frag"]
 divergence = "Both drop malformed/frag datagrams; differential tests verify parity"
 external_dependency = "pproxy==2.7.9"
+
+# ─── Phase 26: Advanced Transports ───────────────────────────────────
+
+[[features]]
+id = "h2_connect_server"
+category = "inbound_tcp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_h2_connect_error_display", "test_h2_connect_error_from_h2"]
+divergence = "HTTP/2 CONNECT server accepts H2 CONNECT, bridges stream to target"
+
+[[features]]
+id = "h2_connect_upstream"
+category = "upstream_tcp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_h2_connect_error_display", "test_h2_connect_error_from_h2"]
+divergence = "HTTP/2 CONNECT upstream client connects to H2 proxy, issues CONNECT"
+
+[[features]]
+id = "websocket_tunnel_server"
+category = "inbound_tcp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_websocket_echo", "test_max_message_size_enforced", "test_close_frame_yields_eof"]
+divergence = "WebSocket tunnel server accepts WS upgrade, relays binary frames"
+
+[[features]]
+id = "websocket_tunnel_upstream"
+category = "upstream_tcp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_websocket_echo"]
+divergence = "WebSocket tunnel upstream client connects to WS/WSS upstream"
+
+[[features]]
+id = "raw_tunnel"
+category = "inbound_tcp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "Raw fixed-target TCP tunnel, no protocol negotiation"
+
+[[features]]
+id = "tls_alpn_config"
+category = "transport"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["builder_with_alpn"]
+divergence = "TLS ALPN protocol negotiation with configurable ALPN values"
+
+[[features]]
+id = "h2_uri_scheme"
+category = "uri"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "H2 URI scheme parsing (h2:// protocol in URI)"
+
+[[features]]
+id = "websocket_uri_scheme"
+category = "uri"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "WebSocket URI scheme parsing (ws:// and wss:// in URI)"
+
+[[features]]
+id = "raw_uri_scheme"
+category = "uri"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "Raw tunnel URI scheme parsing (raw:// and tunnel:// in URI)"
+
+[[features]]
+id = "quic_h3_transport"
+category = "transport"
+pproxy_version = "2.7.9"
+egress_status = "intentional_non_parity"
+evidence_level = "unimplemented"
+tests = []
+divergence = "Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC/H3 behavior is experimental, quinn dependency significant, no clear interop evidence."
+
+[[features]]
+id = "pproxy_h2_scheme"
+category = "uri"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "pproxy h2:// URI scheme support"
+
+[[features]]
+id = "pproxy_ws_scheme"
+category = "uri"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "pproxy ws:// and wss:// URI scheme support"
+
+[[features]]
+id = "pproxy_raw_scheme"
+category = "uri"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["integration_tests"]
+divergence = "pproxy raw:// and tunnel:// URI scheme support"

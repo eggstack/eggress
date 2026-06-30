@@ -434,9 +434,11 @@ policy, architecture, or scope.
 | macOS PF transparent proxy | `redir://` on macOS | Not implemented. Use pfctl with a standard listener instead. Linux transparent proxy via `SO_ORIGINAL_DST` is supported. |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | No authentication. Vulnerable to bit-flipping and replay attacks. Deprecated by the Shadowsocks community. Produces `LegacyMethodUnsupported` error with a message suggesting AEAD methods. |
 | ShadowsocksR (SSR) | Supported in some forks | Non-standard extension. No RFC. Conflicts with upstream Shadowsocks design. SSR URIs are parsed by the pproxy compat layer and produce `UnsupportedFeature` diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. |
-| QUIC transport | Not in pproxy (but mentioned) | Out of scope. HTTP/3 and QUIC are transport-layer concerns, not proxy protocol features. |
-| HTTP/3 | Not in pproxy (but mentioned) | Out of scope. Requires QUIC transport and different connection semantics. |
-| WebSocket tunnels | Not in pproxy | Out of scope. WebSocket is a transport wrapper; not a proxy protocol. |
+| HTTP/2 CONNECT | pproxy h2 scheme | **Supported** — synthetic tests. H2 CONNECT server and client implemented. |
+| WebSocket tunnels | pproxy ws/wss schemes | **Supported** — synthetic tests. WS/WSS tunnel server and client implemented. |
+| Raw tunnels | pproxy raw/tunnel schemes | **Supported** — synthetic tests. Fixed-target TCP tunnel implemented. |
+| QUIC transport | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. pproxy behavior experimental, dependency significant. |
+| HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
 | SSH transport | `ssh://` | Out of scope. SSH is a general-purpose encrypted tunnel, not a proxy protocol. Adds significant dependency weight. |
 | Reverse/backward proxying | Not in pproxy | Eggress is a forward proxy only. Reverse proxy is a different product category. |
 | Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
@@ -528,7 +530,9 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream and inbound listener (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
 - **Implemented as supported**: Transparent TCP proxy (Linux, `redir://`), Unix domain socket listeners (Unix, `unix://`)
-- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, WebSocket tunnels, Raw fixed-target tunnels, TLS ALPN negotiation
+- **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
+- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Trojan inbound listener
 
 ### Diagnostic behavior

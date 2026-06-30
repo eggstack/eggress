@@ -115,6 +115,20 @@ threads `ShadowsocksMetrics` through the server wiring.
 | `eggress_shadowsocks_udp_active_flows` | Gauge | Currently active UDP flows |
 | `eggress_shadowsocks_udp_decrypt_failure_total` | Counter | UDP AEAD decryption failures |
 
+### Advanced Transport Metrics
+
+| Family | Name | Type | Description |
+|--------|------|------|-------------|
+| H2 CONNECT | `eggress_h2_streams_total` | counter | Total H2 CONNECT streams accepted |
+| H2 CONNECT | `eggress_h2_streams_active` | gauge | Currently active H2 streams |
+| H2 CONNECT | `eggress_h2_stream_errors_total` | counter | H2 stream errors (RST_STREAM, etc.) |
+| WebSocket | `eggress_websocket_sessions_total` | counter | Total WebSocket tunnel sessions |
+| WebSocket | `eggress_websocket_sessions_active` | gauge | Currently active WebSocket sessions |
+| WebSocket | `eggress_websocket_frame_errors_total` | counter | WebSocket frame decode errors |
+| Raw Tunnel | `eggress_raw_tunnel_sessions_total` | counter | Total raw tunnel sessions |
+| Raw Tunnel | `eggress_raw_tunnel_sessions_active` | gauge | Currently active raw tunnel sessions |
+| TLS/ALPN | `eggress_tls_alpn_negotiation_failures_total` | counter | TLS ALPN negotiation failures |
+
 ## Labels and Cardinality Policy
 
 ### What IS labeled

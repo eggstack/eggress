@@ -1,0 +1,16 @@
+[package]
+name = "eggress-protocol-raw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Raw fixed-target tunnel protocol for eggress"
+
+[dependencies]
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+eggress-core.workspace = true
+
+[lints]
+workspace = true

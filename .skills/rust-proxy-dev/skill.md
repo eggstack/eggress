@@ -42,6 +42,9 @@ The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-
 - Register the detector in the appropriate listener setup
 - Add URI scheme handling in `eggress-uri/`
 
+### 5. Advanced transport considerations
+For H2, WebSocket, or raw tunnel transports, see `.skills/advanced-transports/skill.md` for specialized guidance. These transports use stream adapters rather than protocol-specific wire formats.
+
 ## Listener types
 
 ### Standard TCP listener

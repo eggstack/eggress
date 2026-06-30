@@ -257,6 +257,9 @@ fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str 
             eggress_uri::ProtocolSpec::Socks5 => "socks5",
             eggress_uri::ProtocolSpec::Shadowsocks => "shadowsocks",
             eggress_uri::ProtocolSpec::Trojan => "trojan",
+            eggress_uri::ProtocolSpec::Http2 => "h2",
+            eggress_uri::ProtocolSpec::WebSocket => "websocket",
+            eggress_uri::ProtocolSpec::Raw => "raw",
         })
         .unwrap_or("unknown")
 }

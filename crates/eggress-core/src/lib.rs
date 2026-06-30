@@ -25,6 +25,9 @@ pub enum ProtocolId {
     Socks5,
     Shadowsocks,
     Trojan,
+    Http2,
+    WebSocket,
+    Raw,
 }
 
 impl fmt::Display for ProtocolId {
@@ -35,6 +38,9 @@ impl fmt::Display for ProtocolId {
             ProtocolId::Socks5 => write!(f, "socks5"),
             ProtocolId::Shadowsocks => write!(f, "shadowsocks"),
             ProtocolId::Trojan => write!(f, "trojan"),
+            ProtocolId::Http2 => write!(f, "h2"),
+            ProtocolId::WebSocket => write!(f, "websocket"),
+            ProtocolId::Raw => write!(f, "raw"),
         }
     }
 }

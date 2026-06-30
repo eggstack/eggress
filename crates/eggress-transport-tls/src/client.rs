@@ -45,6 +45,11 @@ impl TlsClientConfigBuilder {
         self
     }
 
+    /// Set ALPN for HTTP/2 negotiation (h2 + http/1.1 fallback).
+    pub fn with_h2_alpn(self) -> Self {
+        self.with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+    }
+
     /// Accept any server certificate (insecure, for testing only).
     pub fn with_insecure(mut self) -> Self {
         self.insecure = true;

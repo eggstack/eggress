@@ -42,6 +42,12 @@ impl TlsServerConfigBuilder {
         self
     }
 
+    /// Configure ALPN for HTTP/2 with HTTP/1.1 fallback.
+    pub fn with_h2_alpn(mut self) -> Self {
+        self.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        self
+    }
+
     /// Build the shared `ServerConfig`.
     pub fn build(self) -> Result<Arc<ServerConfig>, TlsError> {
         let key = self.key_der.ok_or(TlsError::MissingPrivateKey)?;

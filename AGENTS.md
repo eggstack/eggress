@@ -53,6 +53,18 @@ cargo test -p eggress-transport-tls
 # Run upstream protocol tests
 cargo test -p eggress-runtime upstream_protocols
 
+# Run H2 CONNECT tests
+cargo test -p eggress-protocol-http h2
+
+# Run WebSocket tunnel tests
+cargo test -p eggress-protocol-websocket
+
+# Run raw tunnel tests
+cargo test -p eggress-protocol-raw
+
+# Run advanced transport integration tests
+cargo test -p eggress-runtime advanced_transport
+
 # Run transparent proxy tests
 cargo test -p eggress-runtime transparent
 
@@ -201,6 +213,9 @@ eggress/
 │   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD TCP/UDP (TCP: full stream encryption)
 │   ├── eggress-protocol-trojan/ # Trojan TLS-based proxy
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
+│   ├── eggress-protocol-http/src/h2_connect.rs # HTTP/2 CONNECT bridge
+│   ├── eggress-protocol-websocket/ # WebSocket tunnel (server, client, stream adapter)
+│   ├── eggress-protocol-raw/ # Raw fixed-target TCP tunnel
 │   ├── eggress-runtime/src/platform.rs # Platform capability model (Linux SO_ORIGINAL_DST, macOS PF)
 │   ├── eggress-server/src/listener/transparent.rs # Transparent TCP listener (SO_ORIGINAL_DST)
 │   ├── eggress-server/src/listener/unix.rs # Unix domain socket listener
@@ -320,6 +335,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
 - **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH) produce structured diagnostics. Transparent TCP proxy (`redir://`, Linux only) and Unix domain socket listeners (`unix://`, Unix only) are now supported (Phase 25).
 - **Shadowsocks TCP framing**: Standard SIP003 AEAD (two AEAD operations per chunk, encrypted length). Wire-compatible with standard Shadowsocks implementations. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS.md`.
+- **Advanced transports**: HTTP/2 CONNECT, WebSocket tunnels, and raw fixed-target tunnels supported as inbound/upstream protocols. QUIC/HTTP/3 deferred by ADR. See `docs/protocols/ADVANCED_TRANSPORTS.md`.
 - **SSR/legacy Shadowsocks**: Intentionally unsupported. SSR URIs (`ssr://`) and legacy stream cipher methods are recognized and rejected with clear diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. Legacy method detection exists in `eggress-protocol-shadowsocks::method::is_legacy_method()`.
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP framing standardized to SIP003 AEAD in Phase 21. Completion docs updated with corrective notices and gated-test status.
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Thread ownership: async path uses a Tokio blocking-pool thread + dedicated OS thread (`eggress-embed-rt`); blocking path uses an outer startup thread + inner run thread (`eggress-embed-run`). Handle owns state/token and cleans up on drop (5-second timeout on async path). `shutdown()` and `shutdown_blocking()` are idempotent. See `docs/EMBED_API.md`.
@@ -338,3 +354,4 @@ The `.skills/` directory contains focused reference files for common development
 - `config-reload.md` — TOML config schema, hot-reload vs restart, atomic swaps
 - `routing-rules.md` — Rule engine, matchers, schedulers, route explanation
 - `testing.md` — Test layers, conventions, running and writing tests, including differential tests
+- `advanced-transports.md` — H2 CONNECT, WebSocket tunnels, raw tunnels, TLS/ALPN

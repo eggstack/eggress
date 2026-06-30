@@ -1,24 +1,22 @@
 [package]
-name = "eggress-protocol-http"
+name = "eggress-protocol-websocket"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+description = "WebSocket tunnel protocol implementation for eggress"
 
 [dependencies]
-eggress-core.workspace = true
-http.workspace = true
-httparse.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
-subtle.workspace = true
-h2.workspace = true
 tracing.workspace = true
+eggress-core.workspace = true
 
 [dev-dependencies]
-eggress-testkit.workspace = true
-proptest.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

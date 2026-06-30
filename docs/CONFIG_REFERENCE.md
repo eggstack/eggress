@@ -199,7 +199,24 @@ TLS termination on the listener (requires cert/key PEM files at startup).
 |-------|------|----------|-------------|
 | `cert` | string | yes | Path to PEM certificate chain |
 | `key` | string | yes | Path to PEM private key |
-| `alpn` | `[string]` | none | ALPN protocols (reserved for future use) |
+| `alpn` | `[string]` | none | ALPN protocols for TLS handshake |
+
+#### ALPN Protocol Negotiation
+
+The `alpn` field configures Application-Layer Protocol Negotiation during the TLS handshake:
+
+```toml
+[listeners.tls]
+cert = "/path/to/cert.pem"
+key = "/path/to/key.pem"
+alpn = ["h2", "http/1.1"]
+```
+
+Supported ALPN values:
+- `h2` — HTTP/2 (for H2 CONNECT proxy)
+- `http/1.1` — HTTP/1.1 (default, for standard HTTP CONNECT)
+
+ALPN is optional. If omitted, no protocol negotiation occurs during TLS handshake.
 
 ---
 
