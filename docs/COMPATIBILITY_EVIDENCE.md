@@ -40,7 +40,7 @@ Keep this document in sync with the manifest.
 |---------|------|----------|------------|
 | `socks5_udp_associate_relay` | Partial | Differential (pproxy==2.7.9) — framing differs | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 | `shadowsocks_udp` | Supported | Standard AEAD interop | `cargo test -p eggress-runtime shadowsocks_udp` |
-| `direct_udp_forwarding` | Supported | Synthetic | `cargo test -p eggress-runtime udp` |
+| `direct_udp_forwarding` | Supported | Synthetic | `cargo test -p eggress-runtime udp` (SOCKS5 ASSOCIATE) + `cargo test -p eggress-runtime standalone` (standalone pproxy UDP relay) |
 
 ## Upstream TCP Protocols
 

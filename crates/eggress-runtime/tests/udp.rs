@@ -1075,6 +1075,466 @@ enabled = true
     jh.await.ok();
 }
 
+// ── Standalone UDP relay integration tests ──────────────────────────────
+//
+// These tests exercise the standalone pproxy-compatible UDP relay directly
+// (without a SOCKS5 TCP control channel), validating the cases required by
+// the Phase 23 plan item 23.11.
+
+use std::sync::Arc;
+
+use eggress_udp::codec::decode_packet;
+use eggress_udp::limits::UdpLimits;
+use eggress_udp::metrics::UdpMetrics;
+use eggress_udp::standalone::{standalone_udp_relay, StandaloneUdpConfig};
+use tokio_util::sync::CancellationToken;
+
+fn direct_router() -> Arc<dyn eggress_routing::RouteService> {
+    Arc::new(eggress_routing::Router::new(
+        vec![],
+        eggress_routing::RouteActionSpec::Direct,
+    ))
+}
+
+fn standalone_config(routing: Arc<dyn eggress_routing::RouteService>) -> StandaloneUdpConfig {
+    StandaloneUdpConfig {
+        routing,
+        udp_metrics: Arc::new(UdpMetrics::new()),
+        limits: UdpLimits::default(),
+        listener: "test-standalone".to_string(),
+        generation: 1,
+    }
+}
+
+fn standalone_config_with_limits(
+    routing: Arc<dyn eggress_routing::RouteService>,
+    limits: UdpLimits,
+) -> StandaloneUdpConfig {
+    StandaloneUdpConfig {
+        routing,
+        udp_metrics: Arc::new(UdpMetrics::new()),
+        limits,
+        listener: "test-standalone".to_string(),
+        generation: 1,
+    }
+}
+
+fn standalone_socks5_packet(target: std::net::SocketAddr, payload: &[u8]) -> Vec<u8> {
+    let mut pkt = vec![0x00, 0x00, 0x00];
+    match target {
+        std::net::SocketAddr::V4(addr) => {
+            pkt.push(0x01);
+            pkt.extend_from_slice(&addr.ip().octets());
+        }
+        std::net::SocketAddr::V6(addr) => {
+            pkt.push(0x04);
+            pkt.extend_from_slice(&addr.ip().octets());
+        }
+    }
+    pkt.extend_from_slice(&target.port().to_be_bytes());
+    pkt.extend_from_slice(payload);
+    pkt
+}
+
+fn standalone_socks5_packet_frag(
+    target: std::net::SocketAddr,
+    frag: u8,
+    payload: &[u8],
+) -> Vec<u8> {
+    let mut pkt = vec![0x00, 0x00, frag];
+    match target {
+        std::net::SocketAddr::V4(addr) => {
+            pkt.push(0x01);
+            pkt.extend_from_slice(&addr.ip().octets());
+        }
+        std::net::SocketAddr::V6(addr) => {
+            pkt.push(0x04);
+            pkt.extend_from_slice(&addr.ip().octets());
+        }
+    }
+    pkt.extend_from_slice(&target.port().to_be_bytes());
+    pkt.extend_from_slice(payload);
+    pkt
+}
+
+fn standalone_socks5_packet_domain(host: &str, port: u16, payload: &[u8]) -> Vec<u8> {
+    let mut pkt = vec![0x00, 0x00, 0x00, 0x03];
+    pkt.push(host.len() as u8);
+    pkt.extend_from_slice(host.as_bytes());
+    pkt.extend_from_slice(&port.to_be_bytes());
+    pkt.extend_from_slice(payload);
+    pkt
+}
+
+async fn start_standalone_relay(
+    routing: Arc<dyn eggress_routing::RouteService>,
+) -> (
+    std::net::SocketAddr,
+    Arc<UdpMetrics>,
+    CancellationToken,
+    tokio::task::JoinHandle<Result<(), eggress_udp::error::UdpError>>,
+) {
+    let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    let relay_addr = relay_socket.local_addr().unwrap();
+    let metrics = Arc::new(UdpMetrics::new());
+    let mut config = standalone_config(routing);
+    config.udp_metrics = metrics.clone();
+    let cancel = CancellationToken::new();
+
+    let relay_cancel = cancel.clone();
+    let relay_sock = relay_socket.clone();
+    let handle =
+        tokio::spawn(async move { standalone_udp_relay(relay_sock, config, relay_cancel).await });
+
+    (relay_addr, metrics, cancel, handle)
+}
+
+#[tokio::test]
+async fn standalone_direct_echo() {
+    let echo_addr = start_udp_echo().await;
+    let (relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    let pkt = standalone_socks5_packet(echo_addr, b"standalone-echo");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("recv should not timeout")
+    .expect("recv should succeed");
+
+    let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
+    assert_eq!(resp.payload, b"standalone-echo");
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_malformed_short_datagram() {
+    let (relay_addr, metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    // Too short for SOCKS5 UDP header (need at least 4 bytes)
+    client_socket.send(&[0x00, 0x01]).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    assert_eq!(
+        metrics
+            .standalone_malformed_datagrams
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "should record one malformed datagram"
+    );
+
+    // No response should be received
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+        let mut buf = [0u8; 65535];
+        client_socket.recv(&mut buf).await
+    })
+    .await;
+    assert!(
+        result.is_err(),
+        "should not receive any response to malformed datagram"
+    );
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_nonzero_frag_dropped() {
+    let echo_addr = start_udp_echo().await;
+    let (relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    // FRAG=1 should be silently dropped
+    let pkt = standalone_socks5_packet_frag(echo_addr, 1, b"frag-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), async {
+        let mut buf = [0u8; 65535];
+        client_socket.recv(&mut buf).await
+    })
+    .await;
+    assert!(
+        result.is_err(),
+        "should not receive response to FRAG=1 datagram"
+    );
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_two_clients_same_listener() {
+    let echo_addr = start_udp_echo().await;
+    let (relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_a.connect(relay_addr).await.unwrap();
+
+    let client_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_b.connect(relay_addr).await.unwrap();
+
+    let pkt_a = standalone_socks5_packet(echo_addr, b"client-a");
+    client_a.send(&pkt_a).await.unwrap();
+
+    let pkt_b = standalone_socks5_packet(echo_addr, b"client-b");
+    client_b.send(&pkt_b).await.unwrap();
+
+    let mut buf = [0u8; 65535];
+    let n_a = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_a.recv(&mut buf).await
+    })
+    .await
+    .expect("client a recv timeout")
+    .expect("client a recv failed");
+    let resp_a = decode_packet(&buf[..n_a], &UdpLimits::default()).unwrap();
+    assert_eq!(resp_a.payload, b"client-a");
+
+    let n_b = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_b.recv(&mut buf).await
+    })
+    .await
+    .expect("client b recv timeout")
+    .expect("client b recv failed");
+    let resp_b = decode_packet(&buf[..n_b], &UdpLimits::default()).unwrap();
+    assert_eq!(resp_b.payload, b"client-b");
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_two_targets_from_one_client() {
+    let echo_addr_a = start_udp_echo().await;
+    let echo_addr_b = start_udp_echo().await;
+    let (relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client.connect(relay_addr).await.unwrap();
+
+    let pkt_a = standalone_socks5_packet(echo_addr_a, b"target-a");
+    client.send(&pkt_a).await.unwrap();
+
+    let pkt_b = standalone_socks5_packet(echo_addr_b, b"target-b");
+    client.send(&pkt_b).await.unwrap();
+
+    let mut buf = [0u8; 65535];
+
+    // Receive response from target A
+    let n_a = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client.recv(&mut buf).await
+    })
+    .await
+    .expect("target a recv timeout")
+    .expect("target a recv failed");
+    let resp_a = decode_packet(&buf[..n_a], &UdpLimits::default()).unwrap();
+    assert_eq!(resp_a.payload, b"target-a");
+
+    // Receive response from target B
+    let n_b = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client.recv(&mut buf).await
+    })
+    .await
+    .expect("target b recv timeout")
+    .expect("target b recv failed");
+    let resp_b = decode_packet(&buf[..n_b], &UdpLimits::default()).unwrap();
+    assert_eq!(resp_b.payload, b"target-b");
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_domain_target() {
+    let echo_addr = start_udp_echo().await;
+    let (relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    // Use "127.0.0.1" as a domain name (SOCKS5 ATYP=0x03) to test domain resolution
+    let pkt = standalone_socks5_packet_domain("127.0.0.1", echo_addr.port(), b"domain-test");
+    client_socket.send(&pkt).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("recv timeout")
+    .expect("recv failed");
+
+    let resp = decode_packet(&recv_buf[..n], &UdpLimits::default()).unwrap();
+    assert_eq!(resp.payload, b"domain-test");
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_oversized_datagram_handled() {
+    let (relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    // Build a packet that exceeds the default max_datagram_size (65535)
+    let mut pkt = vec![0x00, 0x00, 0x00, 0x01];
+    pkt.extend_from_slice(&[127, 0, 0, 1]);
+    pkt.extend_from_slice(&8080u16.to_be_bytes());
+    pkt.extend_from_slice(&vec![0xAA; 70000]); // Exceeds 65535
+
+    // Should either be dropped (too large for buffer) or silently fail
+    let _ = client_socket.send(&pkt).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_route_reject_drops_packet() {
+    let rules = vec![eggress_routing::CompiledRule {
+        id: eggress_routing::RuleId(std::sync::Arc::from("reject-all")),
+        matcher: eggress_routing::MatchExpr::Any,
+        action: eggress_routing::RouteActionSpec::Reject(eggress_core::RejectReason::AccessDenied),
+    }];
+    let routing: Arc<dyn eggress_routing::RouteService> = Arc::new(eggress_routing::Router::new(
+        rules,
+        eggress_routing::RouteActionSpec::Direct,
+    ));
+
+    let echo_addr = start_udp_echo().await;
+    let (relay_addr, metrics, cancel, handle) = start_standalone_relay(routing).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    let pkt = standalone_socks5_packet(echo_addr, b"should-be-dropped");
+    client_socket.send(&pkt).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    assert_eq!(
+        metrics
+            .standalone_rejected_datagrams
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "should record one rejected datagram"
+    );
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_per_client_target_limit() {
+    let (_relay_addr, _metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let limits = UdpLimits {
+        max_targets_per_association: 1,
+        ..UdpLimits::default()
+    };
+    let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    let relay_addr_limits = relay_socket.local_addr().unwrap();
+    let metrics_limits = Arc::new(UdpMetrics::new());
+    let mut config = standalone_config_with_limits(direct_router(), limits);
+    config.udp_metrics = metrics_limits.clone();
+    let cancel_limits = CancellationToken::new();
+
+    let relay_cancel = cancel_limits.clone();
+    let relay_sock = relay_socket.clone();
+    let handle_limits =
+        tokio::spawn(async move { standalone_udp_relay(relay_sock, config, relay_cancel).await });
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr_limits).await.unwrap();
+
+    // First packet to target port 8081 should succeed
+    let pkt1 = standalone_socks5_packet(
+        std::net::SocketAddr::new(std::net::Ipv4Addr::new(127, 0, 0, 1).into(), 8081),
+        b"first",
+    );
+    client_socket.send(&pkt1).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Second packet to different target should be rejected (limit = 1)
+    let pkt2 = standalone_socks5_packet(
+        std::net::SocketAddr::new(std::net::Ipv4Addr::new(127, 0, 0, 1).into(), 8082),
+        b"second",
+    );
+    client_socket.send(&pkt2).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    assert_eq!(
+        metrics_limits
+            .standalone_rejected_datagrams
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "should reject second target when limit is 1"
+    );
+
+    cancel_limits.cancel();
+    handle_limits.await.unwrap().unwrap();
+
+    // Cleanup the original relay
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn standalone_flow_reuse_allows_same_target() {
+    let echo_addr = start_udp_echo().await;
+    let (relay_addr, metrics, cancel, handle) = start_standalone_relay(direct_router()).await;
+
+    let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client_socket.connect(relay_addr).await.unwrap();
+
+    // Send two packets to same target - both should succeed (flow reuse)
+    let pkt1 = standalone_socks5_packet(echo_addr, b"reuse1");
+    client_socket.send(&pkt1).await.unwrap();
+
+    let mut recv_buf = [0u8; 65535];
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("first recv timeout")
+    .expect("first recv failed");
+
+    let pkt2 = standalone_socks5_packet(echo_addr, b"reuse2");
+    client_socket.send(&pkt2).await.unwrap();
+
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        client_socket.recv(&mut recv_buf).await
+    })
+    .await
+    .expect("second recv timeout")
+    .expect("second recv failed");
+
+    // No rejections - flow reuse is allowed for same target
+    assert_eq!(
+        metrics
+            .standalone_rejected_datagrams
+            .load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
+
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+}
+
 async fn http_get_local(addr: &str, path: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");

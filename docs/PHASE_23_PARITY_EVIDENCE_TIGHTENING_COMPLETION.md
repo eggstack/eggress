@@ -61,6 +61,23 @@ Phase 23 tightened the repo's compatibility claims, evidence tracking, and docum
 - Group aliases (e.g., `integration_tests`, `unit_tests`) are whitelisted
 - Concrete test names must exist in the codebase
 
+### Standalone UDP Integration Tests (23.11 follow-up)
+
+Added 10 standalone UDP integration tests to `crates/eggress-runtime/tests/udp.rs` that exercise the standalone pproxy-compatible UDP relay directly (without SOCKS5 TCP control channel):
+
+- `standalone_direct_echo` — direct UDP echo through standalone relay
+- `standalone_malformed_short_datagram` — silently drops packets too short for SOCKS5 header
+- `standalone_nonzero_frag_dropped` — silently drops FRAG=1 packets
+- `standalone_two_clients_same_listener` — two clients on same relay both get responses
+- `standalone_two_targets_from_one_client` — one client routes to two different targets
+- `standalone_domain_target` — domain name resolution through standalone relay
+- `standalone_oversized_datagram_handled` — oversized packets handled without panic
+- `standalone_route_reject_drops_packet` — rejected routes drop packets and record metrics
+- `standalone_per_client_target_limit` — per-client target flow limit enforced
+- `standalone_flow_reuse_allows_same_target` — flow reuse for same target is allowed
+
+These complement the existing standalone unit tests in `eggress-udp/src/standalone.rs` (14 tests) and the differential tests in `differential_pproxy.rs` (7 gated tests).
+
 ## Verification
 
 All verification commands pass:
