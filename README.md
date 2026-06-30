@@ -207,9 +207,9 @@ Legend:
 ### Shadowsocks
 
 - [x] Shadowsocks TCP client (standard SIP003 AEAD framing; wire-compatible with standard implementations; aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
-- [ ] Shadowsocks TCP server
+- [x] Shadowsocks TCP server (inbound listener with standard SIP003 AEAD; single-hop upstream)
 - [x] Shadowsocks UDP client (standard AEAD format: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
-- [ ] Shadowsocks UDP server
+- [x] Shadowsocks UDP server (inbound Shadowsocks UDP association listener)
 - [x] AEAD cipher support (individual encrypt/decrypt operations)
 - [x] Modern default cipher suite
 - [ ] Legacy stream cipher compatibility

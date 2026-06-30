@@ -1,9 +1,11 @@
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::sync::Arc;
+
+use tokio::io::AsyncWriteExt;
 
 use crate::address::{decode_address, encode_address};
-use crate::aead::aead_encrypt_raw;
 use crate::error::ShadowsocksError;
 use crate::method::CipherMethod;
+use crate::metrics::ShadowsocksMetrics;
 use crate::tcp_stream::ShadowsocksAeadStream;
 use eggress_core::{BoxStream, TargetAddr};
 
@@ -12,13 +14,19 @@ pub const MAX_FRAME_SIZE: usize = 65535;
 
 /// Send a Shadowsocks TCP CONNECT request and return the upgraded stream.
 ///
-/// Sends the salt + encrypted address header, then wraps the stream with
-/// a bidirectional AEAD stream adapter for encrypting subsequent data.
+/// Sends the salt + encrypted address header (using the standard AEAD chunk
+/// format: length block + payload block), then wraps the stream with a
+/// bidirectional AEAD stream adapter for encrypting subsequent data.
+///
+/// Wire format after salt:
+///   AEAD(len_u16_be, nonce=0)  — 18 bytes (encrypted address length)
+///   AEAD(address, nonce=1)     — variable (encrypted address payload)
 pub async fn shadowsocks_connect(
     mut stream: BoxStream,
     target: &TargetAddr,
     method: CipherMethod,
     password: &str,
+    metrics: Option<Arc<ShadowsocksMetrics>>,
 ) -> Result<BoxStream, ShadowsocksError> {
     use rand::RngCore;
     let mut salt = vec![0u8; method.salt_size()];
@@ -27,137 +35,102 @@ pub async fn shadowsocks_connect(
     let subkey = method.derive_key(password.as_bytes(), &salt)?;
 
     let address = encode_address(target)?;
-    let nonce_bytes = vec![0u8; method.nonce_size()];
-    let encrypted_addr = aead_encrypt_raw(method, &subkey, &nonce_bytes, &address)?;
 
-    let mut payload = Vec::with_capacity(salt.len() + encrypted_addr.len());
+    // Encrypt address header using the standard chunk format (same as data chunks).
+    // Nonce 0 for the length block, nonce 1 for the payload block.
+    let addr_nonce = vec![0u8; method.nonce_size()];
+    let addr_wire = crate::aead::encrypt_chunk_standard(method, &subkey, &addr_nonce, &address)?;
+
+    let mut payload = Vec::with_capacity(salt.len() + addr_wire.len());
     payload.extend_from_slice(&salt);
-    payload.extend_from_slice(&encrypted_addr);
+    payload.extend_from_slice(&addr_wire);
 
     stream.write_all(&payload).await?;
     stream.flush().await?;
 
+    if let Some(m) = metrics.as_ref() {
+        m.record_tcp_upstream_session();
+        m.record_tcp_flow_open();
+    }
+
+    // Data chunks start at nonce 2 (nonce 0+1 were used for the address header).
     Ok(Box::new(ShadowsocksAeadStream::new(stream, method, subkey)))
 }
 
-/// Server-side accept: read the salt, decrypt the address header, and return
-/// the wrapped AEAD stream plus the target address.
+/// Server-side accept: read the salt, decrypt the address header (sent as a
+/// standard AEAD chunk: length block + payload block), and return the wrapped
+/// AEAD stream plus the target address.
 ///
-/// Reads the 16-byte salt, then progressively reads ciphertext bytes and
-/// attempts AEAD decryption to find the correct address header boundary.
-/// Any bytes read beyond the address header ciphertext are prepended to the
-/// returned stream so they can be consumed by the AEAD stream adapter.
+/// Wire format after salt:
+///   AEAD(len_u16_be, nonce=0)  — 18 bytes (encrypted address length)
+///   AEAD(address, nonce=1)     — variable (encrypted address payload)
 pub async fn shadowsocks_accept(
     mut stream: BoxStream,
     password: &str,
     method: CipherMethod,
+    metrics: Option<Arc<ShadowsocksMetrics>>,
 ) -> Result<(BoxStream, TargetAddr), ShadowsocksError> {
     use crate::aead::aead_decrypt_raw;
+    use tokio::io::AsyncReadExt;
 
     let mut salt = vec![0u8; method.salt_size()];
     stream.read_exact(&mut salt).await?;
 
     let subkey = method.derive_key(password.as_bytes(), &salt)?;
-
-    let nonce_bytes = vec![0u8; method.nonce_size()];
     let tag_size = method.tag_size();
+    let len_block_size = 2 + tag_size; // 18 bytes
 
-    // The address header plaintext is at most:
-    //   ATYP(1) + domain_len(1) + max_domain(255) + port(2) = 259 bytes
-    // So ciphertext is at most 259 + tag_size = 275 bytes.
-    // Read up to 512 bytes to be safe.
-    let mut buf = vec![0u8; 512];
-    let mut buf_len = 0;
+    // Read the 18-byte encrypted length block (nonce 0).
+    let mut len_block = vec![0u8; len_block_size];
+    stream.read_exact(&mut len_block).await?;
 
-    // Progressive read + decrypt: try increasing ciphertext lengths until
-    // AEAD decryption succeeds. Minimum address is IPv4: 7 bytes + 16 tag = 23.
-    loop {
-        if buf_len >= buf.len() {
-            return Err(ShadowsocksError::DecryptionFailed(
-                "address header too large".into(),
-            ));
+    let len_nonce = vec![0u8; method.nonce_size()];
+    let len_plaintext = aead_decrypt_raw(method, &subkey, &len_nonce, &len_block).map_err(|e| {
+        if let Some(m) = metrics.as_ref() {
+            m.record_tcp_decrypt_failure();
         }
-        let n = stream.read(&mut buf[buf_len..]).await?;
-        if n == 0 {
-            return Err(ShadowsocksError::DecryptionFailed(
-                "unexpected EOF reading address header".into(),
-            ));
-        }
-        buf_len += n;
+        ShadowsocksError::DecryptionFailed(e.to_string())
+    })?;
 
-        // Try decrypting with increasing ciphertext lengths.
-        // Minimum plaintext: ATYP(1) + len(1) + domain(1) + port(2) = 5 → min ciphertext = 5 + tag_size
-        let min_ct = 5 + tag_size;
-        for ct_len in min_ct..=buf_len {
-            if let Ok(plaintext) = aead_decrypt_raw(method, &subkey, &nonce_bytes, &buf[..ct_len]) {
-                let (target_addr, _consumed) = decode_address(&plaintext)?;
-                let extra = buf[ct_len..buf_len].to_vec();
-                let stream: BoxStream = if extra.is_empty() {
-                    stream
-                } else {
-                    Box::new(PrependReader::new(stream, extra))
-                };
-                return Ok((
-                    Box::new(ShadowsocksAeadStream::new(stream, method, subkey)),
-                    target_addr,
-                ));
+    if len_plaintext.len() != 2 {
+        if let Some(m) = metrics.as_ref() {
+            m.record_tcp_frame_parse_failure();
+        }
+        return Err(ShadowsocksError::DecryptionFailed(
+            "invalid length block plaintext".into(),
+        ));
+    }
+    let addr_len = u16::from_be_bytes([len_plaintext[0], len_plaintext[1]]) as usize;
+
+    // Read the address payload block (nonce 1).
+    let mut addr_block = vec![0u8; addr_len + tag_size];
+    stream.read_exact(&mut addr_block).await?;
+
+    let payload_nonce_bytes = {
+        let mut n = vec![0u8; method.nonce_size()];
+        n[0] = 1; // little-endian nonce 1
+        n
+    };
+    let address_plaintext = aead_decrypt_raw(method, &subkey, &payload_nonce_bytes, &addr_block)
+        .map_err(|e| {
+            if let Some(m) = metrics.as_ref() {
+                m.record_tcp_decrypt_failure();
             }
-        }
-    }
-}
+            ShadowsocksError::DecryptionFailed(e.to_string())
+        })?;
 
-/// A reader that prepends already-read bytes before reading from the inner stream.
-struct PrependReader<S> {
-    inner: S,
-    prefix: Vec<u8>,
-}
+    let (target_addr, _consumed) = decode_address(&address_plaintext)?;
 
-impl<S: tokio::io::AsyncRead + Unpin> PrependReader<S> {
-    fn new(inner: S, prefix: Vec<u8>) -> Self {
-        Self { inner, prefix }
-    }
-}
-
-impl<S: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for PrependReader<S> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        if !this.prefix.is_empty() {
-            let n = std::cmp::min(this.prefix.len(), buf.remaining());
-            buf.put_slice(&this.prefix[..n]);
-            this.prefix.drain(..n);
-            return std::task::Poll::Ready(Ok(()));
-        }
-        let pinned = std::pin::Pin::new(&mut this.inner);
-        pinned.poll_read(cx, buf)
-    }
-}
-
-impl<S: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for PrependReader<S> {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        std::pin::Pin::new(&mut self.get_mut().inner).poll_write(cx, buf)
+    if let Some(m) = metrics.as_ref() {
+        m.record_tcp_session_accepted();
+        m.record_tcp_flow_open();
     }
 
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().inner).poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
-    }
+    // Data chunks start at nonce 2 (nonces 0+1 consumed by address header).
+    Ok((
+        Box::new(ShadowsocksAeadStream::new(stream, method, subkey)),
+        target_addr,
+    ))
 }
 
 #[cfg(test)]
@@ -179,8 +152,9 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let (mut ss_stream, target) =
-                shadowsocks_accept(boxed, password, method).await.unwrap();
+            let (mut ss_stream, target) = shadowsocks_accept(boxed, password, method, None)
+                .await
+                .unwrap();
 
             assert_eq!(target.host, TargetHost::Domain("example.com".to_string()));
             assert_eq!(target.port, 443);
@@ -198,7 +172,7 @@ mod tests {
             port: 443,
         };
 
-        let mut conn = shadowsocks_connect(boxed, &target, method, password)
+        let mut conn = shadowsocks_connect(boxed, &target, method, password, None)
             .await
             .unwrap();
 
@@ -227,8 +201,9 @@ mod tests {
             let server_jh = tokio::spawn(async move {
                 let (stream, _) = listener.accept().await.unwrap();
                 let boxed: BoxStream = Box::new(stream);
-                let (mut ss_stream, _target) =
-                    shadowsocks_accept(boxed, password, method).await.unwrap();
+                let (mut ss_stream, _target) = shadowsocks_accept(boxed, password, method, None)
+                    .await
+                    .unwrap();
 
                 let mut buf = vec![0u8; 4096];
                 let n = ss_stream.read(&mut buf).await.unwrap();
@@ -244,7 +219,7 @@ mod tests {
                 port: 80,
             };
 
-            let mut conn = shadowsocks_connect(boxed, &target, method, password)
+            let mut conn = shadowsocks_connect(boxed, &target, method, password, None)
                 .await
                 .unwrap();
 
@@ -272,8 +247,9 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let (mut ss_stream, _target) =
-                shadowsocks_accept(boxed, password, method).await.unwrap();
+            let (mut ss_stream, _target) = shadowsocks_accept(boxed, password, method, None)
+                .await
+                .unwrap();
 
             let mut buf = vec![0u8; 4096];
             let n = ss_stream.read(&mut buf).await.unwrap();
@@ -288,7 +264,7 @@ mod tests {
             port: 443,
         };
 
-        let mut conn = shadowsocks_connect(boxed, &target, method, password)
+        let mut conn = shadowsocks_connect(boxed, &target, method, password, None)
             .await
             .unwrap();
 
@@ -311,8 +287,9 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let (mut ss_stream, target) =
-                shadowsocks_accept(boxed, password, method).await.unwrap();
+            let (mut ss_stream, target) = shadowsocks_accept(boxed, password, method, None)
+                .await
+                .unwrap();
 
             // Verify the target address was decoded correctly
             assert_eq!(target.host, TargetHost::Ip("10.0.0.1".parse().unwrap()));
@@ -334,7 +311,7 @@ mod tests {
             port: 8080,
         };
 
-        let mut conn = shadowsocks_connect(boxed, &target, method, password)
+        let mut conn = shadowsocks_connect(boxed, &target, method, password, None)
             .await
             .unwrap();
 
@@ -368,8 +345,9 @@ mod tests {
             let server_jh = tokio::spawn(async move {
                 let (stream, _) = listener.accept().await.unwrap();
                 let boxed: BoxStream = Box::new(stream);
-                let (mut ss_stream, target) =
-                    shadowsocks_accept(boxed, password, method).await.unwrap();
+                let (mut ss_stream, target) = shadowsocks_accept(boxed, password, method, None)
+                    .await
+                    .unwrap();
 
                 assert_eq!(target.host, TargetHost::Domain("example.com".to_string()));
                 assert_eq!(target.port, 443);
@@ -388,7 +366,7 @@ mod tests {
                 port: 443,
             };
 
-            let mut conn = shadowsocks_connect(boxed, &target, method, password)
+            let mut conn = shadowsocks_connect(boxed, &target, method, password, None)
                 .await
                 .unwrap();
 
@@ -479,7 +457,7 @@ mod tests {
         };
         let method = CipherMethod::Aes256Gcm;
 
-        let mut conn = shadowsocks_connect(boxed, &target, method, "testpass")
+        let mut conn = shadowsocks_connect(boxed, &target, method, "testpass", None)
             .await
             .unwrap();
 

@@ -31,7 +31,7 @@ async fn handle_client(
     method: CipherMethod,
 ) -> Result<(), ShadowsocksError> {
     let boxed: eggress_core::BoxStream = Box::new(stream);
-    let (ss_stream, target_addr) = shadowsocks_accept(boxed, &password, method).await?;
+    let (ss_stream, target_addr) = shadowsocks_accept(boxed, &password, method, None).await?;
 
     // Connect to target
     let target_str = match &target_addr.host {

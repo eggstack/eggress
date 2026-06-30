@@ -353,9 +353,13 @@ with start_pproxy(["-l", "socks5://:1080"]) as handle:
   built wheel.
 - **No embedded async API**: The Python bindings use the blocking `start_blocking`
   path only. An async Python API is not yet available.
-- **pproxy compat**: Shadowsocks TCP is experimental/non-standard. No inbound
-  Shadowsocks or Trojan listeners. No legacy stream ciphers. No SSH/unix/redir
-  transport. No pproxy daemon mode. Multiple remotes default to round-robin.
+- **pproxy compat**: Shadowsocks TCP uses standard SIP003 AEAD framing
+  (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`). Inbound
+  Shadowsocks listeners are available via the Rust binary; the embed API
+  (which the Python bindings wrap) exposes TCP/UDP upstream Shadowsocks and
+  inbound listeners for SOCKS5/HTTP only in the current release. No Trojan
+  inbound listeners. No legacy stream ciphers. No SSH/unix/redir transport.
+  No pproxy daemon mode. Multiple remotes default to round-robin.
 - **mypy**: PyO3 native types (`_inner` attribute) are invisible to mypy,
   producing ~20 expected false-positive errors. This is known pre-release
   typing debt. A future release will add `.pyi` stubs or type wrappers.

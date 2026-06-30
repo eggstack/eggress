@@ -203,6 +203,7 @@ async fn prepare_shadowsocks_udp_relay(
     let relay_config = eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig {
         routing,
         udp_metrics: state.udp_metrics.clone(),
+        shadowsocks_metrics: Some(state.shadowsocks_metrics.clone()),
         limits: eggress_udp::limits::UdpLimits::from_listener_config(
             udp_cfg.max_associations,
             udp_cfg.max_targets_per_association,
@@ -375,6 +376,7 @@ pub struct RuntimeState {
     pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
+    pub shadowsocks_metrics: Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
     pub udp_tasks: TaskTracker,
 }
 
@@ -434,9 +436,11 @@ impl ServiceSupervisor {
         ));
 
         let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
+        let shadowsocks_metrics = Arc::new(eggress_protocol_shadowsocks::ShadowsocksMetrics::new());
         let udp_tasks = TaskTracker::new();
 
         metrics.set_udp_metrics(udp_metrics.clone());
+        metrics.set_shadowsocks_metrics(shadowsocks_metrics.clone());
 
         let state = Arc::new(RuntimeState {
             snapshot: snapshot.clone(),
@@ -450,6 +454,7 @@ impl ServiceSupervisor {
             listener_addrs: Arc::new(Mutex::new(Vec::new())),
             udp_registry,
             udp_metrics,
+            shadowsocks_metrics,
             udp_tasks: udp_tasks.clone(),
         });
 
@@ -777,6 +782,7 @@ impl ServiceSupervisor {
                         let conn_protocols = proto_slice.clone();
                         let conn_auth = prepared_listener.auth.clone();
                         let conn_metrics = state.metrics.clone();
+                        let conn_ss_metrics = state.shadowsocks_metrics.clone();
                         let active = state.active_connections.clone();
                         let conn_cancel = conn_cancel.child_token();
                         let generation = state.snapshot.load().generation;
@@ -850,6 +856,7 @@ impl ServiceSupervisor {
                                         password: ss.password,
                                     },
                                 ),
+                                shadowsocks_metrics: Some(conn_ss_metrics),
                             };
 
                             let report = tokio::select! {

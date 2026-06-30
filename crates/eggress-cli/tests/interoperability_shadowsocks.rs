@@ -565,6 +565,376 @@ direct = true
     echo_jh.abort();
 }
 
+// ===== Additional interoperability tests (Phase 21.11) =====
+
+/// Send through SOCKS5 to a domain-name target (SOCKS5 ATYP=0x03).
+async fn send_through_socks5_domain(
+    proxy_addr: std::net::SocketAddr,
+    target_host: &str,
+    target_port: u16,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to proxy failed: {e}"))?;
+    let (mut reader, mut writer) = tokio::io::split(stream);
+
+    writer
+        .write_all(&[0x05, 0x01, 0x00])
+        .await
+        .map_err(|e| format!("write method negotiation: {e}"))?;
+    let mut resp = [0u8; 2];
+    reader
+        .read_exact(&mut resp)
+        .await
+        .map_err(|e| format!("read method selection: {e}"))?;
+    if resp != [0x05, 0x00] {
+        return Err(format!("unexpected method selection: {resp:?}"));
+    }
+
+    let host_bytes = target_host.as_bytes();
+    if host_bytes.len() > 255 {
+        return Err("domain too long".into());
+    }
+    let mut req = vec![0x05, 0x01, 0x00, 0x03, host_bytes.len() as u8];
+    req.extend_from_slice(host_bytes);
+    req.extend_from_slice(&target_port.to_be_bytes());
+    writer
+        .write_all(&req)
+        .await
+        .map_err(|e| format!("write CONNECT: {e}"))?;
+
+    let mut reply_head = [0u8; 4];
+    reader
+        .read_exact(&mut reply_head)
+        .await
+        .map_err(|e| format!("read reply head: {e}"))?;
+    if reply_head[1] != 0x00 {
+        return Err(format!(
+            "SOCKS5 CONNECT failed: reply code 0x{:02x}",
+            reply_head[1]
+        ));
+    }
+    let bnd_len = match reply_head[3] {
+        0x01 => 4,
+        0x04 => 16,
+        0x03 => {
+            let mut l = [0u8; 1];
+            reader
+                .read_exact(&mut l)
+                .await
+                .map_err(|e| format!("read bnd length: {e}"))?;
+            l[0] as usize + 2
+        }
+        _ => return Err(format!("unknown ATYP 0x{:02x}", reply_head[3])),
+    };
+    let mut bnd = vec![0u8; bnd_len];
+    reader
+        .read_exact(&mut bnd)
+        .await
+        .map_err(|e| format!("read bnd: {e}"))?;
+
+    writer
+        .write_all(payload)
+        .await
+        .map_err(|e| format!("write payload: {e}"))?;
+    writer
+        .shutdown()
+        .await
+        .map_err(|e| format!("shutdown write: {e}"))?;
+
+    let mut buf = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        let mut chunk = [0u8; 4096];
+        match tokio::time::timeout(Duration::from_millis(500), reader.read(&mut chunk)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => buf.extend_from_slice(&chunk[..n]),
+            Ok(Err(e)) => return Err(format!("read response: {e}")),
+            Err(_) => continue,
+        }
+    }
+    Ok(buf)
+}
+
+/// TCP interop: domain-name SOCKS5 target through Shadowsocks upstream.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver"]
+async fn interop_shadowsocks_tcp_domain_target() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let password = "test-password-domain";
+    let method = "aes-256-gcm";
+
+    let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "ss-up"
+uri = "ss://{method}:{password}@127.0.0.1:{}"
+
+[[upstream_groups]]
+id = "route-group"
+scheduler = "first-available"
+members = ["ss-up"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "route-group"
+"#,
+        ss_addr.port()
+    );
+
+    let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let target_host = "localhost";
+    let payload =
+        send_through_socks5_domain(proxy_addr, target_host, echo_addr.port(), b"domain target")
+            .await
+            .expect("TCP interop failed with domain target");
+
+    assert_eq!(payload, b"domain target");
+
+    cancel.cancel();
+    let _ = proxy_jh.await;
+    echo_jh.abort();
+}
+
+/// TCP interop: large payload (multiple AEAD chunks) through Shadowsocks.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver"]
+async fn interop_shadowsocks_tcp_large_payload() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let password = "test-password-large";
+    let method = "aes-256-gcm";
+
+    let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "ss-up"
+uri = "ss://{method}:{password}@127.0.0.1:{}"
+
+[[upstream_groups]]
+id = "route-group"
+scheduler = "first-available"
+members = ["ss-up"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "route-group"
+"#,
+        ss_addr.port()
+    );
+
+    let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let payload = vec![0x5Au8; 256 * 1024];
+    let sent = payload.clone();
+    let received = send_through_socks5(
+        proxy_addr,
+        &echo_addr.ip().to_string(),
+        echo_addr.port(),
+        &payload,
+    )
+    .await
+    .expect("TCP interop failed with large payload");
+
+    assert_eq!(received.len(), sent.len(), "byte count mismatch");
+    assert_eq!(received, sent, "large payload bytes mismatch");
+
+    cancel.cancel();
+    let _ = proxy_jh.await;
+    echo_jh.abort();
+}
+
+/// TCP interop: half-close behavior — sender shuts down write side after
+/// payload, receiver should still return the full echo before connection
+/// naturally terminates.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 and ssserver"]
+async fn interop_shadowsocks_tcp_half_close() {
+    skip_if_unavailable();
+
+    let (echo_addr, echo_jh) = start_tcp_echo().await;
+    let password = "test-password-halfclose";
+    let method = "aes-256-gcm";
+
+    let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "ss-up"
+uri = "ss://{method}:{password}@127.0.0.1:{}"
+
+[[upstream_groups]]
+id = "route-group"
+scheduler = "first-available"
+members = ["ss-up"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "route-group"
+"#,
+        ss_addr.port()
+    );
+
+    let (proxy_addr, cancel, proxy_jh) = start_eggress_from_toml_running(&config).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let stream = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .expect("connect to proxy");
+    let (mut reader, mut writer) = tokio::io::split(stream);
+
+    writer.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut sel = [0u8; 2];
+    reader.read_exact(&mut sel).await.unwrap();
+    assert_eq!(sel, [0x05, 0x00]);
+
+    let ip = echo_addr.ip().to_string();
+    let ipv4: std::net::Ipv4Addr = ip.parse().unwrap();
+    let mut req = vec![0x05, 0x01, 0x00, 0x01];
+    req.extend_from_slice(&ipv4.octets());
+    req.extend_from_slice(&echo_addr.port().to_be_bytes());
+    writer.write_all(&req).await.unwrap();
+
+    let mut reply = [0u8; 10];
+    reader.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00);
+
+    let payload = b"half-close probe";
+    writer.write_all(payload).await.unwrap();
+    writer.shutdown().await.expect("client half-close");
+
+    let mut buf = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        let mut chunk = [0u8; 4096];
+        match tokio::time::timeout(Duration::from_millis(300), reader.read(&mut chunk)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => buf.extend_from_slice(&chunk[..n]),
+            Ok(Err(_)) => break,
+            Err(_) => continue,
+        }
+    }
+
+    assert_eq!(buf, payload, "echo bytes mismatch on half-close");
+
+    cancel.cancel();
+    let _ = proxy_jh.await;
+    echo_jh.abort();
+}
+
+/// UDP interop: large payload through inbound Shadowsocks listener — exercises
+/// UDP packet decoding for a payload near the practical MTU.
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1"]
+async fn interop_shadowsocks_udp_inbound_large_packet() {
+    require_shadowsocks_interop();
+
+    let (udp_echo_addr, udp_jh) = start_udp_echo().await;
+    let password = "test-password-udp-large-in";
+    let method = "aes-256-gcm";
+    let cipher: eggress_protocol_shadowsocks::CipherMethod =
+        eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
+
+    let ss_config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "ss-in"
+bind = "127.0.0.1:0"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+method = "{method}"
+password = "{password}"
+
+[listeners.udp]
+mode = "shadowsocks_udp"
+client_pin = true
+
+[[rules]]
+id = "route-all"
+direct = true
+"#
+    );
+
+    let (ss_addr, cancel, ss_jh) = start_eggress_from_toml_running(&ss_config).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
+    let mut salt = vec![0u8; cipher.salt_size()];
+    use rand::RngCore;
+    rand::thread_rng().fill_bytes(&mut salt);
+
+    let payload = vec![0xCDu8; 8 * 1024];
+    let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
+        cipher,
+        password.as_bytes(),
+        &eggress_core::TargetAddr {
+            host: eggress_core::TargetHost::Ip(target.ip()),
+            port: target.port(),
+        },
+        &payload,
+        &salt,
+    )
+    .expect("encode udp packet");
+
+    let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    udp_sock.send_to(&encoded, ss_addr).await.expect("send");
+
+    let mut buf = [0u8; 65535];
+    let result = tokio::time::timeout(Duration::from_secs(5), udp_sock.recv_from(&mut buf)).await;
+    let (n, _peer) = result.expect("timeout").expect("recv");
+
+    let (_target, decoded) = eggress_protocol_shadowsocks::udp::decode_udp_packet(
+        cipher,
+        password.as_bytes(),
+        &buf[..n],
+    )
+    .expect("decode udp response");
+
+    assert_eq!(decoded, payload);
+
+    cancel.cancel();
+    let _ = ss_jh.await;
+    udp_jh.abort();
+}
+
 // ===== UDP Interop Tests =====
 
 /// UDP interop: eggress Shadowsocks UDP → external ssserver → UDP echo.

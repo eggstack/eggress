@@ -92,6 +92,29 @@ transport modes are distinguished by which metric family receives the counters.
 | `eggress_standalone_udp_rejected_total` | Counter | Total rejected standalone UDP datagrams |
 | `eggress_standalone_udp_flow_reaps_total` | Counter | Total standalone UDP flow reaps |
 
+### Shadowsocks Metrics
+
+Shadowsocks-specific counters and gauges for TCP/UDP AEAD lifecycle, decrypt
+failures, and key derivation. Populated whenever the runtime supervisor
+threads `ShadowsocksMetrics` through the server wiring.
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `eggress_shadowsocks_tcp_upstream_sessions_total` | Counter | TCP sessions opened against an external Shadowsocks upstream |
+| `eggress_shadowsocks_tcp_inbound_sessions_total` | Counter | TCP sessions accepted as a Shadowsocks inbound listener |
+| `eggress_shadowsocks_tcp_sessions_active` | Gauge | Currently active TCP sessions (inbound + upstream) |
+| `eggress_shadowsocks_tcp_flow_open_total` | Counter | TCP flow opens (one per upstream connect and inbound accept) |
+| `eggress_shadowsocks_tcp_flow_close_total` | Counter | TCP flow closes |
+| `eggress_shadowsocks_tcp_active_flows` | Gauge | Currently open TCP flows |
+| `eggress_shadowsocks_tcp_decrypt_failures_total` | Counter | TCP AEAD decryption failures (wrong key, tampered ciphertext, etc.) |
+| `eggress_shadowsocks_tcp_frame_parse_failures_total` | Counter | TCP frame structure failures (bad plaintext length) |
+| `eggress_shadowsocks_tcp_unsupported_method_reject_total` | Counter | TCP sessions rejected due to unknown cipher method |
+| `eggress_shadowsocks_tcp_session_closed_total` | Counter | TCP sessions closed (matches `tcp_inbound_sessions_total` over time) |
+| `eggress_shadowsocks_udp_packets_in_total` | Counter | UDP datagrams successfully decoded |
+| `eggress_shadowsocks_udp_packets_out_total` | Counter | UDP datagrams successfully encoded and sent |
+| `eggress_shadowsocks_udp_active_flows` | Gauge | Currently active UDP flows |
+| `eggress_shadowsocks_udp_decrypt_failure_total` | Counter | UDP AEAD decryption failures |
+
 ## Labels and Cardinality Policy
 
 ### What IS labeled

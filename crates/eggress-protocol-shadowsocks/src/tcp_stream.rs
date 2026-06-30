@@ -57,8 +57,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             inner,
             method,
             subkey,
-            write_nonce: NonceCounter::starting_at(nonce_size, 1),
-            read_nonce: NonceCounter::starting_at(nonce_size, 1),
+            // Nonces 0 and 1 were consumed by the address header (length + payload).
+            // Data chunks start at nonce 2.
+            write_nonce: NonceCounter::starting_at(nonce_size, 2),
+            read_nonce: NonceCounter::starting_at(nonce_size, 2),
             read_plain: BytesMut::new(),
             read_buf: BytesMut::new(),
             read_state: ReadState::LengthBlock,
@@ -484,9 +486,9 @@ mod tests {
 
         // Manually send a zero-length payload chunk (raw, not through the adapter).
         // Wire format: AEAD(len_u16=0, nonce) + AEAD(empty, nonce+1)
-        // The reader starts at nonce counter=1, so encrypt with nonce 1.
+        // The reader starts at nonce counter=2, so encrypt with nonce 2.
         let mut nonce = vec![0u8; method.nonce_size()];
-        nonce[0] = 1;
+        nonce[0] = 2;
         let wire = encrypt_chunk_standard(method, &subkey, &nonce, b"").unwrap();
         let mut raw_stream = client;
         raw_stream.write_all(&wire).await.unwrap();
@@ -507,11 +509,11 @@ mod tests {
 
         let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey.clone());
 
-        // Manually create wire: encrypt with nonce 1, then tamper length block
+        // Manually create wire: encrypt with nonce 2 (first data nonce), then tamper length block
         let mut raw_stream = client;
         let nonce1 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[0] = 1;
+            n[0] = 2; // first data chunk nonce
             n
         };
         let len_bytes = (5u16).to_be_bytes();
@@ -524,7 +526,7 @@ mod tests {
         // Write a valid payload block (won't matter since length decryption fails)
         let nonce2 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[0] = 2;
+            n[0] = 3; // payload nonce = length nonce + 1
             n
         };
         let payload_ct = crate::aead::aead_encrypt_raw(method, &subkey, &nonce2, b"hello").unwrap();
@@ -560,7 +562,7 @@ mod tests {
         let mut raw_stream = client;
         let nonce1 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[0] = 1;
+            n[0] = 2; // first data chunk nonce
             n
         };
         let len_bytes = (5u16).to_be_bytes();
@@ -570,7 +572,7 @@ mod tests {
         // Write tampered payload block
         let nonce2 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[0] = 2;
+            n[0] = 3; // payload nonce = length nonce + 1
             n
         };
         let payload_ct = crate::aead::aead_encrypt_raw(method, &subkey, &nonce2, b"hello").unwrap();

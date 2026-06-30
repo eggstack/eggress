@@ -27,6 +27,7 @@ use eggress_routing::{
 pub struct ShadowsocksStandaloneUdpConfig {
     pub routing: Arc<dyn RouteService>,
     pub udp_metrics: Arc<UdpMetrics>,
+    pub shadowsocks_metrics: Option<Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
     pub limits: UdpLimits,
     pub listener: String,
     pub generation: u64,
@@ -75,6 +76,7 @@ pub async fn shadowsocks_standalone_udp_relay(
 
     let socket_clone = socket.clone();
     let metrics_clone = config.udp_metrics.clone();
+    let ss_metrics_clone = config.shadowsocks_metrics.clone();
     let resp_method = config.method;
     let resp_password = config.password.as_bytes().to_vec();
     tokio::spawn(async move {
@@ -92,6 +94,9 @@ pub async fn shadowsocks_standalone_udp_relay(
                 Ok(encoded) => {
                     if socket_clone.send_to(&encoded, msg.client).await.is_ok() {
                         metrics_clone.record_standalone_packet_out(encoded.len() as u64);
+                        if let Some(ss) = ss_metrics_clone.as_ref() {
+                            ss.record_udp_packet_out(encoded.len() as u64);
+                        }
                     } else {
                         metrics_clone.record_dropped();
                     }
@@ -123,6 +128,9 @@ pub async fn shadowsocks_standalone_udp_relay(
                         Ok(r) => r,
                         Err(_) => {
                             config.udp_metrics.record_standalone_malformed();
+                            if let Some(ss) = config.shadowsocks_metrics.as_ref() {
+                                ss.record_udp_decrypt_failure();
+                            }
                             continue;
                         }
                     };
@@ -135,6 +143,9 @@ pub async fn shadowsocks_standalone_udp_relay(
                     }
 
                     config.udp_metrics.record_standalone_packet_in(n as u64);
+                    if let Some(ss) = config.shadowsocks_metrics.as_ref() {
+                        ss.record_udp_packet_in(n as u64);
+                    }
 
                     let route_target = TargetAddr {
                         host: target_addr.host.clone(),
@@ -585,6 +596,7 @@ mod tests {
         ShadowsocksStandaloneUdpConfig {
             routing,
             udp_metrics: Arc::new(UdpMetrics::new()),
+            shadowsocks_metrics: None,
             limits: UdpLimits::default(),
             listener: "test-shadowsocks-standalone".to_string(),
             generation: 1,

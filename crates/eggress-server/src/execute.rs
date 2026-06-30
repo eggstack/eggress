@@ -315,7 +315,8 @@ async fn open_route(
                 pending_lease,
                 ..
             } => {
-                let executor = build_chain_executor(tls_override);
+                let executor =
+                    build_chain_executor(tls_override, config.shadowsocks_metrics.clone());
                 let stream = executor.execute(&chain.hops, request.target).await?;
                 let active_lease = pending_lease.established();
                 Ok::<_, SessionOpenError>((stream, Some(active_lease)))
@@ -859,6 +860,7 @@ async fn execute_udp_associate(
 
 fn build_chain_executor(
     tls_override: Option<&std::sync::Arc<rustls::ClientConfig>>,
+    shadowsocks_metrics: Option<std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
 ) -> ChainExecutor {
     // Build shared TLS client config for upstream hops
     let shared_tls_config = match tls_override {
@@ -881,7 +883,9 @@ fn build_chain_executor(
         Box::new(HttpHopHandler),
         Box::new(Socks5HopHandler),
         Box::new(Socks4HopHandler),
-        Box::new(ShadowsocksHopHandler),
+        Box::new(ShadowsocksHopHandler {
+            metrics: shadowsocks_metrics,
+        }),
         Box::new(TrojanHopHandler {
             tls_config: shared_tls_config_arc,
         }),
@@ -991,7 +995,9 @@ impl HopHandler for Socks4HopHandler {
     }
 }
 
-struct ShadowsocksHopHandler;
+struct ShadowsocksHopHandler {
+    metrics: Option<std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+}
 
 impl HopHandler for ShadowsocksHopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
@@ -1004,6 +1010,7 @@ impl HopHandler for ShadowsocksHopHandler {
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
+        let metrics = self.metrics.clone();
         Box::pin(async move {
             let creds = hop.credentials.as_ref().ok_or_else(|| {
                 Box::new(eggress_protocol_shadowsocks::ShadowsocksError::Other(
@@ -1012,13 +1019,19 @@ impl HopHandler for ShadowsocksHopHandler {
             })?;
 
             let method = eggress_protocol_shadowsocks::CipherMethod::parse_method(&creds.username)
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                .map_err(|e| {
+                    if let Some(m) = metrics.as_ref() {
+                        m.record_tcp_unsupported_method_reject();
+                    }
+                    Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+                })?;
 
             eggress_protocol_shadowsocks::shadowsocks_connect(
                 stream,
                 target,
                 method,
                 &creds.password,
+                metrics,
             )
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)

@@ -9,6 +9,7 @@ license.workspace = true
 prometheus-client.workspace = true
 eggress-server.workspace = true
 eggress-udp.workspace = true
+eggress-protocol-shadowsocks.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

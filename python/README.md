@@ -104,8 +104,8 @@ print(result.unsupported)  # unsupported features
 
 ## Non-parity with pproxy
 
-- Shadowsocks TCP is experimental (non-standard AEAD framing)
-- No inbound Shadowsocks or Trojan listeners (upstream-only)
+- Shadowsocks TCP uses standard SIP003 AEAD framing (wire-compatible with `shadowsocks-rust`/`ssserver`/`sslocal`); single-hop upstream only
+- No inbound Shadowsocks or Trojan listeners (upstream-only) — inbound Shadowsocks listener is available in the Rust binary; Python bindings expose the embed API which omits this for now
 - No legacy stream ciphers (aes-ctr, aes-cfb, rc4-md5, etc.)
 - No SSH, Unix socket, or transparent proxy (redir) transport
 - No pproxy daemon mode (`--daemon`)

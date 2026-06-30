@@ -6,6 +6,7 @@ use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::Registry;
 
+use eggress_protocol_shadowsocks::ShadowsocksMetrics;
 use eggress_server::execute::{SessionOutcome, SessionReport};
 use eggress_udp::metrics::UdpMetrics;
 
@@ -112,7 +113,23 @@ pub struct MetricsRegistry {
     upstream_open_total: Family<UpstreamOpenLabels, Counter>,
     upstream_open_failures_total: Family<UpstreamFailureLabels, Counter>,
     unsupported_transport_total: Family<UnsupportedTransportLabels, Counter>,
+    ss_tcp_sessions_active: Gauge,
+    ss_tcp_sessions_total: Counter,
+    ss_tcp_upstream_sessions_total: Counter,
+    ss_tcp_decrypt_failures_total: Counter,
+    ss_tcp_frame_parse_failures_total: Counter,
+    ss_tcp_unsupported_method_rejects_total: Counter,
+    ss_tcp_active_flows: Gauge,
+    ss_udp_packets_in_total: Counter,
+    ss_udp_packets_out_total: Counter,
+    ss_udp_bytes_in_total: Counter,
+    ss_udp_bytes_out_total: Counter,
+    ss_udp_decrypt_failures_total: Counter,
+    ss_udp_unsupported_method_rejects_total: Counter,
+    ss_udp_active_flows: Gauge,
     bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
+    bridged_shadowsocks_metrics:
+        Mutex<Option<(Arc<ShadowsocksMetrics>, BridgedShadowsocksSnapshot)>>,
 }
 
 #[derive(Default)]
@@ -141,6 +158,21 @@ struct BridgedUdpSnapshot {
     standalone_malformed_datagrams: u64,
     standalone_rejected_datagrams: u64,
     standalone_flow_reaps: u64,
+}
+
+#[derive(Default)]
+struct BridgedShadowsocksSnapshot {
+    tcp_sessions_total: u64,
+    tcp_upstream_sessions_total: u64,
+    tcp_decrypt_failures_total: u64,
+    tcp_frame_parse_failures_total: u64,
+    tcp_unsupported_method_rejects_total: u64,
+    udp_packets_in_total: u64,
+    udp_packets_out_total: u64,
+    udp_bytes_in_total: u64,
+    udp_bytes_out_total: u64,
+    udp_decrypt_failures_total: u64,
+    udp_unsupported_method_rejects_total: u64,
 }
 
 impl MetricsRegistry {
@@ -441,6 +473,104 @@ impl MetricsRegistry {
             unsupported_transport_total.clone(),
         );
 
+        let ss_tcp_sessions_active = Gauge::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_sessions_active",
+            "Currently active Shadowsocks TCP sessions",
+            ss_tcp_sessions_active.clone(),
+        );
+
+        let ss_tcp_sessions_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_sessions_total",
+            "Total Shadowsocks TCP sessions accepted",
+            ss_tcp_sessions_total.clone(),
+        );
+
+        let ss_tcp_upstream_sessions_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_upstream_sessions_total",
+            "Total Shadowsocks TCP upstream sessions opened",
+            ss_tcp_upstream_sessions_total.clone(),
+        );
+
+        let ss_tcp_decrypt_failures_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_decrypt_failures_total",
+            "Total Shadowsocks TCP decrypt failures",
+            ss_tcp_decrypt_failures_total.clone(),
+        );
+
+        let ss_tcp_frame_parse_failures_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_frame_parse_failures_total",
+            "Total Shadowsocks TCP frame parse failures",
+            ss_tcp_frame_parse_failures_total.clone(),
+        );
+
+        let ss_tcp_unsupported_method_rejects_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_unsupported_method_rejects_total",
+            "Total Shadowsocks TCP unsupported method rejects",
+            ss_tcp_unsupported_method_rejects_total.clone(),
+        );
+
+        let ss_tcp_active_flows = Gauge::default();
+        registry.register(
+            "eggress_shadowsocks_tcp_active_flows",
+            "Currently active Shadowsocks TCP flows",
+            ss_tcp_active_flows.clone(),
+        );
+
+        let ss_udp_packets_in_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_udp_packets_in_total",
+            "Total Shadowsocks UDP packets received from clients",
+            ss_udp_packets_in_total.clone(),
+        );
+
+        let ss_udp_packets_out_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_udp_packets_out_total",
+            "Total Shadowsocks UDP packets sent to clients",
+            ss_udp_packets_out_total.clone(),
+        );
+
+        let ss_udp_bytes_in_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_udp_bytes_in_total",
+            "Total Shadowsocks UDP bytes received from clients",
+            ss_udp_bytes_in_total.clone(),
+        );
+
+        let ss_udp_bytes_out_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_udp_bytes_out_total",
+            "Total Shadowsocks UDP bytes sent to clients",
+            ss_udp_bytes_out_total.clone(),
+        );
+
+        let ss_udp_decrypt_failures_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_udp_decrypt_failures_total",
+            "Total Shadowsocks UDP decrypt failures",
+            ss_udp_decrypt_failures_total.clone(),
+        );
+
+        let ss_udp_unsupported_method_rejects_total = Counter::default();
+        registry.register(
+            "eggress_shadowsocks_udp_unsupported_method_rejects_total",
+            "Total Shadowsocks UDP unsupported method rejects",
+            ss_udp_unsupported_method_rejects_total.clone(),
+        );
+
+        let ss_udp_active_flows = Gauge::default();
+        registry.register(
+            "eggress_shadowsocks_udp_active_flows",
+            "Currently active Shadowsocks UDP flows",
+            ss_udp_active_flows.clone(),
+        );
+
         Self {
             registry,
             connections_active,
@@ -485,7 +615,22 @@ impl MetricsRegistry {
             upstream_open_total,
             upstream_open_failures_total,
             unsupported_transport_total,
+            ss_tcp_sessions_active,
+            ss_tcp_sessions_total,
+            ss_tcp_upstream_sessions_total,
+            ss_tcp_decrypt_failures_total,
+            ss_tcp_frame_parse_failures_total,
+            ss_tcp_unsupported_method_rejects_total,
+            ss_tcp_active_flows,
+            ss_udp_packets_in_total,
+            ss_udp_packets_out_total,
+            ss_udp_bytes_in_total,
+            ss_udp_bytes_out_total,
+            ss_udp_decrypt_failures_total,
+            ss_udp_unsupported_method_rejects_total,
+            ss_udp_active_flows,
             bridged_udp_metrics: Mutex::new(None),
+            bridged_shadowsocks_metrics: Mutex::new(None),
         }
     }
 
@@ -565,6 +710,47 @@ impl MetricsRegistry {
                 .load(std::sync::atomic::Ordering::Relaxed),
         };
         *self.bridged_udp_metrics.lock().unwrap() = Some((metrics, snapshot));
+    }
+
+    /// Bridge a shared `ShadowsocksMetrics` instance so that `render_prometheus()`
+    /// exposes live Shadowsocks protocol-specific counters and gauges.
+    pub fn set_shadowsocks_metrics(&self, metrics: Arc<ShadowsocksMetrics>) {
+        let snapshot = BridgedShadowsocksSnapshot {
+            tcp_sessions_total: metrics
+                .tcp_sessions_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            tcp_upstream_sessions_total: metrics
+                .tcp_upstream_sessions_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            tcp_decrypt_failures_total: metrics
+                .tcp_decrypt_failures_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            tcp_frame_parse_failures_total: metrics
+                .tcp_frame_parse_failures_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            tcp_unsupported_method_rejects_total: metrics
+                .tcp_unsupported_method_rejects_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            udp_packets_in_total: metrics
+                .udp_packets_in_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            udp_packets_out_total: metrics
+                .udp_packets_out_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            udp_bytes_in_total: metrics
+                .udp_bytes_in_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            udp_bytes_out_total: metrics
+                .udp_bytes_out_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            udp_decrypt_failures_total: metrics
+                .udp_decrypt_failures_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+            udp_unsupported_method_rejects_total: metrics
+                .udp_unsupported_method_rejects_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+        };
+        *self.bridged_shadowsocks_metrics.lock().unwrap() = Some((metrics, snapshot));
     }
 
     pub fn record_session_start(&self) {
@@ -835,6 +1021,111 @@ impl MetricsRegistry {
             prev.standalone_flow_reaps = cur;
         }
 
+        // Sync live Shadowsocks protocol counters/gauges from bridged metrics
+        if let Some((metrics, prev)) = self.bridged_shadowsocks_metrics.lock().unwrap().as_mut() {
+            self.ss_tcp_sessions_active.set(
+                metrics
+                    .tcp_sessions_active
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
+            self.ss_tcp_active_flows.set(
+                metrics
+                    .tcp_active_flows
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
+            self.ss_udp_active_flows.set(
+                metrics
+                    .udp_active_flows
+                    .load(Ordering::Relaxed)
+                    .min(i64::MAX as u64) as i64,
+            );
+
+            let cur = metrics.tcp_sessions_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.tcp_sessions_total);
+            if delta > 0 {
+                self.ss_tcp_sessions_total.inc_by(delta);
+            }
+            prev.tcp_sessions_total = cur;
+
+            let cur = metrics.tcp_upstream_sessions_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.tcp_upstream_sessions_total);
+            if delta > 0 {
+                self.ss_tcp_upstream_sessions_total.inc_by(delta);
+            }
+            prev.tcp_upstream_sessions_total = cur;
+
+            let cur = metrics.tcp_decrypt_failures_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.tcp_decrypt_failures_total);
+            if delta > 0 {
+                self.ss_tcp_decrypt_failures_total.inc_by(delta);
+            }
+            prev.tcp_decrypt_failures_total = cur;
+
+            let cur = metrics
+                .tcp_frame_parse_failures_total
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.tcp_frame_parse_failures_total);
+            if delta > 0 {
+                self.ss_tcp_frame_parse_failures_total.inc_by(delta);
+            }
+            prev.tcp_frame_parse_failures_total = cur;
+
+            let cur = metrics
+                .tcp_unsupported_method_rejects_total
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.tcp_unsupported_method_rejects_total);
+            if delta > 0 {
+                self.ss_tcp_unsupported_method_rejects_total.inc_by(delta);
+            }
+            prev.tcp_unsupported_method_rejects_total = cur;
+
+            let cur = metrics.udp_packets_in_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.udp_packets_in_total);
+            if delta > 0 {
+                self.ss_udp_packets_in_total.inc_by(delta);
+            }
+            prev.udp_packets_in_total = cur;
+
+            let cur = metrics.udp_packets_out_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.udp_packets_out_total);
+            if delta > 0 {
+                self.ss_udp_packets_out_total.inc_by(delta);
+            }
+            prev.udp_packets_out_total = cur;
+
+            let cur = metrics.udp_bytes_in_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.udp_bytes_in_total);
+            if delta > 0 {
+                self.ss_udp_bytes_in_total.inc_by(delta);
+            }
+            prev.udp_bytes_in_total = cur;
+
+            let cur = metrics.udp_bytes_out_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.udp_bytes_out_total);
+            if delta > 0 {
+                self.ss_udp_bytes_out_total.inc_by(delta);
+            }
+            prev.udp_bytes_out_total = cur;
+
+            let cur = metrics.udp_decrypt_failures_total.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.udp_decrypt_failures_total);
+            if delta > 0 {
+                self.ss_udp_decrypt_failures_total.inc_by(delta);
+            }
+            prev.udp_decrypt_failures_total = cur;
+
+            let cur = metrics
+                .udp_unsupported_method_rejects_total
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.udp_unsupported_method_rejects_total);
+            if delta > 0 {
+                self.ss_udp_unsupported_method_rejects_total.inc_by(delta);
+            }
+            prev.udp_unsupported_method_rejects_total = cur;
+        }
+
         let mut buf = String::new();
         encode(&mut buf, &self.registry).unwrap();
         buf
@@ -1009,6 +1300,20 @@ mod tests {
         assert!(output.contains("eggress_upstream_open_total"));
         assert!(output.contains("eggress_upstream_open_failures_total"));
         assert!(output.contains("eggress_unsupported_transport_total"));
+        assert!(output.contains("eggress_shadowsocks_tcp_sessions_active"));
+        assert!(output.contains("eggress_shadowsocks_tcp_sessions_total"));
+        assert!(output.contains("eggress_shadowsocks_tcp_upstream_sessions_total"));
+        assert!(output.contains("eggress_shadowsocks_tcp_decrypt_failures_total"));
+        assert!(output.contains("eggress_shadowsocks_tcp_frame_parse_failures_total"));
+        assert!(output.contains("eggress_shadowsocks_tcp_unsupported_method_rejects_total"));
+        assert!(output.contains("eggress_shadowsocks_tcp_active_flows"));
+        assert!(output.contains("eggress_shadowsocks_udp_packets_in_total"));
+        assert!(output.contains("eggress_shadowsocks_udp_packets_out_total"));
+        assert!(output.contains("eggress_shadowsocks_udp_bytes_in_total"));
+        assert!(output.contains("eggress_shadowsocks_udp_bytes_out_total"));
+        assert!(output.contains("eggress_shadowsocks_udp_decrypt_failures_total"));
+        assert!(output.contains("eggress_shadowsocks_udp_unsupported_method_rejects_total"));
+        assert!(output.contains("eggress_shadowsocks_udp_active_flows"));
     }
 
     #[test]

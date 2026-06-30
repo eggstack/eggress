@@ -59,10 +59,10 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 ### Shadowsocks Interoperability Tests
 
 ```bash
-# All Shadowsocks interop tests (TCP tests will fail due to non-standard framing)
+# All Shadowsocks interop tests (gated; require ssserver/sslocal on PATH)
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
 
-# Only UDP tests (more likely to pass)
+# Only UDP tests
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1 udp
 ```
 
@@ -95,43 +95,50 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
 
 | Test | Description | Expected Result |
 |------|-------------|-----------------|
-| `interop_shadowsocks_tcp_eggress_to_external_server` | eggress SOCKS5 → external ssserver → echo | **FAIL** (non-standard framing) |
-| `interop_shadowsocks_tcp_external_client_to_eggress` | sslocal → eggress SS server → echo | **FAIL** (non-standard framing) |
+| `interop_shadowsocks_tcp_eggress_to_external_server` | eggress SOCKS5 → external ssserver → echo | **PASS** (standard SIP003 AEAD framing) |
+| `interop_shadowsocks_tcp_external_client_to_eggress` | sslocal → eggress SS server → echo | **PASS** (standard SIP003 AEAD framing) |
 | `interop_shadowsocks_tcp_eggress_self_consistent` | eggress-to-eggress SS TCP | **PASS** |
-| `interop_shadowsocks_udp_eggress_to_external_server` | eggress SS UDP → external ssserver → echo | May pass (standard UDP format) |
+| `interop_shadowsocks_udp_eggress_to_external_server` | eggress SS UDP → external ssserver → echo | **PASS** (standard AEAD format) |
 | `interop_shadowsocks_udp_eggress_self_consistent` | eggress-to-eggress SS UDP | **PASS** |
 | `interop_shadowsocks_tcp_wrong_password_fails` | Wrong password failure | **PASS** (should fail) |
 | `interop_shadowsocks_udp_wrong_password_fails` | Wrong password UDP failure | **PASS** (should fail) |
-| `interop_shadowsocks_tcp_aes_128_gcm` | aes-128-gcm method coverage | **FAIL** (non-standard framing) |
-| `interop_shadowsocks_tcp_chacha20_ietf_poly1305` | chacha20-ietf-poly1305 method coverage | **FAIL** (non-standard framing) |
-| `interop_shadowsocks_udp_via_toml_config` | UDP via full TOML-configured stack | May pass |
+| `interop_shadowsocks_tcp_aes_128_gcm` | aes-128-gcm method coverage | **PASS** |
+| `interop_shadowsocks_tcp_chacha20_ietf_poly1305` | chacha20-ietf-poly1305 method coverage | **PASS** |
+| `interop_shadowsocks_tcp_large_payload` | Multi-chunk AEAD payload (>65535-byte test) | **PASS** |
+| `interop_shadowsocks_tcp_domain_target` | SOCKS5 domain-name target through SS upstream | **PASS** |
+| `interop_shadowsocks_tcp_half_close` | Half-close behavior on Shadowsocks path | **PASS** |
+| `interop_shadowsocks_udp_inbound_large_packet` | UDP listener large-packet decoding | **PASS** |
+| `interop_shadowsocks_udp_via_toml_config` | UDP via full TOML-configured stack | **PASS** |
+
+> **Phase 21 note**: Shadowsocks TCP now uses standard SIP003 AEAD framing
+> (two-AEAD-per-chunk with encrypted length block). All TCP interop tests
+> against `ssserver`/`sslocal` from `shadowsocks-rust` are expected to pass.
+> See [`docs/protocols/SHADOWSOCKS.md`](protocols/SHADOWSOCKS.md) for details.
 
 ## Known Failures and Skips
 
-### Shadowsocks TCP: Non-Standard Framing
+### Shadowsocks TCP: Standard SIP003 Framing (Phase 21)
 
-The eggress Shadowsocks TCP implementation uses **non-standard AEAD framing**:
+As of Phase 21, eggress Shadowsocks TCP uses **standard SIP003 AEAD framing**:
 
-- **Standard Shadowsocks**: Two separate AEAD operations per chunk (encrypted
-  length + encrypted payload), nonces increment by 2.
-- **Eggress**: Single AEAD operation with cleartext 2-byte length prefix,
-  nonces increment by 1.
+- Two AEAD operations per chunk (encrypted length + encrypted payload).
+- Nonces increment by 2 (separate read/write counters, both starting at 2 after
+  the address header consumed nonces 0 and 1).
+- Wire-compatible with `shadowsocks-rust` / `shadowsocks-libev` / `go-shadowsocks2`.
 
-This means TCP interop tests against standard Shadowsocks servers (`ssserver`,
-`shadowsocks-rust`, `shadowsocks-libev`) **will fail** with AEAD decryption
-errors after the initial handshake.
+Previous experimental/non-standard framing (single-AEAD-per-chunk with cleartext
+length prefix) was replaced. See
+[`docs/protocols/SHADOWSOCKS_TCP_AUDIT.md`](protocols/SHADOWSOCKS_TCP_AUDIT.md)
+for the corrective audit history.
 
-See [`docs/protocols/SHADOWSOCKS_TCP_AUDIT.md`](protocols/SHADOWSOCKS_TCP_AUDIT.md)
-for the full corrective audit.
-
-**Status**: The TCP Shadowsocks client is classified as **Experimental** (not
-wire-compatible with standard implementations).
+**Status**: TCP Shadowsocks is classified as **Supported** (standard wire format,
+single-hop upstream only).
 
 ### Shadowsocks UDP: Standard-Compliant
 
 The eggress Shadowsocks UDP implementation uses standard AEAD format (salt
-prefix, standard nonce derivation). UDP interop tests have a better chance of
-passing against standard implementations.
+prefix, standard nonce derivation). UDP interop tests pass against standard
+implementations.
 
 ### Python Version Compatibility
 
@@ -150,7 +157,7 @@ The gated tests are designed to be skipped in normal CI. They are useful for:
 - Manual validation against real proxy implementations
 - Verifying protocol compatibility after changes
 - Debugging interop issues reported by users
-- Validating the non-standard framing status
+- Validating the standard SIP003 AEAD framing status
 
 To run the full test suite without external dependencies:
 
