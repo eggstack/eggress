@@ -23,8 +23,8 @@ impl NonceCounter {
 
     pub fn current(&self) -> Vec<u8> {
         let mut buf = vec![0u8; self.nonce_size];
-        let start = self.nonce_size.saturating_sub(8);
-        buf[start..].copy_from_slice(&self.counter.to_be_bytes());
+        let end = self.nonce_size.min(8);
+        buf[..end].copy_from_slice(&self.counter.to_le_bytes()[..end]);
         buf
     }
 
@@ -57,8 +57,9 @@ mod tests {
         nonce.advance().unwrap();
         let bytes = nonce.current();
         assert_eq!(bytes.len(), 12);
-        assert_eq!(&bytes[..4], &[0, 0, 0, 0]);
-        assert_eq!(&bytes[4..], &1u64.to_be_bytes());
+        // little-endian: counter in first 8 bytes, rest zero
+        assert_eq!(&bytes[..8], &1u64.to_le_bytes());
+        assert_eq!(&bytes[8..], &[0, 0, 0, 0]);
     }
 
     #[test]
@@ -67,7 +68,7 @@ mod tests {
         for i in 1u64..=10 {
             nonce.advance().unwrap();
             let bytes = nonce.current();
-            assert_eq!(&bytes[4..], &i.to_be_bytes());
+            assert_eq!(&bytes[..8], &i.to_le_bytes());
         }
     }
 

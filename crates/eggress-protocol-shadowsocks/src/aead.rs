@@ -214,10 +214,11 @@ pub fn decrypt_chunk_standard(
     Ok(plaintext)
 }
 
-/// Increment a nonce by 1 (big-endian, increment last byte with carry).
+/// Increment a nonce by 1 (little-endian in first 8 bytes, increment first byte with carry).
 fn nonce_increment(nonce: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
     let mut result = nonce.to_vec();
-    for byte in result.iter_mut().rev() {
+    let end = result.len().min(8);
+    for byte in result[..end].iter_mut() {
         let (val, carry) = byte.overflowing_add(1);
         *byte = val;
         if !carry {
@@ -524,7 +525,7 @@ mod tests {
         let key = b"0123456789abcdef";
         let nonce1 = vec![0u8; 12];
         let mut nonce2 = vec![0u8; 12];
-        nonce2[11] = 1;
+        nonce2[0] = 1; // different nonce (little-endian)
         let payload = b"secret data";
         let wire = encrypt_chunk_standard(CipherMethod::Aes128Gcm, key, &nonce1, payload).unwrap();
         let result = decrypt_chunk_standard(CipherMethod::Aes128Gcm, key, &nonce2, &wire);
@@ -535,7 +536,7 @@ mod tests {
     fn test_encrypt_decrypt_chunk_standard_sequential_nonces() {
         let key = b"0123456789abcdef";
         let mut nonce = vec![0u8; 12];
-        nonce[11] = 1; // start at nonce 1
+        nonce[0] = 1; // start at nonce 1 (little-endian)
 
         let payload1 = b"first chunk";
         let wire1 = encrypt_chunk_standard(CipherMethod::Aes128Gcm, key, &nonce, payload1).unwrap();
@@ -543,7 +544,7 @@ mod tests {
         assert_eq!(dec1, payload1);
 
         // Advance nonce by 2 (one for length, one for payload)
-        nonce[11] = 3;
+        nonce[0] = 3;
         let payload2 = b"second chunk";
         let wire2 = encrypt_chunk_standard(CipherMethod::Aes128Gcm, key, &nonce, payload2).unwrap();
         let dec2 = decrypt_chunk_standard(CipherMethod::Aes128Gcm, key, &nonce, &wire2).unwrap();
@@ -554,16 +555,16 @@ mod tests {
     fn test_nonce_increment_basic() {
         let nonce = vec![0u8; 12];
         let result = nonce_increment(&nonce).unwrap();
-        assert_eq!(result[11], 1);
+        assert_eq!(result[0], 1);
     }
 
     #[test]
     fn test_nonce_increment_carry() {
         let mut nonce = vec![0u8; 12];
-        nonce[11] = 0xFF;
+        nonce[0] = 0xFF;
         let result = nonce_increment(&nonce).unwrap();
-        assert_eq!(result[10], 1);
-        assert_eq!(result[11], 0);
+        assert_eq!(result[0], 0);
+        assert_eq!(result[1], 1);
     }
 
     #[test]

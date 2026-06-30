@@ -486,7 +486,7 @@ mod tests {
         // Wire format: AEAD(len_u16=0, nonce) + AEAD(empty, nonce+1)
         // The reader starts at nonce counter=1, so encrypt with nonce 1.
         let mut nonce = vec![0u8; method.nonce_size()];
-        nonce[method.nonce_size() - 1] = 1;
+        nonce[0] = 1;
         let wire = encrypt_chunk_standard(method, &subkey, &nonce, b"").unwrap();
         let mut raw_stream = client;
         raw_stream.write_all(&wire).await.unwrap();
@@ -511,7 +511,7 @@ mod tests {
         let mut raw_stream = client;
         let nonce1 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[method.nonce_size() - 1] = 1;
+            n[0] = 1;
             n
         };
         let len_bytes = (5u16).to_be_bytes();
@@ -524,7 +524,7 @@ mod tests {
         // Write a valid payload block (won't matter since length decryption fails)
         let nonce2 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[method.nonce_size() - 1] = 2;
+            n[0] = 2;
             n
         };
         let payload_ct = crate::aead::aead_encrypt_raw(method, &subkey, &nonce2, b"hello").unwrap();
@@ -560,7 +560,7 @@ mod tests {
         let mut raw_stream = client;
         let nonce1 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[method.nonce_size() - 1] = 1;
+            n[0] = 1;
             n
         };
         let len_bytes = (5u16).to_be_bytes();
@@ -570,7 +570,7 @@ mod tests {
         // Write tampered payload block
         let nonce2 = {
             let mut n = vec![0u8; method.nonce_size()];
-            n[method.nonce_size() - 1] = 2;
+            n[0] = 2;
             n
         };
         let payload_ct = crate::aead::aead_encrypt_raw(method, &subkey, &nonce2, b"hello").unwrap();

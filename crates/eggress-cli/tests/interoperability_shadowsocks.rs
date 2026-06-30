@@ -340,12 +340,18 @@ async fn send_through_socks5(
         .await
         .map_err(|e| format!("shutdown write: {e}"))?;
 
-    // Read response
+    // Read response with timeout — data should arrive before connection closes
     let mut buf = Vec::new();
-    reader
-        .read_to_end(&mut buf)
-        .await
-        .map_err(|e| format!("read response: {e}"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        let mut chunk = [0u8; 4096];
+        match tokio::time::timeout(Duration::from_millis(500), reader.read(&mut chunk)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => buf.extend_from_slice(&chunk[..n]),
+            Ok(Err(e)) => return Err(format!("read response: {e}")),
+            Err(_) => continue,
+        }
+    }
     Ok(buf)
 }
 

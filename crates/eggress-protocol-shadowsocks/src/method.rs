@@ -1,5 +1,5 @@
 use hkdf::Hkdf;
-use sha2::{Digest, Sha256};
+use sha1::Sha1;
 
 use crate::error::ShadowsocksError;
 
@@ -46,10 +46,13 @@ impl CipherMethod {
         16
     }
 
-    /// Derive an AEAD subkey from password and salt using HKDF-SHA256.
+    /// Derive an AEAD subkey from password and salt using HKDF-SHA1.
+    ///
+    /// Uses `EVP_BytesToKey(password)` as IKM (matching OpenSSL/shadowsocks-rust),
+    /// then HKDF-SHA1 with info="ss-subkey" per SIP003.
     pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
-        let ikm = Sha256::digest(password);
-        let hk = Hkdf::<Sha256>::new(Some(salt), &ikm);
+        let ikm = evp_bytes_to_key(password);
+        let hk = Hkdf::<Sha1>::new(Some(salt), &ikm);
         let mut key = vec![0u8; self.key_size()];
         hk.expand(b"ss-subkey", &mut key)
             .map_err(|e| ShadowsocksError::Other(format!("HKDF expand failed: {e}")))?;
@@ -65,6 +68,30 @@ impl std::fmt::Display for CipherMethod {
             CipherMethod::ChaCha20IetfPoly1305 => write!(f, "chacha20-ietf-poly1305"),
         }
     }
+}
+
+/// OpenSSL `EVP_BytesToKey` with MD5 and no salt (type 0).
+///
+/// Used by Shadowsocks to derive the initial keying material from a password.
+/// Produces `d1 || d2 || ...` where `d1 = MD5(password)`, `d2 = MD5(d1 + password)`, etc.
+fn evp_bytes_to_key(password: &[u8]) -> Vec<u8> {
+    use md5::Digest as _;
+    use md5::Md5;
+
+    let mut key = Vec::new();
+    let mut prev = Vec::new();
+
+    // Produce enough key material (up to 48 bytes covers all AEAD key sizes)
+    while key.len() < 48 {
+        let mut hasher = Md5::new();
+        hasher.update(&prev);
+        hasher.update(password);
+        let digest = hasher.finalize();
+        prev = digest.to_vec();
+        key.extend_from_slice(&prev);
+    }
+
+    key
 }
 
 #[cfg(test)]
@@ -152,6 +179,29 @@ mod tests {
         assert_eq!(
             CipherMethod::ChaCha20IetfPoly1305.to_string(),
             "chacha20-ietf-poly1305"
+        );
+    }
+
+    #[test]
+    fn test_evp_bytes_to_key() {
+        // Verified against Python's OpenSSL EVP_BytesToKey for "testpass"
+        let key = evp_bytes_to_key(b"testpass");
+        // First 16 bytes (for AES-128)
+        assert_eq!(
+            &key[..16],
+            &[
+                0x17, 0x9a, 0xd4, 0x5c, 0x6c, 0xe2, 0xcb, 0x97, 0xcf, 0x10, 0x29, 0xe2, 0x12, 0x04,
+                0x6e, 0x81
+            ]
+        );
+        // Full 32 bytes (for AES-256)
+        assert_eq!(
+            &key[..32],
+            &[
+                0x17, 0x9a, 0xd4, 0x5c, 0x6c, 0xe2, 0xcb, 0x97, 0xcf, 0x10, 0x29, 0xe2, 0x12, 0x04,
+                0x6e, 0x81, 0x9c, 0x8f, 0x2c, 0x70, 0x95, 0xd2, 0x8b, 0xf6, 0x24, 0xab, 0x97, 0x14,
+                0x3b, 0x51, 0xac, 0x4b
+            ]
         );
     }
 }
