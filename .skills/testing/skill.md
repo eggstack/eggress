@@ -197,6 +197,17 @@ has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_di
 Only `compatible` or `implemented_interop` evidence levels support compatibility claims.
 `implemented_synthetic` means tested without real pproxy.
 
+### Manifest validation (Phase 24)
+
+Manifest validation enforces:
+- `egress_status = "compatible"` requires `evidence_level = "compatible"`
+- Compatible entries with differential tests (`differential_*`) require `external_dependency`
+- `implemented_interop` requires `external_dependency` or `divergence` explaining interop
+- `implemented_synthetic` cannot pair with `compatible` status
+- `intentional_non_parity` requires non-empty `divergence`
+
+The `last_updated` field was removed in Phase 24; stale warnings are no longer emitted.
+
 Run the oracle harness:
 ```bash
 cargo test -p eggress-testkit pproxy_oracle -- --ignored

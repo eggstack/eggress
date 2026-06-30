@@ -15,7 +15,6 @@
 [meta]
 pproxy_version = "2.7.9"
 manifest_version = "1"
-last_updated = "2025-06-30"
 
 # ─── Inbound TCP Protocols ────────────────────────────────────────────
 
@@ -123,9 +122,10 @@ id = "direct_udp_forwarding"
 category = "udp"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["udp_tests"]
-divergence = "Different entry points: pproxy -ul vs eggress SOCKS5 UDP ASSOCIATE"
+evidence_level = "implemented_differential"
+tests = ["udp_tests", "differential_standalone_udp_direct_echo", "differential_standalone_udp_two_clients", "differential_standalone_udp_two_targets_from_same_client"]
+divergence = "Multiple entry points: pproxy -ul mode, SOCKS5 UDP ASSOCIATE, and standalone relay"
+external_dependency = "pproxy==2.7.9"
 
 # ─── Upstream TCP Protocols ───────────────────────────────────────────
 
@@ -373,19 +373,19 @@ divergence = "Same syntax"
 id = "udp_listen_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "intentional_non_parity"
-evidence_level = "intentional_non_parity"
-tests = ["pproxy_cli_tests"]
-divergence = "Eggress uses SOCKS5 UDP ASSOCIATE instead"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["test_ul_generates_standalone_udp_listener", "pproxy_cli_tests"]
+divergence = "Translates to standalone UDP listener config (mode = standalone_pproxy_udp)"
 
 [[features]]
 id = "udp_remote_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "intentional_non_parity"
-evidence_level = "intentional_non_parity"
-tests = ["pproxy_cli_tests"]
-divergence = "Eggress uses SOCKS5 UDP ASSOCIATE instead"
+egress_status = "compatible"
+evidence_level = "compatible"
+tests = ["test_ul_and_ur_generates_udp_upstream_group", "pproxy_cli_tests"]
+divergence = "Translates to UDP upstream config with transport-matching rule"
 
 [[features]]
 id = "daemon_flag"
@@ -800,3 +800,25 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "BIND command not implemented; returns REP_COMMAND_NOT_SUPPORTED (0x07)"
+
+# ─── Phase 24: Standalone UDP Evidence ────────────────────────────────
+
+[[features]]
+id = "standalone_udp_relay"
+category = "udp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_differential"
+tests = ["differential_standalone_udp_direct_echo", "differential_standalone_udp_domain_target"]
+divergence = "pproxy-compatible standalone UDP mode; differential tests compare with pproxy -ul"
+external_dependency = "pproxy==2.7.9"
+
+[[features]]
+id = "standalone_udp_error_handling"
+category = "udp"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_differential"
+tests = ["differential_standalone_udp_malformed_short_datagram", "differential_standalone_udp_nonzero_frag"]
+divergence = "Both drop malformed/frag datagrams; differential tests verify parity"
+external_dependency = "pproxy==2.7.9"

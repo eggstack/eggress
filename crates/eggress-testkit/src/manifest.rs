@@ -24,8 +24,6 @@ pub const PINNED_PPROXY_VERSION: &str = "2.7.9";
 pub struct ManifestMeta {
     pub pproxy_version: String,
     pub manifest_version: String,
-    #[serde(default)]
-    pub last_updated: Option<String>,
 }
 
 /// A single feature entry in the manifest.
@@ -184,8 +182,20 @@ pub enum ValidationError {
     )]
     PproxyVersionMismatch { actual: String, expected: String },
 
-    #[error("meta.last_updated appears to be a current/recent date: \"{date}\" (non-fatal, warning only)")]
-    StaleLastUpdated { date: String },
+    #[error(
+        "feature \"{id}\" has evidence_level=\"compatible\" with differential test names but no external_dependency (expected \"pproxy==2.7.9\")"
+    )]
+    CompatibleDifferentialMissingExternalDependency { id: String },
+
+    #[error(
+        "feature \"{id}\" has evidence_level=\"implemented_interop\" but no external_dependency and no divergence explaining the interop suite"
+    )]
+    InteropMissingExternalDependencyOrDivergence { id: String },
+
+    #[error(
+        "feature \"{id}\" has no external_dependency but evidence_level=\"{evidence}\" (expected external_dependency for non-synthetic, non-intentional-non-parity evidence)"
+    )]
+    MissingExternalDependency { id: String, evidence: String },
 }
 
 /// A collection of validation errors and warnings.
@@ -242,7 +252,7 @@ impl Default for ValidationErrors {
 /// Validate a manifest parsed from TOML.
 ///
 /// Returns `Ok(())` when all invariants hold, or `Err(ValidationErrors)`
-/// listing every violation found. Warnings (e.g. stale `last_updated`) are
+/// listing every violation found.
 /// recorded but do **not** cause a failure.
 pub fn validate_manifest(manifest: &FullManifest) -> Result<(), ValidationErrors> {
     let mut errs = ValidationErrors::new();
@@ -255,14 +265,7 @@ pub fn validate_manifest(manifest: &FullManifest) -> Result<(), ValidationErrors
         });
     }
 
-    // 2. last_updated freshness warning (non-fatal)
-    if let Some(ref date) = manifest.meta.last_updated {
-        if is_recent_date(date) {
-            errs.warn(ValidationError::StaleLastUpdated { date: date.clone() });
-        }
-    }
-
-    // 3. Collect IDs and check for duplicates
+    // 2. Collect IDs and check for duplicates
     let mut seen_ids = HashSet::new();
     for feature in &manifest.features {
         if !seen_ids.insert(feature.id.clone()) {
@@ -327,6 +330,45 @@ pub fn validate_manifest(manifest: &FullManifest) -> Result<(), ValidationErrors
                 id: feature.id.clone(),
             });
         }
+
+        // compatible evidence with differential_ test names requires external_dependency
+        if evidence == EvidenceLevel::Compatible {
+            let has_differential_test =
+                feature.tests.iter().any(|t| t.starts_with("differential_"));
+            if has_differential_test && feature.external_dependency.is_none() {
+                errs.push(
+                    ValidationError::CompatibleDifferentialMissingExternalDependency {
+                        id: feature.id.clone(),
+                    },
+                );
+            }
+        }
+
+        // implemented_interop requires external_dependency or divergence explaining interop
+        if evidence == EvidenceLevel::ImplementedInterop
+            && feature.external_dependency.is_none()
+            && feature.divergence.trim().is_empty()
+        {
+            errs.push(
+                ValidationError::InteropMissingExternalDependencyOrDivergence {
+                    id: feature.id.clone(),
+                },
+            );
+        }
+
+        // non-synthetic, non-intentional-non-parity evidence should have external_dependency
+        // (soft rule: only for compatible and implemented_differential)
+        if matches!(
+            evidence,
+            EvidenceLevel::Compatible | EvidenceLevel::ImplementedDifferential
+        ) && feature.external_dependency.is_none()
+            && feature.tests.iter().any(|t| t.starts_with("differential_"))
+        {
+            errs.push(ValidationError::MissingExternalDependency {
+                id: feature.id.clone(),
+                evidence: feature.evidence_level.clone(),
+            });
+        }
     }
 
     if errs.is_empty() {
@@ -388,22 +430,6 @@ pub fn find_manifest_path() -> Option<PathBuf> {
     }
 }
 
-/// Check if a date string looks like it refers to the current or very recent
-/// calendar year. This is heuristic — it produces warnings, never hard failures.
-fn is_recent_date(date_str: &str) -> bool {
-    // Simple heuristic: if the year is 2025 or later, flag it.
-    // The manifest should be updated periodically but "last_updated" is
-    // informational. We only warn on obviously current dates.
-    //
-    // Parse the first 4-digit year-like token from the string.
-    let year_str: String = date_str.chars().take(4).collect();
-    if let Ok(year) = year_str.parse::<u32>() {
-        year >= 2025
-    } else {
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,7 +442,6 @@ mod tests {
         ManifestMeta {
             pproxy_version: PINNED_PPROXY_VERSION.to_string(),
             manifest_version: "1".to_string(),
-            last_updated: Some("2025-01-01".to_string()),
         }
     }
 
@@ -451,7 +476,6 @@ mod tests {
                 },
             ],
         );
-        // Note: last_updated "2025-01-01" triggers a warning (non-fatal)
         let result = validate_manifest(&manifest);
         assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
     }
@@ -689,7 +713,6 @@ mod tests {
             ManifestMeta {
                 pproxy_version: "0.0.1".to_string(),
                 manifest_version: "1".to_string(),
-                last_updated: None,
             },
             vec![
                 FullManifestEntry {
@@ -863,6 +886,51 @@ mod tests {
             .errors
             .iter()
             .any(|e| matches!(e, ValidationError::Io { .. })));
+    }
+
+    #[test]
+    fn compatible_differential_without_external_dependency_fails() {
+        let manifest = make_manifest(
+            default_meta(),
+            vec![FullManifestEntry {
+                id: "no_dep".to_string(),
+                category: "protocol".to_string(),
+                pproxy_version: PINNED_PPROXY_VERSION.to_string(),
+                egress_status: "compatible".to_string(),
+                evidence_level: "compatible".to_string(),
+                tests: vec!["differential_something".to_string()],
+                divergence: "some divergence".to_string(),
+                external_dependency: None,
+            }],
+        );
+        let errs = validate_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                ValidationError::CompatibleDifferentialMissingExternalDependency { id, .. }
+                    if id == "no_dep"
+            )),
+            "expected CompatibleDifferentialMissingExternalDependency"
+        );
+    }
+
+    #[test]
+    fn compatible_differential_with_external_dependency_passes() {
+        let manifest = make_manifest(
+            default_meta(),
+            vec![FullManifestEntry {
+                id: "has_dep".to_string(),
+                category: "protocol".to_string(),
+                pproxy_version: PINNED_PPROXY_VERSION.to_string(),
+                egress_status: "compatible".to_string(),
+                evidence_level: "compatible".to_string(),
+                tests: vec!["differential_something".to_string()],
+                divergence: "some divergence".to_string(),
+                external_dependency: Some("pproxy==2.7.9".to_string()),
+            }],
+        );
+        let result = validate_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
     }
 
     #[test]

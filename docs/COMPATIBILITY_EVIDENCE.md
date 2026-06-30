@@ -1,7 +1,7 @@
 # Compatibility Evidence Table
 
-Canonical evidence source for pproxy compatibility claims. Generated from the
-manifest at [`tests/compat/pproxy_manifest.toml`](../tests/compat/pproxy_manifest.toml).
+Canonical evidence source for pproxy compatibility claims. Manually synchronized
+from the manifest at [`tests/compat/pproxy_manifest.toml`](../tests/compat/pproxy_manifest.toml).
 Keep this document in sync with the manifest.
 
 ## Evidence Tiers
@@ -41,6 +41,8 @@ Keep this document in sync with the manifest.
 | `socks5_udp_associate_relay` | Partial | Differential (pproxy==2.7.9) — framing differs | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 | `shadowsocks_udp` | Supported | Standard AEAD interop | `cargo test -p eggress-runtime shadowsocks_udp` |
 | `direct_udp_forwarding` | Supported | Synthetic | `cargo test -p eggress-runtime udp` (SOCKS5 ASSOCIATE) + `cargo test -p eggress-runtime standalone` (standalone pproxy UDP relay) |
+| `standalone_udp_relay` | Supported | Differential (pproxy==2.7.9) — standalone mode | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored -- standalone_udp` |
+| `standalone_udp_error_handling` | Supported | Differential (pproxy==2.7.9) — malformed/frag handling | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored -- standalone_udp` |
 
 ## Upstream TCP Protocols
 
@@ -118,6 +120,8 @@ All features below have compatible status backed by differential evidence agains
 |---------|------|----------|------------|
 | `listen_flag` | Compatible | Synthetic | `cargo test -p eggress-cli` |
 | `remote_flag` | Compatible | Synthetic | `cargo test -p eggress-cli` |
+| `udp_listen_flag` | Compatible | Synthetic (pproxy translate) | `cargo test -p eggress-pproxy-compat` |
+| `udp_remote_flag` | Compatible | Synthetic (pproxy translate) | `cargo test -p eggress-pproxy-compat` |
 | `pproxy_translate_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
 | `pproxy_check_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
 | `pproxy_run_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |

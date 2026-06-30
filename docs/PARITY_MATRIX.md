@@ -37,7 +37,7 @@ For the canonical per-feature evidence table with test commands, see
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | SOCKS5 UDP ASSOCIATE relay | own UDP framing protocol | SOCKS5 UDP ASSOCIATE | Partial | `udp.rs` | `differential_socks5_udp_associate` | Framing differs; relay success matches |
-| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | Compatible | `udp.rs` | `differential_socks5_udp_associate` | pproxy-compatible standalone UDP mode; no TCP control connection required. Differential tests verify behavioral parity. |
+| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | Compatible | `udp.rs` | `differential_standalone_udp_direct_echo, differential_standalone_udp_domain_target` | pproxy-compatible standalone UDP mode; differential tests verify behavioral parity with pproxy -ul |
 | Shadowsocks UDP | supported | standard AEAD format | Supported | `shadowsocks_udp.rs` | none | Standard AEAD format; interoperable with standard Shadowsocks. Not pproxy-differential tested. |
 | Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE or standalone mode | Supported | `udp.rs` | none | Both entry points supported |
 
@@ -79,7 +79,7 @@ For the canonical per-feature evidence table with test commands, see
 | Least-connections | not available | `LeastConnections` scheduler | Supported | `scheduler_runtime.rs` | none | Uses active + in_flight count |
 | Health-aware skip | implicit via alive check | explicit health state machine | Supported | `scheduler_runtime.rs` | none | Eggress: hysteresis state machine |
 | Fallback on all fail | `-F` flag (direct only) | `GroupFallback`: reject/direct/use-unhealthy | Partial | `scheduler_runtime.rs` | none | Eggress offers more granular control |
-| Retry within group | not documented | not implemented | Compatible | none | none | Single attempt per request |
+| Retry within group | not documented | not implemented | Supported | none | none | Single attempt per request; pproxy behavior undocumented |
 | Active lease tracking | not documented | `PendingLease`/`ActiveLease` two-phase | Supported | `scheduler_runtime.rs` | none | Precise connection accounting |
 | Scheduler state persistence | resets on reload | persists across reloads | Intentional non-parity | none | none | Eggress preserves cursor for unchanged groups |
 
@@ -99,8 +99,8 @@ For the canonical per-feature evidence table with test commands, see
 |---|---|---|---|---|---|---|
 | `-l` listen flag | supported | supported | Compatible | cli_tests | none | Same syntax |
 | `-r` remote flag | supported | supported | Compatible | cli_tests | none | Same syntax |
-| `-ul` UDP listen | supported | supported | Compatible | cli_tests | none | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
-| `-ur` UDP remote | supported | supported | Compatible | cli_tests | none | Generates UDP upstream config with transport-matching rule |
+| `-ul` UDP listen | supported | supported | Compatible | cli_tests, pproxy_cli_tests | none | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
+| `-ur` UDP remote | supported | supported | Compatible | cli_tests, pproxy_cli_tests | none | Generates UDP upstream config with transport-matching rule |
 | `--config` TOML | supported | supported | Supported | integration tests | none | Different schema |
 | `--rulefile` | supported | rejected | Intentional non-parity | cli_tests | none | Use eggress TOML routing rules |
 | `--daemon` | supported | rejected | Intentional non-parity | none | none | Use systemd or a process manager |
@@ -225,7 +225,7 @@ All diagnostic messages redact credentials.
 - **UDP relay (Supported)**: Both relay UDP datagrams successfully. Standalone UDP mode (`mode = "standalone_pproxy_udp"`) provides pproxy-compatible behavior without TCP control connection. SOCKS5 UDP ASSOCIATE is also supported for TCP-controlled UDP relay.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
-- **CLI (Compatible / Partial)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax. `--daemon` is not yet implemented.
+- **CLI (Compatible / Partial)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as compatible. `--daemon` is not yet implemented.
 - **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan is client-only. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
 - **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. See `docs/PYTHON_BINDINGS.md`.
 
