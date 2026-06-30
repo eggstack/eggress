@@ -1,4 +1,5 @@
 pub mod args;
+pub mod diagnose;
 pub mod error;
 pub mod translate;
 pub mod uri;

@@ -113,6 +113,12 @@ pub struct MetricsRegistry {
     upstream_open_total: Family<UpstreamOpenLabels, Counter>,
     upstream_open_failures_total: Family<UpstreamFailureLabels, Counter>,
     unsupported_transport_total: Family<UnsupportedTransportLabels, Counter>,
+    transparent_connections_accepted: Counter,
+    transparent_original_dst_failed: Counter,
+    transparent_route_rejects: Counter,
+    unix_listener_connections_accepted: Counter,
+    unix_listener_bind_failures: Counter,
+    platform_capability_check_failures: Counter,
     ss_tcp_sessions_active: Gauge,
     ss_tcp_sessions_total: Counter,
     ss_tcp_upstream_sessions_total: Counter,
@@ -473,6 +479,48 @@ impl MetricsRegistry {
             unsupported_transport_total.clone(),
         );
 
+        let transparent_connections_accepted = Counter::default();
+        registry.register(
+            "eggress_transparent_connections_accepted_total",
+            "Total transparent proxy connections accepted",
+            transparent_connections_accepted.clone(),
+        );
+
+        let transparent_original_dst_failed = Counter::default();
+        registry.register(
+            "eggress_transparent_original_dst_failed_total",
+            "Total transparent proxy original destination lookup failures",
+            transparent_original_dst_failed.clone(),
+        );
+
+        let transparent_route_rejects = Counter::default();
+        registry.register(
+            "eggress_transparent_route_rejects_total",
+            "Total transparent proxy route rejections",
+            transparent_route_rejects.clone(),
+        );
+
+        let unix_listener_connections_accepted = Counter::default();
+        registry.register(
+            "eggress_unix_listener_connections_accepted_total",
+            "Total Unix listener connections accepted",
+            unix_listener_connections_accepted.clone(),
+        );
+
+        let unix_listener_bind_failures = Counter::default();
+        registry.register(
+            "eggress_unix_listener_bind_failures_total",
+            "Total Unix listener bind failures",
+            unix_listener_bind_failures.clone(),
+        );
+
+        let platform_capability_check_failures = Counter::default();
+        registry.register(
+            "eggress_platform_capability_check_failures_total",
+            "Total platform capability check failures",
+            platform_capability_check_failures.clone(),
+        );
+
         let ss_tcp_sessions_active = Gauge::default();
         registry.register(
             "eggress_shadowsocks_tcp_sessions_active",
@@ -615,6 +663,12 @@ impl MetricsRegistry {
             upstream_open_total,
             upstream_open_failures_total,
             unsupported_transport_total,
+            transparent_connections_accepted,
+            transparent_original_dst_failed,
+            transparent_route_rejects,
+            unix_listener_connections_accepted,
+            unix_listener_bind_failures,
+            platform_capability_check_failures,
             ss_tcp_sessions_active,
             ss_tcp_sessions_total,
             ss_tcp_upstream_sessions_total,
@@ -1245,6 +1299,30 @@ impl MetricsRegistry {
             })
             .inc();
     }
+
+    pub fn record_transparent_connection_accepted(&self) {
+        self.transparent_connections_accepted.inc();
+    }
+
+    pub fn record_transparent_original_dst_failed(&self) {
+        self.transparent_original_dst_failed.inc();
+    }
+
+    pub fn record_transparent_route_reject(&self) {
+        self.transparent_route_rejects.inc();
+    }
+
+    pub fn record_unix_listener_connection_accepted(&self) {
+        self.unix_listener_connections_accepted.inc();
+    }
+
+    pub fn record_unix_listener_bind_failure(&self) {
+        self.unix_listener_bind_failures.inc();
+    }
+
+    pub fn record_platform_capability_check_failure(&self) {
+        self.platform_capability_check_failures.inc();
+    }
 }
 
 impl Default for MetricsRegistry {
@@ -1300,6 +1378,12 @@ mod tests {
         assert!(output.contains("eggress_upstream_open_total"));
         assert!(output.contains("eggress_upstream_open_failures_total"));
         assert!(output.contains("eggress_unsupported_transport_total"));
+        assert!(output.contains("eggress_transparent_connections_accepted_total"));
+        assert!(output.contains("eggress_transparent_original_dst_failed_total"));
+        assert!(output.contains("eggress_transparent_route_rejects_total"));
+        assert!(output.contains("eggress_unix_listener_connections_accepted_total"));
+        assert!(output.contains("eggress_unix_listener_bind_failures_total"));
+        assert!(output.contains("eggress_platform_capability_check_failures_total"));
         assert!(output.contains("eggress_shadowsocks_tcp_sessions_active"));
         assert!(output.contains("eggress_shadowsocks_tcp_sessions_total"));
         assert!(output.contains("eggress_shadowsocks_tcp_upstream_sessions_total"));
@@ -2101,5 +2185,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn transparent_proxy_metrics_appear_in_prometheus() {
+        let m = MetricsRegistry::new();
+        m.record_transparent_connection_accepted();
+        m.record_transparent_connection_accepted();
+        m.record_transparent_original_dst_failed();
+        m.record_transparent_route_reject();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_transparent_connections_accepted_total"));
+        assert!(output.contains("eggress_transparent_original_dst_failed_total"));
+        assert!(output.contains("eggress_transparent_route_rejects_total"));
+    }
+
+    #[test]
+    fn unix_listener_metrics_appear_in_prometheus() {
+        let m = MetricsRegistry::new();
+        m.record_unix_listener_connection_accepted();
+        m.record_unix_listener_bind_failure();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_unix_listener_connections_accepted_total"));
+        assert!(output.contains("eggress_unix_listener_bind_failures_total"));
+    }
+
+    #[test]
+    fn platform_capability_metrics_appear_in_prometheus() {
+        let m = MetricsRegistry::new();
+        m.record_platform_capability_check_failure();
+        m.record_platform_capability_check_failure();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_platform_capability_check_failures_total"));
     }
 }

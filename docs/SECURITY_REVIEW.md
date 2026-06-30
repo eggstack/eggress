@@ -114,7 +114,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Config validation rejects UDP listeners when no UDP-capable upstreams exist.
 
 **Unsupported Protocol Diagnostics** (`eggress-pproxy-compat/src/translate.rs`):
-- Unsupported schemes (SSH, Unix, redir) produce `UnsupportedFeature` errors with scheme name.
+- Unsupported schemes (SSH) produce `UnsupportedFeature` errors with scheme name. Unix upstream and transparent upstream produce appropriate diagnostics. Unix listener and transparent listener are now supported.
 - Shadowsocks listeners are now supported as an explicit protocol mode (no mixed-listener auto-detection).
 - Trojan listeners are rejected with clear diagnostic (upstream-only).
 - Legacy stream cipher URIs are rejected at parse time.
@@ -196,8 +196,12 @@ Adversaries may include malicious clients on the network, compromised upstream p
 10. **No `unsafe` code**: Workspace-wide `unsafe_code = "forbid"` prevents memory safety issues.
 11. **No OpenSSL dependency**: Uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface.
 12. **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only hot-reloadable fields are swapped.
-13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH, Unix, redir, and other unsupported protocols. No silent fallback to direct or different protocols.
+13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH, Unix (upstream), and other unsupported protocols. No silent fallback to direct or different protocols.
 14. **Python binding security**: Exception strings do not leak raw Rust errors; `repr()` uses Python class names; translation warnings redact credentials; no import-time side effects; context manager ensures cleanup.
+15. **Transparent proxy privilege separation**: Transparent proxy requires explicit `CAP_NET_ADMIN` or root; the listener validates `SO_ORIGINAL_DST` availability at startup and fails fast if unavailable.
+16. **Transparent proxy loop prevention**: Connections destined to the proxy's own listen address are rejected to prevent forwarding loops.
+17. **Unix socket permissions**: Socket file permissions are configurable (default `0o660`); operator controls access via filesystem permissions and group membership.
+18. **Transparent proxy original destination trust**: The original destination is extracted from kernel socket options (`SO_ORIGINAL_DST`), which is trusted kernel-provided metadata. No spoofing risk from the network.
 
 ## Residual Risks
 
@@ -208,6 +212,9 @@ Adversaries may include malicious clients on the network, compromised upstream p
 5. **No rate limiting**: No request rate limiting on any protocol or admin endpoint.
 6. **Logging level sensitivity**: At `debug` level, connection metadata is logged; operators should be cautious about log retention in sensitive environments.
 7. **No credential rotation**: Credentials are static in config; no support for dynamic credential rotation without restart/reload.
+8. **Transparent proxy privilege scope**: Running with `CAP_NET_ADMIN` grants the process ability to manipulate network configuration; ensure the binary is not writable by untrusted users.
+9. **Unix socket file cleanup**: Stale socket files from unclean shutdown require operator-managed cleanup; `unlink_existing` handles the common case but does not cover all race conditions.
+10. **macOS PF transparent proxy**: Not implemented. Operators using macOS must use pfctl with a standard TCP listener, which has different trust and configuration characteristics.
 
 ## Deferred Items
 
@@ -218,6 +225,8 @@ Adversaries may include malicious clients on the network, compromised upstream p
 5. **Admin endpoint rate limiting**: Request throttling for admin HTTP API.
 6. **Dynamic credential sources**: Integration with external secret managers (Vault, AWS Secrets Manager).
 7. **Connection-level metrics with user-controlled labels**: Ensure no label injection in future metric expansions.
+8. **Transparent proxy TPROXY support**: Linux TPROXY workflow for transparent UDP proxying.
+9. **macOS PF transparent proxy**: Native PF integration for macOS transparent proxy.
 
 ## Release Blockers
 

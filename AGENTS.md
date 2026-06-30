@@ -53,6 +53,16 @@ cargo test -p eggress-transport-tls
 # Run upstream protocol tests
 cargo test -p eggress-runtime upstream_protocols
 
+# Run transparent proxy tests
+cargo test -p eggress-runtime transparent
+
+# Run Unix socket tests
+cargo test -p eggress-runtime unix_socket
+
+# Run pproxy compat tests for redir/unix
+cargo test -p eggress-pproxy-compat redir
+cargo test -p eggress-pproxy-compat unix
+
 # Run Shadowsocks interop tests (gated)
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
 
@@ -191,6 +201,9 @@ eggress/
 │   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD TCP/UDP (TCP: full stream encryption)
 │   ├── eggress-protocol-trojan/ # Trojan TLS-based proxy
 │   ├── eggress-transport-tls/ # Shared TLS transport layer (builders, connectors, acceptors)
+│   ├── eggress-runtime/src/platform.rs # Platform capability model (Linux SO_ORIGINAL_DST, macOS PF)
+│   ├── eggress-server/src/listener/transparent.rs # Transparent TCP listener (SO_ORIGINAL_DST)
+│   ├── eggress-server/src/listener/unix.rs # Unix domain socket listener
 │   ├── eggress-udp/       # UDP association, codec, direct forwarding, upstream SOCKS5 relay
 │   ├── eggress-pproxy-compat/ # pproxy compatibility: URI translation, config migration
 │   ├── eggress-embed/      # Stable Rust embed API: config, service, handle, errors
@@ -305,7 +318,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **pproxy parity spec and tier taxonomy** defined in `docs/PPROXY_PARITY_SPEC.md`
 - **Differential test harness** has reusable primitives (`ProcessGuard`, `TaskGuard`, `start_tcp_echo`, `start_udp_echo`, `compare_tcp_echo`, etc.)
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
-- **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH, Unix, redir) produce structured diagnostics
+- **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH) produce structured diagnostics. Transparent TCP proxy (`redir://`, Linux only) and Unix domain socket listeners (`unix://`, Unix only) are now supported (Phase 25).
 - **Shadowsocks TCP framing**: Standard SIP003 AEAD (two AEAD operations per chunk, encrypted length). Wire-compatible with standard Shadowsocks implementations. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS.md`.
 - **SSR/legacy Shadowsocks**: Intentionally unsupported. SSR URIs (`ssr://`) and legacy stream cipher methods are recognized and rejected with clear diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. Legacy method detection exists in `eggress-protocol-shadowsocks::method::is_legacy_method()`.
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP framing standardized to SIP003 AEAD in Phase 21. Completion docs updated with corrective notices and gated-test status.

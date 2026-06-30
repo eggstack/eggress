@@ -40,12 +40,28 @@ pub async fn handle_request(
                 .listeners
                 .iter()
                 .map(|l| {
-                    serde_json::json!({
+                    let mut obj = serde_json::json!({
                         "name": l.name,
                         "bind": l.bind,
                         "protocols": l.protocols,
                         "udp_enabled": l.udp_enabled,
-                    })
+                    });
+                    if let Some(ref mode) = l.mode {
+                        obj["mode"] = serde_json::json!(mode);
+                    }
+                    if let Some(ref cap) = l.capability_status {
+                        obj["capability_status"] = serde_json::json!(cap);
+                    }
+                    if let Some(dst) = l.original_dst_support {
+                        obj["original_dst_support"] = serde_json::json!(dst);
+                    }
+                    if let Some(ref path) = l.unix_socket_path {
+                        obj["unix_socket_path"] = serde_json::json!(path);
+                    }
+                    if let Some(unlink) = l.unix_socket_unlink_existing {
+                        obj["unix_socket_unlink_existing"] = serde_json::json!(unlink);
+                    }
+                    obj
                 })
                 .collect();
             let status = serde_json::json!({

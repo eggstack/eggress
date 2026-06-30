@@ -131,6 +131,128 @@ Fields `target`, `listener`, `protocol` are required. `source` and `identity` ar
 
 Admin endpoints expose only metadata (generation, uptime, rule IDs, listener names, health states, protocol names). Upstream URIs with credentials are **never** exposed. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for details.
 
+## Transparent Proxy Setup (Linux)
+
+Transparent proxy intercepts TCP connections redirected by the kernel, extracting the original destination via `SO_ORIGINAL_DST`.
+
+### Prerequisites
+
+- Linux kernel 2.4+
+- `CAP_NET_ADMIN` capability or root
+- iptables or nftables
+
+### iptables configuration
+
+```bash
+# Redirect HTTP/HTTPS traffic to eggress on port 8080
+iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-ports 8080
+
+# Optionally redirect specific subnets
+iptables -t nat -A PREROUTING -p tcp -s 10.0.0.0/8 --dport 80 -j REDIRECT --to-ports 8080
+```
+
+### nftables configuration
+
+```bash
+nft add table ip nat
+nft add chain ip nat PREROUTING '{ type nat hook prerouting priority 0; }'
+nft add rule ip nat PREROUTING tcp dport { 80, 443 } redirect to :8080
+```
+
+### eggress TOML config
+
+```toml
+[[listeners]]
+name = "transparent-in"
+bind = "0.0.0.0:8080"
+protocols = ["http", "socks5"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+```
+
+### Running with capabilities (non-root)
+
+```bash
+# Grant only the needed capability
+sudo setcap cap_net_admin+ep /usr/bin/eggress
+
+# Or run directly as root
+sudo eggress --config /etc/eggress/config.toml
+```
+
+### Troubleshooting
+
+- **Connection refused**: Verify iptables/nftables rules are in place (`iptables -t nat -L -n`)
+- **Original destination unavailable**: Ensure the listener is bound before traffic is redirected
+- **Permission denied**: Check `CAP_NET_ADMIN` or run as root
+- **macOS PF**: Not supported; use pfctl with a standard TCP listener instead
+
+## Unix Socket Listener Setup
+
+Unix domain sockets provide local-only proxy access without TCP port exposure.
+
+### Configuration
+
+```toml
+[[listeners]]
+name = "unix-in"
+protocols = ["http", "socks5"]
+
+[listeners.unix]
+path = "/run/eggress/proxy.sock"
+unlink_existing = true
+mode = 0o660
+```
+
+### Socket file management
+
+- The socket file is created on listener startup
+- `unlink_existing = true` removes a stale socket file from a previous run
+- On shutdown, the socket file is **not** automatically removed (operator-managed)
+- Clean up stale sockets on service restart or use a systemd unit with `RuntimeDirectory=eggress`
+
+### Permission considerations
+
+- Default mode `0o660` allows owner and group read/write
+- Set `mode = 0o666` for world-accessible sockets (not recommended)
+- Socket ownership follows the process user/group
+- Use filesystem ACLs or group membership to control access
+
+### Client usage
+
+```bash
+# curl through Unix socket
+curl --unix-socket /run/eggress/proxy.sock http://example.com
+
+# SOCKS5 via socat
+socat - UNIX-CONNECT:/run/eggress/proxy.sock
+```
+
+## Monitoring Transparent Proxy and Unix Socket Metrics
+
+Transparent proxy and Unix socket listeners expose standard eggress metrics:
+
+| Metric | Description |
+|--------|-------------|
+| `eggress_connections_total` | Total connections (label: `listener`, `protocol`) |
+| `eggress_active_connections` | Current active connections |
+| `eggress_bytes_sent` / `eggress_bytes_received` | Traffic counters |
+| `eggress_upstream_health` | Upstream health state |
+
+Query via the admin endpoint:
+
+```bash
+curl http://127.0.0.1:9090/metrics
+curl http://127.0.0.1:9090/-/status
+```
+
+For transparent proxy connections, the `listener` label identifies which
+transparent listener handled the connection. The original destination is
+logged at debug level but not exposed in metrics labels.
+
 ## Scheduler Behavior
 
 Eggress supports four scheduling algorithms for upstream group selection:

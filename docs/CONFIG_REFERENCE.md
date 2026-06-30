@@ -134,6 +134,63 @@ This mode accepts SOCKS5-framed UDP datagrams directly on the UDP socket without
 | `max_datagram_size` | usize | 65535 | Max datagram size (257-65535) |
 | `client_pin` | bool | `true` | Pin flow to first client address |
 
+### `[listeners.transparent]`
+
+Transparent TCP proxy support (Linux only, requires `SO_ORIGINAL_DST`).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | bool | yes | Enable transparent proxy mode |
+| `protocol` | string | `"redir"` | Transparent proxy protocol: `"redir"` (iptables REDIRECT) or `"pf"` (macOS PF — not implemented) |
+
+When enabled, incoming connections have their original destination extracted via
+`SO_ORIGINAL_DST` (Linux) before protocol detection. This requires iptables or
+nftables REDIRECT rules to redirect traffic to the eggress listener port.
+
+**Platform requirements:**
+- Linux only (kernel 2.4+)
+- Requires `CAP_NET_ADMIN` capability or root
+- iptables/nftables REDIRECT rules must be configured
+
+```toml
+[[listeners]]
+name = "transparent-in"
+bind = "0.0.0.0:8080"
+protocols = ["http", "socks5"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+```
+
+### `[listeners.unix]`
+
+Unix domain socket listener (Unix only).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | yes | Filesystem path for the Unix domain socket |
+| `unlink_existing` | bool | `true` | Remove existing socket file before binding |
+| `mode` | integer | `0o660` | Unix file permissions for the socket (octal) |
+
+When configured, the listener binds to a Unix domain socket instead of a TCP
+address. The `bind` field is ignored when `[listeners.unix]` is present.
+
+**Platform requirements:**
+- Unix only (Linux, macOS, BSDs)
+- Not available on Windows
+
+```toml
+[[listeners]]
+name = "unix-in"
+protocols = ["http", "socks5"]
+
+[listeners.unix]
+path = "/run/eggress/proxy.sock"
+unlink_existing = true
+mode = 0o660
+```
+
 ### `[listeners.tls]`
 
 TLS termination on the listener (requires cert/key PEM files at startup).

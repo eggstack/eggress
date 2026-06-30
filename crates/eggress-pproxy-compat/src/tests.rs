@@ -326,3 +326,139 @@ fn test_ul_address_format_plain_port() {
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output.toml.contains("0.0.0.0:1081"));
 }
+
+#[test]
+fn test_redir_colon_port_listener_translation() {
+    let args = PproxyArgs::parse(&["-l".into(), "redir://:12345".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(!output.has_unsupported());
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let listeners = parsed["listeners"].as_array().unwrap();
+    assert_eq!(listeners.len(), 1);
+    let listener = &listeners[0];
+    assert_eq!(listener["bind"].as_str(), Some("0.0.0.0:12345"));
+    assert!(listener["protocols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p.as_str() == Some("http")));
+    let transparent = &listener["transparent"];
+    assert_eq!(transparent["enabled"].as_bool(), Some(true));
+    assert_eq!(transparent["protocol"].as_str(), Some("redir"));
+}
+
+#[test]
+fn test_redir_host_port_listener_translation() {
+    let args = PproxyArgs::parse(&["-l".into(), "redir://127.0.0.1:12345".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(!output.has_unsupported());
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let listeners = parsed["listeners"].as_array().unwrap();
+    assert_eq!(listeners.len(), 1);
+    let listener = &listeners[0];
+    assert_eq!(listener["bind"].as_str(), Some("127.0.0.1:12345"));
+    let transparent = &listener["transparent"];
+    assert_eq!(transparent["enabled"].as_bool(), Some(true));
+    assert_eq!(transparent["protocol"].as_str(), Some("redir"));
+}
+
+#[test]
+fn test_unix_socket_listener_translation() {
+    let args = PproxyArgs::parse(&["-l".into(), "unix:///tmp/test.sock".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(!output.has_unsupported());
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let listeners = parsed["listeners"].as_array().unwrap();
+    assert_eq!(listeners.len(), 1);
+    let listener = &listeners[0];
+    assert!(listener["protocols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p.as_str() == Some("socks5")));
+    let unix = &listener["unix"];
+    assert_eq!(unix["path"].as_str(), Some("/tmp/test.sock"));
+    assert_eq!(unix["unlink_existing"].as_bool(), Some(false));
+}
+
+#[test]
+fn test_redir_upstream_still_unsupported() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "redir://proxy:8080".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "redir-upstream"));
+}
+
+#[test]
+fn test_unix_upstream_still_unsupported() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "unix://host:1080".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "unix-upstream"));
+}
+
+#[test]
+fn test_unix_socket_path_redacted_in_display() {
+    let args = PproxyArgs::parse(&["-l".into(), "unix:///tmp/secret.sock".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    // The warning should not contain the actual socket path name
+    let warnings_str = output.warnings_to_string();
+    assert!(
+        !warnings_str.contains("secret"),
+        "unix socket path leaked in warnings"
+    );
+}
+
+#[test]
+fn test_redir_listener_valid_toml() {
+    let args = PproxyArgs::parse(&["-l".into(), "redir://:8080".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    assert_eq!(parsed["version"].as_integer(), Some(1));
+}
+
+#[test]
+fn test_unix_listener_valid_toml() {
+    let args = PproxyArgs::parse(&["-l".into(), "unix:///tmp/test.sock".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    assert_eq!(parsed["version"].as_integer(), Some(1));
+}
+
+#[test]
+fn test_redir_and_socks5_combined() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "redir://:12345".into(),
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let listeners = parsed["listeners"].as_array().unwrap();
+    assert_eq!(listeners.len(), 2);
+    // One should have transparent config, the other should not
+    let has_transparent = listeners.iter().any(|l| l.get("transparent").is_some());
+    assert!(has_transparent);
+    let has_unix = listeners.iter().any(|l| l.get("unix").is_some());
+    assert!(!has_unix);
+}

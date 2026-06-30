@@ -14,6 +14,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 
 use crate::error::RuntimeError;
+use crate::platform::{check_capability, PlatformCapability};
 use crate::snapshot::{compile_runtime_snapshot, CompiledRuntimeSnapshot};
 
 /// Result of a reload attempt.
@@ -48,12 +49,55 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
             .listeners
             .iter()
             .enumerate()
-            .map(|(idx, lcfg)| ListenerInfo {
-                name: lcfg.name.clone(),
-                bind: lcfg.bind.clone(),
-                local_addr: addrs.get(idx).map(|a| a.to_string()).unwrap_or_default(),
-                protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
-                udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
+            .map(|(idx, lcfg)| {
+                let mode = if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
+                    Some("transparent".to_string())
+                } else if lcfg.unix.is_some() {
+                    Some("unix".to_string())
+                } else {
+                    Some("standard".to_string())
+                };
+
+                let capability_status = if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
+                    let cap = crate::platform::check_capability(
+                        crate::platform::PlatformCapability::LinuxOriginalDstIpv4,
+                    );
+                    Some(cap.to_string())
+                } else {
+                    None
+                };
+
+                let original_dst_support = if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
+                    let cap = crate::platform::check_capability(
+                        crate::platform::PlatformCapability::LinuxOriginalDstIpv4,
+                    );
+                    Some(cap == crate::platform::CapabilityStatus::Available)
+                } else {
+                    None
+                };
+
+                let (unix_socket_path, unix_socket_unlink_existing) =
+                    if let Some(ref unix_cfg) = lcfg.unix {
+                        (
+                            Some(unix_cfg.path.display().to_string()),
+                            Some(unix_cfg.unlink_existing),
+                        )
+                    } else {
+                        (None, None)
+                    };
+
+                ListenerInfo {
+                    name: lcfg.name.clone(),
+                    bind: lcfg.bind.clone(),
+                    local_addr: addrs.get(idx).map(|a| a.to_string()).unwrap_or_default(),
+                    protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
+                    udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
+                    mode,
+                    capability_status,
+                    original_dst_support,
+                    unix_socket_path,
+                    unix_socket_unlink_existing,
+                }
             })
             .collect();
         AdminSnapshot {
@@ -137,6 +181,53 @@ fn classify_listeners(
                 }
             }
             (Some(_old_udp), None) => {}
+            (None, None) => {}
+        }
+
+        match (&old.transparent, &new.transparent) {
+            (Some(old_t), Some(new_t)) => {
+                if old_t.enabled != new_t.enabled {
+                    return Err(format!(
+                        "transparent config changed for '{}': enabled {} -> {}; restart required",
+                        old.name, old_t.enabled, new_t.enabled
+                    ));
+                }
+            }
+            (None, Some(new_t)) => {
+                if new_t.enabled {
+                    return Err(format!(
+                        "transparent proxy enabled for '{}'; restart required",
+                        new.name
+                    ));
+                }
+            }
+            (Some(_old_t), None) => {}
+            (None, None) => {}
+        }
+
+        match (&old.unix, &new.unix) {
+            (Some(old_u), Some(new_u)) => {
+                if old_u.path != new_u.path {
+                    return Err(format!(
+                        "unix socket path changed for '{}': '{}' -> '{}'; restart required",
+                        old.name,
+                        old_u.path.display(),
+                        new_u.path.display()
+                    ));
+                }
+            }
+            (None, Some(_new_u)) => {
+                return Err(format!(
+                    "unix socket added for '{}'; restart required",
+                    new.name
+                ));
+            }
+            (Some(_old_u), None) => {
+                return Err(format!(
+                    "unix socket removed for '{}'; restart required",
+                    old.name
+                ));
+            }
             (None, None) => {}
         }
     }
@@ -378,6 +469,8 @@ pub struct RuntimeState {
     pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
     pub shadowsocks_metrics: Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
     pub udp_tasks: TaskTracker,
+    pub transparent_accepted_total: Arc<AtomicU64>,
+    pub transparent_original_dst_failed_total: Arc<AtomicU64>,
 }
 
 impl RuntimeState {
@@ -410,11 +503,13 @@ impl ServiceSupervisor {
             .map_err(|e| RuntimeError::Config(e.to_string()))?;
 
         for lcfg in &rt_config.listeners {
-            let _bind_addr: std::net::SocketAddr =
-                lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
-                    addr: lcfg.bind.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
-                })?;
+            if lcfg.unix.is_none() {
+                let _bind_addr: std::net::SocketAddr =
+                    lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
+                        addr: lcfg.bind.clone(),
+                        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                    })?;
+            }
         }
 
         let metrics = Arc::new(eggress_metrics::MetricsRegistry::new());
@@ -456,6 +551,8 @@ impl ServiceSupervisor {
             udp_metrics,
             shadowsocks_metrics,
             udp_tasks: udp_tasks.clone(),
+            transparent_accepted_total: Arc::new(AtomicU64::new(0)),
+            transparent_original_dst_failed_total: Arc::new(AtomicU64::new(0)),
         });
 
         let cancel = CancellationToken::new();
@@ -632,13 +729,10 @@ impl ServiceSupervisor {
             }
 
             let mut prepared = Vec::new();
-            for lcfg in &listener_configs {
-                let bind_addr: std::net::SocketAddr =
-                    lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
-                        addr: lcfg.bind.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
-                    })?;
+            let mut unix_listener_args = Vec::new();
+            let mut transparent_listener_args = Vec::new();
 
+            for lcfg in &listener_configs {
                 let protocols: Vec<ProtocolId> = lcfg.protocols.to_vec();
 
                 let auth = match &lcfg.auth {
@@ -658,6 +752,128 @@ impl ServiceSupervisor {
                 };
 
                 let connection_limit = lcfg.connection_limit.unwrap_or(1024) as usize;
+
+                // Handle Unix domain socket listeners separately
+                if let Some(ref unix_cfg) = lcfg.unix {
+                    #[cfg(unix)]
+                    {
+                        match eggress_server::listener::unix::create_unix_listener(
+                            &eggress_server::listener::unix::UnixListenerConfig::from_compiled(
+                                &unix_cfg.path,
+                                unix_cfg.unlink_existing,
+                                Some(unix_cfg.mode),
+                            ),
+                        ) {
+                            Ok(unix_listener) => {
+                                tracing::info!(
+                                    "unix socket listener created at {} ({})",
+                                    unix_cfg.path.display(),
+                                    lcfg.name
+                                );
+                                unix_listener_args.push((
+                                    lcfg.name.clone(),
+                                    unix_listener,
+                                    protocols,
+                                    auth,
+                                    handshake_timeout,
+                                    lcfg.tls.clone(),
+                                    lcfg.shadowsocks.clone(),
+                                    lcfg.udp.clone(),
+                                ));
+                                continue;
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "failed to bind unix socket at {} for listener '{}': {e}",
+                                    unix_cfg.path.display(),
+                                    lcfg.name
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        tracing::error!(
+                            "unix socket listener '{}' skipped: not supported on this platform",
+                            lcfg.name
+                        );
+                        continue;
+                    }
+                }
+
+                // Handle transparent TCP listeners
+                if let Some(ref transparent_cfg) = lcfg.transparent {
+                    if transparent_cfg.enabled {
+                        let capability =
+                            check_capability(PlatformCapability::LinuxOriginalDstIpv4);
+                        if capability != crate::platform::CapabilityStatus::Available {
+                            state_ref.metrics.record_platform_capability_check_failure();
+                            let _cap_span = tracing::info_span!(
+                                "capability_check_failed",
+                                capability = %PlatformCapability::LinuxOriginalDstIpv4,
+                                status = %capability,
+                                listener = %lcfg.name,
+                            );
+                            tracing::warn!(
+                                "transparent proxy not available for listener '{}' ({}); \
+                                 falling back to normal TCP listener",
+                                lcfg.name,
+                                capability
+                            );
+                        } else {
+                            let bind_addr: std::net::SocketAddr =
+                                lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
+                                    addr: lcfg.bind.clone(),
+                                    source: std::io::Error::new(
+                                        std::io::ErrorKind::InvalidInput,
+                                        e,
+                                    ),
+                                })?;
+
+                            let transparent_listener =
+                                eggress_server::listener::transparent::TransparentListener::bind(
+                                    &bind_addr.to_string(),
+                                )
+                                .await
+                                .map_err(|e| RuntimeError::ListenerBind {
+                                    addr: lcfg.bind.clone(),
+                                    source: e,
+                                })?;
+
+                            let local_addr = transparent_listener.local_addr().map_err(|e| {
+                                RuntimeError::ListenerBind {
+                                    addr: lcfg.bind.clone(),
+                                    source: e,
+                                }
+                            })?;
+
+                            tracing::info!(
+                                "transparent TCP listener listening on {local_addr} ({})",
+                                lcfg.name
+                            );
+
+                            transparent_listener_args.push((
+                                lcfg.name.clone(),
+                                transparent_listener,
+                                protocols,
+                                auth,
+                                handshake_timeout,
+                                lcfg.tls.clone(),
+                                lcfg.shadowsocks.clone(),
+                                lcfg.udp.clone(),
+                            ));
+                            continue;
+                        }
+                    }
+                }
+
+                // Standard TCP listener path
+                let bind_addr: std::net::SocketAddr =
+                    lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
+                        addr: lcfg.bind.clone(),
+                        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                    })?;
 
                 let config = TcpListenerConfig {
                     bind_addr,
@@ -703,6 +919,11 @@ impl ServiceSupervisor {
                     local_addr: p.local_addr.to_string(),
                     protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
                     udp_enabled: p.udp.as_ref().is_some_and(|u| u.enabled),
+                    mode: Some("standard".to_string()),
+                    capability_status: None,
+                    original_dst_support: None,
+                    unix_socket_path: None,
+                    unix_socket_unlink_existing: None,
                 })
                 .collect();
             drop(listener_infos);
@@ -750,6 +971,389 @@ impl ServiceSupervisor {
                 });
             }
 
+            // Spawn transparent listener accept loops
+            for (
+                listener_name,
+                transparent_listener,
+                protocols,
+                auth,
+                hs_timeout,
+                tls_cfg,
+                ss_cfg,
+                udp_cfg,
+            ) in transparent_listener_args
+            {
+                let routing = routing.clone();
+                let state = state_ref.clone();
+                let conn_tasks = connection_tasks.clone();
+                let conn_cancel = connection_cancel.clone();
+                let tls_client_config = tls_client_config.clone();
+                let listener_cancel = listener_cancel.clone();
+
+                tasks.spawn(async move {
+                    let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
+                    let transparent_listener_inner = transparent_listener.inner();
+
+                    let transparent_accepted = state.transparent_accepted_total.clone();
+                    let transparent_dst_failed =
+                        state.transparent_original_dst_failed_total.clone();
+
+                    loop {
+                        let accept_result = tokio::select! {
+                            result = transparent_listener_inner.accept() => result,
+                            _ = listener_cancel.cancelled() => {
+                                break;
+                            }
+                        };
+
+                        let (stream, _peer) = match accept_result {
+                            Ok(s) => s,
+                            Err(e) => {
+                                if e.to_string().contains("listener cancelled") {
+                                    break;
+                                }
+                                tracing::error!(
+                                    "transparent accept error on '{}': {e}",
+                                    listener_name
+                                );
+                                continue;
+                            }
+                        };
+
+                        transparent_accepted.fetch_add(1, Ordering::Relaxed);
+
+                        let original_dst =
+                            match eggress_server::listener::transparent::get_original_destination(&stream) {
+                                Ok(addr) => addr,
+                                Err(e) => {
+                                    transparent_dst_failed.fetch_add(1, Ordering::Relaxed);
+                                    let _span = tracing::info_span!(
+                                        "transparent_original_dst_failed",
+                                        listener = %listener_name,
+                                        error = %e,
+                                    );
+                                    tracing::warn!(
+                                        "failed to get original destination for transparent connection on '{}': {e}",
+                                        listener_name
+                                    );
+                                    continue;
+                                }
+                            };
+
+                        let peer = stream
+                            .peer_addr()
+                            .unwrap_or_else(|_| {
+                                std::net::SocketAddr::new(
+                                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                                    0,
+                                )
+                            });
+
+                        let routing = routing.clone();
+                        let tls_client_config = tls_client_config.clone();
+                        let listener_str = listener_name.clone();
+                        let conn_id = state
+                            .connection_counter
+                            .fetch_add(1, Ordering::Relaxed);
+                        let conn_protocols = proto_slice.clone();
+                        let conn_auth = auth.clone();
+                        let conn_metrics = state.metrics.clone();
+                        let conn_ss_metrics = state.shadowsocks_metrics.clone();
+                        let active = state.active_connections.clone();
+                        let conn_cancel = conn_cancel.child_token();
+                        let generation = state.snapshot.load().generation;
+                        let tls_config = tls_cfg.clone();
+                        let ss_config = ss_cfg.clone();
+
+                        let udp_svc = udp_cfg.as_ref().map(|udp_config| {
+                            Arc::new(RuntimeUdpService {
+                                _listener_name: listener_name.clone(),
+                                udp_config: udp_config.clone(),
+                                registry: state.udp_registry.clone(),
+                                metrics: state.metrics.clone(),
+                                udp_metrics: state.udp_metrics.clone(),
+                                routing: routing.clone(),
+                                udp_tasks: state.udp_tasks.clone(),
+                            }) as Arc<dyn eggress_server::UdpService>
+                        });
+
+                        active.fetch_add(1, Ordering::Relaxed);
+
+                        conn_tasks.spawn(async move {
+                            let started = std::time::Instant::now();
+
+                            let stream: eggress_core::BoxStream =
+                                if let Some(ref tls_cfg) = tls_config {
+                                    let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
+                                        .with_certificate_pem(&tls_cfg.cert_pem)
+                                        .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
+                                        .and_then(|b| {
+                                            let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
+                                            b.build()
+                                        }) {
+                                            Ok(c) => c,
+                                            Err(e) => {
+                                                tracing::error!(%peer, "TLS config error: {e}");
+                                                active.fetch_sub(1, Ordering::Relaxed);
+                                                return;
+                                            }
+                                        };
+                                    match eggress_transport_tls::tls_accept(Box::new(stream), server_config).await {
+                                        Ok(s) => s,
+                                        Err(e) => {
+                                            tracing::debug!(%peer, "TLS accept failed: {e}");
+                                            active.fetch_sub(1, Ordering::Relaxed);
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    Box::new(stream)
+                                };
+
+                            let config = eggress_server::ConnectionConfig {
+                                routing: routing as Arc<dyn RouteService>,
+                                context: eggress_server::ConnectionContext {
+                                    source: Some(peer),
+                                    listener: listener_str.clone(),
+                                    generation,
+                                },
+                                handshake_timeout: hs_timeout,
+                                connect_timeout,
+                                protocols: conn_protocols,
+                                authentication: conn_auth,
+                                metrics: Some(conn_metrics),
+                                udp: udp_svc,
+                                tls_client_config,
+                                shadowsocks: ss_config.map(
+                                    |ss| eggress_server::accept::InboundShadowsocksConfig {
+                                        method: ss.method,
+                                        password: ss.password,
+                                    },
+                                ),
+                                shadowsocks_metrics: Some(conn_ss_metrics),
+                            };
+
+                        let report = tokio::select! {
+                            report = eggress_server::serve_connection(stream, config)
+                                .instrument(tracing::info_span!(
+                                    "conn",
+                                    id = conn_id,
+                                    peer = %peer,
+                                    original_dst = %original_dst,
+                                    listener_type = "transparent",
+                                    listener = %listener_str,
+                                )) => {
+                                report
+                            }
+                                _ = conn_cancel.cancelled() => {
+                                    eggress_server::SessionReport::cancelled(
+                                        None,
+                                        None,
+                                        String::new(),
+                                    )
+                                }
+                            };
+
+                            active.fetch_sub(1, Ordering::Relaxed);
+
+                            tracing::info!(
+                                protocol = ?report.protocol,
+                                target = ?report.target,
+                                original_dst = %original_dst,
+                                route = %report.route,
+                                outcome = ?report.outcome,
+                                bytes_upstream = report.bytes_upstream,
+                                bytes_downstream = report.bytes_downstream,
+                                duration_ms = started.elapsed().as_millis() as u64,
+                                "transparent connection completed",
+                            );
+                        });
+                    }
+                });
+            }
+
+            // Spawn Unix domain socket accept loops
+            for (
+                listener_name,
+                unix_listener,
+                protocols,
+                auth,
+                hs_timeout,
+                tls_cfg,
+                ss_cfg,
+                udp_cfg,
+            ) in unix_listener_args
+            {
+                let routing = routing.clone();
+                let state = state_ref.clone();
+                let conn_tasks = connection_tasks.clone();
+                let conn_cancel = connection_cancel.clone();
+                let tls_client_config = tls_client_config.clone();
+                let listener_cancel = listener_cancel.clone();
+
+                let socket_path = unix_listener.path().display().to_string();
+                let unix_metrics = state.metrics.clone();
+
+                tasks.spawn(async move {
+                    let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
+
+                    let _accept_loop_span = tracing::info_span!(
+                        "unix_accept_loop",
+                        listener = %listener_name,
+                        socket_path = %socket_path,
+                    );
+
+                    loop {
+                        let (stream, _peer_addr) = tokio::select! {
+                            result = unix_listener.accept() => match result {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    tracing::error!("unix accept error on '{}': {e}", listener_name);
+                                    continue;
+                                }
+                            },
+                            _ = listener_cancel.cancelled() => {
+                                break;
+                            }
+                        };
+
+                        unix_metrics.record_unix_listener_connection_accepted();
+
+                        let routing = routing.clone();
+                        let tls_client_config = tls_client_config.clone();
+                        let listener_str = listener_name.clone();
+                        let conn_id =
+                            state.connection_counter.fetch_add(1, Ordering::Relaxed);
+                        let conn_protocols = proto_slice.clone();
+                        let conn_auth = auth.clone();
+                        let conn_metrics = state.metrics.clone();
+                        let conn_ss_metrics = state.shadowsocks_metrics.clone();
+                        let active = state.active_connections.clone();
+                        let conn_cancel = conn_cancel.child_token();
+                        let generation = state.snapshot.load().generation;
+
+                        let tls_config = tls_cfg.clone();
+                        let ss_config = ss_cfg.clone();
+                        let socket_path_clone = socket_path.clone();
+                        let listener_str_for_span = listener_str.clone();
+
+                        let udp_svc = udp_cfg.as_ref().map(|udp_config| {
+                            Arc::new(RuntimeUdpService {
+                                _listener_name: listener_name.clone(),
+                                udp_config: udp_config.clone(),
+                                registry: state.udp_registry.clone(),
+                                metrics: state.metrics.clone(),
+                                udp_metrics: state.udp_metrics.clone(),
+                                routing: routing.clone(),
+                                udp_tasks: state.udp_tasks.clone(),
+                            }) as Arc<dyn eggress_server::UdpService>
+                        });
+
+                        active.fetch_add(1, Ordering::Relaxed);
+
+                        conn_tasks.spawn(async move {
+                            let started = std::time::Instant::now();
+
+                            let stream: eggress_core::BoxStream =
+                                if let Some(ref tls_cfg) = tls_config {
+                                    let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
+                                        .with_certificate_pem(&tls_cfg.cert_pem)
+                                        .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
+                                        .and_then(|b| {
+                                            let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
+                                            b.build()
+                                        }) {
+                                            Ok(c) => c,
+                                            Err(e) => {
+                                                tracing::error!("TLS config error for unix connection: {e}");
+                                                active.fetch_sub(1, Ordering::Relaxed);
+                                                return;
+                                            }
+                                        };
+                                    match eggress_transport_tls::tls_accept(Box::new(stream), server_config).await {
+                                        Ok(s) => s,
+                                        Err(e) => {
+                                            tracing::debug!("TLS accept failed for unix connection: {e}");
+                                            active.fetch_sub(1, Ordering::Relaxed);
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    Box::new(stream)
+                                };
+
+                            let peer = std::net::SocketAddr::new(
+                                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                                0,
+                            );
+
+                            let config = eggress_server::ConnectionConfig {
+                                routing: routing as Arc<dyn RouteService>,
+                                context: eggress_server::ConnectionContext {
+                                    source: Some(peer),
+                                    listener: listener_str,
+                                    generation,
+                                },
+                                handshake_timeout: hs_timeout,
+                                connect_timeout,
+                                protocols: conn_protocols,
+                                authentication: conn_auth,
+                                metrics: Some(conn_metrics),
+                                udp: udp_svc,
+                                tls_client_config,
+                                shadowsocks: ss_config.map(
+                                    |ss| eggress_server::accept::InboundShadowsocksConfig {
+                                        method: ss.method,
+                                        password: ss.password,
+                                    },
+                                ),
+                                shadowsocks_metrics: Some(conn_ss_metrics),
+                            };
+
+                            let report = tokio::select! {
+                                report = eggress_server::serve_connection(stream, config)
+                                    .instrument(tracing::info_span!(
+                                        "conn",
+                                        id = conn_id,
+                                        peer = %peer,
+                                        listener_type = "unix",
+                                        listener = %listener_str_for_span,
+                                        socket_path = %socket_path_clone,
+                                    )) => {
+                                    report
+                                }
+                                _ = conn_cancel.cancelled() => {
+                                    eggress_server::SessionReport::cancelled(
+                                        None,
+                                        None,
+                                        String::new(),
+                                    )
+                                }
+                            };
+
+                            active.fetch_sub(1, Ordering::Relaxed);
+
+                            tracing::info!(
+                                protocol = ?report.protocol,
+                                target = ?report.target,
+                                route = %report.route,
+                                outcome = ?report.outcome,
+                                bytes_upstream = report.bytes_upstream,
+                                bytes_downstream = report.bytes_downstream,
+                                duration_ms = started.elapsed().as_millis() as u64,
+                                "unix connection completed",
+                            );
+                        });
+                    }
+
+                    // Cleanup socket file on shutdown
+                    unix_listener.cleanup().unwrap_or_else(|e| {
+                        tracing::warn!("failed to cleanup unix socket: {e}");
+                    });
+                });
+            }
+
+            // Spawn standard TCP accept loops
             for prepared_listener in prepared {
                 let routing = routing.clone();
                 let state = state_ref.clone();
@@ -817,13 +1421,13 @@ impl ServiceSupervisor {
                                         let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
                                         b.build()
                                     }) {
-                                    Ok(c) => c,
-                                    Err(e) => {
-                                        tracing::error!(%peer, "TLS config error: {e}");
-                                        active.fetch_sub(1, Ordering::Relaxed);
-                                        return;
-                                    }
-                                };
+                                        Ok(c) => c,
+                                        Err(e) => {
+                                            tracing::error!(%peer, "TLS config error: {e}");
+                                            active.fetch_sub(1, Ordering::Relaxed);
+                                            return;
+                                        }
+                                    };
                                 match eggress_transport_tls::tls_accept(Box::new(conn.stream), server_config).await {
                                     Ok(s) => s,
                                     Err(e) => {
@@ -1365,6 +1969,78 @@ protocols = ["socks5"]
         let result = sup.classify_reload(&new_config);
         assert!(result.is_err(), "listener count change should be rejected");
         assert!(result.unwrap_err().contains("listener count"));
+    }
+
+    #[test]
+    fn reload_rejects_transparent_enabled_change() {
+        let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+"#;
+        let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[listeners.transparent]
+enabled = true
+"#;
+        let f1 = write_config(config1);
+        let f2 = write_config(config2);
+        let path1 = f1.path().to_str().unwrap();
+        let path2 = f2.path().to_str().unwrap();
+
+        let sup = ServiceSupervisor::start(path1).unwrap();
+        let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
+        let result = sup.classify_reload(&new_config);
+        assert!(
+            result.is_err(),
+            "transparent enabled change should be rejected"
+        );
+        assert!(result.unwrap_err().contains("transparent"));
+    }
+
+    #[test]
+    fn reload_rejects_unix_path_change() {
+        let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[listeners.unix]
+path = "/tmp/eggress.sock"
+"#;
+        let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[listeners.unix]
+path = "/tmp/eggress-new.sock"
+"#;
+        let f1 = write_config(config1);
+        let f2 = write_config(config2);
+        let path1 = f1.path().to_str().unwrap();
+        let path2 = f2.path().to_str().unwrap();
+
+        let sup = ServiceSupervisor::start(path1).unwrap();
+        let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
+        let result = sup.classify_reload(&new_config);
+        assert!(result.is_err(), "unix path change should be rejected");
+        assert!(result.unwrap_err().contains("unix socket path"));
     }
 
     #[test]

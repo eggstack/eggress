@@ -54,6 +54,30 @@ impl Default for TimeoutConfig {
     }
 }
 
+/// Compiled transparent proxy configuration with resolved defaults.
+#[derive(Debug, Clone)]
+pub struct CompiledTransparentConfig {
+    pub enabled: bool,
+    pub protocol: String,
+}
+
+impl Default for CompiledTransparentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            protocol: "redir".to_string(),
+        }
+    }
+}
+
+/// Compiled Unix domain socket listener configuration with resolved defaults.
+#[derive(Debug, Clone)]
+pub struct CompiledUnixListenerConfig {
+    pub path: std::path::PathBuf,
+    pub unlink_existing: bool,
+    pub mode: u32,
+}
+
 /// Compiled UDP listener configuration with resolved defaults.
 #[derive(Debug, Clone)]
 pub struct CompiledListenerUdpConfig {
@@ -96,6 +120,8 @@ pub struct ListenerConfig {
     pub udp: Option<CompiledListenerUdpConfig>,
     pub tls: Option<CompiledListenerTlsConfig>,
     pub shadowsocks: Option<crate::model::ShadowsocksListenerConfig>,
+    pub transparent: Option<CompiledTransparentConfig>,
+    pub unix: Option<CompiledUnixListenerConfig>,
 }
 
 /// Compiled TLS configuration for a listener.
@@ -599,6 +625,10 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 None => None,
             };
 
+            let transparent = compile_transparent_config(l.transparent.as_ref())?;
+
+            let unix = compile_unix_listener_config(l.unix.as_ref())?;
+
             Ok(ListenerConfig {
                 name: l.name.clone(),
                 bind: l.bind.clone(),
@@ -608,6 +638,8 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 udp,
                 tls,
                 shadowsocks: l.shadowsocks.clone(),
+                transparent,
+                unix,
             })
         })
         .collect()
@@ -1032,6 +1064,60 @@ fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
         pac,
         static_content,
     })
+}
+
+fn compile_transparent_config(
+    config: Option<&crate::model::TransparentConfig>,
+) -> Result<Option<CompiledTransparentConfig>, ConfigError> {
+    let Some(cfg) = config else {
+        return Ok(None);
+    };
+
+    let enabled = cfg.enabled.unwrap_or(false);
+    let protocol = cfg.protocol.as_deref().unwrap_or("redir").to_string();
+
+    match protocol.as_str() {
+        "redir" | "pf" => {}
+        other => {
+            return Err(ConfigError::validation(
+                "transparent.protocol",
+                &format!(
+                    "unknown transparent protocol '{}'; expected 'redir' or 'pf'",
+                    other
+                ),
+            ));
+        }
+    }
+
+    Ok(Some(CompiledTransparentConfig { enabled, protocol }))
+}
+
+fn compile_unix_listener_config(
+    config: Option<&crate::model::UnixListenerConfig>,
+) -> Result<Option<CompiledUnixListenerConfig>, ConfigError> {
+    let Some(cfg) = config else {
+        return Ok(None);
+    };
+
+    let path = std::path::PathBuf::from(&cfg.path);
+    if path.parent().is_none() || path.parent() == Some(std::path::Path::new("")) {
+        return Err(ConfigError::validation(
+            "unix.path",
+            &format!(
+                "socket path must be absolute or have a valid parent directory: {}",
+                cfg.path
+            ),
+        ));
+    }
+
+    let unlink_existing = cfg.unlink_existing.unwrap_or(true);
+    let mode = cfg.mode.unwrap_or(0o660);
+
+    Ok(Some(CompiledUnixListenerConfig {
+        path,
+        unlink_existing,
+        mode,
+    }))
 }
 
 fn parse_duration_opt(s: &str) -> Option<std::time::Duration> {

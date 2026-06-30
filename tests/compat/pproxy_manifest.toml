@@ -801,6 +801,35 @@ evidence_level = "intentional_non_parity"
 tests = []
 divergence = "BIND command not implemented; returns REP_COMMAND_NOT_SUPPORTED (0x07)"
 
+# ─── Phase 25: Transparent Proxy and Unix Socket Support ─────────────
+
+[[features]]
+id = "transparent_tcp_redir_linux"
+category = "platform"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_transparent_config_validation"]
+divergence = "Linux only, requires iptables/nftables REDIRECT rule"
+
+[[features]]
+id = "unix_domain_sockets"
+category = "platform"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_unix_listener_bind_and_accept"]
+divergence = "Unix only, not available on Windows"
+
+[[features]]
+id = "macos_pf_transparent_proxy"
+category = "platform"
+pproxy_version = "2.7.9"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
+tests = []
+divergence = "macOS PF transparent proxy not implemented; use pfctl with standard listener"
+
 # ─── Phase 24: Standalone UDP Evidence ────────────────────────────────
 
 [[features]]

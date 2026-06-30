@@ -42,6 +42,24 @@ The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-
 - Register the detector in the appropriate listener setup
 - Add URI scheme handling in `eggress-uri/`
 
+## Listener types
+
+### Standard TCP listener
+Binds to a TCP socket. Configured via `[[listeners]]` with `bind = "host:port"`.
+
+### Transparent TCP listener (Linux)
+Intercepts connections redirected by iptables/nftables. Extracts original destination via `SO_ORIGINAL_DST`.
+- Config: `[listeners.transparent]` with `enabled = true`, `protocol = "redir"`
+- Platform: Linux only, requires `CAP_NET_ADMIN` or root
+- Source: `crates/eggress-server/src/listener/transparent.rs`
+- Platform capability model: `crates/eggress-runtime/src/platform.rs`
+
+### Unix domain socket listener
+Listens on a filesystem socket path for local-only deployments.
+- Config: `[listeners.unix]` with `path`, `unlink_existing`, `mode`
+- Platform: Unix only (Linux, macOS, BSDs)
+- Source: `crates/eggress-server/src/listener/unix.rs`
+
 ## Testing
 - Unit tests in the protocol crate
 - Integration tests in `crates/eggress-runtime/tests/`

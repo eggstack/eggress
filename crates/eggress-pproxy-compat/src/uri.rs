@@ -17,11 +17,21 @@ pub struct PproxyUri {
     pub tls: bool,
     /// Optional rule parameter from query string.
     pub rule: Option<String>,
+    /// Optional path (used for unix:// scheme).
+    pub path: Option<String>,
 }
 
 impl PproxyUri {
-    /// Redacted display — credentials shown as `****:****`.
+    /// Redacted display — credentials shown as `****:****`, Unix paths shown as `unix://****`.
     pub fn redacted_display(&self) -> String {
+        if self.scheme == "unix" {
+            if let Some(ref p) = self.path {
+                let redacted_path = redact_unix_path(p);
+                return format!("unix://{}", redacted_path);
+            }
+            return "unix://****".to_string();
+        }
+
         let cred_str = if self.username.is_some() {
             "****:****@"
         } else {
@@ -61,6 +71,17 @@ impl PproxyUri {
     }
 }
 
+/// Redact a Unix socket path for display, preserving only the filename.
+fn redact_unix_path(path: &str) -> String {
+    match path.rfind('/') {
+        Some(pos) => {
+            let dir = &path[..=pos];
+            format!("{}****", dir)
+        }
+        None => "****".to_string(),
+    }
+}
+
 fn format_host_for_uri(host: &str) -> String {
     if host.is_empty() {
         String::new()
@@ -78,6 +99,9 @@ fn format_host_for_uri(host: &str) -> String {
 /// - `scheme://user:pass@host:port`
 /// - `scheme+tls://host:port`
 /// - `scheme://host:port?rule=regex`
+/// - `unix:///path/to/socket`
+/// - `redir://:12345`
+/// - `redir://127.0.0.1:12345`
 pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     let mut remaining = uri;
 
@@ -122,6 +146,57 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         }
     }
 
+    // Handle unix:// scheme — path-based, not host:port
+    if scheme == "unix" {
+        let path = if after_scheme.starts_with('/') {
+            after_scheme.to_string()
+        } else if after_scheme.is_empty() {
+            return Err(CompatError::InvalidUri {
+                message: "unix:// URI requires a path (e.g. unix:///tmp/socket)".to_string(),
+            });
+        } else {
+            // Treat bare content as a relative path
+            format!("/{}", after_scheme)
+        };
+        let rule = query.and_then(extract_rule);
+        return Ok(PproxyUri {
+            scheme,
+            username: None,
+            password: None,
+            host: String::new(),
+            port: 0,
+            tls,
+            rule,
+            path: Some(path),
+        });
+    }
+
+    // Handle redir:// scheme — supports host:port or just :port
+    if scheme == "redir" {
+        let (credentials, endpoint_str) = if let Some(at_pos) = after_scheme.find('@') {
+            let userinfo = &after_scheme[..at_pos];
+            let ep = &after_scheme[at_pos + 1..];
+            let (user, pass) = parse_userinfo(userinfo)?;
+            (Some((user, pass)), ep)
+        } else {
+            (None, after_scheme)
+        };
+
+        // redir://:12345 means empty host (bind all), redir://127.0.0.1:12345 means specific
+        let (host, port) = parse_endpoint(endpoint_str)?;
+        let rule = query.and_then(extract_rule);
+        return Ok(PproxyUri {
+            scheme,
+            username: credentials.as_ref().map(|c| c.0.clone()),
+            password: credentials.as_ref().map(|c| c.1.clone()),
+            host,
+            port,
+            tls,
+            rule,
+            path: None,
+        });
+    }
+
     // Extract credentials
     let (credentials, endpoint_str) = if let Some(at_pos) = after_scheme.find('@') {
         let userinfo = &after_scheme[..at_pos];
@@ -146,6 +221,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         port,
         tls,
         rule,
+        path: None,
     })
 }
 
@@ -344,5 +420,82 @@ mod tests {
     fn test_endpoint_display_brackets_ipv6() {
         let uri = parse_pproxy_uri("socks5://[::1]:1080").unwrap();
         assert_eq!(uri.endpoint_display(), "[::1]:1080");
+    }
+
+    #[test]
+    fn test_unix_socket_path() {
+        let uri = parse_pproxy_uri("unix:///tmp/eggress.sock").unwrap();
+        assert_eq!(uri.scheme, "unix");
+        assert_eq!(uri.path.as_deref(), Some("/tmp/eggress.sock"));
+        assert!(uri.host.is_empty());
+        assert_eq!(uri.port, 0);
+    }
+
+    #[test]
+    fn test_unix_socket_relative_path() {
+        let uri = parse_pproxy_uri("unix://var/run/proxy.sock").unwrap();
+        assert_eq!(uri.scheme, "unix");
+        assert_eq!(uri.path.as_deref(), Some("/var/run/proxy.sock"));
+    }
+
+    #[test]
+    fn test_unix_socket_empty_path_errors() {
+        let err = parse_pproxy_uri("unix://").unwrap_err();
+        match err {
+            CompatError::InvalidUri { message } => {
+                assert!(message.contains("requires a path"));
+            }
+            _ => panic!("expected InvalidUri for empty unix path"),
+        }
+    }
+
+    #[test]
+    fn test_unix_redacted_display() {
+        let uri = parse_pproxy_uri("unix:///tmp/secret.sock").unwrap();
+        let display = uri.redacted_display();
+        assert_eq!(display, "unix:///tmp/****");
+        assert!(!display.contains("secret"));
+    }
+
+    #[test]
+    fn test_unix_redacted_display_nested() {
+        let uri = parse_pproxy_uri("unix:///var/run/myapp/secret.sock").unwrap();
+        let display = uri.redacted_display();
+        assert_eq!(display, "unix:///var/run/myapp/****");
+    }
+
+    #[test]
+    fn test_redir_colon_port() {
+        let uri = parse_pproxy_uri("redir://:12345").unwrap();
+        assert_eq!(uri.scheme, "redir");
+        assert_eq!(uri.host, "");
+        assert_eq!(uri.port, 12345);
+        assert!(uri.path.is_none());
+    }
+
+    #[test]
+    fn test_redir_host_port() {
+        let uri = parse_pproxy_uri("redir://127.0.0.1:12345").unwrap();
+        assert_eq!(uri.scheme, "redir");
+        assert_eq!(uri.host, "127.0.0.1");
+        assert_eq!(uri.port, 12345);
+    }
+
+    #[test]
+    fn test_redir_bind_display() {
+        let uri = parse_pproxy_uri("redir://:12345").unwrap();
+        assert_eq!(uri.bind_display(), "0.0.0.0:12345");
+    }
+
+    #[test]
+    fn test_redir_specific_bind_display() {
+        let uri = parse_pproxy_uri("redir://127.0.0.1:12345").unwrap();
+        assert_eq!(uri.bind_display(), "127.0.0.1:12345");
+    }
+
+    #[test]
+    fn test_redir_redacted_display() {
+        let uri = parse_pproxy_uri("redir://:12345").unwrap();
+        assert_eq!(uri.redacted_display(), "redir://:12345");
     }
 }

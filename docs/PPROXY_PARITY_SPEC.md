@@ -54,8 +54,8 @@ Eggress support status:
 | SOCKS5 | supported | `eggress-protocol-socks` |
 | Shadowsocks | supported | Explicit protocol mode only; no mixed-listener auto-detection |
 | Trojan | **rejected** | No inbound listener; upstream-only |
-| Redir | **rejected** | Requires root, kernel hooks (`SO_ORIGINAL_DST`) |
-| Unix socket | **rejected** | Not in scope |
+| Redir | **supported** | Linux only; transparent TCP proxy via `SO_ORIGINAL_DST` (requires iptables/nftables REDIRECT) |
+| Unix socket | **supported** | Unix only; listen on Unix domain socket path |
 | SSH | **rejected** | Not in scope |
 
 ## 3. Remote/Upstream Protocols
@@ -101,7 +101,7 @@ pproxy URIs follow the pattern: `scheme://[user:pass@]host:port`
 | `trojan://` | `trojan://pass@server:443` | Trojan, password is the auth token |
 | `direct://` | `direct://` | Direct connection, no proxy |
 | `ssh://` | `ssh://user@host:22` | SSH tunnel (not supported) |
-| `unix://` | `unix:///path/to/socket` | Unix domain socket (not supported) |
+| `unix://` | `unix:///path/to/socket` | Unix domain socket listener (Unix only) |
 
 **Shadowsocks URI format**: `ss://method:password@host:port`
 - The `method` and `password` are concatenated with `:` in the userinfo section.
@@ -431,7 +431,7 @@ policy, architecture, or scope.
 
 | Feature | pproxy support | Reason for rejection |
 |---------|---------------|---------------------|
-| Transparent/redir proxy | `redir://` (Linux) | Requires root privileges and kernel hooks (`SO_ORIGINAL_DST`). Not portable. |
+| macOS PF transparent proxy | `redir://` on macOS | Not implemented. Use pfctl with a standard listener instead. Linux transparent proxy via `SO_ORIGINAL_DST` is supported. |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | No authentication. Vulnerable to bit-flipping and replay attacks. Deprecated by the Shadowsocks community. Produces `LegacyMethodUnsupported` error with a message suggesting AEAD methods. |
 | ShadowsocksR (SSR) | Supported in some forks | Non-standard extension. No RFC. Conflicts with upstream Shadowsocks design. SSR URIs are parsed by the pproxy compat layer and produce `UnsupportedFeature` diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. |
 | QUIC transport | Not in pproxy (but mentioned) | Out of scope. HTTP/3 and QUIC are transport-layer concerns, not proxy protocol features. |
@@ -439,10 +439,86 @@ policy, architecture, or scope.
 | WebSocket tunnels | Not in pproxy | Out of scope. WebSocket is a transport wrapper; not a proxy protocol. |
 | SSH transport | `ssh://` | Out of scope. SSH is a general-purpose encrypted tunnel, not a proxy protocol. Adds significant dependency weight. |
 | Reverse/backward proxying | Not in pproxy | Eggress is a forward proxy only. Reverse proxy is a different product category. |
-| Unix domain sockets | `unix://` | Out of scope for current release. May be reconsidered for local-only deployments. |
 | Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
 | Insecure TLS defaults | `--insecure` flag | Eggress requires TLS verification by default. Insecure mode is API-only, not configurable via TOML. |
+
+## 14.2 Transparent Proxy (Phase 25)
+
+Eggress supports transparent TCP proxying on Linux via `SO_ORIGINAL_DST`. This
+retrieves the original destination of a connection redirected by iptables/nftables
+REDIRECT rules, enabling interception without client-side proxy configuration.
+
+### Requirements
+
+- **Platform**: Linux only (kernel 2.4+ for `SO_ORIGINAL_DST`)
+- **Privileges**: Requires `CAP_NET_ADMIN` capability or root
+- **Firewall**: iptables REDIRECT rule or nftables equivalent
+- **macOS PF**: Not implemented; use pfctl with a standard listener
+
+### Configuration
+
+```toml
+[[listeners]]
+name = "transparent-in"
+protocols = ["http", "socks5"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+```
+
+### iptables/nftables setup
+
+```bash
+# iptables REDIRECT
+iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-ports 8080
+
+# nftables equivalent
+nft add rule ip nat PREROUTING tcp dport { 80, 443 } redirect to :8080
+```
+
+### Security considerations
+
+- Original destination is extracted from kernel socket options; trusted kernel input
+- Loop prevention: connections destined to the proxy's own listen address are rejected
+- No special handling for localhost redirects
+
+## 14.3 Unix Domain Socket Listeners (Phase 25)
+
+Eggress supports listening on Unix domain sockets for local-only deployments.
+
+### Requirements
+
+- **Platform**: Unix only (Linux, macOS, BSDs)
+- **Not available**: Windows
+
+### Configuration
+
+```toml
+[[listeners]]
+name = "unix-in"
+protocols = ["http", "socks5"]
+
+[listeners.unix]
+path = "/run/eggress/proxy.sock"
+unlink_existing = true
+mode = 0o660
+```
+
+### Socket management
+
+- `unlink_existing`: removes an existing socket file before binding (prevents stale socket errors)
+- `mode`: Unix file permissions for the socket (default `0o660`)
+- Socket file ownership follows the process user/group
+- On shutdown, the socket file is not removed (operator-managed)
+
+### Security considerations
+
+- Socket file permissions control who can connect
+- No built-in ACL beyond filesystem permissions
+- Loop prevention: same as TCP listeners (reject connections to own address)
 
 ## 14.5 Remaining Protocol Audit
 
@@ -451,7 +527,8 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 ### Summary
 
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream and inbound listener (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
-- **Intentional non-parity**: SSH, Unix sockets, redir, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Implemented as supported**: Transparent TCP proxy (Linux, `redir://`), Unix domain socket listeners (Unix, `unix://`)
+- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, QUIC, HTTP/3, WebSocket tunnels, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Trojan inbound listener
 
 ### Diagnostic behavior

@@ -131,6 +131,16 @@ pub struct ListenerInfo {
     pub local_addr: String,
     pub protocols: Vec<String>,
     pub udp_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_dst_support: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unix_socket_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unix_socket_unlink_existing: Option<bool>,
 }
 
 pub fn build_response(status: u16, body: impl Into<Bytes>, content_type: &str) -> AdminResponse {

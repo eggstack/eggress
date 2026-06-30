@@ -93,6 +93,29 @@ pub struct ListenerConfig {
     pub tls: Option<ListenerTlsConfig>,
     #[serde(default)]
     pub shadowsocks: Option<ShadowsocksListenerConfig>,
+    #[serde(default)]
+    pub transparent: Option<TransparentConfig>,
+    #[serde(default)]
+    pub unix: Option<UnixListenerConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransparentConfig {
+    pub enabled: Option<bool>,
+    /// Transparent proxy protocol: "redir" (iptables REDIRECT/nftables) or "pf" (macOS PF).
+    pub protocol: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnixListenerConfig {
+    /// Filesystem path for the Unix domain socket.
+    pub path: String,
+    /// Whether to remove an existing socket file before binding.
+    pub unlink_existing: Option<bool>,
+    /// File permissions for the socket (e.g., 0o666).
+    pub mode: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

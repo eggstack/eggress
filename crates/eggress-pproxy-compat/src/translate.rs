@@ -155,24 +155,18 @@ pub fn translate_from_uris(
                 continue;
             }
             "unix" => {
-                output = output.with_unsupported(
-                    "unix-listener",
-                    format!(
-                        "Unix socket listener '{}': Unix domain sockets are not supported",
-                        local.redacted_display()
-                    ),
+                // Translate unix:// listener to TOML with unix socket config
+                tracing::debug!(
+                    "unix socket listener '{}' accepted (unix socket mode)",
+                    local.redacted_display()
                 );
-                continue;
             }
             "redir" => {
-                output = output.with_unsupported(
-                    "redir-listener",
-                    format!(
-                        "Redir listener '{}': transparent proxy redirect is not supported",
-                        local.redacted_display()
-                    ),
+                // Translate redir:// listener to TOML with transparent proxy config
+                tracing::debug!(
+                    "redir listener '{}' accepted (transparent proxy mode)",
+                    local.redacted_display()
                 );
-                continue;
             }
             "direct" => {
                 output = output.with_unsupported(
@@ -202,6 +196,8 @@ pub fn translate_from_uris(
             "socks4" | "socks4a" => vec!["socks4".to_string()],
             "socks5" => vec!["socks5".to_string()],
             "ss" | "shadowsocks" => vec!["shadowsocks".to_string()],
+            "redir" => vec!["http".to_string()],
+            "unix" => vec!["socks5".to_string()],
             other => {
                 return Err(CompatError::InvalidArgs {
                     message: format!("unsupported scheme: {other}"),
@@ -216,6 +212,8 @@ pub fn translate_from_uris(
             auth: None,
             udp: None,
             shadowsocks: None,
+            transparent: None,
+            unix: None,
         };
 
         // Handle auth on listener
@@ -264,6 +262,26 @@ pub fn translate_from_uris(
             }
         }
 
+        // Add transparent proxy config for redir://
+        if local.scheme == "redir" {
+            listener_entry.transparent = Some(TransparentToml {
+                enabled: true,
+                protocol: "redir".to_string(),
+            });
+        }
+
+        // Add unix socket config for unix://
+        if local.scheme == "unix" {
+            let path = local
+                .path
+                .clone()
+                .unwrap_or_else(|| "/tmp/eggress.sock".to_string());
+            listener_entry.unix = Some(UnixToml {
+                path,
+                unlink_existing: false,
+            });
+        }
+
         listeners.push(listener_entry);
 
         // If no remotes and no UDP remotes, create a direct rule
@@ -298,6 +316,8 @@ pub fn translate_from_uris(
                     bind: Some(parse_udp_listen_addr(addr)),
                 }),
                 shadowsocks: None,
+                transparent: None,
+                unix: None,
             });
             output = output.with_warning(
                 "ul-no-listener",
@@ -575,6 +595,22 @@ struct ListenerToml {
     udp: Option<UdpToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     shadowsocks: Option<ShadowsocksToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transparent: Option<TransparentToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unix: Option<UnixToml>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct TransparentToml {
+    enabled: bool,
+    protocol: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct UnixToml {
+    path: String,
+    unlink_existing: bool,
 }
 
 #[derive(serde::Serialize, Clone)]

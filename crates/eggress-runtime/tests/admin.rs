@@ -97,6 +97,11 @@ fn test_state_with_listeners() -> AdminState {
                 local_addr: "0.0.0.0:8080".to_string(),
                 protocols: vec!["http".to_string()],
                 udp_enabled: false,
+                mode: Some("standard".to_string()),
+                capability_status: None,
+                original_dst_support: None,
+                unix_socket_path: None,
+                unix_socket_unlink_existing: None,
             },
             ListenerInfo {
                 name: "socks-in".to_string(),
@@ -104,6 +109,11 @@ fn test_state_with_listeners() -> AdminState {
                 local_addr: "0.0.0.0:1080".to_string(),
                 protocols: vec!["socks5".to_string()],
                 udp_enabled: true,
+                mode: Some("standard".to_string()),
+                capability_status: None,
+                original_dst_support: None,
+                unix_socket_path: None,
+                unix_socket_unlink_existing: None,
             },
         ],
     };

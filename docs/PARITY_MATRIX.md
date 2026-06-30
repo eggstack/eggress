@@ -30,6 +30,9 @@ For the canonical per-feature evidence table with test commands, see
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
 | SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | eggress uses SOCKS5 UDP ASSOCIATE framing; pproxy uses its own custom framing. Both relay UDP successfully. |
 | Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
+| Transparent TCP proxy (`redir://`) | Linux only | Linux only | Supported | `transparent.rs` tests | none | Requires `SO_ORIGINAL_DST`; iptables/nftables REDIRECT rule needed |
+| Unix domain socket (`unix://`) | Unix only | Unix only | Supported | `unix_listener.rs` tests | none | Listen on filesystem socket path; Windows not supported |
+| macOS PF transparent proxy | supported | not implemented | Intentional non-parity | none | none | Use pfctl with standard listener instead |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
 ### Inbound UDP Protocols
@@ -124,8 +127,8 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `socks5://` | inbound | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
 | `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Supported | **Supported** | Explicit protocol mode only; no mixed-listener auto-detection |
 | `trojan://` | inbound | TCP | Password (SHA224) | Rejected | **Intentional non-parity** | No inbound listener; upstream-only |
-| `redir://` | inbound | TCP | None | Rejected | **Intentional non-parity** | Requires root, kernel hooks (`SO_ORIGINAL_DST`) |
-| `unix://` | inbound | TCP | None | Rejected | **Intentional non-parity** | Not in scope |
+| `redir://` | inbound | TCP | None | Supported | **Supported** | Linux only; requires `SO_ORIGINAL_DST` via iptables REDIRECT/nftables |
+| `unix://` | inbound | TCP | None | Supported | **Supported** | Unix only; listen on Unix domain socket path |
 | `ssh://` | inbound | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH is not a proxy protocol |
 
 ### Upstream Protocols
@@ -180,8 +183,9 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 | Input | Diagnostic type | Error message |
 |-------|----------------|---------------|
 | `ssh://...` as upstream | `UnsupportedFeature` | "SSH transport is not supported" |
-| `unix://...` as upstream | `UnsupportedFeature` | "Unix domain sockets are not supported" |
-| `redir://...` as upstream | `UnsupportedFeature` | "Transparent/redir proxy is not supported" |
+| `redir://...` as upstream listener | N/A | Now supported as transparent TCP proxy (Linux only) |
+| `unix://...` as upstream | `UnsupportedFeature` | "Unix domain sockets are not supported as upstream" |
+| `unix://...` as listener | N/A | Now supported as Unix domain socket listener (Unix only) |
 | `ss://...` as listener | N/A | Now supported as explicit protocol mode |
 | `trojan://...` as listener | `UnsupportedFeature` | "Trojan listener: Trojan is upstream-only, not a local listener" |
 | Legacy stream cipher URI | `UnsupportedFeature` | "Legacy stream ciphers are not supported; use AEAD methods" |
@@ -227,6 +231,8 @@ All diagnostic messages redact credentials.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
 - **CLI (Compatible / Partial)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as compatible. `--daemon` is not yet implemented.
 - **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan is client-only. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
+- **Transparent proxy (Supported)**: Linux-only transparent TCP proxy via `SO_ORIGINAL_DST`. Requires iptables/nftables REDIRECT rules. macOS PF transparent proxy is intentional non-parity (use pfctl with standard listener).
+- **Unix domain sockets (Supported)**: Unix-only listener on filesystem socket paths. Not available on Windows. Socket file management and permissions are operator-managed.
 - **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. See `docs/PYTHON_BINDINGS.md`.
 
 ## Limitations
@@ -241,6 +247,8 @@ All diagnostic messages redact credentials.
 8. **Hot reload scope**: Eggress reloads routing, upstreams, groups, and health config atomically via `ArcSwap`. Listener topology changes require restart. pproxy reloads its full config on SIGHUP.
 9. **Fallback model**: pproxy uses `-F` flag for fallback; eggress falls back to direct connection or rejects based on route rules. Different semantics.
 10. **Multi-hop UDP chains**: Not implemented. pproxy supports multi-hop UDP chains; eggress supports single-hop only.
+11. **Transparent proxy**: Linux only, requires `SO_ORIGINAL_DST` and iptables/nftables REDIRECT rules. macOS PF transparent proxy is not implemented (use pfctl with standard listener). Not available on Windows.
+12. **Unix domain socket listeners**: Unix only. Socket file permissions and cleanup are operator-managed. Not available on Windows.
 
 ## Test Infrastructure
 
