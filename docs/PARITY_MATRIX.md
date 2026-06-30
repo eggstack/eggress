@@ -4,6 +4,9 @@ This document tracks feature-by-feature comparison between Eggress and pproxy,
 with links to differential and runtime tests that prove behavioral equivalence
 or document supported-but-unverified functionality.
 
+For the canonical per-feature evidence table with test commands, see
+[COMPATIBILITY_EVIDENCE.md](COMPATIBILITY_EVIDENCE.md).
+
 ## Compatibility Tiers
 
 | Tier | Meaning |
@@ -25,8 +28,8 @@ or document supported-but-unverified functionality.
 | HTTP forward proxy | ordinary HTTP request handling | persistent session forward | Compatible | integration tests | `differential_http_forward_get` | Persistent session model implemented (19.1). Differential tests added (19.3). |
 | SOCKS4/4a | server + client | server + client | Compatible | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
-| SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Compatible | `udp.rs` integration | `differential_socks5_udp_associate` | pproxy uses custom UDP framing; standalone mode now provides compatible behavior without TCP control |
-| Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Explicit protocol mode only (no mixed-listener auto-detection); standard AEAD framing |
+| SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | eggress uses SOCKS5 UDP ASSOCIATE framing; pproxy uses its own custom framing. Both relay UDP successfully. |
+| Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
 ### Inbound UDP Protocols
@@ -34,8 +37,8 @@ or document supported-but-unverified functionality.
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | SOCKS5 UDP ASSOCIATE relay | own UDP framing protocol | SOCKS5 UDP ASSOCIATE | Partial | `udp.rs` | `differential_socks5_udp_associate` | Framing differs; relay success matches |
-| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | Compatible | `udp.rs` | `differential_socks5_udp_associate` | pproxy-compatible standalone UDP mode; no TCP control connection required |
-| Shadowsocks UDP | supported | standard AEAD format | Supported | `shadowsocks_udp.rs` | none | Interoperable with standard Shadowsocks |
+| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | Compatible | `udp.rs` | `differential_socks5_udp_associate` | pproxy-compatible standalone UDP mode; no TCP control connection required. Differential tests verify behavioral parity. |
+| Shadowsocks UDP | supported | standard AEAD format | Supported | `shadowsocks_udp.rs` | none | Standard AEAD format; interoperable with standard Shadowsocks. Not pproxy-differential tested. |
 | Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE or standalone mode | Supported | `udp.rs` | none | Both entry points supported |
 
 ### Upstream TCP Protocols
@@ -70,11 +73,11 @@ or document supported-but-unverified functionality.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Round-robin | default for multiple remotes (`-s rr`) | default for groups | Compatible | `scheduler_runtime.rs` | none | Eggress uses global atomic cursor; pproxy resets on reload |
-| First-available | via `-s fa` | `FirstAvailable` scheduler | Compatible | `scheduler_runtime.rs` | none | Both return first eligible upstream |
+| Round-robin | default for multiple remotes (`-s rr`) | default for groups | Supported | `scheduler_runtime.rs` | none | Uses global atomic cursor; pproxy resets on reload. No pproxy differential test. |
+| First-available | via `-s fa` | `FirstAvailable` scheduler | Supported | `scheduler_runtime.rs` | none | Both return first eligible upstream |
 | Random | not default | `Random` scheduler | Supported | `scheduler_runtime.rs` | none | Eggress-specific; deterministic variant for testing |
 | Least-connections | not available | `LeastConnections` scheduler | Supported | `scheduler_runtime.rs` | none | Uses active + in_flight count |
-| Health-aware skip | implicit via alive check | explicit health state machine | Compatible | `scheduler_runtime.rs` | none | Eggress: hysteresis state machine |
+| Health-aware skip | implicit via alive check | explicit health state machine | Supported | `scheduler_runtime.rs` | none | Eggress: hysteresis state machine |
 | Fallback on all fail | `-F` flag (direct only) | `GroupFallback`: reject/direct/use-unhealthy | Partial | `scheduler_runtime.rs` | none | Eggress offers more granular control |
 | Retry within group | not documented | not implemented | Compatible | none | none | Single attempt per request |
 | Active lease tracking | not documented | `PendingLease`/`ActiveLease` two-phase | Supported | `scheduler_runtime.rs` | none | Precise connection accounting |
@@ -143,7 +146,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 
 | Feature | pproxy support | Eggress status | Decision | Rationale |
 |---------|---------------|----------------|----------|-----------|
-| `+tls` suffix | `socks5+tls://` etc. | Supported | **Compatible** | Maps to TLS wrapper via `eggress-transport-tls` |
+| `+tls` suffix | `socks5+tls://` etc. | Supported | **Supported** | Maps to TLS wrapper via `eggress-transport-tls` |
 | Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported; standard TCP framing |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
 | ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
@@ -192,13 +195,13 @@ All diagnostic messages redact credentials.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| `http://` scheme | supported | supported | Compatible | cli_tests | none | |
-| `socks5://` scheme | supported | supported | Compatible | cli_tests | none | |
-| `socks4://` scheme | supported | supported | Compatible | cli_tests | none | |
+| `http://` scheme | supported | supported | Supported | cli_tests | none | |
+| `socks5://` scheme | supported | supported | Supported | cli_tests | none | |
+| `socks4://` scheme | supported | supported | Supported | cli_tests | none | |
 | `ss://` scheme | supported | supported | Supported | cli_tests | none | |
 | `trojan://` scheme | supported | supported | Supported | unit tests | none | |
-| `__` chain separator | supported | supported | Compatible | integration tests | none | |
-| `user:pass@` auth | supported | supported | Compatible | integration tests | none | |
+| `__` chain separator | supported | supported | Supported | integration tests | none | |
+| `user:pass@` auth | supported | supported | Supported | integration tests | none | |
 
 ### Config/Reload Behavior
 
@@ -275,7 +278,8 @@ Per-crate property tests validate codec round-trips, parser round-trips, and rou
 Phase 18 establishes machine-verified compatibility evidence. Phase 19 expands coverage
 with persistent HTTP forwarding and differential tests for HTTP CONNECT, SOCKS4/4a, and
 SOCKS5. All compatibility claims must be backed by a manifest entry in
-`tests/compat/pproxy_manifest.toml`.
+`tests/compat/pproxy_manifest.toml`. The human-readable evidence table is at
+[COMPATIBILITY_EVIDENCE.md](COMPATIBILITY_EVIDENCE.md).
 
 ### Evidence Levels
 
@@ -287,6 +291,11 @@ SOCKS5. All compatibility claims must be backed by a manifest entry in
 | `implemented_interop` | Tested via external protocol interop |
 | `compatible` | Real pproxy differential or interop evidence |
 | `intentional_non_parity` | Deliberately not replicated with rationale |
+
+> **Note:** The `Compatible` tier in the Feature Matrix now requires a matching manifest
+> entry with `evidence_level = "compatible"` backed by pproxy differential tests.
+> Features with `implemented_interop` evidence (e.g., Shadowsocks) are classified as
+> `Supported` instead.
 
 ### Rules
 

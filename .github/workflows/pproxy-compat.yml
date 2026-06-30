@@ -28,6 +28,8 @@ jobs:
         run: python -m pproxy --help
       - name: Build
         run: cargo build --workspace
+      - name: Validate manifest invariants
+        run: cargo test -p eggress-testkit validate_real_manifest
       - name: Run testkit pproxy_oracle tests
         run: cargo test -p eggress-testkit pproxy_oracle -- --ignored
       - name: Run differential pproxy tests
@@ -39,7 +41,7 @@ jobs:
           EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
         run: cargo test -p eggress-cli --test interoperability_pproxy -- --ignored
       - name: Generate parity report
-        run: cargo test -p eggress-testkit report -- --ignored || true
+        run: cargo test -p eggress-testkit report -- --ignored
       - name: Upload parity report
         if: always()
         uses: actions/upload-artifact@v4

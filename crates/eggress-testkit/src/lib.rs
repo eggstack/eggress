@@ -6,6 +6,7 @@
 pub mod case_model;
 pub mod eggress_runner;
 pub mod fixtures;
+pub mod manifest;
 pub mod pproxy_oracle;
 pub mod report;
 

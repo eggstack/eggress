@@ -89,7 +89,66 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
 | `differential_refused_target_failure_class` | Refused target failure class equivalence |
 | `differential_auth_failure_class` | Auth failure class equivalence |
 | `differential_unsupported_route_behavior` | Unsupported route behavior |
+| `differential_http_connect_auth_success` | HTTP CONNECT with valid auth credentials |
+| `differential_http_connect_auth_missing` | HTTP CONNECT with missing/invalid auth |
+| `differential_http_connect_ipv4_target` | HTTP CONNECT to IPv4 target |
+| `differential_http_connect_domain_target` | HTTP CONNECT to domain target |
+| `differential_http_connect_ipv6_target` | HTTP CONNECT to IPv6 target |
+| `differential_http_connect_refused_target` | HTTP CONNECT to refused target |
+| `differential_http_connect_timeout` | HTTP CONNECT upstream timeout (connection refused) |
+| `differential_http_connect_client_half_close` | HTTP CONNECT client half-close after tunnel |
+| `differential_http_connect_server_half_close` | HTTP CONNECT server half-close after tunnel |
+| `differential_http_connect_fragmented_client_payload` | HTTP CONNECT fragmented client payload relay |
+| `differential_http_connect_fragmented_upstream_payload` | HTTP CONNECT fragmented upstream payload relay |
+| `differential_http_forward_get` | HTTP forward GET request |
+| `differential_http_forward_post_with_body` | HTTP forward POST with body |
+| `differential_http_forward_head` | HTTP forward HEAD request |
+| `differential_http_forward_connection_close` | HTTP forward Connection: close |
+| `differential_http_forward_persistent_connection` | HTTP forward persistent connection (two requests) |
+| `differential_http_forward_chunked_body` | HTTP forward chunked transfer encoding |
+| `differential_http_forward_upstream_connection_close` | HTTP forward upstream Connection: close |
+| `differential_http_forward_malformed_request` | HTTP forward malformed request |
+| `differential_http_forward_unsupported_transfer_coding` | HTTP forward unsupported Transfer-Encoding |
+| `differential_http_forward_auth_success` | HTTP forward auth success |
+| `differential_socks4_connect_tcp_echo` | SOCKS4 CONNECT TCP echo |
+| `differential_socks4a_connect_domain` | SOCKS4a domain resolution |
+| `differential_socks4_user_id_propagation` | SOCKS4 user ID propagation |
+| `differential_socks4_domain_fails` | SOCKS4 domain resolution (expected failure) |
+| `differential_socks4_refused_target` | SOCKS4 refused target |
+| `differential_socks4_malformed_version` | SOCKS4 malformed version byte |
+| `differential_socks4_truncated_request` | SOCKS4 truncated request |
+| `differential_socks5_connect_ipv6` | SOCKS5 IPv6 target |
+| `differential_socks5_connect_domain` | SOCKS5 domain target |
+| `differential_socks5_refused_target` | SOCKS5 refused target |
+| `differential_socks5_malformed_address_type` | SOCKS5 malformed address type |
+| `differential_socks5_unsupported_udp_command` | SOCKS5 unsupported UDP ASSOCIATE command |
+| `differential_socks5_early_close_greeting` | SOCKS5 early client close during greeting |
+| `differential_socks5_early_close_request` | SOCKS5 early client close during request |
+| `differential_socks5_server_half_close` | SOCKS5 server half-close during tunnel |
+| `differential_standalone_udp_direct_echo` | Standalone UDP direct echo |
+| `differential_standalone_udp_domain_target` | Standalone UDP domain target |
+| `differential_standalone_udp_malformed_short_datagram` | Standalone UDP malformed short datagram |
+| `differential_standalone_udp_nonzero_frag` | Standalone UDP nonzero FRAG |
+| `differential_standalone_udp_two_clients` | Standalone UDP two clients on same listener |
+| `differential_standalone_udp_oversized_datagram` | Standalone UDP oversized datagram |
+| `differential_standalone_udp_two_targets_from_same_client` | Standalone UDP two targets from same client |
 | Various `probe_*` tests | Black-box exploration of pproxy behavior |
+
+### Standalone UDP Differential Tests
+
+Standalone UDP tests compare pproxy's `-ul` UDP listener with eggress's
+standalone UDP relay (`mode = "standalone_pproxy_udp"`). Both use SOCKS5 UDP
+datagram framing (RSV + FRAG + ATYP + ADDR + PORT + PAYLOAD).
+
+| Test | Description |
+|------|-------------|
+| `differential_standalone_udp_direct_echo` | Direct IPv4 target echo through both relays |
+| `differential_standalone_udp_domain_target` | Domain (`localhost`) target echo through both relays |
+| `differential_standalone_udp_malformed_short_datagram` | Both silently drop datagrams shorter than 4 bytes |
+| `differential_standalone_udp_nonzero_frag` | Both silently drop datagrams with FRAG=1 |
+| `differential_standalone_udp_two_clients` | Two different clients on the same UDP listener |
+| `differential_standalone_udp_oversized_datagram` | Oversized (70KB) datagram handling |
+| `differential_standalone_udp_two_targets_from_same_client` | Same client targeting two different destinations |
 
 ### Shadowsocks Interoperability Tests (`interoperability_shadowsocks.rs`)
 
@@ -173,4 +232,7 @@ cargo test -p eggress-routing --test properties
 
 # Fuzz smoke tests
 cargo test -p eggress-protocol-socks --test fuzz_smoke
+
+# Manifest validation (no external tools needed)
+cargo test -p eggress-testkit validate_real_manifest
 ```

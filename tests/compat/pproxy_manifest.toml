@@ -15,7 +15,7 @@
 [meta]
 pproxy_version = "2.7.9"
 manifest_version = "1"
-last_updated = "2025-01-01"
+last_updated = "2025-06-30"
 
 # ─── Inbound TCP Protocols ────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ id = "socks5_udp_associate_server"
 category = "udp"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "compatible"
+evidence_level = "implemented_interop"
 tests = ["differential_socks5_udp_associate"]
 divergence = "Framing differs but relay success matches"
 external_dependency = "pproxy==2.7.9"
@@ -83,11 +83,10 @@ external_dependency = "pproxy==2.7.9"
 id = "shadowsocks_tcp_upstream"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_interop"
 tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
 divergence = "Standard SIP003 AEAD framing; wire-compatible with standard Shadowsocks"
-external_dependency = null
 
 [[features]]
 id = "trojan_upstream"
@@ -97,7 +96,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["unit_tests"]
 divergence = "Client-only; no Trojan server"
-external_dependency = null
 
 # ─── Inbound UDP Protocols ────────────────────────────────────────────
 
@@ -119,7 +117,6 @@ egress_status = "supported"
 evidence_level = "implemented_interop"
 tests = ["shadowsocks_udp_tests"]
 divergence = "Standard AEAD format; interoperable with standard Shadowsocks"
-external_dependency = null
 
 [[features]]
 id = "direct_udp_forwarding"
@@ -129,7 +126,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["udp_tests"]
 divergence = "Different entry points: pproxy -ul vs eggress SOCKS5 UDP ASSOCIATE"
-external_dependency = null
 
 # ─── Upstream TCP Protocols ───────────────────────────────────────────
 
@@ -151,7 +147,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["unit_tests"]
 divergence = "No differential test against pproxy"
-external_dependency = null
 
 [[features]]
 id = "socks5_upstream"
@@ -167,11 +162,10 @@ external_dependency = "pproxy==2.7.9"
 id = "shadowsocks_upstream"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_interop"
 tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
 divergence = "Standard SIP003 AEAD framing for TCP; standard for UDP"
-external_dependency = null
 
 [[features]]
 id = "trojan_upstream_client"
@@ -181,7 +175,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["unit_tests"]
 divergence = "Client-only; no server side"
-external_dependency = null
 
 [[features]]
 id = "direct_upstream"
@@ -191,7 +184,6 @@ egress_status = "compatible"
 evidence_level = "compatible"
 tests = ["implicit_in_echo_tests"]
 divergence = "Both connect directly"
-external_dependency = null
 
 # ─── Upstream UDP Protocols ───────────────────────────────────────────
 
@@ -203,7 +195,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["udp_upstream_tests"]
 divergence = "Eggress: one-hop; pproxy: multi-hop capable"
-external_dependency = null
 
 [[features]]
 id = "shadowsocks_udp_upstream"
@@ -213,7 +204,6 @@ egress_status = "supported"
 evidence_level = "implemented_interop"
 tests = ["shadowsocks_udp_tests"]
 divergence = "Single-hop only; pproxy: multi-hop capable"
-external_dependency = null
 
 # ─── Chain Behavior ───────────────────────────────────────────────────
 
@@ -235,7 +225,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "3+ hops exist but compatibility untested"
-external_dependency = null
 
 [[features]]
 id = "udp_chain"
@@ -245,7 +234,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["udp_upstream_tests"]
 divergence = "No multi-hop UDP chains"
-external_dependency = null
 
 [[features]]
 id = "chain_capability_validation"
@@ -255,7 +243,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "Explicit validation rejects invalid combos"
-external_dependency = null
 
 # ─── Scheduler Behavior ───────────────────────────────────────────────
 
@@ -263,21 +250,19 @@ external_dependency = null
 id = "round_robin_scheduler"
 category = "routing"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["scheduler_runtime_tests"]
 divergence = "Eggress uses global atomic cursor; pproxy resets on reload"
-external_dependency = null
 
 [[features]]
 id = "first_available_scheduler"
 category = "routing"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["scheduler_runtime_tests"]
 divergence = "Both return first eligible upstream"
-external_dependency = null
 
 [[features]]
 id = "random_scheduler"
@@ -287,7 +272,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["scheduler_runtime_tests"]
 divergence = "Eggress-specific; deterministic variant for testing"
-external_dependency = null
 
 [[features]]
 id = "least_connections_scheduler"
@@ -297,17 +281,15 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["scheduler_runtime_tests"]
 divergence = "Uses active + in_flight count"
-external_dependency = null
 
 [[features]]
 id = "health_aware_skip"
 category = "routing"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["scheduler_runtime_tests"]
 divergence = "Eggress: hysteresis state machine"
-external_dependency = null
 
 [[features]]
 id = "scheduler_state_persistence"
@@ -317,7 +299,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Eggress preserves cursor for unchanged groups; pproxy resets on reload"
-external_dependency = null
 
 # ─── Authentication ───────────────────────────────────────────────────
 
@@ -349,7 +330,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "URI-embedded credentials"
-external_dependency = null
 
 [[features]]
 id = "http_basic_auth"
@@ -359,17 +339,15 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "URI-embedded credentials"
-external_dependency = null
 
 [[features]]
 id = "shadowsocks_password"
 category = "security"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_interop"
 tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
 divergence = "URI-embedded password; verified via interop tests"
-external_dependency = null
 
 # ─── CLI Compatibility ────────────────────────────────────────────────
 
@@ -381,7 +359,6 @@ egress_status = "compatible"
 evidence_level = "compatible"
 tests = ["cli_tests"]
 divergence = "Same syntax"
-external_dependency = null
 
 [[features]]
 id = "remote_flag"
@@ -391,7 +368,6 @@ egress_status = "compatible"
 evidence_level = "compatible"
 tests = ["cli_tests"]
 divergence = "Same syntax"
-external_dependency = null
 
 [[features]]
 id = "udp_listen_flag"
@@ -401,7 +377,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = ["pproxy_cli_tests"]
 divergence = "Eggress uses SOCKS5 UDP ASSOCIATE instead"
-external_dependency = null
 
 [[features]]
 id = "udp_remote_flag"
@@ -411,7 +386,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = ["pproxy_cli_tests"]
 divergence = "Eggress uses SOCKS5 UDP ASSOCIATE instead"
-external_dependency = null
 
 [[features]]
 id = "daemon_flag"
@@ -421,7 +395,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Use systemd or process manager"
-external_dependency = null
 
 [[features]]
 id = "rulefile_flag"
@@ -431,7 +404,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = ["pproxy_cli_tests"]
 divergence = "Use eggress TOML routing rules"
-external_dependency = null
 
 [[features]]
 id = "ssl_flag"
@@ -441,7 +413,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Configure TLS in eggress TOML"
-external_dependency = null
 
 [[features]]
 id = "block_flag"
@@ -451,7 +422,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Use eggress TOML routing rules"
-external_dependency = null
 
 [[features]]
 id = "reuse_flag"
@@ -461,7 +431,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Connection pooling not implemented"
-external_dependency = null
 
 [[features]]
 id = "log_flag"
@@ -471,7 +440,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Use tracing-subscriber"
-external_dependency = null
 
 [[features]]
 id = "sys_flag"
@@ -481,7 +449,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "System proxy config not supported"
-external_dependency = null
 
 [[features]]
 id = "pproxy_translate_command"
@@ -491,7 +458,6 @@ egress_status = "compatible"
 evidence_level = "compatible"
 tests = ["pproxy_cli_tests"]
 divergence = "Translates pproxy CLI args to TOML config"
-external_dependency = null
 
 [[features]]
 id = "pproxy_check_command"
@@ -501,7 +467,6 @@ egress_status = "compatible"
 evidence_level = "compatible"
 tests = ["pproxy_cli_tests"]
 divergence = "Reports parity tier"
-external_dependency = null
 
 [[features]]
 id = "pproxy_run_command"
@@ -511,7 +476,6 @@ egress_status = "compatible"
 evidence_level = "compatible"
 tests = ["pproxy_cli_tests"]
 divergence = "Translates and starts the service"
-external_dependency = null
 
 # ─── URI Compatibility ────────────────────────────────────────────────
 
@@ -519,41 +483,37 @@ external_dependency = null
 id = "http_scheme"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Same syntax"
-external_dependency = null
 
 [[features]]
 id = "socks5_scheme"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Same syntax"
-external_dependency = null
 
 [[features]]
 id = "socks4_scheme"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Same syntax"
-external_dependency = null
 
 [[features]]
 id = "ss_scheme"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_interop"
 tests = ["cli_tests", "interoperability_shadowsocks_tcp"]
 divergence = "Supported as upstream; standard SIP003 URI"
-external_dependency = null
 
 [[features]]
 id = "trojan_scheme"
@@ -563,27 +523,24 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["unit_tests"]
 divergence = "Client-only"
-external_dependency = null
 
 [[features]]
 id = "chain_separator"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "__ separator supported"
-external_dependency = null
 
 [[features]]
 id = "auth_in_uri"
 category = "uri"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "user:pass@ format"
-external_dependency = null
 
 # ─── Transport ────────────────────────────────────────────────────────
 
@@ -591,21 +548,19 @@ external_dependency = null
 id = "tls_suffix"
 category = "transport"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
+egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["tls_tests"]
 divergence = "Maps to TLS wrapper via eggress-transport-tls"
-external_dependency = null
 
 [[features]]
 id = "shadowsocks_aead_ciphers"
 category = "transport"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_interop"
 tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
 divergence = "All three AEAD methods supported; standard framing"
-external_dependency = null
 
 [[features]]
 id = "shadowsocks_stream_ciphers"
@@ -615,7 +570,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "No authentication; vulnerable to bit-flipping"
-external_dependency = null
 
 [[features]]
 id = "shadowsocks_r"
@@ -625,7 +579,6 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = ["pproxy_compat_tests"]
 divergence = "SSR URIs recognized and rejected with structured diagnostics; no protocol/obfs/cipher layers implemented"
-external_dependency = null
 
 # ─── Diagnostics ──────────────────────────────────────────────────────
 
@@ -637,7 +590,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["pproxy_compat_tests"]
 divergence = "Structured UnsupportedFeature/CompatError for all unsupported inputs"
-external_dependency = null
 
 [[features]]
 id = "credential_redaction"
@@ -647,7 +599,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["pproxy_redaction_tests"]
 divergence = "All diagnostic messages redact credentials"
-external_dependency = null
 
 # ─── Config/Reload ────────────────────────────────────────────────────
 
@@ -659,7 +610,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["reload_tests"]
 divergence = "Eggress: routing/upstreams only; pproxy: full config"
-external_dependency = null
 
 [[features]]
 id = "toml_config"
@@ -669,7 +619,6 @@ egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
 divergence = "Different schema"
-external_dependency = null
 
 # ─── Python Library ───────────────────────────────────────────────────
 
@@ -681,7 +630,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["test_pproxy_compat.py", "test_pproxy_redaction.py", "test_pproxy_concurrency.py"]
 divergence = "Not a 1:1 API match with pproxy Server()"
-external_dependency = null
 
 [[features]]
 id = "pypi_package"
@@ -691,7 +639,6 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["wheel_tests"]
 divergence = "Wheels for Linux/macOS/Windows"
-external_dependency = null
 
 # ─── Phase 19: HTTP/SOCKS Baseline Closure ──────────────────────────
 
@@ -853,4 +800,3 @@ egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
 divergence = "BIND command not implemented; returns REP_COMMAND_NOT_SUPPORTED (0x07)"
-external_dependency = null

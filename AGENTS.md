@@ -95,6 +95,12 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 # Run pproxy differential tests (gated, requires pproxy==2.7.9)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 
+# Validate manifest invariants (Phase 23)
+cargo test -p eggress-testkit validate_real_manifest
+
+# Validate manifest test names exist (Phase 23)
+cargo test -p eggress-testkit manifest_test_names_exist
+
 # Run embed API tests
 cargo test -p eggress-embed
 
@@ -276,6 +282,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
   workflow run ID is observable on the commit.
 - See `docs/CI_STATUS.md` for detailed status, local verification commands,
   and how to interpret completion docs when CI is unavailable.
+- `.github/workflows/shadowsocks-interop.yml` runs Shadowsocks interop tests with `ssserver`/`sslocal` from `shadowsocks-rust`.
 
 ## Key Architecture Facts
 
@@ -306,6 +313,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. Version sourced from native module's `CARGO_PKG_VERSION`. Lifecycle: always prefer explicit `shutdown()` or context manager; object destruction is best-effort fallback. See `docs/PYTHON_BINDINGS.md`.
 - **PyPI packaging**: Wheels built with maturin for Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64. See `docs/PYPI_RELEASE.md`.
 - **Release candidate audit (Phase 17)**: Final parity matrix audit, Rust/Python release audits, security/redaction audit including Python binding surface, documentation consistency pass. Release candidate document at `docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`. All verification commands pass; go recommendation issued. See `docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md`.
+- **Manifest validation**: `tests/compat/pproxy_manifest.toml` is the canonical evidence index. `egress_status = "compatible"` requires `evidence_level = "compatible"` backed by real pproxy differential tests. `implemented_synthetic` evidence cannot support compatibility claims. Validation enforced by `eggress-testkit::manifest::validate_manifest()`.
 
 ## Skills
 

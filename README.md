@@ -26,7 +26,7 @@ The `eggress-pproxy-compat` crate provides:
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
 - CLI flag translation with structured warnings for unsupported features
 - Structured diagnostics for unsupported protocols (SSH, Unix, redir)
-- Differential tests verifying behavioral parity with Python `pproxy`
+- Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
 - Standalone UDP mode (`-ul`/`-ur` flags) generating pproxy-compatible config
 - Python bindings for translation helpers (`translate_pproxy_args`, `translate_pproxy_uri`)
 - Python convenience API (`start_pproxy`, `EggressService.from_pproxy_args`)
@@ -215,8 +215,8 @@ Legend:
 - [x] Legacy stream cipher diagnostics (rejected with clear error)
 - [x] OTA intentionally excluded (intentional non-parity)
 - [x] Password/key derivation compatibility
-- [x] Interoperability with `shadowsocks-rust` (TCP framing is standard SIP003 AEAD; UDP is standard)
-- [x] Interoperability with Python `pproxy` (standard SIP003 AEAD framing; wire-compatible)
+- [x] Interoperability with `shadowsocks-rust` (standard SIP003 AEAD framing)
+- [x] Standard SIP003 AEAD framing (wire-compatible with standard implementations)
 
 ### ShadowsocksR (SSR) — Intentionally Unsupported
 
@@ -471,6 +471,7 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Protocol: SOCKS4](docs/protocols/SOCKS4.md)
 - [Protocol: Shadowsocks](docs/protocols/SHADOWSOCKS.md)
 - [Protocol: Trojan](docs/protocols/TROJAN.md)
+- [Compatibility evidence](docs/COMPATIBILITY_EVIDENCE.md)
 - [pproxy parity spec](docs/PPROXY_PARITY_SPEC.md)
 - [pproxy migration](docs/PPROXY_MIGRATION.md)
 - [Phase 7 pproxy parity spec](docs/PHASE_7_PPROXY_PARITY_SPEC_COMPLETION.md)

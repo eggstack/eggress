@@ -1,0 +1,40 @@
+name: Shadowsocks Interop
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  shadowsocks-interop:
+    name: Shadowsocks Interop (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: cargo
+      - uses: Swatinem/rust-cache@v2
+      - name: Install shadowsocks-rust
+        run: cargo install shadowsocks-rust --features "local,server"
+      - name: Verify ssserver
+        run: ssserver --help
+      - name: Verify sslocal
+        run: sslocal --help
+      - name: Run Shadowsocks interop tests
+        env:
+          EGRESS_REQUIRE_SHADOWSOCKS_INTEROP: "1"
+        run: cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadowsocks-interop-logs
+          path: target/tmp/
+          if-no-files-found: ignore
