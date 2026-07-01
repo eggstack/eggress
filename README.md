@@ -312,16 +312,23 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 
 ### Reverse and backward proxying
 
-- [x] Reverse endpoint registration
-- [x] Authenticated control channel
-- [ ] Logical stream multiplexing
-- [x] Heartbeats
-- [x] Reconnect
-- [x] Re-registration
-- [ ] Graceful draining
-- [ ] Reverse listener policy
-- [ ] Reverse UDP
-- [ ] Python `pproxy` backward-mode compatibility
+- [x] Reverse acceptor (control channel + external listener)
+- [x] Reverse control client (outbound dial + auto-reconnect)
+- [x] Plaintext control-channel handshake (1-byte accept/reject)
+- [x] Raw user:pass auth bytes
+- [x] Exponential reconnect backoff (1s -> 30s cap)
+- [x] ReverseMetrics struct (control-accepted/rejected, reconnects, streams)
+- [x] pproxy URI translation (`socks5+in://`, `bind://`, `listen://`, `backward://`, `rebind://`)
+- [x] TOML `[reverse_servers]` / `[reverse_clients]` config model
+- [ ] Logical stream multiplexing (intentional -- pproxy uses one session per control channel)
+- [ ] Built-in TLS for control channel (use stunnel or external TLS)
+- [ ] Multi-channel concurrency (parallel `+in+in+in`)
+- [ ] Jump chain composition on relayed streams
+- [ ] Reverse UDP (intentional -- pproxy does not support UDP reverse)
+- [ ] Reverse listener access policy (allowlist of bind addresses)
+- [ ] Reverse integration into eggress-runtime supervisor (autonomous mode managed by ServiceSupervisor)
+- [ ] Reverse admin endpoints (reverse session listing in admin API)
+- [ ] Python `pproxy` backward-mode compatibility (reverse URI translation only; no Python API yet)
 
 ### Transparent proxying
 

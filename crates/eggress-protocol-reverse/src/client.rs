@@ -1,11 +1,13 @@
-use crate::{read_frame, write_frame, Frame, FrameType, ProtocolError, MAX_FRAME_SIZE};
-use bytes::BytesMut;
+use crate::metrics::ReverseMetrics;
+use crate::{client_auth_handshake, relay_bidirectional, ProtocolError};
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-/// Configuration for a reverse control client.
+/// Configuration for a reverse proxy control client.
 #[derive(Debug, Clone)]
 pub struct ReverseClientConfig {
     /// Address of the reverse server to connect to.
@@ -18,8 +20,10 @@ pub struct ReverseClientConfig {
     pub reconnect_initial_ms: u64,
     /// Reconnect backoff max delay in milliseconds.
     pub reconnect_max_ms: u64,
-    /// Heartbeat interval in milliseconds.
-    pub heartbeat_interval_ms: u64,
+    /// Default target host (used when no target is specified in proxy request).
+    pub default_target_host: Option<String>,
+    /// Default target port.
+    pub default_target_port: Option<u16>,
 }
 
 impl Default for ReverseClientConfig {
@@ -30,18 +34,23 @@ impl Default for ReverseClientConfig {
             auth_password: None,
             reconnect_initial_ms: 1_000,
             reconnect_max_ms: 30_000,
-            heartbeat_interval_ms: 30_000,
+            default_target_host: None,
+            default_target_port: None,
         }
     }
 }
 
 /// A reverse proxy control client.
 ///
-/// Connects to a reverse server, authenticates, and services incoming stream-open
+/// Connects to a reverse server, authenticates, and services incoming proxy
 /// requests by connecting to local targets and relaying data.
+///
+/// In pproxy's backward model, each control connection carries exactly one
+/// proxy session. When the session ends, the client reconnects.
 pub struct ReverseClient {
     config: ReverseClientConfig,
     cancel: CancellationToken,
+    metrics: Option<Arc<ReverseMetrics>>,
 }
 
 impl ReverseClient {
@@ -49,7 +58,18 @@ impl ReverseClient {
         Self {
             config,
             cancel: CancellationToken::new(),
+            metrics: None,
         }
+    }
+
+    /// Attach metrics to this client instance.
+    pub fn set_metrics(&mut self, metrics: Arc<ReverseMetrics>) {
+        self.metrics = Some(metrics);
+    }
+
+    /// Get a cancel token for external shutdown.
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel.clone()
     }
 
     /// Run the reverse client with automatic reconnection.
@@ -59,147 +79,96 @@ impl ReverseClient {
         loop {
             match self.run_session().await {
                 Ok(()) => {
-                    info!("reverse client session ended normally");
-                    break;
+                    // Normal session end (external client disconnected)
+                    // Reset backoff and reconnect immediately
+                    backoff_ms = self.config.reconnect_initial_ms;
+                    if self.cancel.is_cancelled() {
+                        break;
+                    }
+                    debug!("session ended, reconnecting immediately");
                 }
                 Err(e) => {
                     if self.cancel.is_cancelled() {
                         break;
                     }
-                    warn!(error = %e, backoff_ms, "reverse client session failed, reconnecting");
+                    if let Some(ref m) = self.metrics {
+                        m.record_reconnect();
+                    }
+                    warn!(error = %e, backoff_ms, "session failed, reconnecting");
                     tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
                     backoff_ms = (backoff_ms * 2).min(self.config.reconnect_max_ms);
                 }
             }
         }
 
+        info!("reverse client shut down");
         Ok(())
     }
 
     /// Run a single session with the server.
     async fn run_session(&self) -> Result<(), ProtocolError> {
-        let mut stream = TcpStream::connect(&self.config.server_addr).await?;
+        let stream = TcpStream::connect(&self.config.server_addr).await?;
         info!(server = %self.config.server_addr, "connected to reverse server");
 
-        // Authenticate if configured
-        if let Some(ref username) = self.config.auth_username {
+        // Authenticate
+        let stream = if let Some(ref username) = self.config.auth_username {
             let password = self.config.auth_password.as_deref().unwrap_or("");
-            write_frame(&mut stream, &Frame::auth(username, password)).await?;
+            let mut s = stream;
+            client_auth_handshake(&mut s, username, password).await?;
+            info!("authentication successful");
+            s
+        } else {
+            // No auth: just read the handshake response
+            let mut s = stream;
+            crate::read_handshake(&mut s).await?;
+            s
+        };
 
-            let resp = read_frame(&mut stream, &mut BytesMut::with_capacity(256)).await?;
-            match resp.frame_type {
-                FrameType::AuthOk => {
-                    info!("authentication successful");
+        if let Some(ref m) = self.metrics {
+            m.record_stream_opened();
+        }
+
+        // At this point, the control channel is established.
+        // In pproxy's model, the acceptor relays an external client's
+        // connection through this control channel as raw TCP. The server
+        // runs relay_bidirectional between the external client and this
+        // control stream. We connect to the configured default target and
+        // relay bidirectionally between control and target.
+
+        if let (Some(ref host), Some(port)) = (
+            &self.config.default_target_host,
+            self.config.default_target_port,
+        ) {
+            let target_addr = format!("{}:{}", host, port);
+            match TcpStream::connect(&target_addr).await {
+                Ok(target_stream) => {
+                    info!(target = %target_addr, "connected to target, relaying");
+                    relay_bidirectional(stream, target_stream).await?;
                 }
-                FrameType::AuthFail => {
-                    return Err(ProtocolError::AuthFailed);
+                Err(e) => {
+                    warn!(target = %target_addr, error = %e, "failed to connect to target");
+                    if let Some(ref m) = self.metrics {
+                        m.record_error(&format!("target connect failed: {e}"));
+                    }
+                    return Err(ProtocolError::Io(e));
                 }
-                _ => {
-                    return Err(ProtocolError::MalformedFrame);
+            }
+        } else {
+            // No default target configured; drain the control connection
+            debug!("no default target configured, holding control connection open");
+            let mut stream = stream;
+            let mut buf = [0u8; 8192];
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => break,
                 }
             }
         }
 
-        // Main loop: read frames from server
-        let mut buf = BytesMut::with_capacity(MAX_FRAME_SIZE);
-        let cancel = self.cancel.clone();
-
-        loop {
-            tokio::select! {
-                result = read_frame(&mut stream, &mut buf) => {
-                    match result {
-                        Ok(frame) => {
-                            match frame.frame_type {
-                                FrameType::OpenStream => {
-                                    let (host, port) =
-                                        crate::decode_open_stream_payload(&frame.payload)?;
-                                    let stream_id = frame.stream_id;
-                                    info!(stream_id, target = format!("{}:{}", host, port), "opening stream to target");
-
-                                    // Connect to local target
-                                    let target_addr = format!("{}:{}", host, port);
-                                    match tokio::net::TcpStream::connect(&target_addr).await {
-                                        Ok(target_stream) => {
-                                            write_frame(&mut stream, &Frame::stream_opened(stream_id)).await?;
-
-                                            let cancel_child = cancel.child_token();
-                                            // Split stream for relay
-                                            let (mut reader, mut writer) = tokio::io::split(stream);
-                                            let (mut target_read, mut target_write) = tokio::io::split(target_stream);
-
-                                            let ctrl_to_target = async {
-                                                let mut buf = [0u8; 8192];
-                                                loop {
-                                                    match reader.read(&mut buf).await {
-                                                        Ok(0) => break,
-                                                        Ok(n) => {
-                                                            if target_write.write_all(&buf[..n]).await.is_err() {
-                                                                break;
-                                                            }
-                                                        }
-                                                        Err(_) => break,
-                                                    }
-                                                }
-                                            };
-
-                                            let target_to_ctrl = async {
-                                                let mut buf = [0u8; 8192];
-                                                loop {
-                                                    match target_read.read(&mut buf).await {
-                                                        Ok(0) => break,
-                                                        Ok(n) => {
-                                                            if writer.write_all(&buf[..n]).await.is_err() {
-                                                                break;
-                                                            }
-                                                        }
-                                                        Err(_) => break,
-                                                    }
-                                                }
-                                            };
-
-                                            tokio::select! {
-                                                _ = ctrl_to_target => {}
-                                                _ = target_to_ctrl => {}
-                                                _ = cancel_child.cancelled() => {}
-                                            }
-
-                                            debug!(stream_id, "stream relay ended");
-                                            return Ok(());
-                                        }
-                                        Err(e) => {
-                                            warn!(stream_id, target = %target_addr, error = %e, "failed to connect to target");
-                                            write_frame(&mut stream, &Frame::stream_reset(stream_id)).await?;
-                                        }
-                                    }
-                                }
-                                FrameType::StreamData => {
-                                    debug!(stream_id = frame.stream_id, data_len = frame.payload.len(), "received stream data");
-                                }
-                                FrameType::StreamClose => {
-                                    debug!(stream_id = frame.stream_id, "stream closed by server");
-                                }
-                                FrameType::StreamReset => {
-                                    warn!(stream_id = frame.stream_id, "stream reset by server");
-                                }
-                                FrameType::Ping => {
-                                    write_frame(&mut stream, &Frame::pong()).await?;
-                                }
-                                _ => {
-                                    warn!(frame_type = ?frame.frame_type, "unexpected frame from server");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            warn!(error = %e, "connection read error");
-                            break;
-                        }
-                    }
-                }
-                _ = cancel.cancelled() => {
-                    info!("reverse client shutting down");
-                    break;
-                }
-            }
+        if let Some(ref m) = self.metrics {
+            m.record_stream_closed(0);
         }
 
         Ok(())
@@ -210,5 +179,3 @@ impl ReverseClient {
         self.cancel.cancel();
     }
 }
-
-use tokio::io::{AsyncReadExt, AsyncWriteExt};

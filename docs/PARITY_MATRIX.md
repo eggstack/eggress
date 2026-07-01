@@ -32,6 +32,7 @@ For the canonical per-feature evidence table with test commands, see
 | Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
 | Transparent TCP proxy (`redir://`) | Linux only | Linux only | Supported | `transparent.rs` tests | none | Requires `SO_ORIGINAL_DST`; iptables/nftables REDIRECT rule needed |
 | Unix domain socket (`unix://`) | Unix only | Unix only | Supported | `unix_listener.rs` tests | none | Listen on filesystem socket path; Windows not supported |
+| Reverse/backward proxy (`+in`/`bind://`/`listen://`) | TCP-only raw relay, optional plaintext auth, one session per control channel | Reverse acceptor + control client (`crates/eggress-protocol-reverse`) | Supported | `integration.rs` | none | TCP only; UDP not supported by pproxy either; no built-in TLS |
 | macOS PF transparent proxy | supported | not implemented | Intentional non-parity | none | none | Use pfctl with standard listener instead |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
@@ -130,6 +131,9 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `redir://` | inbound | TCP | None | Supported | **Supported** | Linux only; requires `SO_ORIGINAL_DST` via iptables REDIRECT/nftables |
 | `unix://` | inbound | TCP | None | Supported | **Supported** | Unix only; listen on Unix domain socket path |
 | `ssh://` | inbound | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH is not a proxy protocol |
+| `bind://` / `listen://` | inbound (reverse) | TCP | Optional plaintext auth | Supported | **Supported** | Reverse acceptor; raw-relay control channel |
+| `backward://` / `rebind://` | upstream (reverse) | TCP | Optional plaintext auth | Supported | **Supported** | Reverse control client; raw-relay control channel |
+| `+in` modifier | upstream (reverse) | TCP | Optional plaintext auth | Supported | **Supported** | Activates reverse/backward mode on any protocol scheme |
 
 ### Upstream Protocols
 

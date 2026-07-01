@@ -1,26 +1,29 @@
-use crate::{read_frame, write_frame, Frame, FrameType, ProtocolError, MAX_FRAME_SIZE};
-use bytes::BytesMut;
+use crate::metrics::ReverseMetrics;
+use crate::{relay_bidirectional, server_auth_handshake, ProtocolError};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-/// Configuration for a reverse listener (the side that accepts control connections).
+/// Configuration for a reverse proxy server (acceptor side).
+///
+/// The server accepts control connections from remote clients and dispatches
+/// externally-accepted connections back through the control channel.
 #[derive(Debug, Clone)]
 pub struct ReverseServerConfig {
     /// Address to bind the control listener on.
     pub control_bind: SocketAddr,
+    /// Address to bind the external listener on (for clients to connect to).
+    pub external_bind: Option<SocketAddr>,
     /// Optional username for authentication.
     pub auth_username: Option<String>,
     /// Optional password for authentication.
     pub auth_password: Option<String>,
-    /// Maximum concurrent streams per control client.
-    pub max_streams: u32,
-    /// Heartbeat interval in milliseconds.
-    pub heartbeat_interval_ms: u64,
-    /// Read timeout in milliseconds (for idle streams).
+    /// Maximum concurrent control connections.
+    pub max_control_connections: u32,
+    /// Read timeout in milliseconds (for idle control connections).
     pub read_timeout_ms: u64,
 }
 
@@ -28,10 +31,10 @@ impl Default for ReverseServerConfig {
     fn default() -> Self {
         Self {
             control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: None,
             auth_username: None,
             auth_password: None,
-            max_streams: 256,
-            heartbeat_interval_ms: 30_000,
+            max_control_connections: 256,
             read_timeout_ms: 300_000,
         }
     }
@@ -39,11 +42,13 @@ impl Default for ReverseServerConfig {
 
 /// The reverse proxy server (acceptor side).
 ///
-/// Accepts control connections from reverse clients, binds listeners on their
-/// behalf, and dispatches accepted connections back through the control channel.
+/// Accepts control connections from reverse clients and external clients,
+/// relaying traffic between them. Each control connection carries exactly
+/// one proxy session (matching pproxy's backward model).
 pub struct ReverseServer {
     config: ReverseServerConfig,
     cancel: CancellationToken,
+    metrics: Option<Arc<ReverseMetrics>>,
 }
 
 impl ReverseServer {
@@ -51,38 +56,107 @@ impl ReverseServer {
         Self {
             config,
             cancel: CancellationToken::new(),
+            metrics: None,
         }
     }
 
-    /// Get a cancel token that can be used to shut down the server.
+    /// Attach metrics to this server instance.
+    pub fn set_metrics(&mut self, metrics: Arc<ReverseMetrics>) {
+        self.metrics = Some(metrics);
+    }
+
+    /// Get a cancel token for external shutdown.
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel.clone()
     }
 
-    /// Start the reverse server, accepting control connections.
+    /// Start the reverse server.
     pub async fn run(self) -> Result<(), ProtocolError> {
-        let listener = TcpListener::bind(&self.config.control_bind).await?;
-        let local_addr = listener.local_addr()?;
-        info!(addr = %local_addr, "reverse server listening for control connections");
+        let control_listener = TcpListener::bind(&self.config.control_bind).await?;
+        let control_addr = control_listener.local_addr()?;
+        info!(addr = %control_addr, "reverse server listening for control connections");
+
+        // Optionally bind external listener
+        let external_listener = if let Some(external_bind) = self.config.external_bind {
+            let listener = TcpListener::bind(external_bind).await?;
+            let addr = listener.local_addr()?;
+            info!(addr = %addr, "reverse server listening for external clients");
+            Some(listener)
+        } else {
+            None
+        };
 
         let config = Arc::new(self.config);
         let cancel = self.cancel.clone();
 
+        // Channel for available control connections
+        let (control_tx, control_rx) = mpsc::unbounded_channel::<TcpStream>();
+
+        // Spawn control connection acceptor
+        let config_clone = config.clone();
+        let cancel_clone = cancel.clone();
+        let control_tx_clone = control_tx.clone();
+        let metrics_clone = self.metrics.clone();
+        tokio::spawn(async move {
+            Self::accept_control_connections(
+                control_listener,
+                config_clone,
+                cancel_clone,
+                control_tx_clone,
+                metrics_clone,
+            )
+            .await;
+        });
+
+        // Spawn external client acceptor
+        if let Some(external_listener) = external_listener {
+            let config_clone = config.clone();
+            let cancel_clone = cancel.clone();
+            let metrics_clone = self.metrics.clone();
+            tokio::spawn(async move {
+                Self::accept_external_clients(
+                    external_listener,
+                    config_clone,
+                    cancel_clone,
+                    control_rx,
+                    metrics_clone,
+                )
+                .await;
+            });
+        }
+
+        // Wait for shutdown
+        cancel.cancelled().await;
+        info!("reverse server shutting down");
+
+        Ok(())
+    }
+
+    /// Accept control connections, authenticate, and add to available pool.
+    async fn accept_control_connections(
+        listener: TcpListener,
+        config: Arc<ReverseServerConfig>,
+        cancel: CancellationToken,
+        control_tx: mpsc::UnboundedSender<TcpStream>,
+        metrics: Option<Arc<ReverseMetrics>>,
+    ) {
         loop {
             tokio::select! {
                 result = listener.accept() => {
                     match result {
                         Ok((stream, peer_addr)) => {
                             let config = config.clone();
-                            let cancel_child = cancel.child_token();
+                            let control_tx = control_tx.clone();
+                            let metrics = metrics.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_control_connection(
+                                if let Err(e) = Self::handle_control_connection(
                                     stream,
                                     peer_addr,
                                     config,
-                                    cancel_child,
+                                    control_tx,
+                                    metrics.as_deref(),
                                 ).await {
-                                    warn!(peer = %peer_addr, error = %e, "control connection terminated");
+                                    debug!(peer = %peer_addr, error = %e, "control connection handler error");
                                 }
                             });
                         }
@@ -93,13 +167,116 @@ impl ReverseServer {
                     }
                 }
                 _ = cancel.cancelled() => {
-                    info!("reverse server shutting down");
                     break;
                 }
             }
         }
+    }
 
+    /// Handle a single control connection: authenticate and add to pool.
+    async fn handle_control_connection(
+        mut stream: TcpStream,
+        peer_addr: SocketAddr,
+        config: Arc<ReverseServerConfig>,
+        control_tx: mpsc::UnboundedSender<TcpStream>,
+        metrics: Option<&ReverseMetrics>,
+    ) -> Result<(), ProtocolError> {
+        info!(peer = %peer_addr, "new control connection");
+
+        // Authenticate if configured
+        if config.auth_username.is_some() || config.auth_password.is_some() {
+            let result = server_auth_handshake(
+                &mut stream,
+                config.auth_username.as_deref(),
+                config.auth_password.as_deref(),
+            )
+            .await;
+
+            match result {
+                Ok(_) => {
+                    info!(peer = %peer_addr, "control connection authenticated");
+                    if let Some(m) = metrics {
+                        m.record_control_accepted(peer_addr);
+                    }
+                }
+                Err(e) => {
+                    warn!(peer = %peer_addr, error = %e, "control connection auth failed");
+                    if let Some(m) = metrics {
+                        m.record_control_rejected(peer_addr, &e.to_string());
+                    }
+                    return Err(e);
+                }
+            }
+        } else {
+            // No auth configured: send accept handshake
+            crate::write_handshake_accept(&mut stream).await?;
+            info!(peer = %peer_addr, "control connection accepted (no auth)");
+            if let Some(m) = metrics {
+                m.record_control_accepted(peer_addr);
+            }
+        }
+
+        // Add to pool of available control connections
+        // After this, the stream is owned by the channel receiver (relay task)
+        if control_tx.send(stream).is_err() {
+            warn!(peer = %peer_addr, "control channel closed, cannot add to pool");
+        }
+
+        // Handler returns immediately; the stream is now owned by the relay task
         Ok(())
+    }
+
+    /// Accept external clients and relay them through available control connections.
+    async fn accept_external_clients(
+        listener: TcpListener,
+        _config: Arc<ReverseServerConfig>,
+        cancel: CancellationToken,
+        mut control_rx: mpsc::UnboundedReceiver<TcpStream>,
+        metrics: Option<Arc<ReverseMetrics>>,
+    ) {
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    match result {
+                        Ok((external_stream, peer_addr)) => {
+                            // Get an available control connection
+                            match control_rx.recv().await {
+                                Some(control_stream) => {
+                                    let metrics = metrics.clone();
+                                    tokio::spawn(async move {
+                                        info!(peer = %peer_addr, "relaying external client through control connection");
+                                        if let Some(m) = metrics.as_deref() {
+                                            m.record_stream_opened();
+                                        }
+                                        if let Err(e) = relay_bidirectional(
+                                            external_stream,
+                                            control_stream,
+                                        ).await {
+                                            debug!(peer = %peer_addr, error = %e, "relay ended");
+                                        }
+                                        if let Some(m) = metrics.as_deref() {
+                                            m.record_stream_closed(0);
+                                        }
+                                        debug!(peer = %peer_addr, "relay finished");
+                                    });
+                                }
+                                None => {
+                                    warn!(peer = %peer_addr, "no control connections available, rejecting external client");
+                                    drop(external_stream);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(error = %e, "failed to accept external client");
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        }
+                    }
+                }
+                _ = cancel.cancelled() => {
+                    break;
+                }
+            }
+        }
     }
 
     /// Shut down the reverse server.
@@ -107,170 +284,3 @@ impl ReverseServer {
         self.cancel.cancel();
     }
 }
-
-/// Handle a single control connection from a reverse client.
-async fn handle_control_connection(
-    mut stream: TcpStream,
-    peer_addr: SocketAddr,
-    config: Arc<ReverseServerConfig>,
-    cancel: CancellationToken,
-) -> Result<(), ProtocolError> {
-    info!(peer = %peer_addr, "new control connection");
-
-    // Authenticate if configured
-    if config.auth_username.is_some() {
-        let frame = read_frame(&mut stream, &mut BytesMut::with_capacity(1024)).await?;
-        if frame.frame_type == FrameType::Auth {
-            let (user, pass) = crate::decode_auth_payload(&frame.payload)?;
-            if Some(&user) == config.auth_username.as_ref()
-                && Some(&pass) == config.auth_password.as_ref()
-            {
-                write_frame(&mut stream, &Frame::auth_ok()).await?;
-            } else {
-                write_frame(&mut stream, &Frame::auth_fail()).await?;
-                return Err(ProtocolError::AuthFailed);
-            }
-        } else {
-            write_frame(&mut stream, &Frame::auth_fail()).await?;
-            return Err(ProtocolError::AuthRequired);
-        }
-    }
-
-    info!(peer = %peer_addr, "control connection authenticated");
-
-    // Main loop: read frames from control client
-    let mut buf = BytesMut::with_capacity(MAX_FRAME_SIZE);
-    let mut stream_ids: Vec<u32> = Vec::new();
-
-    loop {
-        tokio::select! {
-            result = read_frame(&mut stream, &mut buf) => {
-                match result {
-                    Ok(frame) => {
-                        match frame.frame_type {
-                            FrameType::OpenStream => {
-                                let (host, port) =
-                                    crate::decode_open_stream_payload(&frame.payload)?;
-                                let stream_id = frame.stream_id;
-                                if stream_ids.len() >= config.max_streams as usize {
-                                    warn!(peer = %peer_addr, stream_id, "max streams reached");
-                                    write_frame(&mut stream, &Frame::stream_reset(stream_id)).await?;
-                                    continue;
-                                }
-
-                                // Connect to target
-                                let target_addr = format!("{}:{}", host, port);
-                                match tokio::net::TcpStream::connect(&target_addr).await {
-                                    Ok(target_stream) => {
-                                        write_frame(&mut stream, &Frame::stream_opened(stream_id)).await?;
-                                        stream_ids.push(stream_id);
-
-                                        let (_stop_tx, stop_rx) = oneshot::channel();
-                                        let stream_id_for_relay = stream_id;
-                                        // Split the control stream for the relay
-                                        let (ctrl_read, ctrl_write) = tokio::io::split(stream);
-                                        // We need to reconstruct stream for the next loop iteration
-                                        // This is the fundamental issue with the single-connection design
-                                        // In pproxy's model, each +in connection is a single session,
-                                        // so we don't actually need multiplexing.
-                                        // For now, handle single-stream case.
-                                        tokio::spawn(async move {
-                                            run_stream_relay(
-                                                ctrl_read,
-                                                ctrl_write,
-                                                target_stream,
-                                                stream_id_for_relay,
-                                                stop_rx,
-                                            )
-                                            .await;
-                                        });
-                                        // Since we split the stream, we can't continue the loop
-                                        // In the real pproxy model, each control connection handles one stream
-                                        return Ok(());
-                                    }
-                                    Err(e) => {
-                                        warn!(peer = %peer_addr, stream_id, target = %target_addr, error = %e, "failed to connect to target");
-                                        write_frame(&mut stream, &Frame::stream_reset(stream_id)).await?;
-                                    }
-                                }
-                            }
-                            FrameType::StreamClose => {
-                                debug!(peer = %peer_addr, stream_id = frame.stream_id, "stream close");
-                                break;
-                            }
-                            FrameType::Ping => {
-                                write_frame(&mut stream, &Frame::pong()).await?;
-                            }
-                            FrameType::Pong => {}
-                            _ => {
-                                warn!(peer = %peer_addr, frame_type = ?frame.frame_type, "unexpected frame");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!(peer = %peer_addr, error = %e, "control connection read error");
-                        break;
-                    }
-                }
-            }
-            _ = cancel.cancelled() => {
-                info!(peer = %peer_addr, "control connection cancelled");
-                break;
-            }
-        }
-    }
-
-    info!(peer = %peer_addr, "control connection closed");
-    Ok(())
-}
-
-/// Run a relay between the control channel stream and a target connection.
-async fn run_stream_relay(
-    mut ctrl_read: tokio::io::ReadHalf<TcpStream>,
-    mut ctrl_write: tokio::io::WriteHalf<TcpStream>,
-    target_stream: TcpStream,
-    stream_id: u32,
-    stop_rx: oneshot::Receiver<()>,
-) {
-    let (mut target_read, mut target_write) = tokio::io::split(target_stream);
-
-    let ctrl_to_target = async {
-        let mut buf = [0u8; 8192];
-        loop {
-            match ctrl_read.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    if target_write.write_all(&buf[..n]).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    };
-
-    let target_to_ctrl = async {
-        let mut buf = [0u8; 8192];
-        loop {
-            match target_read.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    if ctrl_write.write_all(&buf[..n]).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    };
-
-    tokio::select! {
-        _ = ctrl_to_target => {}
-        _ = target_to_ctrl => {}
-        _ = stop_rx => {}
-    }
-
-    debug!(stream_id, "stream relay ended");
-}
-
-use tokio::io::{AsyncReadExt, AsyncWriteExt};

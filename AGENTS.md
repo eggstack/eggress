@@ -64,6 +64,8 @@ cargo test -p eggress-protocol-raw
 
 # Run reverse protocol tests
 cargo test -p eggress-protocol-reverse
+cargo test -p eggress-protocol-reverse --test integration
+cargo test -p eggress-pproxy-compat --lib reverse
 
 # Run advanced transport integration tests
 cargo test -p eggress-runtime advanced_transport
@@ -219,7 +221,7 @@ eggress/
 │   ├── eggress-protocol-http/src/h2_connect.rs # HTTP/2 CONNECT bridge
 │   ├── eggress-protocol-websocket/ # WebSocket tunnel (server, client, stream adapter)
 │   ├── eggress-protocol-raw/ # Raw fixed-target TCP tunnel
-│   ├── eggress-protocol-reverse/ # Reverse/backward proxy: length-prefixed frame protocol, server (acceptor), client (control client)
+│   ├── eggress-protocol-reverse/ # Reverse/backward proxy: raw-relay control channel, server (acceptor), client (control client), metrics
 │   ├── eggress-runtime/src/platform.rs # Platform capability model (Linux SO_ORIGINAL_DST, macOS PF)
 │   ├── eggress-server/src/listener/transparent.rs # Transparent TCP listener (SO_ORIGINAL_DST)
 │   ├── eggress-server/src/listener/unix.rs # Unix domain socket listener

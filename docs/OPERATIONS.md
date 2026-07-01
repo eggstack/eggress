@@ -231,6 +231,101 @@ curl --unix-socket /run/eggress/proxy.sock http://example.com
 socat - UNIX-CONNECT:/run/eggress/proxy.sock
 ```
 
+## Reverse / Backward Mode
+
+Reverse mode enables NAT/firewall traversal: a control client behind a NAT
+connects outward to an acceptor in a publicly-reachable location, and the
+acceptor dispatches inbound connections back through the control channel.
+
+### When to use
+
+- The client is behind a NAT, firewall, or CGNAT and cannot expose a public
+  listener port.
+- The acceptor runs in a datacenter or DMZ with a static public address.
+- You need to expose services on a private network to external clients without
+  opening inbound firewall rules on the client side.
+
+### Setup
+
+Split the configuration into two halves: the acceptor and the client.
+
+**Acceptor (datacenter)** -- has a `[[reverse_servers]]` table:
+
+```toml
+[[reverse_servers]]
+id = "rs-dc"
+control_bind = "0.0.0.0:9443"
+auth_username = "tunnel"
+auth_password_env = "RS_PASSWORD"
+max_streams = 256
+heartbeat_interval = "30s"
+```
+
+**Client (behind NAT)** -- has a `[[reverse_clients]]` table:
+
+```toml
+[[reverse_clients]]
+id = "rc-branch"
+server_addr = "dc.example.com:9443"
+auth_username = "tunnel"
+auth_password_env = "RC_PASSWORD"
+reconnect_initial = "1s"
+reconnect_max = "60s"
+heartbeat_interval = "30s"
+```
+
+Each `[[reverse_servers]]` or `[[reverse_clients]]` table defines one
+control channel. One control channel carries one session. Define multiple
+tables for multiple concurrent sessions.
+
+### Verifying with metrics
+
+Query the acceptor's `/metrics` endpoint:
+
+```bash
+curl -s http://127.0.0.1:9090/metrics | grep eggress_reverse_
+```
+
+Key metrics:
+
+| Metric | What to look for |
+|--------|-----------------|
+| `eggress_reverse_control_connections_active` | Gauge; should be 1 per connected client |
+| `eggress_reverse_streams_opened_total` | Counter; increments when a session is initiated |
+| `eggress_reverse_control_reconnects_total` | Counter; high values indicate unstable connectivity |
+| `eggress_reverse_control_connections_rejected_total` | Counter; should be 0 in steady state (auth failures) |
+
+### Lifecycle behavior
+
+1. The control client connects to the acceptor and authenticates with the
+   `user:pass` bytes.
+2. The acceptor sends a 1-byte handshake (`0x01` = accept).
+3. Bidirectional TCP relay begins for one session.
+4. On disconnect the client backs off exponentially from `reconnect_initial`
+   to `reconnect_max`, resetting on successful reconnect.
+5. On acceptor restart, all control channels are closed. Clients reconnect
+   automatically after the backoff period.
+6. On client restart, the control channel is closed cleanly and the client
+   reconnects from scratch.
+
+### Common pitfalls
+
+- **Forgetting to bind the control listener**: If `control_bind` is not
+  reachable from the client, the connection silently fails. Verify with
+  `nc -zv <acceptor-ip> 9443` from the client host.
+- **Binding too broadly**: `control_bind = "0.0.0.0:9443"` exposes the
+  control port to the network. Restrict to loopback or a VPC interface unless
+  TLS is configured.
+- **Missing auth**: If `auth_username` and `auth_password` are both `None`,
+  any host that can reach the control port can connect. Always configure
+  authentication for public-facing acceptors.
+- **Downstream egress bypassing policy**: Connections accepted through a
+  reverse session are forwarded to local targets on the client side. Routing
+  rules on the acceptor do not apply to the reverse-forwarded traffic. Ensure
+  the client has its own policy enforcement if needed.
+- **One session per control channel**: Multiple `[[reverse_clients]]` tables
+  are needed for concurrent sessions; a single table only carries one session.
+
 ## Monitoring Transparent Proxy and Unix Socket Metrics
 
 Transparent proxy and Unix socket listeners expose standard eggress metrics:

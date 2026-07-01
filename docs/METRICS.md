@@ -115,6 +115,46 @@ threads `ShadowsocksMetrics` through the server wiring.
 | `eggress_shadowsocks_udp_active_flows` | Gauge | Currently active UDP flows |
 | `eggress_shadowsocks_udp_decrypt_failure_total` | Counter | UDP AEAD decryption failures |
 
+### Reverse / Backward Proxy Metrics
+
+Protocol-level counters for the reverse/backward proxy protocol (`eggress-protocol-reverse`).
+These are recorded when `ReverseMetrics` is attached to a `ReverseServer` or `ReverseClient`
+via `set_metrics()`.
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `eggress_reverse_control_connections_active` | Gauge | Currently active control connections |
+| `eggress_reverse_control_connections_accepted_total` | Counter | Total accepted control connections |
+| `eggress_reverse_control_connections_rejected_total` | Counter | Total rejected control connections (auth failures) |
+| `eggress_reverse_control_reconnects_total` | Counter | Total client reconnect attempts |
+| `eggress_reverse_streams_opened_total` | Counter | Total control sessions initiated |
+| `eggress_reverse_streams_closed_total` | Counter | Total control sessions completed cleanly |
+| `eggress_reverse_stream_bytes_total` | Counter | Total bytes relayed through control channels |
+
+```
+# HELP eggress_reverse_control_connections_active Currently active control connections.
+# TYPE eggress_reverse_control_connections_active gauge
+eggress_reverse_control_connections_active 2
+# HELP eggress_reverse_control_connections_accepted_total Total accepted control connections.
+# TYPE eggress_reverse_control_connections_accepted_total counter
+eggress_reverse_control_connections_accepted_total 5
+# HELP eggress_reverse_control_connections_rejected_total Total rejected control connections.
+# TYPE eggress_reverse_control_connections_rejected_total counter
+eggress_reverse_control_connections_rejected_total 1
+# HELP eggress_reverse_control_reconnects_total Total client reconnect attempts.
+# TYPE eggress_reverse_control_reconnects_total counter
+eggress_reverse_control_reconnects_total 3
+# HELP eggress_reverse_streams_opened_total Total control sessions initiated.
+# TYPE eggress_reverse_streams_opened_total counter
+eggress_reverse_streams_opened_total 4
+# HELP eggress_reverse_streams_closed_total Total control sessions completed cleanly.
+# TYPE eggress_reverse_streams_closed_total counter
+eggress_reverse_streams_closed_total 4
+# HELP eggress_reverse_stream_bytes_total Total bytes relayed through control channels.
+# TYPE eggress_reverse_stream_bytes_total counter
+eggress_reverse_stream_bytes_total 16384
+```
+
 ### Advanced Transport Metrics
 
 | Family | Name | Type | Description |

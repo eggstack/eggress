@@ -123,6 +123,24 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - One connection per accepted TCP stream; no multiplexing.
 - **Warning**: Raw tunnels have no authentication or encryption. Target must be trusted. Network-level access control is the operator's responsibility.
 
+**Reverse / Backward Proxy Security** (`eggress-protocol-reverse/`):
+
+- **Plaintext control channel by default**: The reverse protocol uses raw TCP with auth sent as plaintext `user:pass` bytes. The pproxy-compatible wire format (1-byte handshake + raw auth) is intentional and matches upstream behavior.
+- **No built-in TLS**: The control channel has no TLS support. Operators must wrap the control connection with stunnel, haproxy, or use a WireGuard tunnel when traversing untrusted networks.
+- **Auth bypass risk**: If `auth_username` and `auth_password` are both `None` on a `[[reverse_servers]]` table, any host that can reach the control port can connect. Recommended: always configure `auth_username` and `auth_password` (or `auth_password_env`) when binding to a non-loopback address.
+- **Auth replay**: The same `user:pass` bytes are accepted on every reconnect. There is no nonce, challenge-response, or forward secrecy. Operators needing forward secrecy must add TLS over the control channel.
+- **Listener bind access control**: There is no built-in allowlist in the current implementation. Operators exposing public listeners must restrict the `control_bind` address at the OS / firewall level. An `allow_bind` policy is planned but not yet implemented.
+- **Recommended hardening**:
+  - Use TLS over the control channel via stunnel or equivalent.
+  - Configure strong `auth_password` (use `auth_password_env` for environment injection rather than plaintext in config).
+  - Restrict `control_bind` to loopback or a known VPC interface.
+  - Run firewall rules to limit which hosts can reach the control port.
+  - Monitor `eggress_reverse_control_connections_rejected_total` for anomalies.
+- **Documented limitations**:
+  - UDP reverse mode is not supported.
+  - Jump chains through reverse are not supported.
+  - On-wire version is fixed at "user:pass + 1-byte handshake + bidirectional TCP relay" -- no versioning or upgrade path.
+
 **TLS Insecure Mode** (`eggress-transport-tls/src/client.rs:49-51`):
 - `with_insecure()` creates an `InsecureVerifier` that accepts any certificate.
 - Documented as "for testing only — never use in production."

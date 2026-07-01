@@ -16,14 +16,8 @@ handling. This inverts the usual forward-proxy relationship: the acceptor
 publishes a listener endpoint, and remote clients connect to it, with traffic
 tunneled back to the control client.
 
-eggress must decide:
-
-1. Whether to use a custom protocol or pproxy's wire-compatible reverse proxy
-   format.
-2. Whether to support this only in pproxy-compat mode or as an Eggress-native
-   feature.
-3. How to handle authentication, TLS, multiplexing, and reconnect semantics.
-4. How to restrict what remote listeners can bind to (security boundary).
+eggress must decide how to implement this feature to achieve pproxy parity while
+keeping the implementation honest and simple.
 
 The reverse proxy model is common in scenarios where a machine behind NAT or a
 firewall needs to expose services: the machine initiates an outbound control
@@ -34,215 +28,157 @@ through the control channel.
 
 ### 1. pproxy Wire-Compatible Protocol
 
-Use a simple length-prefixed frame protocol compatible with pproxy's reverse
-proxy wire format. This ensures interoperability with existing pproxy
-deployments where an eggress reverse client can connect to a pproxy acceptor
-(or vice versa).
+Use pproxy's actual wire protocol: raw auth bytes, a 1-byte handshake, then
+raw TCP relay. No length-prefixed framing, no stream multiplexing, no HMAC
+authentication.
 
 The wire format is:
 
-```
-Frame:
-  [4 bytes: stream_id (big-endian u32)]
-  [4 bytes: payload_length (big-endian u32)]
-  [payload_length bytes: payload]
-```
+| Phase | Direction | Content | Notes |
+|-------|-----------|---------|-------|
+| Auth | Client → Server | Raw `user:pass` bytes | No length prefix, no type byte |
+| Handshake | Server → Client | 1 byte: `0x00` = reject, else = accept | If `0x00`, connection closes |
+| Relay | Bidirectional | Raw TCP bytes | No framing, no multiplexing |
 
-Stream ID `0` is reserved for control frames (listener registration, heartbeat,
-authentication). Stream IDs `1..=N` carry proxied data streams.
+**There is no stream multiplexing.** Each backward connection carries exactly
+one proxy session. If you need concurrent sessions, use multiple control
+channels (matching pproxy's `+in` count).
 
-### 2. Dual Mode
+### 2. Simplified Model (pproxy-Only, No Native Mode)
 
-Support two operational modes:
+The implementation matches pproxy's behavior exactly. There is no
+"Eggress-native mode" with enhanced security defaults. This decision was made
+because:
 
-- **pproxy-compat mode**: Wire-compatible with pproxy's reverse proxy. No TLS
-  by default, optional password authentication. Intended for interop with
-  existing pproxy deployments.
-- **Eggress-native mode**: Stronger security defaults — TLS required,
-  HMAC-based authentication, private network target restrictions. Intended for
-  new deployments that want a more secure reverse proxy.
+- The pproxy wire format is already simple and well-defined.
+- A separate native mode would double the code surface with no clear user benefit.
+- Operators who need TLS or stronger auth can wrap the control channel with
+  stunnel or use `+ssl` on the pproxy side.
 
 ### 3. Authentication
 
-- **Eggress-native mode**: Authentication is required by default. Uses
-  HMAC-SHA256 over a shared secret, exchanged in the control handshake. The
-  challenge-response prevents replay attacks.
-- **pproxy-compat mode**: Password comparison is optional. When a password is
-  configured, it is sent in the initial control frame in plaintext (matching
-  pproxy behavior). Operators are warned in logs when using unauthenticated or
-  plaintext-authenticated reverse connections.
+Authentication is optional and uses raw `user:pass` bytes sent as a single
+write with no framing:
+
+- **Server side**: If configured, the server reads auth bytes, parses
+  `user:pass`, compares against configured credentials, and sends `0x01`
+  (accept) or `0x00` (reject). If no auth is configured, the server sends
+  `0x01` immediately.
+- **Client side**: If auth is configured, the client sends `user:pass` raw
+  bytes before reading the handshake response. If no auth, the client reads
+  the 1-byte handshake directly.
+- **No challenge-response**: Same auth bytes accepted on every reconnect.
+  Plaintext by default.
 
 ### 4. TLS
 
-- **Eggress-native mode**: TLS is enabled by default for control channels and
-  data streams. Uses `eggress-transport-tls` (rustls, no OpenSSL).
-- **pproxy-compat mode**: No TLS by default, matching pproxy behavior. TLS
-  can be enabled explicitly via config.
+No built-in TLS. The control channel is plaintext TCP by default, matching
+pproxy behavior. Operators can wrap with stunnel, nginx, or use `+ssl` on the
+pproxy side for encryption.
 
-### 5. Multiplexing
+### 5. Connection Model
 
-Length-prefixed frames carry a 32-bit stream ID, enabling multiplexed data
-streams over a single control connection:
+Each control channel carries exactly one proxy session:
 
-- **Max concurrent streams**: Configurable, default 256.
-- **Max frame size**: Configurable, default 64KB.
-- **Flow control**: Not implemented in v1. Backpressure is applied by refusing
-  new streams when the limit is reached. A full implementation is deferred to
-  a future phase.
+1. Control client connects to acceptor and authenticates.
+2. Acceptor accepts an external client connection.
+3. Acceptor relays the external client's stream through the control channel
+   (bidirectional raw TCP relay).
+4. Control client performs proxy operation (SOCKS5 CONNECT, HTTP, etc.) on
+   behalf of the external client.
+5. When the external client disconnects, the control channel connection closes.
+6. Control client reconnects (with backoff on error, immediate on normal close).
+
+For concurrent sessions, the client opens N parallel control connections
+(matching pproxy's `+in` token count). Each connection carries one session.
 
 ### 6. Reconnect Strategy
 
-When the control connection drops, the reverse client reconnects with:
+When the control connection drops, the client reconnects with exponential
+backoff:
 
-- **Exponential backoff**: Initial delay 1 second, max delay 30 seconds.
-- **Jitter**: ±25% randomization on each backoff interval.
-- **Re-register**: On successful reconnect, the client re-registers all
-  listeners with the acceptor.
-- **Configurable**: Backoff parameters are exposed in TOML config.
+- **Initial delay**: Configurable (default 1 second).
+- **Growth**: Doubles each attempt, capped at configurable max (default 30
+  seconds).
+- **Reset on success**: Backoff resets to initial delay after a successful
+  session.
+- **Immediate reconnect on normal close**: When the session ends normally
+  (external client disconnected), the client reconnects immediately without
+  backoff.
 
-### 7. Remote Listener Authorization
+### 7. Security Posture
 
-By default, the acceptor restricts what bind addresses remote clients can
-request:
+The implementation has known limitations:
 
-- **Default**: Only loopback (`127.0.0.1`, `::1`) listeners are allowed.
-- **Allowlist**: Operators explicitly configure allowed bind addresses/port
-  ranges in TOML.
-- **Reject**: Requests for bind addresses not in the allowlist are rejected
-  with a structured diagnostic.
-- **Prevents arbitrary bind**: A rogue or misconfigured reverse client cannot
-  bind to `0.0.0.0` or arbitrary external addresses.
+| Property | Default | Notes |
+|----------|---------|-------|
+| Encryption | None | Control channel is plaintext TCP |
+| Authentication | Optional | Raw `user:pass` bytes, compared as bytes |
+| Auth transport | Plaintext | No challenge-response, no hashing |
+| TLS | Not built-in | Use stunnel or `+ssl` wrapper |
+| Private network | Not restricted | No ACL on target addresses |
 
-### 8. Config Model
+**Recommended operator hardening**:
+- Always configure authentication.
+- Wrap control channel with TLS (stunnel, nginx, etc.).
+- Use firewall rules to limit which clients can reach the acceptor.
+- Restrict listener bind addresses to known interfaces.
 
-New TOML configuration sections, separate from forward proxy config:
+### 8. Alternatives Considered
 
-```toml
-# Reverse listener (acceptor side)
-[[reverse_listeners]]
-bind = "0.0.0.0:8443"
-protocol = "http"              # or "socks5", "socks4"
-allow_bind = ["127.0.0.1", "::1"]
-password = "secret"            # optional, pproxy-compat
+**Eggress-Native Only (No pproxy Compat)**
+Rejected: prevents interop with existing pproxy deployments, which is a core
+goal of the pproxy parity effort.
 
-# Reverse client (initiator side)
-[[reverse_clients]]
-remote = "example.com:8443"
-password = "secret"
-tls = true                     # Eggress-native default
-backoff_initial_ms = 1000
-backoff_max_ms = 30000
-```
+**pproxy-Compat Only with Enhanced Security Defaults**
+Rejected: adds code complexity without clear benefit. Operators who need
+stronger security can wrap the channel externally.
 
-### 9. Lifecycle State Machine
+**Standard Protocol (SOCKS5 Bind / CONNECT-UDP)**
+Rejected: pproxy does not use these for reverse proxying. Would not achieve
+pproxy interop. Could be added as a separate feature in a future phase.
 
-The control channel follows a defined state machine:
+**Control Channel Over WebSocket**
+Rejected: pproxy does not use WebSocket for reverse proxy control. Would not
+be wire-compatible. WebSocket transport is already available as a general
+transport layer.
 
-```
-Disconnected → Connecting → Authenticating → Registering → Ready
-                                                         ↓
-                                                   Draining → Closed
-```
-
-Reconnect from any failure state:
-
-```
-* → Reconnecting → Connecting → ...
-```
-
-State transitions are logged and exposed via metrics. The `Draining` state is
-entered during graceful shutdown — existing streams complete, no new streams
-are accepted.
-
-### 10. Security Defaults
-
-- **Eggress-native mode**: Denies reverse connections that target private
-  network addresses (RFC 1918, RFC 4193, loopback) unless explicitly allowed
-  in config. Logged and rejected with a structured diagnostic.
-- **pproxy-compat mode**: Logs warnings when private network targets are
-  requested but does not block by default (matching pproxy permissive
-  behavior).
+**Length-Prefixed Frame Protocol with Multiplexing**
+Rejected: does not match pproxy's actual wire format. Would break
+interoperability. pproxy uses raw TCP relay after handshake, not framed
+multiplexing.
 
 ## Consequences
 
 ### Positive
 
 - **pproxy interoperability**: eggress reverse clients can connect to pproxy
-  acceptors and vice versa, enabling incremental migration.
-- **Clean security model**: Eggress-native mode provides strong defaults
-  (TLS, HMAC auth, private-net restrictions) without requiring operator
-  expertise.
-- **Testable**: The wire format is simple enough for property-based testing
-  and differential testing against pproxy.
-- **Incremental adoption**: Dual mode lets operators start with pproxy-compat
-  and migrate to Eggress-native at their own pace.
+  acceptors and vice versa.
+- **Simplicity**: The wire format is minimal — raw bytes and a 1-byte
+  handshake. Easy to test and reason about.
+- **Low code surface**: No frame parser, no multiplexer, no HMAC. Fewer
+  places for bugs.
 
 ### Negative
 
-- **Two modes add complexity**: The codebase must handle both pproxy-compat
-  and Eggress-native behaviors, including different auth, TLS, and security
-  enforcement paths.
-- **Wire protocol is not standard**: The length-prefixed frame format is
-  compatible with pproxy but is not an RFC or widely adopted standard.
-  Interoperability is limited to pproxy-compatible implementations.
-- **No flow control in v1**: The initial multiplexing implementation lacks
-  per-stream flow control. Backpressure is coarse (reject new streams).
-  This is acceptable for v1 but limits high-throughput scenarios.
+- **No encryption by default**: Control channel is plaintext. Operators must
+  add TLS externally.
+- **No multiplexing**: Each control channel carries one session. High
+  concurrency requires multiple connections.
+- **Weak auth**: Raw `user:pass` with no challenge-response or hashing.
 
 ### Mitigations
 
-- **Mode-specific tests**: Each mode has dedicated unit and integration tests.
-  pproxy-compat mode is tested against pproxy via differential tests.
-- **Clear documentation**: Mode differences are documented in config reference
-  and operations guide.
-- **Deprecation path**: pproxy-compat mode may be deprecated in a future
-  phase if pproxy interop is no longer needed. The state machine and wire
-  format abstraction make this a contained change.
-
-## Alternatives Considered
-
-### 1. Eggress-Native Only (No pproxy Compat)
-
-Design a new reverse proxy protocol from scratch with no pproxy wire
-compatibility.
-
-**Rejected because**: This would prevent interop with existing pproxy
-deployments, which is a core goal of the pproxy parity effort. Operators
-with mixed eggress/pproxy fleets need a migration path.
-
-### 2. pproxy-Compat Only (No Native Mode)
-
-Only implement pproxy-compatible reverse proxy behavior, with no enhanced
-security defaults.
-
-**Rejected because**: pproxy's reverse proxy has weak security defaults
-(no TLS, optional auth, no private-net restrictions). Eggress should provide
-a more secure option for new deployments while maintaining compat for
-migration.
-
-### 3. Standard Protocol (SOCKS5 Bind / CONNECT-UDP)
-
-Use an established protocol like SOCKS5 BIND or RFC 9298 CONNECT-UDP for
-reverse proxying.
-
-**Rejected because**: Neither SOCKS5 BIND nor CONNECT-UDP is implemented by
-pproxy for reverse proxying. This would not achieve pproxy interop. These
-protocols could be added as additional transport options in a future phase.
-
-### 4. Control Channel Over WebSocket
-
-Transport the reverse proxy control channel over WebSocket for NAT traversal
-benefits.
-
-**Rejected because**: pproxy does not use WebSocket for its reverse proxy
-control channel. This would not be wire-compatible. WebSocket transport is
-already supported as a general transport layer and could be composed with
-reverse proxying externally if needed.
+- **Documentation**: Security limitations and hardening recommendations are
+  documented.
+- **External TLS**: stunnel or nginx can wrap the control channel.
+- **Multiple connections**: pproxy's `+in` token count provides a model for
+  concurrent sessions.
 
 ## References
 
+- `docs/protocols/REVERSE_PROXYING.md` — Wire format and behavior details
 - `docs/PPROXY_PARITY_SPEC.md` — Tier taxonomy and parity decisions
 - `docs/PARITY_MATRIX.md` — Feature parity tracking
-- `docs/protocols/` — Protocol specifications
-- `crates/eggress-transport-tls/` — TLS transport layer (rustls-based)
+- `crates/eggress-protocol-reverse/` — Implementation
 - [pproxy reverse proxy documentation](https://github.com/windprophet/pproxy)

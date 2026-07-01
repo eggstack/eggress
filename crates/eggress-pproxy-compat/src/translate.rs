@@ -5,8 +5,29 @@ use crate::warnings::TranslationOutput;
 
 /// Translate pproxy-style arguments into Eggress TOML configuration.
 pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, CompatError> {
+    let mut pre_filter_output = TranslationOutput::new(String::new());
+
+    // Pre-filter: detect unsupported jump chain (__ syntax) in raw remote URIs
+    let mut filtered_remotes = Vec::new();
+    for raw_remote in args.remotes.iter() {
+        if raw_remote.contains("__") {
+            pre_filter_output = pre_filter_output.with_unsupported(
+                "backward-jump-chain",
+                format!(
+                    "Jump chain syntax '{}' is not supported; each URI must be a separate -r argument",
+                    raw_remote
+                ),
+            );
+        } else {
+            filtered_remotes.push(raw_remote.clone());
+        }
+    }
+
     let local_uris = args.parse_local_uris()?;
-    let remote_uris = args.parse_remote_uris()?;
+    let remote_uris: Vec<PproxyUri> = filtered_remotes
+        .iter()
+        .map(|s| crate::uri::parse_pproxy_uri(s))
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Allow empty local_uris when -ul is present (standalone UDP mode)
     let has_udp_listen = args.raw_flags.iter().any(|f| f.starts_with("udp-listen="));
@@ -18,6 +39,9 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
     }
 
     let mut output = translate_from_uris(&local_uris, &remote_uris, &args.raw_flags)?;
+
+    // Merge pre-filter unsupported features (e.g., backward-jump-chain)
+    output = output.with_unsupported_features(pre_filter_output.unsupported);
 
     // Merge unknown-flag warnings
     let unknown_warnings = args.unknown_flag_warnings();
@@ -37,6 +61,8 @@ pub fn translate_from_uris(
     let mut upstreams = Vec::new();
     let mut upstream_groups = Vec::new();
     let mut rules = Vec::new();
+    let mut reverse_servers = Vec::new();
+    let mut reverse_clients = Vec::new();
 
     // Check for unsupported flags and handle supported ones
     let mut scheduler_override = None;
@@ -115,6 +141,29 @@ pub fn translate_from_uris(
 
     // Process local listeners
     for (idx, local) in local_uris.iter().enumerate() {
+        // Reverse-mode listeners (bind/listen/backward/rebind) → reverse_servers
+        if local.is_reverse_listener() {
+            let bind = local.bind_display();
+            let server_id = format!("pproxy-reverse-server-{}", idx);
+            reverse_servers.push(ReverseServerToml {
+                id: server_id,
+                control_bind: bind,
+                auth_username: local.username.clone(),
+                auth_password: local.password.clone(),
+            });
+            // Emit credential warning if auth present
+            if local.username.is_some() {
+                output = output.with_warning(
+                    "credential-in-toml",
+                    format!(
+                        "Reverse server 'pproxy-reverse-server-{}' has plaintext credentials in generated TOML",
+                        idx
+                    ),
+                );
+            }
+            continue;
+        }
+
         // Check for unsupported local protocols
         match local.scheme.as_str() {
             "ss" | "shadowsocks" => {
@@ -328,6 +377,44 @@ pub fn translate_from_uris(
 
     // Process remote upstreams
     for (idx, remote) in remote_uris.iter().enumerate() {
+        // Backward/upstream URIs with +in modifier → reverse_clients
+        if remote.is_backward() {
+            // Backward + SSL (+ssl modifier) is not supported
+            if remote.ssl {
+                output = output.with_unsupported(
+                    "backward-tls",
+                    format!(
+                        "Backward upstream '{}': TLS on backward connections is not supported",
+                        remote.redacted_display()
+                    ),
+                );
+            }
+            let server_addr = remote.endpoint_display();
+            let client_id = format!("pproxy-reverse-client-{}", idx);
+            reverse_clients.push(ReverseClientToml {
+                id: client_id,
+                server_addr,
+                auth_username: remote.username.clone(),
+                auth_password: remote.password.clone(),
+                parallel_connections: if remote.backward_num() > 1 {
+                    Some(remote.backward_num())
+                } else {
+                    None
+                },
+            });
+            // Emit credential warning if auth present
+            if remote.username.is_some() {
+                output = output.with_warning(
+                    "credential-in-toml",
+                    format!(
+                        "Reverse client 'pproxy-reverse-client-{}' has plaintext credentials in generated TOML",
+                        idx
+                    ),
+                );
+            }
+            continue;
+        }
+
         // Check for unsupported upstream protocols
         match remote.scheme.as_str() {
             "ss" | "shadowsocks" => {
@@ -498,7 +585,14 @@ pub fn translate_from_uris(
     }
 
     // Generate TOML
-    let toml_str = generate_toml(&listeners, &upstreams, &upstream_groups, &rules);
+    let toml_str = generate_toml(
+        &listeners,
+        &upstreams,
+        &upstream_groups,
+        &rules,
+        &reverse_servers,
+        &reverse_clients,
+    );
 
     Ok(TranslationOutput::new(toml_str)
         .with_warnings(output.warnings)
@@ -676,6 +770,32 @@ struct ConfigToml {
     upstream_groups: Vec<UpstreamGroupToml>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     rules: Vec<RuleToml>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    reverse_servers: Vec<ReverseServerToml>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    reverse_clients: Vec<ReverseClientToml>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ReverseServerToml {
+    id: String,
+    control_bind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_password: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ReverseClientToml {
+    id: String,
+    server_addr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parallel_connections: Option<u32>,
 }
 
 fn generate_toml(
@@ -683,6 +803,8 @@ fn generate_toml(
     upstreams: &[UpstreamToml],
     upstream_groups: &[UpstreamGroupToml],
     rules: &[RuleToml],
+    reverse_servers: &[ReverseServerToml],
+    reverse_clients: &[ReverseClientToml],
 ) -> String {
     let config = ConfigToml {
         version: 1,
@@ -690,6 +812,8 @@ fn generate_toml(
         upstreams: upstreams.to_vec(),
         upstream_groups: upstream_groups.to_vec(),
         rules: rules.to_vec(),
+        reverse_servers: reverse_servers.to_vec(),
+        reverse_clients: reverse_clients.to_vec(),
     };
 
     toml::to_string_pretty(&config)
@@ -1207,5 +1331,176 @@ mod tests {
         assert!(rules
             .iter()
             .any(|r| r["id"].as_str() == Some("pproxy-udp-default")));
+    }
+
+    #[test]
+    fn test_translate_socks5_backward_emits_reverse_client() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+in://user:pass@acceptor:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let clients = parsed["reverse_clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 1);
+        assert_eq!(clients[0]["server_addr"].as_str(), Some("acceptor:1080"));
+        assert_eq!(clients[0]["auth_username"].as_str(), Some("user"));
+        assert_eq!(clients[0]["auth_password"].as_str(), Some("pass"));
+        // Should NOT appear in regular upstreams
+        assert!(
+            parsed.get("upstreams").is_none()
+                || parsed["upstreams"]
+                    .as_array()
+                    .map_or(true, |a| a.is_empty())
+        );
+    }
+
+    #[test]
+    fn test_translate_bind_listener_emits_reverse_server() {
+        let args = PproxyArgs::parse(&["-l".into(), "bind://0.0.0.0:8080".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let servers = parsed["reverse_servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["control_bind"].as_str(), Some("0.0.0.0:8080"));
+        // Should NOT appear in regular listeners
+        let listeners = parsed["listeners"].as_array().unwrap();
+        assert!(listeners.is_empty());
+    }
+
+    #[test]
+    fn test_translate_backward_listener_emits_reverse_server() {
+        let args = PproxyArgs::parse(&["-l".into(), "backward://0.0.0.0:8080".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let servers = parsed["reverse_servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["control_bind"].as_str(), Some("0.0.0.0:8080"));
+    }
+
+    #[test]
+    fn test_translate_backward_with_parallel_connections() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+in+in://acceptor:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let clients = parsed["reverse_clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 1);
+        assert_eq!(clients[0]["parallel_connections"].as_integer(), Some(2));
+    }
+
+    #[test]
+    fn test_translate_backward_with_jump_chain_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+in://a:1__http://b:2".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(
+            output
+                .unsupported
+                .iter()
+                .any(|u| u.feature == "backward-jump-chain"),
+            "expected backward-jump-chain unsupported, got: {:?}",
+            output.unsupported
+        );
+        // The invalid URI should be filtered out — no reverse_clients generated
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert!(
+            parsed.get("reverse_clients").is_none()
+                || parsed["reverse_clients"]
+                    .as_array()
+                    .map_or(true, |a| a.is_empty())
+        );
+    }
+
+    #[test]
+    fn test_translate_backward_tls_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+in+ssl://acceptor:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(
+            output
+                .unsupported
+                .iter()
+                .any(|u| u.feature == "backward-tls"),
+            "expected backward-tls unsupported, got: {:?}",
+            output.unsupported
+        );
+    }
+
+    #[test]
+    fn test_translate_reverse_server_with_auth() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "bind://user:pass@0.0.0.0:8080".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let servers = parsed["reverse_servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["auth_username"].as_str(), Some("user"));
+        assert_eq!(servers[0]["auth_password"].as_str(), Some("pass"));
+        // Credential warning emitted
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "credential-in-toml"));
+    }
+
+    #[test]
+    fn test_translate_backward_no_parallel_when_single() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+in://acceptor:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let clients = parsed["reverse_clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 1);
+        // parallel_connections should not be present for single +in
+        assert!(clients[0].get("parallel_connections").is_none());
+    }
+
+    #[test]
+    fn test_translate_backward_toml_parses() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+in+in://user:pass@acceptor:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        // Verify TOML is valid
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert_eq!(parsed["version"].as_integer(), Some(1));
+        // Verify structure matches eggress ConfigFile expectations
+        let clients = parsed["reverse_clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 1);
+        assert_eq!(clients[0]["id"].as_str(), Some("pproxy-reverse-client-0"));
+        assert_eq!(clients[0]["server_addr"].as_str(), Some("acceptor:1080"));
+        assert_eq!(clients[0]["auth_username"].as_str(), Some("user"));
+        assert_eq!(clients[0]["auth_password"].as_str(), Some("pass"));
+        assert_eq!(clients[0]["parallel_connections"].as_integer(), Some(2));
     }
 }

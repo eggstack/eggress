@@ -337,9 +337,17 @@ members = ["ss-udp"]
 
 ## `[[reverse_servers]]`
 
-A reverse server listens for incoming control connections from reverse clients and
-accepts tunneled streams. It presents the local service to remote clients over a
-persistent control channel with multiplexed streams.
+A reverse server listens for incoming control connections from remote reverse
+clients. When a control client connects and authenticates, the acceptor can
+dispatch inbound connections back through the control channel to be handled by
+the client. This enables NAT/firewall traversal: the client behind a NAT
+exposes local services to the acceptor in the datacenter.
+
+The wire format matches pproxy's raw-relay protocol:
+- 1-byte handshake (`0x01` = accept, `0x00` = reject)
+- Raw `user:pass` auth bytes sent by the client
+- One session per control channel (no multiplexing)
+- TCP only (no UDP, no built-in TLS)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -361,13 +369,55 @@ max_streams = 512
 heartbeat_interval = "15s"
 ```
 
+### Concurrency and pproxy Compatibility
+
+Each `[[reverse_servers]]` table accepts one control connection per client
+identity. One control channel carries one session -- there is no multiplexing.
+To accept multiple concurrent sessions, either:
+
+- Define multiple `[[reverse_servers]]` tables (each bound to its own control
+  port), or
+- Accept that only one session is active at a time per control channel
+  (pproxy-compatible default behavior).
+
+The on-wire protocol is intentionally identical to pproxy's raw-relay: a
+1-byte handshake followed by raw `user:pass` auth bytes, then bidirectional
+TCP relay. This ensures interoperability with pproxy clients and servers.
+
+### Security Hardening
+
+The reverse control channel is **plaintext TCP by default**. Operators MUST:
+
+- Use TLS via an external wrapper (stunnel, haproxy, or a WireGuard tunnel)
+  when control traffic traverses untrusted networks.
+- Restrict `control_bind` to a loopback or VPC-internal address when TLS is
+  not in use. There is no built-in bind allowlist in the current
+  implementation; restrict at the OS / firewall level until the
+  `allow_bind` policy lands in a follow-up phase.
+- Configure strong `auth_password` (use `auth_password_env` for environment
+  injection rather than embedding plaintext in config).
+- Apply firewall rules to limit which hosts can reach the control port.
+- Monitor `eggress_reverse_control_connections_rejected_total` for
+  unauthorized connection attempts.
+
+### Unsupported Features
+
+- **UDP reverse mode**: Not supported. Reverse sessions are TCP-only.
+- **Jump chains through reverse**: Chains cannot transit a reverse hop.
+- **TLS on the control channel**: Not built-in. Use stunnel or equivalent.
+
 ---
 
 ## `[[reverse_clients]]`
 
 A reverse client connects to a reverse server and exposes local streams through
 the control channel. It maintains the connection with automatic reconnection
-and heartbeat keep-alive.
+and heartbeat keep-alive. On disconnect the client backs off exponentially
+from `reconnect_initial` up to `reconnect_max`, resetting on successful
+reconnect.
+
+The wire format matches pproxy's raw-relay protocol (see `[[reverse_servers]]`
+above for protocol details).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

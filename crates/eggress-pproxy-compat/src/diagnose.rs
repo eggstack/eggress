@@ -122,7 +122,9 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 12345,
             tls: false,
+            ssl: false,
             inbound: false,
+            backward_num: 0,
             rule: None,
             path: None,
         };
@@ -177,7 +179,9 @@ mod tests {
             host: String::new(),
             port: 0,
             tls: false,
+            ssl: false,
             inbound: false,
+            backward_num: 0,
             rule: None,
             path: None,
         };
@@ -194,7 +198,9 @@ mod tests {
             host: String::new(),
             port: 0,
             tls: false,
+            ssl: false,
             inbound: false,
+            backward_num: 0,
             rule: None,
             path: None,
         };

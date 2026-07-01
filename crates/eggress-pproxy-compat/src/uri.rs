@@ -15,8 +15,12 @@ pub struct PproxyUri {
     pub port: u16,
     /// Whether TLS is requested (+tls suffix).
     pub tls: bool,
+    /// Whether SSL modifier was used (+ssl suffix, treated as unsupported variant of +tls).
+    pub ssl: bool,
     /// Whether this is a reverse/inbound URI (+in suffix).
     pub inbound: bool,
+    /// Count of `+in` tokens parsed from the scheme (backward connection count).
+    pub backward_num: u32,
     /// Optional rule parameter from query string.
     pub rule: Option<String>,
     /// Optional path (used for unix:// scheme).
@@ -24,12 +28,25 @@ pub struct PproxyUri {
 }
 
 impl PproxyUri {
-    /// Returns true if this is a reverse proxy URI (bind/listen/backward/rebind).
-    pub fn is_reverse(&self) -> bool {
+    /// Returns true if this is a reverse proxy listener URI (bind/listen/backward/rebind scheme).
+    pub fn is_reverse_listener(&self) -> bool {
         matches!(
             self.scheme.as_str(),
             "bind" | "listen" | "backward" | "rebind"
         )
+    }
+
+    /// Returns true if this is a backward/upstream URI with the `+in` modifier
+    /// (e.g., `socks5+in://...`).
+    pub fn is_backward(&self) -> bool {
+        self.inbound
+    }
+
+    /// Returns the number of `+in` tokens parsed from the scheme (the backward
+    /// connection count). A single `+in` yields 1; multiple `+in+in` yields 2, etc.
+    /// Returns 0 if no `+in` modifier is present.
+    pub fn backward_num(&self) -> u32 {
+        self.backward_num
     }
 
     /// Redacted display — credentials shown as `****:****`, Unix paths shown as `unix://****`.
@@ -138,24 +155,29 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         });
     };
 
-    // Parse +tls suffix and +in modifier
+    // Parse +tls suffix and +in modifier (supports multiple occurrences)
     let mut tls = false;
+    let mut ssl = false;
     let mut inbound = false;
+    let mut backward_num: u32 = 0;
     let mut scheme = scheme_part;
     loop {
-        if let Some(tls_pos) = scheme.find("+tls") {
-            if &scheme[tls_pos..] == "+tls" {
-                tls = true;
-                scheme = scheme[..tls_pos].to_string();
-                continue;
-            }
+        if scheme.ends_with("+tls") {
+            tls = true;
+            scheme = scheme[..scheme.len() - 4].to_string();
+            continue;
         }
-        if let Some(in_pos) = scheme.find("+in") {
-            if &scheme[in_pos..] == "+in" {
-                inbound = true;
-                scheme = scheme[..in_pos].to_string();
-                continue;
-            }
+        if scheme.ends_with("+ssl") {
+            ssl = true;
+            tls = true;
+            scheme = scheme[..scheme.len() - 4].to_string();
+            continue;
+        }
+        if scheme.ends_with("+in") {
+            inbound = true;
+            backward_num += 1;
+            scheme = scheme[..scheme.len() - 3].to_string();
+            continue;
         }
         break;
     }
@@ -190,7 +212,9 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             host: String::new(),
             port: 0,
             tls,
+            ssl,
             inbound,
+            backward_num,
             rule,
             path: Some(path),
         });
@@ -217,7 +241,9 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             host,
             port,
             tls,
+            ssl,
             inbound,
+            backward_num,
             rule,
             path: None,
         });
@@ -246,7 +272,9 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         host,
         port,
         tls,
+        ssl,
         inbound,
+        backward_num,
         rule,
         path: None,
     })
@@ -532,7 +560,7 @@ mod tests {
         assert_eq!(uri.scheme, "bind");
         assert_eq!(uri.host, "0.0.0.0");
         assert_eq!(uri.port, 8080);
-        assert!(uri.is_reverse());
+        assert!(uri.is_reverse_listener());
         assert!(!uri.inbound);
     }
 
@@ -540,21 +568,21 @@ mod tests {
     fn test_listen_uri() {
         let uri = parse_pproxy_uri("listen://127.0.0.1:9090").unwrap();
         assert_eq!(uri.scheme, "listen");
-        assert!(uri.is_reverse());
+        assert!(uri.is_reverse_listener());
     }
 
     #[test]
     fn test_backward_uri() {
         let uri = parse_pproxy_uri("backward://0.0.0.0:8080").unwrap();
         assert_eq!(uri.scheme, "backward");
-        assert!(uri.is_reverse());
+        assert!(uri.is_reverse_listener());
     }
 
     #[test]
     fn test_rebind_uri() {
         let uri = parse_pproxy_uri("rebind://0.0.0.0:8080").unwrap();
         assert_eq!(uri.scheme, "rebind");
-        assert!(uri.is_reverse());
+        assert!(uri.is_reverse_listener());
     }
 
     #[test]
@@ -563,7 +591,7 @@ mod tests {
         assert_eq!(uri.scheme, "bind");
         assert_eq!(uri.username.as_deref(), Some("user"));
         assert_eq!(uri.password.as_deref(), Some("pass"));
-        assert!(uri.is_reverse());
+        assert!(uri.is_reverse_listener());
     }
 
     #[test]
@@ -571,7 +599,7 @@ mod tests {
         let uri = parse_pproxy_uri("bind+tls://0.0.0.0:8443").unwrap();
         assert_eq!(uri.scheme, "bind");
         assert!(uri.tls);
-        assert!(uri.is_reverse());
+        assert!(uri.is_reverse_listener());
     }
 
     #[test]
@@ -598,9 +626,31 @@ mod tests {
     #[test]
     fn test_not_reverse_schemes() {
         let uri = parse_pproxy_uri("socks5://127.0.0.1:1080").unwrap();
-        assert!(!uri.is_reverse());
+        assert!(!uri.is_reverse_listener());
 
         let uri = parse_pproxy_uri("http://proxy:8080").unwrap();
-        assert!(!uri.is_reverse());
+        assert!(!uri.is_reverse_listener());
+    }
+
+    #[test]
+    fn test_inbound_modifier() {
+        let uri = parse_pproxy_uri("socks5+in://acceptor:1080").unwrap();
+        assert!(uri.is_backward());
+        assert!(!uri.is_reverse_listener());
+        assert_eq!(uri.backward_num(), 1);
+    }
+
+    #[test]
+    fn test_multiple_inbound_tokens() {
+        let uri = parse_pproxy_uri("socks5+in+in://acceptor:1080").unwrap();
+        assert!(uri.is_backward());
+        assert_eq!(uri.backward_num(), 2);
+    }
+
+    #[test]
+    fn test_backward_num_zero_without_in() {
+        let uri = parse_pproxy_uri("socks5://proxy:1080").unwrap();
+        assert!(!uri.is_backward());
+        assert_eq!(uri.backward_num(), 0);
     }
 }

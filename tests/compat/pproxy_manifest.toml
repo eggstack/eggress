@@ -977,28 +977,28 @@ divergence = "pproxy raw:// and tunnel:// URI scheme support"
 id = "backward_tcp_control"
 category = "protocol"
 pproxy_version = "2.7.9"
-egress_status = "unsupported"
-evidence_level = "unimplemented"
-tests = []
-divergence = "Captured from pproxy 2.7.9 source; not implemented. Backward control channel establishes outbound TCP, sends auth, receives 1-byte handshake, then relays raw proxy streams."
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_server_accepts_control_connection", "test_echo_relay_through_server", "test_client_server_roundtrip"]
+divergence = "Simplified raw-relay model: 1-byte handshake (0x01=accept, 0x00=reject), raw user:pass auth bytes, bidirectional TCP relay. One session per control channel, no multiplexing. Matches pproxy wire format."
 
 [[features]]
 id = "backward_auth"
 category = "security"
 pproxy_version = "2.7.9"
-egress_status = "unsupported"
-evidence_level = "unimplemented"
-tests = []
-divergence = "Simple raw-byte auth comparison on backward channel; no challenge-response. Plaintext by default."
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_auth_success", "test_auth_failure", "test_auth_required_not_provided"]
+divergence = "Raw user:pass bytes sent as single write, compared by server. Optional (no auth = send empty bytes). Plaintext, no challenge-response. Matches pproxy behavior."
 
 [[features]]
 id = "backward_reconnect"
 category = "platform"
 pproxy_version = "2.7.9"
-egress_status = "unsupported"
-evidence_level = "unimplemented"
-tests = []
-divergence = "Exponential backoff: 0s, 0.1s, 0.23s, 0.4s, ... capped at 30s. Reset on success. Each backward connection carries one session; reconnects after session ends."
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_client_reconnects_after_failure"]
+divergence = "Exponential backoff with configurable initial/max delay. Doubles each attempt, capped at max. Resets on success. Immediate reconnect on normal session close."
 
 [[features]]
 id = "backward_parallel_connections"
@@ -1007,7 +1007,7 @@ pproxy_version = "2.7.9"
 egress_status = "unsupported"
 evidence_level = "unimplemented"
 tests = []
-divergence = "Multiple +in tokens in URI create parallel backward control connections. Count of +in determines backward_num."
+divergence = "Architecture supports multiple control channels but no concurrency > 1 is wired. Would need N control channels from a single client plus listener pool on server."
 
 [[features]]
 id = "backward_jump_chain"
@@ -1016,7 +1016,7 @@ pproxy_version = "2.7.9"
 egress_status = "unsupported"
 evidence_level = "unimplemented"
 tests = []
-divergence = "Backward +in combined with __ jump chain: backward client receives streams, forwards through remaining hops."
+divergence = "No chain execution on relayed streams. Would need chain executor integration on the backward client side."
 
 [[features]]
 id = "backward_tls"
@@ -1025,7 +1025,7 @@ pproxy_version = "2.7.9"
 egress_status = "unsupported"
 evidence_level = "unimplemented"
 tests = []
-divergence = "TLS wrapping available via +ssl modifier on backward URI."
+divergence = "No built-in TLS. Operators can wrap with stunnel or use +ssl on the pproxy side."
 
 [[features]]
 id = "backward_no_udp"
@@ -1034,4 +1034,4 @@ pproxy_version = "2.7.9"
 egress_status = "intentional_non_parity"
 evidence_level = "intentional_non_parity"
 tests = []
-divergence = "pproxy does not support UDP reverse proxying. Only TCP streams are multiplexed over backward control channel."
+divergence = "pproxy does not support UDP reverse proxying. Only TCP streams are carried over backward control channel."

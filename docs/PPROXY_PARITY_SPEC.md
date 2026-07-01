@@ -440,7 +440,7 @@ policy, architecture, or scope.
 | QUIC transport | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. pproxy behavior experimental, dependency significant. |
 | HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
 | SSH transport | `ssh://` | Out of scope. SSH is a general-purpose encrypted tunnel, not a proxy protocol. Adds significant dependency weight. |
-| Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with length-prefixed frame protocol (Phase 27). TCP only; no multiplexing in pproxy-compat mode. |
+| Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with raw-relay control channel (Phase 27). TCP only; one session per control channel; no multiplexing. |
 | Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
 | Insecure TLS defaults | `--insecure` flag | Eggress requires TLS verification by default. Insecure mode is API-only, not configurable via TOML. |
@@ -531,7 +531,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream and inbound listener (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
 - **Implemented as supported**: Transparent TCP proxy (Linux, `redir://`), Unix domain socket listeners (Unix, `unix://`)
 - **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, WebSocket tunnels, Raw fixed-target tunnels, TLS ALPN negotiation
-- **Implemented as supported (Phase 27)**: Reverse/backward proxying (length-prefixed frame protocol, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
+- **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
 - **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Trojan inbound listener
@@ -624,7 +624,7 @@ password = "secret"            # optional
 [[reverse_clients]]
 remote = "example.com:8443"
 password = "secret"
-tls = false                   # true for Eggress-native mode
+tls = false                   # true for TLS-wrapped control channel
 backoff_initial_ms = 1000
 backoff_max_ms = 30000
 ```
