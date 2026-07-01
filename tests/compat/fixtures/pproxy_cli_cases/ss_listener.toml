@@ -1,0 +1,14 @@
+id = "ss_listener"
+args = ["-l", "ss://aes-256-gcm:secret@0.0.0.0:8388"]
+expected_exit_code = 0
+expected_warnings = [
+    "[credential-in-toml] Listener 'pproxy-local-0' has plaintext credentials in generated TOML",
+    "[direct-mode] Listener 'pproxy-local-0' has no upstream; traffic will be direct",
+]
+toml_content_must_contain = [
+    "version = 1",
+    "[[listeners]]",
+    'protocols = ["shadowsocks"]',
+    'method = "aes-256-gcm"',
+    'password = "secret"',
+]

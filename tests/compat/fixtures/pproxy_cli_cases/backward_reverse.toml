@@ -1,0 +1,12 @@
+id = "backward_reverse"
+args = ["-l", "backward://0.0.0.0:8443", "-r", "socks5+in://127.0.0.1:8080"]
+expected_exit_code = 0
+expected_warnings = []
+toml_content_must_contain = [
+    "version = 1",
+    "listeners = []",
+    "[[reverse_servers]]",
+    'control_bind = "0.0.0.0:8443"',
+    "[[reverse_clients]]",
+    'server_addr = "127.0.0.1:8080"',
+]

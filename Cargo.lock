@@ -536,6 +536,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]
@@ -614,6 +615,7 @@ dependencies = [
  "eggress-uri",
  "predicates",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "toml",

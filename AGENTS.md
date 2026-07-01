@@ -84,6 +84,21 @@ cargo test -p eggress-runtime unix_socket
 cargo test -p eggress-pproxy-compat redir
 cargo test -p eggress-pproxy-compat unix
 
+# Run CLI exit code tests
+cargo test -p eggress-cli --test cli_exit_codes
+
+# Run pproxy run process tests
+cargo test -p eggress-cli --test pproxy_run_process
+
+# Run CLI translation golden tests
+cargo test -p eggress-cli --test pproxy_translation_golden
+
+# Run diagnostics tests
+cargo test -p eggress-pproxy-compat diagnostics
+
+# Run exit codes tests
+cargo test -p eggress-pproxy-compat exit_codes
+
 # Run Shadowsocks interop tests (gated)
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
 
@@ -267,6 +282,9 @@ eggress/
     ├── PHASE_17_RC_POLISH_COMPLETION.md
     ├── TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md
     ├── URI_GRAMMAR.md
+    ├── cli/
+    │   ├── PPROXY_CLI_INVENTORY.md
+    │   └── EXIT_CODES.md
     └── protocols/
         ├── HTTP_CONNECT.md
         ├── SOCKS4.md
@@ -354,6 +372,9 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Release candidate audit (Phase 17)**: Final parity matrix audit, Rust/Python release audits, security/redaction audit including Python binding surface, documentation consistency pass. Release candidate document at `docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`. All verification commands pass; go recommendation issued. See `docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md`.
 - **Manifest validation**: `tests/compat/pproxy_manifest.toml` is the canonical evidence index. `egress_status = "compatible"` requires `evidence_level = "compatible"` backed by real pproxy differential tests. `implemented_synthetic` evidence cannot support compatibility claims. Validation enforced by `eggress-testkit::manifest::validate_manifest()`. `last_updated` field removed in Phase 24; stale warnings no longer emitted.
 - **Manifest external dependency checks (Phase 24)**: Compatible entries with differential tests require `external_dependency`; implemented_interop requires dependency or divergence note explaining interop.
+- **Exit codes**: Structured exit codes defined in `eggress-pproxy-compat::exit_codes`. CLI uses constants, not ad-hoc returns.
+- **Diagnostics**: `DiagnosticCode` enum with stable codes for all pproxy compat errors/warnings. `StructuredDiagnostic` for JSON output.
+- **pproxy check --json**: Machine-readable compatibility check output with tier, features, and diagnostics.
 
 ## Skills
 

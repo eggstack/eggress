@@ -1,11 +1,14 @@
 pub mod args;
 pub mod diagnose;
+pub mod diagnostics;
 pub mod error;
+pub mod exit_codes;
 pub mod translate;
 pub mod uri;
 pub mod warnings;
 
 pub use args::PproxyArgs;
+pub use diagnostics::{DiagnosticCode, StructuredDiagnostic};
 pub use error::CompatError;
 pub use translate::{translate_from_uris, translate_pproxy_args};
 pub use uri::PproxyUri;

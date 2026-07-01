@@ -1,0 +1,11 @@
+id = "ssh_unsupported"
+args = ["-l", "socks5://127.0.0.1:1080", "-r", "ssh://user@host:22"]
+expected_exit_code = 5
+expected_warnings = [
+    "unsupported ssh-upstream: SSH upstream 'ssh://****:****@host:22': SSH transport is not supported",
+]
+toml_content_must_contain = [
+    "version = 1",
+    "[[listeners]]",
+    'protocols = ["socks5"]',
+]

@@ -1,7 +1,10 @@
 use std::net::SocketAddr;
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use eggress_pproxy_compat::exit_codes::*;
 
 use clap::{Parser, Subcommand};
 use eggress_core::chain::{ChainExecutor, HopHandler};
@@ -128,6 +131,10 @@ struct PproxyCheck {
     /// pproxy-style arguments (after --)
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
+
+    /// Output results as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -164,12 +171,12 @@ fn handle_route_explain(args: &RouteExplain) {
                 Ok(r) => (r, true),
                 Err(e) => {
                     eprintln!("failed to build router from config: {e}");
-                    std::process::exit(1);
+                    std::process::exit(EXIT_CONFIG_VALIDATION);
                 }
             },
             Err(e) => {
                 eprintln!("failed to load config: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_CONFIG_VALIDATION);
             }
         },
         None => (Router::new(vec![], RouteActionSpec::Direct), false),
@@ -179,7 +186,7 @@ fn handle_route_explain(args: &RouteExplain) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("{e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
 
@@ -189,7 +196,7 @@ fn handle_route_explain(args: &RouteExplain) {
         Some("socks5") => eggress_core::ProtocolId::Socks5,
         Some(p) => {
             eprintln!("unknown protocol: {p}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
         None => eggress_core::ProtocolId::Http,
     };
@@ -212,7 +219,7 @@ fn handle_route_explain(args: &RouteExplain) {
             Ok(json) => println!("{json}"),
             Err(e) => {
                 eprintln!("failed to serialize explanation: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_RUNTIME_FAILURE);
             }
         }
     } else {
@@ -225,7 +232,7 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("{e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
 
@@ -235,7 +242,7 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
         Some("socks5") => "socks5",
         Some(p) => {
             eprintln!("unknown protocol: {p}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
         None => "http",
     };
@@ -266,14 +273,14 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("failed to connect to admin at {addr}: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_RUNTIME_FAILURE);
             }
         };
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         if let Err(e) = stream.write_all(request.as_bytes()).await {
             eprintln!("failed to send request: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_RUNTIME_FAILURE);
         }
         let _ = stream.shutdown().await;
 
@@ -301,7 +308,7 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
 
     if status != 200 {
         eprintln!("admin returned {status}: {body}");
-        std::process::exit(1);
+        std::process::exit(EXIT_RUNTIME_FAILURE);
     }
 
     if args.json {
@@ -311,7 +318,7 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
             Ok(explanation) => print_explanation(&explanation, true),
             Err(e) => {
                 eprintln!("failed to parse response: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_RUNTIME_FAILURE);
             }
         }
     }
@@ -342,12 +349,12 @@ fn handle_upstream_test(args: &UpstreamTest) {
             Ok(rt) => rt,
             Err(e) => {
                 eprintln!("failed to load config: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_CONFIG_VALIDATION);
             }
         },
         None => {
             eprintln!("--config is required for upstream test");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
 
@@ -359,7 +366,7 @@ fn handle_upstream_test(args: &UpstreamTest) {
 
     if upstreams.is_empty() {
         eprintln!("no upstreams found matching criteria");
-        std::process::exit(1);
+        std::process::exit(EXIT_CONFIG_VALIDATION);
     }
 
     let target = match &args.target {
@@ -367,7 +374,7 @@ fn handle_upstream_test(args: &UpstreamTest) {
             Ok(addr) => addr,
             Err(e) => {
                 eprintln!("invalid target: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_CLI_PARSE_ERROR);
             }
         },
         None => eggress_core::TargetAddr {
@@ -426,7 +433,7 @@ fn handle_upstream_test(args: &UpstreamTest) {
             Ok(json) => println!("{json}"),
             Err(e) => {
                 eprintln!("failed to serialize results: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_RUNTIME_FAILURE);
             }
         }
     } else {
@@ -441,7 +448,7 @@ fn handle_pproxy_translate(args: &PproxyTranslate) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
 
@@ -449,7 +456,7 @@ fn handle_pproxy_translate(args: &PproxyTranslate) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CONFIG_VALIDATION);
         }
     };
 
@@ -482,7 +489,7 @@ fn handle_pproxy_translate(args: &PproxyTranslate) {
     print!("{}", output.toml);
 
     if output.has_unsupported() {
-        std::process::exit(1);
+        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
     }
 }
 
@@ -491,7 +498,7 @@ fn handle_pproxy_check(args: &PproxyCheck) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
 
@@ -499,61 +506,129 @@ fn handle_pproxy_check(args: &PproxyCheck) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CONFIG_VALIDATION);
         }
     };
-
-    println!("pproxy compatibility check");
-    println!("=========================");
 
     let local_uris = pproxy_args.parse_local_uris();
     let remote_uris = pproxy_args.parse_remote_uris();
 
-    match local_uris {
-        Ok(uris) => {
-            for uri in &uris {
-                println!(
-                    "  local:  {} -> scheme={}",
-                    uri.redacted_display(),
-                    uri.scheme
-                );
-            }
-        }
-        Err(e) => eprintln!("  local:  error: {e}"),
-    }
+    if args.json {
+        let listeners = match &local_uris {
+            Ok(uris) => uris
+                .iter()
+                .map(|u| u.redacted_display().to_string())
+                .collect(),
+            Err(e) => vec![format!("error: {e}")],
+        };
+        let remotes = match &remote_uris {
+            Ok(uris) => uris
+                .iter()
+                .map(|u| u.redacted_display().to_string())
+                .collect(),
+            Err(e) => vec![format!("error: {e}")],
+        };
 
-    match remote_uris {
-        Ok(uris) => {
-            for uri in &uris {
-                println!(
-                    "  remote: {} -> scheme={}",
-                    uri.redacted_display(),
-                    uri.scheme
-                );
-            }
-        }
-        Err(e) => eprintln!("  remote: error: {e}"),
-    }
+        let mut diagnostics: Vec<eggress_pproxy_compat::StructuredDiagnostic> = Vec::new();
+        let mut features: Vec<FeatureInfo> = Vec::new();
 
-    if output.warnings.is_empty() && output.unsupported.is_empty() {
-        println!("\nparity tier: Compatible");
-    } else if output.unsupported.is_empty() {
-        println!("\nparity tier: Supported (with warnings)");
-    } else {
-        println!("\nparity tier: Partial");
-    }
-
-    if !output.warnings.is_empty() {
-        println!("\nwarnings:");
         for w in &output.warnings {
-            println!("  {w}");
+            diagnostics.push(eggress_pproxy_compat::StructuredDiagnostic::from(w));
+            features.push(FeatureInfo {
+                name: w.category.to_string(),
+                tier: "supported".to_string(),
+                diagnostic_code: Some(w.diagnostic_code()),
+            });
         }
-    }
-
-    if !output.unsupported.is_empty() {
-        println!("\nunsupported:");
         for u in &output.unsupported {
-            println!("  {u}");
+            let diag = eggress_pproxy_compat::StructuredDiagnostic {
+                code: eggress_pproxy_compat::DiagnosticCode::UnsupportedProtocol,
+                feature_id: Some(u.feature.to_string()),
+                tier: Some("unsupported".to_string()),
+                message: u.detail.clone(),
+                suggestion: None,
+            };
+            diagnostics.push(diag);
+            features.push(FeatureInfo {
+                name: u.feature.to_string(),
+                tier: "unsupported".to_string(),
+                diagnostic_code: Some(eggress_pproxy_compat::DiagnosticCode::UnsupportedProtocol),
+            });
+        }
+
+        let tier = if output.warnings.is_empty() && output.unsupported.is_empty() {
+            "compatible"
+        } else if output.unsupported.is_empty() {
+            "supported"
+        } else {
+            "unsupported"
+        };
+
+        let check_output = PproxyCheckOutput {
+            tier: tier.to_string(),
+            diagnostics,
+            features,
+            raw_args: args.args.clone(),
+            parsed_uris: ParsedUris { listeners, remotes },
+        };
+
+        match serde_json::to_string_pretty(&check_output) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("failed to serialize check output: {e}");
+                std::process::exit(EXIT_RUNTIME_FAILURE);
+            }
+        }
+    } else {
+        println!("pproxy compatibility check");
+        println!("=========================");
+
+        match local_uris {
+            Ok(uris) => {
+                for uri in &uris {
+                    println!(
+                        "  local:  {} -> scheme={}",
+                        uri.redacted_display(),
+                        uri.scheme
+                    );
+                }
+            }
+            Err(e) => eprintln!("  local:  error: {e}"),
+        }
+
+        match remote_uris {
+            Ok(uris) => {
+                for uri in &uris {
+                    println!(
+                        "  remote: {} -> scheme={}",
+                        uri.redacted_display(),
+                        uri.scheme
+                    );
+                }
+            }
+            Err(e) => eprintln!("  remote: error: {e}"),
+        }
+
+        if output.warnings.is_empty() && output.unsupported.is_empty() {
+            println!("\nparity tier: Compatible");
+        } else if output.unsupported.is_empty() {
+            println!("\nparity tier: Supported (with warnings)");
+        } else {
+            println!("\nparity tier: Partial");
+        }
+
+        if !output.warnings.is_empty() {
+            println!("\nwarnings:");
+            for w in &output.warnings {
+                println!("  {w}");
+            }
+        }
+
+        if !output.unsupported.is_empty() {
+            println!("\nunsupported:");
+            for u in &output.unsupported {
+                println!("  {u}");
+            }
         }
     }
 }
@@ -563,7 +638,7 @@ fn handle_pproxy_run(args: &PproxyRun) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
 
@@ -571,7 +646,7 @@ fn handle_pproxy_run(args: &PproxyRun) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_CONFIG_VALIDATION);
         }
     };
 
@@ -591,13 +666,13 @@ fn handle_pproxy_run(args: &PproxyRun) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("failed to create temp directory: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_RUNTIME_FAILURE);
         }
     };
     let config_path = tmp_dir.path().join("pproxy-compat.toml");
     if let Err(e) = std::fs::write(&config_path, &output.toml) {
         eprintln!("failed to write config: {e}");
-        std::process::exit(1);
+        std::process::exit(EXIT_RUNTIME_FAILURE);
     }
 
     tracing::info!("starting eggress with pproxy-compatible config");
@@ -606,14 +681,37 @@ fn handle_pproxy_run(args: &PproxyRun) {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("runtime error: {e}");
-                std::process::exit(1);
+                std::process::exit(EXIT_RUNTIME_FAILURE);
             }
         }
         Err(e) => {
             eprintln!("runtime error: {e}");
-            std::process::exit(1);
+            std::process::exit(EXIT_RUNTIME_FAILURE);
         }
     }
+}
+
+#[derive(serde::Serialize)]
+struct PproxyCheckOutput {
+    tier: String,
+    diagnostics: Vec<eggress_pproxy_compat::StructuredDiagnostic>,
+    features: Vec<FeatureInfo>,
+    raw_args: Vec<String>,
+    parsed_uris: ParsedUris,
+}
+
+#[derive(serde::Serialize)]
+struct FeatureInfo {
+    name: String,
+    tier: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic_code: Option<eggress_pproxy_compat::DiagnosticCode>,
+}
+
+#[derive(serde::Serialize)]
+struct ParsedUris {
+    listeners: Vec<String>,
+    remotes: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -958,19 +1056,24 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
+    let exit_code = run().await;
+    ExitCode::from(exit_code as u8)
+}
+
+async fn run() -> i32 {
     let args = Cli::parse();
 
     if let Some(SubCommand::Route(explain_args)) = args.command {
         handle_route_explain(&explain_args);
-        return;
+        return EXIT_SUCCESS;
     }
 
     if let Some(SubCommand::Upstream(upstream_cmd)) = args.command {
         match upstream_cmd.action {
             UpstreamAction::Test(test_args) => {
                 handle_upstream_test(&test_args);
-                return;
+                return EXIT_SUCCESS;
             }
         }
     }
@@ -979,23 +1082,23 @@ async fn main() {
         match pproxy_cmd.action {
             PproxyAction::Translate(translate_args) => {
                 handle_pproxy_translate(&translate_args);
-                return;
+                return EXIT_SUCCESS;
             }
             PproxyAction::Check(check_args) => {
                 handle_pproxy_check(&check_args);
-                return;
+                return EXIT_SUCCESS;
             }
             PproxyAction::Run(run_args) => {
                 init_logging(&run_args.log_format);
                 handle_pproxy_run(&run_args);
-                return;
+                return EXIT_SUCCESS;
             }
         }
     }
 
     if args.config.is_some() && (!args.listeners.is_empty() || !args.upstreams.is_empty()) {
         eprintln!("--config mode is incompatible with -l and -r flags. Use one or the other.");
-        std::process::exit(1);
+        return EXIT_CLI_PARSE_ERROR;
     }
 
     if let Some(ref config_path) = args.config {
@@ -1004,15 +1107,15 @@ async fn main() {
             Ok(mut supervisor) => {
                 if let Err(e) = supervisor.run() {
                     eprintln!("runtime error: {e}");
-                    std::process::exit(1);
+                    return EXIT_RUNTIME_FAILURE;
                 }
             }
             Err(e) => {
                 eprintln!("runtime error: {e}");
-                std::process::exit(1);
+                return EXIT_RUNTIME_FAILURE;
             }
         }
-        return;
+        return EXIT_SUCCESS;
     }
 
     init_logging(&args.log_format);
@@ -1022,7 +1125,7 @@ async fn main() {
         Ok(r) => r,
         Err(e) => {
             eprintln!("{e}");
-            std::process::exit(1);
+            return EXIT_CONFIG_VALIDATION;
         }
     };
 
@@ -1042,7 +1145,7 @@ async fn main() {
             Ok(spec) => listener_specs.push((uri.clone(), spec)),
             Err(e) => {
                 eprintln!("invalid listener URI '{uri}': {e}");
-                std::process::exit(1);
+                return EXIT_CLI_PARSE_ERROR;
             }
         }
     }
@@ -1071,6 +1174,8 @@ async fn main() {
 
     let mut shutdown_handles = handles;
 
+    let shutdown_exit_code: i32;
+
     {
         let token = cancel_token.clone();
 
@@ -1087,16 +1192,19 @@ async fn main() {
                 tracing::warn!("failed to register SIGHUP handler: {e}");
             }
 
+            let exit;
             loop {
                 tokio::select! {
                     _ = tokio::signal::ctrl_c() => {
                         tracing::info!("shutdown signal received");
                         token.cancel();
+                        exit = EXIT_SIGINT;
                         break;
                     }
                     _ = async { sigterm.as_mut().ok()?.recv().await }, if sigterm.is_ok() => {
                         tracing::info!("shutdown signal received");
                         token.cancel();
+                        exit = EXIT_SIGTERM;
                         break;
                     }
                     _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() => {
@@ -1104,6 +1212,7 @@ async fn main() {
                     }
                 }
             }
+            shutdown_exit_code = exit;
         }
 
         #[cfg(not(unix))]
@@ -1111,6 +1220,7 @@ async fn main() {
             tokio::signal::ctrl_c().await.ok();
             tracing::info!("shutdown signal received");
             token.cancel();
+            shutdown_exit_code = EXIT_SIGINT;
         }
     }
 
@@ -1135,6 +1245,7 @@ async fn main() {
     }
 
     tracing::info!("eggress stopped");
+    shutdown_exit_code
 }
 
 fn build_router_from_config(

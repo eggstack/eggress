@@ -112,6 +112,10 @@ For the canonical per-feature evidence table with test commands, see
 | pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | Compatible | cli_tests | none | Translates pproxy CLI args to TOML config |
 | pproxy URI translation | N/A | `eggress pproxy translate` | Compatible | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
 | `--reuse` | supported | N/A | Intentional non-parity | none | none | Connection pooling not implemented |
+| Exit codes | generic (1 for all errors) | granular (0–7, 130, 143) | Intentional non-parity | `cli_exit_codes.rs` | none | pproxy uses 1 for all failures; eggress provides differentiated codes per error class |
+| JSON output (`--json`) | N/A | `pproxy check --json`, `route explain --json`, `upstream test --json` | Intentional non-parity | `cli_exit_codes.rs` | none | Machine-readable JSON output with tier, diagnostics, features, parsed URIs |
+| Structured diagnostics | N/A | `StructuredDiagnostic` with stable `DiagnosticCode` | Intentional non-parity | `diagnostics.rs` | none | 13 stable diagnostic codes; serializable to JSON; includes tier and suggestion fields |
+| CLI inventory completeness | all flags mapped | 5 of 14 pproxy flags mapped | Partial | `cli_tests` | none | `-l`, `-r`, `-ul`, `-ur`, `-s`, `-v`, `-a` mapped; `--daemon`, `--ssl`, `-b`, `--rulefile`, `--reuse`, `--log`, `--sys`, `--pac` intentionally rejected |
 
 ## Remaining Protocol Audit
 

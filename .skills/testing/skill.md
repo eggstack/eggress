@@ -105,6 +105,9 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 
 ### CLI tests
 - `crates/eggress-cli/tests/cli_tests.rs` — argument parsing
+- `crates/eggress-cli/tests/cli_exit_codes.rs` — structured exit code verification
+- `crates/eggress-cli/tests/pproxy_run_process.rs` — pproxy run subprocess lifecycle
+- `crates/eggress-cli/tests/pproxy_translation_golden.rs` — pproxy URI → TOML golden tests
 - `crates/eggress-cli/tests/reply_order.rs` — deferred success reply ordering
 
 ## Test utilities (`eggress-testkit`)
@@ -196,6 +199,21 @@ has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_di
 
 Only `compatible` or `implemented_interop` evidence levels support compatibility claims.
 `implemented_synthetic` means tested without real pproxy.
+
+### pproxy compat unit tests
+- `crates/eggress-pproxy-compat/src/tests.rs` — protocol aliases, diagnostics, credential redaction
+- Diagnostics tests: `cargo test -p eggress-pproxy-compat diagnostics`
+- Exit codes tests: `cargo test -p eggress-pproxy-compat exit_codes`
+
+### Fixtures
+- `tests/compat/fixtures/pproxy_uri_corpus.toml` — canonical pproxy URI input corpus
+- `tests/compat/fixtures/pproxy_cli_cases/*.toml` — per-case CLI translation golden files
+
+### Subprocess testing patterns
+- `pproxy_run_process.rs` spawns eggress as a child process via `Command::new("cargo")` with `run --bin eggress`
+- Use `assert_cmd` or raw `std::process::Command` with timeout-based assertions
+- Capture stdout/stderr for exit code and output validation
+- Clean up child processes via `Drop` guards or explicit `kill()`
 
 ### Manifest validation (Phase 24)
 

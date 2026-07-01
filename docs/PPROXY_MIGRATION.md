@@ -141,12 +141,82 @@ The following pproxy features are explicitly unsupported:
 - **Multi-hop UDP** -- Not supported
 - **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
 - **H3/QUIC transport** -- Deferred; pproxy H3 behavior is experimental and unstable. See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`.
-- **Unix domain sockets** -- Not supported
-- **Transparent/system proxy mode** -- Not supported
 - **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
 - **ShadowsocksR** -- Not supported (non-standard extension). `ssr://` URIs are recognized and rejected with structured `UnsupportedFeature` diagnostics (categories: `ssr-listener`, `ssr-upstream`). See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
 
 Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
+
+## Exit Codes
+
+Eggress pproxy subcommands use granular exit codes to indicate failure classes:
+
+| Code | Name | Meaning |
+|------|------|---------|
+| 0 | `success` | Command succeeded |
+| 1 | `runtime_failure` | Runtime error (e.g. JSON serialization failure) |
+| 2 | `cli_parse_error` | CLI argument parsing failed (unknown flags, bad syntax) |
+| 3 | `config_validation` | Translated config failed validation |
+| 4 | `bind_failure` | Could not bind to listen address |
+| 5 | `unsupported_feature` | An unsupported pproxy feature was encountered |
+| 6 | `platform_missing` | Required OS capability not available (e.g. Linux-only feature) |
+| 7 | `external_dependency` | External dependency required but unavailable |
+| 130 | `interrupted_by_sigint` | Process interrupted by SIGINT |
+| 143 | `terminated_by_sigterm` | Process terminated by SIGTERM |
+
+pproxy uses a generic exit code of `1` for all failures. Eggress provides
+differentiated codes to enable scripted error handling.
+
+`eggress pproxy check` always exits 0 regardless of compatibility findings —
+it reports parity tiers without failing.
+
+## The `--json` Flag
+
+The `pproxy check` subcommand accepts `--json` for machine-readable output:
+
+```bash
+eggress pproxy check --json -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
+```
+
+The JSON output includes:
+
+- `tier` — overall compatibility tier (`compatible`, `supported`, `unsupported`)
+- `diagnostics` — array of structured diagnostic objects (see below)
+- `features` — per-feature info with name, tier, and diagnostic code
+- `raw_args` — the original pproxy-style arguments
+- `parsed_uris` — parsed listener and remote URIs (redacted)
+
+The `route explain` and `upstream test` subcommands also support `--json`.
+
+## Structured Diagnostics
+
+When pproxy features are encountered during translation, eggress produces
+structured diagnostics with stable codes, optional tier classification, and
+actionable suggestions. Each diagnostic carries:
+
+- `code` — stable `DiagnosticCode` (e.g. `unsupported_protocol`, `invalid_cipher_method`)
+- `feature_id` — the pproxy feature name, if applicable
+- `tier` — compatibility tier (`unsupported`, `partial`, `intentional_non_parity`)
+- `message` — human-readable description
+- `suggestion` — eggress-native alternative, if one exists
+
+Example diagnostic codes:
+
+| Code | Example trigger |
+|------|----------------|
+| `unsupported_protocol` | `ssh://` or unrecognized scheme |
+| `unsupported_flag` | `--daemon`, `--reuse`, unknown flags |
+| `unsupported_security_sensitive_legacy_feature` | SSR URIs (`ssr://`) |
+| `invalid_cipher_method` | Legacy stream cipher (e.g. `aes-128-ctr`) |
+| `invalid_uri_syntax` | Malformed URI or argument list |
+| `invalid_chainComposition` | Conflicting protocol chain |
+| `missing_target` | No `-l` argument provided |
+| `missing_credential` | URI requires password but none given |
+| `bind_failure` | Could not bind to address (port in use) |
+| `privilege_capability_missing` | Linux-only feature on macOS |
+| `external_dependency_missing` | Required external tool not found |
+
+Diagnostics are produced by the `StructuredDiagnostic` type in
+`eggress-pproxy-compat` and are serializable to JSON.
 
 ## Parity Tiers
 

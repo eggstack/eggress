@@ -1,0 +1,18 @@
+id = "standalone_udp"
+args = ["-ul", ":5353", "-ur", "socks5://127.0.0.1:1080"]
+expected_exit_code = 0
+expected_warnings = [
+    "[ul-no-listener] -ul specified without a compatible -l listener; added default SOCKS5 listener on :1080",
+]
+toml_content_must_contain = [
+    "version = 1",
+    "[[listeners]]",
+    'protocols = ["socks5"]',
+    'mode = "standalone_pproxy_udp"',
+    'bind = "0.0.0.0:5353"',
+    "[[upstreams]]",
+    'uri = "socks5://127.0.0.1:1080"',
+    "[[upstream_groups]]",
+    "[[rules]]",
+    'transport = "udp"',
+]

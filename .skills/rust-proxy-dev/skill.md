@@ -69,6 +69,11 @@ Listens on a filesystem socket path for local-only deployments.
 - Interoperability tests in `crates/eggress-cli/tests/`
 - Always run: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check`
 
+## Exit codes and diagnostics
+- Use exit code constants from `eggress-pproxy-compat::exit_codes` — never ad-hoc `process::exit` or raw numbers
+- Use `DiagnosticCode` enum for structured error/warning codes; wrap in `StructuredDiagnostic` for JSON output
+- `PproxyCheckOutput` struct drives `pproxy check --json` output
+
 ## Verification checklist
 - [ ] `cargo check --workspace` passes
 - [ ] `cargo test --workspace` passes

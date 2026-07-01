@@ -1,0 +1,10 @@
+id = "ssr_rejection"
+args = ["-l", "ssr://aes-256-cfb:secret@host:1080"]
+expected_exit_code = 5
+expected_warnings = [
+    "unsupported ssr-listener: ShadowsocksR (SSR) listener 'ssr://****:****@host:1080': SSR protocol, obfs, and legacy features are not supported",
+]
+toml_content_must_contain = [
+    "version = 1",
+    "listeners = []",
+]

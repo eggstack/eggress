@@ -1,0 +1,1425 @@
+# pproxy URI Golden Corpus Test Fixture
+#
+# Comprehensive test cases for pproxy URI compatibility testing.
+# Each case documents: the raw URI, what pproxy does, what eggress should do,
+# the compatibility tier, credential presence, redacted display, warnings,
+# and expected generated TOML (if supported).
+#
+# Tier taxonomy (from docs/PARITY_MATRIX.md):
+#   compatible               - eggress behavior matches pproxy for tested scenarios
+#   supported                - eggress supports the feature, pproxy equivalence not claimed
+#   partial                  - usable subset exists but not full compatibility
+#   intentional_non_parity   - deliberately not replicated with rationale
+#   unsupported              - not implemented
+#
+# Standalone UDP (-ul/-ur) flags are documented in comments only, since they
+# are CLI flags rather than URI-based test cases.
+
+# ============================================================================
+# 1. HTTP/HTTPS
+# ============================================================================
+
+[[cases]]
+id = "http_basic_listener"
+raw_uri = "http://0.0.0.0:8080"
+pproxy_interpretation = "Start HTTP CONNECT forward proxy on port 8080, all interfaces"
+expected_interpretation = "HTTP CONNECT listener on 0.0.0.0:8080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "http://0.0.0.0:8080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:8080"
+protocols = ["http"]
+'''
+
+[[cases]]
+id = "http_with_auth_listener"
+raw_uri = "http://user:pass@proxy:8080"
+pproxy_interpretation = "HTTP proxy with Basic auth on port 8080"
+expected_interpretation = "HTTP CONNECT listener with auth on proxy:8080"
+compatibility_tier = "compatible"
+has_credentials = true
+expected_redacted_display = "http://****:****@proxy:8080"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "proxy:8080"
+protocols = ["http"]
+
+[listeners.auth]
+type = "password"
+username = "user"
+password = "pass"
+'''
+
+[[cases]]
+id = "http_upstream"
+raw_uri = "http://proxy:8080"
+pproxy_interpretation = "Forward traffic to HTTP proxy upstream at proxy:8080"
+expected_interpretation = "HTTP CONNECT upstream at proxy:8080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "http://proxy:8080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http://proxy:8080"
+'''
+
+[[cases]]
+id = "https_listener"
+raw_uri = "https://0.0.0.0:8443"
+pproxy_interpretation = "HTTP proxy with TLS on port 8443"
+expected_interpretation = "HTTPS (HTTP+TLS) listener on 0.0.0.0:8443"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "https://0.0.0.0:8443"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:8443"
+protocols = ["http"]
+'''
+
+[[cases]]
+id = "https_upstream"
+raw_uri = "https://proxy:8443"
+pproxy_interpretation = "Forward traffic to HTTPS upstream (HTTP over TLS)"
+expected_interpretation = "HTTP CONNECT upstream with TLS wrapper at proxy:8443"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "https://proxy:8443"
+expected_warnings = []
+# https upstream maps to http+tls in the config URI
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http+tls://proxy:8443"
+'''
+
+# ============================================================================
+# 2. SOCKS4
+# ============================================================================
+
+[[cases]]
+id = "socks4_basic_listener"
+raw_uri = "socks4://0.0.0.0:1080"
+pproxy_interpretation = "Start SOCKS4 proxy on port 1080, all interfaces"
+expected_interpretation = "SOCKS4 listener on 0.0.0.0:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks4://0.0.0.0:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:1080"
+protocols = ["socks4"]
+'''
+
+[[cases]]
+id = "socks4_upstream"
+raw_uri = "socks4://proxy:1080"
+pproxy_interpretation = "Forward SOCKS4 traffic through proxy upstream"
+expected_interpretation = "SOCKS4 upstream at proxy:1080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks4://proxy:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks4://proxy:1080"
+'''
+
+# ============================================================================
+# 3. SOCKS4a
+# ============================================================================
+
+[[cases]]
+id = "socks4a_listener"
+raw_uri = "socks4a://0.0.0.0:1080"
+pproxy_interpretation = "Start SOCKS4a proxy on port 1080 (supports domain destinations)"
+expected_interpretation = "SOCKS4a listener (alias for SOCKS4) on 0.0.0.0:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks4a://0.0.0.0:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:1080"
+protocols = ["socks4"]
+'''
+
+[[cases]]
+id = "socks4a_upstream"
+raw_uri = "socks4a://proxy:1080"
+pproxy_interpretation = "Forward SOCKS4a traffic through proxy upstream (domain resolution at server)"
+expected_interpretation = "SOCKS4 upstream (socks4a aliased to socks4)"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks4a://proxy:1080"
+expected_warnings = []
+# socks4a is mapped to socks4 in config URI generation
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks4://proxy:1080"
+'''
+
+# ============================================================================
+# 4. SOCKS5
+# ============================================================================
+
+[[cases]]
+id = "socks5_basic_listener"
+raw_uri = "socks5://127.0.0.1:1080"
+pproxy_interpretation = "Start SOCKS5 proxy on loopback port 1080"
+expected_interpretation = "SOCKS5 listener on 127.0.0.1:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://127.0.0.1:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+'''
+
+[[cases]]
+id = "socks5_with_auth_listener"
+raw_uri = "socks5://user:pass@127.0.0.1:1080"
+pproxy_interpretation = "SOCKS5 proxy with username/password authentication"
+expected_interpretation = "SOCKS5 listener with auth on 127.0.0.1:1080"
+compatibility_tier = "compatible"
+has_credentials = true
+expected_redacted_display = "socks5://****:****@127.0.0.1:1080"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "user"
+password = "pass"
+'''
+
+[[cases]]
+id = "socks5_empty_host_binds_all"
+raw_uri = "socks5://:1080"
+pproxy_interpretation = "SOCKS5 proxy on all interfaces port 1080"
+expected_interpretation = "SOCKS5 listener on 0.0.0.0:1080 (empty host = all interfaces)"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+'''
+
+[[cases]]
+id = "socks5_upstream"
+raw_uri = "socks5://proxy:1080"
+pproxy_interpretation = "Forward SOCKS5 traffic through proxy upstream"
+expected_interpretation = "SOCKS5 upstream at proxy:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://proxy:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5://proxy:1080"
+'''
+
+[[cases]]
+id = "socks5_upstream_with_auth"
+raw_uri = "socks5://user:secret@proxy:1080"
+pproxy_interpretation = "Forward SOCKS5 traffic through authenticated proxy"
+expected_interpretation = "SOCKS5 upstream with credentials at proxy:1080"
+compatibility_tier = "compatible"
+has_credentials = true
+expected_redacted_display = "socks5://****:****@proxy:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5:user:secret@proxy:1080"
+'''
+
+# ============================================================================
+# 5. Shadowsocks AEAD
+# ============================================================================
+
+[[cases]]
+id = "ss_aead_listener"
+raw_uri = "ss://aes-256-gcm:secret@0.0.0.0:8388"
+pproxy_interpretation = "Shadowsocks listener with aes-256-gcm AEAD encryption"
+expected_interpretation = "Shadowsocks AEAD listener on 0.0.0.0:8388"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "ss://****:****@0.0.0.0:8388"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:8388"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+method = "aes-256-gcm"
+password = "secret"
+'''
+
+[[cases]]
+id = "ss_chacha20_listener"
+raw_uri = "ss://chacha20-ietf-poly1305:mypassword@proxy:8388"
+pproxy_interpretation = "Shadowsocks listener with chacha20-ietf-poly1305"
+expected_interpretation = "Shadowsocks AEAD listener with chacha20-ietf-poly1305"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "proxy:8388"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+method = "chacha20-ietf-poly1305"
+password = "mypassword"
+'''
+
+[[cases]]
+id = "ss_upstream"
+raw_uri = "ss://aes-256-gcm:password@proxy:8388"
+pproxy_interpretation = "Shadowsocks upstream with aes-256-gcm"
+expected_interpretation = "Shadowsocks upstream with AEAD encryption"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "ss:aes-256-gcm:password@proxy:8388"
+'''
+
+[[cases]]
+id = "ss_aes128gcm_upstream"
+raw_uri = "ss://aes-128-gcm:pass@proxy:8388"
+pproxy_interpretation = "Shadowsocks upstream with aes-128-gcm"
+expected_interpretation = "Shadowsocks upstream with AEAD encryption"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "ss:aes-128-gcm:pass@proxy:8388"
+'''
+
+# ============================================================================
+# 6. Trojan
+# ============================================================================
+
+[[cases]]
+id = "trojan_upstream"
+raw_uri = "trojan://password@server:443"
+pproxy_interpretation = "Trojan upstream connecting to server:443 with password auth"
+expected_interpretation = "Trojan upstream at server:443 (password-only, no username)"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "trojan://****:****@server:443"
+expected_warnings = []
+# trojan://password@host:port → empty username, password in URI
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "trojan:password@server:443"
+'''
+
+[[cases]]
+id = "trojan_listener_unsupported"
+raw_uri = "trojan://password@0.0.0.0:443"
+pproxy_interpretation = "Start Trojan server listener on port 443"
+expected_interpretation = "Trojan is upstream-only; listener not supported"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "trojan://****:****@0.0.0.0:443"
+expected_warnings = []
+expected_unsupported = "trojan-listener"
+
+# ============================================================================
+# 7. Standalone UDP (-ul/-ur flags)
+# Note: These are CLI flags, not URI test cases. Documented here for reference.
+# ============================================================================
+
+# -ul :1081 → standalone_pproxy_udp on 0.0.0.0:1081
+# -ul socks5://:1081 → same
+# -ul 1081 → same
+# -ur socks5://proxy:1080 → UDP upstream
+# -ur direct → direct UDP forwarding
+#
+# These are tested via translate_pproxy_args() in translate.rs tests.
+
+# ============================================================================
+# 8. Transparent / Unix
+# ============================================================================
+
+[[cases]]
+id = "redir_transparent_listener"
+raw_uri = "redir://127.0.0.1:12345"
+pproxy_interpretation = "Transparent proxy listener (Linux SO_ORIGINAL_DST) on 127.0.0.1:12345"
+expected_interpretation = "Transparent TCP proxy listener on 127.0.0.1:12345"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "redir://127.0.0.1:12345"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "127.0.0.1:12345"
+protocols = ["http"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+'''
+
+[[cases]]
+id = "redir_bind_all"
+raw_uri = "redir://:12345"
+pproxy_interpretation = "Transparent proxy listener on all interfaces, port 12345"
+expected_interpretation = "Transparent TCP proxy listener on 0.0.0.0:12345"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "redir://:12345"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:12345"
+protocols = ["http"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+'''
+
+[[cases]]
+id = "redir_upstream_unsupported"
+raw_uri = "redir://proxy:12345"
+pproxy_interpretation = "Transparent proxy upstream (not a valid upstream role)"
+expected_interpretation = "Redir upstream is not supported"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "redir://proxy:12345"
+expected_warnings = []
+expected_unsupported = "redir-upstream"
+
+[[cases]]
+id = "unix_listener"
+raw_uri = "unix:///tmp/eggress.sock"
+pproxy_interpretation = "Listen on Unix domain socket at /tmp/eggress.sock"
+expected_interpretation = "Unix domain socket listener at /tmp/eggress.sock"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "unix:///tmp/****"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = ""
+protocols = ["socks5"]
+
+[listeners.unix]
+path = "/tmp/eggress.sock"
+unlink_existing = false
+'''
+
+[[cases]]
+id = "unix_relative_path"
+raw_uri = "unix://var/run/proxy.sock"
+pproxy_interpretation = "Listen on Unix domain socket (relative path → /var/run/proxy.sock)"
+expected_interpretation = "Unix domain socket listener at /var/run/proxy.sock"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "unix:///var/run/****"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = ""
+protocols = ["socks5"]
+
+[listeners.unix]
+path = "/var/run/proxy.sock"
+unlink_existing = false
+'''
+
+[[cases]]
+id = "unix_empty_path_error"
+raw_uri = "unix://"
+pproxy_interpretation = "Error: unix:// requires a path"
+expected_interpretation = "Parse error: unix:// URI requires a path"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "unix:// URI requires a path"
+
+[[cases]]
+id = "unix_upstream_unsupported"
+raw_uri = "unix:///tmp/proxy.sock"
+pproxy_interpretation = "Unix socket upstream (not supported)"
+expected_interpretation = "Unix socket upstream is not supported"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "unix:///tmp/****"
+expected_warnings = []
+expected_unsupported = "unix-upstream"
+
+# ============================================================================
+# 9. Advanced transports (h2, ws, wss, raw)
+# ============================================================================
+
+[[cases]]
+id = "h2_tls_upstream"
+raw_uri = "h2+tls://proxy:443"
+pproxy_interpretation = "HTTP/2 CONNECT upstream with TLS wrapper"
+expected_interpretation = "HTTP/2 CONNECT upstream at proxy:443 with TLS"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "h2+tls://proxy:443"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "h2+tls://proxy:443"
+'''
+
+[[cases]]
+id = "ws_upstream"
+raw_uri = "ws://proxy:8080"
+pproxy_interpretation = "WebSocket tunnel upstream"
+expected_interpretation = "WebSocket tunnel upstream at proxy:8080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "ws://proxy:8080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "ws://proxy:8080"
+'''
+
+[[cases]]
+id = "wss_upstream"
+raw_uri = "wss://proxy:8443"
+pproxy_interpretation = "WebSocket tunnel upstream with TLS"
+expected_interpretation = "WebSocket tunnel upstream at proxy:8443 with TLS"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "wss://proxy:8443"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "wss://proxy:8443"
+'''
+
+[[cases]]
+id = "raw_upstream"
+raw_uri = "raw://target:80"
+pproxy_interpretation = "Raw fixed-target TCP tunnel to target:80"
+expected_interpretation = "Raw fixed-target TCP tunnel to target:80"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "raw://target:80"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "raw://target:80"
+'''
+
+# ============================================================================
+# 10. Reverse / backward proxy
+# ============================================================================
+
+[[cases]]
+id = "bind_reverse_server"
+raw_uri = "bind://0.0.0.0:8080"
+pproxy_interpretation = "Reverse proxy acceptor listening on 0.0.0.0:8080"
+expected_interpretation = "Reverse acceptor (bind) on 0.0.0.0:8080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "bind://0.0.0.0:8080"
+expected_warnings = []
+expected_toml = '''
+[[reverse_servers]]
+id = "pproxy-reverse-server-0"
+control_bind = "0.0.0.0:8080"
+'''
+
+[[cases]]
+id = "listen_reverse_server"
+raw_uri = "listen://127.0.0.1:9090"
+pproxy_interpretation = "Reverse proxy acceptor (listen is alias for bind)"
+expected_interpretation = "Reverse acceptor (listen) on 127.0.0.1:9090"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "listen://127.0.0.1:9090"
+expected_warnings = []
+expected_toml = '''
+[[reverse_servers]]
+id = "pproxy-reverse-server-0"
+control_bind = "127.0.0.1:9090"
+'''
+
+[[cases]]
+id = "backward_reverse_server"
+raw_uri = "backward://0.0.0.0:8080"
+pproxy_interpretation = "Reverse proxy acceptor (backward is alias for bind)"
+expected_interpretation = "Reverse acceptor (backward) on 0.0.0.0:8080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "backward://0.0.0.0:8080"
+expected_warnings = []
+expected_toml = '''
+[[reverse_servers]]
+id = "pproxy-reverse-server-0"
+control_bind = "0.0.0.0:8080"
+'''
+
+[[cases]]
+id = "bind_with_auth"
+raw_uri = "bind://user:pass@0.0.0.0:8080"
+pproxy_interpretation = "Reverse acceptor with plaintext auth"
+expected_interpretation = "Reverse acceptor with auth on 0.0.0.0:8080"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "bind://****:****@0.0.0.0:8080"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[reverse_servers]]
+id = "pproxy-reverse-server-0"
+control_bind = "0.0.0.0:8080"
+auth_username = "user"
+auth_password = "pass"
+'''
+
+[[cases]]
+id = "bind_with_tls"
+raw_uri = "bind+tls://0.0.0.0:8443"
+pproxy_interpretation = "Reverse acceptor with TLS on control channel"
+expected_interpretation = "Reverse acceptor with TLS on 0.0.0.0:8443"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "bind+tls://0.0.0.0:8443"
+expected_warnings = []
+expected_toml = '''
+[[reverse_servers]]
+id = "pproxy-reverse-server-0"
+control_bind = "0.0.0.0:8443"
+'''
+
+[[cases]]
+id = "backward_client"
+raw_uri = "socks5+in://acceptor:1080"
+pproxy_interpretation = "Reverse control client connecting to acceptor:1080 via SOCKS5"
+expected_interpretation = "Reverse client connecting to acceptor:1080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks5+in://acceptor:1080"
+expected_warnings = []
+expected_toml = '''
+[[reverse_clients]]
+id = "pproxy-reverse-client-0"
+server_addr = "acceptor:1080"
+'''
+
+[[cases]]
+id = "backward_client_with_auth"
+raw_uri = "socks5+in://user:pass@acceptor:1080"
+pproxy_interpretation = "Reverse control client with auth connecting to acceptor"
+expected_interpretation = "Reverse client with auth connecting to acceptor:1080"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "socks5+in://****:****@acceptor:1080"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[reverse_clients]]
+id = "pproxy-reverse-client-0"
+server_addr = "acceptor:1080"
+auth_username = "user"
+auth_password = "pass"
+'''
+
+[[cases]]
+id = "backward_parallel_connections"
+raw_uri = "socks5+in+in://acceptor:1080"
+pproxy_interpretation = "Reverse control client with 2 parallel connections"
+expected_interpretation = "Reverse client with 2 parallel connections to acceptor:1080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks5+in+in://acceptor:1080"
+expected_warnings = []
+expected_toml = '''
+[[reverse_clients]]
+id = "pproxy-reverse-client-0"
+server_addr = "acceptor:1080"
+parallel_connections = 2
+'''
+
+[[cases]]
+id = "backward_tls_unsupported"
+raw_uri = "socks5+in+ssl://acceptor:1080"
+pproxy_interpretation = "Reverse control client with TLS on control channel"
+expected_interpretation = "TLS on backward connections is not supported"
+compatibility_tier = "intentional_non_parity"
+has_credentials = false
+expected_redacted_display = "socks5+in+ssl://acceptor:1080"
+expected_warnings = []
+expected_unsupported = "backward-tls"
+
+# ============================================================================
+# 11. Chained __ syntax
+# ============================================================================
+
+[[cases]]
+id = "chain_syntax_unsupported"
+raw_uri = "socks5://a:1080__http://b:80"
+pproxy_interpretation = "Two-hop chain: SOCKS5 → HTTP, first hop at a:1080, second at b:80"
+expected_interpretation = "Jump chain syntax not supported; each URI must be a separate -r argument"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "socks5://a:1080__http://b:80"
+expected_warnings = []
+expected_unsupported = "backward-jump-chain"
+
+[[cases]]
+id = "chain_syntax_with_inbound_unsupported"
+raw_uri = "socks5+in://a:1__http://b:2"
+pproxy_interpretation = "Backward jump chain (not supported)"
+expected_interpretation = "Jump chain syntax not supported"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "socks5+in://a:1__http://b:2"
+expected_warnings = []
+expected_unsupported = "backward-jump-chain"
+
+# ============================================================================
+# 12. TLS wrappers
+# ============================================================================
+
+[[cases]]
+id = "socks5_tls_upstream"
+raw_uri = "socks5+tls://proxy:1080"
+pproxy_interpretation = "SOCKS5 upstream with TLS wrapper at proxy:1080"
+expected_interpretation = "SOCKS5 upstream with TLS wrapper at proxy:1080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks5+tls://proxy:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5+tls://proxy:1080"
+'''
+
+[[cases]]
+id = "http_tls_upstream"
+raw_uri = "http+tls://proxy:443"
+pproxy_interpretation = "HTTP proxy with TLS wrapper"
+expected_interpretation = "HTTP CONNECT upstream with TLS wrapper at proxy:443"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "http+tls://proxy:443"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http+tls://proxy:443"
+'''
+
+[[cases]]
+id = "socks4_tls_upstream"
+raw_uri = "socks4+tls://proxy:1080"
+pproxy_interpretation = "SOCKS4 upstream with TLS wrapper"
+expected_interpretation = "SOCKS4 upstream with TLS wrapper at proxy:1080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks4+tls://proxy:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks4+tls://proxy:1080"
+'''
+
+[[cases]]
+id = "socks5_ssl_suffix"
+raw_uri = "socks5+ssl://proxy:1080"
+pproxy_interpretation = "SOCKS5 upstream with SSL/TLS (+ssl treated same as +tls)"
+expected_interpretation = "SOCKS5 upstream with TLS wrapper (+ssl maps to +tls)"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks5+ssl://proxy:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5+tls://proxy:1080"
+'''
+
+# ============================================================================
+# 13. Auth in URI
+# ============================================================================
+
+[[cases]]
+id = "http_upstream_with_auth"
+raw_uri = "http://admin:secret@proxy:8080"
+pproxy_interpretation = "HTTP proxy upstream with Basic auth"
+expected_interpretation = "HTTP CONNECT upstream with credentials at proxy:8080"
+compatibility_tier = "compatible"
+has_credentials = true
+expected_redacted_display = "http://****:****@proxy:8080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http:admin:secret@proxy:8080"
+'''
+
+[[cases]]
+id = "socks5_listener_auth_only_warning"
+raw_uri = "socks5://admin:secret@0.0.0.0:1080"
+pproxy_interpretation = "SOCKS5 listener with username/password auth"
+expected_interpretation = "SOCKS5 listener with auth; plaintext credentials in TOML"
+compatibility_tier = "compatible"
+has_credentials = true
+expected_redacted_display = "socks5://****:****@0.0.0.0:1080"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = "secret"
+'''
+
+# ============================================================================
+# 14. Percent-encoded (base64)
+# ============================================================================
+
+[[cases]]
+id = "ss_base64_encoded_userinfo"
+raw_uri = "ss://dGVzdDpwYXNz@proxy:8388"
+pproxy_interpretation = "Shadowsocks with base64-encoded method:password (test:pass)"
+expected_interpretation = "Shadowsocks upstream with decoded credentials"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+# Note: The URI parser treats this as literal method/password, not base64 decoded.
+# The raw userinfo "dGVzdDpwYXNz" becomes username="dGVzdDpwYXNz", password="".
+# pproxy handles base64 decoding at a higher layer; eggress URI parser does not.
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "ss:dGVzdDpwYXNz@proxy:8388"
+'''
+
+# ============================================================================
+# 15. IPv6 literals
+# ============================================================================
+
+[[cases]]
+id = "socks5_ipv6_listener"
+raw_uri = "socks5://[::1]:1080"
+pproxy_interpretation = "SOCKS5 listener on IPv6 loopback port 1080"
+expected_interpretation = "SOCKS5 listener on [::1]:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://[::1]:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "[::1]:1080"
+protocols = ["socks5"]
+'''
+
+[[cases]]
+id = "socks5_ipv6_upstream"
+raw_uri = "socks5://[::1]:1080"
+pproxy_interpretation = "SOCKS5 upstream on IPv6 loopback"
+expected_interpretation = "SOCKS5 upstream at [::1]:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://[::1]:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5://[::1]:1080"
+'''
+
+[[cases]]
+id = "http_ipv6_upstream"
+raw_uri = "http://[::1]:8080"
+pproxy_interpretation = "HTTP proxy upstream on IPv6 loopback"
+expected_interpretation = "HTTP CONNECT upstream at [::1]:8080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "http://[::1]:8080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http://[::1]:8080"
+'''
+
+# ============================================================================
+# 16. Domains
+# ============================================================================
+
+[[cases]]
+id = "socks5_domain_upstream"
+raw_uri = "socks5://example.com:1080"
+pproxy_interpretation = "SOCKS5 upstream at example.com:1080"
+expected_interpretation = "SOCKS5 upstream at example.com:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://example.com:1080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5://example.com:1080"
+'''
+
+[[cases]]
+id = "http_domain_upstream"
+raw_uri = "http://proxy.example.com:8080"
+pproxy_interpretation = "HTTP proxy upstream at proxy.example.com:8080"
+expected_interpretation = "HTTP CONNECT upstream at proxy.example.com:8080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "http://proxy.example.com:8080"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http://proxy.example.com:8080"
+'''
+
+[[cases]]
+id = "trojan_domain_upstream"
+raw_uri = "trojan://my-password@server.example.com:443"
+pproxy_interpretation = "Trojan upstream with password auth at server.example.com:443"
+expected_interpretation = "Trojan upstream at server.example.com:443"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "trojan://****:****@server.example.com:443"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "trojan:my-password@server.example.com:443"
+'''
+
+# ============================================================================
+# 17. Local bind address variant
+# ============================================================================
+
+[[cases]]
+id = "socks5_bind_to_specific_address"
+raw_uri = "socks5://127.0.0.1:1080"
+pproxy_interpretation = "SOCKS5 listener bound to loopback"
+expected_interpretation = "SOCKS5 listener on 127.0.0.1:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://127.0.0.1:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+'''
+
+[[cases]]
+id = "socks5_bind_all_interfaces"
+raw_uri = "socks5://0.0.0.0:1080"
+pproxy_interpretation = "SOCKS5 listener bound to all interfaces"
+expected_interpretation = "SOCKS5 listener on 0.0.0.0:1080"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://0.0.0.0:1080"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+'''
+
+# ============================================================================
+# 18. SSR (unsupported)
+# ============================================================================
+
+[[cases]]
+id = "ssr_listener_unsupported"
+raw_uri = "ssr://aes-256-ctr:secret@proxy:8388"
+pproxy_interpretation = "SSR listener with obfs and protocol layers"
+expected_interpretation = "SSR protocol is not supported"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ssr://****:****@proxy:8388"
+expected_warnings = []
+expected_unsupported = "ssr-listener"
+
+[[cases]]
+id = "ssr_upstream_unsupported"
+raw_uri = "ssr://aes-256-ctr:secret@proxy:8388"
+pproxy_interpretation = "SSR upstream with obfs and protocol layers"
+expected_interpretation = "SSR upstream is not supported"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ssr://****:****@proxy:8388"
+expected_warnings = []
+expected_unsupported = "ssr-upstream"
+
+# ============================================================================
+# 19. SSH (unsupported)
+# ============================================================================
+
+[[cases]]
+id = "ssh_listener_unsupported"
+raw_uri = "ssh://user:pass@host:22"
+pproxy_interpretation = "SSH tunnel listener (not a proxy protocol)"
+expected_interpretation = "SSH transport is not supported"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ssh://****:****@host:22"
+expected_warnings = []
+expected_unsupported = "ssh-listener"
+
+[[cases]]
+id = "ssh_upstream_unsupported"
+raw_uri = "ssh://user:pass@host:22"
+pproxy_interpretation = "SSH tunnel upstream"
+expected_interpretation = "SSH upstream is not supported"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ssh://****:****@host:22"
+expected_warnings = []
+expected_unsupported = "ssh-upstream"
+
+# ============================================================================
+# 20. QUIC (not in pproxy; deferred for eggress)
+# ============================================================================
+
+[[cases]]
+id = "quic_scheme_not_in_pproxy"
+raw_uri = "quic://host:443"
+pproxy_interpretation = "Error: unknown scheme 'quic' (not in pproxy)"
+expected_interpretation = "Unsupported protocol: quic"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "UnsupportedProtocol"
+
+# ============================================================================
+# 21. Legacy SS methods (intentional non-parity)
+# ============================================================================
+
+[[cases]]
+id = "ss_aes_128_cfb_listener"
+raw_uri = "ss://aes-128-cfb:password@proxy:8388"
+pproxy_interpretation = "Shadowsocks listener with insecure stream cipher aes-128-cfb"
+expected_interpretation = "Legacy stream cipher method not supported; use AEAD method"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+expected_unsupported = "legacy-cipher"
+
+[[cases]]
+id = "ss_rc4_md5_listener"
+raw_uri = "ss://rc4-md5:password@proxy:8388"
+pproxy_interpretation = "Shadowsocks listener with insecure stream cipher rc4-md5"
+expected_interpretation = "Legacy stream cipher method not supported; use AEAD method"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+expected_unsupported = "legacy-cipher"
+
+[[cases]]
+id = "ss_aes_128_ctr_listener"
+raw_uri = "ss://aes-128-ctr:secret@proxy:8388"
+pproxy_interpretation = "Shadowsocks listener with insecure stream cipher aes-128-ctr"
+expected_interpretation = "Legacy stream cipher method not supported; use AEAD method"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+expected_unsupported = "legacy-cipher"
+
+[[cases]]
+id = "ss_chacha20_ietf_listener"
+raw_uri = "ss://chacha20-ietf:password@proxy:8388"
+pproxy_interpretation = "Shadowsocks listener with insecure stream cipher chacha20-ietf"
+expected_interpretation = "Legacy stream cipher method not supported; use AEAD method"
+compatibility_tier = "intentional_non_parity"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+expected_unsupported = "legacy-cipher"
+
+# ============================================================================
+# 22. Empty / invalid URIs
+# ============================================================================
+
+[[cases]]
+id = "missing_scheme"
+raw_uri = "host:8080"
+pproxy_interpretation = "Error: no scheme specified"
+expected_interpretation = "Parse error: missing scheme in URI"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "missing scheme"
+
+[[cases]]
+id = "completely_empty"
+raw_uri = ""
+pproxy_interpretation = "Error: empty URI"
+expected_interpretation = "Parse error: missing scheme in URI"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "missing scheme"
+
+[[cases]]
+id = "unknown_scheme_ftp"
+raw_uri = "ftp://host:22"
+pproxy_interpretation = "Error: unknown scheme 'ftp'"
+expected_interpretation = "Unsupported protocol: ftp"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "UnsupportedProtocol"
+
+[[cases]]
+id = "unterminated_ipv6_bracket"
+raw_uri = "socks5://[::1:1080"
+pproxy_interpretation = "Error: malformed IPv6 literal"
+expected_interpretation = "Parse error: unterminated IPv6 bracket"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "unterminated IPv6 bracket"
+
+[[cases]]
+id = "invalid_port_non_numeric"
+raw_uri = "socks5://host:notaport"
+pproxy_interpretation = "Error: invalid port"
+expected_interpretation = "Parse error: invalid port"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "invalid port"
+
+# ============================================================================
+# 23. Rule query parameters
+# ============================================================================
+
+[[cases]]
+id = "socks5_with_rule"
+raw_uri = "socks5://127.0.0.1:1080?rule=.*\\.com"
+pproxy_interpretation = "SOCKS5 listener with routing rule matching *.com domains"
+expected_interpretation = "SOCKS5 listener on 127.0.0.1:1080 with rule parameter"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks5://127.0.0.1:1080?rule=.*\\.com"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+'''
+
+[[cases]]
+id = "http_upstream_with_rule"
+raw_uri = "http://proxy:8080?rule=.*\\.org"
+pproxy_interpretation = "HTTP upstream with routing rule"
+expected_interpretation = "HTTP CONNECT upstream at proxy:8080 with rule parameter"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "http://proxy:8080?rule=.*\\.org"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "http://proxy:8080?rule=.*\\.org"
+'''
+
+# ============================================================================
+# 24. Direct upstream
+# ============================================================================
+
+[[cases]]
+id = "direct_upstream"
+raw_uri = "direct://"
+pproxy_interpretation = "Direct connection, no upstream proxy"
+expected_interpretation = "Direct upstream (no proxy)"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "direct://:0"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "direct://:0"
+'''
+
+# ============================================================================
+# 25. Direct listener (invalid)
+# ============================================================================
+
+[[cases]]
+id = "direct_listener_unsupported"
+raw_uri = "direct://"
+pproxy_interpretation = "Direct is not a valid listener protocol"
+expected_interpretation = "Direct listener is not a valid listener protocol"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "direct://:0"
+expected_warnings = []
+expected_unsupported = "direct-listener"
+
+# ============================================================================
+# 26. rebind (alias for backward)
+# ============================================================================
+
+[[cases]]
+id = "rebind_reverse_server"
+raw_uri = "rebind://0.0.0.0:8080"
+pproxy_interpretation = "Reverse proxy acceptor (rebind is alias for backward/bind)"
+expected_interpretation = "Reverse acceptor (rebind) on 0.0.0.0:8080"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "rebind://0.0.0.0:8080"
+expected_warnings = []
+expected_toml = '''
+[[reverse_servers]]
+id = "pproxy-reverse-server-0"
+control_bind = "0.0.0.0:8080"
+'''
+
+# ============================================================================
+# 27. Edge cases
+# ============================================================================
+
+[[cases]]
+id = "socks5_with_empty_password"
+raw_uri = "socks5://user:@proxy:1080"
+pproxy_interpretation = "SOCKS5 listener with username and empty password"
+expected_interpretation = "SOCKS5 listener with auth (empty password)"
+compatibility_tier = "compatible"
+has_credentials = true
+expected_redacted_display = "socks5://****:****@proxy:1080"
+expected_warnings = ["credential-in-toml"]
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "proxy:1080"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "user"
+password = ""
+'''
+
+[[cases]]
+id = "ss_with_special_chars_in_password"
+raw_uri = "ss://aes-256-gcm:p@ss:word@proxy:8388"
+pproxy_interpretation = "Shadowsocks with password containing @ and : — URI parsing splits at first @ after port"
+expected_interpretation = "Shadowsocks upstream; password may be truncated at first : after method"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "ss://****:****@proxy:8388"
+expected_warnings = []
+# Note: URI parser splits at last colon in endpoint, so host gets "proxy" and
+# port gets 8388. The userinfo "aes-256-gcm:p@ss" gets split at first colon
+# into username="aes-256-gcm" and password="p@ss".
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "ss:aes-256-gcm:p@ss@proxy:8388"
+'''
+
+[[cases]]
+id = "port_zero"
+raw_uri = "socks5://host:0"
+pproxy_interpretation = "SOCKS5 upstream on port 0 (OS-assigned)"
+expected_interpretation = "SOCKS5 upstream at host:0"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "socks5://host:0"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5://host:0"
+'''
+
+[[cases]]
+id = "max_port"
+raw_uri = "socks5://host:65535"
+pproxy_interpretation = "SOCKS5 upstream on max valid port"
+expected_interpretation = "SOCKS5 upstream at host:65535"
+compatibility_tier = "compatible"
+has_credentials = false
+expected_redacted_display = "socks5://host:65535"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "socks5://host:65535"
+'''
+
+[[cases]]
+id = "invalid_port_over_max"
+raw_uri = "socks5://host:70000"
+pproxy_interpretation = "Error: port out of range"
+expected_interpretation = "Parse error: invalid port"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = ""
+expected_warnings = []
+expected_error = "invalid port"
+
+# ============================================================================
+# 28. Shadowsocks alias schemes
+# ============================================================================
+
+[[cases]]
+id = "shadowsocks_alias_upstream"
+raw_uri = "shadowsocks://aes-256-gcm:password@proxy:8388"
+pproxy_interpretation = "Shadowsocks upstream using alias scheme"
+expected_interpretation = "Shadowsocks upstream (alias scheme accepted)"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "shadowsocks://****:****@proxy:8388"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "shadowsocks:aes-256-gcm:password@proxy:8388"
+'''
+
+# ============================================================================
+# 29. Tunnel scheme (raw alias)
+# ============================================================================
+
+[[cases]]
+id = "tunnel_upstream"
+raw_uri = "tunnel://target:80"
+pproxy_interpretation = "Raw/tunnel upstream to target:80 (tunnel is alias for raw)"
+expected_interpretation = "Raw fixed-target tunnel to target:80"
+compatibility_tier = "supported"
+has_credentials = false
+expected_redacted_display = "tunnel://target:80"
+expected_warnings = []
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "tunnel://target:80"
+'''
+
+# ============================================================================
+# 30. Multi-hop chain (separate -r args)
+# ============================================================================
+
+# Note: Separate -r args create a multi-upstream group, not a chain.
+# pproxy chains them: hop1 → hop2 → direct
+# eggress creates an upstream group with round-robin scheduling.
+# This is a behavioral difference but both relay traffic successfully.
+
+# ============================================================================
+# 31. Redir with credentials
+# ============================================================================
+
+[[cases]]
+id = "redir_with_auth"
+raw_uri = "redir://admin:secret@127.0.0.1:12345"
+pproxy_interpretation = "Transparent proxy with auth (unusual but valid in pproxy)"
+expected_interpretation = "Transparent TCP proxy with auth on 127.0.0.1:12345"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "redir://****:****@127.0.0.1:12345"
+expected_warnings = []
+expected_toml = '''
+[[listeners]]
+name = "pproxy-local-0"
+bind = "127.0.0.1:12345"
+protocols = ["http"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+'''
+
+# ============================================================================
+# 32. Trojan with explicit user:pass (password-only format)
+# ============================================================================
+
+[[cases]]
+id = "trojan_password_only"
+raw_uri = "trojan://my-secret-password@server:443"
+pproxy_interpretation = "Trojan upstream; password-only format (no username)"
+expected_interpretation = "Trojan upstream at server:443 with password auth"
+compatibility_tier = "supported"
+has_credentials = true
+expected_redacted_display = "trojan://****:****@server:443"
+expected_warnings = []
+# parse_userinfo returns ("", "my-secret-password") for password-only format
+expected_toml = '''
+[[upstreams]]
+id = "pproxy-upstream-0"
+uri = "trojan:my-secret-password@server:443"
+'''

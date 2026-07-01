@@ -1,0 +1,13 @@
+id = "auth_flags"
+args = ["-l", "socks5://127.0.0.1:1080", "-a", "user:pass", "-r", "http://127.0.0.1:8080"]
+expected_exit_code = 0
+expected_warnings = [
+    "[alive-check] pproxy -a (alive check interval) is not directly mappable; configure health probes in TOML",
+]
+toml_content_must_contain = [
+    "version = 1",
+    "[[listeners]]",
+    "[[upstreams]]",
+    "[[upstream_groups]]",
+    "[[rules]]",
+]

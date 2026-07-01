@@ -1,0 +1,14 @@
+id = "socks5_http_chain"
+args = ["-l", "socks5://127.0.0.1:1080", "-r", "http://127.0.0.1:8080"]
+expected_exit_code = 0
+expected_warnings = []
+toml_content_must_contain = [
+    "version = 1",
+    "[[listeners]]",
+    'protocols = ["socks5"]',
+    "[[upstreams]]",
+    'uri = "http://127.0.0.1:8080"',
+    "[[upstream_groups]]",
+    'scheduler = "first-available"',
+    "[[rules]]",
+]

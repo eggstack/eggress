@@ -1,0 +1,12 @@
+id = "scheduler_flags"
+args = ["-l", "socks5://127.0.0.1:1080", "-r", "http://a:80", "-r", "http://b:80", "-s", "rr"]
+expected_exit_code = 0
+expected_warnings = []
+toml_content_must_contain = [
+    "version = 1",
+    "[[listeners]]",
+    "[[upstreams]]",
+    "[[upstream_groups]]",
+    'scheduler = "round-robin"',
+    "[[rules]]",
+]

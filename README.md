@@ -31,6 +31,14 @@ The `eggress-pproxy-compat` crate provides:
 - Python bindings for translation helpers (`translate_pproxy_args`, `translate_pproxy_uri`)
 - Python convenience API (`start_pproxy`, `EggressService.from_pproxy_args`)
 
+### Phase 28: CLI compatibility enhancements
+
+- `eggress pproxy translate/check/run` subcommands translate pproxy CLI args to eggress TOML config
+- Structured diagnostic codes for all CLI operations with `--json` flag support
+- Exit code differentiation for process lifecycle and error handling (see `docs/cli/EXIT_CODES.md`)
+- Full CLI flag inventory documenting parity with pproxy (`docs/cli/PPROXY_CLI_INVENTORY.md`)
+- SSR and SSH URIs rejected with structured diagnostics (intentional non-parity)
+
 ## Usage
 
 ```text
@@ -412,6 +420,9 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 - [x] Python pproxy compat tests (45 passing)
 - [x] Python security/redaction tests
 - [x] Python concurrency tests
+- [x] Structured diagnostics and exit codes (Phase 28) — `docs/cli/EXIT_CODES.md`, `docs/cli/PPROXY_CLI_INVENTORY.md`
+- [x] `--json` flag for machine-readable pproxy check output (Phase 28)
+- [x] CLI flag inventory: full parity documentation of translate/check/run subcommands (Phase 28)
 - [x] Compatibility manifest tracking all parity features with evidence levels (`tests/compat/pproxy_manifest.toml`)
 - Oracle process runner for real pproxy differential testing (`eggress-testkit`)
 - Machine-readable parity reports generated after differential test runs

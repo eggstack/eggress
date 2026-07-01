@@ -698,6 +698,153 @@ configuration with `mode = "standalone_pproxy_udp"`.
 
 For detailed migration instructions, see [`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).
 
+## 16.1 CLI Compatibility: Exit Codes, JSON, and Diagnostics (Phase 28)
+
+### Exit Codes
+
+pproxy uses a single exit code (`1`) for all error conditions. Eggress
+provides granular exit codes to enable scripted error handling:
+
+| Code | Name | When produced |
+|------|------|---------------|
+| 0 | `success` | Command succeeded |
+| 1 | `runtime_failure` | Internal runtime error |
+| 2 | `cli_parse_error` | Unknown flags or bad argument syntax |
+| 3 | `config_validation` | Translated config failed validation |
+| 4 | `bind_failure` | Could not bind to listen address |
+| 5 | `unsupported_feature` | Unsupported pproxy feature encountered |
+| 6 | `platform_missing` | OS-specific capability not available |
+| 7 | `external_dependency` | Required external tool not found |
+| 130 | `interrupted_by_sigint` | SIGINT received |
+| 143 | `terminated_by_sigterm` | SIGTERM received |
+
+`eggress pproxy check` always exits 0 regardless of findings — it reports
+parity tiers without failing. This differs from `translate` and `run` which
+use exit code 5 when unsupported features are present.
+
+### JSON Output (`--json`)
+
+`pproxy check --json` emits machine-readable output with the following
+structure:
+
+```json
+{
+  "tier": "supported",
+  "diagnostics": [
+    {
+      "code": "unsupported_flag",
+      "feature_id": "daemon",
+      "tier": "unsupported",
+      "message": "--daemon mode is not supported",
+      "suggestion": "use systemd or process manager"
+    }
+  ],
+  "features": [
+    {
+      "name": "daemon",
+      "tier": "unsupported",
+      "diagnostic_code": "unsupported_flag"
+    }
+  ],
+  "raw_args": ["-l", "socks5://127.0.0.1:1080"],
+  "parsed_uris": {
+    "listeners": ["socks5://****:****@127.0.0.1:1080"],
+    "remotes": []
+  }
+}
+```
+
+The `tier` field is computed from the aggregate of warnings and unsupported
+features:
+- `compatible` — no warnings, no unsupported features
+- `supported` — warnings present but no unsupported features
+- `unsupported` — one or more unsupported features
+
+Credentials in `parsed_uris` are always redacted.
+
+### Structured Diagnostics Taxonomy
+
+The `StructuredDiagnostic` type carries stable `DiagnosticCode` values
+designed for JSON output, test assertions, and documentation cross-references.
+Each code corresponds to a class of translation issue:
+
+| DiagnosticCode | Meaning | Example triggers |
+|----------------|---------|------------------|
+| `unsupported_protocol` | Protocol/scheme not implemented | `ssh://`, unknown scheme |
+| `unsupported_flag` | Flag not mappable to eggress | `--daemon`, `--reuse`, `-b`, unknown flags |
+| `unsupported_platform` | OS-specific capability missing | `unix://` on Windows |
+| `unsupported_transport_wrapper` | Transport wrapper not supported | `+tls` in wrong context |
+| `unsupported_security_sensitive_legacy_feature` | Insecure legacy feature | SSR URIs, obfs plugins |
+| `invalid_uri_syntax` | Malformed URI or arguments | Bad host, missing port |
+| `invalid_chainComposition` | Invalid protocol chain | Conflicting protocols |
+| `missing_target` | Required address missing | No `-l` argument |
+| `missing_credential` | Required password/key missing | URI without password |
+| `invalid_cipher_method` | Insecure cipher specified | `aes-128-ctr`, `rc4-md5` |
+| `bind_failure` | Listen address bind failed | Port in use |
+| `privilege_capability_missing` | OS capability required | `SO_ORIGINAL_DST` without root |
+| `external_dependency_missing` | External tool required | `ssserver` not found |
+
+Each diagnostic also carries optional `feature_id`, `tier`, `message`, and
+`suggestion` fields. Diagnostics are serializable to JSON and produced by
+the `eggress-pproxy-compat` crate.
+
+### CLI Inventory
+
+pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
+
+| pproxy flag | eggress mapping | Status |
+|-------------|----------------|--------|
+| `-l` | `[[listeners]]` in TOML | Mapped |
+| `-r` | `[[upstreams]]` in TOML | Mapped |
+| `-ul` | standalone UDP listener | Mapped |
+| `-ur` | UDP upstream config | Mapped |
+| `-s` | `scheduler` in group TOML | Mapped |
+| `-v` | `RUST_LOG=debug` | Mapped |
+| `-a` | Health probe config | Mapped |
+| `--daemon` | rejected | Intentional non-parity |
+| `--ssl` | TLS config in TOML | Intentional non-parity |
+| `-b` | rejected | Intentional non-parity |
+| `--rulefile` | rejected | Intentional non-parity |
+| `--reuse` | rejected | Intentional non-parity |
+| `--log` | rejected | Intentional non-parity |
+| `--sys` | rejected | Intentional non-parity |
+
+For the complete inventory with diagnostic codes, see
+[`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).
+
+### Logging and Verbosity (Section 16.2)
+
+pproxy provides two logging controls:
+
+| Flag | pproxy behavior | Eggress handling |
+|------|----------------|-----------------|
+| `-v` / `--verbose` | Enable verbose/debug output to stderr | **Partial** — compat layer emits a warning suggesting `RUST_LOG=debug` |
+| `--log FILE` | Write log output to a file | **Not supported** — eggress logs to stderr only; redirect via shell if needed |
+
+Eggress uses `tracing-subscriber` with `EnvFilter` for log control:
+
+| Feature | Implementation |
+|---------|---------------|
+| Default log level | `info` (when `RUST_LOG` is unset) |
+| Verbosity control | `RUST_LOG=<level>` environment variable (`debug`, `trace`, etc.) |
+| Log format | `--log-format` flag: `pretty` (default), `json`, `compact` |
+| Log destination | stderr only; no built-in file output |
+| Credential redaction | `****:****@` format at all log levels |
+
+**pproxy `-v` mapping**: The compat layer parses `-v` as a known flag and
+emits a `verbose-mode` warning with migration guidance. It does not
+generate TOML configuration — the user must set `RUST_LOG=debug` in their
+environment. This is an intentional non-parity because eggress uses the
+standard Rust/tracing ecosystem for log control rather than a binary
+verbose flag.
+
+**pproxy `--log FILE` mapping**: The compat layer parses `--log` as a known
+flag but does not produce a diagnostic — the flag is silently dropped. Users
+who need file-based logging should redirect stderr:
+```bash
+RUST_LOG=info eggress --config config.toml > access.log 2>&1
+```
+
 ## 17. References
 
 - [pproxy GitHub repository](https://github.com/nimlang/pproxy)
