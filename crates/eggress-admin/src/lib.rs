@@ -1,8 +1,10 @@
 pub mod pac;
+pub mod reverse;
 pub mod routes;
 pub mod server;
 pub mod static_content;
 
+pub use reverse::{ReverseRegistry, ReverseServerEntry, ReverseServerId};
 pub use server::{
     AdminServer, AdminSnapshot, AdminSnapshotProvider, AdminState, ListenerInfo, PacConfig,
     StaticAdminSnapshot, StaticRoute,
@@ -63,6 +65,7 @@ mod tests {
             udp_registry: Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
                 eggress_udp::limits::UdpLimits::default(),
             )),
+            reverse_registry: Arc::new(ReverseRegistry::new()),
         }
     }
 
@@ -87,6 +90,7 @@ mod tests {
             udp_registry: Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
                 eggress_udp::limits::UdpLimits::default(),
             )),
+            reverse_registry: Arc::new(ReverseRegistry::new()),
         }
     }
 
@@ -229,6 +233,61 @@ mod tests {
         assert_eq!(status, 200);
         let json: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert!(json.is_array());
+    }
+
+    #[tokio::test]
+    async fn reverse_endpoint_empty_when_no_servers() {
+        let state = test_state();
+        let addr = start_server(state).await;
+        let (status, body) = http_get(&addr, "/-/reverse").await;
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(json["totals"]["server_count"], 0);
+        assert!(json["servers"].is_array());
+        assert_eq!(json["servers"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn reverse_endpoint_reports_registered_server_state() {
+        use crate::reverse::{ReverseRegistry, ReverseServerEntry, ReverseServerId};
+        use eggress_protocol_reverse::server::ReverseServerState;
+
+        let state = test_state();
+        let registry = ReverseRegistry::new();
+        let server_state = Arc::new(ReverseServerState::default());
+        server_state
+            .active_control
+            .store(3, std::sync::atomic::Ordering::Relaxed);
+        server_state
+            .active_streams
+            .store(7, std::sync::atomic::Ordering::Relaxed);
+        server_state
+            .denied_bind
+            .store(1, std::sync::atomic::Ordering::Relaxed);
+        server_state
+            .dropped_stream_limit
+            .store(2, std::sync::atomic::Ordering::Relaxed);
+        registry.register(ReverseServerEntry {
+            id: ReverseServerId::from("rev-1"),
+            control_bind: "127.0.0.1:8080".to_string(),
+            state: server_state,
+        });
+        let mut state_with_rev = state;
+        state_with_rev.reverse_registry = Arc::new(registry);
+
+        let addr = start_server(state_with_rev).await;
+        let (status, body) = http_get(&addr, "/-/reverse").await;
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(json["totals"]["server_count"], 1);
+        let servers = json["servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0]["id"], "rev-1");
+        assert_eq!(servers[0]["control_bind"], "127.0.0.1:8080");
+        assert_eq!(servers[0]["active_control"], 3);
+        assert_eq!(servers[0]["active_streams"], 7);
+        assert_eq!(servers[0]["denied_bind"], 1);
+        assert_eq!(servers[0]["dropped_stream_limit"], 2);
     }
 
     #[test]

@@ -13,6 +13,11 @@ pub enum TransportKind {
     #[default]
     Tcp,
     Udp,
+    /// Reverse-tunneled TCP traffic: the client (agent) dials the server,
+    /// hands it an external listen address, and forwards the resulting
+    /// connections back over the control channel. Routing decisions are
+    /// still evaluated against the resolved external target.
+    ReverseTcp,
 }
 
 impl std::fmt::Display for TransportKind {
@@ -20,6 +25,7 @@ impl std::fmt::Display for TransportKind {
         match self {
             TransportKind::Tcp => write!(f, "tcp"),
             TransportKind::Udp => write!(f, "udp"),
+            TransportKind::ReverseTcp => write!(f, "reverse_tcp"),
         }
     }
 }
@@ -114,6 +120,9 @@ pub enum MatchExpr {
     Protocol(ProtocolId),
     Identity(Arc<str>),
     Transport(TransportKind),
+    /// Match a reverse tunnel listener name. Only effective when the request's
+    /// transport is `ReverseTcp`.
+    ReverseListener(Arc<str>),
 }
 
 fn normalize_host_for_exact(host: &str) -> String {
@@ -185,6 +194,10 @@ impl MatchExpr {
                 ClientIdentity::Opaque(o) => o == name.as_ref(),
             },
             MatchExpr::Transport(kind) => request.transport == *kind,
+            MatchExpr::ReverseListener(expected) => {
+                request.transport == TransportKind::ReverseTcp
+                    && request.listener == expected.as_ref()
+            }
         }
     }
 }

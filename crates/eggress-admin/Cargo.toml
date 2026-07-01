@@ -21,6 +21,7 @@ eggress-core = { workspace = true }
 eggress-routing = { workspace = true }
 eggress-metrics = { workspace = true }
 eggress-udp = { workspace = true }
+eggress-protocol-reverse = { workspace = true }
 
 [lints]
 workspace = true

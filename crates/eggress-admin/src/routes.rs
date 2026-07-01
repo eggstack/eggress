@@ -204,6 +204,30 @@ pub async fn handle_request(
             });
             build_json_response(200, udp.to_string())
         }
+        "/-/reverse" => {
+            let entries = state.reverse_registry.snapshot();
+            let servers: Vec<serde_json::Value> = entries
+                .into_iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "id": e.id,
+                        "control_bind": e.control_bind,
+                        "active_control": e.state.active_control,
+                        "active_streams": e.state.active_streams,
+                        "denied_bind": e.state.denied_bind,
+                        "dropped_stream_limit": e.state.dropped_stream_limit,
+                    })
+                })
+                .collect();
+            let totals = serde_json::json!({
+                "server_count": servers.len(),
+            });
+            let body = serde_json::json!({
+                "totals": totals,
+                "servers": servers,
+            });
+            build_json_response(200, body.to_string())
+        }
         "/-/route-explain" => {
             if method != http::Method::POST {
                 return build_text_response(405, "method not allowed");

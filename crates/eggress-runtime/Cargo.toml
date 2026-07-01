@@ -16,6 +16,7 @@ eggress-uri.workspace = true
 eggress-udp.workspace = true
 eggress-transport-tls.workspace = true
 eggress-protocol-shadowsocks.workspace = true
+eggress-protocol-reverse.workspace = true
 rustls.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

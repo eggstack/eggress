@@ -164,3 +164,31 @@ After running differential tests, a machine-readable parity report is generated 
 | TLS ALPN config | Supported | Synthetic (config compilation test) |
 | H2/WS/Raw URI schemes | Supported | Synthetic (parser tests) |
 | QUIC/H3 | Deferred | ADR (no implementation) |
+
+## Phase 27: Reverse / Backward Proxying
+
+| Feature | Tier | Evidence | How to run |
+|---------|------|----------|------------|
+| `reverse_server_bind_listener` | Supported | Synthetic (unit + integration tests in `eggress-protocol-reverse`) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_client_backward_modifier` | Supported | Synthetic (unit + integration tests in `eggress-protocol-reverse`) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_auth_handshake` | Supported | Synthetic (success/failure unit tests in `eggress-protocol-reverse`) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_relay_bidirectional` | Supported | Synthetic (echo integration test) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_allow_bind_security` | Supported | Synthetic (allow-list integration tests) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_max_control_streams` | Supported | Synthetic (max control / max streams integration tests) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_redacted_logging` | Supported | Synthetic (`redact_auth` unit tests + log smoke checks) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_metrics` | Supported | Synthetic (Prometheus format + per-state integration tests) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_graceful_drain` | Supported | Synthetic (drain metric + graceful shutdown integration tests) | `cargo test -p eggress-protocol-reverse` |
+| `reverse_routing_integration` | Supported | Synthetic (`RouteEngineTargetResolver` unit tests in `eggress-runtime`) | `cargo test -p eggress-runtime reverse::` |
+| `reverse_admin_endpoint` | Supported | Synthetic (`/-/reverse` admin route integration tests) | `cargo test -p eggress-admin` |
+| `reverse_python_helper` | Supported | Synthetic (Python `describe_reverse_pproxy_uri` tests) | `python -m pytest python/tests/test_reverse_uri_helper.py` |
+| `reverse_eggress_self_interop` | Supported | Synthetic (loopback self-interop test) | `cargo test -p eggress-runtime --test reverse_interop -- reverse_eggress_self_interop_loopback` |
+| `reverse_pproxy_interop` | Supported | Synthetic (gated pproxy handshake smoke tests) | `EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored` |
+
+**Note on differential evidence:** Phase 27 does not yet claim pproxy-compatible
+status for reverse mode. The two gated tests (`reverse_pproxy_interop`) verify
+handshake wiring in both directions but do not compare wire-format byte-for-byte
+behavior against pproxy==2.7.9. To upgrade to **Compatible**, additional
+differential tests must be added that run a real pproxy 2.7.9 instance against an
+eggress reverse server/client, exchange a known payload through a relay, and
+assert byte equality. The `EGRESS_REQUIRE_REVERSE_INTEROP` test scaffold is the
+documented place for that work.

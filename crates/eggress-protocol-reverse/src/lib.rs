@@ -21,6 +21,8 @@ pub enum ProtocolError {
     AuthRequired,
     #[error("connection closed")]
     ConnectionClosed,
+    #[error("bind address {0} is not in the allow_bind allowlist")]
+    BindDenied(std::net::SocketAddr),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -83,7 +85,9 @@ pub async fn client_auth_handshake(
 
 /// Perform the server-side auth handshake: read credentials, validate, respond.
 ///
-/// Returns the authenticated username:password string, or an error.
+/// Returns the redacted auth representation `user:****` (never the password)
+/// so callers can log it without leaking credentials. The full raw bytes are
+/// only retained for the duration of the auth phase and then dropped.
 pub async fn server_auth_handshake(
     stream: &mut TcpStream,
     expected_user: Option<&str>,
@@ -111,7 +115,22 @@ pub async fn server_auth_handshake(
     }
 
     write_handshake_accept(stream).await?;
-    Ok(auth_str)
+    Ok(redact_auth(&auth_str))
+}
+
+/// Build a redacted form of an auth string suitable for logging.
+///
+/// Replaces the password with `****` while preserving the username. If the
+/// string contains no `:`, the entire content is replaced with `****`.
+pub fn redact_auth(auth: &str) -> String {
+    let (user, _) = parse_auth_str(auth);
+    if user.is_empty() && auth.is_empty() {
+        return String::new();
+    }
+    if !auth.contains(':') {
+        return "****".to_string();
+    }
+    format!("{}:****", user)
 }
 
 /// Parse a `user:pass` auth string.
@@ -203,6 +222,34 @@ mod tests {
     }
 
     #[test]
+    fn redact_auth_basic() {
+        assert_eq!(redact_auth("user:pass"), "user:****");
+    }
+
+    #[test]
+    fn redact_auth_no_colon() {
+        assert_eq!(redact_auth("opaque"), "****");
+    }
+
+    #[test]
+    fn redact_auth_empty() {
+        assert_eq!(redact_auth(""), "");
+    }
+
+    #[test]
+    fn redact_auth_password_contains_colon() {
+        // Multiple colons: only the first separates user/pass
+        assert_eq!(redact_auth("user:p:a:s:s"), "user:****");
+    }
+
+    #[test]
+    fn redact_auth_does_not_leak_password() {
+        let s = redact_auth("user:supersecret123");
+        assert!(!s.contains("supersecret"));
+        assert!(!s.contains("secret"));
+    }
+
+    #[test]
     fn handshake_constants() {
         assert_eq!(HANDSHAKE_ACCEPT, 0x01);
         assert_eq!(HANDSHAKE_REJECT, 0x00);
@@ -238,7 +285,8 @@ mod tests {
             let (mut stream, _) = listener.accept().await.unwrap();
             let result = server_auth_handshake(&mut stream, Some("user"), Some("pass")).await;
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), "user:pass");
+            // Returned form is redacted to avoid leaking the password
+            assert_eq!(result.unwrap(), "user:****");
         });
 
         let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();

@@ -23,6 +23,8 @@ from eggress.pproxy import (
     translate_pproxy_args,
     translate_pproxy_uri,
     check_pproxy_args,
+    describe_reverse_pproxy_uri,
+    ReverseUriSummary,
 )
 
 
@@ -68,5 +70,7 @@ __all__ = [
     "translate_pproxy_args",
     "translate_pproxy_uri",
     "check_pproxy_args",
+    "describe_reverse_pproxy_uri",
+    "ReverseUriSummary",
     "start_pproxy",
 ]

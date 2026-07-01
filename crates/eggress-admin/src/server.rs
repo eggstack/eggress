@@ -9,6 +9,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+use crate::reverse::ReverseRegistry;
 use crate::routes::handle_request;
 use crate::AdminError;
 
@@ -94,6 +95,9 @@ pub struct AdminState {
     pub active_connections: Option<Arc<AtomicU64>>,
     pub provider: Arc<dyn AdminSnapshotProvider>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
+    /// Registry of reverse servers. Empty by default — populating it
+    /// enables the `/-/reverse` admin route.
+    pub reverse_registry: Arc<ReverseRegistry>,
 }
 
 impl AdminState {

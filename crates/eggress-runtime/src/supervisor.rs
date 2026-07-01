@@ -471,6 +471,7 @@ pub struct RuntimeState {
     pub udp_tasks: TaskTracker,
     pub transparent_accepted_total: Arc<AtomicU64>,
     pub transparent_original_dst_failed_total: Arc<AtomicU64>,
+    pub reverse_registry: Arc<eggress_admin::ReverseRegistry>,
 }
 
 impl RuntimeState {
@@ -553,6 +554,7 @@ impl ServiceSupervisor {
             udp_tasks: udp_tasks.clone(),
             transparent_accepted_total: Arc::new(AtomicU64::new(0)),
             transparent_original_dst_failed_total: Arc::new(AtomicU64::new(0)),
+            reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
         });
 
         let cancel = CancellationToken::new();
@@ -1523,6 +1525,7 @@ impl ServiceSupervisor {
                             active_connections: Some(state_ref.active_connections.clone()),
                             provider,
                             udp_registry: state_ref.udp_registry.clone(),
+                            reverse_registry: state_ref.reverse_registry.clone(),
                         };
                         if let Err(e) = server.run(admin_state).await {
                             tracing::error!("admin server error: {e}");

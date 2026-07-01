@@ -34,6 +34,7 @@ pub struct LeafMatcher {
     pub protocol: Option<String>,
     pub identity: Option<String>,
     pub transport: Option<String>,
+    pub reverse_listener: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

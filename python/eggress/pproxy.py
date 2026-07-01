@@ -75,3 +75,47 @@ def translate_pproxy_uri(
 
 def check_pproxy_args(args: Sequence[str]) -> TranslationResult:
     return TranslationResult(_check_pproxy_args(list(args)))
+
+
+try:
+    from eggress._eggress import describe_reverse_pproxy_uri as _describe_reverse_pproxy_uri
+except ImportError:
+    _describe_reverse_pproxy_uri = None
+
+
+@dataclass(frozen=True)
+class ReverseUriSummary:
+    role: str  # "server" | "client" | "unknown"
+    scheme: str
+    target: str  # redacted "host:port" or "****@host:port"
+    has_auth: bool
+    toml_section: str  # "reverse_servers" | "reverse_clients" | "unknown"
+    tls: bool
+    modifiers: tuple[str, ...]
+
+
+def describe_reverse_pproxy_uri(uri: str) -> ReverseUriSummary:
+    """Inspect a pproxy reverse URI and summarize how eggress would translate it.
+
+    Supported pproxy reverse URI forms:
+        * ``bind://[user:pass@]host:port`` / ``listen://...`` / ``backward://...`` /
+          ``rebind://...``  -> eggress ``reverse_servers`` entry
+        * ``socks5+in://...`` / ``http+in://...`` / ``ss+in://...`` etc.
+          -> eggress ``reverse_clients`` entry
+
+    The returned ``target`` is always redacted; credentials are never exposed.
+    """
+    if _describe_reverse_pproxy_uri is None:
+        raise RuntimeError(
+            "describe_reverse_pproxy_uri requires a newer eggress native module"
+        )
+    inner = _describe_reverse_pproxy_uri(uri)
+    return ReverseUriSummary(
+        role=inner.role,
+        scheme=inner.scheme,
+        target=inner.target,
+        has_auth=inner.has_auth,
+        toml_section=inner.toml_section,
+        tls=inner.tls,
+        modifiers=tuple(inner.modifiers),
+    )

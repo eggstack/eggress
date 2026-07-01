@@ -197,6 +197,7 @@ fn compile_transport(s: &str) -> Result<eggress_routing::TransportKind, ConfigEr
     match s {
         "tcp" => Ok(eggress_routing::TransportKind::Tcp),
         "udp" => Ok(eggress_routing::TransportKind::Udp),
+        "reverse_tcp" => Ok(eggress_routing::TransportKind::ReverseTcp),
         _ => Err(ConfigError::validation(
             "transport",
             &format!("unknown transport: {}", s),
@@ -430,6 +431,11 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
     if let Some(ref transport_str) = leaf.transport {
         let transport_kind = compile_transport(transport_str)?;
         matchers.push(eggress_routing::MatchExpr::Transport(transport_kind));
+    }
+    if let Some(ref name) = leaf.reverse_listener {
+        matchers.push(eggress_routing::MatchExpr::ReverseListener(Arc::from(
+            name.as_str(),
+        )));
     }
 
     match matchers.len() {

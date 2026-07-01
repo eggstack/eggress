@@ -134,32 +134,104 @@ The three `supported` entries reference the integration tests that prove
 local behavior. The four `unsupported` entries have updated `divergence`
 notes describing what would be needed to lift the gap.
 
+### Phase 27 follow-up closure (post-`ff209d8`)
+
+The original Phase 27 workstream shipped the protocol implementation, pproxy
+URI translation, and basic metrics. A follow-up pass closed the remaining
+workstream items in `plans/PHASE_27_REVERSE_BACKWARD_AND_JUMP_PROXYING.md`:
+
+- **`27.1` Behavior capture extension**: `docs/protocols/REVERSE_PROXYING.md`
+  sections 13–18 now document heartbeat / keepalive cadence, log message +
+  exit code conventions, listener bind failure, target connect failure,
+  half-close / reset behavior, and how chaining interacts with reverse mode.
+- **`27.3` Redacted logging + per-state metrics**: `redact_auth(&str)` is
+  now exposed as a public helper; `server_auth_handshake` returns the
+  redacted `user:****` form. `ReverseMetrics` gained `auth_failures_total`,
+  `heartbeat_failures_total`, `drain_total`, `drain_duration_ms_total`, and a
+  per-state `state_time_ms[6]` array. Prometheus output covers every new
+  counter and exposes per-state labels.
+- **`27.4` Server-side security hardening**: `ReverseServerConfig` gained
+  `allow_bind: Option<Vec<SocketAddr>>`, `max_listeners_per_client`,
+  `max_streams_per_listener`, and `max_pending_external`. `ReverseServer::run`
+  now enforces an allow-bind allowlist (matching ip+port), caps concurrent
+  control connections and streams per listener, and surfaces a new
+  `ProtocolError::BindDenied(SocketAddr)` variant. `ReverseServerState` exposes
+  atomic counters with a `state_handle()` snapshot for admin / observability.
+- **`27.5` Client-side routing hook**: `ReverseClient` now accepts a
+  `TargetResolver` trait (`TargetResolution::{Connect, Reject}`); the default
+  `DefaultTargetResolver` uses the legacy `default_target_host` /
+  `default_target_port` fields, and a custom resolver may reject to implement
+  a soft policy gate. `run_session` records route rejection as
+  `last_error` and reconnects with backoff.
+- **`27.7` Runtime routing integration**: `eggress-routing` gained a
+  `TransportKind::ReverseTcp` variant and a `MatchExpr::ReverseListener` matcher
+  (which only matches when transport is `ReverseTcp`). The TOML `LeafMatcher`
+  learned a `reverse_listener` field; the parser accepts `transport =
+  "reverse_tcp"`. `crates/eggress-runtime/src/reverse.rs` exposes a
+  `RouteEngineTargetResolver` adapter that wraps a `SharedRoutingService` and
+  consults the router on every reconnect — `Direct` and `UpstreamGroup`
+  decisions map to `Connect`, `Reject` decisions map to `Reject`. Routing is
+  a gate, not a redirect, since reverse mode always dials the same external
+  target.
+- **`27.8` Python helpers**: `eggress-python` exposes
+  `describe_reverse_pproxy_uri(uri: str) -> ReverseUriSummary` which classifies
+  a pproxy reverse URI as `server` (`bind://`, `listen://`, `backward://`,
+  `rebind://` → `reverse_servers`) or `client` (`*+in://...` →
+  `reverse_clients`), redacts the target display, and exposes `tls` and
+  modifier lists. `python/tests/test_reverse_uri_helper.py` covers 17 cases
+  including credential redaction and modifier counts.
+- **`27.9` Admin API**: `crates/eggress-admin` gained a `ReverseRegistry` and
+  a new `/-/reverse` HTTP endpoint that emits per-server
+  `{id, control_bind, active_control, active_streams, denied_bind,
+  dropped_stream_limit}`. The runtime supervisor wires `ReverseRegistry`
+  into `AdminState` so that future supervisor changes can register servers
+  dynamically.
+- **`27.10` Gated interop tests**: `crates/eggress-runtime/tests/reverse_interop.rs`
+  contains one loopback self-interop test (ungated) plus two gated
+  pproxy handshake smoke tests under `EGRESS_REQUIRE_REVERSE_INTEROP=1`.
+  Status, `Controls::Reverse` clause, and how to run are documented in
+  `docs/COMPATIBILITY_EVIDENCE.md`.
+
+### Updated protocol-crate test counts (post-`ff209d8`)
+
+| Subset | Count |
+|--------|-------|
+| `eggress-protocol-reverse` lib | 42 / 42 pass (was 22) |
+| `eggress-protocol-reverse` integration | 19 / 19 pass (was 9) |
+| `eggress-admin` lib (incl. reverse route + registry tests) | 21 / 21 pass (was 19) |
+| `eggress-runtime` lib `reverse::` | 4 / 4 pass (new) |
+| `eggress-runtime` `reverse_interop` | 2 un-gated pass / 2 gated ignored |
+| `eggress-python` `test_reverse_uri_helper.py` | 17 / 17 pass |
+| `eggress-pproxy-compat` lib (unchanged) | 138 / 138 pass |
+
 ## Out-of-scope (intentional deferrals)
 
-- **Reverse integration into `eggress-runtime` supervisor**: the
-  protocol crate is a standalone library. Wiring it into the
-  `ServiceSupervisor` so that `[[reverse_servers]]` and
-  `[[reverse_clients]]` from the live TOML become live services at
-  runtime is deferred to a later phase. The protocol crate is ready
-  for this; the integration is mechanical (start task per config entry,
-  pass `CancellationToken` on shutdown, expose metrics on the runtime
-  snapshot).
-- **Reverse endpoints in admin API**: the admin HTTP server does not
-  yet expose reverse session state. The metrics + snapshot pattern is
-  in place; admin wiring is mechanical follow-up.
-- **Multi-channel concurrency**: a single `ReverseClient` currently
-  maintains a single control connection. pproxy achieves concurrency
-  via `+in+in+in` count, which would require running N parallel
-  control-client tasks. The config model supports this
-  (`parallel_connections` field) but the runtime execution is not
-  wired.
-- **Jump chain composition on relayed streams**: a relayed stream is
-  currently handed to the configured `default_target` or dropped.
-  Hooking the chain executor into the reverse client is a follow-up.
-- **Built-in TLS**: intentionally deferred. Operators wrap with
-  stunnel / haproxy / WireGuard.
-- **Reverse UDP**: `intentional_non_parity` because pproxy itself does
-  not support reverse UDP.
+- **Live supervisor spawn**: `[[reverse_servers]]` and `[[reverse_clients]]`
+  entries in the runtime TOML config are translated to runtime config objects
+  but not yet wired to live `ReverseServer` / `ReverseClient` tasks inside
+  `ServiceSupervisor`. The protocol crate is fully usable in standalone mode
+  (see gated interop tests in `crates/eggress-runtime/tests/reverse_interop.rs`)
+  and the supervisor wiring is a thin mechanical follow-up.
+- **Multi-channel concurrency**: a single `ReverseClient` still maintains a
+  single control connection. pproxy achieves concurrency via `+in+in+in` count,
+  which would require running N parallel control-client tasks. The config
+  model supports this (`parallel_connections` field) but the runtime execution
+  is not wired.
+- **Jump chain composition on relayed streams**: a relayed stream is currently
+  handed to the configured `default_target` or dropped. Hooking the chain
+  executor into the reverse client is a follow-up.
+- **Built-in TLS**: intentionally deferred. Operators wrap with stunnel /
+  haproxy / WireGuard.
+- **Reverse UDP**: `intentional_non_parity` because pproxy itself does not
+  support reverse UDP.
+- **Differential pproxy wire-format tests**: the gated pproxy interop tests
+  verify handshake wiring in both directions. They do **not** yet compare a
+  relayed payload byte-for-byte against pproxy==2.7.9. Promoting the
+  `reverse_pproxy_interop` row to **Compatible** requires additional
+  differential tests that exchange a known payload through an eggress →
+  pproxy or pproxy → eggress relay and assert byte equality. The
+  `EGRESS_REQUIRE_REVERSE_INTEROP` test scaffold is the documented place
+  for that work.
 
 ## Validation
 
@@ -212,11 +284,14 @@ take ~5–10 minutes; spot-checked subsets are summarized below.
 
 ## Handoff notes for follow-up phases
 
-- **Reverse runtime integration**: extend `eggress-runtime`'s
-  `ServiceSupervisor` to spawn a `ReverseServer` for each
-  `[[reverse_servers]]` entry and a `ReverseClient` for each
-  `[[reverse_clients]]` entry. Wire `Arc<ReverseMetrics>` into the
-  runtime snapshot, surface via admin API and Prometheus endpoint.
+- **Live supervisor spawn**: extend `eggress-runtime`'s `ServiceSupervisor`
+  to spawn a `ReverseServer` for each `[[reverse_servers]]` entry and a
+  `ReverseClient` for each `[[reverse_clients]]` entry. The
+  `RouteEngineTargetResolver`, `ReverseRegistry`, and `reverse_registry`
+  field on `RuntimeState` are already in place. Required wiring is
+  mechanical: register each started server in the registry (use
+  `ReverseServerEntry { id, control_bind, state }`); spawn client tasks
+  with `RouteEngineTargetResolver` injected; cancel on shutdown.
 - **Multi-channel concurrency**: when wiring reverse clients into the
   runtime, iterate `1..=config.parallel_connections.unwrap_or(1)` and
   spawn one `ReverseClient` task per channel.
@@ -224,11 +299,12 @@ take ~5–10 minutes; spot-checked subsets are summarized below.
   control-client side should invoke the chain executor with the chain
   derived from the URI's jump suffix (`__`-separated). Until then,
   emit an unsupported diagnostic at translation time (already done).
-- **Listener allowlist**: add an `allow_bind` configuration to
-  `ReverseServerConfig` and reject bind addresses not in the allowlist
-  in `ReverseServer::run`. Default to loopback-only when `allow_bind`
-  is empty. The current implementation accepts any bind address; the
-  security docs and config reference call this out as a follow-up.
+- **Differential pproxy wire-format tests**: the current gated tests verify
+  handshake wiring. Add relay-payload differential tests (eggress →
+  pproxy over a known payload, byte-equality assert) under
+  `EGRESS_REQUIRE_REVERSE_INTEROP=1` and promote the
+  `reverse_pproxy_interop` row in `docs/COMPATIBILITY_EVIDENCE.md` to
+  **Compatible**.
 - **TLS termination**: defer until operator demand is clear. Wrap with
   external tooling (stunnel/haproxy/WireGuard) is the recommended
   path and is documented.

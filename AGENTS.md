@@ -66,6 +66,10 @@ cargo test -p eggress-protocol-raw
 cargo test -p eggress-protocol-reverse
 cargo test -p eggress-protocol-reverse --test integration
 cargo test -p eggress-pproxy-compat --lib reverse
+cargo test -p eggress-runtime --test reverse_interop
+
+# Run gated reverse interop tests (requires pproxy on PATH)
+EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored
 
 # Run advanced transport integration tests
 cargo test -p eggress-runtime advanced_transport

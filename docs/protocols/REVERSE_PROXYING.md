@@ -489,3 +489,132 @@ pproxy -l http://:9090 \
 - Phase 27 plan: `plans/PHASE_27_REVERSE_BACKWARD_AND_JUMP_PROXYING.md`
 - Parity spec: `docs/PPROXY_PARITY_SPEC.md`
 - Parity matrix: `docs/PARITY_MATRIX.md`
+
+## 13. Heartbeat and Keepalive
+
+pproxy does **not** implement an explicit application-layer heartbeat on the
+backward control channel. Keepalive is delegated entirely to the TCP transport:
+
+| Mechanism | Behavior |
+|-----------|----------|
+| TCP keepalive | Relies on OS defaults; no application-level ping |
+| Read timeout | 60-second `asyncio.wait_for` on the initial control channel read |
+| Idle timeout | None — connection stays open until either side closes |
+| Application-level ping | Not implemented |
+| Application-level pong | Not implemented |
+
+If the underlying TCP connection survives but no traffic flows (for example,
+because the acceptor's `stream_handler` is idle), neither side times out. The
+control channel remains open indefinitely. pproxy's 60-second timeout only
+fires during the initial read of the auth bytes, not during the relay phase.
+
+The Eggress implementation matches pproxy's behavior: no application-level
+heartbeat, 60-second initial read timeout, and otherwise relies on TCP
+keepalive. Operators requiring active liveness detection must use a separate
+monitoring path.
+
+## 14. Log Messages and Exit Codes
+
+pproxy uses Python's `logging` module at `INFO` level. The relevant log
+messages emitted during reverse proxy operation:
+
+| Event | Log message |
+|-------|-------------|
+| Backward client started | `client connect to ssl://...` (when +ssl) or `client connect to ...` (plaintext) |
+| Control connection established | `connected to <host>:<port>` |
+| Auth failure | `client <host>:<port> login failed` |
+| Listener bind failure | `bind on <addr> failed: <reason>` |
+| External client connect | `connection from <peer>` (from `stream_handler`) |
+| Reconnect | `reconnect after <n> second(s)` |
+| Listener closed | `client closed` (from accept loop) |
+| Fatal error | `proxy: <error>` then exit with code 1 |
+
+pproxy exit codes:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Normal shutdown (SIGTERM/SIGINT) |
+| 1 | Fatal error (bind failure, unexpected exception) |
+| 130 | SIGINT (Ctrl-C) |
+| 143 | SIGTERM |
+
+Eggress uses `tracing` at `INFO`/`DEBUG`/`WARN` levels. The following
+messages are emitted:
+
+| Event | Tracing event |
+|-------|---------------|
+| Server started | `info! reverse server listening for control connections` |
+| External listener bound | `info! reverse server listening for external clients` |
+| Control connection accepted | `info! control connection accepted` |
+| Auth failure | `warn! control connection auth failed` |
+| External client relay started | `info! relaying external client through control connection` |
+| Reconnect | `warn! session failed, reconnecting` |
+| Shutdown | `info! reverse server shutting down` |
+
+Credentials are never logged. Peer addresses are logged for diagnostics.
+
+## 15. Listener Bind Failure
+
+When the acceptor cannot bind the requested listener address, pproxy exits
+with code 1 and the error `bind on <addr> failed: <reason>`. Common causes:
+
+| Cause | Example pproxy log |
+|-------|--------------------|
+| Address already in use | `bind on 0.0.0.0:8080 failed: [Errno 98] Address already in use` |
+| Permission denied | `bind on 0.0.0.0:80 failed: [Errno 13] Permission denied` |
+| Hostname resolution failure | `bind on 0.0.0.0:8080 failed: [Errno -2] Name or service not known` |
+| Address family mismatch | `bind on 0.0.0.0:8080 failed: [Errno 97] Address family not supported` |
+
+The Eggress implementation surfaces the same `std::io::Error` from the
+`TcpListener::bind` call and propagates it up through `ReverseServer::run`.
+The error message is included in `last_error` of `ReverseMetrics` and the
+server task exits with the error.
+
+## 16. Target Connect Failure
+
+When the control client (backward client) cannot connect to its configured
+default target, pproxy closes the control channel. The acceptor detects the
+close and discards the in-flight stream.
+
+| Cause | pproxy behavior |
+|-------|-----------------|
+| Connection refused | Close control channel; external client receives EOF |
+| DNS resolution failure | Close control channel; external client receives EOF |
+| Timeout | Close control channel; external client receives EOF |
+| Auth required by target | Close control channel; external client receives EOF |
+
+The Eggress implementation records the error in `last_error` and
+`control_reconnects_total`, then reconnects the control channel with
+exponential backoff. External clients receive a connection reset on the
+listener side.
+
+## 17. Half-Close and Reset
+
+| Event | pproxy behavior | Eggress behavior |
+|-------|-----------------|-------------------|
+| External client half-closes (shutdown write) | Acceptor half-closes control channel | `relay_bidirectional` exits when either side reads EOF |
+| Control client half-closes | Acceptor half-closes listener side | `relay_bidirectional` exits when either side reads EOF |
+| TCP RST | Connection terminates immediately | Connection terminates immediately |
+| Idle (no traffic) | Connection remains open | Connection remains open until either side closes |
+
+The Eggress implementation uses bidirectional copy and treats half-close and
+full-close identically. When either side's read returns 0 bytes, the relay
+function returns and both streams are dropped, which causes the other side to
+see EOF. This matches pproxy's `asyncio.streams` behavior.
+
+## 18. Chaining with Reverse Mode
+
+pproxy supports jump chains (`__` separator) combined with the `+in` modifier:
+
+```
+socks5+in://acceptor:1080__http://upstream:8080__direct://
+```
+
+Parsing: the `+in` modifier is on the **leftmost** URI. The control client
+dials `acceptor:1080`, and accepted streams are forwarded through the
+remaining hops: `upstream:8080` via HTTP, then `direct://` to the target.
+
+The Eggress implementation does not support jump chains through reverse
+streams. When such a URI is translated via `pproxy translate`, the
+configuration emits an `unsupported` diagnostic for `backward-jump-chain`.
+Each URI in a chain must be a separate `-r` argument instead.

@@ -364,6 +364,97 @@ fn check_pproxy_args(
     translate_pproxy_args(py, args)
 }
 
+#[pyclass]
+struct PyReverseUriSummary {
+    /// "server" or "client" or "unknown"
+    role: String,
+    scheme: String,
+    /// "host:port" string in redacted form for display
+    target: String,
+    has_auth: bool,
+    /// "reverse_servers" or "reverse_clients" or "unknown"
+    toml_section: String,
+    tls: bool,
+    /// Modifiers parsed (e.g. "+tls", "+in")
+    modifiers: Vec<String>,
+}
+
+#[pymethods]
+impl PyReverseUriSummary {
+    #[getter]
+    fn role(&self) -> &str {
+        &self.role
+    }
+    #[getter]
+    fn scheme(&self) -> &str {
+        &self.scheme
+    }
+    #[getter]
+    fn target(&self) -> &str {
+        &self.target
+    }
+    #[getter]
+    fn has_auth(&self) -> bool {
+        self.has_auth
+    }
+    #[getter]
+    fn toml_section(&self) -> &str {
+        &self.toml_section
+    }
+    #[getter]
+    fn tls(&self) -> bool {
+        self.tls
+    }
+    #[getter]
+    fn modifiers(&self) -> Vec<String> {
+        self.modifiers.clone()
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "ReverseUriSummary(role={}, target={}, toml_section={}, has_auth={})",
+            self.role, self.target, self.toml_section, self.has_auth
+        )
+    }
+}
+
+#[pyfunction]
+fn describe_reverse_pproxy_uri(uri: &str) -> PyResult<PyReverseUriSummary> {
+    let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
+        .map_err(|e| UnsupportedFeatureError::new_err(format!("invalid pproxy URI: {e}")))?;
+
+    let (role, toml_section) = if parsed.is_reverse_listener() {
+        ("server", "reverse_servers")
+    } else if parsed.is_backward() {
+        ("client", "reverse_clients")
+    } else {
+        ("unknown", "unknown")
+    };
+
+    let target = parsed.redacted_display();
+
+    // Modifiers encoded in the scheme: +tls, +ssl, +in, ...
+    let mut modifiers: Vec<String> = Vec::new();
+    if parsed.tls {
+        modifiers.push("+tls".to_string());
+    }
+    if parsed.ssl {
+        modifiers.push("+ssl".to_string());
+    }
+    for _ in 0..parsed.backward_num {
+        modifiers.push("+in".to_string());
+    }
+
+    Ok(PyReverseUriSummary {
+        role: role.to_string(),
+        scheme: parsed.scheme.clone(),
+        target,
+        has_auth: parsed.username.is_some(),
+        toml_section: toml_section.to_string(),
+        tls: parsed.tls,
+        modifiers,
+    })
+}
+
 #[pymodule]
 fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEggressConfig>()?;
@@ -372,9 +463,11 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTranslationWarning>()?;
     m.add_class::<PyUnsupportedFeature>()?;
     m.add_class::<PyTranslationResult>()?;
+    m.add_class::<PyReverseUriSummary>()?;
     m.add_function(wrap_pyfunction!(translate_pproxy_args, m)?)?;
     m.add_function(wrap_pyfunction!(translate_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_args, m)?)?;
+    m.add_function(wrap_pyfunction!(describe_reverse_pproxy_uri, m)?)?;
     m.add("EggressError", m.py().get_type::<EggressError>())?;
     m.add("ConfigError", m.py().get_type::<ConfigError>())?;
     m.add("StartupError", m.py().get_type::<StartupError>())?;
