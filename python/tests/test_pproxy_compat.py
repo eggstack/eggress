@@ -181,13 +181,13 @@ def test_unsupported_ssh():
     assert any(u.feature == "ssh-upstream" for u in result.unsupported)
 
 
-def test_shadowsocks_warning():
-    """10. Shadowsocks TCP warning/downgrade is visible if translated."""
+def test_shadowsocks_supported():
+    """10. Shadowsocks TCP is now fully supported — translation succeeds."""
     result = translate_pproxy_args([
         "-l", "ss://aes-256-gcm:secret@127.0.0.1:8388",
     ])
-    assert not result.ok
-    assert any(u.feature == "shadowsocks-listener" for u in result.unsupported)
+    assert result.ok
+    assert "shadowsocks" in result.toml.lower()
 
 
 def test_from_pproxy_args_rejects_unsupported():

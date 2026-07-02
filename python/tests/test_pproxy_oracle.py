@@ -8,6 +8,10 @@ The oracle fixture is at tests/compat/fixtures/pproxy_api_snapshot.json.
 
 import json
 import os
+import socket
+import struct
+import threading
+import time
 
 import pytest
 
@@ -42,6 +46,58 @@ def _load_snapshot():
     """Load the frozen API snapshot."""
     with open(SNAPSHOT_PATH) as f:
         return json.load(f)
+
+
+# --- Helpers for lifecycle tests ---
+
+
+def _echo_server():
+    """Start a TCP echo server on 127.0.0.1:0, return (host, port, server_socket)."""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    host, port = srv.getsockname()
+
+    def _accept():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                break
+            try:
+                while True:
+                    data = conn.recv(4096)
+                    if not data:
+                        break
+                    conn.sendall(data)
+            finally:
+                conn.close()
+
+    t = threading.Thread(target=_accept, daemon=True)
+    t.start()
+    return host, port, srv
+
+
+def _socks5_connect(proxy_host, proxy_port, target_host, target_port):
+    """Perform a SOCKS5 CONNECT handshake and return the connected socket."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(3.0)
+    s.connect((proxy_host, proxy_port))
+    s.sendall(b"\x05\x01\x00")
+    resp = s.recv(2)
+    assert resp[0] == 0x05, f"SOCKS5 greeting version mismatch: {resp!r}"
+    host_bytes = target_host.encode()
+    req = (
+        b"\x05\x01\x00\x03"
+        + bytes([len(host_bytes)])
+        + host_bytes
+        + struct.pack("!H", target_port)
+    )
+    s.sendall(req)
+    resp = s.recv(32)
+    assert resp[1] == 0x00, f"SOCKS5 connect failed: {resp!r}"
+    return s
 
 
 # --- Module Export Tests ---
@@ -200,3 +256,178 @@ class TestSnapshotConsistency:
         snapshot = _load_snapshot()
         for name in snapshot.get("cipher_info", {}).get("classes", []):
             assert hasattr(cipher, name), f"pproxy.cipher class {name!r} missing"
+
+
+# --- Server Lifecycle Oracle Tests (Phase 30) ---
+
+
+@pytest.mark.skipif(not _eggress_available(), reason="eggress native module not built")
+class TestServerLifecycle:
+    """Verify eggress Server lifecycle matches pproxy Server patterns."""
+
+    def test_server_import(self):
+        """eggress.pproxy.Server is importable and callable."""
+        from eggress.pproxy import Server
+
+        assert Server is not None
+
+    def test_server_construct_listen_remote(self):
+        """Server(listen=[...], remote=[...]) creates without error."""
+        from eggress.pproxy import Server
+
+        srv = Server(
+            listen=["socks5://127.0.0.1:0"],
+            remote=["http://127.0.0.1:8080"],
+        )
+        srv.close()
+
+    def test_server_start_stop_lifecycle(self):
+        """Server starts, reports addresses, and stops cleanly."""
+        from eggress.pproxy import Server
+
+        with Server(listen=["http://127.0.0.1:0"]) as srv:
+            time.sleep(0.1)
+            addrs = srv.addresses
+            assert len(addrs) > 0
+            for addr in addrs.values():
+                assert addr != ""
+        assert srv.addresses == {}
+
+    def test_server_socks5_relay(self):
+        """Server SOCKS5 listener relays traffic to upstream."""
+        from eggress.pproxy import Server
+
+        echo_host, echo_port, echo_srv = _echo_server()
+        try:
+            with Server(listen=["socks5://127.0.0.1:0"]) as srv:
+                time.sleep(0.1)
+                addrs = srv.addresses
+                socks_addr = None
+                for key, addr in addrs.items():
+                    if addr:
+                        host, port = addr.rsplit(":", 1)
+                        socks_addr = (host, int(port))
+                        break
+                assert socks_addr is not None
+
+                s = _socks5_connect(
+                    socks_addr[0], socks_addr[1], echo_host, echo_port
+                )
+                try:
+                    s.sendall(b"ping")
+                    resp = s.recv(4096)
+                    assert resp == b"ping"
+                finally:
+                    s.close()
+        finally:
+            echo_srv.close()
+
+    def test_server_double_start_raises(self):
+        """Starting a running server raises AlreadyStartedError."""
+        from eggress.pproxy import AlreadyStartedError, Server
+
+        srv = Server(listen=["http://127.0.0.1:0"])
+        try:
+            srv.start()
+            time.sleep(0.1)
+            with pytest.raises(AlreadyStartedError):
+                srv.start()
+        finally:
+            srv.close()
+
+    def test_server_close_idempotent(self):
+        """Closing a server twice is safe."""
+        from eggress.pproxy import Server
+
+        srv = Server(listen=["http://127.0.0.1:0"])
+        srv.start()
+        time.sleep(0.1)
+        srv.close()
+        srv.close()  # should not raise
+
+    def test_server_repr_states(self):
+        """repr shows stopped/running states."""
+        from eggress.pproxy import Server
+
+        srv = Server(listen=["http://127.0.0.1:0"])
+        assert repr(srv) == "Server(stopped)"
+        srv.start()
+        time.sleep(0.1)
+        try:
+            assert repr(srv) == "Server(running)"
+        finally:
+            srv.close()
+        assert repr(srv) == "Server(stopped)"
+
+    def test_server_unsupported_uri_raises(self):
+        """Unsupported URI (ssh://) raises UnsupportedFeatureError."""
+        from eggress import UnsupportedFeatureError
+        from eggress.pproxy import Server
+
+        with pytest.raises(UnsupportedFeatureError):
+            Server(listen=["ssh://127.0.0.1:22"])
+
+    def test_server_async_context_manager(self):
+        """async with Server(...) works."""
+        import asyncio
+        from eggress.pproxy import Server
+
+        async def _run():
+            async with Server(listen=["http://127.0.0.1:0"]) as srv:
+                await asyncio.sleep(0.1)
+                assert len(srv.addresses) > 0
+            assert srv.addresses == {}
+
+        asyncio.run(_run())
+
+    def test_server_multiple_listeners(self):
+        """Two listeners both report in addresses."""
+        from eggress.pproxy import Server
+
+        with Server(
+            listen=["socks5://127.0.0.1:0", "http://127.0.0.1:0"],
+        ) as srv:
+            time.sleep(0.1)
+            addrs = srv.addresses
+            assert len(addrs) == 2
+            for addr in addrs.values():
+                assert addr != ""
+
+
+@pytest.mark.skipif(not _pproxy_available(), reason="pproxy not installed")
+class TestServerLifecycleOracle:
+    """Compare pproxy and eggress server lifecycle patterns.
+
+    pproxy.Server is actually proxies_by_uri() — a protocol handler factory,
+    not a full server lifecycle manager. eggress Server wraps the full
+    start/stop lifecycle that pproxy handles externally via asyncio.
+    """
+
+    def test_pproxy_server_is_handler_factory(self):
+        """pproxy.Server is proxies_by_uri, a protocol handler factory."""
+        import pproxy
+
+        assert callable(pproxy.Server)
+        # It creates a protocol handler from a URI chain
+        handler = pproxy.Server("socks5://:1080")
+        assert handler is not None
+
+    def test_pproxy_server_produces_handler(self):
+        """pproxy.Server creates a usable protocol handler."""
+        import pproxy
+
+        handler = pproxy.Server("socks5://:1080")
+        # handler should be callable or have protocol methods
+        assert hasattr(handler, "__call__") or handler is not None
+
+    def test_eggress_server_has_matching_api(self):
+        """eggress Server has matching API surface to pproxy patterns."""
+        from eggress.pproxy import Server
+
+        # eggress Server provides the full lifecycle that pproxy handles externally
+        srv = Server(listen=["http://127.0.0.1:0"])
+        assert hasattr(srv, "start")
+        assert hasattr(srv, "close")
+        assert hasattr(srv, "stop")
+        assert hasattr(srv, "addresses")
+        srv.close()

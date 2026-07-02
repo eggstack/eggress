@@ -8,7 +8,10 @@ from eggress._eggress import (
     InternalError,
 )
 
+from eggress.pproxy import AlreadyStartedError
+
 __all__ = [
+    "AlreadyStartedError",
     "EggressError",
     "ConfigError",
     "StartupError",

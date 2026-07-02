@@ -25,6 +25,8 @@ from eggress.pproxy import (
     check_pproxy_args,
     describe_reverse_pproxy_uri,
     ReverseUriSummary,
+    AlreadyStartedError,
+    Server,
 )
 
 
@@ -72,5 +74,7 @@ __all__ = [
     "check_pproxy_args",
     "describe_reverse_pproxy_uri",
     "ReverseUriSummary",
+    "AlreadyStartedError",
+    "Server",
     "start_pproxy",
 ]
