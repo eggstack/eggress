@@ -267,6 +267,9 @@ mod tests {
         server_state
             .dropped_stream_limit
             .store(2, std::sync::atomic::Ordering::Relaxed);
+        server_state
+            .dropped_pending_limit
+            .store(3, std::sync::atomic::Ordering::Relaxed);
         registry.register(ReverseServerEntry {
             id: ReverseServerId::from("rev-1"),
             control_bind: "127.0.0.1:8080".to_string(),
@@ -288,6 +291,7 @@ mod tests {
         assert_eq!(servers[0]["active_streams"], 7);
         assert_eq!(servers[0]["denied_bind"], 1);
         assert_eq!(servers[0]["dropped_stream_limit"], 2);
+        assert_eq!(servers[0]["dropped_pending_limit"], 3);
     }
 
     #[test]

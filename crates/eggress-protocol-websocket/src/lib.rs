@@ -139,10 +139,20 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
         }
 
         match Pin::new(&mut self.write_half).start_send(Message::Binary(buf.to_vec().into())) {
-            Ok(()) => Poll::Ready(Ok(buf.len())),
-            Err(e) => Poll::Ready(Err(std::io::Error::other(WebSocketError::Protocol(
-                e.to_string(),
-            )))),
+            Ok(()) => {}
+            Err(e) => {
+                return Poll::Ready(Err(std::io::Error::other(WebSocketError::Protocol(
+                    e.to_string(),
+                ))));
+            }
+        }
+
+        match Pin::new(&mut self.write_half).poll_flush(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(buf.len())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
+                WebSocketError::Protocol(e.to_string()),
+            ))),
+            Poll::Pending => Poll::Ready(Ok(buf.len())),
         }
     }
 
@@ -327,6 +337,242 @@ mod tests {
         let (mut sink, _stream) = ws_stream.split();
 
         sink.send(Message::Close(None)).await.unwrap();
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_ping_pong_skipped() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let mut bs = server.accept_upgrade(stream).await.unwrap();
+            let mut buf = [0u8; 10];
+            bs.read_exact(&mut buf).await.unwrap();
+            assert_eq!(&buf, b"after-ping");
+        });
+
+        let (ws_stream, _) = tokio_tungstenite::connect_async(format!("ws://{}", server_addr))
+            .await
+            .unwrap();
+        let (mut sink, _stream) = ws_stream.split();
+
+        sink.send(Message::Ping(b"ping-data".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Pong(b"pong-data".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Binary(b"after-ping".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Close(None)).await.unwrap();
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_text_frame_skipped() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let mut bs = server.accept_upgrade(stream).await.unwrap();
+            let mut buf = [0u8; 4];
+            bs.read_exact(&mut buf).await.unwrap();
+            assert_eq!(&buf, b"data");
+        });
+
+        let (ws_stream, _) = tokio_tungstenite::connect_async(format!("ws://{}", server_addr))
+            .await
+            .unwrap();
+        let (mut sink, _stream) = ws_stream.split();
+
+        sink.send(Message::Text("skipped-text".into()))
+            .await
+            .unwrap();
+        sink.send(Message::Binary(b"data".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Close(None)).await.unwrap();
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_partial_read_buffering() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let mut bs = server.accept_upgrade(stream).await.unwrap();
+
+            let mut buf1 = [0u8; 5];
+            bs.read_exact(&mut buf1).await.unwrap();
+            assert_eq!(&buf1, b"hello");
+
+            let mut buf2 = [0u8; 5];
+            bs.read_exact(&mut buf2).await.unwrap();
+            assert_eq!(&buf2, b"world");
+
+            let mut buf3 = [0u8; 4];
+            bs.read_exact(&mut buf3).await.unwrap();
+            assert_eq!(&buf3, b"done");
+        });
+
+        let (ws_stream, _) = tokio_tungstenite::connect_async(format!("ws://{}", server_addr))
+            .await
+            .unwrap();
+        let (mut sink, _stream) = ws_stream.split();
+
+        sink.send(Message::Binary(b"helloworld".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Binary(b"done".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Close(None)).await.unwrap();
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_accept_upgrade_with_config() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+                .max_message_size(Some(8192));
+            let mut bs = server
+                .accept_upgrade_with_config(stream, config)
+                .await
+                .unwrap();
+            let mut buf = [0u8; 6];
+            bs.read_exact(&mut buf).await.unwrap();
+            assert_eq!(&buf, b"config");
+        });
+
+        let (ws_stream, _) = tokio_tungstenite::connect_async(format!("ws://{}", server_addr))
+            .await
+            .unwrap();
+        let (mut sink, _stream) = ws_stream.split();
+
+        sink.send(Message::Binary(b"config".to_vec().into()))
+            .await
+            .unwrap();
+        sink.send(Message::Close(None)).await.unwrap();
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bidirectional_large_payload() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let mut bs = server.accept_upgrade(stream).await.unwrap();
+
+            let mut buf = [0u8; 65536];
+            bs.read_exact(&mut buf).await.unwrap();
+
+            bs.write_all(&buf).await.unwrap();
+            bs.shutdown().await.unwrap();
+        });
+
+        let (ws_stream, _) = tokio_tungstenite::connect_async(format!("ws://{}", server_addr))
+            .await
+            .unwrap();
+        let (mut sink, mut stream) = ws_stream.split();
+
+        let payload: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
+        sink.send(Message::Binary(payload.clone().into()))
+            .await
+            .unwrap();
+
+        let mut received = Vec::new();
+        loop {
+            match stream.next().await {
+                Some(Ok(Message::Binary(data))) => {
+                    received.extend_from_slice(&data);
+                    if received.len() >= 65536 {
+                        break;
+                    }
+                }
+                Some(Ok(Message::Close(_))) => break,
+                _ => break,
+            }
+        }
+        assert_eq!(&received, &payload);
+
+        sink.send(Message::Close(None)).await.unwrap();
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_websocket_error_display() {
+        let err = WebSocketError::Handshake("test handshake".into());
+        assert!(err.to_string().contains("test handshake"));
+
+        let err = WebSocketError::Connect("test connect".into());
+        assert!(err.to_string().contains("test connect"));
+
+        let err = WebSocketError::Protocol("test protocol".into());
+        assert!(err.to_string().contains("test protocol"));
+
+        let err = WebSocketError::MessageTooLarge {
+            size: 2048,
+            max: 1024,
+        };
+        assert!(err.to_string().contains("2048"));
+        assert!(err.to_string().contains("1024"));
+    }
+
+    #[tokio::test]
+    async fn test_websocket_client_new() {
+        let client = WebSocketTunnelClient::new(4096);
+        assert_eq!(client.max_message_size, 4096);
+
+        let client = WebSocketTunnelClient::with_default_config();
+        assert_eq!(client.max_message_size, DEFAULT_MAX_MESSAGE_SIZE);
+    }
+
+    #[tokio::test]
+    async fn test_websocket_client_connect() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let mut bs = server.accept_upgrade(stream).await.unwrap();
+            let mut buf = [0u8; 5];
+            bs.read_exact(&mut buf).await.unwrap();
+            bs.write_all(b"reply").await.unwrap();
+            bs.shutdown().await.unwrap();
+        });
+
+        let client = WebSocketTunnelClient::with_default_config();
+        let mut bs = client
+            .connect(&format!("ws://{}", server_addr))
+            .await
+            .unwrap();
+        bs.write_all(b"hello").await.unwrap();
+        let mut reply = [0u8; 5];
+        bs.read_exact(&mut reply).await.unwrap();
+        assert_eq!(&reply, b"reply");
 
         server_handle.await.unwrap();
     }

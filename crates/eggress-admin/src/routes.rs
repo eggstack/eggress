@@ -214,8 +214,10 @@ pub async fn handle_request(
                         "control_bind": e.control_bind,
                         "active_control": e.state.active_control,
                         "active_streams": e.state.active_streams,
+                        "pending_external": e.state.pending_external,
                         "denied_bind": e.state.denied_bind,
                         "dropped_stream_limit": e.state.dropped_stream_limit,
+                        "dropped_pending_limit": e.state.dropped_pending_limit,
                     })
                 })
                 .collect();

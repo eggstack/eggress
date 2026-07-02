@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use prometheus_client::encoding::EncodeLabelSet;
@@ -133,15 +134,10 @@ pub struct MetricsRegistry {
     ss_udp_decrypt_failures_total: Counter,
     ss_udp_unsupported_method_rejects_total: Counter,
     ss_udp_active_flows: Gauge,
-    h2_streams_total: Counter,
-    h2_streams_active: Gauge,
-    h2_stream_errors_total: Counter,
-    websocket_sessions_total: Counter,
-    websocket_sessions_active: Gauge,
-    websocket_frame_errors_total: Counter,
-    raw_tunnel_sessions_total: Counter,
-    raw_tunnel_sessions_active: Gauge,
-    tls_alpn_negotiation_failures_total: Counter,
+    transparent_accepted_bridged: Mutex<Option<Arc<AtomicU64>>>,
+    transparent_dst_failed_bridged: Mutex<Option<Arc<AtomicU64>>>,
+    transparent_prev_accepted: Mutex<u64>,
+    transparent_prev_dst_failed: Mutex<u64>,
     bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
     bridged_shadowsocks_metrics:
         Mutex<Option<(Arc<ShadowsocksMetrics>, BridgedShadowsocksSnapshot)>>,
@@ -628,69 +624,6 @@ impl MetricsRegistry {
             ss_udp_active_flows.clone(),
         );
 
-        let h2_streams_total = Counter::default();
-        registry.register(
-            "eggress_h2_streams_total",
-            "Total H2 CONNECT streams accepted",
-            h2_streams_total.clone(),
-        );
-
-        let h2_streams_active = Gauge::default();
-        registry.register(
-            "eggress_h2_streams_active",
-            "Currently active H2 streams",
-            h2_streams_active.clone(),
-        );
-
-        let h2_stream_errors_total = Counter::default();
-        registry.register(
-            "eggress_h2_stream_errors_total",
-            "H2 stream errors (RST_STREAM, etc.)",
-            h2_stream_errors_total.clone(),
-        );
-
-        let websocket_sessions_total = Counter::default();
-        registry.register(
-            "eggress_websocket_sessions_total",
-            "Total WebSocket tunnel sessions",
-            websocket_sessions_total.clone(),
-        );
-
-        let websocket_sessions_active = Gauge::default();
-        registry.register(
-            "eggress_websocket_sessions_active",
-            "Currently active WebSocket sessions",
-            websocket_sessions_active.clone(),
-        );
-
-        let websocket_frame_errors_total = Counter::default();
-        registry.register(
-            "eggress_websocket_frame_errors_total",
-            "WebSocket frame decode errors",
-            websocket_frame_errors_total.clone(),
-        );
-
-        let raw_tunnel_sessions_total = Counter::default();
-        registry.register(
-            "eggress_raw_tunnel_sessions_total",
-            "Total raw tunnel sessions",
-            raw_tunnel_sessions_total.clone(),
-        );
-
-        let raw_tunnel_sessions_active = Gauge::default();
-        registry.register(
-            "eggress_raw_tunnel_sessions_active",
-            "Currently active raw tunnel sessions",
-            raw_tunnel_sessions_active.clone(),
-        );
-
-        let tls_alpn_negotiation_failures_total = Counter::default();
-        registry.register(
-            "eggress_tls_alpn_negotiation_failures_total",
-            "TLS ALPN negotiation failures",
-            tls_alpn_negotiation_failures_total.clone(),
-        );
-
         Self {
             registry,
             connections_active,
@@ -755,15 +688,10 @@ impl MetricsRegistry {
             ss_udp_decrypt_failures_total,
             ss_udp_unsupported_method_rejects_total,
             ss_udp_active_flows,
-            h2_streams_total,
-            h2_streams_active,
-            h2_stream_errors_total,
-            websocket_sessions_total,
-            websocket_sessions_active,
-            websocket_frame_errors_total,
-            raw_tunnel_sessions_total,
-            raw_tunnel_sessions_active,
-            tls_alpn_negotiation_failures_total,
+            transparent_accepted_bridged: Mutex::new(None),
+            transparent_dst_failed_bridged: Mutex::new(None),
+            transparent_prev_accepted: Mutex::new(0),
+            transparent_prev_dst_failed: Mutex::new(0),
             bridged_udp_metrics: Mutex::new(None),
             bridged_shadowsocks_metrics: Mutex::new(None),
         }
@@ -1261,6 +1189,26 @@ impl MetricsRegistry {
             prev.udp_unsupported_method_rejects_total = cur;
         }
 
+        // Sync transparent proxy counters from bridged SupervisorState atomics
+        if let Some(accepted) = self.transparent_accepted_bridged.lock().unwrap().as_ref() {
+            let cur = accepted.load(Ordering::Relaxed);
+            let mut prev = self.transparent_prev_accepted.lock().unwrap();
+            let delta = cur.saturating_sub(*prev);
+            if delta > 0 {
+                self.transparent_connections_accepted.inc_by(delta);
+            }
+            *prev = cur;
+        }
+        if let Some(dst_failed) = self.transparent_dst_failed_bridged.lock().unwrap().as_ref() {
+            let cur = dst_failed.load(Ordering::Relaxed);
+            let mut prev = self.transparent_prev_dst_failed.lock().unwrap();
+            let delta = cur.saturating_sub(*prev);
+            if delta > 0 {
+                self.transparent_original_dst_failed.inc_by(delta);
+            }
+            *prev = cur;
+        }
+
         let mut buf = String::new();
         encode(&mut buf, &self.registry).unwrap();
         buf
@@ -1353,6 +1301,13 @@ impl MetricsRegistry {
         self.udp_upstream_associations_active.get()
     }
 
+    /// Bridge the supervisor's transparent proxy atomic counters so that
+    /// `render_prometheus()` exposes live transparent proxy counters.
+    pub fn set_transparent_counters(&self, accepted: Arc<AtomicU64>, dst_failed: Arc<AtomicU64>) {
+        *self.transparent_accepted_bridged.lock().unwrap() = Some(accepted);
+        *self.transparent_dst_failed_bridged.lock().unwrap() = Some(dst_failed);
+    }
+
     pub fn record_upstream_open(&self, protocol: &str, outcome: &str) {
         self.upstream_open_total
             .get_or_create(&UpstreamOpenLabels {
@@ -1403,45 +1358,6 @@ impl MetricsRegistry {
 
     pub fn record_platform_capability_check_failure(&self) {
         self.platform_capability_check_failures.inc();
-    }
-
-    pub fn record_h2_stream_opened(&self) {
-        self.h2_streams_active.inc();
-        self.h2_streams_total.inc();
-    }
-
-    pub fn record_h2_stream_closed(&self) {
-        self.h2_streams_active.dec();
-    }
-
-    pub fn record_h2_stream_error(&self) {
-        self.h2_stream_errors_total.inc();
-    }
-
-    pub fn record_websocket_session_opened(&self) {
-        self.websocket_sessions_active.inc();
-        self.websocket_sessions_total.inc();
-    }
-
-    pub fn record_websocket_session_closed(&self) {
-        self.websocket_sessions_active.dec();
-    }
-
-    pub fn record_websocket_frame_error(&self) {
-        self.websocket_frame_errors_total.inc();
-    }
-
-    pub fn record_raw_tunnel_session_opened(&self) {
-        self.raw_tunnel_sessions_active.inc();
-        self.raw_tunnel_sessions_total.inc();
-    }
-
-    pub fn record_raw_tunnel_session_closed(&self) {
-        self.raw_tunnel_sessions_active.dec();
-    }
-
-    pub fn record_tls_alpn_negotiation_failure(&self) {
-        self.tls_alpn_negotiation_failures_total.inc();
     }
 }
 
@@ -1518,15 +1434,6 @@ mod tests {
         assert!(output.contains("eggress_shadowsocks_udp_decrypt_failures_total"));
         assert!(output.contains("eggress_shadowsocks_udp_unsupported_method_rejects_total"));
         assert!(output.contains("eggress_shadowsocks_udp_active_flows"));
-        assert!(output.contains("eggress_h2_streams_total"));
-        assert!(output.contains("eggress_h2_streams_active"));
-        assert!(output.contains("eggress_h2_stream_errors_total"));
-        assert!(output.contains("eggress_websocket_sessions_total"));
-        assert!(output.contains("eggress_websocket_sessions_active"));
-        assert!(output.contains("eggress_websocket_frame_errors_total"));
-        assert!(output.contains("eggress_raw_tunnel_sessions_total"));
-        assert!(output.contains("eggress_raw_tunnel_sessions_active"));
-        assert!(output.contains("eggress_tls_alpn_negotiation_failures_total"));
     }
 
     #[test]
@@ -2349,69 +2256,16 @@ mod tests {
     }
 
     #[test]
-    fn advanced_transport_metrics_appear_in_prometheus() {
+    fn transparent_proxy_bridged_metrics_appear_in_prometheus() {
         let m = MetricsRegistry::new();
-        m.record_h2_stream_opened();
-        m.record_h2_stream_opened();
-        m.record_h2_stream_closed();
-        m.record_h2_stream_error();
-        m.record_websocket_session_opened();
-        m.record_websocket_session_opened();
-        m.record_websocket_session_closed();
-        m.record_websocket_frame_error();
-        m.record_raw_tunnel_session_opened();
-        m.record_raw_tunnel_session_opened();
-        m.record_raw_tunnel_session_closed();
-        m.record_tls_alpn_negotiation_failure();
-        let output = m.render_prometheus();
-        assert!(output.contains("eggress_h2_streams_total"));
-        assert!(output.contains("eggress_h2_streams_active"));
-        assert!(output.contains("eggress_h2_stream_errors_total"));
-        assert!(output.contains("eggress_websocket_sessions_total"));
-        assert!(output.contains("eggress_websocket_sessions_active"));
-        assert!(output.contains("eggress_websocket_frame_errors_total"));
-        assert!(output.contains("eggress_raw_tunnel_sessions_total"));
-        assert!(output.contains("eggress_raw_tunnel_sessions_active"));
-        assert!(output.contains("eggress_tls_alpn_negotiation_failures_total"));
-    }
+        let accepted = Arc::new(AtomicU64::new(0));
+        let dst_failed = Arc::new(AtomicU64::new(0));
+        m.set_transparent_counters(accepted.clone(), dst_failed.clone());
 
-    #[test]
-    fn advanced_transport_active_gauges_return_to_zero() {
-        let m = MetricsRegistry::new();
-        m.record_h2_stream_opened();
-        m.record_h2_stream_opened();
-        m.record_h2_stream_closed();
-        m.record_h2_stream_closed();
-        m.record_websocket_session_opened();
-        m.record_websocket_session_closed();
-        m.record_raw_tunnel_session_opened();
-        m.record_raw_tunnel_session_closed();
+        accepted.fetch_add(5, std::sync::atomic::Ordering::Relaxed);
+        dst_failed.fetch_add(2, std::sync::atomic::Ordering::Relaxed);
         let output = m.render_prometheus();
-        for line in output.lines() {
-            if line.contains("eggress_h2_streams_active") && !line.starts_with('#') {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if let Some(val) = parts.last() {
-                    if let Ok(n) = val.parse::<f64>() {
-                        assert_eq!(n, 0.0, "h2 active streams should return to 0");
-                    }
-                }
-            }
-            if line.contains("eggress_websocket_sessions_active") && !line.starts_with('#') {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if let Some(val) = parts.last() {
-                    if let Ok(n) = val.parse::<f64>() {
-                        assert_eq!(n, 0.0, "websocket active sessions should return to 0");
-                    }
-                }
-            }
-            if line.contains("eggress_raw_tunnel_sessions_active") && !line.starts_with('#') {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if let Some(val) = parts.last() {
-                    if let Ok(n) = val.parse::<f64>() {
-                        assert_eq!(n, 0.0, "raw tunnel active sessions should return to 0");
-                    }
-                }
-            }
-        }
+        assert!(output.contains("eggress_transparent_connections_accepted_total"));
+        assert!(output.contains("eggress_transparent_original_dst_failed_total"));
     }
 }

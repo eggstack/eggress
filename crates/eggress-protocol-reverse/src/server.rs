@@ -131,10 +131,14 @@ pub struct ReverseServerState {
     pub active_control: AtomicU32,
     /// Number of currently-active external streams being relayed.
     pub active_streams: AtomicU32,
+    /// Number of external clients waiting for a control connection.
+    pub pending_external: AtomicU32,
     /// Number of listeners denied because of allow_bind.
     pub denied_bind: AtomicU32,
     /// Number of streams dropped because max_streams_per_listener was reached.
     pub dropped_stream_limit: AtomicU32,
+    /// Number of external clients dropped because max_pending_external was reached.
+    pub dropped_pending_limit: AtomicU32,
 }
 
 impl ReverseServerState {
@@ -143,8 +147,10 @@ impl ReverseServerState {
         ReverseServerStateSnapshot {
             active_control: self.active_control.load(Ordering::Relaxed),
             active_streams: self.active_streams.load(Ordering::Relaxed),
+            pending_external: self.pending_external.load(Ordering::Relaxed),
             denied_bind: self.denied_bind.load(Ordering::Relaxed),
             dropped_stream_limit: self.dropped_stream_limit.load(Ordering::Relaxed),
+            dropped_pending_limit: self.dropped_pending_limit.load(Ordering::Relaxed),
         }
     }
 }
@@ -154,8 +160,10 @@ impl ReverseServerState {
 pub struct ReverseServerStateSnapshot {
     pub active_control: u32,
     pub active_streams: u32,
+    pub pending_external: u32,
     pub denied_bind: u32,
     pub dropped_stream_limit: u32,
+    pub dropped_pending_limit: u32,
 }
 
 /// The reverse proxy server (acceptor side).
@@ -440,17 +448,23 @@ impl ReverseServer {
             None
         };
 
-        // pproxy model: 1 control connection == 1 external listener. We enforce
-        // a configurable cap (default 1) to keep the model but allow operators
-        // to relax it.
+        // pproxy model: 1 control connection == 1 external listener. Enforce
+        // a configurable cap (default 1). Excess connections are rejected.
         let listener_budget = config.max_listeners_per_client.max(1);
-        if state.active_control.load(Ordering::Relaxed) > listener_budget {
+        if state.active_control.load(Ordering::Relaxed) >= listener_budget {
             warn!(
                 peer = %peer_addr,
                 active = state.active_control.load(Ordering::Relaxed),
                 max_listeners_per_client = listener_budget,
-                "exceeded max_listeners_per_client, allowing but logging"
+                "rejecting control connection: max_listeners_per_client reached"
             );
+            if let Some(m) = metrics {
+                m.record_control_rejected(peer_addr, "max_listeners_per_client");
+            }
+            state.active_control.fetch_sub(1, Ordering::Relaxed);
+            return Err(ProtocolError::ConfigInvalid(format!(
+                "max_listeners_per_client={listener_budget} reached"
+            )));
         }
 
         state.active_control.fetch_add(1, Ordering::Relaxed);
@@ -495,9 +509,25 @@ impl ReverseServer {
                                 drop(external_stream);
                                 continue;
                             }
+                            // Enforce max_pending_external: reject if too many
+                            // clients are already waiting for a control connection.
+                            let pending = state.pending_external.load(Ordering::Relaxed);
+                            if pending >= config.max_pending_external {
+                                warn!(
+                                    peer = %peer_addr,
+                                    pending,
+                                    max = config.max_pending_external,
+                                    "dropping external client: max_pending_external reached"
+                                );
+                                state.dropped_pending_limit.fetch_add(1, Ordering::Relaxed);
+                                drop(external_stream);
+                                continue;
+                            }
+                            state.pending_external.fetch_add(1, Ordering::Relaxed);
                             // Get an available control connection
                             match control_rx.recv().await {
                                 Some(control) => {
+                                    state.pending_external.fetch_sub(1, Ordering::Relaxed);
                                     let metrics = metrics.clone();
                                     let state = state.clone();
                                     state.active_streams.fetch_add(1, Ordering::Relaxed);
@@ -532,6 +562,7 @@ impl ReverseServer {
                                     });
                                 }
                                 None => {
+                                    state.pending_external.fetch_sub(1, Ordering::Relaxed);
                                     warn!(peer = %peer_addr, "no control connections available, rejecting external client");
                                     drop(external_stream);
                                 }
@@ -615,13 +646,17 @@ mod tests {
         let s = ReverseServerState::default();
         s.active_control.fetch_add(3, Ordering::Relaxed);
         s.active_streams.fetch_add(2, Ordering::Relaxed);
+        s.pending_external.fetch_add(1, Ordering::Relaxed);
         s.denied_bind.fetch_add(1, Ordering::Relaxed);
         s.dropped_stream_limit.fetch_add(4, Ordering::Relaxed);
+        s.dropped_pending_limit.fetch_add(5, Ordering::Relaxed);
         let snap = s.snapshot();
         assert_eq!(snap.active_control, 3);
         assert_eq!(snap.active_streams, 2);
+        assert_eq!(snap.pending_external, 1);
         assert_eq!(snap.denied_bind, 1);
         assert_eq!(snap.dropped_stream_limit, 4);
+        assert_eq!(snap.dropped_pending_limit, 5);
     }
 
     #[test]

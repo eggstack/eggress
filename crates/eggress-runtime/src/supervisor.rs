@@ -543,7 +543,7 @@ impl ServiceSupervisor {
         let state = Arc::new(RuntimeState {
             snapshot: snapshot.clone(),
             routing: routing.clone(),
-            metrics,
+            metrics: metrics.clone(),
             readiness,
             start_time: Instant::now(),
             active_connections,
@@ -559,6 +559,12 @@ impl ServiceSupervisor {
             reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
             reverse_metrics,
         });
+
+        // Bridge transparent proxy atomics to MetricsRegistry for /metrics
+        metrics.set_transparent_counters(
+            state.transparent_accepted_total.clone(),
+            state.transparent_original_dst_failed_total.clone(),
+        );
 
         let cancel = CancellationToken::new();
         let listener_cancel = CancellationToken::new();

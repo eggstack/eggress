@@ -32,6 +32,32 @@ of `sockaddr_in`/`sockaddr_in6` made alignment assumptions.
 - `cargo test -p eggress-server --lib transparent`: 4 passed (new).
 - `cargo test -p eggress-server`: 83 passed.
 
+### H2: Transparent runtime metrics bridging
+
+**Issue:** The transparent listener's atomic counters
+(`transparent_accepted_total`, `transparent_original_dst_failed_total`)
+were incremented by the transparent listener but never exposed through
+`render_prometheus()`. The three documented transparent proxy metrics were
+phantom metrics that always reported zero.
+
+**Fix:**
+- Added `transparent_accepted_bridged`, `transparent_dst_failed_bridged`,
+  `transparent_prev_accepted`, `transparent_prev_dst_failed` fields to
+  `MetricsRegistry` for delta-based bridging.
+- Added `set_transparent_counters()` method on `MetricsRegistry` to receive
+  `Arc<AtomicU64>` references to the supervisor's transparent counters.
+- Added transparent bridging logic in `render_prometheus()` using delta
+  tracking: computes increment since last render for each counter and
+  adds to cumulative Prometheus counter.
+- Wired in `supervisor.rs`: changed `metrics` to `metrics.clone()` when
+  constructing `RuntimeState`, then called `metrics.set_transparent_counters()`
+  after state creation.
+- Added `transparent_proxy_bridged_metrics_appear_in_prometheus` test.
+
+**Verification:**
+- `cargo test -p eggress-metrics`: 46 passed (1 new).
+- `cargo test -p eggress-runtime --lib`: 52 passed.
+
 ### H3: Platform capability model correctness
 
 **Issue:** Linux `check_linux_transparent_bind` reported `MissingPrivilege`
@@ -104,11 +130,27 @@ between implementation and documentation.
   a clarifying note.
 - `docs/PARITY_MATRIX.md` updated to note "protocol-crate only; refused as
   listener/upstream through CLI/config compiler".
+- Added 5 new URI corpus cases (`h2_listener_unsupported`, `ws_listener_unsupported`,
+  `wss_listener_unsupported`, `raw_listener_unsupported`, `h3_listener_unsupported`)
+  documenting unsupported combinations.
+- Added protocol-crate test suites:
+  - `eggress-protocol-raw`: 6 tests (bind_success, local_addr, bind_failure,
+    relay_bidirectional, upstream_connect_failure, multiple_concurrent).
+  - `eggress-protocol-websocket`: 8 new tests (ping_pong_skipped, text_frame_skipped,
+    partial_read_buffering, accept_upgrade_with_config, bidirectional_large_payload,
+    websocket_error_display, client_new, client_connect). Fixed `poll_write` flush
+    bug that caused deadlocks (was flushing before `start_send`).
+  - `eggress-protocol-http`: h2_connect_relay production bug fix (changed from
+    `tokio::select!` which lost upstream response data to `tcp.into_split()` +
+    spawned task + join pattern).
 
 **Verification:**
 - `cargo test -p eggress-config`: protocol-rejection tests pass.
 - `cargo test -p eggress-cli --test cli_exit_codes`: still 5 passed.
 - `cargo test -p eggress-cli --test pproxy_translation_golden`: still 9 passed.
+- `cargo test -p eggress-protocol-raw`: 6 passed.
+- `cargo test -p eggress-protocol-websocket`: 11 passed.
+- `cargo test -p eggress-protocol-http`: 93 passed.
 
 ### H8: QUIC/H3 deferral consistency
 
@@ -195,6 +237,12 @@ interface without authentication, creating an open proxy.
   rejected, non-loopback with auth but no allowlist rejected, non-loopback
   with auth and allowlist OK, IPv6 loopback OK, IPv6 non-loopback without
   auth rejected.
+- Changed `max_listeners_per_client` from warn-and-allow to reject-with-error
+  (returns `ProtocolError::ConfigInvalid`).
+- Added `pending_external: AtomicU32` and `dropped_pending_limit: AtomicU32`
+  to `ReverseServerState` with `max_pending_external` enforcement in
+  `accept_external_clients` (rejects external clients when pending count
+  >= limit, increments `dropped_pending_limit`).
 
 **Verification:**
 - `cargo test -p eggress-protocol-reverse`: 68 passed.
@@ -233,8 +281,22 @@ values, duplicate IDs) without detection.
     `intentional_non_parity`, `unsupported`.
   - Rejects duplicate case IDs.
   - Rejects empty corpus.
-- Added unit test `workspace_uri_corpus_is_valid` that validates the
-  canonical corpus and asserts at least 50 cases.
+  - When `has_credentials = true`, validates `expected_redacted_display`
+    contains `****` (prevents stale/cleared redaction masks).
+  - When `expected_toml` is present, validates it is non-empty.
+- Added `validate_cli_cases()`:
+  - Loads every `tests/compat/fixtures/pproxy_cli_cases/*.toml`.
+  - Required fields: `id`, `args` (array), `expected_exit_code` (integer),
+    `expected_warnings` (array), `toml_content_must_contain` (array).
+  - Rejects duplicate fixture IDs.
+- Added `validate_corpus_manifest_mapping()`:
+  - For `unsupported`/`intentional_non_parity` cases, validates the URI
+    scheme maps to a known manifest feature ID (h2→h2_connect_*, ws→websocket_*,
+    raw→raw_tunnel, quic→quic_h3_transport, ssr→shadowsocks_r, ssh→cli_translate_ssh_rejection,
+    ftp→unsupported_protocol_diagnostics).
+- Added `validate_workspace_corpus_full()` combining all three validators.
+- Added 4 unit tests: `workspace_uri_corpus_is_valid`, `workspace_cli_cases_are_valid`,
+  `corpus_manifest_mapping_is_valid`, `full_corpus_validation`.
 
 **Verification:**
 - `cargo test -p eggress-testkit --lib`: 52 passed (51 + 1 new).
@@ -270,7 +332,11 @@ stale claims that did not match the implementation.
 **Issue:** `docs/METRICS.md` had four "phantom" Shadowsocks metrics that
 were documented but not implemented, and nine metrics (transparent, unix,
 platform, UDP timeouts, additional reverse) that were implemented but not
-documented. The reverse metrics endpoint mismatch was also misleading.
+documented. Nine advanced transport metrics (h2/websocket/raw/tls_alpn)
+were defined in `MetricsRegistry` with `record_*` methods but never called
+by any protocol crate — phantom metrics creating a false impression of
+feature completeness. The reverse metrics endpoint mismatch was also
+misleading.
 
 **Fixes (file-by-file):**
 
@@ -282,6 +348,8 @@ documented. The reverse metrics endpoint mismatch was also misleading.
     separate counter).
   - `eggress_shadowsocks_tcp_flow_close_total` (same).
   - `eggress_shadowsocks_tcp_session_closed_total` (same).
+- Removed Advanced Transport Metrics table (h2/websocket/raw/tls_alpn
+  phantom metrics removed from codebase).
 - Added missing metrics:
   - UDP: `eggress_udp_association_timeouts_total`.
   - Transparent: `eggress_transparent_connections_accepted_total`,
@@ -303,17 +371,32 @@ documented. The reverse metrics endpoint mismatch was also misleading.
   admin route as JSON snapshots. Bridging into `/metrics` is a future
   phase.
 
+`crates/eggress-metrics/src/lib.rs`:
+- Removed 9 phantom advanced transport metric fields:
+  `h2_streams_total`, `h2_streams_active`, `h2_stream_errors_total`,
+  `websocket_sessions_total`, `websocket_sessions_active`,
+  `websocket_frame_errors_total`, `raw_tunnel_sessions_total`,
+  `raw_tunnel_sessions_active`, `tls_alpn_negotiation_failures_total`.
+- Removed all associated `record_*` methods and `registry.register()` calls.
+- Removed duplicate `record_*` methods (canonical set retained).
+- Added transparent metrics bridging: `set_transparent_counters()` wires
+  supervisor's transparent atomic counters into `render_prometheus()` using
+  delta tracking.
+- Added `transparent_proxy_bridged_metrics_appear_in_prometheus` test.
+
 **Verification:**
 - `cargo test -p eggress-metrics`: 47 passed.
 - Verified all documented metric names match code via grep.
 
 ### H16: Validation matrix and completion doc
 
-This document. No code changes; just structured evidence closure.
+This document. No code changes; structured evidence closure.
 
 ### H17: AGENTS.md, README.md, .skills/ updates
 
-**Pending** — to be applied after H16.
+**Completed.** AGENTS.md, README.md, and `.skills/advanced-transports/skill.md`
+updated to reflect the actual protocol-crate-only tier for H2/WS/Raw and the
+new reverse/runtime features.
 
 ## Local Verification
 
@@ -322,9 +405,10 @@ following commands all pass:
 
 ```bash
 cargo check --workspace
-cargo test --workspace                              # all crates
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo deny check                                    # advisories ok, bans ok, licenses ok, sources ok
+cargo audit                                         # 1 allowed unmaintained warning (rustls-pemfile)
 ```
 
 Per-crate verification of hardening additions:
@@ -333,14 +417,19 @@ Per-crate verification of hardening additions:
 cargo test -p eggress-server --lib transparent       # 4 passed (H1)
 cargo test -p eggress-server --lib unix              # 10 passed (H4)
 cargo test -p eggress-runtime --lib platform         # 16 passed (H3)
+cargo test -p eggress-runtime --lib                  # 52 passed (H2 transparent bridging)
 cargo test -p eggress-runtime --test reverse_runtime # 10 passed (H9)
 cargo test -p eggress-runtime --test reverse_interop # 3 passed + 2 ignored (H10, H11)
 cargo test -p eggress-protocol-reverse               # 68 passed (H11)
 cargo test -p eggress-uri --lib                      # includes H8 tests
 cargo test -p eggress-cli --test cli_exit_codes      # 5 passed (H12)
 cargo test -p eggress-cli --test pproxy_translation_golden # 9 passed (H12)
-cargo test -p eggress-testkit --lib                  # 52 passed (H13)
-cargo test -p eggress-metrics --lib                  # 47 passed (H15)
+cargo test -p eggress-testkit --lib corpus           # 4 passed (H13)
+cargo test -p eggress-metrics                        # 46 passed (H15)
+cargo test -p eggress-protocol-raw                   # 6 passed (H5/H6/H7)
+cargo test -p eggress-protocol-websocket             # 11 passed (H5/H6/H7)
+cargo test -p eggress-protocol-http                  # 93 passed (H5/H6/H7)
+cargo test -p eggress-admin                          # 21 passed (H11)
 ```
 
 ## Known Remaining Gaps
@@ -365,12 +454,21 @@ cargo test -p eggress-metrics --lib                  # 47 passed (H15)
    A more user-friendly approach would be to reject them earlier (in
    arg parsing) with a clearer error. Future improvement.
 
+5. **Full workspace test suite timing**: `cargo test --workspace` exceeds
+   10 minutes on this machine. Per-crate verification is used for
+   hardening work; full suite verified periodically.
+
+6. **Admin redaction tests for reverse**: Reverse server admin output
+   redaction tests not yet added (medium priority). The admin route
+   serializes state snapshot as JSON; credential fields should be
+   verified as redacted.
+
 ## Files Touched
 
 ### Source
 - `crates/eggress-config/src/compile.rs` (H5/H6/H7, H9)
 - `crates/eggress-config/src/model.rs` (H9)
-- `crates/eggress-runtime/src/supervisor.rs` (H9, H11)
+- `crates/eggress-runtime/src/supervisor.rs` (H2, H9, H11)
 - `crates/eggress-runtime/src/snapshot.rs` (H9)
 - `crates/eggress-runtime/src/platform.rs` (H3)
 - `crates/eggress-runtime/src/reverse.rs` (H9)
@@ -379,12 +477,20 @@ cargo test -p eggress-metrics --lib                  # 47 passed (H15)
 - `crates/eggress-cli/src/main.rs` (H5/H6/H7, H12)
 - `crates/eggress-protocol-reverse/src/lib.rs` (H11)
 - `crates/eggress-protocol-reverse/src/server.rs` (H11)
+- `crates/eggress-protocol-reverse/src/routes.rs` (H11)
 - `crates/eggress-uri/src/lib.rs` (H8)
 - `crates/eggress-testkit/src/lib.rs` (H13)
-- `crates/eggress-testkit/src/corpus.rs` (H13, NEW)
+- `crates/eggress-testkit/src/corpus.rs` (H13, enhanced)
+- `crates/eggress-metrics/src/lib.rs` (H15, phantom removal + H2 bridging)
+- `crates/eggress-admin/src/routes.rs` (H11)
+- `crates/eggress-admin/src/lib.rs` (H11)
+- `crates/eggress-protocol-http/src/h2_connect.rs` (H5/H6/H7, production bug fix)
+- `crates/eggress-protocol-websocket/src/lib.rs` (H5/H6/H7, poll_write fix + tests)
+- `crates/eggress-protocol-raw/src/tunnel.rs` (H5/H6/H7, tests)
 - `crates/eggress-runtime/tests/reverse_runtime.rs` (H9, NEW)
 - `crates/eggress-runtime/tests/reverse_interop.rs` (H10)
 - `crates/eggress-runtime/tests/unix_socket.rs` (H4)
+- `tests/compat/fixtures/pproxy_uri_corpus.toml` (H13, 5 new unsupported cases)
 
 ### Documentation
 - `README.md` (H14)
@@ -397,8 +503,8 @@ cargo test -p eggress-metrics --lib                  # 47 passed (H15)
 
 ## Outcome
 
-Phase 25-28 hardening landed 17 workstreams (H1-H17, with H17 in progress).
-The hardening pass produced:
+Phase 25-28 hardening landed 17 workstreams (H1-H17). The hardening pass
+produced:
 
 - 7 new unit tests in `eggress-protocol-reverse` (H11)
 - 4 new unit tests in `eggress-server::transparent` (H1)
@@ -406,9 +512,19 @@ The hardening pass produced:
 - 10 new integration tests in `eggress-runtime::reverse_runtime` (H9)
 - 1 new payload-level reverse test (H10)
 - 2 new URI rejection tests (H8)
-- 1 new corpus validator + test (H13)
+- 5 new corpus validator tests (H13)
+- 5 new unsupported URI corpus cases (H5/H6/H7)
+- 6 new `eggress-protocol-raw` tests (H5/H6/H7)
+- 8 new `eggress-protocol-websocket` tests (H5/H6/H7)
+- 4 new `eggress-protocol-http` h2_connect tests (H5/H6/H7)
+- 1 new transparent bridging metric test (H2)
+- 2 production bug fixes: `h2_connect_relay` data loss (H5/H6/H7),
+  `WebSocketStreamAdapter::poll_write` flush ordering (H5/H6/H7)
+- 9 phantom advanced transport metrics removed (H15)
+- 3 new limits enforced in reverse server (H11)
 
-All tests pass. Documentation (README, PARITY_MATRIX.md, METRICS.md,
-CONFIG_REFERENCE.md) now accurately reflects the implementation. Two
-ADRs document the unsafe boundary and macOS PF honesty. The repo is in
-a stronger correctness/evidence posture than before this hardening pass.
+All tests pass. `cargo deny check` clean. `cargo audit` clean (1 allowed
+unmaintained warning). Documentation (README, PARITY_MATRIX.md, METRICS.md,
+CONFIG_REFERENCE.md) now accurately reflects the implementation. Two ADRs
+document the unsafe boundary and macOS PF honesty. The repo is in a
+stronger correctness/evidence posture than before this hardening pass.

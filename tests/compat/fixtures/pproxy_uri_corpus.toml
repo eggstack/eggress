@@ -1423,3 +1423,62 @@ expected_toml = '''
 id = "pproxy-upstream-0"
 uri = "trojan:my-secret-password@server:443"
 '''
+
+# ============================================================================
+# 33. Advanced transport unsupported combinations (H5/H6/H7)
+# ============================================================================
+
+[[cases]]
+id = "h2_listener_unsupported"
+raw_uri = "h2://0.0.0.0:8443"
+pproxy_interpretation = "Error: 'h2' is not a valid listener protocol in pproxy"
+expected_interpretation = "Unsupported: h2 is a protocol-crate only transport, not a listener"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "h2://0.0.0.0:8443"
+expected_warnings = []
+expected_error = "UnsupportedTransportWrapper"
+
+[[cases]]
+id = "ws_listener_unsupported"
+raw_uri = "ws://0.0.0.0:8080"
+pproxy_interpretation = "Error: 'ws' is not a valid listener protocol in pproxy"
+expected_interpretation = "Unsupported: ws is a protocol-crate only transport, not a listener"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "ws://0.0.0.0:8080"
+expected_warnings = []
+expected_error = "UnsupportedTransportWrapper"
+
+[[cases]]
+id = "wss_listener_unsupported"
+raw_uri = "wss://0.0.0.0:8443"
+pproxy_interpretation = "Error: 'wss' is not a valid listener protocol in pproxy"
+expected_interpretation = "Unsupported: wss is a protocol-crate only transport, not a listener"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "wss://0.0.0.0:8443"
+expected_warnings = []
+expected_error = "UnsupportedTransportWrapper"
+
+[[cases]]
+id = "raw_listener_unsupported"
+raw_uri = "raw://0.0.0.0:9090"
+pproxy_interpretation = "Error: 'raw' is not a valid listener protocol in pproxy"
+expected_interpretation = "Unsupported: raw is a protocol-crate only transport, not a listener"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "raw://0.0.0.0:9090"
+expected_warnings = []
+expected_error = "UnsupportedTransportWrapper"
+
+[[cases]]
+id = "h3_listener_unsupported"
+raw_uri = "h3://0.0.0.0:8443"
+pproxy_interpretation = "Error: 'h3' is not a valid listener protocol in pproxy"
+expected_interpretation = "Unsupported: h3 (QUIC/HTTP3) is deferred"
+compatibility_tier = "unsupported"
+has_credentials = false
+expected_redacted_display = "h3://0.0.0.0:8443"
+expected_warnings = []
+expected_error = "UnsupportedProtocol"
