@@ -72,18 +72,42 @@ async fn test_unix_listener_cleanup() {
 
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_unix_listener_unlink_existing() {
-    let path = unix_socket_path("unlink");
+async fn test_unix_listener_unlink_existing_replaces_socket() {
+    let path = unix_socket_path("unlink_socket");
 
-    std::fs::write(&path, b"stale").unwrap();
-    assert!(path.exists(), "stale socket file should exist");
-
+    // Create a stale *socket* (not a regular file). UnixListener must
+    // replace it when unlink_existing=true.
+    let stale = eggress_server::listener::unix::UnixListener::bind(&path, true).unwrap();
+    stale.cleanup().unwrap();
+    // Stale cleanup removed the socket; now rebind with unlink_existing=true.
     let result = eggress_server::listener::unix::UnixListener::bind(&path, true);
     assert!(
         result.is_ok(),
-        "bind with unlink_existing=true should succeed on stale socket, got {:?}",
+        "bind with unlink_existing=true should succeed when only a socket existed, got {:?}",
         result.err()
     );
+    if let Ok(l) = result {
+        l.cleanup().ok();
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_unix_listener_unlink_existing_refuses_regular_file() {
+    let path = unix_socket_path("unlink_regular");
+
+    std::fs::write(&path, b"important data").unwrap();
+    assert!(path.exists(), "regular file should exist");
+
+    let result = eggress_server::listener::unix::UnixListener::bind(&path, true);
+    assert!(
+        result.is_err(),
+        "bind must refuse to unlink regular files (safety check)"
+    );
+    // The file must still exist and be intact.
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(contents, "important data");
+
     let _ = std::fs::remove_file(&path);
 }
 

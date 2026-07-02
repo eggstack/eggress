@@ -472,6 +472,7 @@ pub struct RuntimeState {
     pub transparent_accepted_total: Arc<AtomicU64>,
     pub transparent_original_dst_failed_total: Arc<AtomicU64>,
     pub reverse_registry: Arc<eggress_admin::ReverseRegistry>,
+    pub reverse_metrics: Arc<eggress_protocol_reverse::metrics::ReverseMetrics>,
 }
 
 impl RuntimeState {
@@ -533,6 +534,7 @@ impl ServiceSupervisor {
 
         let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
         let shadowsocks_metrics = Arc::new(eggress_protocol_shadowsocks::ShadowsocksMetrics::new());
+        let reverse_metrics = Arc::new(eggress_protocol_reverse::metrics::ReverseMetrics::new());
         let udp_tasks = TaskTracker::new();
 
         metrics.set_udp_metrics(udp_metrics.clone());
@@ -555,6 +557,7 @@ impl ServiceSupervisor {
             transparent_accepted_total: Arc::new(AtomicU64::new(0)),
             transparent_original_dst_failed_total: Arc::new(AtomicU64::new(0)),
             reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
+            reverse_metrics,
         });
 
         let cancel = CancellationToken::new();
@@ -1500,6 +1503,118 @@ impl ServiceSupervisor {
                 });
             }
 
+            // Spawn reverse servers and clients
+            {
+                let current_snapshot = snapshot.load();
+                let reverse_servers = current_snapshot.reverse_servers.clone();
+                let reverse_clients = current_snapshot.reverse_clients.clone();
+                drop(current_snapshot);
+
+                for rs_cfg in reverse_servers {
+                    let server_config = eggress_protocol_reverse::server::ReverseServerConfig {
+                        control_bind: rs_cfg.control_bind,
+                        external_bind: rs_cfg.external_bind,
+                        auth_username: rs_cfg.auth_username,
+                        auth_password: rs_cfg.auth_password,
+                        max_control_connections: rs_cfg.max_control_connections,
+                        read_timeout_ms: rs_cfg.read_timeout_ms,
+                        allow_bind: rs_cfg.allow_bind,
+                        max_listeners_per_client: rs_cfg.max_listeners_per_client,
+                        max_streams_per_listener: rs_cfg.max_streams_per_listener,
+                        max_pending_external: rs_cfg.max_pending_external,
+                    };
+                    // Defense-in-depth: validate the configuration before
+                    // spawning the task so unsafe configurations fail at
+                    // startup rather than silently at bind time.
+                    if let Err(e) = server_config.validate() {
+                        tracing::error!(
+                            server_id = %rs_cfg.id,
+                            error = %e,
+                            "reverse server configuration validation failed; skipping",
+                        );
+                        continue;
+                    }
+                    let mut server = eggress_protocol_reverse::server::ReverseServer::new(server_config);
+                    server.set_metrics(state_ref.reverse_metrics.clone());
+                    let server_state = server.state_handle();
+                    let server_cancel = server.cancel_token();
+
+                    state_ref.reverse_registry.register(
+                        eggress_admin::ReverseServerEntry {
+                            id: eggress_admin::ReverseServerId::from(rs_cfg.id.as_str()),
+                            control_bind: rs_cfg.control_bind.to_string(),
+                            state: server_state,
+                        },
+                    );
+
+                    let cancel_clone = cancel.clone();
+                    tasks.spawn(async move {
+                        let result = tokio::select! {
+                            r = server.run() => r,
+                            _ = cancel_clone.cancelled() => {
+                                server_cancel.cancel();
+                                Ok(())
+                            }
+                        };
+                        if let Err(e) = result {
+                            tracing::error!(error = %e, "reverse server error");
+                        }
+                    });
+                }
+
+                for rc_cfg in reverse_clients {
+                    let host = rc_cfg
+                        .default_target_host
+                        .clone()
+                        .unwrap_or_else(|| "127.0.0.1".to_string());
+                    let port = rc_cfg.default_target_port.unwrap_or(0);
+
+                    let parallel = rc_cfg.parallel_connections.max(1);
+                    for conn_idx in 0..parallel {
+                        let client_config = eggress_protocol_reverse::client::ReverseClientConfig {
+                            server_addr: rc_cfg.server_addr,
+                            auth_username: rc_cfg.auth_username.clone(),
+                            auth_password: rc_cfg.auth_password.clone(),
+                            reconnect_initial_ms: rc_cfg.reconnect_initial_ms,
+                            reconnect_max_ms: rc_cfg.reconnect_max_ms,
+                            default_target_host: rc_cfg.default_target_host.clone(),
+                            default_target_port: rc_cfg.default_target_port,
+                            read_timeout_ms: rc_cfg.read_timeout_ms,
+                            drain_grace_ms: rc_cfg.drain_grace_ms,
+                        };
+                        let mut client = eggress_protocol_reverse::client::ReverseClient::new(client_config);
+                        client.set_metrics(state_ref.reverse_metrics.clone());
+
+                        let resolver = crate::reverse::RouteEngineTargetResolver::new(
+                            routing.clone(),
+                            host.clone(),
+                            port,
+                            std::sync::Arc::from(rc_cfg.id.as_str()),
+                            Some(rc_cfg.server_addr),
+                        );
+                        client.set_resolver(std::sync::Arc::new(resolver));
+
+                        let cancel_clone = cancel.clone();
+                        let client_cancel = client.cancel_token();
+                        let client_id = rc_cfg.id.clone();
+                        let server_addr = rc_cfg.server_addr;
+
+                        tasks.spawn(async move {
+                            let result = tokio::select! {
+                                r = client.run() => r,
+                                _ = cancel_clone.cancelled() => {
+                                    client_cancel.cancel();
+                                    Ok(())
+                                }
+                            };
+                            if let Err(e) = result {
+                                tracing::error!(error = %e, client_id = %client_id, server = %server_addr, conn = conn_idx, "reverse client error");
+                            }
+                        });
+                    }
+                }
+            }
+
             if let Some(ref admin_cfg) = admin_config {
                 if admin_cfg.enabled {
                     let bind = admin_cfg.bind.clone();
@@ -1745,6 +1860,8 @@ mod tests {
             rules: vec![],
             default_action: RouteActionSpec::Direct,
             admin: None,
+            reverse_servers: vec![],
+            reverse_clients: vec![],
         };
         let snap = compile_runtime_snapshot(&rt_config, None).unwrap();
         assert!(snap.router.rules().is_empty());
@@ -1766,6 +1883,8 @@ mod tests {
             rules: vec![],
             default_action: RouteActionSpec::Direct,
             admin: None,
+            reverse_servers: vec![],
+            reverse_clients: vec![],
         };
         let result = compile_runtime_snapshot(&rt_config, None);
         assert!(result.is_err(), "expected error, got Ok");
@@ -1793,6 +1912,8 @@ mod tests {
             rules: vec![],
             default_action: RouteActionSpec::Direct,
             admin: None,
+            reverse_servers: vec![],
+            reverse_clients: vec![],
         };
         let snap = compile_runtime_snapshot(&rt_config, None).unwrap();
         assert!(snap.router.rules().is_empty());
@@ -1813,6 +1934,8 @@ mod tests {
             }],
             default_action: RouteActionSpec::Direct,
             admin: None,
+            reverse_servers: vec![],
+            reverse_clients: vec![],
         };
         let result = compile_runtime_snapshot(&rt_config, None);
         assert!(result.is_err(), "expected error, got Ok");

@@ -4,6 +4,7 @@
 //! protocol test harnesses for fragmented and slow I/O scenarios.
 
 pub mod case_model;
+pub mod corpus;
 pub mod eggress_runner;
 pub mod fixtures;
 pub mod manifest;

@@ -265,4 +265,6 @@ pub struct ReverseClientConfig {
     pub reconnect_max: Option<String>,
     /// Heartbeat interval (e.g., "30s").
     pub heartbeat_interval: Option<String>,
+    /// Number of parallel control connections (default 1).
+    pub parallel_connections: Option<u32>,
 }

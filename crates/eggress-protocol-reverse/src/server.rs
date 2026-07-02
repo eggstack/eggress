@@ -70,6 +70,49 @@ impl ReverseServerConfig {
             Some(list) => list.iter().any(|allowed| same_bind(allowed, &addr)),
         }
     }
+
+    /// Returns true if the address is loopback (127.0.0.0/8 or ::1).
+    pub fn is_loopback(addr: SocketAddr) -> bool {
+        match addr.ip() {
+            IpAddr::V4(v4) => v4.is_loopback(),
+            IpAddr::V6(v6) => v6.is_loopback(),
+        }
+    }
+
+    /// Validate this configuration. Returns an error if the configuration is
+    /// unsafe (e.g. external bind on a non-loopback address without
+    /// authentication and without an explicit `allow_bind` allowlist).
+    ///
+    /// This is a defense-in-depth check: it catches misconfigurations that
+    /// would otherwise expose the reverse proxy to unauthenticated network
+    /// clients.
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if let Some(external) = self.external_bind {
+            // Non-loopback external bind requires BOTH authentication
+            // credentials AND a non-empty `allow_bind` allowlist. This
+            // prevents accidentally exposing the reverse proxy to the
+            // local network without operator intent.
+            if !Self::is_loopback(external) {
+                let has_auth = self.auth_username.as_deref().is_some_and(|s| !s.is_empty())
+                    && self.auth_password.as_deref().is_some_and(|s| !s.is_empty());
+                let has_allowlist = matches!(&self.allow_bind, Some(list) if !list.is_empty());
+                if !has_auth {
+                    return Err(ProtocolError::ConfigInvalid(format!(
+                        "reverse server external_bind={external} is non-loopback but no \
+                         authentication is configured; set auth_username/auth_password or \
+                         bind to loopback"
+                    )));
+                }
+                if !has_allowlist {
+                    return Err(ProtocolError::ConfigInvalid(format!(
+                        "reverse server external_bind={external} is non-loopback but \
+                         allow_bind is empty; configure an explicit allowlist"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn same_bind(a: &SocketAddr, b: &SocketAddr) -> bool {
@@ -174,6 +217,11 @@ impl ReverseServer {
 
     /// Start the reverse server.
     pub async fn run(self) -> Result<(), ProtocolError> {
+        // Defense-in-depth validation: catch unsafe configurations (e.g.
+        // non-loopback external_bind without auth or allow_bind allowlist)
+        // before binding any sockets.
+        self.config.validate()?;
+
         // Enforce the allow_bind policy up-front so misconfiguration is loud.
         if let Some(external_bind) = self.config.external_bind {
             if !self.config.is_bind_allowed(external_bind) {
@@ -593,5 +641,95 @@ mod tests {
         let a: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let b: SocketAddr = "127.0.0.1:9090".parse().unwrap();
         assert!(!same_bind(&a, &b));
+    }
+
+    #[test]
+    fn validate_loopback_ok() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: Some("127.0.0.1:0".parse().unwrap()),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_no_external_bind_ok() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: None,
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_non_loopback_without_auth_rejected() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: Some("0.0.0.0:9000".parse().unwrap()),
+            auth_username: None,
+            auth_password: None,
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ProtocolError::ConfigInvalid(_)),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_non_loopback_with_auth_but_no_allowlist_rejected() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: Some("0.0.0.0:9000".parse().unwrap()),
+            auth_username: Some("user".to_string()),
+            auth_password: Some("pass".to_string()),
+            allow_bind: None,
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ProtocolError::ConfigInvalid(_)),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_non_loopback_with_auth_and_allowlist_ok() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: Some("0.0.0.0:9000".parse().unwrap()),
+            auth_username: Some("user".to_string()),
+            auth_password: Some("pass".to_string()),
+            allow_bind: Some(vec!["0.0.0.0:9000".parse().unwrap()]),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_ipv6_loopback_ok() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: Some("[::1]:9000".parse().unwrap()),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_ipv6_non_loopback_without_auth_rejected() {
+        let cfg = ReverseServerConfig {
+            control_bind: "127.0.0.1:0".parse().unwrap(),
+            external_bind: Some("[2001:db8::1]:9000".parse().unwrap()),
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ProtocolError::ConfigInvalid(_)),
+            "got: {err:?}"
+        );
     }
 }

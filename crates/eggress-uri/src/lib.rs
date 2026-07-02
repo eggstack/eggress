@@ -626,6 +626,24 @@ mod tests {
     }
 
     #[test]
+    fn test_quic_scheme_rejected_with_structured_diagnostic() {
+        let result = parse_proxy_chain("quic://host:443");
+        match result {
+            Err(UriParseError::UnsupportedProtocol(p)) => assert_eq!(p, "quic"),
+            other => panic!("expected UnsupportedProtocol for quic, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_h3_scheme_rejected_with_structured_diagnostic() {
+        let result = parse_proxy_chain("h3://host:443");
+        match result {
+            Err(UriParseError::UnsupportedProtocol(p)) => assert_eq!(p, "h3"),
+            other => panic!("expected UnsupportedProtocol for h3, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_missing_scheme() {
         let result = parse_proxy_chain("host:80");
         assert!(result.is_err());

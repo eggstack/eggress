@@ -1,4 +1,5 @@
 use std::fmt;
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
 use tokio::io;
@@ -64,8 +65,12 @@ pub struct UnixListener {
 impl UnixListener {
     /// Binds a new Unix domain socket listener.
     ///
-    /// If `unlink_existing` is `true` and a file already exists at `path`,
-    /// it is removed before binding.
+    /// If `unlink_existing` is `true` and a Unix socket file already exists
+    /// at `path`, it is removed before binding. To avoid surprising or
+    /// destructive behavior, `unlink_existing=true` will refuse to remove
+    /// anything other than a Unix socket (regular files, directories,
+    /// symlinks, and special device files are all preserved). When
+    /// `unlink_existing=false` and any file exists at `path`, binding fails.
     pub fn bind(path: &Path, unlink_existing: bool) -> Result<Self, UnixListenerError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -76,14 +81,45 @@ impl UnixListener {
             }
         }
 
-        if unlink_existing && path.exists() {
-            std::fs::remove_file(path).map_err(|e| {
+        if path.exists() || path.symlink_metadata().is_ok() {
+            // Distinguish "a socket file lives here" from "something else
+            // lives here and we should not destroy it".
+            let meta = std::fs::symlink_metadata(path).map_err(|e| {
                 UnixListenerError::Io(std::io::Error::other(format!(
-                    "failed to unlink existing socket '{}': {}",
+                    "failed to stat '{}': {}",
                     path.display(),
                     e
                 )))
             })?;
+            let file_type = meta.file_type();
+            let is_socket = file_type.is_socket();
+            let is_symlink = file_type.is_symlink();
+            if is_socket {
+                if unlink_existing {
+                    std::fs::remove_file(path).map_err(|e| {
+                        UnixListenerError::Io(std::io::Error::other(format!(
+                            "failed to unlink existing socket '{}': {}",
+                            path.display(),
+                            e
+                        )))
+                    })?;
+                } else {
+                    return Err(UnixListenerError::Io(std::io::Error::other(format!(
+                        "socket file '{}' already exists and unlink_existing=false",
+                        path.display()
+                    ))));
+                }
+            } else if is_symlink {
+                return Err(UnixListenerError::Io(std::io::Error::other(format!(
+                    "refusing to unlink symlink at '{}' (target type not verified)",
+                    path.display()
+                ))));
+            } else {
+                return Err(UnixListenerError::Io(std::io::Error::other(format!(
+                    "refusing to unlink non-socket path '{}' (file_type is not a socket)",
+                    path.display()
+                ))));
+            }
         }
 
         let listener = tokio::net::UnixListener::bind(path)?;
@@ -244,18 +280,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_unix_listener_unlink_existing() {
-        let path = temp_socket_path("unlink_existing");
+    async fn test_unix_listener_unlink_existing_socket() {
+        // Stale *socket* files should be replaced when unlink_existing=true.
+        let path = temp_socket_path("unlink_existing_socket");
         let _ = std::fs::remove_file(&path);
 
-        // Create a stale socket file
-        std::fs::write(&path, "stale").unwrap();
-        assert!(path.exists());
+        let stale = UnixListener::bind(&path, true).unwrap();
+        // Explicit cleanup because UnixListener does not auto-clean on drop.
+        stale.cleanup().unwrap();
+        assert!(!path.exists(), "stale listener should be cleaned up");
 
+        // Re-bind: there is no file now, so this should just succeed.
         let listener = UnixListener::bind(&path, true).unwrap();
         assert!(path.exists());
 
         listener.cleanup().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_unix_listener_refuses_to_unlink_regular_file() {
+        // Refuse to unlink a regular file even if unlink_existing=true.
+        let path = temp_socket_path("regular_file");
+        let _ = std::fs::remove_file(&path);
+
+        std::fs::write(&path, "important data").unwrap();
+        let result = UnixListener::bind(&path, true);
+        assert!(result.is_err(), "must not unlink regular files");
+        // The file must still exist and be intact.
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, "important data");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn test_unix_listener_refuses_to_unlink_symlink() {
+        // Refuse to follow/remove symlinks; operator should resolve manually.
+        let real_path = temp_socket_path("symlink_target");
+        let link_path = temp_socket_path("symlink_link");
+        let _ = std::fs::remove_file(&real_path);
+        let _ = std::fs::remove_file(&link_path);
+
+        std::fs::write(&real_path, "real data").unwrap();
+        std::os::unix::fs::symlink(&real_path, &link_path).unwrap();
+
+        let result = UnixListener::bind(&link_path, true);
+        assert!(result.is_err(), "must not unlink symlinks");
+
+        // Both must still exist.
+        assert!(real_path.exists());
+        assert!(link_path.exists());
+
+        let _ = std::fs::remove_file(&real_path);
+        let _ = std::fs::remove_file(&link_path);
+    }
+
+    #[tokio::test]
+    async fn test_unix_listener_unlink_false_fails_when_socket_present() {
+        // With unlink_existing=false, refuse to bind when a socket already exists.
+        let path = temp_socket_path("unlink_false_existing");
+        let _ = std::fs::remove_file(&path);
+
+        let first = UnixListener::bind(&path, true).unwrap();
+        let result = UnixListener::bind(&path, false);
+        assert!(
+            result.is_err(),
+            "must refuse to bind without unlink when socket present"
+        );
+
+        drop(first);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

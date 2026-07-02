@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 25 complete — Transparent proxy and Unix socket support: Linux transparent TCP proxy via `SO_ORIGINAL_DST`, Unix domain socket listeners, platform capability model, config/security/parity documentation updates. Phase 24 complete — Evidence consistency cleanup: manifest validation tightened, standalone UDP evidence corrected. Phase 20 complete — Standalone UDP and UDP chain parity: pproxy-compatible standalone UDP relay mode (`-ul`/`-ur`), standalone UDP metrics, config reference updates, documentation updates across parity spec, parity matrix, config reference, metrics, migration guide, and README. Phase 19 complete — HTTP/SOCKS baseline closure: persistent HTTP forwarding, expanded differential evidence for HTTP CONNECT, SOCKS4/4a, and SOCKS5, mixed-protocol listener robustness, SOCKS BIND deferral, and 17 new manifest entries. Phase 17 complete — True pproxy parity release candidate audit: final parity matrix audit with evidence taxonomy, Rust runtime release audit (all tests pass), Python package audit, differential/interop evidence audit, security/redaction audit including Python binding surface, packaging/supply-chain audit, documentation consistency pass, and release candidate document. Phase 16 complete — Python pproxy library parity: pproxy translation helpers (translate_pproxy_args, translate_pproxy_uri), from_pproxy_args/start_pproxy convenience APIs, async lifecycle (astart, AsyncEggressHandle), 45 passing tests (pproxy-compat, redaction, concurrency, differential gated), examples, and documentation. Phase 14 complete — Python bindings via PyO3 wrapping `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, GIL release, context manager support, and 14 passing tests. Phase 13 complete — Rust embed API stabilization with `eggress-embed` crate providing stable blocking/async start, bound address discovery, metrics/status, reload, error redaction, and comprehensive integration tests. Phase 12 complete — scheduler parity audit, multi-hop TCP chain tests, failure semantics documentation, retry/fallback behavior tests, observability semantics tests, and differential test extensions. Phase 11 complete — remaining protocol parity: all pproxy protocols classified, lightweight aliases (socks4a, https), Shadowsocks upstream fully supported, unsupported feature diagnostics, and comprehensive documentation. Phase 8 complete — pproxy compatibility CLI with URI-mode command translation, configuration migration support, and differential tests against Python `pproxy`. Phase 7 complete — pproxy parity specification with compatibility tier taxonomy, expanded parity matrix, refactored differential test harness with reusable primitives, and black-box probe tests. Phase 6 complete — hardening: property tests for codecs/parsers (proptest), fuzz harness smoke foundation, runtime lifecycle invariant tests, observability/metrics/admin tests, security invariant tests, pproxy differential tests (gated), benchmarks (criterion) and load tests, deny.toml explicit dependency bans, and comprehensive documentation (CI_STATUS, SECURITY_REVIEW, PARITY_MATRIX, CONFIG_REFERENCE, METRICS, OPERATIONS, TESTING, RELEASE_READINESS). Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
+> Status: Phase 25-28 hardening pass complete — Implementation-vs-documentation audit closed evidence gaps. H1 added SAFETY comments and `read_unaligned` to transparent listener; H3 corrected Linux/macOS platform capability semantics (macOS PF now honestly reports `KernelUnsupported`); H4 hardened Unix listener (`unlink_existing=true` refuses non-socket paths); H5/H6/H7 refused H2/WS/Raw as listener/upstream protocols (protocol-crate only); H8 added QUIC/H3 structured-rejection tests; H9 wired reverse proxy through supervisor with `reverse_runtime.rs` (10 tests); H10 added payload-level reverse differential test; H11 added `ReverseServerConfig::validate()` for non-loopback safety; H13 added URI corpus integrity validator; H14/H15 audited and corrected docs. See `docs/PHASE_25_28_HARDENING_COMPLETION.md`. Phase 25 complete — Transparent proxy and Unix socket support: Linux transparent TCP proxy via `SO_ORIGINAL_DST`, Unix domain socket listeners, platform capability model, config/security/parity documentation updates. Phase 24 complete — Evidence consistency cleanup: manifest validation tightened, standalone UDP evidence corrected. Phase 20 complete — Standalone UDP and UDP chain parity: pproxy-compatible standalone UDP relay mode (`-ul`/`-ur`), standalone UDP metrics, config reference updates, documentation updates across parity spec, parity matrix, config reference, metrics, migration guide, and README. Phase 19 complete — HTTP/SOCKS baseline closure: persistent HTTP forwarding, expanded differential evidence for HTTP CONNECT, SOCKS4/4a, and SOCKS5, mixed-protocol listener robustness, SOCKS BIND deferral, and 17 new manifest entries. Phase 17 complete — True pproxy parity release candidate audit: final parity matrix audit with evidence taxonomy, Rust runtime release audit (all tests pass), Python package audit, differential/interop evidence audit, security/redaction audit including Python binding surface, packaging/supply-chain audit, documentation consistency pass, and release candidate document. Phase 16 complete — Python pproxy library parity: pproxy translation helpers (translate_pproxy_args, translate_pproxy_uri), from_pproxy_args/start_pproxy convenience APIs, async lifecycle (astart, AsyncEggressHandle), 45 passing tests (pproxy-compat, redaction, concurrency, differential gated), examples, and documentation. Phase 14 complete — Python bindings via PyO3 wrapping `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, GIL release, context manager support, and 14 passing tests. Phase 13 complete — Rust embed API stabilization with `eggress-embed` crate providing stable blocking/async start, bound address discovery, metrics/status, reload, error redaction, and comprehensive integration tests. Phase 12 complete — scheduler parity audit, multi-hop TCP chain tests, failure semantics documentation, retry/fallback behavior tests, observability semantics tests, and differential test extensions. Phase 11 complete — remaining protocol parity: all pproxy protocols classified, lightweight aliases (socks4a, https), Shadowsocks upstream fully supported, unsupported feature diagnostics, and comprehensive documentation. Phase 8 complete — pproxy compatibility CLI with URI-mode command translation, configuration migration support, and differential tests against Python `pproxy`. Phase 7 complete — pproxy parity specification with compatibility tier taxonomy, expanded parity matrix, refactored differential test harness with reusable primitives, and black-box probe tests. Phase 6 complete — hardening: property tests for codecs/parsers (proptest), fuzz harness smoke foundation, runtime lifecycle invariant tests, observability/metrics/admin tests, security invariant tests, pproxy differential tests (gated), benchmarks (criterion) and load tests, deny.toml explicit dependency bans, and comprehensive documentation (CI_STATUS, SECURITY_REVIEW, PARITY_MATRIX, CONFIG_REFERENCE, METRICS, OPERATIONS, TESTING, RELEASE_READINESS). Phase 5 complete — broader upstream protocol parity with HTTP CONNECT upstream polish, SOCKS4/SOCKS4a upstream polish, Shadowsocks TCP/UDP foundation (AEAD methods), Trojan TCP foundation, and upstream capability classification. Phase 4 complete — one-hop SOCKS5 UDP upstream relay with capability classification, flow model, upstream metrics, and integration tests. Phase 3 complete — UDP foundation with SOCKS5 UDP ASSOCIATE, direct forwarding, association lifecycle management, idle timeout, target-flow reaping, per-listener TOML configuration, task tracking, metrics bridging, routing fallback, and admin visibility. Phase 2 complete — policy-driven routing with rule engine, upstream groups, health-aware scheduling, TOML configuration, metrics, admin API, PAC/static serving, scoped atomic reload, route explanation (including source- and identity-based rules), runtime supervisor with fallible startup, and integration tests covering startup, routing, health, admin, reload, shutdown, PAC/static, and bind-conflict paths.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -255,21 +255,31 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 
 ### WebSocket
 
-- [x] WebSocket tunnel client (Phase 26)
-- [x] WebSocket tunnel server (Phase 26)
-- [x] WSS via rustls (Phase 26)
-- [x] Binary-message byte-stream adapter (Phase 26)
-- [x] Ping/pong handling (Phase 26)
-- [x] Close and half-close mapping (Phase 26)
-- [x] Fixed-target WebSocket tunnel (Phase 26)
-- [x] WebSocket in proxy chains (Phase 26)
+- [x] WebSocket tunnel client (Phase 26, protocol-crate only)
+- [x] WebSocket tunnel server (Phase 26, protocol-crate only)
+- [x] WSS via rustls (Phase 26, protocol-crate only)
+- [x] Binary-message byte-stream adapter (Phase 26, protocol-crate only)
+- [x] Ping/pong handling (Phase 26, protocol-crate only)
+- [x] Close and half-close mapping (Phase 26, protocol-crate only)
+- [x] Fixed-target WebSocket tunnel (Phase 26, protocol-crate only)
+- [x] WebSocket in proxy chains (Phase 26, protocol-crate only)
+
+Note: `ws://`/`wss://` URIs are accepted by the URI parser and translator but are
+**refused** as listener/upstream protocols through the runtime supervisor and
+config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct protocol-crate
+callers only.
 
 ### Raw forwarding
 
-- [x] Fixed-target TCP forwarding (Phase 26)
+- [x] Fixed-target TCP forwarding (Phase 26, protocol-crate only)
 - [ ] Fixed-target UDP forwarding
-- [x] Raw tunnel client (Phase 26)
-- [x] Raw tunnel server (Phase 26)
+- [x] Raw tunnel client (Phase 26, protocol-crate only)
+- [x] Raw tunnel server (Phase 26, protocol-crate only)
+
+Note: `raw://`/`tunnel://` URIs are accepted by the URI parser and translator
+but are **refused** as listener/upstream protocols through the runtime
+supervisor and config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct
+protocol-crate callers only.
 
 ### SSH
 
@@ -287,15 +297,20 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 
 ### HTTP/2
 
-- [x] HTTP/2 CONNECT server (Phase 26)
-- [x] HTTP/2 CONNECT client (Phase 26)
-- [x] Stream adapter (Phase 26)
-- [x] Flow-control integration (Phase 26)
-- [x] Stream reset propagation (Phase 26)
-- [x] GOAWAY handling (Phase 26)
-- [x] Upstream connection pooling (Phase 26)
-- [x] H2-over-TLS ALPN (Phase 26)
-- [x] H2 authentication (Phase 26)
+- [x] HTTP/2 CONNECT server (Phase 26, protocol-crate only)
+- [x] HTTP/2 CONNECT client (Phase 26, protocol-crate only)
+- [x] Stream adapter (Phase 26, protocol-crate only)
+- [x] Flow-control integration (Phase 26, protocol-crate only)
+- [x] Stream reset propagation (Phase 26, protocol-crate only)
+- [x] GOAWAY handling (Phase 26, protocol-crate only)
+- [x] Upstream connection pooling (Phase 26, protocol-crate only)
+- [x] H2-over-TLS ALPN (Phase 26, protocol-crate only)
+- [x] H2 authentication (Phase 26, protocol-crate only)
+
+Note: `h2://` URIs are accepted by the URI parser and translator but are
+**refused** as listener/upstream protocols through the runtime supervisor and
+config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct protocol-crate
+callers only.
 
 ### QUIC
 
@@ -333,9 +348,9 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 - [ ] Multi-channel concurrency (parallel `+in+in+in`)
 - [ ] Jump chain composition on relayed streams
 - [ ] Reverse UDP (intentional -- pproxy does not support UDP reverse)
-- [ ] Reverse listener access policy (allowlist of bind addresses)
-- [ ] Reverse integration into eggress-runtime supervisor (autonomous mode managed by ServiceSupervisor)
-- [ ] Reverse admin endpoints (reverse session listing in admin API)
+- [x] Reverse listener access policy (allowlist of bind addresses)
+- [x] Reverse integration into eggress-runtime supervisor (autonomous mode managed by ServiceSupervisor)
+- [x] Reverse admin endpoints (reverse session listing in admin API)
 - [ ] Python `pproxy` backward-mode compatibility (reverse URI translation only; no Python API yet)
 
 ### Transparent proxying
@@ -502,6 +517,7 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [True pproxy parity release candidate](docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md)
 - [Phase 18 pproxy oracle and evidence harness](plans/PHASE_18_PPROXY_ORACLE_AND_EVIDENCE_HARNESS.md)
 - [Phase 19 HTTP/SOCKS baseline closure](docs/PHASE_19_HTTP_SOCKS_BASELINE_CLOSURE_COMPLETION.md)
+- [Phase 25-28 hardening pass](docs/PHASE_25_28_HARDENING_COMPLETION.md)
 - [PyPI release procedure](docs/PYPI_RELEASE.md)
 - [Wheel artifact audit](docs/WHEEL_AUDIT.md)
 

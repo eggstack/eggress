@@ -17,9 +17,12 @@ However, this requires:
 2. PF kernel support (available on macOS via `/dev/pf`)
 3. Divert socket creation (macOS-specific API, not available in standard Rust)
 
-eggress already defines `PlatformCapability::MacosPfOriginalDst` and probes
-`/dev/pf` availability, but does not implement actual PF rule injection or
-divert socket handling.
+eggress defines `PlatformCapability::MacosPfOriginalDst` to expose the
+platform capability surface, but does not implement actual PF rule injection
+or divert socket handling. After Phase 25-28 hardening the capability check
+returns `KernelUnsupported` on macOS (and `UnsupportedPlatform` elsewhere)
+to honestly reflect that no PF integration exists, rather than reporting
+`Available` based on `/dev/pf` existence.
 
 ## Decision
 
@@ -56,9 +59,10 @@ The reasons are:
   or audit.
 - **Clear diagnostics**: `redir://` on macOS produces a diagnostic message
   explaining the limitation and suggesting the `pfctl` workaround.
-- **Capability model preserved**: `PlatformCapability::MacosPfOriginalDst`
-  returns `Available` when `/dev/pf` is accessible, correctly reflecting
-  kernel support without implying eggress uses it.
+- **Capability model honest**: `PlatformCapability::MacosPfOriginalDst`
+  returns `KernelUnsupported` on macOS to make clear that eggress does not
+  perform PF-based original-destination recovery. Operators are not led to
+  believe the platform check implies any usable behavior.
 - **Easy future extension**: The platform capability model and transparent
   listener abstraction make it straightforward to add PF support later if
   user demand warrants.
@@ -111,7 +115,7 @@ privileges are still required.
 - `crates/eggress-server/src/listener/transparent.rs` — TransparentListener
   and `get_original_destination()` (returns `UnsupportedPlatform` on non-Linux)
 - `crates/eggress-runtime/src/platform.rs` — `MacosPfOriginalDst` capability
-  check (probes `/dev/pf`)
+  check (intentionally reports `KernelUnsupported` to reflect no integration)
 - `crates/eggress-pproxy-compat/src/diagnose.rs` — Diagnostic messages for
   unsupported transparent proxy configurations
 - `docs/PPROXY_PARITY_SPEC.md` — Tier taxonomy and intentional non-parity

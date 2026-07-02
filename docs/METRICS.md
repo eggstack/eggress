@@ -51,6 +51,7 @@ bridges the call into `MetricsRegistry`.
 | `eggress_udp_associations_active` | Gauge | Currently active UDP associations |
 | `eggress_udp_associations_total` | Counter | Total UDP associations created |
 | `eggress_udp_association_failures_total` | Counter | Total UDP association creation failures |
+| `eggress_udp_association_timeouts_total` | Counter | Total UDP association idle timeouts |
 | `eggress_udp_packets_up_total` | Counter | Total UDP packets received from clients |
 | `eggress_udp_packets_down_total` | Counter | Total UDP packets sent to clients |
 | `eggress_udp_bytes_up_total` | Counter | Total UDP bytes received from clients |
@@ -84,13 +85,13 @@ transport modes are distinguished by which metric family receives the counters.
 |--------|------|-------------|
 | `eggress_standalone_udp_flows_active` | Gauge | Currently active standalone UDP flows |
 | `eggress_standalone_udp_flows_total` | Counter | Total standalone UDP flows created |
-| `eggress_standalone_udp_packets_in_total` | Counter | Total standalone UDP packets received |
+| `eggress_standalone_udp_packets_in_total` | Counter | Total standalone UDP packets received from clients |
 | `eggress_standalone_udp_packets_out_total` | Counter | Total standalone UDP packets sent |
 | `eggress_standalone_udp_bytes_in_total` | Counter | Total standalone UDP bytes received |
 | `eggress_standalone_udp_bytes_out_total` | Counter | Total standalone UDP bytes sent |
-| `eggress_standalone_udp_malformed_total` | Counter | Total malformed standalone UDP datagrams |
+| `eggress_standalone_udp_malformed_total` | Counter | Total standalone UDP malformed datagrams |
 | `eggress_standalone_udp_rejected_total` | Counter | Total rejected standalone UDP datagrams |
-| `eggress_standalone_udp_flow_reaps_total` | Counter | Total standalone UDP flow reaps |
+| `eggress_standalone_udp_flow_reaps_total` | Counter | Total standalone UDP flows reaped |
 
 ### Shadowsocks Metrics
 
@@ -101,15 +102,12 @@ threads `ShadowsocksMetrics` through the server wiring.
 | Metric | Type | Description |
 |--------|------|-------------|
 | `eggress_shadowsocks_tcp_upstream_sessions_total` | Counter | TCP sessions opened against an external Shadowsocks upstream |
-| `eggress_shadowsocks_tcp_inbound_sessions_total` | Counter | TCP sessions accepted as a Shadowsocks inbound listener |
+| `eggress_shadowsocks_tcp_sessions_total` | Counter | Total TCP sessions accepted (inbound + upstream) |
 | `eggress_shadowsocks_tcp_sessions_active` | Gauge | Currently active TCP sessions (inbound + upstream) |
-| `eggress_shadowsocks_tcp_flow_open_total` | Counter | TCP flow opens (one per upstream connect and inbound accept) |
-| `eggress_shadowsocks_tcp_flow_close_total` | Counter | TCP flow closes |
 | `eggress_shadowsocks_tcp_active_flows` | Gauge | Currently open TCP flows |
 | `eggress_shadowsocks_tcp_decrypt_failures_total` | Counter | TCP AEAD decryption failures (wrong key, tampered ciphertext, etc.) |
 | `eggress_shadowsocks_tcp_frame_parse_failures_total` | Counter | TCP frame structure failures (bad plaintext length) |
 | `eggress_shadowsocks_tcp_unsupported_method_reject_total` | Counter | TCP sessions rejected due to unknown cipher method |
-| `eggress_shadowsocks_tcp_session_closed_total` | Counter | TCP sessions closed (matches `tcp_inbound_sessions_total` over time) |
 | `eggress_shadowsocks_udp_packets_in_total` | Counter | UDP datagrams successfully decoded |
 | `eggress_shadowsocks_udp_packets_out_total` | Counter | UDP datagrams successfully encoded and sent |
 | `eggress_shadowsocks_udp_active_flows` | Gauge | Currently active UDP flows |
@@ -121,15 +119,26 @@ Protocol-level counters for the reverse/backward proxy protocol (`eggress-protoc
 These are recorded when `ReverseMetrics` is attached to a `ReverseServer` or `ReverseClient`
 via `set_metrics()`.
 
+**Note:** Reverse metrics are NOT exposed on the main `/metrics` endpoint. They are
+rendered by `ReverseMetrics::render_prometheus()` (called from the
+`/-/reverse` admin route) and are bridged into the main `/metrics` output only
+when the supervisor wires `reverse_metrics` into `MetricsRegistry`. Snapshots
+are also available as JSON via the admin route.
+
 | Metric | Type | Description |
 |--------|------|-------------|
 | `eggress_reverse_control_connections_active` | Gauge | Currently active control connections |
 | `eggress_reverse_control_connections_accepted_total` | Counter | Total accepted control connections |
-| `eggress_reverse_control_connections_rejected_total` | Counter | Total rejected control connections (auth failures) |
+| `eggress_reverse_control_connections_rejected_total` | Counter | Total rejected control connections |
 | `eggress_reverse_control_reconnects_total` | Counter | Total client reconnect attempts |
+| `eggress_reverse_auth_failures_total` | Counter | Total authentication failures |
+| `eggress_reverse_heartbeat_failures_total` | Counter | Total heartbeat failures |
+| `eggress_reverse_drain_total` | Counter | Total drain events |
+| `eggress_reverse_drain_duration_ms_total` | Counter | Cumulative drain duration in milliseconds |
 | `eggress_reverse_streams_opened_total` | Counter | Total control sessions initiated |
 | `eggress_reverse_streams_closed_total` | Counter | Total control sessions completed cleanly |
 | `eggress_reverse_stream_bytes_total` | Counter | Total bytes relayed through control channels |
+| `eggress_reverse_state_time_ms` | Gauge (vector) | Time spent in each control state, in milliseconds |
 
 ```
 # HELP eggress_reverse_control_connections_active Currently active control connections.
@@ -168,6 +177,27 @@ eggress_reverse_stream_bytes_total 16384
 | Raw Tunnel | `eggress_raw_tunnel_sessions_total` | counter | Total raw tunnel sessions |
 | Raw Tunnel | `eggress_raw_tunnel_sessions_active` | gauge | Currently active raw tunnel sessions |
 | TLS/ALPN | `eggress_tls_alpn_negotiation_failures_total` | counter | TLS ALPN negotiation failures |
+
+### Transparent Proxy Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `eggress_transparent_connections_accepted_total` | Counter | Total transparent proxy connections accepted |
+| `eggress_transparent_original_dst_failed_total` | Counter | Total transparent proxy original destination lookup failures |
+| `eggress_transparent_route_rejects_total` | Counter | Total transparent proxy route rejections |
+
+### Unix Listener Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `eggress_unix_listener_connections_accepted_total` | Counter | Total Unix listener connections accepted |
+| `eggress_unix_listener_bind_failures_total` | Counter | Total Unix listener bind failures |
+
+### Platform Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `eggress_platform_capability_check_failures_total` | Counter | Total platform capability check failures |
 
 ## Labels and Cardinality Policy
 

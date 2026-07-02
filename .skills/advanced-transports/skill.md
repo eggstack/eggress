@@ -9,6 +9,19 @@ Use when implementing or modifying HTTP/2 CONNECT, WebSocket tunnels, raw fixed-
 - Each transport produces/accepts `BoxStream` — the universal stream type
 - TLS/ALPN configured via `[listeners.tls]` alpn field, wired through `eggress-transport-tls`
 
+## Tier classification (Phase 25-28 H5/H6/H7)
+
+These transports are **protocol-crate only**. They are intentionally **not**
+integrated as listener/upstream protocols through the runtime supervisor or
+config compiler. Use them by importing the protocol crate directly, or as
+URI-parseable transports for documentation/testing.
+
+- The CLI `parse_listener_uri` rejects `h2://`, `ws://`, `wss://`, `raw://`,
+  `tunnel://` as listener URIs.
+- `compile_protocol()` in `crates/eggress-config/src/compile.rs` refuses
+  these as listener/upstream protocols with a structured validation error.
+- Tests: `cargo test -p eggress-config` covers the refuse paths.
+
 ## H2 CONNECT
 - Server: `h2_connect::handle_h2_connect()` accepts H2 connections, dispatches CONNECT, bridges stream to TCP target
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request

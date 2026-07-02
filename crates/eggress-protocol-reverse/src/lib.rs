@@ -23,6 +23,8 @@ pub enum ProtocolError {
     ConnectionClosed,
     #[error("bind address {0} is not in the allow_bind allowlist")]
     BindDenied(std::net::SocketAddr),
+    #[error("invalid configuration: {0}")]
+    ConfigInvalid(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

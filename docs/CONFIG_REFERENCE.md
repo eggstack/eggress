@@ -178,6 +178,12 @@ Unix domain socket listener (Unix only).
 When configured, the listener binds to a Unix domain socket instead of a TCP
 address. The `bind` field is ignored when `[listeners.unix]` is present.
 
+**Filesystem safety:** `unlink_existing = true` only removes an existing
+socket file at `path`. Regular files, symlinks, directories, and special
+devices are preserved; binding fails with a clear error if the path is not a
+socket. With `unlink_existing = false`, binding fails when any entry exists
+at `path`.
+
 **Platform requirements:**
 - Unix only (Linux, macOS, BSDs)
 - Not available on Windows

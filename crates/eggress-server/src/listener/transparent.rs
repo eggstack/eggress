@@ -133,10 +133,22 @@ fn get_original_destination_impl(_stream: &TcpStream) -> Result<SocketAddr, Tran
 /// a `sockaddr_in` (IPv4) or `sockaddr_in6` (IPv6) structure.
 #[cfg(target_os = "linux")]
 fn query_original_dst(fd: std::os::raw::c_int, level: i32, optname: i32) -> Option<SocketAddr> {
-    // sockaddr_storage is large enough for both sockaddr_in and sockaddr_in6.
+    // SAFETY: `sockaddr_storage` is a POD type whose layout is defined by the
+    // platform libc. Initializing all bytes to zero is valid for any fully
+    // zeroed struct, and the kernel only ever writes a `sockaddr_in` or
+    // `sockaddr_in6` (both smaller than `sockaddr_storage`) into the buffer
+    // via `getsockopt(SO_ORIGINAL_DST)`. `parse_sockaddr` below validates
+    // `ss_family` and `len` before reinterpreting the storage as a concrete
+    // sockaddr type.
     let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
 
+    // SAFETY: `fd` is a borrowed raw file descriptor owned by the caller and
+    // is valid for the duration of this call. The storage pointer is properly
+    // aligned (cast from a stack-allocated `sockaddr_storage`) and points to
+    // `len` bytes of writable memory. `getsockopt` only writes through the
+    // provided pointer; we re-initialize `storage` immediately after the
+    // call so previous contents are not relied upon.
     let ret = unsafe {
         libc::getsockopt(
             fd,
@@ -159,8 +171,15 @@ fn query_original_dst(fd: std::os::raw::c_int, level: i32, optname: i32) -> Opti
 fn parse_sockaddr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Option<SocketAddr> {
     match storage.ss_family as i32 {
         libc::AF_INET if len as usize >= std::mem::size_of::<libc::sockaddr_in>() => {
-            let sa = unsafe { *((storage as *const _) as *const libc::sockaddr_in) };
-            let port = u16::from_be_bytes(sa.sin_port.to_ne_bytes());
+            // SAFETY: We checked that `len` is at least `size_of::<sockaddr_in>()`
+            // and `ss_family == AF_INET`. On Linux the kernel only writes a fully
+            // populated `sockaddr_in` for `SO_ORIGINAL_DST` on `SOL_IP`, so the
+            // `storage` bytes hold a valid `sockaddr_in`. Reading individual
+            // fields via copy avoids aliasing assumptions.
+            let sa = unsafe {
+                std::ptr::read_unaligned(storage as *const _ as *const libc::sockaddr_in)
+            };
+            let port = u16::from_be(sa.sin_port);
             let octets = sa.sin_addr.s_addr.to_ne_bytes();
             Some(SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3])),
@@ -168,21 +187,29 @@ fn parse_sockaddr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Opt
             ))
         }
         libc::AF_INET6 if len as usize >= std::mem::size_of::<libc::sockaddr_in6>() => {
-            let sa = unsafe { *((storage as *const _) as *const libc::sockaddr_in6) };
-            let port = u16::from_be_bytes(sa.sin6_port.to_ne_bytes());
-            let flowinfo = u32::from_be_bytes(sa.sin6_flowinfo.to_ne_bytes());
-            let scope_id = sa.sin6_scope_id;
-            let seg0 = u16::from_be_bytes(sa.sin6_addr.s6_addr[0..2].try_into().ok()?);
-            let seg1 = u16::from_be_bytes(sa.sin6_addr.s6_addr[2..4].try_into().ok()?);
-            let seg2 = u16::from_be_bytes(sa.sin6_addr.s6_addr[4..6].try_into().ok()?);
-            let seg3 = u16::from_be_bytes(sa.sin6_addr.s6_addr[6..8].try_into().ok()?);
-            let seg4 = u16::from_be_bytes(sa.sin6_addr.s6_addr[8..10].try_into().ok()?);
-            let seg5 = u16::from_be_bytes(sa.sin6_addr.s6_addr[10..12].try_into().ok()?);
-            let seg6 = u16::from_be_bytes(sa.sin6_addr.s6_addr[12..14].try_into().ok()?);
-            let seg7 = u16::from_be_bytes(sa.sin6_addr.s6_addr[14..16].try_into().ok()?);
+            // SAFETY: We checked that `len` is at least `size_of::<sockaddr_in6>()`
+            // and `ss_family == AF_INET6`. The kernel fills a complete
+            // `sockaddr_in6` for `SO_ORIGINAL_DST` on `SOL_IPV6`.
+            //
+            // NOTE: IPv6 `SO_ORIGINAL_DST` support requires kernel nf_conntrack
+            // IPv6 support and a recent enough iptables/nftables. When that
+            // path is unreachable we fall through to `NoOriginalDestination`.
+            let sa = unsafe {
+                std::ptr::read_unaligned(storage as *const _ as *const libc::sockaddr_in6)
+            };
+            let port = u16::from_be(sa.sin6_port);
+            let octets = sa.sin6_addr.s6_addr;
+            let seg = |i: usize| u16::from_be_bytes(octets[i..i + 2].try_into().ok()?);
             Some(SocketAddr::new(
                 IpAddr::V6(Ipv6Addr::new(
-                    seg0, seg1, seg2, seg3, seg4, seg5, seg6, seg7,
+                    seg(0),
+                    seg(2),
+                    seg(4),
+                    seg(6),
+                    seg(8),
+                    seg(10),
+                    seg(12),
+                    seg(14),
                 )),
                 port,
             ))
@@ -254,5 +281,93 @@ mod tests {
             "expected UnsupportedPlatform on non-Linux, got: {:?}",
             result
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_sockaddr_rejects_unknown_family() {
+        let storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        // ss_family defaults to 0 (AF_UNSPEC on Linux), so this should
+        // always return None without crashing.
+        let result = parse_sockaddr(&storage, 0);
+        assert!(result.is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_sockaddr_rejects_truncated_ipv4() {
+        // Build a sockaddr_in with AF_INET family but pass a too-short len.
+        let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        unsafe {
+            let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in);
+            sa.sin_family = libc::AF_INET as u16;
+            sa.sin_port = 8080u16.to_be();
+            sa.sin_addr.s_addr = u32::from([127, 0, 0, 1]).to_be();
+        }
+        let truncated_len = 4u32; // smaller than sizeof(sockaddr_in)
+        let result = parse_sockaddr(&storage, truncated_len);
+        assert!(result.is_none(), "truncated length must reject");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_sockaddr_round_trip_ipv4() {
+        // Build a sockaddr_in with AF_INET family and parse it back.
+        let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        unsafe {
+            let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in);
+            sa.sin_family = libc::AF_INET as u16;
+            sa.sin_port = 8080u16.to_be();
+            sa.sin_addr.s_addr = u32::from([192, 0, 2, 7]).to_be();
+        }
+        let len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+        let result = parse_sockaddr(&storage, len).expect("IPv4 should parse");
+        match result {
+            SocketAddr::V4(v4) => {
+                assert_eq!(v4.ip().to_string(), "192.0.2.7");
+                assert_eq!(v4.port(), 8080);
+            }
+            other => panic!("expected IPv4 SocketAddr, got {other:?}"),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_sockaddr_round_trip_ipv6() {
+        // Build a sockaddr_in6 with AF_INET6 family and parse it back.
+        let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        unsafe {
+            let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in6);
+            sa.sin6_family = libc::AF_INET6 as u16;
+            sa.sin6_port = 9090u16.to_be();
+            // 2001:db8::1
+            let addr_bytes: [u8; 16] = [
+                0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+            ];
+            sa.sin6_addr.s6_addr = addr_bytes;
+        }
+        let len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
+        let result = parse_sockaddr(&storage, len).expect("IPv6 should parse");
+        match result {
+            SocketAddr::V6(v6) => {
+                assert_eq!(v6.ip().to_string(), "2001:db8::1");
+                assert_eq!(v6.port(), 9090);
+            }
+            other => panic!("expected IPv6 SocketAddr, got {other:?}"),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parse_sockaddr_rejects_truncated_ipv6() {
+        let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        unsafe {
+            let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in6);
+            sa.sin6_family = libc::AF_INET6 as u16;
+            sa.sin6_port = 9090u16.to_be();
+        }
+        let truncated_len = 4u32;
+        let result = parse_sockaddr(&storage, truncated_len);
+        assert!(result.is_none(), "truncated IPv6 length must reject");
     }
 }

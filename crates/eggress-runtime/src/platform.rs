@@ -206,6 +206,16 @@ fn check_linux_netfilter_proc(path: &str) -> CapabilityStatus {
 // ---------------------------------------------------------------------------
 // Linux transparent bind (IP_TRANSPARENT)
 // ---------------------------------------------------------------------------
+//
+// `ip_nonlocal_bind=1` is a sysctl value: it does NOT mean the running
+// process can successfully call setsockopt(IP_TRANSPARENT). Setting that
+// option requires CAP_NET_ADMIN (or root) and an active socket. We surface
+// the sysctl reading here for diagnostics only; the supervisor must treat
+// any later bind failure as the authoritative answer.
+//
+// A successful probe only indicates that the sysctl knob has been flipped
+// globally; it does not assert CAP_NET_ADMIN, nor that IP_TRANSPARENT will
+// actually succeed. Treat this as a soft hint, not a privilege assertion.
 
 #[cfg(target_os = "linux")]
 fn check_linux_transparent_bind() -> CapabilityStatus {
@@ -215,7 +225,7 @@ fn check_linux_transparent_bind() -> CapabilityStatus {
             if val == "1" {
                 CapabilityStatus::Available
             } else {
-                CapabilityStatus::MissingPrivilege
+                CapabilityStatus::KernelUnsupported
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
@@ -233,18 +243,18 @@ fn check_linux_transparent_bind() -> CapabilityStatus {
 // ---------------------------------------------------------------------------
 // macOS PF original destination
 // ---------------------------------------------------------------------------
+//
+// macOS exposes PF via `/dev/pf`, but Eggress does not implement PF-based
+// original-destination recovery (see ADR_macos_pf_transparent_proxy.md).
+// Reporting `/dev/pf` as Available would falsely imply that running eggress
+// on macOS yields full transparent proxy semantics; we instead always
+// return UnsupportedPlatform so callers cannot route traffic on that
+// assumption.
 
 #[cfg(target_os = "macos")]
 fn check_macos_pf_original_dst() -> CapabilityStatus {
-    match std::path::Path::new("/dev/pf").metadata() {
-        Ok(meta) if meta.is_file() => CapabilityStatus::Available,
-        Ok(_) => CapabilityStatus::KernelUnsupported,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => CapabilityStatus::KernelUnsupported,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            CapabilityStatus::MissingPrivilege
-        }
-        Err(_) => CapabilityStatus::KernelUnsupported,
-    }
+    // Even when /dev/pf exists, Eggress has no PF integration.
+    CapabilityStatus::KernelUnsupported
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -442,13 +452,12 @@ mod tests {
             CapabilityStatus::Available
         );
 
-        // Without override: returns real platform status (not Available on
-        // systems where /dev/pf is not accessible).
+        // Without override: PF is intentionally not implemented on any
+        // platform, so the real probe always reports either
+        // KernelUnsupported (macOS) or UnsupportedPlatform (non-macOS).
         let real = check_capability(PlatformCapability::MacosPfOriginalDst);
         match real {
-            CapabilityStatus::Available
-            | CapabilityStatus::MissingPrivilege
-            | CapabilityStatus::KernelUnsupported => {}
+            CapabilityStatus::KernelUnsupported => {}
             #[cfg(not(target_os = "macos"))]
             CapabilityStatus::UnsupportedPlatform => {}
             other => panic!("unexpected status: {other:?}"),
@@ -520,5 +529,68 @@ mod tests {
         assert_eq!(result, CapabilityStatus::Available);
         #[cfg(not(unix))]
         assert_eq!(result, CapabilityStatus::UnsupportedPlatform);
+    }
+
+    /// The `LinuxTransparentBind` capability reports the `ip_nonlocal_bind`
+    /// sysctl value, not a verified privilege or kernel feature. Override
+    /// paths verify that the sysctl returns the expected enum regardless
+    /// of host state.
+    #[test]
+    fn linux_transparent_bind_override_paths() {
+        for status in [
+            CapabilityStatus::Available,
+            CapabilityStatus::MissingPrivilege,
+            CapabilityStatus::KernelUnsupported,
+            CapabilityStatus::UnsupportedPlatform,
+            CapabilityStatus::DisabledAtCompileTime,
+        ] {
+            let mut overrides = HashMap::new();
+            overrides.insert(PlatformCapability::LinuxTransparentBind, status.clone());
+            assert_eq!(
+                check_capability_with_overrides(
+                    PlatformCapability::LinuxTransparentBind,
+                    Some(&overrides),
+                ),
+                status,
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_transparent_bind_real_probe_returns_known_status() {
+        let status = check_capability(PlatformCapability::LinuxTransparentBind);
+        match status {
+            CapabilityStatus::Available | CapabilityStatus::KernelUnsupported => {}
+            other => panic!(
+                "LinuxTransparentBind real probe must be Available or KernelUnsupported (sysctl read), got {other:?}"
+            ),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_original_dst_real_probe_returns_known_status() {
+        let v4 = check_capability(PlatformCapability::LinuxOriginalDstIpv4);
+        let v6 = check_capability(PlatformCapability::LinuxOriginalDstIpv6);
+        for s in [&v4, &v6] {
+            match s {
+                CapabilityStatus::Available
+                | CapabilityStatus::MissingPrivilege
+                | CapabilityStatus::KernelUnsupported => {}
+                other => panic!("unexpected real-probe status: {other:?}"),
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_pf_real_probe_always_kernel_unsupported() {
+        let status = check_capability(PlatformCapability::MacosPfOriginalDst);
+        assert_eq!(
+            status,
+            CapabilityStatus::KernelUnsupported,
+            "PF integration is intentionally unimplemented; probe must not claim Available"
+        );
     }
 }

@@ -32,7 +32,7 @@ For the canonical per-feature evidence table with test commands, see
 | Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
 | Transparent TCP proxy (`redir://`) | Linux only | Linux only | Supported | `transparent.rs` tests | none | Requires `SO_ORIGINAL_DST`; iptables/nftables REDIRECT rule needed |
 | Unix domain socket (`unix://`) | Unix only | Unix only | Supported | `unix_listener.rs` tests | none | Listen on filesystem socket path; Windows not supported |
-| Reverse/backward proxy (`+in`/`bind://`/`listen://`) | TCP-only raw relay, optional plaintext auth, one session per control channel | Reverse acceptor + control client (`crates/eggress-protocol-reverse`) | Supported | `integration.rs` | none | TCP only; UDP not supported by pproxy either; no built-in TLS |
+| Reverse/backward proxy (`+in`/`bind://`/`listen://`) | TCP-only raw relay, optional plaintext auth, one session per control channel | Reverse acceptor + control client (`crates/eggress-protocol-reverse`) | Supported | `integration.rs`, `reverse_runtime.rs` (10 supervisor-wiring tests), `reverse_interop.rs` | `reverse_payload_byte_equality_eggress_loopback` (self-interop payload byte-equality) | TCP only; UDP not supported by pproxy either; no built-in TLS; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind (Phase 25-28 H11) |
 | macOS PF transparent proxy | supported | not implemented | Intentional non-parity | none | none | Use pfctl with standard listener instead |
 | Trojan | server + client | client only | Partial | unit tests | none | No Trojan server; no differential |
 
@@ -161,9 +161,9 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported; standard TCP framing |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
 | ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
-| HTTP/2 CONNECT | Supported | Supported | **Supported** | Phase 26, synthetic |
-| WebSocket tunnels | Supported | Supported | **Supported** | Phase 26, synthetic |
-| Raw fixed-target tunnels | Supported | Supported | **Supported** | Phase 26, synthetic |
+| HTTP/2 CONNECT | Supported | Supported (protocol-crate only) | **Supported** | Phase 26, synthetic; refused as listener/upstream through CLI/config compiler (Phase 25-28 H5/H6/H7) |
+| WebSocket tunnels | Supported | Supported (protocol-crate only) | **Supported** | Phase 26, synthetic; refused as listener/upstream through CLI/config compiler (Phase 25-28 H5/H6/H7) |
+| Raw fixed-target tunnels | Supported | Supported (protocol-crate only) | **Supported** | Phase 26, synthetic; refused as listener/upstream through CLI/config compiler (Phase 25-28 H5/H6/H7) |
 | TLS ALPN negotiation | Supported | Supported | **Supported** | Phase 26, synthetic |
 | QUIC transport | Deferred | Deferred | **Intentional non-parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
 | HTTP/3 | Deferred | Deferred | **Intentional non-parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |

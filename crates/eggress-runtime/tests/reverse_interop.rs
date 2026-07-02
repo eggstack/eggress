@@ -158,6 +158,125 @@ async fn reverse_eggress_self_interop_loopback() {
     let _ = tokio::time::timeout(Duration::from_secs(1), echo_task).await;
 }
 
+/// Payload-level differential test using a known byte sequence. This
+/// verifies that the eggress reverse client and server correctly relay
+/// arbitrary bytes through the control channel. A real pproxy-against-
+/// pproxy comparison is captured separately in the gated tests below.
+#[tokio::test]
+async fn reverse_payload_byte_equality_eggress_loopback() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let control_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let control_addr = control_listener.local_addr().unwrap();
+    drop(control_listener);
+
+    let external_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let external_addr = external_listener.local_addr().unwrap();
+    drop(external_listener);
+
+    let target_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_addr = target_listener.local_addr().unwrap();
+
+    // Real echo server that reads N bytes and writes them back.
+    let echo_task = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match target_listener.accept().await {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 4096];
+                loop {
+                    match stream.read(&mut buf).await {
+                        Ok(0) => return,
+                        Ok(n) => {
+                            if stream.write_all(&buf[..n]).await.is_err() {
+                                return;
+                            }
+                        }
+                        Err(_) => return,
+                    }
+                }
+            });
+        }
+    });
+
+    let server = ReverseServer::new(ReverseServerConfig {
+        control_bind: control_addr,
+        external_bind: Some(external_addr),
+        ..Default::default()
+    });
+    let server_cancel = server.cancel_token();
+    let server_handle = tokio::spawn(async move {
+        let _ = server.run().await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut client = ReverseClient::new(ReverseClientConfig {
+        server_addr: control_addr,
+        reconnect_initial_ms: 50,
+        reconnect_max_ms: 100,
+        ..Default::default()
+    });
+    client.set_resolver(Arc::new(StaticTargetResolver::new(
+        target_addr.ip().to_string(),
+        target_addr.port(),
+    )));
+    let client_cancel = client.cancel_token();
+    let client_handle = tokio::spawn(async move {
+        let _ = client.run().await;
+    });
+
+    // Wait for the control stream to be established AND pooled.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // External client connects to the eggress reverse server's external
+    // listener. The server pairs this connection with the pooled control
+    // stream from the reverse client. Bytes flow:
+    //   external_client <-> reverse_server <-> control_stream <-> reverse_client <-> echo
+    let mut stream = tokio::net::TcpStream::connect(external_addr).await.unwrap();
+    let payload: Vec<u8> = (0..=255u8).cycle().take(1024).collect();
+    stream.write_all(&payload).await.unwrap();
+
+    // Don't shutdown the write side: relay_bidirectional will exit when
+    // either side returns 0, so we keep our write half open until we've
+    // read the echo response. Read exactly the payload size back.
+    let mut received = vec![0u8; payload.len()];
+    let mut total_read = 0;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while total_read < received.len() {
+            match stream.read(&mut received[total_read..]).await {
+                Ok(0) => break,
+                Ok(n) => total_read += n,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok::<(), std::io::Error>(())
+    })
+    .await
+    .expect("read timed out")
+    .expect("read failed");
+    received.truncate(total_read);
+
+    // Now safe to close.
+    drop(stream);
+
+    assert_eq!(
+        received,
+        payload,
+        "echo server returned different bytes than sent ({} bytes sent, {} received)",
+        payload.len(),
+        received.len(),
+    );
+
+    client_cancel.cancel();
+    server_cancel.cancel();
+    let _ = tokio::time::timeout(Duration::from_secs(2), client_handle).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), server_handle).await;
+    let _ = tokio::time::timeout(Duration::from_secs(1), echo_task).await;
+}
+
 #[tokio::test]
 async fn reverse_redacts_credentials_in_logs() {
     // Verifies that the `redact_auth` helper behaves correctly even

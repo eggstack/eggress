@@ -10,6 +10,38 @@ use crate::model::{
 };
 use crate::validate::validate_duration;
 
+/// Compiled reverse server configuration with resolved defaults and parsed addresses.
+#[derive(Debug, Clone)]
+pub struct CompiledReverseServerConfig {
+    pub id: String,
+    pub control_bind: std::net::SocketAddr,
+    pub external_bind: Option<std::net::SocketAddr>,
+    pub auth_username: Option<String>,
+    pub auth_password: Option<String>,
+    pub max_control_connections: u32,
+    pub read_timeout_ms: u64,
+    pub allow_bind: Option<Vec<std::net::SocketAddr>>,
+    pub max_listeners_per_client: u32,
+    pub max_streams_per_listener: u32,
+    pub max_pending_external: u32,
+}
+
+/// Compiled reverse client configuration with resolved defaults and parsed addresses.
+#[derive(Debug, Clone)]
+pub struct CompiledReverseClientConfig {
+    pub id: String,
+    pub server_addr: std::net::SocketAddr,
+    pub auth_username: Option<String>,
+    pub auth_password: Option<String>,
+    pub reconnect_initial_ms: u64,
+    pub reconnect_max_ms: u64,
+    pub default_target_host: Option<String>,
+    pub default_target_port: Option<u16>,
+    pub read_timeout_ms: u64,
+    pub drain_grace_ms: u64,
+    pub parallel_connections: u32,
+}
+
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
     pub process: ProcessConfig,
@@ -20,6 +52,8 @@ pub struct RuntimeConfig {
     pub rules: Vec<eggress_routing::CompiledRule>,
     pub default_action: eggress_routing::RouteActionSpec,
     pub admin: Option<AdminConfig>,
+    pub reverse_servers: Vec<CompiledReverseServerConfig>,
+    pub reverse_clients: Vec<CompiledReverseClientConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -183,9 +217,21 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "socks4" => Ok(ProtocolId::Socks4),
         "socks5" => Ok(ProtocolId::Socks5),
         "shadowsocks" => Ok(ProtocolId::Shadowsocks),
-        "h2" => Ok(ProtocolId::Http2),
-        "websocket" | "ws" | "wss" => Ok(ProtocolId::WebSocket),
-        "raw" | "tunnel" => Ok(ProtocolId::Raw),
+        // H2/WebSocket/Raw are recognized in the URI parser and exist as
+        // protocol crates, but they are NOT yet integrated through the
+        // supervisor. We refuse them in `[[listeners]]`/`[[upstreams]]`
+        // configs with a structured diagnostic so users get an honest
+        // failure rather than a silently broken listener. See
+        // docs/PHASE_25_28_HARDENING_COMPLETION.md (H5/H6/H7).
+        "h2" | "websocket" | "ws" | "wss" | "raw" | "tunnel" => Err(ConfigError::validation(
+            "protocols",
+            &format!(
+                "'{}' is not yet integrated through the runtime supervisor \
+                     (protocol-crate only). Use it directly via the protocol crate, \
+                     or rely on a stdio TCP listener/upstream instead.",
+                s
+            ),
+        )),
         _ => Err(ConfigError::validation(
             "protocols",
             &format!("unknown protocol: {}", s),
@@ -485,6 +531,8 @@ pub fn compile_config(config: &ConfigFile) -> Result<RuntimeConfig, ConfigError>
     let rules = compile_rules(config)?;
     let default_action = compile_default_action(config);
     let admin = compile_admin(config);
+    let reverse_servers = compile_reverse_servers(config)?;
+    let reverse_clients = compile_reverse_clients(config)?;
 
     Ok(RuntimeConfig {
         process,
@@ -495,6 +543,8 @@ pub fn compile_config(config: &ConfigFile) -> Result<RuntimeConfig, ConfigError>
         rules,
         default_action,
         admin,
+        reverse_servers,
+        reverse_clients,
     })
 }
 
@@ -1132,6 +1182,161 @@ fn compile_unix_listener_config(
         unlink_existing,
         mode,
     }))
+}
+
+fn compile_reverse_servers(
+    config: &ConfigFile,
+) -> Result<Vec<CompiledReverseServerConfig>, ConfigError> {
+    let servers = match &config.reverse_servers {
+        Some(s) => s,
+        None => return Ok(vec![]),
+    };
+
+    servers
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let path = format!("reverse_servers[{}]", i);
+
+            let control_bind: std::net::SocketAddr = s.control_bind.parse().map_err(|_| {
+                ConfigError::validation(
+                    &format!("{}.control_bind", path),
+                    &format!("invalid socket address: {}", s.control_bind),
+                )
+            })?;
+
+            let external_bind = None; // external_bind is not in the TOML model yet; could be added later
+
+            let auth_password = resolve_password(
+                s.auth_password.as_deref(),
+                s.auth_password_env.as_deref(),
+                &path,
+            )?;
+
+            let max_streams = s.max_streams.unwrap_or(1024);
+
+            let heartbeat_interval_ms = s
+                .heartbeat_interval
+                .as_deref()
+                .map(|h| validate_duration(h).map(|d| d.as_millis() as u64))
+                .transpose()
+                .map_err(|e| {
+                    ConfigError::validation(&format!("{}.heartbeat_interval", path), &e.to_string())
+                })?
+                .unwrap_or(300_000);
+
+            Ok(CompiledReverseServerConfig {
+                id: s.id.clone(),
+                control_bind,
+                external_bind,
+                auth_username: s.auth_username.clone(),
+                auth_password,
+                max_control_connections: 256,
+                read_timeout_ms: heartbeat_interval_ms,
+                allow_bind: None,
+                max_listeners_per_client: 1,
+                max_streams_per_listener: max_streams,
+                max_pending_external: 1024,
+            })
+        })
+        .collect()
+}
+
+fn compile_reverse_clients(
+    config: &ConfigFile,
+) -> Result<Vec<CompiledReverseClientConfig>, ConfigError> {
+    let clients = match &config.reverse_clients {
+        Some(c) => c,
+        None => return Ok(vec![]),
+    };
+
+    clients
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let path = format!("reverse_clients[{}]", i);
+
+            let server_addr: std::net::SocketAddr = c.server_addr.parse().map_err(|_| {
+                ConfigError::validation(
+                    &format!("{}.server_addr", path),
+                    &format!("invalid socket address: {}", c.server_addr),
+                )
+            })?;
+
+            let auth_password = resolve_password(
+                c.auth_password.as_deref(),
+                c.auth_password_env.as_deref(),
+                &path,
+            )?;
+
+            let reconnect_initial_ms = c
+                .reconnect_initial
+                .as_deref()
+                .map(|d| validate_duration(d).map(|dur| dur.as_millis() as u64))
+                .transpose()
+                .map_err(|e| {
+                    ConfigError::validation(&format!("{}.reconnect_initial", path), &e.to_string())
+                })?
+                .unwrap_or(1_000);
+
+            let reconnect_max_ms = c
+                .reconnect_max
+                .as_deref()
+                .map(|d| validate_duration(d).map(|dur| dur.as_millis() as u64))
+                .transpose()
+                .map_err(|e| {
+                    ConfigError::validation(&format!("{}.reconnect_max", path), &e.to_string())
+                })?
+                .unwrap_or(30_000);
+
+            let heartbeat_interval_ms = c
+                .heartbeat_interval
+                .as_deref()
+                .map(|d| validate_duration(d).map(|dur| dur.as_millis() as u64))
+                .transpose()
+                .map_err(|e| {
+                    ConfigError::validation(&format!("{}.heartbeat_interval", path), &e.to_string())
+                })?
+                .unwrap_or(60_000);
+
+            let parallel_connections = c.parallel_connections.unwrap_or(1);
+
+            Ok(CompiledReverseClientConfig {
+                id: c.id.clone(),
+                server_addr,
+                auth_username: c.auth_username.clone(),
+                auth_password,
+                reconnect_initial_ms,
+                reconnect_max_ms,
+                default_target_host: None,
+                default_target_port: None,
+                read_timeout_ms: heartbeat_interval_ms,
+                drain_grace_ms: 5_000,
+                parallel_connections,
+            })
+        })
+        .collect()
+}
+
+/// Resolve a password from either an explicit value or an environment variable.
+fn resolve_password(
+    password: Option<&str>,
+    password_env: Option<&str>,
+    path: &str,
+) -> Result<Option<String>, ConfigError> {
+    if let Some(env_var) = password_env {
+        std::env::var(env_var).map(Some).map_err(|_| {
+            ConfigError::validation(
+                path,
+                &format!(
+                    "environment variable '{}' not set (referenced by auth_password_env)",
+                    env_var
+                ),
+            )
+        })
+    } else {
+        Ok(password.map(|s| s.to_string()))
+    }
 }
 
 fn parse_duration_opt(s: &str) -> Option<std::time::Duration> {

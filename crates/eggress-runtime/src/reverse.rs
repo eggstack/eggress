@@ -34,7 +34,7 @@ use tracing::warn;
 /// 3. If the decision is `Reject`, returns `TargetResolution::Reject`
 ///    with the reason.
 pub struct RouteEngineTargetResolver {
-    router: SharedRoutingService,
+    router: Arc<SharedRoutingService>,
     target: TargetAddr,
     reverse_listener: Arc<str>,
     client_addr: Option<SocketAddr>,
@@ -43,7 +43,7 @@ pub struct RouteEngineTargetResolver {
 impl RouteEngineTargetResolver {
     /// Build a new resolver.
     pub fn new(
-        router: SharedRoutingService,
+        router: Arc<SharedRoutingService>,
         host: String,
         port: u16,
         reverse_listener: Arc<str>,
@@ -107,8 +107,8 @@ mod tests {
     use eggress_core::RejectReason;
     use eggress_routing::{CompiledRule, RouteActionSpec, Router, RuleId, SharedRoutingService};
 
-    fn router_with_default(action: RouteActionSpec) -> SharedRoutingService {
-        SharedRoutingService::new(Router::new(Vec::new(), action))
+    fn router_with_default(action: RouteActionSpec) -> Arc<SharedRoutingService> {
+        Arc::new(SharedRoutingService::new(Router::new(Vec::new(), action)))
     }
 
     #[test]
@@ -157,7 +157,10 @@ mod tests {
             matcher: eggress_routing::MatchExpr::Any,
             action: RouteActionSpec::Reject(RejectReason::AccessDenied),
         };
-        let router = SharedRoutingService::new(Router::new(vec![rule], RouteActionSpec::Direct));
+        let router = Arc::new(SharedRoutingService::new(Router::new(
+            vec![rule],
+            RouteActionSpec::Direct,
+        )));
         let resolver = RouteEngineTargetResolver::new(
             router,
             "127.0.0.1".to_string(),
@@ -181,10 +184,10 @@ mod tests {
             matcher: eggress_routing::MatchExpr::ReverseListener(Arc::from("rev-1")),
             action: RouteActionSpec::Direct,
         };
-        let router = SharedRoutingService::new(Router::new(
+        let router = Arc::new(SharedRoutingService::new(Router::new(
             vec![rule],
             RouteActionSpec::Reject(RejectReason::AccessDenied),
-        ));
+        )));
         let resolver = RouteEngineTargetResolver::new(
             router,
             "127.0.0.1".to_string(),

@@ -14,6 +14,8 @@ pub struct CompiledRuntimeSnapshot {
     pub health_config: eggress_routing::health::HealthConfig,
     pub listeners: Vec<ListenerConfig>,
     pub admin: Option<AdminConfig>,
+    pub reverse_servers: Vec<eggress_config::compile::CompiledReverseServerConfig>,
+    pub reverse_clients: Vec<eggress_config::compile::CompiledReverseClientConfig>,
 }
 
 /// Check whether an existing `UpstreamRuntime` is compatible with a new config,
@@ -106,6 +108,8 @@ pub fn compile_runtime_snapshot(
         health_config: eggress_routing::health::HealthConfig::default(),
         listeners: rt.listeners.clone(),
         admin: rt.admin.clone(),
+        reverse_servers: rt.reverse_servers.clone(),
+        reverse_clients: rt.reverse_clients.clone(),
     })
 }
 
@@ -153,6 +157,8 @@ mod tests {
             rules: vec![],
             default_action: RouteActionSpec::Direct,
             admin: None,
+            reverse_servers: vec![],
+            reverse_clients: vec![],
         }
     }
 

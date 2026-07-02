@@ -67,9 +67,19 @@ cargo test -p eggress-protocol-reverse
 cargo test -p eggress-protocol-reverse --test integration
 cargo test -p eggress-pproxy-compat --lib reverse
 cargo test -p eggress-runtime --test reverse_interop
+cargo test -p eggress-runtime --test reverse_runtime
 
 # Run gated reverse interop tests (requires pproxy on PATH)
 EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored
+
+# Run URI corpus integrity validator
+cargo test -p eggress-testkit --lib corpus
+
+# Run platform capability tests (transparent, PF)
+cargo test -p eggress-runtime --lib platform
+
+# Run sockaddr parser tests (transparent unsafe boundary)
+cargo test -p eggress-server --lib transparent
 
 # Run advanced transport integration tests
 cargo test -p eggress-runtime advanced_transport
@@ -363,7 +373,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **pproxy CLI subcommands**: `pproxy translate` converts pproxy URI arguments to eggress TOML; `pproxy check` reports parity tier; `pproxy run` translates and starts the service
 - **pproxy protocol parity**: Phase 11 classified all remaining pproxy protocols/schemes; lightweight aliases (socks4a, https) map to existing protocols; unsupported protocols (SSH) produce structured diagnostics. Transparent TCP proxy (`redir://`, Linux only) and Unix domain socket listeners (`unix://`, Unix only) are now supported (Phase 25).
 - **Shadowsocks TCP framing**: Standard SIP003 AEAD (two AEAD operations per chunk, encrypted length). Wire-compatible with standard Shadowsocks implementations. UDP uses standard AEAD format and is interoperable. See `docs/protocols/SHADOWSOCKS.md`.
-- **Advanced transports**: HTTP/2 CONNECT, WebSocket tunnels, and raw fixed-target tunnels supported as inbound/upstream protocols. QUIC/HTTP/3 deferred by ADR. See `docs/protocols/ADVANCED_TRANSPORTS.md`.
+- **Advanced transports**: HTTP/2 CONNECT, WebSocket tunnels, and raw fixed-target tunnels are implemented in their protocol crates (`eggress-protocol-http/src/h2_connect.rs`, `eggress-protocol-websocket/`, `eggress-protocol-raw/`) as **protocol-crate only**. They are intentionally **not** integrated as inbound/upstream protocols through the runtime supervisor or config compiler — `compile_protocol()` and `parse_listener_uri` refuse `h2`, `ws`, `wss`, `raw`, `tunnel` with a `diagnostic[unsupported_transport_wrapper]` tag. QUIC/HTTP/3 deferred by ADR. See `docs/protocols/ADVANCED_TRANSPORTS.md` and `docs/PHASE_25_28_HARDENING_COMPLETION.md` (H5/H6/H7).
 - **SSR/legacy Shadowsocks**: Intentionally unsupported. SSR URIs (`ssr://`) and legacy stream cipher methods are recognized and rejected with clear diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. Legacy method detection exists in `eggress-protocol-shadowsocks::method::is_legacy_method()`.
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP framing standardized to SIP003 AEAD in Phase 21. Completion docs updated with corrective notices and gated-test status.
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Thread ownership: async path uses a Tokio blocking-pool thread + dedicated OS thread (`eggress-embed-rt`); blocking path uses an outer startup thread + inner run thread (`eggress-embed-run`). Handle owns state/token and cleans up on drop (5-second timeout on async path). `shutdown()` and `shutdown_blocking()` are idempotent. See `docs/EMBED_API.md`.
@@ -375,6 +385,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Exit codes**: Structured exit codes defined in `eggress-pproxy-compat::exit_codes`. CLI uses constants, not ad-hoc returns.
 - **Diagnostics**: `DiagnosticCode` enum with stable codes for all pproxy compat errors/warnings. `StructuredDiagnostic` for JSON output.
 - **pproxy check --json**: Machine-readable compatibility check output with tier, features, and diagnostics.
+- **Phase 25-28 hardening pass**: Verified implementation matches documentation. H1 added SAFETY comments and `read_unaligned` to transparent listener; H3 corrected Linux/macOS platform capability semantics (macOS PF now honestly reports `KernelUnsupported`); H4 hardened Unix listener (`unlink_existing=true` refuses non-socket paths); H5/H6/H7 refused H2/WS/Raw as listener/upstream protocols (protocol-crate only); H8 added QUIC/H3 structured-rejection tests; H9 wired reverse proxy through supervisor with `reverse_runtime.rs` (10 tests); H10 added payload-level reverse differential test; H11 added `ReverseServerConfig::validate()` for non-loopback safety; H13 added URI corpus integrity validator; H14/H15 audited and corrected docs (README, PARITY_MATRIX.md, METRICS.md). See `docs/PHASE_25_28_HARDENING_COMPLETION.md` for the full record.
 
 ## Skills
 
