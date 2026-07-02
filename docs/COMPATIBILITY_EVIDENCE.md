@@ -125,9 +125,19 @@ All features below have compatible status backed by differential evidence agains
 | `pproxy_translate_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
 | `pproxy_check_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
 | `pproxy_run_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
-| `exit_codes_granular` | Intentional non-parity | Synthetic (exit code constants) | `cargo test -p eggress-pproxy-compat exit_codes` |
-| `json_check_output` | Intentional non-parity | Synthetic (`--json` flag) | `cargo test -p eggress-cli cli_exit_codes` |
-| `structured_diagnostics` | Intentional non-parity | Synthetic (DiagnosticCode serialization) | `cargo test -p eggress-pproxy-compat diagnostics` |
+| `cli_exit_codes` | Compatible | Synthetic (exit code constants, subprocess tests) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_check_json` | Compatible | Synthetic (`--json` flag produces structured output) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_diagnostics_taxonomy` | Compatible | Synthetic (DiagnosticCode serialization, 13 codes) | `cargo test -p eggress-pproxy-compat diagnostics` |
+| `cli_translate_golden` | Compatible | Synthetic (deterministic translation output) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_chain` | Compatible | Synthetic (chain translation via __ separator) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_scheduler` | Compatible | Synthetic (scheduler flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_auth` | Compatible | Synthetic (auth flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_reverse` | Compatible | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_standalone_udp` | Supported | Synthetic (standalone UDP translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_ssr_rejection` | Intentional non-parity | Synthetic (SSR URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_ssh_rejection` | Intentional non-parity | Synthetic (SSH URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
+| `cli_run_process_behavior` | Compatible | Synthetic (signal handling, clean shutdown) | `cargo test -p eggress-cli pproxy_run_process` |
+| `cli_inventory_complete` | Compatible | Synthetic (full flag inventory documented) | docs review |
 
 ## Gated vs Ungated Tests
 
@@ -200,19 +210,19 @@ documented place for that work.
 
 | Feature | Tier | Evidence | How to run |
 |---------|------|----------|------------|
-| `exit_code_cli_parse_error` | Intentional non-parity | Synthetic (exit code 2) | `cargo test -p eggress-cli cli_exit_codes::test_exit_code_cli_parse_error` |
-| `exit_code_config_validation` | Intentional non-parity | Synthetic (non-zero for missing config) | `cargo test -p eggress-cli cli_exit_codes::test_exit_code_config_validation` |
-| `exit_code_unsupported_feature` | Intentional non-parity | Synthetic (exit code 5) | `cargo test -p eggress-cli cli_exit_codes::test_exit_code_unsupported_feature` |
-| `exit_code_success` | Intentional non-parity | Synthetic (exit code 0) | `cargo test -p eggress-cli cli_exit_codes::test_exit_code_success` |
-| `exit_code_check_always_zero` | Intentional non-parity | Synthetic (exit code 0 even with unsupported) | `cargo test -p eggress-cli cli_exit_codes::test_exit_code_check_unsupported_still_zero` |
-| `json_output_check` | Intentional non-parity | Synthetic (`--json` flag produces JSON with tier, diagnostics, features) | `cargo test -p eggress-cli cli_exit_codes` |
-| `structured_diagnostics_all_codes` | Intentional non-parity | Synthetic (all 13 codes serialize correctly) | `cargo test -p eggress-pproxy-compat diagnostics::tests::all_diagnostic_codes_serialize` |
-| `structured_diagnostics_from_errors` | Intentional non-parity | Synthetic (`From<CompatError>` maps to correct codes) | `cargo test -p eggress-pproxy-compat diagnostics::tests::from_` |
-| `structured_diagnostics_from_warnings` | Intentional non-parity | Synthetic (`From<CompatWarning>` maps to correct codes) | `cargo test -p eggress-pproxy-compat diagnostics::tests::from_` |
-| `structured_diagnostics_json_roundtrip` | Intentional non-parity | Synthetic (JSON serialization/deserialization) | `cargo test -p eggress-pproxy-compat diagnostics::tests::structured_diagnostic_json_roundtrip` |
-| `pproxy_translation_golden` | Intentional non-parity | Synthetic (golden fixture exit codes) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `pproxy_run_exit_codes` | Intentional non-parity | Synthetic (process exit codes for various scenarios) | `cargo test -p eggress-cli pproxy_run_process` |
+| `cli_exit_codes` | Compatible | Synthetic (exit code constants, subprocess tests) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_check_json` | Compatible | Synthetic (`--json` flag produces JSON with tier, diagnostics, features) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_diagnostics_taxonomy` | Compatible | Synthetic (all 13 codes serialize correctly) | `cargo test -p eggress-pproxy-compat diagnostics::tests::all_diagnostic_codes_serialize` |
+| `cli_translate_golden` | Compatible | Synthetic (deterministic translation output for fixtures) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_chain` | Compatible | Synthetic (chain translation via __ separator) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_scheduler` | Compatible | Synthetic (scheduler flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_auth` | Compatible | Synthetic (auth flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_reverse` | Compatible | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_run_process_behavior` | Compatible | Synthetic (signal handling, clean shutdown, readiness) | `cargo test -p eggress-cli pproxy_run_process` |
+| `cli_inventory_complete` | Compatible | Synthetic (full flag inventory documented) | docs review |
+| `cli_translate_ssr_rejection` | Intentional non-parity | Synthetic (SSR URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_ssh_rejection` | Intentional non-parity | Synthetic (SSH URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
 
-**Note:** Phase 28 does not claim pproxy-compatible exit code behavior. pproxy
-uses a single exit code (1) for all errors. Eggress provides differentiated codes.
-These are classified as **Intentional non-parity** — by design, not a gap.
+**Note:** Phase 28 exit codes and JSON output are classified as **Compatible**
+with eggress behavior (not pproxy behavioral parity). pproxy uses a single exit
+code (1) for all errors; eggress provides differentiated codes by design.

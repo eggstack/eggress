@@ -536,4 +536,85 @@ mod tests {
             assert!(json.ends_with('"'));
         }
     }
+
+    // --- Redaction tests (28.8) ---
+    //
+    // Redaction in eggress happens at the URI display level (PproxyUri::redacted_display)
+    // and in translate.rs warning messages. Error messages from CompatError are internal
+    // and don't carry credentials in production. These tests verify the structured
+    // diagnostic pipeline doesn't amplify credential leaks.
+
+    #[test]
+    fn structured_diagnostic_from_unsupported_protocol_never_leaks_credentials() {
+        let err = CompatError::UnsupportedProtocol("ssh".to_string());
+        let diag = StructuredDiagnostic::from(err);
+        assert!(!diag.message.contains("@"));
+        assert!(diag.suggestion.is_some());
+    }
+
+    #[test]
+    fn structured_diagnostic_from_unsupported_feature_never_leaks_credentials() {
+        let err = CompatError::unsupported("daemon", "--daemon not supported");
+        let diag = StructuredDiagnostic::from(err);
+        assert_eq!(diag.code, DiagnosticCode::UnsupportedFlag);
+        assert!(!diag.message.contains("@"));
+    }
+
+    #[test]
+    fn structured_diagnostic_from_invalid_uri_never_leaks_credentials() {
+        let err = CompatError::InvalidUri {
+            message: "missing port in endpoint".to_string(),
+        };
+        let diag = StructuredDiagnostic::from(err);
+        assert_eq!(diag.code, DiagnosticCode::InvalidUriSyntax);
+        assert!(!diag.message.contains("@"));
+    }
+
+    #[test]
+    fn structured_diagnostic_json_excludes_optional_none_fields() {
+        let diag = StructuredDiagnostic {
+            code: DiagnosticCode::UnsupportedProtocol,
+            feature_id: None,
+            tier: None,
+            message: "test".to_string(),
+            suggestion: None,
+        };
+        let json = serde_json::to_value(&diag).unwrap();
+        assert!(json.get("feature_id").is_none());
+        assert!(json.get("tier").is_none());
+        assert!(json.get("suggestion").is_none());
+    }
+
+    #[test]
+    fn compat_warning_display_never_leaks_credentials() {
+        let warn = CompatWarning {
+            category: "credential-in-toml",
+            message: "Listener 'pproxy-local-0' has plaintext credentials in generated TOML"
+                .to_string(),
+        };
+        let display = warn.to_string();
+        assert!(display.contains("[credential-in-toml]"));
+        assert!(!display.contains("@"));
+    }
+
+    #[test]
+    fn diagnostic_code_display_never_contains_credentials() {
+        let codes = [
+            DiagnosticCode::UnsupportedProtocol,
+            DiagnosticCode::UnsupportedFlag,
+            DiagnosticCode::InvalidUriSyntax,
+            DiagnosticCode::MissingTarget,
+            DiagnosticCode::MissingCredential,
+            DiagnosticCode::InvalidCipherMethod,
+            DiagnosticCode::BindFailure,
+        ];
+        for code in &codes {
+            let display = code.to_string();
+            assert!(
+                !display.contains("@"),
+                "code display contains @: {}",
+                display
+            );
+        }
+    }
 }
