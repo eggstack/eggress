@@ -1,0 +1,528 @@
+{
+  "pproxy_version": "unknown",
+  "python_version": "3.14.2",
+  "module_exports": [
+    "Connection",
+    "DIRECT",
+    "Rule",
+    "Server",
+    "cipher",
+    "proto",
+    "server"
+  ],
+  "submodules": {
+    "proto": [
+      "BaseProtocol",
+      "Direct",
+      "Echo",
+      "H2",
+      "H3",
+      "HTTP",
+      "HTTPOnly",
+      "HTTP_LINE",
+      "MAPPINGS",
+      "Pf",
+      "Redir",
+      "SOL_IPV6",
+      "SO_ORIGINAL_DST",
+      "SS",
+      "SSH",
+      "SSR",
+      "Socks4",
+      "Socks5",
+      "Transparent",
+      "Trojan",
+      "Tunnel",
+      "WS",
+      "accept",
+      "asyncio",
+      "base64",
+      "get_protos",
+      "hashlib",
+      "hmac",
+      "io",
+      "netloc_split",
+      "os",
+      "packstr",
+      "re",
+      "socket",
+      "socks_address",
+      "socks_address_stream",
+      "sslwrap",
+      "struct",
+      "time",
+      "udp_accept",
+      "urllib"
+    ],
+    "server": [
+      "AuthTable",
+      "DIRECT",
+      "DUMMY",
+      "ProxyBackward",
+      "ProxyDirect",
+      "ProxyH2",
+      "ProxyH3",
+      "ProxyQUIC",
+      "ProxySSH",
+      "ProxySimple",
+      "SOCKET_TIMEOUT",
+      "UDP_LIMIT",
+      "argparse",
+      "asyncio",
+      "base64",
+      "check_server_alive",
+      "compile_rule",
+      "datagram_handler",
+      "functools",
+      "main",
+      "patch_StreamReader",
+      "patch_StreamWriter",
+      "prepare_ciphers",
+      "print_server_started",
+      "proto",
+      "proxies_by_uri",
+      "proxy_by_uri",
+      "random",
+      "re",
+      "schedule",
+      "socket",
+      "sslcontexts",
+      "stream_handler",
+      "test_url",
+      "time",
+      "urllib"
+    ],
+    "cipher": [
+      "AEADCipher",
+      "AES_128_CFB8_Cipher",
+      "AES_128_CFB_Cipher",
+      "AES_128_CTR_Cipher",
+      "AES_128_GCM_Cipher",
+      "AES_128_OFB_Cipher",
+      "AES_192_CFB8_Cipher",
+      "AES_192_CFB_Cipher",
+      "AES_192_CTR_Cipher",
+      "AES_192_GCM_Cipher",
+      "AES_192_OFB_Cipher",
+      "AES_256_CFB8_Cipher",
+      "AES_256_CFB_Cipher",
+      "AES_256_CTR_Cipher",
+      "AES_256_GCM_Cipher",
+      "AES_256_OFB_Cipher",
+      "BF_CFB_Cipher",
+      "BaseCipher",
+      "CAST5_CFB_Cipher",
+      "ChaCha20_Cipher",
+      "ChaCha20_IETF_Cipher",
+      "ChaCha20_IETF_POLY1305_Cipher",
+      "DES_CFB_Cipher",
+      "MAP",
+      "PacketCipher",
+      "RC4_Cipher",
+      "RC4_MD5_Cipher",
+      "Salsa20_Cipher",
+      "get_cipher",
+      "hashlib",
+      "hmac",
+      "os"
+    ]
+  },
+  "protocols": {
+    "BaseProtocol": {
+      "qualname": "BaseProtocol",
+      "module": "pproxy.proto",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "methods": [
+        "channel",
+        "connect",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Direct": {
+      "qualname": "Direct",
+      "module": "pproxy.proto",
+      "bases": [
+        "Direct",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "channel",
+        "connect",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Echo": {
+      "qualname": "Echo",
+      "module": "pproxy.proto",
+      "bases": [
+        "Echo",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "query_remote",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "H2": {
+      "qualname": "H2",
+      "module": "pproxy.proto",
+      "bases": [
+        "H2",
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "http_accept",
+        "http_channel",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "H3": {
+      "qualname": "H3",
+      "module": "pproxy.proto",
+      "bases": [
+        "H3",
+        "H2",
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "http_accept",
+        "http_channel",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "HTTP": {
+      "qualname": "HTTP",
+      "module": "pproxy.proto",
+      "bases": [
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "http_accept",
+        "http_channel",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "HTTPOnly": {
+      "qualname": "HTTPOnly",
+      "module": "pproxy.proto",
+      "bases": [
+        "HTTPOnly",
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "http_accept",
+        "http_channel",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Pf": {
+      "qualname": "Pf",
+      "module": "pproxy.proto",
+      "bases": [
+        "Pf",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "query_remote",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Redir": {
+      "qualname": "Redir",
+      "module": "pproxy.proto",
+      "bases": [
+        "Redir",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "query_remote",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "SS": {
+      "qualname": "SS",
+      "module": "pproxy.proto",
+      "bases": [
+        "SS",
+        "SSR",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "patch_ota_reader",
+        "patch_ota_writer",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "SSH": {
+      "qualname": "SSH",
+      "module": "pproxy.proto",
+      "bases": [
+        "SSH",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "channel",
+        "connect",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "SSR": {
+      "qualname": "SSR",
+      "module": "pproxy.proto",
+      "bases": [
+        "SSR",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Socks4": {
+      "qualname": "Socks4",
+      "module": "pproxy.proto",
+      "bases": [
+        "Socks4",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Socks5": {
+      "qualname": "Socks5",
+      "module": "pproxy.proto",
+      "bases": [
+        "Socks5",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Transparent": {
+      "qualname": "Transparent",
+      "module": "pproxy.proto",
+      "bases": [
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Trojan": {
+      "qualname": "Trojan",
+      "module": "pproxy.proto",
+      "bases": [
+        "Trojan",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "Tunnel": {
+      "qualname": "Tunnel",
+      "module": "pproxy.proto",
+      "bases": [
+        "Tunnel",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "query_remote",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    },
+    "WS": {
+      "qualname": "WS",
+      "module": "pproxy.proto",
+      "bases": [
+        "WS",
+        "BaseProtocol"
+      ],
+      "methods": [
+        "accept",
+        "channel",
+        "connect",
+        "guess",
+        "patch_ws_stream",
+        "reuse",
+        "udp_accept",
+        "udp_connect",
+        "udp_pack",
+        "udp_unpack"
+      ]
+    }
+  },
+  "cipher_info": {
+    "classes": [
+      "AEADCipher",
+      "AES_128_CFB8_Cipher",
+      "AES_128_CFB_Cipher",
+      "AES_128_CTR_Cipher",
+      "AES_128_GCM_Cipher",
+      "AES_128_OFB_Cipher",
+      "AES_192_CFB8_Cipher",
+      "AES_192_CFB_Cipher",
+      "AES_192_CTR_Cipher",
+      "AES_192_GCM_Cipher",
+      "AES_192_OFB_Cipher",
+      "AES_256_CFB8_Cipher",
+      "AES_256_CFB_Cipher",
+      "AES_256_CTR_Cipher",
+      "AES_256_GCM_Cipher",
+      "AES_256_OFB_Cipher",
+      "BF_CFB_Cipher",
+      "BaseCipher",
+      "CAST5_CFB_Cipher",
+      "ChaCha20_Cipher",
+      "ChaCha20_IETF_Cipher",
+      "ChaCha20_IETF_POLY1305_Cipher",
+      "DES_CFB_Cipher",
+      "PacketCipher",
+      "RC4_Cipher",
+      "RC4_MD5_Cipher",
+      "Salsa20_Cipher"
+    ],
+    "functions": [
+      "get_cipher"
+    ]
+  },
+  "scheduling_algorithms": [
+    "schedule"
+  ]
+}

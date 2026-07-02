@@ -1,0 +1,4 @@
+# Pinned pproxy for oracle tests (Phase 29)
+# This version is the reference implementation for Python API compatibility.
+# Update requires re-validation of oracle test results.
+pproxy==2.7.9

@@ -1,0 +1,6 @@
+[pproxy_oracle]
+version = "2.7.9"
+python_version = "3.14"
+snapshot_date = "2026-07-02"
+frozen = true
+notes = "Reference pproxy for oracle compatibility tests. Do not update without re-validation."

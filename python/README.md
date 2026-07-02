@@ -62,6 +62,17 @@ explicit `handle.shutdown()` in a `finally` block. Do not rely on Python
 garbage collection to shut down the service — object destruction is a
 best-effort fallback, not the lifecycle API.
 
+## pproxy Compatibility
+
+Eggress provides drop-in compatibility with pproxy for common use cases:
+
+- **URI Translation**: `translate_pproxy_args()` converts pproxy CLI arguments to eggress TOML
+- **Same Protocols**: HTTP, SOCKS4/4a, SOCKS5, Shadowsocks (AEAD), Trojan
+- **Same Schedulers**: Round-robin, least-connections, first-available
+- **Enhanced Features**: Hot-reload, structured errors, context managers
+
+See `docs/python/PPROXY_EMBEDDED_USAGE_PATTERNS.md` for migration guidance.
+
 ## Migrating from pproxy
 
 ```python
