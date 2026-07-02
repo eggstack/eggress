@@ -233,6 +233,27 @@ All diagnostic messages redact credentials.
 | Python library | `pproxy.Server()` API | `eggress` package (PyO3) | Supported | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py` | none | `EggressService`, `EggressHandle`, `start_pproxy`, translation helpers |
 | PyPI package | `pip install pproxy` | `pip install eggress` | Supported | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
 
+#### Phase 29 Python API Inventory (114 entries)
+
+| API Surface | pproxy | Eggress | Tier | Notes |
+|---|---|---|---|---|
+| Module exports | `Connection`, `Server`, `Rule`, `DIRECT` | `Connection`, `Server`, `Rule`, `DIRECT` | A (exact) | Snapshot exports match |
+| Protocol classes | 18 classes (`Http`, `Socks5`, `Shadow`, etc.) | Not exposed | D (deferred) | Documented in inventory |
+| Cipher classes | 43 classes (`AEAD`, `BaseCipher`, etc.) | Not exposed | D (deferred) | Documented in inventory |
+| Scheduling | `rr`, `fa`, `ra`, `lc` | `RoundRobin`, `FirstAvailable`, `Random`, `LeastConnections` | B (functional) | Different names, same algorithms |
+| Server constructor | `Server([listen], [remote], ...)` | `EggressConfig` + `EggressService` | B (functional) | TOML-first vs URI-first |
+| Async lifecycle | `asyncio.ensure_future(server_forever())` | `EggressService.start_background()` | B (functional) | Tokio vs asyncio |
+| Blocking lifecycle | `asyncio.run(server_forever())` | `EggressService.start()` | A (exact) | Both block until shutdown |
+| Context managers | Not available | `async with EggressService(config)` | Eggress-only | Eggress advantage |
+| Config reload | Not available | `handle.reload_config(path)` | Eggress-only | Hot-reload support |
+| Error types | Generic `Exception` | 7 typed exceptions | Eggress-only | Structured errors |
+| URI translation | URI strings only | `pproxy_to_toml()` | Eggress-only | Translation helpers |
+| GIL handling | N/A | Released on all blocking calls | Eggress-only | `py.detach()` |
+
+**Tier key:** A = exact match, B = functional equivalent, D = deferred, Eggress-only = not in pproxy
+
+Full inventory: `docs/python/PPROXY_API_INVENTORY.md`
+
 ## Coverage Summary
 
 - **TCP proxying (Compatible)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, SOCKS4/4a, HTTP forward proxy, and direct upstream — differential tests produce byte-exact echo payloads.
@@ -244,7 +265,7 @@ All diagnostic messages redact credentials.
 - **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan is client-only. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
 - **Transparent proxy (Supported)**: Linux-only transparent TCP proxy via `SO_ORIGINAL_DST`. Requires iptables/nftables REDIRECT rules. macOS PF transparent proxy is intentional non-parity (use pfctl with standard listener).
 - **Unix domain sockets (Supported)**: Unix-only listener on filesystem socket paths. Not available on Windows. Socket file management and permissions are operator-managed.
-- **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. See `docs/PYTHON_BINDINGS.md`.
+- **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. Phase 29 inventoried pproxy's 114-entry Python API surface and classified compatibility tiers. See `docs/PYTHON_BINDINGS.md` and `docs/python/`.
 
 ## Limitations
 

@@ -226,3 +226,38 @@ documented place for that work.
 **Note:** Phase 28 exit codes and JSON output are classified as **Compatible**
 with eggress behavior (not pproxy behavioral parity). pproxy uses a single exit
 code (1) for all errors; eggress provides differentiated codes by design.
+
+## Phase 29: Python API Discovery and Parity Spec
+
+Phase 29 established the Python API compatibility specification. The evidence
+below reflects specification-level coverage (synthetic), not behavioral parity.
+
+| Feature | Tier | Evidence | How to run |
+|---------|------|----------|------------|
+| `python_module_import` | Supported | Synthetic (import test) | `python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_version_metadata` | Supported | Synthetic (snapshot comparison) | `EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_server_constructor` | Partial | Synthetic (native + Python wrappers) | `python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_server_lifecycle_async` | Supported | Synthetic (EggressService async) | `python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_server_lifecycle_blocking` | Supported | Synthetic (EggressService blocking) | `python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_server_context_manager` | Supported | Synthetic (sync + async CM) | `python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_listen_uri_api` | Supported | Synthetic (pproxy translate) | `python -m pytest python/tests/test_pproxy_compat.py` |
+| `python_remote_uri_api` | Supported | Synthetic (pproxy translate) | `python -m pytest python/tests/test_pproxy_compat.py` |
+| `python_chain_api` | Partial | Synthetic (translation only) | `python -m pytest python/tests/test_pproxy_compat.py` |
+| `python_auth_api` | Supported | Synthetic (pproxy translate) | `python -m pytest python/tests/test_pproxy_compat.py` |
+| `python_error_types` | Supported | Synthetic (7 exception classes) | `python -m pytest python/tests/test_pproxy_compat.py` |
+| `python_reload_api` | Supported | Synthetic (EggressHandle.reload_config) | `python -m pytest python/tests/test_pproxy_oracle.py` |
+
+**Note:** Phase 29 is a specification phase. All evidence is `implemented_synthetic`.
+No pproxy behavioral parity is claimed for Python API surfaces. Tier classifications
+are in `docs/python/PPROXY_API_INVENTORY.md`. Full differential testing of Python API
+surfaces is deferred to Phase 30+.
+
+## Gated Python Tests
+
+```bash
+# Oracle tests (requires pproxy package)
+EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+
+# pproxy compat tests
+python -m pytest python/tests/test_pproxy_compat.py -v
+```
