@@ -188,6 +188,9 @@ EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_in
 python3 scripts/phase36_report.py   # writes target/compat/final-pproxy-parity-report.json
 # Or re-run the parity release audit (see plans/PHASE_36_FINAL_PARITY_RELEASE_AUDIT.md)
 
+# Validate release-doc consistency (R1-R4 checks)
+python3 scripts/check_release_docs.py
+
 # Run embed API tests
 cargo test -p eggress-embed
 

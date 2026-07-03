@@ -1,7 +1,7 @@
 # Final pproxy Parity Report (Phase 36)
 
 **Report status:** Generated from `tests/compat/pproxy_manifest.toml` on 2026-07-03.
-**Machine-readable source:** `target/compat/final-pproxy-parity-report.json`
+**Machine-readable source:** generated with `python3 scripts/phase36_report.py` → `target/compat/final-pproxy-parity-report.json`
 **Frozen targets:** [`PARITY_TARGET_FREEZE.md`](PARITY_TARGET_FREEZE.md)
 
 This is the release-readiness parity report for the eggress parity release
@@ -29,7 +29,7 @@ Categories in scope: `protocol`, `udp`, `routing`, `security`, `cli`, `uri`,
 These features have pproxy behavioral parity backed by differential or
 interoperability evidence. Each entry lists the differential test command.
 
-### Inbound TCP (7)
+### Inbound TCP (18)
 
 | Feature | Test command |
 |---|---|
@@ -51,12 +51,8 @@ interoperability evidence. Each entry lists the differential test command.
 | `socks5_refused_target` | Same as above |
 | `socks5_auth_rejection` | Same as above |
 | `http_auth_rejection` | Same as above |
-| `http_forward_persistent_connection` | Same as above |
-| `http_forward_post_body` | Same as above |
-| `http_forward_head` | Same as above |
-| `http_forward_connection_close` | Same as above |
 
-### Upstream TCP (5)
+### Upstream TCP (4)
 
 | Feature | Test command |
 |---|---|
@@ -64,11 +60,10 @@ interoperability evidence. Each entry lists the differential test command.
 | `socks5_upstream` | Same as above |
 | `direct_upstream` | Synthetic (covered by all echo relay tests) |
 | `single_hop_tcp_chain` | Same as `http_connect_upstream` and `socks5_upstream` |
-| `cli_run_process_behavior` | `cargo test -p eggress-cli` |
 
-### CLI / Misc (3)
+### CLI / Misc (4)
 
-These three CLI behaviors have differential process-lifecycle and golden output
+These CLI behaviors have differential process-lifecycle and golden output
 comparisons that were upgraded from synthetic evidence after Phase 28:
 
 | Feature | Test command |
@@ -222,7 +217,8 @@ block the release but are documented for users.
    package itself supports 3.14; only the gated differential tests against
    pproxy require Python 3.11/3.12.
 2. **No hosted CI visibility** for this release. Local verification is the
-   source of truth; see [`docs/CI_STATUS.md`](../../CI_STATUS.md).
+   source of truth; see [`docs/CI_STATUS.md`](../../CI_STATUS.md). Do not
+   assume hosted GitHub checks passed — no statuses are observable.
 3. **MacOS PF original-destination recovery** is intentionally not
    implemented; users must use `pfctl` with a standard listener.
 4. **QUIC / HTTP/3** is intentionally deferred per ADR.
@@ -260,3 +256,15 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
 EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored --test-threads=1
 ```
+
+## Report generation
+
+The machine-readable JSON report is a build artifact, not a committed file.
+Generate it with:
+
+```bash
+python3 scripts/phase36_report.py
+# Writes target/compat/final-pproxy-parity-report.json
+```
+
+This file is not committed to the repository (it lives in `target/`).

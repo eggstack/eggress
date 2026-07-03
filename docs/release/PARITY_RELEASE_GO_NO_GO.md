@@ -10,8 +10,8 @@ candidate based on the evidence in:
 - [`PLATFORM_SUPPORT_MATRIX.md`](PLATFORM_SUPPORT_MATRIX.md)
 - `docs/SECURITY_REVIEW.md`
 - `docs/performance/BASELINE.md`
-- Local verification logs at `target/compat/` (see
-  [`FINAL_PPROXY_PARITY_REPORT.md`](FINAL_PPROXY_PARITY_REPORT.md)).
+- `docs/performance/BASELINE_2026_07_03.md`
+- Machine-readable parity report: generated with `python3 scripts/phase36_report.py` → `target/compat/final-pproxy-parity-report.json` (not committed; see `FINAL_PPROXY_PARITY_REPORT.md` for the rendered report).
 
 ## Required checks
 

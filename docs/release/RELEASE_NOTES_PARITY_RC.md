@@ -25,9 +25,9 @@ manifest validator.
 
 ## 3. Highlights
 
-- **37 compatible features** backed by differential tests against
+- **26 compatible features** backed by differential tests against
   pproxy 2.7.9 (HTTP CONNECT, SOCKS4/4a, SOCKS5, HTTP forward proxy,
-  standalone UDP, and more)
+  and more)
 - **pproxy CLI translation**: `eggress pproxy translate/check/run`
   subcommands convert pproxy arguments to TOML config
 - **Python bindings**: `pip install eggress` with full lifecycle API,
@@ -81,9 +81,6 @@ differential tests.
 | `socks5_upstream` | protocol | SOCKS5 as upstream | `differential_socks5_through_socks5_upstream` |
 | `direct_upstream` | protocol | Direct upstream connection | `implicit_in_echo_tests` |
 | `single_hop_tcp_chain` | protocol | Single-hop TCP chain | `differential_socks5_through_http_upstream` |
-| `standalone_udp_relay` | udp | Standalone UDP relay | `differential_standalone_udp_direct_echo` |
-| `standalone_udp_error_handling` | udp | UDP malformed/frag handling | `differential_standalone_udp_malformed_short_datagram` |
-| `socks5_udp_associate_relay` | udp | SOCKS5 UDP ASSOCIATE relay | `differential_socks5_udp_associate` |
 
 ## 5. Supported but Not Parity-Tested Features
 
@@ -100,6 +97,8 @@ evidence against pproxy 2.7.9.
 | `shadowsocks_udp` | udp | Shadowsocks UDP (AEAD) | `cargo test -p eggress-runtime shadowsocks_udp` |
 | `shadowsocks_udp_upstream` | udp | Shadowsocks UDP upstream | `cargo test -p eggress-runtime shadowsocks_udp` |
 | `direct_udp_forwarding` | udp | Direct UDP forwarding | `cargo test -p eggress-runtime udp` |
+| `standalone_udp_relay` | udp | Standalone UDP relay | `cargo test -p eggress-runtime udp` |
+| `standalone_udp_error_handling` | udp | UDP malformed/frag handling | `cargo test -p eggress-runtime udp` |
 | `socks4_upstream` | protocol | SOCKS4 upstream | `cargo test -p eggress-runtime upstream_protocols` |
 | `round_robin_scheduler` | routing | Round-robin scheduling | `cargo test -p eggress-runtime scheduler_runtime` |
 | `first_available_scheduler` | routing | First-available scheduling | `cargo test -p eggress-runtime scheduler_runtime` |
