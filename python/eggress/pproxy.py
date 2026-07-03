@@ -320,9 +320,19 @@ class Server:
         self.close()
 
     def run(self) -> None:
-        """Start and block until interrupted (SIGINT/SIGTERM)."""
+        """Start and block until interrupted (SIGINT/SIGTERM).
+
+        Must be called from the main thread because Python signal handlers
+        can only be installed from the main thread.
+        """
         import signal
         import threading
+
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError(
+                "Server.run() must be called from the main thread; "
+                "use Server.start() from other threads"
+            )
 
         self.start()
         event = threading.Event()
@@ -331,7 +341,11 @@ class Server:
             event.set()
 
         old_sigint = signal.signal(signal.SIGINT, _handler)
-        old_sigterm = signal.signal(signal.SIGTERM, _handler)
+        try:
+            old_sigterm = signal.signal(signal.SIGTERM, _handler)
+        except BaseException:
+            signal.signal(signal.SIGINT, old_sigint)
+            raise
         try:
             event.wait()
         finally:

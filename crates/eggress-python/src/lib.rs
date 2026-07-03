@@ -428,7 +428,8 @@ fn supported_features() -> Vec<&'static str> {
 // --- config explanation helpers ---
 
 fn parse_toml_config(py: Python<'_>, toml_str: &str) -> PyResult<Py<PyDict>> {
-    let parsed: toml::Value = toml::from_str(toml_str)
+    let parsed: toml::Value = py
+        .detach(|| toml::from_str(toml_str))
         .map_err(|e| ConfigError::new_err(format!("failed to parse TOML: {e}")))?;
 
     let dict = PyDict::new(py);
@@ -718,28 +719,33 @@ fn route_explain(py: Python<'_>, toml_str: &str, target: &str) -> PyResult<Py<Py
     use eggress_core::{ClientIdentity, ProtocolId, TargetAddr};
     use eggress_routing::{RouteRequest, Router, TransportKind};
 
-    let config: ConfigFile = toml::from_str(toml_str)
-        .map_err(|e| ConfigError::new_err(format!("failed to parse TOML: {e}")))?;
-
-    let runtime_config = compile_config(&config)
-        .map_err(|e| ConfigError::new_err(format!("failed to compile config: {e}")))?;
-
-    let router = Router::with_groups(runtime_config.rules, runtime_config.default_action, vec![]);
-
     let target_addr: TargetAddr = target
         .parse()
         .map_err(|e: String| PyValueError::new_err(format!("invalid target: {e}")))?;
 
-    let request = RouteRequest {
-        target: &target_addr,
-        source: None,
-        listener: "",
-        inbound_protocol: ProtocolId::Socks5,
-        identity: &ClientIdentity::Anonymous,
-        transport: TransportKind::Tcp,
-    };
+    let explanation = py
+        .detach(|| -> Result<_, String> {
+            let config: ConfigFile =
+                toml::from_str(toml_str).map_err(|e| format!("failed to parse TOML: {e}"))?;
 
-    let explanation = router.explain(&request, 0);
+            let runtime_config =
+                compile_config(&config).map_err(|e| format!("failed to compile config: {e}"))?;
+
+            let router =
+                Router::with_groups(runtime_config.rules, runtime_config.default_action, vec![]);
+
+            let request = RouteRequest {
+                target: &target_addr,
+                source: None,
+                listener: "",
+                inbound_protocol: ProtocolId::Socks5,
+                identity: &ClientIdentity::Anonymous,
+                transport: TransportKind::Tcp,
+            };
+
+            Ok(router.explain(&request, 0))
+        })
+        .map_err(ConfigError::new_err)?;
 
     let dict = PyDict::new(py);
     dict.set_item("target", &explanation.target)?;
@@ -809,34 +815,29 @@ fn test_upstream_connect(py: Python<'_>, uri: &str, timeout_secs: f64) -> PyResu
 
     // Attempt TCP connect
     let addr_str = format!("{}:{}", host, port);
-    let socket_addrs = match addr_str.to_socket_addrs() {
-        Ok(addrs) => addrs,
-        Err(e) => {
-            dict.set_item("connected", false)?;
-            dict.set_item::<_, Option<u64>>("latency_us", None)?;
-            dict.set_item("error", Some(format!("DNS resolution failed: {e}")))?;
-            return Ok(dict.into());
-        }
-    };
+    let (connected, latency_us, last_error): (bool, Option<u64>, Option<String>) =
+        py.detach(|| {
+            let std_duration = std::time::Duration::from_secs_f64(timeout_secs);
+            let socket_addrs = match addr_str.to_socket_addrs() {
+                Ok(addrs) => addrs,
+                Err(e) => {
+                    return (false, None, Some(format!("DNS resolution failed: {e}")));
+                }
+            };
 
-    let std_duration = std::time::Duration::from_secs_f64(timeout_secs);
-    let mut last_error: Option<String> = None;
-    let mut connected = false;
-    let mut latency_us: Option<u64> = None;
-
-    for addr in socket_addrs {
-        let start = std::time::Instant::now();
-        match std::net::TcpStream::connect_timeout(&addr, std_duration) {
-            Ok(_stream) => {
-                connected = true;
-                latency_us = Some(start.elapsed().as_micros() as u64);
-                break;
+            for addr in socket_addrs {
+                let start = std::time::Instant::now();
+                match std::net::TcpStream::connect_timeout(&addr, std_duration) {
+                    Ok(_stream) => {
+                        return (true, Some(start.elapsed().as_micros() as u64), None);
+                    }
+                    Err(e) => {
+                        let _ = e;
+                    }
+                }
             }
-            Err(e) => {
-                last_error = Some(e.to_string());
-            }
-        }
-    }
+            (false, None, None)
+        });
 
     dict.set_item("connected", connected)?;
     dict.set_item("latency_us", latency_us)?;

@@ -197,16 +197,17 @@ with EggressHandle(...) as h:
 | Init from URI | `proxies_by_uri()` | `EggressConfig` + TOML | **B** — different model; pproxy URIs map to TOML |
 | Init from CLI args | `main(args)` | `from_pproxy_args(args)` | **B** — translation layer bridges the gap |
 | Start serving | `main()` event loop | `EggressService.start()` | **A** — equivalent functional outcome |
-| Config reload | Not supported | `reload_toml()` | **A** (Eggress-only feature) |
-| Graceful shutdown | SIGTERM handler | `shutdown()` | **A** — Eggress has explicit API + timeout |
+| Config reload | Not supported | `reload_toml()` | **Eggress-native** — no pproxy equivalent |
+| Graceful shutdown | SIGTERM handler | `shutdown()` | **B** — Eggress has explicit API + timeout; pproxy uses signal handler |
 | Health checks | `-a` flag (optional) | Built-in per upstream | **B** — Eggress has richer health model |
-| Context manager | Not supported | `with`/`async with` | **A** (Eggress-only feature) |
-| Async context mgr | Not supported | `async with` | **A** (Eggress-only feature) |
-| Status/metrics | Not available | `status()`, `metrics_text()` | **A** (Eggress-only feature) |
+| Context manager | Not supported | `with`/`async with` | **Eggress-native** — no pproxy equivalent |
+| Async context mgr | Not supported | `async with` | **Eggress-native** — no pproxy equivalent |
+| Status/metrics | Not available | `status()`, `metrics_text()` | **Eggress-native** — no pproxy equivalent |
 
 **Parity Legend:**
-- **A** — Feature present in both or Eggress-only (no gap for migration)
+- **A** — Feature present in both with same API shape and semantics
 - **B** — Feature present in both but with architectural differences
+- **Eggress-native** — Feature exists only in eggress; not a pproxy parity claim
 
 ## 4. Thread Model Comparison
 

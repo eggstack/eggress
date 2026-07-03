@@ -1215,8 +1215,8 @@ divergence = "pproxy.Server(uris) maps to eggress.Server(listen=[...], remote=[.
 id = "python_api_config_reload"
 category = "python"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
 tests = []
 divergence = "eggress-only: Hot-reload of routing/upstreams via ArcSwap; pproxy has no equivalent Python API"
 
@@ -1224,8 +1224,8 @@ divergence = "eggress-only: Hot-reload of routing/upstreams via ArcSwap; pproxy 
 id = "python_api_error_hierarchy"
 category = "python"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
 tests = []
 divergence = "eggress-only: Structured error types (EggressError, DiagnosticCode); pproxy uses flat exceptions"
 
@@ -1233,8 +1233,8 @@ divergence = "eggress-only: Structured error types (EggressError, DiagnosticCode
 id = "python_api_context_manager"
 category = "python"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
 tests = []
 divergence = "eggress-only: Sync and async context managers for EggressService; pproxy has no context manager protocol"
 
@@ -1242,8 +1242,8 @@ divergence = "eggress-only: Sync and async context managers for EggressService; 
 id = "python_api_gil_release"
 category = "python"
 pproxy_version = "2.7.9"
-egress_status = "supported"
-evidence_level = "implemented_synthetic"
+egress_status = "intentional_non_parity"
+evidence_level = "intentional_non_parity"
 tests = []
 divergence = "eggress-only: GIL released on all blocking Rust calls via py.detach(); pproxy is pure Python"
 

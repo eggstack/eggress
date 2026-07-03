@@ -116,28 +116,32 @@ All features below have compatible status backed by differential evidence agains
 
 ## CLI Compatibility
 
+CLI features are classified as **Supported** (not Compatible) because evidence is
+synthetic — they verify eggress behavior, not pproxy behavioral parity. pproxy uses
+different exit codes, different CLI structure, and different error formatting.
+
 | Feature | Tier | Evidence | How to run |
 |---------|------|----------|------------|
-| `listen_flag` | Compatible | Synthetic | `cargo test -p eggress-cli` |
-| `remote_flag` | Compatible | Synthetic | `cargo test -p eggress-cli` |
-| `udp_listen_flag` | Compatible | Synthetic (pproxy translate) | `cargo test -p eggress-pproxy-compat` |
-| `udp_remote_flag` | Compatible | Synthetic (pproxy translate) | `cargo test -p eggress-pproxy-compat` |
-| `pproxy_translate_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
-| `pproxy_check_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
-| `pproxy_run_command` | Compatible | Synthetic | `cargo test -p eggress-cli` |
-| `cli_exit_codes` | Compatible | Synthetic (exit code constants, subprocess tests) | `cargo test -p eggress-cli cli_exit_codes` |
-| `cli_check_json` | Compatible | Synthetic (`--json` flag produces structured output) | `cargo test -p eggress-cli cli_exit_codes` |
-| `cli_diagnostics_taxonomy` | Compatible | Synthetic (DiagnosticCode serialization, 13 codes) | `cargo test -p eggress-pproxy-compat diagnostics` |
-| `cli_translate_golden` | Compatible | Synthetic (deterministic translation output) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_translate_chain` | Compatible | Synthetic (chain translation via __ separator) | `cargo test -p eggress-pproxy-compat` |
-| `cli_translate_scheduler` | Compatible | Synthetic (scheduler flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_translate_auth` | Compatible | Synthetic (auth flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_translate_reverse` | Compatible | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `listen_flag` | Supported | Synthetic | `cargo test -p eggress-cli` |
+| `remote_flag` | Supported | Synthetic | `cargo test -p eggress-cli` |
+| `udp_listen_flag` | Supported | Synthetic (pproxy translate) | `cargo test -p eggress-pproxy-compat` |
+| `udp_remote_flag` | Supported | Synthetic (pproxy translate) | `cargo test -p eggress-pproxy-compat` |
+| `pproxy_translate_command` | Supported | Synthetic | `cargo test -p eggress-cli` |
+| `pproxy_check_command` | Supported | Synthetic | `cargo test -p eggress-cli` |
+| `pproxy_run_command` | Supported | Synthetic | `cargo test -p eggress-cli` |
+| `cli_exit_codes` | Supported | Synthetic (exit code constants, subprocess tests) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_check_json` | Supported | Synthetic (`--json` flag produces structured output) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_diagnostics_taxonomy` | Supported | Synthetic (DiagnosticCode serialization, 13 codes) | `cargo test -p eggress-pproxy-compat diagnostics` |
+| `cli_translate_golden` | Supported | Synthetic (deterministic translation output) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_chain` | Supported | Synthetic (chain translation via __ separator) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_scheduler` | Supported | Synthetic (scheduler flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_auth` | Supported | Synthetic (auth flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_reverse` | Supported | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
 | `cli_translate_standalone_udp` | Supported | Synthetic (standalone UDP translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
 | `cli_translate_ssr_rejection` | Intentional non-parity | Synthetic (SSR URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
 | `cli_translate_ssh_rejection` | Intentional non-parity | Synthetic (SSH URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
-| `cli_run_process_behavior` | Compatible | Synthetic (signal handling, clean shutdown) | `cargo test -p eggress-cli pproxy_run_process` |
-| `cli_inventory_complete` | Compatible | Synthetic (full flag inventory documented) | docs review |
+| `cli_run_process_behavior` | Supported | Synthetic (signal handling, clean shutdown) | `cargo test -p eggress-cli pproxy_run_process` |
+| `cli_inventory_complete` | Supported | Synthetic (full flag inventory documented) | docs review |
 
 ## Gated vs Ungated Tests
 
@@ -210,22 +214,23 @@ documented place for that work.
 
 | Feature | Tier | Evidence | How to run |
 |---------|------|----------|------------|
-| `cli_exit_codes` | Compatible | Synthetic (exit code constants, subprocess tests) | `cargo test -p eggress-cli cli_exit_codes` |
-| `cli_check_json` | Compatible | Synthetic (`--json` flag produces JSON with tier, diagnostics, features) | `cargo test -p eggress-cli cli_exit_codes` |
-| `cli_diagnostics_taxonomy` | Compatible | Synthetic (all 13 codes serialize correctly) | `cargo test -p eggress-pproxy-compat diagnostics::tests::all_diagnostic_codes_serialize` |
-| `cli_translate_golden` | Compatible | Synthetic (deterministic translation output for fixtures) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_translate_chain` | Compatible | Synthetic (chain translation via __ separator) | `cargo test -p eggress-pproxy-compat` |
-| `cli_translate_scheduler` | Compatible | Synthetic (scheduler flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_translate_auth` | Compatible | Synthetic (auth flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_translate_reverse` | Compatible | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
-| `cli_run_process_behavior` | Compatible | Synthetic (signal handling, clean shutdown, readiness) | `cargo test -p eggress-cli pproxy_run_process` |
-| `cli_inventory_complete` | Compatible | Synthetic (full flag inventory documented) | docs review |
+| `cli_exit_codes` | Supported | Synthetic (exit code constants, subprocess tests) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_check_json` | Supported | Synthetic (`--json` flag produces JSON with tier, diagnostics, features) | `cargo test -p eggress-cli cli_exit_codes` |
+| `cli_diagnostics_taxonomy` | Supported | Synthetic (all 13 codes serialize correctly) | `cargo test -p eggress-pproxy-compat diagnostics::tests::all_diagnostic_codes_serialize` |
+| `cli_translate_golden` | Supported | Synthetic (deterministic translation output for fixtures) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_chain` | Supported | Synthetic (chain translation via __ separator) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_scheduler` | Supported | Synthetic (scheduler flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_auth` | Supported | Synthetic (auth flag translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_translate_reverse` | Supported | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
+| `cli_run_process_behavior` | Supported | Synthetic (signal handling, clean shutdown, readiness) | `cargo test -p eggress-cli pproxy_run_process` |
+| `cli_inventory_complete` | Supported | Synthetic (full flag inventory documented) | docs review |
 | `cli_translate_ssr_rejection` | Intentional non-parity | Synthetic (SSR URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
 | `cli_translate_ssh_rejection` | Intentional non-parity | Synthetic (SSH URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
 
-**Note:** Phase 28 exit codes and JSON output are classified as **Compatible**
-with eggress behavior (not pproxy behavioral parity). pproxy uses a single exit
-code (1) for all errors; eggress provides differentiated codes by design.
+**Note:** Phase 28 CLI features use **Supported** tier (not Compatible) because evidence
+is synthetic — these verify eggress behavior, not pproxy behavioral parity. pproxy uses
+a single exit code (1) for all errors; eggress provides differentiated codes by design.
+No pproxy differential tests back these claims.
 
 ## Phase 29: Python API Discovery and Parity Spec
 

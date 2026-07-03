@@ -96,3 +96,16 @@ def test_eggress_pproxy_coexists():
     if mod is not None:
         import pproxy as pp
         assert hasattr(pp, "Server") or hasattr(pp, "server")
+
+
+def test_py_typed_marker_exists():
+    """The py.typed PEP 561 marker file should be present in the package."""
+    import importlib.resources
+    try:
+        ref = importlib.resources.files("eggress").joinpath("py.typed")
+        assert ref.is_file(), "py.typed marker file not found in eggress package"
+    except (TypeError, AttributeError):
+        # Fallback for Python 3.9 where files() API differs
+        import pathlib
+        pkg_dir = pathlib.Path(__file__).resolve().parents[1] / "eggress"
+        assert (pkg_dir / "py.typed").exists(), "py.typed marker file not found"

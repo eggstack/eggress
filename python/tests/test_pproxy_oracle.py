@@ -1,7 +1,8 @@
 """Oracle tests: verify eggress Python API behavior matches pproxy oracle.
 
-These tests are GATED — they require pproxy==2.7.9 to be installed.
-Run with: EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+These tests are GATED — pproxy-dependent tests auto-skip if pproxy is not
+installed. eggress-dependent tests auto-skip if the native module is not built.
+No manual gating via environment variables is required.
 
 The oracle fixture is at tests/compat/fixtures/pproxy_api_snapshot.json.
 """
@@ -14,8 +15,6 @@ import threading
 import time
 
 import pytest
-
-ORACLE_REQUIRED = os.environ.get("EGRESS_REQUIRE_PPROXY_ORACLE", "") != "0"
 
 SNAPSHOT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "tests", "compat", "fixtures", "pproxy_api_snapshot.json"

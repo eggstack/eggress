@@ -116,7 +116,7 @@ Exception
 
 ### `__init__.py` Exports
 
-The `eggress` package re-exports everything from the native module and adds Python-level wrappers. All public symbols are listed in `__all__` (25 items).
+The `eggress` package re-exports everything from the native module and adds Python-level wrappers. All public symbols are listed in `__all__` (36 items).
 
 ### `EggressConfig` — `eggress/config.py`
 

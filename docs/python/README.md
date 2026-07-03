@@ -23,7 +23,12 @@ between eggress and pproxy 2.7.9.
 | **B** — Functional equivalent | Different API shape but same capability | 34 |
 | **C** — Partial | Usable subset exists | 1 |
 | **D** — Deferred | Not yet implemented, no final decision | 5 |
+| **Eggress-native** | Feature exists only in eggress; not a pproxy parity claim | 4 |
 | **N/A** — Not applicable | pproxy feature out of scope | 54 |
+
+> **Note:** Eggress-native features (context managers, hot reload, structured errors,
+> GIL release) are enhancements over pproxy, not compatibility claims. They are not
+> labeled as Tier A exact matches because pproxy has no equivalent API.
 
 ## Oracle Testing
 

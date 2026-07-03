@@ -250,7 +250,7 @@ All diagnostic messages redact credentials.
 | URI translation | URI strings only | `pproxy_to_toml()` | Eggress-only | Translation helpers |
 | GIL handling | N/A | Released on all blocking calls | Eggress-only | `py.detach()` |
 
-**Tier key:** A = exact match, B = functional equivalent, D = deferred, Eggress-only = not in pproxy
+**Tier key:** A = exact match, B = functional equivalent, D = deferred, Eggress-native = not in pproxy (not a parity claim)
 
 Full inventory: `docs/python/PPROXY_API_INVENTORY.md`
 

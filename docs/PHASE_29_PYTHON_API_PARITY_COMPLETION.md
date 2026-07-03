@@ -62,10 +62,10 @@ Phase 29 established the Python API compatibility specification between eggress 
 - Context managers (sync/async), structured errors, hot-reload
 
 ### Compatibility Assessment
-- **Tier A** (exact match): Service lifecycle, context managers, error hierarchy, config reload
+- **Eggress-native** (not in pproxy): Context managers, error hierarchy, config reload, GIL release, status/metrics
+- **Tier A** (exact match): Blocking service start/stop lifecycle
 - **Tier B** (functional equivalent): URI config, CLI args translation, scheduling, health checks
 - **Tier D** (deferred): Protocol class access, cipher access, plugin system
-- **Eggress-only**: Hot-reload, structured errors, context managers, GIL release
 
 ## Verification
 
