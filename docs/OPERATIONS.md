@@ -97,6 +97,8 @@ Configured via `[process].shutdown_grace` (default `"30s"`). Controls how long t
 
 Admin server is enabled via `[admin].enabled = true` and binds to `[admin].bind` (default `127.0.0.1:9090`).
 
+> **Security note**: Admin endpoints have no authentication. Keep admin on loopback unless remote admin is explicitly needed. If binding to a non-loopback address, use network-level access control (firewall, VPN). See [security/HARDENING_GUIDE.md](security/HARDENING_GUIDE.md) for details.
+
 | Endpoint | Method | Response | Description |
 |----------|--------|----------|-------------|
 | `/-/health` | GET | `200 ok` | Liveness probe; always returns 200 when admin is up |

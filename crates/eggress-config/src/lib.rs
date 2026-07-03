@@ -5,7 +5,7 @@ pub mod model;
 pub mod validate;
 
 pub use compile::RuntimeConfig;
-pub use error::ConfigError;
+pub use error::{ConfigError, ConfigWarning};
 
 pub fn load_and_validate(path: &str) -> Result<RuntimeConfig, ConfigError> {
     let contents = file::load_config_file(path)?;
@@ -20,6 +20,29 @@ pub fn load_and_validate(path: &str) -> Result<RuntimeConfig, ConfigError> {
         ConfigError::validation("config", &messages.join("; "))
     })?;
     compile::compile_config(&config)
+}
+
+/// Load, validate, and compile a config file, also returning security warnings.
+///
+/// Security warnings do not prevent the config from loading but indicate
+/// potentially dangerous configurations that should be reviewed.
+pub fn load_and_validate_with_warnings(
+    path: &str,
+) -> Result<(RuntimeConfig, Vec<ConfigWarning>), ConfigError> {
+    let contents = file::load_config_file(path)?;
+    let config: model::ConfigFile = toml::from_str(&contents)?;
+    if let Some(version) = config.version {
+        if version != 1 {
+            return Err(ConfigError::UnsupportedVersion(version));
+        }
+    }
+    validate::validate_config(&config).map_err(|errors| {
+        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        ConfigError::validation("config", &messages.join("; "))
+    })?;
+    let warnings = validate::validate_config_security(&config);
+    let rt = compile::compile_config(&config)?;
+    Ok((rt, warnings))
 }
 
 #[cfg(test)]

@@ -18,3 +18,19 @@ impl ConfigError {
         }
     }
 }
+
+/// A non-fatal security warning emitted during config validation.
+///
+/// Warnings indicate potentially dangerous configurations that should be
+/// reviewed by the operator but do not prevent the config from loading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigWarning {
+    pub path: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for ConfigWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "warning at {}: {}", self.path, self.message)
+    }
+}

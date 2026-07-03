@@ -1554,3 +1554,88 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["python/tests/test_performance_smoke.py"]
 divergence = "Tier 1 Python binding overhead: import cost, URI translation, config parse, service lifecycle"
+
+# ─── Security Features (Phase 35) ──────────────────────────────────────
+
+[[features]]
+id = "security_open_proxy_warning"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-config/src/validate.rs::warn_non_loopback_listener_without_auth"]
+divergence = "Config validation emits warning for non-loopback listener binds without authentication or TLS"
+
+[[features]]
+id = "security_admin_bind_warning"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-config/src/validate.rs::warn_non_loopback_admin"]
+divergence = "Config validation emits warning for non-loopback admin binds without authentication"
+
+[[features]]
+id = "security_secret_redaction"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [
+    "crates/eggress-pproxy-compat/src/uri.rs::test_redacted_display",
+    "crates/eggress-pproxy-compat/src/uri.rs::test_unix_redacted_display",
+]
+divergence = "All credential-bearing paths use PproxyUri::redacted_display() with ****:****@ replacement"
+
+[[features]]
+id = "security_reverse_allowlist"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [
+    "crates/eggress-protocol-reverse/src/server.rs::validate_non_loopback_without_auth_rejected",
+    "crates/eggress-protocol-reverse/src/server.rs::validate_non_loopback_with_auth_and_allowlist_ok",
+]
+divergence = "Reverse server refuses non-loopback external_bind without auth+allowlist; control_bind emits warning without auth"
+
+[[features]]
+id = "security_transparent_capability_diagnostics"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-runtime/src/platform.rs"]
+divergence = "Platform capability checks report accurate status; macOS PF honestly reports KernelUnsupported"
+
+[[features]]
+id = "security_resource_limits"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-config/src/validate.rs::validate_listener_udp"]
+divergence = "Bounded defaults for UDP associations, datagram sizes, max streams, max pending connections; validation rejects zero values and out-of-range sizes"
+
+[[features]]
+id = "security_parser_property_tests"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [
+    "crates/eggress-protocol-socks/tests/codec_properties.rs",
+    "crates/eggress-protocol-http/tests/connect_properties.rs",
+    "crates/eggress-protocol-trojan/tests/request_properties.rs",
+    "crates/eggress-routing/tests/properties.rs",
+]
+divergence = "Property tests verify parser round-trip for SOCKS, HTTP, Trojan, and routing modules"
+
+[[features]]
+id = "security_dependency_audit"
+category = "security"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/ci.yml::cargo-deny"]
+divergence = "CI runs cargo-deny and cargo-audit; deny.toml bans openssl-sys, native-tls, aws-lc-sys, cmake"

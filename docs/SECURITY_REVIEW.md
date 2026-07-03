@@ -309,6 +309,10 @@ Adversaries may include malicious clients on the network, compromised upstream p
 22. **Raw tunnel fixed target**: Target is fixed by config at startup; no runtime target selection from client data (Phase 26).
 23. **Raw tunnel no-auth warning**: Documented that raw tunnels have no authentication or encryption; operator must control network access (Phase 26).
 24. **Python packaging security**: No secrets in package data; wheels built with `--release` exclude debug artifacts; generated configs use placeholder credentials; `.gitignore` prevents stale build artifacts from being committed; long description does not overclaim compatibility.
+25. **Non-loopback bind warnings**: Config validation emits structured warnings for non-loopback listener, admin, and reverse control binds without authentication (Phase 35).
+26. **`load_and_validate_with_warnings()`**: New API returns both compiled config and security warnings, allowing operators to review dangerous configurations before startup (Phase 35).
+27. **Security documentation suite**: Dedicated `docs/security/` directory with threat model, hardening guide, open-proxy prevention, reverse security, and redaction policy documents (Phase 35).
+28. **Security manifest entries**: Eight security features tracked in `pproxy_manifest.toml` with synthetic evidence and test references (Phase 35).
 
 ## Residual Risks
 

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::error::ConfigError;
+use crate::error::{ConfigError, ConfigWarning};
 use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig};
 
 const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5", "shadowsocks"];
@@ -803,5 +803,346 @@ fn validate_listener_udp(
                 &format!("must be between 257 and 65535, got {}", max_datagram_size),
             ));
         }
+    }
+}
+
+/// Check if a socket address string binds to loopback.
+///
+/// Returns `true` for `127.x.x.x` and `::1`. Returns `false` for `0.0.0.0`,
+/// `::`, and other non-loopback addresses.
+fn is_loopback_bind(addr: &str) -> bool {
+    if let Ok(socket) = addr.parse::<std::net::SocketAddr>() {
+        match socket.ip() {
+            std::net::IpAddr::V4(v4) => v4.is_loopback(),
+            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+        }
+    } else {
+        false
+    }
+}
+
+/// Emit security warnings for dangerous config combinations.
+///
+/// This runs after structural validation succeeds and produces non-fatal
+/// warnings about configurations that could expose services to untrusted
+/// networks without authentication.
+pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
+    let mut warnings = Vec::new();
+
+    // 35.2 / 35.7: Warn about non-loopback listener binds without auth
+    if let Some(ref listeners) = config.listeners {
+        for (i, listener) in listeners.iter().enumerate() {
+            let path = format!("listeners[{}].bind", i);
+            if !is_loopback_bind(&listener.bind) {
+                let has_auth = listener.auth.is_some();
+                let has_tls = listener.tls.is_some();
+                let has_shadowsocks = listener.shadowsocks.is_some();
+                if !has_auth && !has_tls && !has_shadowsocks {
+                    warnings.push(ConfigWarning {
+                        path,
+                        message: format!(
+                            "listener '{}' binds to {} without authentication or TLS — \
+                             this may expose the proxy to untrusted networks",
+                            listener.name, listener.bind,
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    // 35.4 / 35.7: Warn about non-loopback admin bind
+    if let Some(ref admin) = config.admin {
+        if let Some(ref bind) = admin.bind {
+            if !is_loopback_bind(bind) {
+                warnings.push(ConfigWarning {
+                    path: "admin.bind".to_string(),
+                    message: format!(
+                        "admin server binds to {} without authentication — \
+                         this may expose admin endpoints to untrusted networks",
+                        bind,
+                    ),
+                });
+            }
+        }
+    }
+
+    // 35.5 / 35.7: Warn about non-loopback reverse control_bind without auth
+    if let Some(ref servers) = config.reverse_servers {
+        for (i, server) in servers.iter().enumerate() {
+            let path = format!("reverse_servers[{}].control_bind", i);
+            if !is_loopback_bind(&server.control_bind) {
+                let has_auth = server.auth_username.is_some() || server.auth_password.is_some();
+                let has_env_auth = server.auth_password_env.is_some();
+                if !has_auth && !has_env_auth {
+                    warnings.push(ConfigWarning {
+                        path,
+                        message: format!(
+                            "reverse server '{}' control channel binds to {} without authentication — \
+                             any client can connect and request proxying",
+                            server.id, server.control_bind,
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    warnings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loopback_detection() {
+        assert!(is_loopback_bind("127.0.0.1:8080"));
+        assert!(is_loopback_bind("127.0.0.1:0"));
+        assert!(is_loopback_bind("[::1]:8080"));
+        assert!(!is_loopback_bind("0.0.0.0:8080"));
+        assert!(!is_loopback_bind("[::]:8080"));
+        assert!(!is_loopback_bind("10.0.0.1:8080"));
+        assert!(!is_loopback_bind("192.168.1.1:8080"));
+        assert!(!is_loopback_bind("not-an-addr"));
+    }
+
+    #[test]
+    fn warn_non_loopback_listener_without_auth() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "public".to_string(),
+                bind: "0.0.0.0:8080".to_string(),
+                protocols: vec!["http".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: None,
+                shadowsocks: None,
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(!warnings.is_empty());
+        assert!(warnings[0].message.contains("0.0.0.0:8080"));
+    }
+
+    #[test]
+    fn no_warn_loopback_listener() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "local".to_string(),
+                bind: "127.0.0.1:8080".to_string(),
+                protocols: vec!["http".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: None,
+                shadowsocks: None,
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn no_warn_authed_listener() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "public-ss".to_string(),
+                bind: "0.0.0.0:8388".to_string(),
+                protocols: vec!["shadowsocks".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: None,
+                shadowsocks: Some(crate::model::ShadowsocksListenerConfig {
+                    method: "aes-256-gcm".to_string(),
+                    password: "secret".to_string(),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        // Shadowsocks provides its own auth, so no warning
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn warn_non_loopback_admin() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: None,
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: Some(crate::model::AdminConfig {
+                bind: Some("0.0.0.0:9090".to_string()),
+                enabled: None,
+                metrics: None,
+                pac: None,
+                static_content: None,
+            }),
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.path == "admin.bind"));
+    }
+
+    #[test]
+    fn no_warn_loopback_admin() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: None,
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: Some(crate::model::AdminConfig {
+                bind: Some("127.0.0.1:9090".to_string()),
+                enabled: None,
+                metrics: None,
+                pac: None,
+                static_content: None,
+            }),
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn warn_reverse_control_bind_without_auth() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: None,
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: Some(vec![crate::model::ReverseServerConfig {
+                id: "rs1".to_string(),
+                control_bind: "0.0.0.0:8443".to_string(),
+                auth_username: None,
+                auth_password: None,
+                auth_password_env: None,
+                max_streams: None,
+                heartbeat_interval: None,
+            }]),
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.path.contains("control_bind")));
+    }
+
+    #[test]
+    fn no_warn_reverse_control_bind_with_auth() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: None,
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: Some(vec![crate::model::ReverseServerConfig {
+                id: "rs1".to_string(),
+                control_bind: "0.0.0.0:8443".to_string(),
+                auth_username: Some("user".to_string()),
+                auth_password: Some("pass".to_string()),
+                auth_password_env: None,
+                max_streams: None,
+                heartbeat_interval: None,
+            }]),
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn no_warn_reverse_control_bind_with_env_auth() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: None,
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: Some(vec![crate::model::ReverseServerConfig {
+                id: "rs1".to_string(),
+                control_bind: "0.0.0.0:8443".to_string(),
+                auth_username: None,
+                auth_password: None,
+                auth_password_env: Some("MY_SECRET".to_string()),
+                max_streams: None,
+                heartbeat_interval: None,
+            }]),
+            reverse_clients: None,
+        };
+        let warnings = validate_config_security(&config);
+        assert!(warnings.is_empty());
     }
 }
