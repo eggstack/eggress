@@ -355,3 +355,19 @@ After running differential tests, a parity report is generated:
 
 The report includes: eggress commit, pproxy version, OS, Rust/Python versions,
 per-feature evidence levels, test results, and suggested evidence updates.
+
+## Performance and Regression Gates
+
+Phase 34 establishes performance baselines and regression gates. Performance tests are
+classified into 4 tiers:
+
+| Tier | Purpose | Gating | Tests |
+|------|---------|--------|-------|
+| 0 | Microbenchmarks | Informational | `cargo bench --workspace` (Criterion) |
+| 1 | Performance smoke | Automated | `performance_smoke.rs`, Python perf tests |
+| 2 | Soak / load | Gated (EGRESS_REQUIRE_SOAK) | `reverse_soak.rs`, `load.rs` |
+| 3 | pproxy comparison | Gated (EGRESS_REQUIRE_PPROXY_PERF) | `scripts/perf/run_pproxy_comparison.sh` |
+
+Tier 0-1 tests run as part of the standard test suite. Tier 2-3 tests require explicit
+opt-in via environment variables. See `docs/performance/REGRESSION_GATE_POLICY.md` for
+the full policy and `docs/performance/BENCHMARK_INVENTORY.md` for the benchmark catalog.

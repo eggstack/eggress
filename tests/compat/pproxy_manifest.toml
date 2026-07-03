@@ -446,7 +446,7 @@ id = "sys_flag"
 category = "cli"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["system_proxy_inspect"]
 divergence = "pproxy --sys mutates global state; eggress provides read-only inspection via `eggress system-proxy inspect` and explicit dry-run apply. No hidden global mutation."
 
@@ -455,7 +455,7 @@ id = "system_proxy_inspect"
 category = "system_proxy"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["system_proxy_inspect"]
 divergence = "Eggress-native read-only inspection. pproxy --sys is a global mutation flag; eggress inspection is a separate subcommand."
 
@@ -464,7 +464,7 @@ id = "system_proxy_apply_macos"
 category = "system_proxy"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "supported"
+evidence_level = "implemented_synthetic"
 tests = []
 divergence = "Explicit dry-run apply via `eggress system-proxy apply --dry-run`. No automatic mutation."
 
@@ -473,7 +473,7 @@ id = "system_proxy_revert_macos"
 category = "system_proxy"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "supported"
+evidence_level = "implemented_synthetic"
 tests = []
 divergence = "Rollback state saved to file; revert requires explicit command."
 
@@ -482,18 +482,18 @@ id = "system_proxy_env_exports"
 category = "system_proxy"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "supported"
-tests = ["system_proxy_env_exports"]
+evidence_level = "implemented_synthetic"
+tests = []
 divergence = "Generates shell export commands from detected settings."
 
 [[features]]
 id = "python_system_proxy_inspect"
 category = "python"
 pproxy_version = "2.7.9"
-egress_status = "deferred"
-evidence_level = "deferred"
+egress_status = "unsupported"
+evidence_level = "unimplemented"
 tests = []
-divergence = "Python bindings deferred to a future phase."
+divergence = "Python system proxy inspection not yet implemented."
 
 [[features]]
 id = "pproxy_translate_command"
@@ -1500,3 +1500,57 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["python/tests/test_wheel_import_smoke.py::test_capabilities"]
 divergence = "eggress.capabilities() and eggress.pproxy.compatibility_version() expose metadata"
+
+[[features]]
+id = "performance_tcp_relay_smoke"
+category = "performance"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-runtime/tests/performance_smoke.rs::performance_tcp_relay_smoke"]
+divergence = "Tier 1 performance smoke: 50 concurrent SOCKS5 sessions under 5s"
+
+[[features]]
+id = "performance_udp_relay_smoke"
+category = "performance"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-runtime/tests/performance_smoke.rs::performance_udp_relay_smoke"]
+divergence = "Tier 1 performance smoke: 100 datagrams through standalone UDP relay"
+
+[[features]]
+id = "resource_leak_fd_cleanup"
+category = "performance"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-runtime/tests/performance_smoke.rs::resource_leak_fd_cleanup"]
+divergence = "Tier 1 leak detection: FD count returns to baseline after 20 sessions"
+
+[[features]]
+id = "resource_leak_task_cleanup"
+category = "performance"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-runtime/tests/performance_smoke.rs::resource_leak_task_cleanup"]
+divergence = "Tier 1 leak detection: task count returns to zero after 20 concurrent sessions"
+
+[[features]]
+id = "performance_reverse_soak"
+category = "performance"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["crates/eggress-runtime/tests/reverse_soak.rs::performance_reverse_soak"]
+divergence = "Tier 2 soak: 30s sustained reverse proxy load, gated EGRESS_REQUIRE_SOAK=1"
+
+[[features]]
+id = "python_binding_performance"
+category = "performance"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_performance_smoke.py"]
+divergence = "Tier 1 Python binding overhead: import cost, URI translation, config parse, service lifecycle"

@@ -130,6 +130,21 @@ cargo test -p eggress-routing --test properties
 # Run fuzz smoke tests
 cargo test -p eggress-protocol-socks --test fuzz_smoke
 
+# Run performance smoke tests (Tier 1)
+cargo test -p eggress-runtime --test performance_smoke
+
+# Run performance smoke tests with output
+cargo test -p eggress-runtime --test performance_smoke -- --nocapture
+
+# Run soak tests (Tier 2, gated)
+EGRESS_REQUIRE_SOAK=1 cargo test -p eggress-runtime --test reverse_soak -- --ignored --test-threads=1
+
+# Run pproxy performance comparison (Tier 3, gated)
+EGRESS_REQUIRE_PPROXY_PERF=1 ./scripts/perf/run_pproxy_comparison.sh
+
+# Run Python binding performance tests
+python -m pytest python/tests/test_performance_smoke.py -v
+
 # Run lifecycle invariant tests
 cargo test -p eggress-runtime --test lifecycle_invariants
 

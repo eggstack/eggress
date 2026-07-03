@@ -257,6 +257,22 @@ No pproxy behavioral parity is claimed for Python API surfaces. Tier classificat
 are in `docs/python/PPROXY_API_INVENTORY.md`. Full differential testing of Python API
 surfaces is deferred to Phase 30+.
 
+## Performance and Resource Tracking
+
+Phase 34 establishes performance baselines, leak detection, and regression gates.
+
+| Feature | Tier | Evidence | How to run |
+|---------|------|----------|------------|
+| `performance_tcp_relay_smoke` | Tier 1 | Synthetic (50 concurrent sessions) | `cargo test -p eggress-runtime --test performance_smoke -- performance_tcp_relay_smoke` |
+| `performance_udp_relay_smoke` | Tier 1 | Synthetic (100 datagrams) | `cargo test -p eggress-runtime --test performance_smoke -- performance_udp_relay_smoke` |
+| `resource_leak_fd_cleanup` | Tier 1 | Synthetic (FD baseline check) | `cargo test -p eggress-runtime --test performance_smoke -- resource_leak_fd_cleanup` |
+| `resource_leak_task_cleanup` | Tier 1 | Synthetic (task count check) | `cargo test -p eggress-runtime --test performance_smoke -- resource_leak_task_cleanup` |
+| `performance_reverse_soak` | Tier 2 | Synthetic (30s sustained load) | `EGRESS_REQUIRE_SOAK=1 cargo test -p eggress-runtime --test reverse_soak -- --ignored` |
+| `python_binding_performance` | Tier 1 | Synthetic (overhead tests) | `python -m pytest python/tests/test_performance_smoke.py` |
+
+See `docs/performance/README.md` for the full performance testing guide.
+Regression gate policy is at `docs/performance/REGRESSION_GATE_POLICY.md`.
+
 ## Gated Python Tests
 
 Oracle tests auto-skip if pproxy is not installed. The legacy env var

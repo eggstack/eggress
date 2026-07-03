@@ -69,6 +69,20 @@ Run with `cargo bench --workspace`.
 `#[ignore]`-annotated tests for stress/load scenarios:
 - `crates/eggress-runtime/tests/load.rs` — run with `cargo test -p eggress-runtime --test load -- --ignored`
 
+### Performance smoke tests
+Tier 1 performance and leak detection tests (automated, not `#[ignore]`):
+- `crates/eggress-runtime/tests/performance_smoke.rs` — TCP/UDP relay smoke, FD leak check, task cleanup
+- `python/tests/test_performance_smoke.py` — Python binding overhead, GIL release
+
+### Reverse soak tests
+Tier 2 soak tests gated behind `EGRESS_REQUIRE_SOAK=1`:
+- `crates/eggress-runtime/tests/reverse_soak.rs` — 30s sustained load, reconnect churn, auth failure churn
+
+### Performance scripts
+- `scripts/perf/run_local_baseline.sh` — Tier 1 runner
+- `scripts/perf/run_soak.sh` — Tier 2 soak runner (requires EGRESS_REQUIRE_SOAK=1)
+- `scripts/perf/run_pproxy_comparison.sh` — Tier 3 pproxy comparison (requires EGRESS_REQUIRE_PPROXY_PERF=1)
+
 ### Protocol-crate tests
 Protocol-specific tests live alongside the implementation:
 - `crates/eggress-protocol-trojan/src/tcp.rs` — hash, `encode_trojan_request()`

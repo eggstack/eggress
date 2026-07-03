@@ -106,6 +106,18 @@ Publishes to PyPI or TestPyPI via manual dispatch. Uses trusted publishing (OIDC
 
 **Note:** All Python workflows are subject to the same billing limitations as `ci.yml`. Local verification remains the source of truth.
 
+## Performance Testing
+
+Performance tests are gated and not run in CI by default. See `docs/performance/` for the full guide.
+
+| Test | Command | Gating |
+|------|---------|--------|
+| Tier 0 benchmarks | `cargo bench --workspace` | Informational (manual) |
+| Tier 1 smoke | `cargo test -p eggress-runtime --test performance_smoke` | Automated |
+| Tier 2 soak | `EGRESS_REQUIRE_SOAK=1 cargo test -p eggress-runtime --test reverse_soak -- --ignored` | Gated |
+| Tier 3 pproxy | `EGRESS_REQUIRE_PPROXY_PERF=1 scripts/perf/run_pproxy_comparison.sh` | Gated |
+| Python perf | `python -m pytest python/tests/test_performance_smoke.py` | Automated |
+
 ## How to Interpret Completion Docs
 
 When hosted CI is unavailable, completion documents (e.g.
