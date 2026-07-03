@@ -230,7 +230,7 @@ All diagnostic messages redact credentials.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Python library | `pproxy.Server()` API | `eggress` package (PyO3) | Supported | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py` | none | `EggressService`, `EggressHandle`, `start_pproxy`, translation helpers |
+| Python library | `pproxy.Server()` API | `eggress` package (PyO3) | Supported | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py`, `test_server_lifecycle.py`, `test_pproxy_oracle.py` | none | `EggressService`, `EggressHandle`, `Server`, `start_pproxy`, translation helpers |
 | PyPI package | `pip install pproxy` | `pip install eggress` | Supported | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
 
 #### Phase 29 Python API Inventory (114 entries)
@@ -241,7 +241,7 @@ All diagnostic messages redact credentials.
 | Protocol classes | 18 classes (`Http`, `Socks5`, `Shadow`, etc.) | Not exposed | D (deferred) | Documented in inventory |
 | Cipher classes | 43 classes (`AEAD`, `BaseCipher`, etc.) | Not exposed | D (deferred) | Documented in inventory |
 | Scheduling | `rr`, `fa`, `ra`, `lc` | `RoundRobin`, `FirstAvailable`, `Random`, `LeastConnections` | B (functional) | Different names, same algorithms |
-| Server constructor | `Server([listen], [remote], ...)` | `EggressConfig` + `EggressService` | B (functional) | TOML-first vs URI-first |
+| Server constructor | `Server([listen], [remote], ...)` | `eggress.Server(listen=[...], remote=[...])` | B (functional) | pproxy `rserver`/`server` mapped to `listen`/`remote`; pre-built config via `config=` kwarg |
 | Async lifecycle | `asyncio.ensure_future(server_forever())` | `EggressService.start_background()` | B (functional) | Tokio vs asyncio |
 | Blocking lifecycle | `asyncio.run(server_forever())` | `EggressService.start()` | A (exact) | Both block until shutdown |
 | Context managers | Not available | `async with EggressService(config)` | Eggress-only | Eggress advantage |

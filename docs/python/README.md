@@ -13,6 +13,7 @@ between eggress and pproxy 2.7.9.
 | [PPROXY_EMBEDDED_USAGE_PATTERNS.md](PPROXY_EMBEDDED_USAGE_PATTERNS.md) | 10 common pproxy embedded usage patterns with eggress equivalents |
 | [PYTHON_LIFECYCLE_PARITY.md](PYTHON_LIFECYCLE_PARITY.md) | Lifecycle model comparison: asyncio vs Tokio, blocking vs async |
 | [EGGRESS_PYTHON_API_CURRENT_STATE.md](EGRESS_PYTHON_API_CURRENT_STATE.md) | Current eggress Python package audit and gap analysis |
+| [SERVER_LIFECYCLE_COMPATIBILITY.md](SERVER_LIFECYCLE_COMPATIBILITY.md) | Phase 30: pproxy-shaped `Server` wrapper with lifecycle management |
 
 ## Tier Classification
 
@@ -46,3 +47,17 @@ protocols, ciphers, scheduling).
 - `docs/PYTHON_BINDINGS.md` — User-facing Python bindings documentation
 - `python/README.md` — Python package README
 - `tests/compat/pproxy_manifest.toml` — Canonical compatibility manifest
+
+## Installation
+
+Once published to PyPI, install with:
+
+```bash
+pip install eggress
+```
+
+Wheels are built for 5 platforms via maturin: Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64.
+
+See [INSTALLATION.md](INSTALLATION.md) for detailed installation options, [PACKAGING.md](PACKAGING.md) for wheel/sdist build details, and [MIGRATION_FROM_PPROXY.md](MIGRATION_FROM_PPROXY.md) for migrating from Python pproxy.
+
+The import strategy and distribution design is documented in the ADR at `docs/adr/ADR_python_import_and_distribution_strategy.md`.

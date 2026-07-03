@@ -989,6 +989,8 @@ mod tests {
             "test_pproxy_compat.py",
             "test_pproxy_redaction.py",
             "test_pproxy_concurrency.py",
+            "test_server_lifecycle.py",
+            "test_pproxy_oracle.py",
         ];
 
         let manifest_path = match find_manifest_path() {

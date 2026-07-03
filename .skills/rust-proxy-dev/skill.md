@@ -177,10 +177,40 @@ maturin build --release --out ../../dist
 pip install --force-reinstall ../../dist/eggress-*.whl
 ```
 
+To build an sdist:
+
+```bash
+cd crates/eggress-python && maturin sdist --out ../../dist
+```
+
+To validate wheel/sdist metadata:
+
+```bash
+python -m twine check dist/*
+```
+
 To test the wheel in a clean environment:
 
 ```bash
 ./scripts/test_wheel.sh
 ```
 
+### Import strategy and distribution
+
+The canonical PyPI package is `eggress`. The import path is `eggress` (not `pproxy`).
+`eggress.pproxy` provides compatibility helpers. No top-level `pproxy` shim is included.
+
+Key metadata:
+- `py.typed` PEP 561 marker included
+- Version sourced from native module's `CARGO_PKG_VERSION`
+- Capability metadata via `eggress.__version__`, `eggress.version()`, `eggress.capabilities()`
+
+### Smoke tests
+
+```bash
+python -m pytest python/tests/test_wheel_import_smoke.py -v
+```
+
+See `docs/adr/ADR_python_import_and_distribution_strategy.md` for the ADR.
+See `docs/python/PACKAGING.md` and `docs/python/INSTALLATION.md` for packaging and installation details.
 See `docs/PYPI_RELEASE.md` for the full release procedure.

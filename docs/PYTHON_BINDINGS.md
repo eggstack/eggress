@@ -340,6 +340,107 @@ with start_pproxy(["-l", "socks5://:1080"]) as handle:
 | `TranslationWarning` | `.category` and `.message` describing a partial-behavior note |
 | `UnsupportedFeature` | `.feature` and `.message` for unsupported pproxy features |
 
+## URI inspection and diagnostics (Phase 31)
+
+### `check_pproxy_uri(uri)`
+
+Parse a pproxy URI and return structured information. Never raises — errors
+are captured in the `error` field of the returned `UriInfo`.
+
+```python
+from eggress import check_pproxy_uri
+
+info = check_pproxy_uri("socks5://user:pass@example.com:1080+tls")
+print(info.scheme)       # "socks5"
+print(info.host)         # "example.com"
+print(info.port)         # 1080
+print(info.tls)          # True
+print(info.has_auth)     # True
+print(info.ok)           # True (no error)
+
+# Error handling
+info = check_pproxy_uri("invalid://")
+print(info.ok)           # False
+print(info.error)        # error message
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `scheme` | `str` | Protocol scheme (socks5, http, ss, etc.) |
+| `host` | `str` | Target host |
+| `port` | `int` | Target port |
+| `tls` | `bool` | TLS enabled |
+| `ssl` | `bool` | SSL suffix present (normalized to +tls in display) |
+| `inbound` | `bool` | Inbound listener mode (+in modifier) |
+| `backward_num` | `int` | Backward chain depth |
+| `has_auth` | `bool` | Credentials present |
+| `has_rule` | `bool` | Rule query parameter present |
+| `is_reverse_listener` | `bool` | Reverse listener scheme (bind/listen/backward/rebind) |
+| `redacted_display` | `str` | URI display with credentials redacted |
+| `error` | `str \| None` | Parse error message (None if successful) |
+| `ok` | `bool` | True if no parse error |
+
+### `redact_pproxy_uri(uri)`
+
+Return the URI with credentials redacted. Raises `EggressError` on invalid URI.
+
+```python
+from eggress import redact_pproxy_uri
+
+print(redact_pproxy_uri("socks5://secret:word@proxy:1080"))
+# "socks5://****:****@proxy:1080"
+```
+
+### `diagnostics_for_uri(uri)`
+
+Translate a URI and return structured diagnostics for all warnings and
+unsupported features. Raises `EggressError` on invalid URI.
+
+```python
+from eggress import diagnostics_for_uri
+
+diags = diagnostics_for_uri("ssh://proxy:22")
+for d in diags:
+    print(f"[{d.code}] {d.message}")
+    print(f"  Suggestion: {d.suggestion}")
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | `str` | Stable diagnostic code (e.g., "unsupported_protocol") |
+| `feature_id` | `str` | Feature identifier |
+| `tier` | `str` | Compatibility tier |
+| `message` | `str` | Human-readable message |
+| `suggestion` | `str` | Suggested action |
+
+### `supported_features()`
+
+Return a list of all supported pproxy protocol features as strings.
+
+```python
+from eggress import supported_features
+
+features = supported_features()
+print("socks5" in features)  # True
+print("http" in features)    # True
+print("ssh" in features)     # False
+```
+
+## Server status helpers (Phase 31)
+
+The `Server` class exposes convenience properties for querying runtime state:
+
+```python
+from eggress import Server
+
+server = Server(listen="socks5://127.0.0.1:1080", remote="http://proxy:8080")
+server.start()
+
+print(server.is_ready)       # True when service is ready
+print(server.listener_info)  # [{name, bind, protocols, ...}, ...]
+print(server.metrics_text)   # Prometheus metrics text
+```
+
 ## pproxy oracle testing (Phase 29)
 
 The Python bindings include an oracle test harness that verifies eggress

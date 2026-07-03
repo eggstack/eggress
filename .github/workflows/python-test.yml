@@ -29,11 +29,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install maturin
-        run: pip install maturin
+        run: pip install "maturin>=1.0,<2.0"
       - name: Build and install
         run: maturin develop
         working-directory: crates/eggress-python
+      - name: Verify py.typed
+        run: python -c "import importlib.resources; p = importlib.resources.files('eggress').joinpath('py.typed'); assert p.is_file(), 'py.typed not found'; print('py.typed found')"
+      - name: Syntax check
+        run: python -m compileall python/eggress
       - name: Install test dependencies
         run: pip install pytest
       - name: Run tests
         run: python -m pytest python/tests -v
+      - name: Wheel import smoke tests
+        run: python -m pytest python/tests/test_wheel_import_smoke.py -v

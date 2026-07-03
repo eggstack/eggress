@@ -190,6 +190,12 @@ python -m pytest python/tests/test_pproxy_redaction.py -v
 # Run Python pproxy concurrency tests
 python -m pytest python/tests/test_pproxy_concurrency.py -v
 
+# Run Python utility/fixture tests (Phase 31)
+python -m pytest python/tests/test_pproxy_utility_fixtures.py -v
+
+# Run Python diagnostics tests (Phase 31)
+python -m pytest python/tests/test_pproxy_diagnostics.py -v
+
 # Run Python pproxy differential tests (gated, requires pproxy package)
 EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python -m pytest python/tests/test_pproxy_differential.py -v
 
@@ -204,6 +210,15 @@ deactivate
 
 # Or use the helper script
 ./scripts/test_wheel.sh
+
+# Run Python wheel import smoke tests
+python -m pytest python/tests/test_wheel_import_smoke.py -v
+
+# Build sdist
+cd crates/eggress-python && maturin sdist --out ../../dist
+
+# Check wheel/sdist metadata
+python -m twine check dist/*
 
 # Run fuzz targets (standalone `fuzz/` workspace; libfuzzer-sys based)
 cargo check --manifest-path fuzz/Cargo.toml --bins
@@ -258,6 +273,7 @@ eggress/
 │   ├── eggress-pproxy-compat/ # pproxy compatibility: URI translation, config migration
 │   ├── eggress-embed/      # Stable Rust embed API: config, service, handle, errors
 │   ├── eggress-python/     # Python bindings via PyO3 (wraps eggress-embed)
+│   │   └── pyproject.toml      # Authoritative release build config (maturin)
 │   └── eggress-testkit/   # Test utilities
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
@@ -377,8 +393,9 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **SSR/legacy Shadowsocks**: Intentionally unsupported. SSR URIs (`ssr://`) and legacy stream cipher methods are recognized and rejected with clear diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. Legacy method detection exists in `eggress-protocol-shadowsocks::method::is_legacy_method()`.
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP framing standardized to SIP003 AEAD in Phase 21. Completion docs updated with corrective notices and gated-test status.
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Thread ownership: async path uses a Tokio blocking-pool thread + dedicated OS thread (`eggress-embed-rt`); blocking path uses an outer startup thread + inner run thread (`eggress-embed-run`). Handle owns state/token and cleans up on drop (5-second timeout on async path). `shutdown()` and `shutdown_blocking()` are idempotent. See `docs/EMBED_API.md`.
-- **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. Version sourced from native module's `CARGO_PKG_VERSION`. Lifecycle: always prefer explicit `shutdown()` or context manager; object destruction is best-effort fallback. See `docs/PYTHON_BINDINGS.md`.
+- **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. Version sourced from native module's `CARGO_PKG_VERSION`. Lifecycle: always prefer explicit `shutdown()` or context manager; object destruction is best-effort fallback. Phase 31 added Python utility APIs: `check_pproxy_uri()`, `redact_pproxy_uri()`, `diagnostics_for_uri()`, `supported_features()`, `UriInfo` dataclass, `Diagnostic` dataclass, and `Server` status helpers (`is_ready`, `listener_info`, `metrics_text`). URI corpus fixture tests parametrized from `tests/compat/fixtures/pproxy_uri_corpus.toml` (65 cases). See `docs/PYTHON_BINDINGS.md`.
 - **PyPI packaging**: Wheels built with maturin for Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64. See `docs/PYPI_RELEASE.md`.
+- **Python packaging**: Canonical package `eggress` on PyPI. `eggress.pproxy` provides compatibility helpers. No top-level `pproxy` shim (deferred). Wheels built for 5 platforms via maturin. `py.typed` PEP 561 marker included. Version/capability metadata exposed via `eggress.__version__`, `eggress.version()`, `eggress.capabilities()`, `eggress.pproxy.compatibility_version()`. See `docs/adr/ADR_python_import_and_distribution_strategy.md`.
 - **Release candidate audit (Phase 17)**: Final parity matrix audit, Rust/Python release audits, security/redaction audit including Python binding surface, documentation consistency pass. Release candidate document at `docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`. All verification commands pass; go recommendation issued. See `docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md`.
 - **Manifest validation**: `tests/compat/pproxy_manifest.toml` is the canonical evidence index. `egress_status = "compatible"` requires `evidence_level = "compatible"` backed by real pproxy differential tests. `implemented_synthetic` evidence cannot support compatibility claims. Validation enforced by `eggress-testkit::manifest::validate_manifest()`. `last_updated` field removed in Phase 24; stale warnings no longer emitted.
 - **Manifest external dependency checks (Phase 24)**: Compatible entries with differential tests require `external_dependency`; implemented_interop requires dependency or divergence note explaining interop.

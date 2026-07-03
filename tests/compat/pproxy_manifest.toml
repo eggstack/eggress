@@ -1203,6 +1203,15 @@ tests = []
 divergence = "Service start/stop lifecycle matches pproxy Server() start/stop semantics"
 
 [[features]]
+id = "python_server_lifecycle"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_server_lifecycle.py", "test_pproxy_oracle.py"]
+divergence = "pproxy.Server(uris) maps to eggress.Server(listen=[...], remote=[...]); same start/close/run lifecycle; constructor takes listen/remote instead of rserver/server"
+
+[[features]]
 id = "python_api_config_reload"
 category = "python"
 pproxy_version = "2.7.9"
@@ -1264,3 +1273,185 @@ egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = []
 divergence = "Different API shape (TOML config vs function call) but same scheduling algorithms (fa, rr, rc, lc) and outcome"
+
+[[features]]
+id = "python_check_uri"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_pproxy_utility_fixtures"]
+divergence = "Returns UriInfo dataclass (scheme, host, port, tls, ssl, inbound, has_auth, redacted_display, error) instead of raising"
+
+[[features]]
+id = "python_redact_uri"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_pproxy_utility_fixtures"]
+divergence = "Wraps Rust pproxy URI redaction; credentials replaced with ****"
+
+[[features]]
+id = "python_diagnostics_model"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_pproxy_diagnostics"]
+divergence = "Diagnostic dataclass with code, feature_id, tier, message, suggestion fields; Python-only convenience layer over Rust StructuredDiagnostic"
+
+[[features]]
+id = "python_config_explain"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_config_explain::TestExplainConfigToml", "test_config_explain::TestExplainPproxyArgs", "test_config_explain::TestExplainPproxyUri"]
+divergence = "explain_config_toml/explain_pproxy_args/explain_pproxy_uri parse TOML and return structured dicts with listeners/upstreams/rules metadata"
+
+[[features]]
+id = "python_server_status"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_server_lifecycle"]
+divergence = "Server.is_ready/listener_info/metrics_text properties; no pproxy equivalent"
+
+[[features]]
+id = "python_metrics_text"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_server_lifecycle"]
+divergence = "Server.metrics_text returns Prometheus-format text; pproxy has no equivalent API"
+
+[[features]]
+id = "python_route_explain"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_config_explain::TestRouteExplain"]
+divergence = "route_explain compiles TOML config and runs routing engine; returns matched_rule/action/upstream_group/scheduler/eligible_upstreams"
+
+[[features]]
+id = "python_upstream_test"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["test_config_explain::TestUpstream"]
+divergence = "check_upstream attempts TCP connect to URI and returns connected/latency/error; no pproxy equivalent"
+
+# ─── Phase 32: Python Package Distribution ───────────────────────────
+
+[[features]]
+id = "python_package_import_eggress"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_wheel_import_smoke.py::test_import_eggress"]
+divergence = "import eggress works in Python package"
+
+[[features]]
+id = "python_package_import_eggress_pproxy"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_wheel_import_smoke.py::test_import_eggress_pproxy"]
+divergence = "from eggress import pproxy works"
+
+[[features]]
+id = "python_package_import_no_pproxy_shadow"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_wheel_import_smoke.py::test_no_pproxy_shadow"]
+divergence = "eggress does not shadow upstream pproxy import"
+
+[[features]]
+id = "python_wheel_linux_x86_64"
+category = "packaging"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/python-wheels.yml"]
+divergence = "Linux x86_64 manylinux wheel built and tested in CI"
+
+[[features]]
+id = "python_wheel_linux_aarch64"
+category = "packaging"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/python-wheels.yml"]
+divergence = "Linux aarch64 manylinux wheel built in CI"
+
+[[features]]
+id = "python_wheel_macos_x86_64"
+category = "packaging"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/python-wheels.yml"]
+divergence = "macOS x86_64 wheel built in CI"
+
+[[features]]
+id = "python_wheel_macos_arm64"
+category = "packaging"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/python-wheels.yml"]
+divergence = "macOS arm64 wheel built in CI"
+
+[[features]]
+id = "python_wheel_windows_x86_64"
+category = "packaging"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/python-wheels.yml"]
+divergence = "Windows x86_64 wheel built in CI"
+
+[[features]]
+id = "python_sdist_build"
+category = "packaging"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = [".github/workflows/python-wheels.yml"]
+divergence = "Source distribution builds with maturin (requires Rust toolchain)"
+
+[[features]]
+id = "python_py_typed"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_wheel_import_smoke.py"]
+divergence = "PEP 561 py.typed marker included in package"
+
+[[features]]
+id = "python_version_metadata"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_wheel_import_smoke.py::test_version_metadata"]
+divergence = "eggress.__version__ and eggress.version() expose package version"
+
+[[features]]
+id = "python_capability_metadata"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
+tests = ["python/tests/test_wheel_import_smoke.py::test_capabilities"]
+divergence = "eggress.capabilities() and eggress.pproxy.compatibility_version() expose metadata"

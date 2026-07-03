@@ -3,7 +3,8 @@ try:
 except ImportError:
     __version__ = "0.1.0"
 
-from typing import Sequence
+import sys
+from typing import Any, Sequence
 
 from eggress._eggress import (
     EggressError,
@@ -25,8 +26,20 @@ from eggress.pproxy import (
     check_pproxy_args,
     describe_reverse_pproxy_uri,
     ReverseUriSummary,
+    UriInfo,
+    check_pproxy_uri,
+    redact_pproxy_uri,
+    Diagnostic,
+    diagnostics_for_uri,
+    supported_features,
+    compatibility_version,
     AlreadyStartedError,
     Server,
+    explain_config_toml,
+    explain_pproxy_args,
+    explain_pproxy_uri,
+    route_explain,
+    check_upstream,
 )
 
 
@@ -54,6 +67,56 @@ def start_pproxy(
     return EggressService.from_pproxy_args(args, allow_partial=allow_partial).start()
 
 
+def version() -> str:
+    """Return the eggress version string.
+
+    Returns:
+        The version string, e.g. ``"0.1.0"``.
+    """
+    return __version__
+
+
+def capabilities() -> dict[str, Any]:
+    """Return a dict describing eggress capabilities and metadata.
+
+    Returns a dict with the following keys:
+
+    - ``version``: eggress version string
+    - ``python_version``: Python runtime version (e.g. ``"3.12.4"``)
+    - ``pproxy_compatibility_version``: target pproxy version (e.g. ``"2.7.9"``)
+    - ``supported_protocols``: list of supported proxy protocol names
+    - ``supported_schedulers``: list of supported scheduler names
+
+    Example::
+
+        >>> import eggress
+        >>> caps = eggress.capabilities()
+        >>> caps["version"]
+        '0.1.0'
+        >>> caps["pproxy_compatibility_version"]
+        '2.7.9'
+    """
+    return {
+        "version": __version__,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "pproxy_compatibility_version": compatibility_version(),
+        "supported_protocols": [
+            "http",
+            "socks4",
+            "socks4a",
+            "socks5",
+            "https",
+            "ss",
+            "trojan",
+        ],
+        "supported_schedulers": [
+            "round_robin",
+            "least_connections",
+            "first_available",
+        ],
+    }
+
+
 __all__ = [
     "EggressConfig",
     "EggressService",
@@ -74,7 +137,16 @@ __all__ = [
     "check_pproxy_args",
     "describe_reverse_pproxy_uri",
     "ReverseUriSummary",
+    "UriInfo",
+    "check_pproxy_uri",
+    "redact_pproxy_uri",
+    "Diagnostic",
+    "diagnostics_for_uri",
+    "supported_features",
+    "compatibility_version",
     "AlreadyStartedError",
     "Server",
     "start_pproxy",
+    "version",
+    "capabilities",
 ]

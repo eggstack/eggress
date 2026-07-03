@@ -201,6 +201,42 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - `import eggress` does not start services, bind ports, or log.
 - Native module (`_eggress`) loads on import but performs no I/O.
 
+### Python Packaging
+
+**No secrets in package data**:
+- The `eggress` wheel does not contain `.env` files, API tokens, TLS certificates, or private keys.
+- Generated config/fixture files in the repository use placeholder credentials (`user:password`, `example.com`).
+- `pyproject.toml` declares no runtime dependencies; the only dev dependency is `pytest>=7.0`.
+
+**Wheel builds exclude debug artifacts**:
+- Wheels are built with `maturin build --release`. Debug symbols are stripped.
+- The `include` directive in `[tool.maturin]` explicitly lists `eggress/**/*.py` and `eggress/py.typed`. No additional files are bundled.
+- No build scripts (`build.rs`) or post-install hooks exist in the workspace.
+
+**Generated config/fixture files contain no real credentials**:
+- All TOML config strings in tests and examples use `user:password` or `example.com`.
+- `check_pproxy_uri()` and `translate_pproxy_uri()` accept user-provided URIs but redact credentials in all output (`RedactedUri`).
+- Test fixtures under `tests/compat/fixtures/` use synthetic data.
+
+**Long description does not overclaim compatibility**:
+- The package description is "Python bindings for the eggress proxy".
+- The README and long description do not claim drop-in replacement status for pproxy.
+- Compatibility claims are scoped to specific features with diagnostic-backed boundaries.
+
+**Dependency list is minimal**:
+- Runtime dependencies: none (native extension only).
+- Dev dependencies: `pytest>=7.0`.
+- Build dependencies: `maturin>=1.0,<2.0` (declared in `[build-system]`).
+- No transitive dependency risk beyond PyO3 and maturin.
+
+**`pip-audit` recommended as optional check**:
+- Run `pip-audit` against installed wheels to verify no known vulnerabilities in dependencies.
+- Not a gate for release, but recommended as a periodic supply-chain hygiene check.
+
+**`.gitignore` prevents stale build artifacts from being committed**:
+- `/target`, `/dist`, `crates/eggress-python/dist/`, `*.so`, `*.pyc`, `__pycache__/`, `*.egg-info/`, `.venv/` are all gitignored.
+- Built wheels and sdist archives are not committed to the repository.
+
 ### Resource Management
 
 **Task Leaks on Malformed Clients**:
@@ -247,6 +283,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 21. **WebSocket binary-only**: Text frames are logged and skipped; no text frame data is processed (Phase 26).
 22. **Raw tunnel fixed target**: Target is fixed by config at startup; no runtime target selection from client data (Phase 26).
 23. **Raw tunnel no-auth warning**: Documented that raw tunnels have no authentication or encryption; operator must control network access (Phase 26).
+24. **Python packaging security**: No secrets in package data; wheels built with `--release` exclude debug artifacts; generated configs use placeholder credentials; `.gitignore` prevents stale build artifacts from being committed; long description does not overclaim compatibility.
 
 ## Residual Risks
 

@@ -13,8 +13,11 @@ source .venv-wheel-test/bin/activate
 echo "=== Installing wheel ==="
 pip install dist/eggress-*.whl
 
-echo "=== Running tests ==="
+echo "=== Running wheel import smoke tests ==="
 pip install pytest
+python -m pytest python/tests/test_wheel_import_smoke.py -v
+
+echo "=== Running full test suite ==="
 python -m pytest python/tests -v
 
 echo "=== Cleanup ==="

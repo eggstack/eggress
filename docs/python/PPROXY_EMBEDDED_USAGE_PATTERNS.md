@@ -504,7 +504,7 @@ print("Reloaded, generation:", result["generation"])
 
 | Pattern | pproxy | Eggress | Status |
 |---------|--------|---------|--------|
-| Create proxy from URI | `pproxy.Server('socks5://:1080')` | `EggressConfig.from_toml(toml)` | **Partial** — URI via translation layer only; TOML is primary |
+| Create proxy from URI | `pproxy.Server('socks5://:1080')` | `eggress.Server(listen=['socks5://:1080'])` | **Supported** — pproxy-shaped constructor with URI translation |
 | Chain proxies | `pproxy.Server('a://host__b://proxy')` | `start_pproxy(["-l", "a://host", "-r", "b://proxy"])` | **Supported** — via `-l`/`-r` flags or TOML upstreams |
 | Compile rules | `pproxy.Rule('rules.txt')` | TOML structured matchers | **Partial** — structured matchers replace freeform regex |
 | Use DIRECT | `pproxy.DIRECT` | No upstream config | **Supported** — absence of upstreams = direct |
