@@ -247,4 +247,38 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
 Parity reports are generated at:
 - `target/compat/pproxy-parity-report.json`
+
+### Manifest validation (Phase 36)
+
+Phase 36 tightened the manifest validator. New invariants:
+
+- `category` must be one of the 15 allowed values (enumerated in
+  `manifest::ALLOWED_CATEGORIES`).
+- `intentional_non_parity` status must pair with `intentional_non_parity` or
+  `implemented_synthetic` evidence (not `unimplemented`).
+- `unsupported` and `experimental` statuses require non-empty `divergence`.
+- `platform` category entries must mention a platform keyword in
+  `divergence` (Linux, macOS, Windows, FreeBSD, Unix, Solaris, BSD, Android, iOS).
+- `tests` entries must not be bare file paths or CI workflow references.
+  Use either a group alias (e.g. `cli_tests`, `integration_tests`,
+  `deny_audit_gate`, `python_wheel_ci_workflow`) or `file::test_function`
+  form.
+
+CLI tier tightened: 17 CLI entries that previously claimed `compatible` with
+synthetic evidence are now `supported` with `implemented_synthetic` evidence.
+
+Run the full manifest validation suite:
+```bash
+cargo test -p eggress-testkit --lib manifest
+```
+
+Generate the final parity release report JSON:
+```bash
+python3 scripts/phase36_report.py
+# writes target/compat/final-pproxy-parity-report.json
+```
+
+The full Phase 36 release audit is gated and requires Python 3.11 (pproxy
+2.7.9 is incompatible with Python 3.14). See
+`docs/release/PARITY_RELEASE_GO_NO_GO.md` for the gating rationale.
 - `target/compat/pproxy-parity-report.md`

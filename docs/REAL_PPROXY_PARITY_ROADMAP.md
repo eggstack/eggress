@@ -1,5 +1,14 @@
 # Real pproxy Parity Roadmap
 
+> **Phase 36 status.** This roadmap defines the long-term incremental path
+> from the initial Eggress release-candidate boundary to real pproxy parity.
+> It intentionally uses a stricter definition of parity than the existing
+> release-candidate documents. The "Current non-parity areas" list below is
+> the original Phase 11 snapshot and is preserved for historical reference;
+> it has been substantially closed by the work since Phase 11. See
+> [`release/FINAL_PPROXY_PARITY_REPORT.md`](release/FINAL_PPROXY_PARITY_REPORT.md)
+> for the current parity status.
+
 This roadmap defines the long-term incremental path from the current Eggress release-candidate boundary to real pproxy parity. It intentionally uses a stricter definition of parity than the existing release-candidate documents.
 
 The two end goals are:

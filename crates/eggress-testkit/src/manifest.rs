@@ -15,6 +15,29 @@ use thiserror::Error;
 /// Pinned pproxy version that manifest metadata must reference.
 pub const PINNED_PPROXY_VERSION: &str = "2.7.9";
 
+/// Allowed `category` values for manifest entries.
+///
+/// Keep this list in sync with the categories used in
+/// `tests/compat/pproxy_manifest.toml`. Adding a new category requires
+/// updating both this enum and any docs that enumerate parity categories.
+pub const ALLOWED_CATEGORIES: &[&str] = &[
+    "protocol",
+    "udp",
+    "routing",
+    "security",
+    "cli",
+    "uri",
+    "transport",
+    "platform",
+    "system_proxy",
+    "python",
+    "python-api",
+    "packaging",
+    "performance",
+    "inbound_tcp",
+    "upstream_tcp",
+];
+
 // ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
@@ -196,6 +219,43 @@ pub enum ValidationError {
         "feature \"{id}\" has no external_dependency but evidence_level=\"{evidence}\" (expected external_dependency for non-synthetic, non-intentional-non-parity evidence)"
     )]
     MissingExternalDependency { id: String, evidence: String },
+
+    #[error("feature \"{id}\" has unknown category \"{category}\" (must be one of: {allowed:?})")]
+    InvalidCategory {
+        id: String,
+        category: String,
+        allowed: Vec<String>,
+    },
+
+    #[error(
+        "feature \"{id}\" has egress_status=\"intentional_non_parity\" but evidence_level=\"{evidence}\" (must be \"intentional_non_parity\" or \"implemented_synthetic\")"
+    )]
+    IntentionalNonParityEvidenceMismatch { id: String, evidence: String },
+
+    #[error(
+        "feature \"{id}\" has egress_status=\"unsupported\" with empty divergence (expected rationale explaining why not implemented)"
+    )]
+    UnsupportedRequiresDivergence { id: String },
+
+    #[error(
+        "feature \"{id}\" has egress_status=\"experimental\" with empty divergence (expected rationale describing the experiment)"
+    )]
+    ExperimentalRequiresDivergence { id: String },
+
+    #[error(
+        "feature \"{id}\" has category=\"platform\" but divergence does not mention a platform constraint (e.g. \"Linux only\", \"Unix only\")"
+    )]
+    PlatformMissingConstraint { id: String },
+
+    #[error(
+        "feature \"{id}\" tests reference a file path (\"{test}\") rather than a test function or group alias"
+    )]
+    TestReferenceIsFilePath { id: String, test: String },
+
+    #[error(
+        "feature \"{id}\" tests reference a CI workflow (\"{test}\") rather than a test function or group alias"
+    )]
+    TestReferenceIsCIWorkflow { id: String, test: String },
 }
 
 /// A collection of validation errors and warnings.
@@ -368,6 +428,98 @@ pub fn validate_manifest(manifest: &FullManifest) -> Result<(), ValidationErrors
                 id: feature.id.clone(),
                 evidence: feature.evidence_level.clone(),
             });
+        }
+
+        // category must be from the allowed list
+        if !ALLOWED_CATEGORIES.contains(&feature.category.as_str()) {
+            errs.push(ValidationError::InvalidCategory {
+                id: feature.id.clone(),
+                category: feature.category.clone(),
+                allowed: ALLOWED_CATEGORIES.iter().map(|s| s.to_string()).collect(),
+            });
+        }
+
+        // intentional_non_parity status must pair with intentional_non_parity or
+        // implemented_synthetic evidence (not "unimplemented" which means absent)
+        if status == EgressStatus::IntentionalNonParity
+            && !matches!(
+                evidence,
+                EvidenceLevel::IntentionalNonParity | EvidenceLevel::ImplementedSynthetic
+            )
+        {
+            errs.push(ValidationError::IntentionalNonParityEvidenceMismatch {
+                id: feature.id.clone(),
+                evidence: feature.evidence_level.clone(),
+            });
+        }
+
+        // unsupported requires a divergence explaining the omission
+        if status == EgressStatus::Unsupported && feature.divergence.trim().is_empty() {
+            errs.push(ValidationError::UnsupportedRequiresDivergence {
+                id: feature.id.clone(),
+            });
+        }
+
+        // experimental requires a divergence describing the experiment
+        if status == EgressStatus::Experimental && feature.divergence.trim().is_empty() {
+            errs.push(ValidationError::ExperimentalRequiresDivergence {
+                id: feature.id.clone(),
+            });
+        }
+
+        // platform category must mention a platform constraint in divergence
+        if feature.category == "platform" {
+            let d = feature.divergence.to_lowercase();
+            let has_platform_keyword = [
+                "linux", "macos", "windows", "freebsd", "unix", "solaris", "bsd", "android", "ios",
+            ]
+            .iter()
+            .any(|kw| d.contains(kw));
+            if !has_platform_keyword {
+                errs.push(ValidationError::PlatformMissingConstraint {
+                    id: feature.id.clone(),
+                });
+            }
+        }
+
+        // tests must not reference bare file paths or CI workflow files.
+        // Acceptable forms:
+        //   - group alias (e.g. "cli_tests", "integration_tests") — checked elsewhere
+        //   - file::test_name reference (e.g. "test_foo.py::test_bar")
+        //   - file::TestClassName reference (e.g. "test_foo.py::TestBar")
+        //   - bare test function name (e.g. "test_foo")
+        // Unacceptable:
+        //   - bare file paths like "crates/.../foo.rs" with no test function
+        //   - CI workflow references like ".github/workflows/ci.yml::cargo-deny"
+        for test in &feature.tests {
+            if test.starts_with(".github/workflows/") || test.starts_with(".github\\workflows\\") {
+                errs.push(ValidationError::TestReferenceIsCIWorkflow {
+                    id: feature.id.clone(),
+                    test: test.clone(),
+                });
+                continue;
+            }
+            if !test.contains("::") {
+                continue;
+            }
+            // file::needle form: require the needle to look like a test identifier
+            let (_, needle) = match test.split_once("::") {
+                Some(parts) if !parts.1.is_empty() => parts,
+                _ => continue,
+            };
+            let first_char = needle.chars().next();
+            let looks_like_test_id = match first_char {
+                Some(c) if c.is_ascii_alphabetic() || c == '_' => needle
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                _ => false,
+            };
+            if !looks_like_test_id {
+                errs.push(ValidationError::TestReferenceIsFilePath {
+                    id: feature.id.clone(),
+                    test: test.clone(),
+                });
+            }
         }
     }
 
@@ -991,6 +1143,10 @@ mod tests {
             "test_pproxy_concurrency.py",
             "test_server_lifecycle.py",
             "test_pproxy_oracle.py",
+            // Phase 36 group aliases: represent evidence that is verified by an
+            // external command rather than an in-tree test function.
+            "deny_audit_gate",
+            "python_wheel_ci_workflow",
         ];
 
         let manifest_path = match find_manifest_path() {

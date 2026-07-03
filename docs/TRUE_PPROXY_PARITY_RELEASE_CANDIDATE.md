@@ -1,5 +1,19 @@
 # True pproxy Parity Release Candidate
 
+> **Superseded by Phase 36 release audit.**
+> This document captures the release-candidate state at Phase 17
+> (commit `15eb0d1` and earlier). For the current parity status, see:
+>
+> - [`release/PARITY_TARGET_FREEZE.md`](release/PARITY_TARGET_FREEZE.md) — frozen targets.
+> - [`release/FINAL_PPROXY_PARITY_REPORT.md`](release/FINAL_PPROXY_PARITY_REPORT.md) — current compatible / supported / partial / non-parity split.
+> - [`release/RELEASE_NOTES_PARITY_RC.md`](release/RELEASE_NOTES_PARITY_RC.md) — current release-candidate notes.
+>
+> The Phase 36 audit tightened the CLI tier: 17 CLI entries that previously
+> claimed `compatible` with synthetic evidence are now `supported`. The
+> `intentional_non_parity` and `supported` lists in this document are still
+> informative for historical context but should not be cited as the current
+> contract.
+
 ## 1. Release Candidate Summary
 
 Eggress is a Rust-native, embeddable, multi-protocol proxy framework targeting practical and behavioral parity with Python `pproxy`. This document defines the release candidate boundary: what is supported, what is compatible with pproxy, what is experimental, and what is intentionally not supported.

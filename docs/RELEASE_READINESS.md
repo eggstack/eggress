@@ -71,9 +71,12 @@ All five commands must pass cleanly before tagging a release.
 |---------|-------|
 | QUIC transport | Not planned for current scope |
 | MASQUE transport | Not planned for current scope |
-| Unix-domain socket listeners | Listed in roadmap |
-| Persistent HTTP forwarding | Listed in roadmap |
 | mTLS for admin server | Deferred (see SECURITY_REVIEW.md) |
+
+> Unix-domain socket listeners and persistent HTTP forwarding are now
+> implemented (see manifest entries `unix_domain_sockets` and
+> `http_forward_persistent_connection`). The previous "Listed in roadmap"
+> rows are removed as of Phase 36.
 
 ## Known Limitations
 

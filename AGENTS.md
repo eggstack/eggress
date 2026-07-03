@@ -175,6 +175,19 @@ cargo test -p eggress-testkit validate_real_manifest
 # Validate manifest test names exist (Phase 23)
 cargo test -p eggress-testkit manifest_test_names_exist
 
+# Run all manifest validation tests (Phase 36)
+cargo test -p eggress-testkit --lib manifest
+
+# Run full Phase 36 release audit locally (Python 3.11 required for pproxy 2.7.9 interop)
+python3.11 -m pip install "pproxy==2.7.9"
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
+EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored --test-threads=1
+
+# Generate the final parity report JSON (Phase 36)
+python3 scripts/phase36_report.py   # writes target/compat/final-pproxy-parity-report.json
+# Or re-run the parity release audit (see plans/PHASE_36_FINAL_PARITY_RELEASE_AUDIT.md)
+
 # Run embed API tests
 cargo test -p eggress-embed
 

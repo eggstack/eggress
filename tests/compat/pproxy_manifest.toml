@@ -355,8 +355,8 @@ divergence = "URI-embedded password; verified via interop tests"
 id = "listen_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Same syntax"
 
@@ -364,8 +364,8 @@ divergence = "Same syntax"
 id = "remote_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Same syntax"
 
@@ -373,8 +373,8 @@ divergence = "Same syntax"
 id = "udp_listen_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["test_ul_generates_standalone_udp_listener", "pproxy_cli_tests"]
 divergence = "Translates to standalone UDP listener config (mode = standalone_pproxy_udp)"
 
@@ -382,8 +382,8 @@ divergence = "Translates to standalone UDP listener config (mode = standalone_pp
 id = "udp_remote_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["test_ul_and_ur_generates_udp_upstream_group", "pproxy_cli_tests"]
 divergence = "Translates to UDP upstream config with transport-matching rule"
 
@@ -499,8 +499,8 @@ divergence = "Python system proxy inspection not yet implemented."
 id = "pproxy_translate_command"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["pproxy_cli_tests"]
 divergence = "Translates pproxy CLI args to TOML config"
 
@@ -508,8 +508,8 @@ divergence = "Translates pproxy CLI args to TOML config"
 id = "pproxy_check_command"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["pproxy_cli_tests"]
 divergence = "Reports parity tier"
 
@@ -517,8 +517,8 @@ divergence = "Reports parity tier"
 id = "pproxy_run_command"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["pproxy_cli_tests"]
 divergence = "Translates and starts the service"
 
@@ -528,8 +528,8 @@ divergence = "Translates and starts the service"
 id = "cli_exit_codes"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Exit code differentiation with eggress-specific granularity; maps to docs/cli/EXIT_CODES.md"
 
@@ -537,8 +537,8 @@ divergence = "Exit code differentiation with eggress-specific granularity; maps 
 id = "cli_check_json"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "eggress extension: --json flag for machine-readable pproxy check output"
 
@@ -546,8 +546,8 @@ divergence = "eggress extension: --json flag for machine-readable pproxy check o
 id = "cli_diagnostics_taxonomy"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "eggress extension: structured diagnostic codes for all CLI operations"
 
@@ -555,8 +555,8 @@ divergence = "eggress extension: structured diagnostic codes for all CLI operati
 id = "cli_translate_golden"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Deterministic translation output for pproxy translate subcommand"
 
@@ -564,8 +564,8 @@ divergence = "Deterministic translation output for pproxy translate subcommand"
 id = "cli_translate_chain"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Chain translation via __ separator syntax"
 
@@ -573,8 +573,8 @@ divergence = "Chain translation via __ separator syntax"
 id = "cli_translate_scheduler"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Scheduler flag translation (--round-robin, --least-connections, etc.)"
 
@@ -582,8 +582,8 @@ divergence = "Scheduler flag translation (--round-robin, --least-connections, et
 id = "cli_translate_auth"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Auth flag translation (user:pass in URI)"
 
@@ -591,8 +591,8 @@ divergence = "Auth flag translation (user:pass in URI)"
 id = "cli_translate_reverse"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Reverse/backward mode translation (--backward, --backward+in)"
 
@@ -627,8 +627,8 @@ divergence = "SSH URIs intentionally rejected with structured diagnostics"
 id = "cli_run_process_behavior"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Process lifecycle: signal handling (SIGTERM/SIGINT), clean shutdown, readiness probe"
 
@@ -636,8 +636,8 @@ divergence = "Process lifecycle: signal handling (SIGTERM/SIGINT), clean shutdow
 id = "cli_inventory_complete"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "compatible"
-evidence_level = "compatible"
+egress_status = "supported"
+evidence_level = "implemented_synthetic"
 tests = ["cli_tests"]
 divergence = "Full CLI flag inventory documented; maps to docs/cli/PPROXY_CLI_INVENTORY.md"
 
@@ -773,7 +773,7 @@ pproxy_version = "2.7.9"
 egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["reload_tests"]
-divergence = "Eggress: routing/upstreams only; pproxy: full config"
+divergence = "Cross-platform (Linux, macOS, Windows, Unix): eggress supports hot-reload of routing and upstreams; pproxy reloads the full config."
 
 [[features]]
 id = "toml_config"
@@ -782,7 +782,7 @@ pproxy_version = "2.7.9"
 egress_status = "partial"
 evidence_level = "implemented_synthetic"
 tests = ["integration_tests"]
-divergence = "Different schema"
+divergence = "Cross-platform (Linux, macOS, Windows, Unix): TOML config schema differs from pproxy's JSON-style; see docs/CONFIG_REFERENCE.md."
 
 # ─── Python Library ───────────────────────────────────────────────────
 
@@ -1104,7 +1104,7 @@ id = "quic_h3_transport"
 category = "transport"
 pproxy_version = "2.7.9"
 egress_status = "intentional_non_parity"
-evidence_level = "unimplemented"
+evidence_level = "intentional_non_parity"
 tests = []
 divergence = "Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC/H3 behavior is experimental, quinn dependency significant, no clear interop evidence."
 
@@ -1162,7 +1162,7 @@ pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
 tests = ["test_client_reconnects_after_failure"]
-divergence = "Exponential backoff with configurable initial/max delay. Doubles each attempt, capped at max. Resets on success. Immediate reconnect on normal session close."
+divergence = "Cross-platform (Linux, macOS, Windows, Unix): exponential backoff with configurable initial/max delay. Doubles each attempt, capped at max. Resets on success. Immediate reconnect on normal session close."
 
 [[features]]
 id = "backward_parallel_connections"
@@ -1426,7 +1426,7 @@ category = "packaging"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/python-wheels.yml"]
+tests = ["python_wheel_ci_workflow"]
 divergence = "Linux x86_64 manylinux wheel built and tested in CI"
 
 [[features]]
@@ -1435,7 +1435,7 @@ category = "packaging"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/python-wheels.yml"]
+tests = ["python_wheel_ci_workflow"]
 divergence = "Linux aarch64 manylinux wheel built in CI"
 
 [[features]]
@@ -1444,7 +1444,7 @@ category = "packaging"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/python-wheels.yml"]
+tests = ["python_wheel_ci_workflow"]
 divergence = "macOS x86_64 wheel built in CI"
 
 [[features]]
@@ -1453,7 +1453,7 @@ category = "packaging"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/python-wheels.yml"]
+tests = ["python_wheel_ci_workflow"]
 divergence = "macOS arm64 wheel built in CI"
 
 [[features]]
@@ -1462,7 +1462,7 @@ category = "packaging"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/python-wheels.yml"]
+tests = ["python_wheel_ci_workflow"]
 divergence = "Windows x86_64 wheel built in CI"
 
 [[features]]
@@ -1471,7 +1471,7 @@ category = "packaging"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/python-wheels.yml"]
+tests = ["python_wheel_ci_workflow"]
 divergence = "Source distribution builds with maturin (requires Rust toolchain)"
 
 [[features]]
@@ -1605,7 +1605,7 @@ category = "security"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = ["crates/eggress-runtime/src/platform.rs"]
+tests = ["crates/eggress-runtime/tests/transparent.rs::test_transparent_capability_check_macos"]
 divergence = "Platform capability checks report accurate status; macOS PF honestly reports KernelUnsupported"
 
 [[features]]
@@ -1637,5 +1637,5 @@ category = "security"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = [".github/workflows/ci.yml::cargo-deny"]
+tests = ["deny_audit_gate"]
 divergence = "CI runs cargo-deny and cargo-audit; deny.toml bans openssl-sys, native-tls, aws-lc-sys, cmake"
