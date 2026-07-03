@@ -181,7 +181,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `-b` block rules | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
 | `--reuse` | Supported | Rejected | **Intentional non-parity** | Connection pooling not implemented |
 | `--log` | Supported | Rejected | **Intentional non-parity** | Use tracing-subscriber |
-| `--sys` | Supported | Rejected | **Intentional non-parity** | System proxy config not supported |
+| `--sys` | Supported | Inspection supported; apply is explicit dry-run only | **Supported (divergent)** | System proxy inspection via `eggress system-proxy inspect`; apply requires explicit `--apply` flag with dry-run support. No hidden global mutation. See `docs/system_proxy/` |
 | `--rulefile` | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
 | Multi-hop UDP chains | Supported | Rejected | **Intentional non-parity** | One-hop only |
 | Persistent HTTP forwarding | Supported | Supported | **Compatible** | Persistent session model with HTTP/1.1 keep-alive |

@@ -381,9 +381,9 @@ callers only.
 - [x] PAC serving
 - [x] Static HTTP endpoint
 - [x] Upstream test command
-- [ ] System-proxy configuration on macOS
-- [ ] System-proxy configuration on Windows
-- [ ] System-proxy state restoration
+- [x] System-proxy configuration on macOS (inspection, dry-run apply commands)
+- [x] System-proxy configuration on Windows (inspection, dry-run apply commands)
+- [x] System-proxy state restoration (rollback state save/load)
 
 ### Security and robustness
 

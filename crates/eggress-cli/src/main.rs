@@ -45,6 +45,26 @@ enum SubCommand {
     Route(RouteExplain),
     Upstream(UpstreamCommand),
     Pproxy(PproxyCommand),
+    SystemProxy(SystemProxyCommand),
+}
+
+#[derive(Parser, Debug)]
+struct SystemProxyCommand {
+    #[command(subcommand)]
+    action: SystemProxyAction,
+}
+
+#[derive(Subcommand, Debug)]
+enum SystemProxyAction {
+    /// Inspect current system proxy settings (read-only)
+    Inspect(SystemProxyInspect),
+}
+
+#[derive(Parser, Debug)]
+struct SystemProxyInspect {
+    /// Output as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -928,6 +948,64 @@ fn print_upstream_test_result(result: &UpstreamTestResult) {
     );
 }
 
+fn handle_system_proxy_inspect(args: &SystemProxyInspect) {
+    let result = eggress_system_proxy::inspect_system_proxy();
+
+    if args.json {
+        match serde_json::to_string_pretty(&result) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("failed to serialize inspection result: {e}");
+                std::process::exit(EXIT_RUNTIME_FAILURE);
+            }
+        }
+    } else {
+        print_inspection_result(&result);
+    }
+}
+
+fn print_inspection_result(result: &eggress_system_proxy::InspectionResult) {
+    println!("System Proxy Inspection");
+    println!("=======================");
+    println!("Platform: {}", result.platform);
+    println!();
+
+    println!("Capabilities:");
+    for cap in &result.capabilities {
+        println!("  {cap}");
+    }
+    println!();
+
+    if let Some(ref settings) = result.settings {
+        println!("Current Settings (source: {}):", settings.source);
+        if let Some(ref http) = settings.http_proxy {
+            println!("  HTTP proxy:  {http}");
+        }
+        if let Some(ref https) = settings.https_proxy {
+            println!("  HTTPS proxy: {https}");
+        }
+        if let Some(ref socks) = settings.socks_proxy {
+            println!("  SOCKS proxy: {socks}");
+        }
+        if let Some(ref no_proxy) = settings.no_proxy {
+            println!("  No proxy:    {no_proxy}");
+        }
+    } else {
+        println!("No proxy settings detected.");
+    }
+    println!();
+
+    println!("Apply supported: {}", result.apply_supported);
+
+    if !result.dry_run_commands.is_empty() {
+        println!();
+        println!("Dry-run apply commands:");
+        for cmd in &result.dry_run_commands {
+            println!("  {cmd}");
+        }
+    }
+}
+
 fn print_explanation(explanation: &eggress_routing::RouteExplanation, is_online: bool) {
     println!("Target: {}", explanation.target);
     println!("Listener: {}", explanation.listener);
@@ -1101,6 +1179,15 @@ async fn run() -> i32 {
             PproxyAction::Run(run_args) => {
                 init_logging(&run_args.log_format);
                 handle_pproxy_run(&run_args);
+                return EXIT_SUCCESS;
+            }
+        }
+    }
+
+    if let Some(SubCommand::SystemProxy(sysproxy_cmd)) = args.command {
+        match sysproxy_cmd.action {
+            SystemProxyAction::Inspect(inspect_args) => {
+                handle_system_proxy_inspect(&inspect_args);
                 return EXIT_SUCCESS;
             }
         }

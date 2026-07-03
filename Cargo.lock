@@ -537,6 +537,7 @@ dependencies = [
  "eggress-routing",
  "eggress-runtime",
  "eggress-server",
+ "eggress-system-proxy",
  "eggress-testkit",
  "eggress-udp",
  "eggress-uri",
@@ -822,6 +823,17 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "eggress-system-proxy"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
  "tracing",
 ]
 

@@ -90,6 +90,9 @@ cargo test -p eggress-runtime transparent
 # Run Unix socket tests
 cargo test -p eggress-runtime unix_socket
 
+# Run system proxy tests
+cargo test -p eggress-system-proxy
+
 # Run pproxy compat tests for redir/unix
 cargo test -p eggress-pproxy-compat redir
 cargo test -p eggress-pproxy-compat unix
@@ -266,6 +269,7 @@ eggress/
 │   ├── eggress-protocol-websocket/ # WebSocket tunnel (server, client, stream adapter)
 │   ├── eggress-protocol-raw/ # Raw fixed-target TCP tunnel
 │   ├── eggress-protocol-reverse/ # Reverse/backward proxy: raw-relay control channel, server (acceptor), client (control client), metrics
+│   ├── eggress-system-proxy/ # System proxy inspection, capability model, dry-run apply
 │   ├── eggress-runtime/src/platform.rs # Platform capability model (Linux SO_ORIGINAL_DST, macOS PF)
 │   ├── eggress-server/src/listener/transparent.rs # Transparent TCP listener (SO_ORIGINAL_DST)
 │   ├── eggress-server/src/listener/unix.rs # Unix domain socket listener
@@ -403,6 +407,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Diagnostics**: `DiagnosticCode` enum with stable codes for all pproxy compat errors/warnings. `StructuredDiagnostic` for JSON output.
 - **pproxy check --json**: Machine-readable compatibility check output with tier, features, and diagnostics.
 - **Phase 25-28 hardening pass**: Verified implementation matches documentation. H1 added SAFETY comments and `read_unaligned` to transparent listener; H3 corrected Linux/macOS platform capability semantics (macOS PF now honestly reports `KernelUnsupported`); H4 hardened Unix listener (`unlink_existing=true` refuses non-socket paths); H5/H6/H7 refused H2/WS/Raw as listener/upstream protocols (protocol-crate only); H8 added QUIC/H3 structured-rejection tests; H9 wired reverse proxy through supervisor with `reverse_runtime.rs` (10 tests); H10 added payload-level reverse differential test; H11 added `ReverseServerConfig::validate()` for non-loopback safety; H13 added URI corpus integrity validator; H14/H15 audited and corrected docs (README, PARITY_MATRIX.md, METRICS.md). See `docs/PHASE_25_28_HARDENING_COMPLETION.md` for the full record.
+- **System proxy**: `eggress-system-proxy` provides read-only system proxy inspection, platform capability detection, and explicit dry-run apply. CLI subcommand `eggress system-proxy inspect` reads current settings. No hidden global mutation; apply requires explicit `--apply` flag. Supports macOS (`networksetup`), Windows (registry), Linux (`gsettings`), and environment variables. `CommandRunner` trait enables testable command execution. See `docs/system_proxy/`.
 
 ## Skills
 

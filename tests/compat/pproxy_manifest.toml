@@ -445,10 +445,55 @@ divergence = "Use tracing-subscriber"
 id = "sys_flag"
 category = "cli"
 pproxy_version = "2.7.9"
-egress_status = "intentional_non_parity"
-evidence_level = "intentional_non_parity"
+egress_status = "supported"
+evidence_level = "supported"
+tests = ["system_proxy_inspect"]
+divergence = "pproxy --sys mutates global state; eggress provides read-only inspection via `eggress system-proxy inspect` and explicit dry-run apply. No hidden global mutation."
+
+[[features]]
+id = "system_proxy_inspect"
+category = "system_proxy"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "supported"
+tests = ["system_proxy_inspect"]
+divergence = "Eggress-native read-only inspection. pproxy --sys is a global mutation flag; eggress inspection is a separate subcommand."
+
+[[features]]
+id = "system_proxy_apply_macos"
+category = "system_proxy"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "supported"
 tests = []
-divergence = "System proxy config not supported"
+divergence = "Explicit dry-run apply via `eggress system-proxy apply --dry-run`. No automatic mutation."
+
+[[features]]
+id = "system_proxy_revert_macos"
+category = "system_proxy"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "supported"
+tests = []
+divergence = "Rollback state saved to file; revert requires explicit command."
+
+[[features]]
+id = "system_proxy_env_exports"
+category = "system_proxy"
+pproxy_version = "2.7.9"
+egress_status = "supported"
+evidence_level = "supported"
+tests = ["system_proxy_env_exports"]
+divergence = "Generates shell export commands from detected settings."
+
+[[features]]
+id = "python_system_proxy_inspect"
+category = "python"
+pproxy_version = "2.7.9"
+egress_status = "deferred"
+evidence_level = "deferred"
+tests = []
+divergence = "Python bindings deferred to a future phase."
 
 [[features]]
 id = "pproxy_translate_command"

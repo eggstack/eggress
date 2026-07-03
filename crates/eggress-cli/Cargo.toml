@@ -20,6 +20,7 @@ eggress-metrics.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
 eggress-pproxy-compat.workspace = true
+eggress-system-proxy.workspace = true
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
