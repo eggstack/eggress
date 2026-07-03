@@ -292,3 +292,56 @@ def test_config_property():
     with Server(config=cfg) as srv:
         time.sleep(0.1)
         assert len(srv.addresses) > 0
+
+
+def test_server_config_property_from_config():
+    """Server(config=cfg).config returns the same EggressConfig instance."""
+    cfg = EggressConfig.from_toml(VALID_TOML)
+    srv = Server(config=cfg)
+    try:
+        assert srv.config is cfg
+    finally:
+        srv.close()
+
+
+def test_server_config_property_before_start():
+    """Server.config is available before start()."""
+    cfg = EggressConfig.from_toml(VALID_TOML)
+    srv = Server(config=cfg)
+    assert srv.config is cfg
+    srv.close()
+
+
+def test_server_config_property_from_listen_remote():
+    """Server(listen=[...]).config returns the translated EggressConfig."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        cfg = srv.config
+        assert isinstance(cfg, EggressConfig)
+        redacted = cfg.redacted_toml()
+        assert "version = 1" in redacted
+        assert "[[listeners]]" in redacted
+    finally:
+        srv.close()
+
+
+def test_server_config_property_after_start():
+    """Server.config remains accessible after start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        cfg_before = srv.config
+        srv.start()
+        time.sleep(0.1)
+        cfg_after = srv.config
+        assert cfg_before is cfg_after
+    finally:
+        srv.close()
+
+
+def test_server_config_property_after_close():
+    """Server.config remains accessible after close()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    assert isinstance(srv.config, EggressConfig)

@@ -82,7 +82,7 @@ protocols = ["socks5"]
 
 async def main():
     async with await EggressService.from_toml(TOML).astart() as handle:
-        print("Listening on", await handle.bound_addresses)
+        print("Listening on", await handle.bound_addresses())
 
 asyncio.run(main())
 ```
@@ -253,7 +253,7 @@ finally:
 
 ```python
 async with await EggressService.from_toml(TOML).astart() as handle:
-    print("Listening on", await handle.bound_addresses)
+    print("Listening on", await handle.bound_addresses())
 # service is shut down automatically on exit
 ```
 
@@ -426,6 +426,145 @@ print("http" in features)    # True
 print("ssh" in features)     # False
 ```
 
+## Reverse URI inspection (Phase 31)
+
+### `describe_reverse_pproxy_uri(uri)`
+
+Parse a pproxy reverse URI and return a structured :class:`ReverseUriSummary`.
+Never raises; returns a summary with safe defaults for invalid input.
+
+```python
+from eggress import describe_reverse_pproxy_uri
+
+summary = describe_reverse_pproxy_uri("socks5+in://user:pass@host:1080")
+print(summary.role)          # "client"
+print(summary.toml_section)  # "reverse_clients"
+print(summary.has_auth)      # True
+print(summary.tls)           # False
+print("+in" in summary.modifiers)  # True
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `role` | `str` | `"server"`, `"client"`, or `"unknown"` |
+| `scheme` | `str` | URI scheme |
+| `target` | `str` | Redacted `host:port` (never includes credentials) |
+| `has_auth` | `bool` | Credentials present in URI |
+| `toml_section` | `str` | `"reverse_servers"`, `"reverse_clients"`, or `"unknown"` |
+| `tls` | `bool` | TLS modifier present |
+| `modifiers` | `tuple[str, ...]` | URI modifiers (e.g., `"+in"`, `"+tls"`) |
+
+## Config explanation (Phase 31)
+
+The `explain_*` functions parse a configuration source and return a structured
+dict describing listeners, upstreams, upstream groups, rules, reverse servers,
+and reverse clients. They never raise on invalid input.
+
+### `explain_config_toml(toml_str)`
+
+```python
+from eggress import explain_config_toml
+
+info = explain_config_toml("""
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+""")
+print(info["listeners"])   # [{"name": "socks", "bind": "127.0.0.1:1080", ...}]
+print(info["upstreams"])   # []
+print(info["rules"])       # []
+```
+
+### `explain_pproxy_args(args)`
+
+Translate pproxy CLI arguments and return a dict with the same shape as
+`explain_config_toml`, plus `warnings`, `unsupported`, `toml`, and `ok` keys.
+
+```python
+from eggress import explain_pproxy_args
+
+info = explain_pproxy_args(["-l", "socks5://:1080", "-r", "http://proxy:8080"])
+print(info["ok"])        # True
+print(info["warnings"])  # []
+print(info["toml"])      # full TOML config
+```
+
+### `explain_pproxy_uri(uri)`
+
+Translate a single pproxy URI and return a dict with the same shape as
+`explain_pproxy_args`.
+
+## Routing and upstream helpers (Phase 31)
+
+### `route_explain(config_toml, target)`
+
+Compile a TOML config and run the routing engine against the target address.
+Returns a dict describing the matched rule, action, upstream group, scheduler,
+eligible upstreams, and selected upstream.
+
+```python
+from eggress import route_explain
+
+info = route_explain(toml_str, "example.com:443")
+print(info["matched_rule"])
+print(info["action"])            # "direct" | "deny" | "use_upstream"
+print(info["upstream_group"])
+print(info["scheduler"])
+print(info["selected_upstream"])
+```
+
+### `check_upstream(uri, timeout=5.0)`
+
+Attempt a TCP connection to the upstream URI. Returns a dict with `host`,
+`port`, `scheme`, `has_auth`, `redacted_uri`, `connected`, `latency_us`,
+and `error` keys.
+
+```python
+from eggress import check_upstream
+
+result = check_upstream("socks5://proxy.example.com:1080", timeout=2.0)
+if result["connected"]:
+    print(f"latency: {result['latency_us']} us")
+else:
+    print(f"error: {result['error']}")
+```
+
+## Package metadata (Phase 32)
+
+### `version()`
+
+```python
+import eggress
+print(eggress.version())  # "0.1.0"
+```
+
+### `capabilities()`
+
+Return a dict describing eggress capabilities and runtime metadata:
+
+```python
+import eggress
+caps = eggress.capabilities()
+print(caps["version"])                      # "0.1.0"
+print(caps["python_version"])               # "3.12.4"
+print(caps["pproxy_compatibility_version"]) # "2.7.9"
+print(caps["supported_protocols"])          # ["http", "socks4", "socks4a", "socks5", ...]
+print(caps["supported_schedulers"])         # ["round_robin", "least_connections", "first_available"]
+```
+
+### `compatibility_version()`
+
+Return the pproxy version that eggress targets for compatibility.
+
+```python
+from eggress.pproxy import compatibility_version
+
+print(compatibility_version())  # "2.7.9"
+```
+
 ## Server status helpers (Phase 31)
 
 The `Server` class exposes convenience properties for querying runtime state:
@@ -439,17 +578,28 @@ server.start()
 print(server.is_ready)       # True when service is ready
 print(server.listener_info)  # [{name, bind, protocols, ...}, ...]
 print(server.metrics_text)   # Prometheus metrics text
+print(server.config)         # EggressConfig used to start the server
 ```
+
+| Property | Type | Description |
+|---|---|---|
+| `addresses` | `dict[str, str]` | Bound listener addresses; empty when stopped |
+| `is_ready` | `bool` | True when service is started and ready |
+| `listener_info` | `list[dict]` | Listener details from the running service; empty when stopped |
+| `metrics_text` | `str` | Prometheus metrics text; empty when stopped |
+| `config` | `EggressConfig` | The configuration used to construct/start the server |
 
 ## pproxy oracle testing (Phase 29)
 
 The Python bindings include an oracle test harness that verifies eggress
 Python API behavior against a frozen pproxy 2.7.9 API snapshot. Tests are
-**gated** — they require pproxy to be installed.
+**auto-gated** — they require pproxy to be installed and skip otherwise.
+The legacy env var `EGRESS_REQUIRE_PPROXY_ORACLE=1` is accepted for backward
+compatibility but is no longer required.
 
 ```bash
-# Run oracle tests
-EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+# Run oracle tests (auto-skips if pproxy is not installed)
+python -m pytest python/tests/test_pproxy_oracle.py -v
 ```
 
 The oracle fixture lives at `tests/compat/fixtures/pproxy_api_snapshot.json`

@@ -45,14 +45,43 @@ Check that `crates/`, `python/`, and `pyproject.toml` are included.
 
 ## 5. pproxy oracle gated tests (if applicable)
 
+Oracle tests auto-skip if pproxy is not installed; the legacy env var
+`EGRESS_REQUIRE_PPROXY_ORACLE=1` is accepted but no longer required.
+
 ```bash
-EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+python -m pytest python/tests/test_pproxy_oracle.py -v
 ```
 
 Run only if the pproxy oracle test harness is relevant to the release. These
 tests verify Python API behavior against a frozen pproxy 2.7.9 snapshot.
 
-## 6. README metadata renders correctly
+## 6. Corrective closure checks (Phase 29-32)
+
+The Phase 29-32 corrective closure added the following checks. Run them as
+part of every release to prevent doc/test drift from regressing:
+
+```bash
+# Validate python_api_cases.toml schema (>= 50 cases, valid tiers)
+cargo test -p eggress-testkit workspace_python_api_cases_are_valid
+
+# Manifest references test names must exist in python/ or crates/
+cargo test -p eggress-testkit manifest_test_names_exist
+
+# Wheel smoke (build wheel, install in clean venv, verify imports come from wheel)
+./scripts/test_wheel.sh
+
+# Documented examples must run
+python -m pytest python/tests/test_docs_examples.py -v
+```
+
+These checks catch:
+
+- Missing test references in manifest entries
+- Schema drift in `python_api_cases.toml`
+- Source-tree shadowing during wheel install
+- Documentation example breakage (every code block in `docs/PYTHON_BINDINGS.md`)
+
+## 7. README metadata renders correctly
 
 Verify the package README renders correctly on PyPI:
 
@@ -69,7 +98,7 @@ print('readme:', cfg['project']['readme'])
 Confirm the `readme` path exists and is valid. If using a PyPI-rendered
 README, verify markdown syntax manually.
 
-## 7. Version bump in pyproject.toml
+## 8. Version bump in pyproject.toml
 
 Update the version in `crates/eggress-python/pyproject.toml`:
 
@@ -81,7 +110,7 @@ version = "X.Y.Z"
 The version is the single source of truth for the Python package. The native
 module reads `CARGO_PKG_VERSION` at build time.
 
-## 8. Changelog entry
+## 9. Changelog entry
 
 When `CHANGELOG.md` exists, add an entry for the release version covering:
 
@@ -90,7 +119,7 @@ When `CHANGELOG.md` exists, add an entry for the release version covering:
 - Breaking changes
 - Deprecations
 
-## 9. TestPyPI dry run
+## 10. TestPyPI dry run
 
 ```bash
 cd crates/eggress-python
@@ -110,7 +139,7 @@ deactivate
 rm -rf .venv-testpypi
 ```
 
-## 10. Production PyPI manual approval
+## 11. Production PyPI manual approval
 
 Requires explicit human approval. No automated publish.
 
@@ -118,7 +147,7 @@ Requires explicit human approval. No automated publish.
 maturin upload dist/*
 ```
 
-## 11. Tag and GitHub release
+## 12. Tag and GitHub release
 
 ```bash
 git tag vX.Y.Z

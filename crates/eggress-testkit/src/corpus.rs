@@ -44,6 +44,17 @@ const CLI_REQUIRED_FIELDS: &[&str] = &[
     "toml_content_must_contain",
 ];
 
+const PYTHON_API_REQUIRED_FIELDS: &[&str] = &[
+    "id",
+    "category",
+    "description",
+    "pproxy_behavior",
+    "egress_behavior",
+    "tier",
+];
+
+const PYTHON_API_VALID_TIERS: &[&str] = &["A", "B", "C", "D", "N/A", "A ", "B ", "C ", "D "];
+
 /// Validation error from a corpus case check.
 #[derive(Debug, thiserror::Error)]
 pub enum CorpusValidationError {
@@ -429,9 +440,11 @@ pub fn validate_corpus_manifest_mapping(path: &Path) -> Result<usize, CorpusVali
 /// 1. URI corpus schema validation
 /// 2. CLI cases schema validation
 /// 3. Corpus-to-manifest feature mapping
+/// 4. Python API cases schema validation
 ///
-/// Returns `(corpus_cases, cli_cases, manifest_mapped)` on success.
-pub fn validate_workspace_corpus_full() -> Result<(usize, usize, usize), CorpusValidationError> {
+/// Returns `(corpus_cases, cli_cases, manifest_mapped, python_api_cases)` on success.
+pub fn validate_workspace_corpus_full(
+) -> Result<(usize, usize, usize, usize), CorpusValidationError> {
     let corpus = validate_workspace_uri_corpus()?;
     let cli = validate_workspace_cli_cases()?;
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -439,7 +452,87 @@ pub fn validate_workspace_corpus_full() -> Result<(usize, usize, usize), CorpusV
         .join("..");
     let corpus_path = workspace_root.join("tests/compat/fixtures/pproxy_uri_corpus.toml");
     let mapped = validate_corpus_manifest_mapping(&corpus_path)?;
-    Ok((corpus, cli, mapped))
+    let python_api = validate_workspace_python_api_cases()?;
+    Ok((corpus, cli, mapped, python_api))
+}
+
+/// Validate the Python API cases fixture at the given path.
+///
+/// Each case must have the legacy schema fields: `id`, `category`,
+/// `description`, `pproxy_behavior`, `egress_behavior`, `tier`. Optional
+/// fields include `notes`. The `tier` value must be one of A/B/C/D/N/A
+/// (or a trailing-whitespace variant tolerated for legacy data).
+///
+/// Returns the number of cases validated on success.
+pub fn validate_python_api_cases(path: &Path) -> Result<usize, CorpusValidationError> {
+    let path_str = path.display().to_string();
+    let value = load_toml(path)?;
+
+    // python_api_cases.toml uses array-of-tables ([[case]]), not an inline
+    // `cases = [...]` array. Pull both forms to support either convention.
+    let cases: Vec<toml::Value> = value
+        .get("cases")
+        .or_else(|| value.get("case"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .ok_or_else(|| CorpusValidationError::Empty {
+            path: path_str.clone(),
+        })?;
+
+    if cases.is_empty() {
+        return Err(CorpusValidationError::Empty {
+            path: path_str.clone(),
+        });
+    }
+
+    let valid_tiers: Vec<&'static str> = PYTHON_API_VALID_TIERS.to_vec();
+    let mut seen_ids = HashSet::new();
+
+    for case in &cases {
+        let raw_id = case
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>");
+        let case_id = raw_id.to_string();
+
+        for &field in PYTHON_API_REQUIRED_FIELDS {
+            if case.get(field).is_none() {
+                return Err(CorpusValidationError::MissingField {
+                    case_id,
+                    path: path_str.clone(),
+                    field,
+                });
+            }
+        }
+
+        let tier = case.get("tier").and_then(|v| v.as_str()).unwrap_or("");
+        if !valid_tiers.contains(&tier) {
+            return Err(CorpusValidationError::InvalidTier {
+                case_id,
+                path: path_str.clone(),
+                tier: tier.to_string(),
+                valid: vec!["A", "B", "C", "D", "N/A"],
+            });
+        }
+
+        if !seen_ids.insert(case_id.clone()) {
+            return Err(CorpusValidationError::DuplicateId {
+                id: case_id,
+                path: path_str.clone(),
+            });
+        }
+    }
+
+    Ok(cases.len())
+}
+
+/// Validate the Python API cases at the canonical workspace location.
+pub fn validate_workspace_python_api_cases() -> Result<usize, CorpusValidationError> {
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    let path = workspace_root.join("tests/compat/fixtures/python_api_cases.toml");
+    validate_python_api_cases(&path)
 }
 
 #[cfg(test)]
@@ -475,10 +568,24 @@ mod tests {
 
     #[test]
     fn full_corpus_validation() {
-        let (corpus, cli, mapped) =
+        let (corpus, cli, mapped, python_api) =
             validate_workspace_corpus_full().expect("full corpus validation should pass");
         assert!(corpus >= 50);
         assert!(cli >= 1);
         assert!(mapped >= 1);
+        assert!(
+            python_api >= 50,
+            "python_api cases should have at least 50 cases, got {python_api}"
+        );
+    }
+
+    #[test]
+    fn workspace_python_api_cases_are_valid() {
+        let n =
+            validate_workspace_python_api_cases().expect("python_api_cases.toml should validate");
+        assert!(
+            n >= 50,
+            "python_api cases should have at least 50 cases, got {n}"
+        );
     }
 }

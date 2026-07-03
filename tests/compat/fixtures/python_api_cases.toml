@@ -669,3 +669,336 @@ description = "pproxy uses #fragment for password in some schemes"
 pproxy_behavior = "proxy = pproxy.Server('ss:host:8388#password')"
 egress_behavior = "from eggress import translate_pproxy_uri; result = translate_pproxy_uri('ss:host:8388#password'); assert result.ok"
 tier = "B"
+
+# ============================================================================
+# 21. Phase 30 — pproxy-shaped Server wrapper
+# ============================================================================
+
+[[case]]
+id = "py_server_wrapper_construct_listen"
+category = "python_api"
+description = "Construct Server from pproxy listen URI"
+pproxy_behavior = "pproxy.Server('socks5://:1080')"
+egress_behavior = "from eggress import Server; srv = Server(listen=['socks5://:1080']); srv.close()"
+tier = "B"
+notes = "pproxy.Server is a protocol-handler factory; eggress.Server is a full lifecycle manager"
+
+[[case]]
+id = "py_server_wrapper_construct_config"
+category = "python_api"
+description = "Construct Server from pre-built EggressConfig"
+pproxy_behavior = "# N/A — pproxy.Server takes URIs only"
+egress_behavior = "from eggress import Server, EggressConfig; cfg = EggressConfig.from_toml(toml); srv = Server(config=cfg); srv.close()"
+tier = "A"
+notes = "eggress-only feature"
+
+[[case]]
+id = "py_server_wrapper_start_returns_self"
+category = "python_api"
+description = "Server.start() returns self for chaining"
+pproxy_behavior = "# N/A — pproxy.Server returns a handler factory"
+egress_behavior = "srv = Server(listen=['http://:0']).start(); srv.close()"
+tier = "A"
+notes = "eggress-only feature"
+
+[[case]]
+id = "py_server_wrapper_close_idempotent"
+category = "python_api"
+description = "Server.close() is idempotent — safe to call multiple times"
+pproxy_behavior = "# N/A — pproxy has no close lifecycle"
+egress_behavior = "srv = Server(listen=['http://:0']).start(); srv.close(); srv.close()  # second call no-ops"
+tier = "A"
+notes = "eggress-only feature"
+
+[[case]]
+id = "py_server_wrapper_stop_alias"
+category = "python_api"
+description = "Server.stop() is an alias for Server.close()"
+pproxy_behavior = "# N/A"
+egress_behavior = "srv = Server(listen=['http://:0']).start(); srv.stop()  # same as close()"
+tier = "A"
+notes = "eggress-only feature"
+
+[[case]]
+id = "py_server_wrapper_run_blocks_until_signal"
+category = "python_api"
+description = "Server.run() blocks until SIGINT/SIGTERM (main thread only)"
+pproxy_behavior = "pproxy.main(['-l', 'socks5://:1080'])  # blocks until SIGINT"
+egress_behavior = "Server(listen=['socks5://:1080']).run()  # blocks until SIGINT/SIGTERM"
+tier = "B"
+notes = "Both block until signal; run() requires main thread (signal API constraint)"
+
+[[case]]
+id = "py_server_wrapper_async_start"
+category = "python_api"
+description = "Server.astart() starts asynchronously"
+pproxy_behavior = "# pproxy uses asyncio internally but exposes no astart API"
+egress_behavior = "import asyncio; srv = asyncio.run(Server(listen=['http://:0']).astart()); srv.aclose()"
+tier = "A"
+notes = "egress-only async lifecycle"
+
+[[case]]
+id = "py_server_wrapper_double_start_raises"
+category = "python_api"
+description = "Server.start() on a running server raises AlreadyStartedError"
+pproxy_behavior = "# N/A"
+egress_behavior = "srv = Server(listen=['http://:0']).start(); AlreadyStartedError raised on second start()"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_server_wrapper_addresses_dict"
+category = "python_api"
+description = "Server.addresses returns dict[str, str] of bound addresses"
+pproxy_behavior = "# pproxy prints to stdout; no Python accessor"
+egress_behavior = "with Server(listen=['http://:0']) as srv: srv.addresses == {'pproxy-local-0': '127.0.0.1:NNNNN'}"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_server_wrapper_sync_context_manager"
+category = "python_api"
+description = "Server supports `with` for automatic start/close"
+pproxy_behavior = "# No context manager support"
+egress_behavior = "with Server(listen=['http://:0']) as srv: pass  # auto start + close"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_server_wrapper_async_context_manager"
+category = "python_api"
+description = "Server supports `async with` for automatic async lifecycle"
+pproxy_behavior = "# No async context manager support"
+egress_behavior = "async with Server(listen=['http://:0']).astart() as srv: pass"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_server_wrapper_config_property"
+category = "python_api"
+description = "Server.config property exposes the EggressConfig used to start"
+pproxy_behavior = "# N/A"
+egress_behavior = "cfg = EggressConfig.from_toml(toml); srv = Server(config=cfg); assert srv.config is cfg"
+tier = "A"
+notes = "egress-only feature; exposed pre-start, post-start, and post-close"
+
+[[case]]
+id = "py_server_wrapper_allow_partial"
+category = "python_api"
+description = "Server(allow_partial=True) starts despite unsupported features"
+pproxy_behavior = "# N/A"
+egress_behavior = "srv = Server(listen=['ssh://:22'], allow_partial=True); srv.close()"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_server_wrapper_repr_states"
+category = "python_api"
+description = "repr(Server) shows 'stopped' or 'running' state"
+pproxy_behavior = "# N/A"
+egress_behavior = "srv = Server(listen=['http://:0']); repr(srv) == 'Server(stopped)'; srv.start(); repr(srv) == 'Server(running)'"
+tier = "A"
+notes = "egress-only feature"
+
+# ============================================================================
+# 22. Phase 31 — URI inspection and structured diagnostics
+# ============================================================================
+
+[[case]]
+id = "py_check_uri_dataclass"
+category = "python_api"
+description = "check_pproxy_uri returns a UriInfo dataclass with all fields"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import check_pproxy_uri; info = check_pproxy_uri('socks5://user:pass@example.com:1080+tls'); assert info.scheme == 'socks5'; assert info.tls is True; assert info.has_auth is True"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_check_uri_never_raises"
+category = "python_api"
+description = "check_pproxy_uri never raises; errors captured in info.error"
+pproxy_behavior = "# N/A"
+egress_behavior = "info = check_pproxy_uri('not-a-valid-uri'); assert info.ok is False; assert info.error is not None"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_check_uri_redacted_display"
+category = "python_api"
+description = "check_pproxy_uri.redacted_display has credentials masked"
+pproxy_behavior = "# N/A"
+egress_behavior = "info = check_pproxy_uri('socks5://secret:word@host:1080'); assert '****' in info.redacted_display"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_redact_pproxy_uri"
+category = "python_api"
+description = "redact_pproxy_uri returns redacted URI string"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import redact_pproxy_uri; assert redact_pproxy_uri('socks5://s:w@h:1080') == 'socks5://****:****@h:1080'"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_diagnostics_for_uri"
+category = "python_api"
+description = "diagnostics_for_uri returns list[Diagnostic] for translation issues"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import diagnostics_for_uri; diags = diagnostics_for_uri('ssh://h:22'); assert all(hasattr(d, 'code') for d in diags)"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_diagnostic_dataclass_fields"
+category = "python_api"
+description = "Diagnostic dataclass has code, feature_id, tier, message, suggestion"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import Diagnostic; d = Diagnostic(code='x', feature_id=None, tier=None, message='m', suggestion=None); assert d.code == 'x'"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_describe_reverse_pproxy_uri"
+category = "python_api"
+description = "describe_reverse_pproxy_uri returns ReverseUriSummary for a reverse URI"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import describe_reverse_pproxy_uri; s = describe_reverse_pproxy_uri('bind://h:1080'); assert s.role in ('server', 'client', 'unknown')"
+tier = "A"
+notes = "egress-only feature"
+
+# ============================================================================
+# 23. Phase 31 — Config explanation and routing helpers
+# ============================================================================
+
+[[case]]
+id = "py_explain_config_toml"
+category = "python_api"
+description = "explain_config_toml returns dict with listeners/upstreams/rules"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import explain_config_toml; info = explain_config_toml(toml_str); assert 'listeners' in info; assert 'upstreams' in info; assert 'rules' in info"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_explain_pproxy_args"
+category = "python_api"
+description = "explain_pproxy_args returns dict with toml/warnings/unsupported"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import explain_pproxy_args; info = explain_pproxy_args(['-l', 'socks5://:0']); assert 'toml' in info; assert 'ok' in info"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_explain_pproxy_uri"
+category = "python_api"
+description = "explain_pproxy_uri returns dict with toml/warnings/unsupported"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import explain_pproxy_uri; info = explain_pproxy_uri('socks5://:0'); assert 'toml' in info; assert 'ok' in info"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_route_explain"
+category = "python_api"
+description = "route_explain compiles TOML and returns routing decision for target"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import route_explain; info = route_explain(toml_str, 'example.com:443'); assert 'matched_rule' in info; assert 'action' in info"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_check_upstream"
+category = "python_api"
+description = "check_upstream attempts TCP connect and returns result dict"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import check_upstream; r = check_upstream('127.0.0.1:1', timeout=0.5); assert 'connected' in r; assert 'error' in r"
+tier = "A"
+notes = "egress-only feature"
+
+# ============================================================================
+# 24. Phase 32 — Package metadata and version APIs
+# ============================================================================
+
+[[case]]
+id = "py_version_function"
+category = "python_api"
+description = "eggress.version() returns version string"
+pproxy_behavior = "import pproxy; pproxy.__version__"
+egress_behavior = "import eggress; eggress.version() == eggress.__version__"
+tier = "A"
+
+[[case]]
+id = "py_capabilities_function"
+category = "python_api"
+description = "eggress.capabilities() returns metadata dict"
+pproxy_behavior = "# N/A"
+egress_behavior = "import eggress; caps = eggress.capabilities(); assert 'version' in caps; assert 'supported_protocols' in caps; assert 'supported_schedulers' in caps"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_compatibility_version"
+category = "python_api"
+description = "eggress.pproxy.compatibility_version() returns target pproxy version"
+pproxy_behavior = "import pproxy; pproxy.__version__"
+egress_behavior = "from eggress.pproxy import compatibility_version; assert compatibility_version() == '2.7.9'"
+tier = "A"
+notes = "Static string constant; pproxy has dynamic version"
+
+[[case]]
+id = "py_py_typed_marker"
+category = "python_api"
+description = "Package ships py.typed marker for PEP 561"
+pproxy_behavior = "import pproxy; # pproxy ships py.typed"
+egress_behavior = "import importlib.resources; importlib.resources.files('eggress').joinpath('py.typed').is_file()"
+tier = "A"
+
+[[case]]
+id = "py_translation_result_config_method"
+category = "python_api"
+description = "TranslationResult.config() returns EggressConfig"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import translate_pproxy_args; result = translate_pproxy_args(['-l', 'socks5://:0']); cfg = result.config(); assert cfg.redacted_toml() == result.toml"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_translation_warning_dataclass"
+category = "python_api"
+description = "TranslationWarning dataclass has category and message"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import translate_pproxy_args; result = translate_pproxy_args(['-l', 'http://:0', '-a', '60']); assert all(hasattr(w, 'category') for w in result.warnings)"
+tier = "A"
+notes = "egress-only feature"
+
+[[case]]
+id = "py_unsupported_feature_dataclass"
+category = "python_api"
+description = "UnsupportedFeature dataclass has feature and message"
+pproxy_behavior = "# N/A"
+egress_behavior = "from eggress import translate_pproxy_args; result = translate_pproxy_args(['-l', 'ssh://:22']); assert all(hasattr(u, 'feature') for u in result.unsupported)"
+tier = "A"
+notes = "egress-only feature"
+
+# ============================================================================
+# 25. Phase 32 — Wheel artifact verification (env var gated)
+# ============================================================================
+
+[[case]]
+id = "py_wheel_install_in_clean_venv"
+category = "python_api"
+description = "Wheel installs cleanly and imports without source-tree contamination"
+pproxy_behavior = "pip install pproxy; import pproxy"
+egress_behavior = "pip install eggress-*.whl; python -c 'import eggress; print(eggress.__version__)'"
+tier = "A"
+notes = "Verified by scripts/test_wheel.sh; PYTHONPATH must not include source tree"
+
+[[case]]
+id = "py_no_pproxy_shadow"
+category = "python_api"
+description = "import eggress does not create sys.modules['pproxy']"
+pproxy_behavior = "# N/A"
+egress_behavior = "import eggress; 'pproxy' not in sys.modules or 'pproxy' refers to upstream package"
+tier = "A"
+notes = "egress-only requirement; verified by test_wheel_import_smoke.py"

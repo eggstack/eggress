@@ -240,7 +240,7 @@ below reflects specification-level coverage (synthetic), not behavioral parity.
 | Feature | Tier | Evidence | How to run |
 |---------|------|----------|------------|
 | `python_module_import` | Supported | Synthetic (import test) | `python -m pytest python/tests/test_pproxy_oracle.py` |
-| `python_version_metadata` | Supported | Synthetic (snapshot comparison) | `EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py` |
+| `python_version_metadata` | Supported | Synthetic (snapshot comparison) | `python -m pytest python/tests/test_pproxy_oracle.py` |
 | `python_server_constructor` | Partial | Synthetic (native + Python wrappers) | `python -m pytest python/tests/test_pproxy_oracle.py` |
 | `python_server_lifecycle_async` | Supported | Synthetic (EggressService async) | `python -m pytest python/tests/test_pproxy_oracle.py` |
 | `python_server_lifecycle_blocking` | Supported | Synthetic (EggressService blocking) | `python -m pytest python/tests/test_pproxy_oracle.py` |
@@ -259,9 +259,13 @@ surfaces is deferred to Phase 30+.
 
 ## Gated Python Tests
 
+Oracle tests auto-skip if pproxy is not installed. The legacy env var
+`EGRESS_REQUIRE_PPROXY_ORACLE=1` is accepted for backward compatibility but
+no longer required.
+
 ```bash
-# Oracle tests (requires pproxy package)
-EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+# Oracle tests (auto-skips if pproxy is not installed)
+python -m pytest python/tests/test_pproxy_oracle.py -v
 
 # pproxy compat tests
 python -m pytest python/tests/test_pproxy_compat.py -v

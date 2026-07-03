@@ -1,15 +1,64 @@
 """Wheel import and API smoke tests (Phase 32)."""
 
+import os
 import sys
 
 import eggress
 from eggress import pproxy
 
 
+def _installed_path() -> str:
+    """Return absolute path to the loaded eggress module file."""
+    return os.path.realpath(eggress.__file__)
+
+
 def test_import_eggress():
     assert hasattr(eggress, "__version__")
     assert isinstance(eggress.__version__, str)
     assert len(eggress.__version__) > 0
+
+
+def test_imported_from_installed_wheel():
+    """When EGRESS_EXPECT_INSTALLED_WHEEL=1 is set, eggress must be loaded
+    from a site-packages/dist-packages installation (i.e., a wheel install),
+    not from a local source tree. This prevents accidental source-tree
+    shadowing during release validation."""
+    if os.environ.get("EGRESS_EXPECT_INSTALLED_WHEEL") != "1":
+        return
+    path = _installed_path()
+    assert "site-packages" in path or "dist-packages" in path, (
+        f"eggress loaded from non-installed path: {path}; "
+        "set EGRESS_EXPECT_INSTALLED_WHEEL=1 only inside an installed venv"
+    )
+
+
+def test_native_module_is_compiled():
+    """The native extension module must be a compiled artifact (.so/.pyd/.dylib),
+    not a Python source file. This verifies the wheel bundled the binary."""
+    import eggress._eggress as native  # noqa: F401
+
+    assert native.__file__.endswith((".so", ".pyd", ".dylib")), (
+        f"native module is not a compiled artifact: {native.__file__}"
+    )
+
+
+def test_no_source_tree_in_sys_path():
+    """The repo's python/ directory must not be in sys.path when running
+    inside an installed venv; otherwise local source files would shadow
+    the installed wheel. Only enforced when EGRESS_EXPECT_INSTALLED_WHEEL=1
+    is set (i.e., this is a wheel-validation run, not a dev-source run)."""
+    if os.environ.get("EGRESS_EXPECT_INSTALLED_WHEEL") != "1":
+        return
+    repo_python = os.path.realpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "python")
+    )
+    for entry in sys.path:
+        if not entry:
+            continue
+        normalized = os.path.realpath(entry)
+        assert not normalized.startswith(repo_python), (
+            f"sys.path leaks source tree: {normalized}"
+        )
 
 
 def test_import_eggress_pproxy():

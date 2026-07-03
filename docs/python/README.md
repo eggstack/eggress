@@ -32,10 +32,13 @@ between eggress and pproxy 2.7.9.
 
 ## Oracle Testing
 
-The oracle test harness lives at `python/tests/test_pproxy_oracle.py`. Run with:
+The oracle test harness lives at `python/tests/test_pproxy_oracle.py`. Tests
+auto-skip if pproxy is not installed; the legacy env var
+`EGRESS_REQUIRE_PPROXY_ORACLE=1` is accepted for backward compatibility but
+no longer required.
 
 ```bash
-EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+python -m pytest python/tests/test_pproxy_oracle.py -v
 ```
 
 The pproxy API snapshot is frozen at `tests/compat/fixtures/pproxy_api_snapshot.json`.

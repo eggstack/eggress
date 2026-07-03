@@ -1017,6 +1017,22 @@ mod tests {
                 }
             }
         }
+        let python_dir = workspace_root.join("python");
+        if python_dir.exists() {
+            for entry in walk_dir_recursive(&python_dir) {
+                if entry.extension().is_some_and(|e| e == "py") {
+                    source_files.push(entry);
+                }
+            }
+        }
+        let workflows_dir = workspace_root.join(".github").join("workflows");
+        if workflows_dir.exists() {
+            for entry in walk_dir_recursive(&workflows_dir) {
+                if entry.extension().is_some_and(|e| e == "yml" || e == "yaml") {
+                    source_files.push(entry);
+                }
+            }
+        }
 
         let mut missing = Vec::new();
         for feature in &manifest.features {
@@ -1024,9 +1040,46 @@ mod tests {
                 if GROUP_ALIASES.contains(&test_name.as_str()) {
                     continue;
                 }
+                // Accept three reference shapes:
+                //   1. file.py::needle       — search in `file.py` for `needle`
+                //   2. path/file.py::needle  — search in matched file for `needle`
+                //   3. bare token            — match if any source file's stem,
+                //                              path, or body contains the token
+                let (file_filter, needle) = match test_name.split_once("::") {
+                    Some((file_part, fn_part)) if !fn_part.is_empty() => {
+                        (Some(file_part.to_string()), fn_part.to_string())
+                    }
+                    _ => (None, test_name.clone()),
+                };
+                let file_filter_stem = file_filter.as_deref().map(|p| {
+                    std::path::Path::new(p)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.to_string())
+                });
                 let found = source_files.iter().any(|path| {
+                    if let Some(ref stem) = file_filter_stem {
+                        // Scope to a specific file by stem.
+                        let path_stem = path.file_stem().map(|s| s.to_string_lossy().to_string());
+                        if path_stem.as_deref() != Some(stem.as_str()) {
+                            return false;
+                        }
+                        // Search the body of the matched file for the needle.
+                        return std::fs::read_to_string(path)
+                            .map(|content| content.contains(needle.as_str()))
+                            .unwrap_or(false);
+                    }
+                    // Bare token: accept if stem or full path or body matches.
+                    let path_str = path.to_string_lossy();
+                    let path_stem = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if path_stem == needle || path_str.contains(needle.as_str()) {
+                        return true;
+                    }
                     std::fs::read_to_string(path)
-                        .map(|content| content.contains(test_name.as_str()))
+                        .map(|content| content.contains(needle.as_str()))
                         .unwrap_or(false)
                 });
                 if !found {

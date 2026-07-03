@@ -38,7 +38,7 @@ Phase 29 established the Python API compatibility specification between eggress 
 
 ### 29.7 Oracle Test Harness
 - `python/tests/test_pproxy_oracle.py` — 190 lines
-- Gated behind EGRESS_REQUIRE_PPROXY_ORACLE=1
+- Auto-skips if pproxy is not installed (legacy `EGRESS_REQUIRE_PPROXY_ORACLE=1` env var accepted but no longer required)
 - Module exports, protocol classes, translation parity, snapshot consistency
 
 ### 29.8 Manifest Updates
@@ -70,8 +70,8 @@ Phase 29 established the Python API compatibility specification between eggress 
 ## Verification
 
 ```bash
-# Run oracle tests (requires pproxy)
-EGRESS_REQUIRE_PPROXY_ORACLE=1 python -m pytest python/tests/test_pproxy_oracle.py -v
+# Run oracle tests (auto-skips if pproxy not installed)
+python -m pytest python/tests/test_pproxy_oracle.py -v
 
 # Validate manifest
 cargo test -p eggress-testkit validate_real_manifest

@@ -300,6 +300,7 @@ class Server:
             eggress_config = result.config()
 
         self._service = EggressService(eggress_config)
+        self._config = eggress_config
         self._handle = None
 
     def start(self):
@@ -381,6 +382,15 @@ class Server:
         if self._handle is None:
             return {}
         return self._handle.bound_addresses
+
+    @property
+    def config(self):
+        """The :class:`EggressConfig` used to construct this server.
+
+        Available before and after ``start()``. If the server was constructed
+        from ``listen``/remote URIs, this is the translated config.
+        """
+        return self._config
 
     @property
     def is_ready(self) -> bool:

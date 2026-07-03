@@ -197,6 +197,31 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - `AsyncEggressHandle.__aexit__` calls `shutdown()` asynchronously.
 - Drop without explicit shutdown triggers cleanup via Rust `Drop` impl.
 
+**Signal handling (`Server.run()`)**:
+- `Server.run()` registers `SIGINT`/`SIGTERM` handlers and blocks on a `threading.Event`. It raises `RuntimeError` if invoked from a non-main thread because Python's `signal.signal()` API requires the main thread.
+- Old signal handlers are restored in a `try/finally` block, so a panic during signal handler registration does not leave the process with a wedged handler.
+- Context-manager exit (`__exit__`) calls `close()` regardless of whether `run()` was used.
+
+**Concurrent `Server` instances**:
+- Each `Server` owns its own `EggressService` (which owns its own Tokio runtime and two OS threads: `eggress-embed-rt` and `eggress-embed-run`). Two `Server` instances do not share runtime state.
+- `EggressHandle.shutdown()` is idempotent and safe to call from any thread.
+- `EggressHandle` is `Send + Sync` in Rust, so `handle.status()`, `handle.bound_addresses`, `handle.metrics_text()`, and `handle.reload_toml()` are safe to call from multiple Python threads.
+- Concurrent `start()` on the same `EggressService` fails with `AlreadyStartedError`.
+
+**GIL release completeness** (`eggress-python` PyO3 bindings):
+- All blocking Rust entry points (`EggressConfig.from_toml`, `EggressConfig.from_file`, `EggressService.start`, `EggressHandle.shutdown`, `handle.metrics_text()`, `handle.status()`, `handle.reload_toml()`, `handle.bound_addresses`, `route_explain`, `test_upstream_connect`, `translate_pproxy_*`, `check_pproxy_*`, `redact_pproxy_uri`, `diagnostics_for_uri`, `explain_*`) release the GIL via `py.detach()` before crossing the FFI boundary.
+- Verified by `python/tests/test_threading.py` (concurrent shutdown, parallel handle access).
+- This means that a Python thread holding the GIL (e.g., during callback invocation) does not block the Rust runtime.
+
+**Open-proxy risk on non-loopback binds**:
+- `Server(listen=["socks5://0.0.0.0:1080"])` binds on all interfaces with no authentication. The Python binding does not add a guardrail; the operator is responsible for ensuring the bind address is appropriate.
+- This is a documentation/sandbox responsibility, not a runtime check. The Rust supervisor enforces the same `bind` semantics; the embed API surfaces them as-is.
+
+**DoS via repeated start/close cycles**:
+- A loop that calls `Server.start()` repeatedly without bound is bounded by `AlreadyStartedError` after the first start.
+- `Server.close()` is idempotent and does not block on thread join beyond the `eggress-embed` 5-second best-effort timeout.
+- No persistent state survives a `close()`, so repeated cycles do not accumulate listeners or upstreams.
+
 **No Import-Time Side Effects**:
 - `import eggress` does not start services, bind ports, or log.
 - Native module (`_eggress`) loads on import but performs no I/O.

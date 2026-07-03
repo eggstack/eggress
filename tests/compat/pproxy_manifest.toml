@@ -1163,7 +1163,7 @@ category = "python"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = []
+tests = ["test_pproxy_oracle.py::TestModuleExports", "test_wheel_import_smoke.py::test_import_eggress"]
 divergence = "Different export names (Connection→EggressConfig, Server→EggressService); functionally equivalent"
 
 [[features]]
@@ -1172,7 +1172,7 @@ category = "python"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = []
+tests = ["test_pproxy_compat.py::test_local_socks5_direct", "test_pproxy_compat.py::test_local_http_direct", "test_pproxy_compat.py::test_multiple_remotes_round_robin", "test_pproxy_oracle.py::TestTranslationParity"]
 divergence = "translate_pproxy_args() produces equivalent TOML config from pproxy CLI arguments"
 
 [[features]]
@@ -1181,7 +1181,7 @@ category = "python"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = []
+tests = ["test_pproxy_compat.py::test_shadowsocks_supported", "test_pproxy_compat.py::test_unsupported_ssh"]
 divergence = "translate_pproxy_uri() produces equivalent TOML config from pproxy URI strings"
 
 [[features]]
@@ -1190,7 +1190,7 @@ category = "python"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = []
+tests = ["test_pproxy_compat.py::test_local_socks5_direct", "test_pproxy_compat.py::test_socks5_through_http_upstream"]
 divergence = "check_pproxy_args() reports parity tier matching pproxy compatibility assessment"
 
 [[features]]
@@ -1199,7 +1199,7 @@ category = "python"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = []
+tests = ["test_server_lifecycle.py::test_start_and_stop", "test_server_lifecycle.py::test_sync_context_manager", "test_server_lifecycle.py::test_async_context_manager", "test_server_lifecycle.py::test_close_is_idempotent", "test_pproxy_oracle.py::TestServerLifecycle"]
 divergence = "Service start/stop lifecycle matches pproxy Server() start/stop semantics"
 
 [[features]]
@@ -1271,8 +1271,8 @@ category = "python"
 pproxy_version = "2.7.9"
 egress_status = "supported"
 evidence_level = "implemented_synthetic"
-tests = []
-divergence = "Different API shape (TOML config vs function call) but same scheduling algorithms (fa, rr, rc, lc) and outcome"
+tests = ["test_pproxy_compat.py::test_multiple_remotes_round_robin", "test_pproxy_compat.py::test_socks5_through_socks5_upstream"]
+divergence = "Different API shape (TOML config vs function call) but same scheduling algorithms (fa, rr, rc, lc) and outcome; covered by translate_pproxy_args output TOML inspection"
 
 [[features]]
 id = "python_check_uri"
