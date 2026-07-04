@@ -673,8 +673,13 @@ impl ServiceSupervisor {
         let upstream_count = new_snapshot.upstreams.len();
         let gen = new_snapshot.generation;
 
+        // Snapshot must be published before the router swap. Readers that observe
+        // the new generation via `snapshot.load()` pull the router from that
+        // same snapshot Arc, so any reader seeing the new generation also sees
+        // the router that belongs to it.
+        let new_snapshot = Arc::new(new_snapshot);
+        self.state.snapshot.store(new_snapshot.clone());
         self.state.routing.swap_arc(new_snapshot.router.clone());
-        self.state.snapshot.store(Arc::new(new_snapshot));
 
         self.rt_config = new_rt_config;
 
@@ -1707,8 +1712,13 @@ impl ServiceSupervisor {
                                             let upstream_count = new_snapshot.upstreams.len();
                                             let gen = new_snapshot.generation;
 
+                                            // Snapshot must be published before the router swap so any reader
+                                            // observing the new generation via
+                                            // `snapshot.load()` also sees the
+                                            // matching router.
+                                            let new_snapshot = Arc::new(new_snapshot);
+                                            snapshot.store(new_snapshot.clone());
                                             routing.swap_arc(new_snapshot.router.clone());
-                                            snapshot.store(Arc::new(new_snapshot));
 
                                             metrics.set_config_generation(gen);
                                             metrics.record_reload(true);

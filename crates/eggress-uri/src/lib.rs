@@ -384,6 +384,16 @@ fn parse_endpoint(endpoint: &str) -> Result<EndpointSpec, UriParseError> {
     let host = &endpoint[..colon_pos];
     let port_str = &endpoint[colon_pos + 1..];
 
+    if host.contains(':') {
+        return Err(UriParseError::InvalidFormat {
+            message: format!(
+                "endpoint '{endpoint}' contains multiple ':' separators; \
+                 use [ipv6]:port form for IPv6 literals"
+            ),
+            span: None,
+        });
+    }
+
     let port = parse_port(port_str)?;
 
     Ok(EndpointSpec {

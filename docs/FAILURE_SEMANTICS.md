@@ -29,9 +29,8 @@ predictable client behavior across failure scenarios.
 | Host unreachable | `REP_HOST_UNREACHABLE` | `0x04` | Host unreachable |
 | Connection refused | `REP_CONNECTION_REFUSED` | `0x05` | Connection refused |
 | Timeout | `0x06` | `0x06` | TTL expired (closest match) |
-| BIND command | `REP_NOT_ALLOWED` | `0x02` | Command not permitted |
+| BIND command (unsupported) | `REP_COMMAND_NOT_SUPPORTED` | `0x07` | Command not supported |
 | Other error | `REP_GENERAL_FAILURE` | `0x01` | General failure |
-| BIND not supported | `REP_COMMAND_NOT_SUPPORTED` | `0x07` | Command not supported |
 | Unknown address type | `REP_ADDRESS_TYPE_NOT_SUPPORTED` | `0x08` | Address type not supported |
 
 ### SOCKS5 Authentication Failure

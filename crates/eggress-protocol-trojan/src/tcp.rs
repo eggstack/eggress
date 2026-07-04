@@ -350,9 +350,10 @@ mod tests {
             buf.truncate(n);
 
             let received_hash = std::str::from_utf8(&buf[..56]).unwrap();
-            if received_hash != correct_hash {
-                // Wrong password - drop connection (Trojan behavior)
-            }
+            assert_ne!(
+                received_hash, correct_hash,
+                "server should see a password hash different from the correct one"
+            );
         });
 
         let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();

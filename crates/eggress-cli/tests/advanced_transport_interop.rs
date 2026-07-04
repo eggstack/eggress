@@ -3,6 +3,14 @@
 //! These tests verify interoperability between eggress and external tools
 //! (pproxy, curl, standard WebSocket clients) for advanced transport protocols.
 //!
+//! Status: advanced transports (H2/WS/Raw) are protocol-crate only — they are
+//! intentionally **not** wired through the runtime supervisor or config
+//! compiler (see `docs/protocols/ADVANCED_TRANSPORTS.md` and Phase 25-28
+//! hardening H5/H6/H7). The bodies below are forwarded markers, not forgotten
+//! stubs: each test is gated behind the env var and is skipped when the gate
+//! is absent. They will be implemented once the transports are elevated from
+//! protocol-crate to runtime-supported status.
+//!
 //! All tests are `#[ignore]` and require:
 //! - `EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1` environment variable
 //! - For pproxy tests: Python 3 with pproxy installed

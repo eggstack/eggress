@@ -481,8 +481,13 @@ impl EggressHandle {
         let gen = new_snapshot.generation;
         let upstreams = new_snapshot.upstreams.len();
 
+        // Snapshot must be published before the router swap. Readers that observe
+        // the new generation via `snapshot.load()` pull the router from that
+        // same snapshot Arc, so any reader seeing the new generation also sees
+        // the router that belongs to it.
+        let new_snapshot = Arc::new(new_snapshot);
+        self.state.snapshot.store(new_snapshot.clone());
         self.state.routing.swap_arc(new_snapshot.router.clone());
-        self.state.snapshot.store(Arc::new(new_snapshot));
 
         self.state.metrics.set_config_generation(gen);
         self.state.metrics.record_reload(true);
@@ -664,53 +669,98 @@ pub enum ReloadOutcome {
     },
 }
 
-/// Redact credential fields in a dynamic TOML value tree.
-fn redact_toml_value(value: &mut toml::Value) {
-    // Redact listener auth passwords
-    if let Some(listeners) = value.get_mut("listeners").and_then(|v| v.as_array_mut()) {
-        for listener in listeners {
-            if let Some(auth) = listener.get_mut("auth").and_then(|v| v.as_table_mut()) {
-                if auth.contains_key("password") {
-                    auth.insert(
-                        "password".to_string(),
-                        toml::Value::String("****".to_string()),
-                    );
-                }
-                if auth.contains_key("password_env") {
-                    auth.insert(
-                        "password_env".to_string(),
-                        toml::Value::String("****".to_string()),
-                    );
-                }
-            }
-        }
-    }
+/// Well-known keys that hold raw secrets and must always be redacted.
+const REDACTED_SECRET_KEYS: &[&str] = &[
+    "password",
+    "password_env",
+    "secret",
+    "secret_ref",
+    "token",
+    "api_key",
+    "apikey",
+    "credentials",
+];
 
-    // Redact upstream URIs (replace user:pass@ with ****:****@)
-    if let Some(upstreams) = value.get_mut("upstreams").and_then(|v| v.as_array_mut()) {
-        for upstream in upstreams {
-            if let Some(uri_val) = upstream.get_mut("uri") {
-                if let Some(s) = uri_val.as_str() {
-                    let redacted = redact_uri(s);
-                    *uri_val = toml::Value::String(redacted);
+/// Redact credential fields in a dynamic TOML value tree.
+///
+/// Walks the tree generically rather than only enumerating known paths:
+/// - Any string whose key matches a known credential-bearing name is
+///   replaced with `****`.
+/// - Any string that looks like a proxy URI (`scheme://...`) is passed
+///   through [`redact_uri`] so `user:pass@` and `user@` authorities are
+///   stripped. This covers `upstreams[].uri`, per-hop credentials, PAC
+///   fields, and any future field that embeds a proxy URI.
+fn redact_toml_value(value: &mut toml::Value) {
+    redact_toml_value_inner(value);
+}
+
+fn redact_toml_value_inner(value: &mut toml::Value) {
+    match value {
+        toml::Value::Table(table) => {
+            for (key, val) in table.iter_mut() {
+                let lkey = key.to_ascii_lowercase();
+                if REDACTED_SECRET_KEYS.iter().any(|k| lkey == *k) {
+                    if let toml::Value::String(_) = val {
+                        *val = toml::Value::String("****".to_string());
+                        continue;
+                    }
                 }
+                redact_toml_value_inner(val);
             }
         }
+        toml::Value::Array(items) => {
+            for item in items.iter_mut() {
+                redact_toml_value_inner(item);
+            }
+        }
+        toml::Value::String(s) if looks_like_proxy_uri(s) => {
+            *s = redact_uri(s);
+        }
+        _ => {}
     }
+}
+
+/// Heuristic: a string is treated as a proxy URI if it starts with
+/// `scheme://` where `scheme` is one of the eggress-supported schemes.
+fn looks_like_proxy_uri(s: &str) -> bool {
+    let Some(colon) = s.find("://") else {
+        return false;
+    };
+    let scheme = &s[..colon];
+    matches!(
+        scheme,
+        "socks5"
+            | "socks4"
+            | "http"
+            | "https"
+            | "ss"
+            | "trojan"
+            | "h2"
+            | "ws"
+            | "wss"
+            | "raw"
+            | "tunnel"
+            | "redir"
+            | "unix"
+    )
 }
 
 /// Redact credentials embedded in a proxy URI.
 ///
 /// Transforms `proto://user:pass@host:port` into `proto://****:****@host:port`.
-/// If no credentials are present, the URI is returned unchanged.
+/// Also redacts username-only authorities (`proto://user@host:port`) so that
+/// bare usernames never leak into diagnostic or `redacted_*` output.
+/// If no `userinfo` is present, the URI is returned unchanged.
 fn redact_uri(uri: &str) -> String {
     if let Some(scheme_end) = uri.find("://") {
         let rest = &uri[scheme_end + 3..];
         if let Some(at_pos) = rest.find('@') {
-            let authority = &rest[..at_pos];
-            if authority.contains(':') {
-                return format!("{}://****:****@{}", &uri[..scheme_end], &rest[at_pos + 1..]);
-            }
+            // Any authority between `://` and `@` is treated as credentials
+            // and replaced with `****:****`. This covers both `user:pass@` and
+            // username-only `user@` forms, plus any other characters that
+            // appeared between them.
+            let authority_after = &rest[at_pos + 1..];
+            return format!("{}://****:****@{}", &uri[..scheme_end], authority_after);
         }
     }
     uri.to_string()

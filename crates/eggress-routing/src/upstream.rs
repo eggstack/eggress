@@ -13,8 +13,10 @@ use eggress_uri::ProxyChainSpec;
 
 const UPSTREAM_ID_PATTERN: &str = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$";
 
-static UPSTREAM_ID_RE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(UPSTREAM_ID_PATTERN).unwrap());
+static UPSTREAM_ID_RE: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(UPSTREAM_ID_PATTERN)
+        .expect("UPSTREAM_ID_PATTERN is a hardcoded constant and must compile")
+});
 
 pub fn validate_upstream_id(id: &str) -> Result<(), String> {
     if !UPSTREAM_ID_RE.is_match(id) {

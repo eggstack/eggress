@@ -36,6 +36,11 @@ impl ProtocolDetector for HttpDetector {
             return DetectResult::NeedMore { minimum: 5 };
         }
 
+        // Partial "HTTP/" prefix must not be treated as no-match.
+        if b"HTTP/".starts_with(prefix) {
+            return DetectResult::NeedMore { minimum: 5 };
+        }
+
         // Check for known HTTP methods
         for method in HTTP_METHODS {
             if prefix.starts_with(method) {
@@ -122,6 +127,29 @@ mod tests {
         assert!(matches!(
             detector.detect(b"P"),
             DetectResult::NeedMore { .. }
+        ));
+    }
+
+    #[test]
+    fn test_http_partial_response_prefix_needs_more() {
+        let detector = HttpDetector;
+        // Single byte that could be the start of "HTTP/" must not be rejected
+        // as NoMatch (which would happen on slow server-side dribbles).
+        assert!(matches!(
+            detector.detect(b"H"),
+            DetectResult::NeedMore { minimum: 5 }
+        ));
+        assert!(matches!(
+            detector.detect(b"HT"),
+            DetectResult::NeedMore { minimum: 5 }
+        ));
+        assert!(matches!(
+            detector.detect(b"HTT"),
+            DetectResult::NeedMore { minimum: 5 }
+        ));
+        assert!(matches!(
+            detector.detect(b"HTTP"),
+            DetectResult::NeedMore { minimum: 5 }
         ));
     }
 }

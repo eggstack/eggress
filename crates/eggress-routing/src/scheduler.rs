@@ -109,11 +109,17 @@ impl Scheduler for RoundRobinScheduler {
         if candidates.is_empty() {
             return None;
         }
-        let start = self.cursor.fetch_add(1, Ordering::Relaxed) as usize;
         let len = candidates.len();
+        let current = self.cursor.load(Ordering::Relaxed) as usize;
         for i in 0..len {
-            let idx = (start + i) % len;
+            let idx = (current + i) % len;
             if is_eligible(&candidates[idx]) {
+                let _ = self.cursor.compare_exchange(
+                    current as u64,
+                    (current + 1) as u64,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                );
                 return Some(candidates[idx].clone());
             }
         }

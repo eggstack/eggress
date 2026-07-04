@@ -491,16 +491,8 @@ pub async fn reject_command<W: AsyncWrite + Unpin>(
     cmd: u8,
     target: &SocksAddr,
 ) -> Result<(), Socks5Error> {
-    match cmd {
-        // BIND is not supported
-        CMD_BIND => {
-            send_connect_reply(writer, REP_NOT_ALLOWED, target).await?;
-        }
-        // Unknown command
-        _ => {
-            send_connect_reply(writer, REP_COMMAND_NOT_SUPPORTED, target).await?;
-        }
-    }
+    let _ = cmd;
+    send_connect_reply(writer, REP_COMMAND_NOT_SUPPORTED, target).await?;
     Ok(())
 }
 
@@ -728,7 +720,7 @@ mod tests {
         let mut response = [0u8; 10];
         client.read_exact(&mut response).await.unwrap();
         assert_eq!(response[0], 0x05); // version
-        assert_eq!(response[1], 0x02); // not allowed
+        assert_eq!(response[1], 0x07); // command not supported (RFC 1928 §6)
     }
 
     #[tokio::test]
@@ -985,7 +977,7 @@ mod tests {
         let mut response = [0u8; 10];
         client.read_exact(&mut response).await.unwrap();
         assert_eq!(response[0], 0x05);
-        assert_eq!(response[1], 0x02); // not allowed for BIND
+        assert_eq!(response[1], 0x07); // command not supported (RFC 1928 §6)
     }
 
     #[tokio::test]

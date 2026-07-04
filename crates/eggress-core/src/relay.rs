@@ -56,9 +56,9 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
     };
 
     let termination_reason = match (a_error, b_error) {
-        (true, true) => TerminationReason::BothClosed,
-        (true, false) => TerminationReason::ServerClosed,
-        (false, true) => TerminationReason::ClientClosed,
+        (true, true) => TerminationReason::Error,
+        (true, false) => TerminationReason::ClientClosed,
+        (false, true) => TerminationReason::ServerClosed,
         (false, false) => TerminationReason::BothClosed,
     };
 

@@ -347,7 +347,7 @@ async fn accept_socks5(
 ) -> Result<AcceptedSession, AcceptError> {
     use eggress_protocol_socks::socks5::server::{
         read_auth_request, read_method_negotiation, read_socks5_request, send_auth_response,
-        send_connect_reply, Socks5Command, CMD_BIND, REP_NOT_ALLOWED,
+        send_connect_reply, Socks5Command, CMD_BIND, REP_COMMAND_NOT_SUPPORTED,
     };
 
     let (mut reader, mut writer) = tokio::io::split(stream);
@@ -444,7 +444,7 @@ async fn accept_socks5(
             }))
         }
         Socks5Command::Bind => {
-            let _ = send_connect_reply(&mut writer, REP_NOT_ALLOWED, &socks_addr).await;
+            let _ = send_connect_reply(&mut writer, REP_COMMAND_NOT_SUPPORTED, &socks_addr).await;
             Err(AcceptError::Protocol(Box::new(
                 eggress_protocol_socks::error::Socks5Error::UnsupportedCommand(CMD_BIND),
             )))
@@ -1723,11 +1723,11 @@ mod tests {
             .unwrap();
         stream.write_all(&80u16.to_be_bytes()).await.unwrap();
 
-        // Server sends rejection reply
+        // Server sends rejection reply (RFC 1928 0x07 command not supported)
         let mut reply = [0u8; 10];
         stream.read_exact(&mut reply).await.unwrap();
         assert_eq!(reply[0], 0x05);
-        assert_eq!(reply[1], 0x02); // not allowed
+        assert_eq!(reply[1], 0x07); // command not supported
 
         server_jh.await.unwrap();
     }
