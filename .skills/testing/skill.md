@@ -272,6 +272,12 @@ Run the full manifest validation suite:
 cargo test -p eggress-testkit --lib manifest
 ```
 
+Validate the pproxy parity capability manifest (Phase 37):
+```bash
+python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
+python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
+```
+
 Generate the final parity release report JSON:
 ```bash
 python3 scripts/phase36_report.py

@@ -30,6 +30,8 @@ jobs:
         run: cargo build --workspace
       - name: Validate manifest invariants
         run: cargo test -p eggress-testkit validate_real_manifest
+      - name: Validate parity capability manifest
+        run: python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
       - name: Run testkit pproxy_oracle tests
         run: cargo test -p eggress-testkit pproxy_oracle -- --ignored
       - name: Run differential pproxy tests

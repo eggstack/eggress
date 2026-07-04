@@ -31,6 +31,7 @@ The `eggress-pproxy-compat` crate provides:
 - Python bindings for translation helpers (`translate_pproxy_args`, `translate_pproxy_uri`)
 - Python convenience API (`start_pproxy`, `EggressService.from_pproxy_args`)
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
+- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 99 capabilities across 5 categories with tier classification and machine-readable validation
 
 ### Phase 28: CLI compatibility enhancements
 

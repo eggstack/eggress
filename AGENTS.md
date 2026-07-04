@@ -178,6 +178,12 @@ cargo test -p eggress-testkit manifest_test_names_exist
 # Run all manifest validation tests (Phase 36)
 cargo test -p eggress-testkit --lib manifest
 
+# Validate pproxy parity capability manifest (Phase 37)
+python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
+
+# Validate parity manifest (strict mode)
+python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
+
 # Run full Phase 36 release audit locally (Python 3.11 required for pproxy 2.7.9 interop)
 python3.11 -m pip install "pproxy==2.7.9"
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
@@ -433,6 +439,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Python packaging**: Canonical package `eggress` on PyPI. `eggress.pproxy` provides compatibility helpers. No top-level `pproxy` shim (deferred). Wheels built for 5 platforms via maturin. `py.typed` PEP 561 marker included. Version/capability metadata exposed via `eggress.__version__`, `eggress.version()`, `eggress.capabilities()`, `eggress.pproxy.compatibility_version()`. See `docs/adr/ADR_python_import_and_distribution_strategy.md`.
 - **Release candidate audit (Phase 17)**: Final parity matrix audit, Rust/Python release audits, security/redaction audit including Python binding surface, documentation consistency pass. Release candidate document at `docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`. All verification commands pass; go recommendation issued. See `docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md`.
 - **Manifest validation**: `tests/compat/pproxy_manifest.toml` is the canonical evidence index. `egress_status = "compatible"` requires `evidence_level = "compatible"` backed by real pproxy differential tests. `implemented_synthetic` evidence cannot support compatibility claims. Validation enforced by `eggress-testkit::manifest::validate_manifest()`. `last_updated` field removed in Phase 24; stale warnings no longer emitted.
+- **pproxy parity manifest (Phase 37)**: `docs/parity/pproxy_capability_manifest.toml` is the authoritative compatibility contract — 99 capabilities across 5 categories (CLI, URI, Protocol, Routing, Python) with tier classification, evidence requirements, and config/runtime/test layers. Validated by `scripts/validate_pproxy_parity_manifest.py` (11 rules, strict mode). See `docs/parity/README.md` for design and `docs/parity/PPROXY_PARITY_REPORT.md` for summary.
 - **Manifest external dependency checks (Phase 24)**: Compatible entries with differential tests require `external_dependency`; implemented_interop requires dependency or divergence note explaining interop.
 - **Exit codes**: Structured exit codes defined in `eggress-pproxy-compat::exit_codes`. CLI uses constants, not ad-hoc returns.
 - **Diagnostics**: `DiagnosticCode` enum with stable codes for all pproxy compat errors/warnings. `StructuredDiagnostic` for JSON output.
