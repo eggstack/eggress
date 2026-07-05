@@ -70,12 +70,13 @@ pub fn translate_from_uris(
     let mut reverse_servers = Vec::new();
     let mut reverse_clients = Vec::new();
 
-    // Check for unsupported flags and handle supported ones
     let mut scheduler_override = None;
     let mut udp_listen_addr: Option<String> = None;
     let mut udp_remotes: Vec<String> = Vec::new();
     let mut ssl_config: Option<TlsToml> = None;
     let mut block_rules: Vec<String> = Vec::new();
+    let mut health_interval: Option<String> = None;
+    let mut pac_enabled = false;
     for flag in flags {
         if flag == "daemon" {
             output = output.with_unsupported(
@@ -160,6 +161,7 @@ pub fn translate_from_uris(
             }
         }
         if let Some(interval) = flag.strip_prefix("alive=") {
+            health_interval = Some(format!("{}s", interval));
             output = output.with_warning(
                 "alive-check",
                 format!(
@@ -182,6 +184,7 @@ pub fn translate_from_uris(
             block_rules.push(block_value.to_string());
         }
         if flag == "pac" {
+            pac_enabled = true;
             output = output.with_warning(
                 "pac-serving",
                 "pproxy --pac flag detected; configure PAC serving in eggress TOML admin.pac block",
@@ -712,14 +715,16 @@ pub fn translate_from_uris(
     }
 
     // Generate TOML
-    let toml_str = generate_toml(
-        &listeners,
-        &upstreams,
-        &upstream_groups,
-        &rules,
-        &reverse_servers,
-        &reverse_clients,
-    );
+    let toml_str = generate_toml(TomlInput {
+        listeners: &listeners,
+        upstreams: &upstreams,
+        upstream_groups: &upstream_groups,
+        rules: &rules,
+        reverse_servers: &reverse_servers,
+        reverse_clients: &reverse_clients,
+        health_interval: health_interval.as_deref(),
+        pac_enabled,
+    });
 
     Ok(TranslationOutput::new(toml_str)
         .with_warnings(output.warnings)
@@ -927,6 +932,10 @@ struct ConfigToml {
     reverse_servers: Vec<ReverseServerToml>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     reverse_clients: Vec<ReverseClientToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    health: Option<HealthToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    admin: Option<AdminToml>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -951,22 +960,55 @@ struct ReverseClientToml {
     parallel_connections: Option<u32>,
 }
 
-fn generate_toml(
-    listeners: &[ListenerToml],
-    upstreams: &[UpstreamToml],
-    upstream_groups: &[UpstreamGroupToml],
-    rules: &[RuleToml],
-    reverse_servers: &[ReverseServerToml],
-    reverse_clients: &[ReverseClientToml],
-) -> String {
+#[derive(serde::Serialize, Clone)]
+struct HealthToml {
+    interval: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct PacToml {
+    enabled: bool,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct AdminToml {
+    pac: PacToml,
+}
+
+struct TomlInput<'a> {
+    listeners: &'a [ListenerToml],
+    upstreams: &'a [UpstreamToml],
+    upstream_groups: &'a [UpstreamGroupToml],
+    rules: &'a [RuleToml],
+    reverse_servers: &'a [ReverseServerToml],
+    reverse_clients: &'a [ReverseClientToml],
+    health_interval: Option<&'a str>,
+    pac_enabled: bool,
+}
+
+fn generate_toml(input: TomlInput<'_>) -> String {
+    let health = input.health_interval.map(|interval| HealthToml {
+        interval: interval.to_string(),
+    });
+
+    let admin = if input.pac_enabled {
+        Some(AdminToml {
+            pac: PacToml { enabled: true },
+        })
+    } else {
+        None
+    };
+
     let config = ConfigToml {
         version: 1,
-        listeners: listeners.to_vec(),
-        upstreams: upstreams.to_vec(),
-        upstream_groups: upstream_groups.to_vec(),
-        rules: rules.to_vec(),
-        reverse_servers: reverse_servers.to_vec(),
-        reverse_clients: reverse_clients.to_vec(),
+        listeners: input.listeners.to_vec(),
+        upstreams: input.upstreams.to_vec(),
+        upstream_groups: input.upstream_groups.to_vec(),
+        rules: input.rules.to_vec(),
+        reverse_servers: input.reverse_servers.to_vec(),
+        reverse_clients: input.reverse_clients.to_vec(),
+        health,
+        admin,
     };
 
     toml::to_string_pretty(&config)
@@ -1980,7 +2022,6 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        // Verify TOML is valid
         let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
         assert_eq!(parsed["version"].as_integer(), Some(1));
         let listeners = parsed["listeners"].as_array().unwrap();
@@ -1991,5 +2032,32 @@ mod tests {
         assert!(rules
             .iter()
             .any(|r| r["id"].as_str() == Some("pproxy-default")));
+    }
+
+    #[test]
+    fn test_alive_flag_generates_health_config() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-a".into(),
+            "10".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("[health]"));
+        assert!(output.toml.contains("interval = \"10s\""));
+    }
+
+    #[test]
+    fn test_pac_flag_generates_admin_pac_config() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--pac".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("[admin.pac]"));
+        assert!(output.toml.contains("enabled = true"));
     }
 }

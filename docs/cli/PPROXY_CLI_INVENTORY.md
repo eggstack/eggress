@@ -56,7 +56,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Set alive check interval in seconds. pproxy probes upstreams periodically and removes failed ones temporarily. |
-| Eggress handling | **Partial** — maps alive check interval to health probe config in TOML. The `-a <seconds>` value is translated to a health probe interval. |
+| Eggress handling | **Supported** — generates `[health] interval = "Ns"` in the translated TOML config, where N is the seconds value from `-a`. |
 | Example | `pproxy -l socks5://:1080 -r http://proxy:8080 -a 10` |
 
 ### TLS/SSL
@@ -134,7 +134,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Serve a PAC (Proxy Auto-Configuration) file for browser auto-configuration. |
-| Eggress handling | **Partial** — emits diagnostic pointing to admin PAC serving. The `--pac` flag is acknowledged with a message directing users to configure PAC in the TOML `admin.pac` block. |
+| Eggress handling | **Supported** — generates `[admin.pac] enabled = true` in the translated TOML config. The PAC endpoint is served by the eggress admin HTTP server. |
 | Example | `pproxy -l http://:8080 --pac /path/to/proxy.pac` |
 
 #### `--sys` — Set System Proxy
@@ -142,7 +142,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Automatically configure system proxy settings (macOS/Windows). |
-| Eggress handling | **Partial** — emits diagnostic pointing to `eggress system-proxy inspect`. The `--sys` flag is acknowledged with a message directing users to the dedicated system proxy inspection command. |
+| Eggress handling | **Supported** — auto-invokes `eggress system-proxy inspect` and prints the inspection result before starting the service. |
 | Example | `pproxy -l http://:8080 --sys` |
 
 #### `--get` — URL Fetch Helper
@@ -160,7 +160,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Test all remote proxies and exit. Verifies upstream connectivity. |
-| Eggress handling | **Partial** — emits diagnostic pointing to `eggress upstream test -c config`. The `--test` flag is acknowledged with a message directing users to the equivalent eggress command with a config file argument. |
+| Eggress handling | **Supported** — translates the pproxy args to TOML config, writes to a temp file, runs `eggress upstream test -c <config>`, and exits with the result. Does not start the service. |
 | Example | `pproxy -l http://:8080 -r http://proxy:8080 --test` |
 
 ### Config and Help
@@ -216,10 +216,10 @@ with eggress handling status and migration notes.
 | `-v` | (none) | Verbose logging | Partial | Set `RUST_LOG=debug` |
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | Connection reuse | Intentional non-parity | Connection pooling not implemented |
-| `--pac` | (none) | PAC file serving | Partial | Configure PAC in TOML admin.pac block |
-| `--sys` | (none) | System proxy | Partial | Use eggress system-proxy inspect |
+| `--pac` | (none) | PAC file serving | Supported | Generates `[admin.pac] enabled = true` TOML |
+| `--sys` | (none) | System proxy | Supported | Auto-invokes eggress system-proxy inspect |
 | `--get` | (none) | URL fetch | Partial | Use curl --proxy |
-| `--test` | (none) | Test upstreams | Partial | Use eggress upstream test -c config |
+| `--test` | (none) | Test upstreams | Supported | Runs eggress upstream test and exits |
 | `-f` | `--config` | Config file | Supported | Different schema |
 | `--version` | (none) | Version | Supported | — |
 | `--help` | (none) | Help | Supported | — |

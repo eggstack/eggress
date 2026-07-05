@@ -260,7 +260,12 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     };
 
     // Parse host:port
-    let (host, port) = parse_endpoint(endpoint_str)?;
+    let (host, mut port) = parse_endpoint(endpoint_str)?;
+    if port == 0 && !host.is_empty() {
+        if let Some(default) = default_port_for_scheme(&scheme) {
+            port = default;
+        }
+    }
 
     // Parse query parameters
     let rule = query.and_then(extract_rule);
@@ -320,9 +325,12 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), CompatError> {
     }
 
     // Regular host:port
-    let colon_pos = endpoint.rfind(':').ok_or_else(|| CompatError::InvalidUri {
-        message: format!("missing port in endpoint: {}", endpoint),
-    })?;
+    let colon_pos = match endpoint.rfind(':') {
+        Some(pos) => pos,
+        None => {
+            return Ok((endpoint.to_string(), 0));
+        }
+    };
     let host = &endpoint[..colon_pos];
     let port_str = &endpoint[colon_pos + 1..];
     let port = port_str
@@ -332,6 +340,17 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), CompatError> {
         })?;
 
     Ok((host.to_string(), port))
+}
+
+fn default_port_for_scheme(scheme: &str) -> Option<u16> {
+    match scheme {
+        "http" | "h2" => Some(80),
+        "https" | "ws" | "wss" | "trojan" => Some(443),
+        "socks4" | "socks4a" | "socks5" => Some(1080),
+        "ss" | "shadowsocks" => Some(8388),
+        "ssh" => Some(22),
+        _ => None,
+    }
 }
 
 fn extract_rule(query: &str) -> Option<String> {
@@ -865,5 +884,61 @@ mod tests {
         let unsupported = validate_chain_hops(&chain);
         assert_eq!(unsupported.len(), 1);
         assert_eq!(unsupported[0], (1, "ssr".to_string()));
+    }
+
+    #[test]
+    fn test_default_port_socks5() {
+        let uri = parse_pproxy_uri("socks5://host").unwrap();
+        assert_eq!(uri.host, "host");
+        assert_eq!(uri.port, 1080);
+    }
+
+    #[test]
+    fn test_default_port_http() {
+        let uri = parse_pproxy_uri("http://host").unwrap();
+        assert_eq!(uri.host, "host");
+        assert_eq!(uri.port, 80);
+    }
+
+    #[test]
+    fn test_default_port_https() {
+        let uri = parse_pproxy_uri("https://host").unwrap();
+        assert_eq!(uri.host, "host");
+        assert_eq!(uri.port, 443);
+    }
+
+    #[test]
+    fn test_default_port_trojan() {
+        let uri = parse_pproxy_uri("trojan://password@host").unwrap();
+        assert_eq!(uri.host, "host");
+        assert_eq!(uri.port, 443);
+    }
+
+    #[test]
+    fn test_default_port_shadowsocks() {
+        let uri = parse_pproxy_uri("ss://method:pass@host").unwrap();
+        assert_eq!(uri.host, "host");
+        assert_eq!(uri.port, 8388);
+    }
+
+    #[test]
+    fn test_explicit_port_overrides_default() {
+        let uri = parse_pproxy_uri("socks5://host:9090").unwrap();
+        assert_eq!(uri.host, "host");
+        assert_eq!(uri.port, 9090);
+    }
+
+    #[test]
+    fn test_empty_port_with_colon() {
+        let uri = parse_pproxy_uri("socks5://:1080").unwrap();
+        assert_eq!(uri.host, "");
+        assert_eq!(uri.port, 1080);
+    }
+
+    #[test]
+    fn test_chain_default_ports() {
+        let chain = parse_pproxy_chain("socks5://h1__http://h2").unwrap();
+        assert_eq!(chain.hops[0].port, 1080);
+        assert_eq!(chain.hops[1].port, 80);
     }
 }

@@ -713,7 +713,14 @@ fn handle_pproxy_run(args: &PproxyRun) {
         eprintln!("warning: {w}");
     }
 
-    // Write generated TOML to a temp file and start supervisor
+    let has_sys = pproxy_args.raw_flags.iter().any(|f| f == "sys");
+    if has_sys {
+        let result = eggress_system_proxy::inspect_system_proxy();
+        print_inspection_result(&result);
+    }
+
+    let has_test = pproxy_args.raw_flags.iter().any(|f| f == "test");
+
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,
         Err(e) => {
@@ -725,6 +732,26 @@ fn handle_pproxy_run(args: &PproxyRun) {
     if let Err(e) = std::fs::write(&config_path, &output.toml) {
         eprintln!("failed to write config: {e}");
         std::process::exit(EXIT_RUNTIME_FAILURE);
+    }
+
+    if has_test {
+        let status = std::process::Command::new(
+            std::env::current_exe().unwrap_or_else(|_| "eggress".into()),
+        )
+        .args([
+            "upstream",
+            "test",
+            "-c",
+            config_path.to_str().unwrap_or_default(),
+        ])
+        .status();
+        match status {
+            Ok(s) => std::process::exit(s.code().unwrap_or(EXIT_RUNTIME_FAILURE)),
+            Err(e) => {
+                eprintln!("failed to run upstream test: {e}");
+                std::process::exit(EXIT_RUNTIME_FAILURE);
+            }
+        }
     }
 
     tracing::info!("starting eggress with pproxy-compatible config");
