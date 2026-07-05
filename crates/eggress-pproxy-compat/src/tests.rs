@@ -482,12 +482,17 @@ fn test_pac_flag_generates_unknown_warning() {
         "/path/to/proxy.pac".into(),
     ])
     .unwrap();
-    // --pac is unknown, its value "/path/to/proxy.pac" becomes a positional remote
-    // (no more locals, so it's treated as remote), which fails URI parse.
-    // We verify the flag is at least recognized as unknown via raw_flags.
+    // --pac is now a known flag; its value "/path/to/proxy.pac" becomes a positional remote
     assert!(
-        args.raw_flags.iter().any(|f| f == "--pac"),
-        "--pac should be captured as raw flag"
+        args.raw_flags.iter().any(|f| f == "pac"),
+        "pac should be captured as raw flag"
+    );
+    // Should NOT produce an unknown-flag warning for --pac
+    let warnings = args.unknown_flag_warnings();
+    assert!(
+        !warnings.iter().any(|w| w.message.contains("pac")),
+        "pac should not produce unknown-flag warning: {:?}",
+        warnings
     );
 }
 
@@ -502,9 +507,17 @@ fn test_get_flag_generates_unknown_warning() {
         "http://example.com".into(),
     ])
     .unwrap();
+    // --get is now a known flag; its value "http://example.com" becomes a positional remote
     assert!(
-        args.raw_flags.iter().any(|f| f == "--get"),
-        "--get should be captured as raw flag"
+        args.raw_flags.iter().any(|f| f == "get"),
+        "get should be captured as raw flag"
+    );
+    // Should NOT produce an unknown-flag warning for --get
+    let warnings = args.unknown_flag_warnings();
+    assert!(
+        !warnings.iter().any(|w| w.message.contains("get")),
+        "get should not produce unknown-flag warning: {:?}",
+        warnings
     );
 }
 
@@ -518,13 +531,16 @@ fn test_test_flag_generates_unknown_warning() {
         "--test".into(),
     ])
     .unwrap();
-    let output = translate_pproxy_args(&args).unwrap();
-    let warnings = output.warnings_to_string();
+    // --test is now a known flag; should NOT produce unknown-flag warning
+    let warnings = args.unknown_flag_warnings();
     assert!(
-        warnings.contains("--test"),
-        "--test should generate unknown-flag warning, got: {}",
+        !warnings.iter().any(|w| w.message.contains("test")),
+        "test should not produce unknown-flag warning: {:?}",
         warnings
     );
+    // Translation should produce a test-mode warning instead
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.warnings.iter().any(|w| w.category == "test-mode"));
 }
 
 #[test]

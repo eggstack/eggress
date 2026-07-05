@@ -206,6 +206,62 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                 message: warn.message.clone(),
                 suggestion: None,
             },
+            "pac-serving" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("pac".to_string()),
+                tier: Some("native_equivalent".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "configure PAC serving in eggress TOML admin.pac block".to_string(),
+                ),
+            },
+            "test-mode" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("test".to_string()),
+                tier: Some("native_equivalent".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some("use 'eggress upstream test -c <config>'".to_string()),
+            },
+            "system-proxy" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("sys".to_string()),
+                tier: Some("native_equivalent".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some("use 'eggress system-proxy inspect'".to_string()),
+            },
+            "log-file" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("log".to_string()),
+                tier: Some("native_equivalent".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "redirect stderr with shell redirection for file logging".to_string(),
+                ),
+            },
+            "reuse-connection" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("reuse".to_string()),
+                tier: Some("intentional_non_parity".to_string()),
+                message: warn.message.clone(),
+                suggestion: None,
+            },
+            "get-url" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("get".to_string()),
+                tier: Some("unsupported".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some("use curl --proxy <proxy-uri> <url>".to_string()),
+            },
+            "rulefile-read" | "rulefile-parse" | "rulefile-partial" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("rulefile".to_string()),
+                tier: Some("partial".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "configure rules in eggress TOML [[rules]] with structured matchers"
+                        .to_string(),
+                ),
+            },
             _ => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: None,
@@ -230,12 +286,7 @@ fn classify_unsupported_feature(
     feature: &'static str,
 ) -> (DiagnosticCode, &'static str, Option<&'static str>) {
     match feature {
-        "daemon"
-        | "rulefile"
-        | "ssl-listener"
-        | "block-rules"
-        | "backward-jump-chain"
-        | "backward-tls" => (
+        "daemon" | "backward-jump-chain" | "backward-tls" => (
             DiagnosticCode::UnsupportedFlag,
             "unsupported",
             Some("configure this via eggress TOML"),
@@ -273,12 +324,7 @@ pub fn classify_unsupported_feature_code(feature: &str) -> DiagnosticCode {
 
 fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {
     match feature {
-        "daemon"
-        | "rulefile"
-        | "ssl-listener"
-        | "block-rules"
-        | "backward-jump-chain"
-        | "backward-tls" => DiagnosticCode::UnsupportedFlag,
+        "daemon" | "backward-jump-chain" | "backward-tls" => DiagnosticCode::UnsupportedFlag,
         "ssr-listener" | "ssr-upstream" => {
             DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature
         }

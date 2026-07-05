@@ -68,6 +68,8 @@ pub fn translate_from_uris(
     let mut scheduler_override = None;
     let mut udp_listen_addr: Option<String> = None;
     let mut udp_remotes: Vec<String> = Vec::new();
+    let mut ssl_config: Option<TlsToml> = None;
+    let mut block_rules: Vec<String> = Vec::new();
     for flag in flags {
         if flag == "daemon" {
             output = output.with_unsupported(
@@ -81,11 +83,49 @@ pub fn translate_from_uris(
         if let Some(remote) = flag.strip_prefix("udp-remote=") {
             udp_remotes.push(remote.to_string());
         }
-        if flag.starts_with("rulefile=") {
-            output = output.with_unsupported(
-                "rulefile",
-                "--rulefile is not supported; use eggress TOML routing rules",
-            );
+        if let Some(rulefile_path) = flag.strip_prefix("rulefile=") {
+            match std::fs::read_to_string(rulefile_path) {
+                Ok(content) => {
+                    for (line_num, line) in content.lines().enumerate() {
+                        let line = line.trim();
+                        if line.is_empty() || line.starts_with('#') {
+                            continue;
+                        }
+                        if let Some((pattern, action)) = line.split_once("->") {
+                            let pattern = pattern.trim().to_string();
+                            let action = action.trim();
+                            if action == "reject" || action == "block" {
+                                block_rules.push(pattern);
+                            } else {
+                                output = output.with_warning(
+                                    "rulefile-partial",
+                                    format!(
+                                        "rulefile line {}: complex rule '{}' -> '{}' cannot be auto-translated; use eggress TOML [[rules]] with structured matchers",
+                                        line_num + 1, pattern.trim(), action
+                                    ),
+                                );
+                            }
+                        } else {
+                            output = output.with_warning(
+                                "rulefile-parse",
+                                format!(
+                                    "rulefile line {}: unrecognized format '{}'; expected 'pattern -> action'",
+                                    line_num + 1, line
+                                ),
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    output = output.with_warning(
+                        "rulefile-read",
+                        format!(
+                            "failed to read rulefile '{}': {}; configure rules in eggress TOML instead",
+                            rulefile_path, e
+                        ),
+                    );
+                }
+            }
         }
         if flag == "verbose" {
             output = output.with_warning(
@@ -113,28 +153,62 @@ pub fn translate_from_uris(
                 );
             }
         }
-        if flag.starts_with("alive=") {
+        if let Some(interval) = flag.strip_prefix("alive=") {
             output = output.with_warning(
                 "alive-check",
-                "pproxy -a (alive check interval) is not directly mappable; configure health probes in TOML",
+                format!(
+                    "pproxy -a {} (alive check interval) maps to eggress health probes; configure 'health.interval' on each [[upstreams]] entry (e.g., interval = \"{}s\")",
+                    interval, interval
+                ),
             );
         }
         if let Some(ssl_value) = flag.strip_prefix("ssl=") {
-            output = output.with_unsupported(
-                "ssl-listener",
-                format!(
-                    "pproxy --ssl '{}' (TLS listener) is not yet supported; configure TLS in eggress TOML",
-                    ssl_value
-                ),
-            );
+            let parts: Vec<&str> = ssl_value.splitn(2, ',').collect();
+            let cert = parts[0].to_string();
+            let key = if parts.len() > 1 {
+                Some(parts[1].to_string())
+            } else {
+                None
+            };
+            ssl_config = Some(TlsToml { cert, key });
         }
         if let Some(block_value) = flag.strip_prefix("block=") {
-            output = output.with_unsupported(
-                "block-rules",
-                format!(
-                    "pproxy -b '{}' (block regex rules) is not supported; use eggress TOML routing rules",
-                    block_value
-                ),
+            block_rules.push(block_value.to_string());
+        }
+        if flag == "pac" {
+            output = output.with_warning(
+                "pac-serving",
+                "pproxy --pac flag detected; configure PAC serving in eggress TOML admin.pac block",
+            );
+        }
+        if flag == "test" {
+            output = output.with_warning(
+                "test-mode",
+                "pproxy --test flag detected; use 'eggress upstream test -c <config>' to test upstream connectivity",
+            );
+        }
+        if flag == "sys" {
+            output = output.with_warning(
+                "system-proxy",
+                "pproxy --sys flag detected; use 'eggress system-proxy inspect' to view system proxy settings",
+            );
+        }
+        if flag.starts_with("log=") {
+            output = output.with_warning(
+                "log-file",
+                "pproxy --log flag detected; eggress logs to stderr via tracing-subscriber; redirect stderr with shell redirection for file logging",
+            );
+        }
+        if flag == "reuse" {
+            output = output.with_warning(
+                "reuse-connection",
+                "pproxy --reuse (connection pooling) is not implemented by design; eggress uses one upstream connection per session (intentional non-parity)",
+            );
+        }
+        if flag == "get" {
+            output = output.with_warning(
+                "get-url",
+                "pproxy --get flag detected; use 'curl --proxy <proxy-uri> <url>' instead",
             );
         }
     }
@@ -263,6 +337,7 @@ pub fn translate_from_uris(
             shadowsocks: None,
             transparent: None,
             unix: None,
+            tls: None,
         };
 
         // Handle auth on listener
@@ -345,6 +420,13 @@ pub fn translate_from_uris(
         }
     }
 
+    // Apply --ssl TLS config to the first listener
+    if let Some(tls) = ssl_config {
+        if let Some(listener) = listeners.first_mut() {
+            listener.tls = Some(tls);
+        }
+    }
+
     // If -ul is specified, add standalone UDP config to the first listener
     if let Some(ref addr) = udp_listen_addr {
         let bind = parse_udp_listen_addr(addr);
@@ -367,6 +449,7 @@ pub fn translate_from_uris(
                 shadowsocks: None,
                 transparent: None,
                 unix: None,
+                tls: None,
             });
             output = output.with_warning(
                 "ul-no-listener",
@@ -555,6 +638,8 @@ pub fn translate_from_uris(
             any: true,
             upstream_group: group_id,
             r#match: None,
+            host_regex: None,
+            reject: None,
         });
     }
 
@@ -581,7 +666,26 @@ pub fn translate_from_uris(
             r#match: Some(MatchToml {
                 transport: "udp".to_string(),
             }),
+            host_regex: None,
+            reject: None,
         });
+    }
+
+    // Prepend block rules (first-match-wins: block rules before default rules)
+    if !block_rules.is_empty() {
+        let mut all_rules = Vec::new();
+        for (idx, pattern) in block_rules.iter().enumerate() {
+            all_rules.push(RuleToml {
+                id: format!("pproxy-block-{}", idx),
+                any: false,
+                upstream_group: String::new(),
+                r#match: None,
+                host_regex: Some(pattern.clone()),
+                reject: Some("blocked by pproxy -b rule".to_string()),
+            });
+        }
+        all_rules.extend(rules);
+        rules = all_rules;
     }
 
     // Generate TOML
@@ -679,6 +783,13 @@ fn build_config_uri(remote: &PproxyUri) -> String {
 }
 
 #[derive(serde::Serialize, Clone)]
+struct TlsToml {
+    cert: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
 struct ListenerToml {
     name: String,
     bind: String,
@@ -693,6 +804,8 @@ struct ListenerToml {
     transparent: Option<TransparentToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unix: Option<UnixToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tls: Option<TlsToml>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -753,6 +866,10 @@ struct RuleToml {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "match")]
     r#match: Option<MatchToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host_regex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reject: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -1049,7 +1166,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ssl_flag_emits_unsupported() {
+    fn test_ssl_flag_generates_tls_config() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -1058,15 +1175,30 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
+        assert!(output.toml.contains("cert.pem"));
+        assert!(output.toml.contains("key.pem"));
+        assert!(!output
             .unsupported
             .iter()
             .any(|u| u.feature == "ssl-listener"));
     }
 
     #[test]
-    fn test_block_flag_emits_unsupported() {
+    fn test_ssl_cert_only_generates_tls_config() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--ssl".into(),
+            "cert.pem".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("cert.pem"));
+        assert!(!output.has_unsupported());
+    }
+
+    #[test]
+    fn test_block_flag_generates_reject_rule() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -1075,25 +1207,83 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "block-rules"));
+        assert!(output.toml.contains("pproxy-block-0"));
+        assert!(output.toml.contains("reject"));
+        assert!(output.toml.contains(".*\\.example\\.com"));
+        assert!(!output.has_unsupported());
     }
 
     #[test]
-    fn test_rulefile_flag_emits_unsupported_without_unknown_warning() {
+    fn test_block_flag_toml_roundtrip() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-b".into(),
+            ".*\\.blocked\\.com".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let rules = parsed["rules"].as_array().unwrap();
+        let block_rule = rules
+            .iter()
+            .find(|r| r["id"].as_str() == Some("pproxy-block-0"))
+            .unwrap();
+        assert_eq!(
+            block_rule["host_regex"].as_str(),
+            Some(".*\\.blocked\\.com")
+        );
+        assert_eq!(
+            block_rule["reject"].as_str(),
+            Some("blocked by pproxy -b rule")
+        );
+    }
+
+    #[test]
+    fn test_rulefile_missing_file_emits_warning() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--rulefile".into(),
-            "rules.txt".into(),
+            "/nonexistent/rules.txt".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.unsupported.iter().any(|u| u.feature == "rulefile"));
-        assert!(!output.warnings.iter().any(|w| w.category == "unknown-flag"));
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "rulefile-read"));
+    }
+
+    #[test]
+    fn test_rulefile_generates_block_rules() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join("eggress_test_rulefile");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rules.txt");
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(
+            f,
+            "# comment\n.*\\.blocked\\.com -> reject\nother\\.com -> http://proxy:8080"
+        )
+        .unwrap();
+
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--rulefile".into(),
+            path.to_str().unwrap().into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("pproxy-block-0"));
+        assert!(output.toml.contains(".*\\.blocked\\.com"));
+        // Complex rule should emit a warning
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "rulefile-partial"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1502,5 +1692,99 @@ mod tests {
         assert_eq!(clients[0]["auth_username"].as_str(), Some("user"));
         assert_eq!(clients[0]["auth_password"].as_str(), Some("pass"));
         assert_eq!(clients[0]["parallel_connections"].as_integer(), Some(2));
+    }
+
+    #[test]
+    fn test_pac_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--pac".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "pac-serving"));
+    }
+
+    #[test]
+    fn test_test_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--test".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "test-mode"));
+    }
+
+    #[test]
+    fn test_sys_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--sys".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "system-proxy"));
+    }
+
+    #[test]
+    fn test_log_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--log".into(),
+            "access.log".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "log-file"));
+    }
+
+    #[test]
+    fn test_reuse_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--reuse".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "reuse-connection"));
+    }
+
+    #[test]
+    fn test_alive_flag_includes_interval_in_message() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-a".into(),
+            "15".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let alive_warn = output
+            .warnings
+            .iter()
+            .find(|w| w.category == "alive-check")
+            .unwrap();
+        assert!(alive_warn.message.contains("15"));
+    }
+
+    #[test]
+    fn test_get_flag_emits_warning() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--get".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "get-url"));
     }
 }

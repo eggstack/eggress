@@ -14,6 +14,11 @@ const KNOWN_RAW_FLAG_KEYS: &[&str] = &[
     "alive",
     "ssl",
     "block",
+    "pac",
+    "test",
+    "sys",
+    "reuse",
+    "get",
 ];
 
 fn take_required_value(
@@ -92,6 +97,21 @@ impl PproxyArgs {
                 "-b" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     raw_flags.push(format!("block={value}"));
+                }
+                "--pac" => {
+                    raw_flags.push("pac".to_string());
+                }
+                "--test" => {
+                    raw_flags.push("test".to_string());
+                }
+                "--sys" => {
+                    raw_flags.push("sys".to_string());
+                }
+                "--reuse" => {
+                    raw_flags.push("reuse".to_string());
+                }
+                "--get" => {
+                    raw_flags.push("get".to_string());
                 }
                 other if other.starts_with('-') => {
                     raw_flags.push(other.to_string());
@@ -426,5 +446,21 @@ mod tests {
         let result =
             PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-b".into()]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_known_flags_pac_test_sys_reuse_get() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--pac".into(),
+            "--test".into(),
+            "--sys".into(),
+            "--reuse".into(),
+            "--get".into(),
+        ])
+        .unwrap();
+        let warnings = args.unknown_flag_warnings();
+        assert!(warnings.is_empty(), "unexpected warnings: {:?}", warnings);
     }
 }

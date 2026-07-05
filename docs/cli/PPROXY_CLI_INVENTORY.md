@@ -56,7 +56,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Set alive check interval in seconds. pproxy probes upstreams periodically and removes failed ones temporarily. |
-| Eggress handling | **Partial** — emits a warning ("alive check is not directly mappable; configure health probes in TOML"). The compat layer does not generate health probe config; users must configure `health` blocks in TOML manually. |
+| Eggress handling | **Partial** — maps alive check interval to health probe config in TOML. The `-a <seconds>` value is translated to a health probe interval. |
 | Example | `pproxy -l socks5://:1080 -r http://proxy:8080 -a 10` |
 
 ### TLS/SSL
@@ -66,7 +66,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Enable TLS on the listener. Takes `certfile[,keyfile]` as value. Wraps the inbound connection in TLS. |
-| Eggress handling | **Unsupported** — emits unsupported feature diagnostic ("pproxy --ssl is not yet supported; configure TLS in eggress TOML"). TLS is configured via `listeners.tls` block in TOML. |
+| Eggress handling | **Partial** — generates TLS listener config in TOML from `cert[,key]` value. The `--ssl` flag translates to a `listeners.tls` block with the provided certificate and key paths. |
 | Example | `pproxy -l socks5://:1080 --ssl cert.pem,key.pem` |
 
 ### Traffic Filtering
@@ -76,7 +76,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Block connections matching regex patterns against the target hostname. |
-| Eggress handling | **Unsupported** — emits unsupported feature diagnostic ("pproxy -b is not supported; use eggress TOML routing rules"). Use TOML `[[rules]]` with `reject` action. |
+| Eggress handling | **Partial** — generates reject rules with host-regex matcher in TOML. The `-b <pattern>` flag is translated to a `[[rules]]` entry with `action = "reject"` and a `host_regex` matcher. |
 | Example | `pproxy -l http://:8080 -b ".*\\.example\\.com"` |
 
 ### Routing Rules
@@ -86,7 +86,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Load routing rules from a file (line-based format with regex patterns and destination actions). |
-| Eggress handling | **Unsupported** — emits unsupported feature diagnostic ("--rulefile is not supported; use eggress TOML routing rules"). Use TOML `[[rules]]` with structured matchers. |
+| Eggress handling | **Partial** — parses line-based rulefile format; generates reject rules for simple patterns, warnings for complex rules. Simple host-regex patterns are translated to TOML `[[rules]]` entries; unsupported patterns emit a warning. |
 | Example | `pproxy -l http://:8080 --rulefile rules.txt` |
 
 ### Process Management
@@ -114,7 +114,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Write log output to a file instead of stderr. |
-| Eggress handling | **Unsupported** — emits unknown-flag warning. Eggress uses `tracing-subscriber` for logging; redirect stderr or configure a log file via tracing-subscriber options. |
+| Eggress handling | **Partial** — emits diagnostic about tracing-subscriber; redirect stderr for file logging. The `--log` flag is acknowledged with a message explaining that eggress uses `tracing-subscriber` and stderr can be redirected for log file output. |
 | Example | `pproxy -l socks5://:1080 --log access.log` |
 
 ### Connection Behavior
@@ -134,7 +134,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Serve a PAC (Proxy Auto-Configuration) file for browser auto-configuration. |
-| Eggress handling | **Partial** — PAC file serving is available via the eggress admin HTTP server. The `--pac` flag is not recognized by the compat layer; use the admin API or configure PAC serving in TOML. |
+| Eggress handling | **Partial** — emits diagnostic pointing to admin PAC serving. The `--pac` flag is acknowledged with a message directing users to configure PAC in the TOML `admin.pac` block. |
 | Example | `pproxy -l http://:8080 --pac /path/to/proxy.pac` |
 
 #### `--sys` — Set System Proxy
@@ -142,7 +142,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Automatically configure system proxy settings (macOS/Windows). |
-| Eggress handling | **Unsupported** — emits unknown-flag warning. System proxy configuration is not supported. |
+| Eggress handling | **Partial** — emits diagnostic pointing to `eggress system-proxy inspect`. The `--sys` flag is acknowledged with a message directing users to the dedicated system proxy inspection command. |
 | Example | `pproxy -l http://:8080 --sys` |
 
 #### `--get` — URL Fetch Helper
@@ -150,7 +150,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Fetch a URL through the configured proxy (utility for testing). |
-| Eggress handling | **Unsupported** — not recognized by the compat layer. Use `curl` with `--proxy` flag instead. |
+| Eggress handling | **Partial** — emits diagnostic pointing to `curl --proxy`. The `--get` flag is acknowledged with a message directing users to use curl with the `--proxy` flag for equivalent functionality. |
 | Example | `pproxy -l http://:8080 --get http://example.com` |
 
 ### Testing
@@ -160,7 +160,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Test all remote proxies and exit. Verifies upstream connectivity. |
-| Eggress handling | **Partial** — `eggress upstream test` provides equivalent functionality. The `--test` flag is not recognized by the compat layer. |
+| Eggress handling | **Partial** — emits diagnostic pointing to `eggress upstream test -c config`. The `--test` flag is acknowledged with a message directing users to the equivalent eggress command with a config file argument. |
 | Example | `pproxy -l http://:8080 -r http://proxy:8080 --test` |
 
 ### Config and Help
@@ -208,18 +208,18 @@ with eggress handling status and migration notes.
 | `-ul` | `--udp-listen` | UDP listen URI | Compatible | — |
 | `-ur` | `--udp-remote` | UDP upstream URI | Compatible | — |
 | `-s` | (none) | Scheduler algorithm | Compatible | Warning for unrecognized values |
-| `-a` | (none) | Alive check interval | Partial | Warning: not directly mappable |
-| `--ssl` | (none) | TLS listener cert/key | Unsupported | Configure TLS in TOML |
-| `-b` | (none) | Block regex rules | Unsupported | Use TOML routing rules |
-| `--rulefile` | `-rulefile` | Rule file path | Unsupported | Use TOML routing rules |
+| `-a` | (none) | Alive check interval | Partial | Maps to health probe config in TOML |
+| `--ssl` | (none) | TLS listener cert/key | Partial | Generates TLS listener config in TOML |
+| `-b` | (none) | Block regex rules | Partial | Generates reject rules with host-regex matcher |
+| `--rulefile` | `-rulefile` | Rule file path | Partial | Parses rulefile; generates reject rules for simple patterns |
 | `--daemon` | `-d` | Daemonize | Unsupported | Use systemd/process manager |
 | `-v` | (none) | Verbose logging | Partial | Set `RUST_LOG=debug` |
-| `--log` | `-log` | Log file path | Unsupported | Use tracing-subscriber |
+| `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | Connection reuse | Intentional non-parity | Connection pooling not implemented |
-| `--pac` | (none) | PAC file serving | Partial | Admin API serves PAC |
-| `--sys` | (none) | System proxy | Unsupported | — |
-| `--get` | (none) | URL fetch | Unsupported | Use curl |
-| `--test` | (none) | Test upstreams | Partial | `eggress upstream test` |
+| `--pac` | (none) | PAC file serving | Partial | Configure PAC in TOML admin.pac block |
+| `--sys` | (none) | System proxy | Partial | Use eggress system-proxy inspect |
+| `--get` | (none) | URL fetch | Partial | Use curl --proxy |
+| `--test` | (none) | Test upstreams | Partial | Use eggress upstream test -c config |
 | `-f` | `--config` | Config file | Supported | Different schema |
 | `--version` | (none) | Version | Supported | — |
 | `--help` | (none) | Help | Supported | — |
