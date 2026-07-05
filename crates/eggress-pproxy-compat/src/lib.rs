@@ -11,7 +11,7 @@ pub use args::PproxyArgs;
 pub use diagnostics::{DiagnosticCode, StructuredDiagnostic};
 pub use error::CompatError;
 pub use translate::{translate_from_uris, translate_pproxy_args};
-pub use uri::PproxyUri;
+pub use uri::{PproxyChain, PproxyUri};
 pub use warnings::{CompatWarning, TranslationOutput, UnsupportedFeature};
 
 #[cfg(test)]

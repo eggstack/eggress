@@ -1,33 +1,39 @@
 use crate::args::PproxyArgs;
 use crate::error::CompatError;
-use crate::uri::PproxyUri;
+use crate::uri::{PproxyChain, PproxyUri};
 use crate::warnings::TranslationOutput;
 
 /// Translate pproxy-style arguments into Eggress TOML configuration.
 pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, CompatError> {
-    let mut pre_filter_output = TranslationOutput::new(String::new());
+    let local_uris = args.parse_local_uris()?;
 
-    // Pre-filter: detect unsupported jump chain (__ syntax) in raw remote URIs
-    let mut filtered_remotes = Vec::new();
+    // Parse remote URIs as chains (supports __ hop separator)
+    let mut remote_chains = Vec::new();
+    let mut chain_warnings = TranslationOutput::new(String::new());
     for raw_remote in args.remotes.iter() {
-        if raw_remote.contains("__") {
-            pre_filter_output = pre_filter_output.with_unsupported(
-                "backward-jump-chain",
-                format!(
-                    "Jump chain syntax '{}' is not supported; each URI must be a separate -r argument",
-                    raw_remote
-                ),
-            );
-        } else {
-            filtered_remotes.push(raw_remote.clone());
+        match crate::uri::parse_pproxy_chain(raw_remote) {
+            Ok(chain) => remote_chains.push(chain),
+            Err(e) => {
+                return Err(e);
+            }
         }
     }
 
-    let local_uris = args.parse_local_uris()?;
-    let remote_uris: Vec<PproxyUri> = filtered_remotes
-        .iter()
-        .map(|s| crate::uri::parse_pproxy_uri(s))
-        .collect::<Result<Vec<_>, _>>()?;
+    // Validate chain hops for unsupported protocols
+    for chain in &remote_chains {
+        let unsupported = crate::uri::validate_chain_hops(chain);
+        for (idx, scheme) in unsupported {
+            chain_warnings = chain_warnings.with_unsupported(
+                "chain-unsupported-hop",
+                format!(
+                    "chain hop {} in '{}' uses unsupported scheme '{}'",
+                    idx + 1,
+                    chain.redacted_display(),
+                    scheme
+                ),
+            );
+        }
+    }
 
     // Allow empty local_uris when -ul is present (standalone UDP mode)
     let has_udp_listen = args.raw_flags.iter().any(|f| f.starts_with("udp-listen="));
@@ -38,10 +44,10 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
         });
     }
 
-    let mut output = translate_from_uris(&local_uris, &remote_uris, &args.raw_flags)?;
+    let mut output = translate_from_uris(&local_uris, &remote_chains, &args.raw_flags)?;
 
-    // Merge pre-filter unsupported features (e.g., backward-jump-chain)
-    output = output.with_unsupported_features(pre_filter_output.unsupported);
+    // Merge chain validation warnings
+    output = output.with_unsupported_features(chain_warnings.unsupported);
 
     // Merge unknown-flag warnings
     let unknown_warnings = args.unknown_flag_warnings();
@@ -53,7 +59,7 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
 /// Translate pproxy-style local and remote URIs into Eggress TOML.
 pub fn translate_from_uris(
     local_uris: &[PproxyUri],
-    remote_uris: &[PproxyUri],
+    remote_chains: &[PproxyChain],
     flags: &[String],
 ) -> Result<TranslationOutput, CompatError> {
     let mut output = TranslationOutput::new(String::new());
@@ -409,7 +415,7 @@ pub fn translate_from_uris(
         listeners.push(listener_entry);
 
         // If no remotes and no UDP remotes, create a direct rule
-        if remote_uris.is_empty() && udp_remotes.is_empty() {
+        if remote_chains.is_empty() && udp_remotes.is_empty() {
             output = output.with_warning(
                 "direct-mode",
                 format!(
@@ -458,106 +464,123 @@ pub fn translate_from_uris(
         }
     }
 
-    // Process remote upstreams
-    for (idx, remote) in remote_uris.iter().enumerate() {
-        // Backward/upstream URIs with +in modifier → reverse_clients
-        if remote.is_backward() {
-            // Backward + SSL (+ssl modifier) is not supported
-            if remote.ssl {
-                output = output.with_unsupported(
-                    "backward-tls",
-                    format!(
-                        "Backward upstream '{}': TLS on backward connections is not supported",
-                        remote.redacted_display()
-                    ),
-                );
+    // Process remote upstreams (chains)
+    for (idx, chain) in remote_chains.iter().enumerate() {
+        // Single-hop backward/upstream URIs with +in modifier → reverse_clients
+        if chain.hops.len() == 1 {
+            let remote = &chain.hops[0];
+            if remote.is_backward() {
+                // Backward + SSL (+ssl modifier) is not supported
+                if remote.ssl {
+                    output = output.with_unsupported(
+                        "backward-tls",
+                        format!(
+                            "Backward upstream '{}': TLS on backward connections is not supported",
+                            remote.redacted_display()
+                        ),
+                    );
+                }
+                let server_addr = remote.endpoint_display();
+                let client_id = format!("pproxy-reverse-client-{}", idx);
+                reverse_clients.push(ReverseClientToml {
+                    id: client_id,
+                    server_addr,
+                    auth_username: remote.username.clone(),
+                    auth_password: remote.password.clone(),
+                    parallel_connections: if remote.backward_num() > 1 {
+                        Some(remote.backward_num())
+                    } else {
+                        None
+                    },
+                });
+                // Emit credential warning if auth present
+                if remote.username.is_some() {
+                    output = output.with_warning(
+                        "credential-in-toml",
+                        format!(
+                            "Reverse client 'pproxy-reverse-client-{}' has plaintext credentials in generated TOML",
+                            idx
+                        ),
+                    );
+                }
+                continue;
             }
-            let server_addr = remote.endpoint_display();
-            let client_id = format!("pproxy-reverse-client-{}", idx);
-            reverse_clients.push(ReverseClientToml {
-                id: client_id,
-                server_addr,
-                auth_username: remote.username.clone(),
-                auth_password: remote.password.clone(),
-                parallel_connections: if remote.backward_num() > 1 {
-                    Some(remote.backward_num())
-                } else {
-                    None
-                },
-            });
-            // Emit credential warning if auth present
-            if remote.username.is_some() {
-                output = output.with_warning(
-                    "credential-in-toml",
-                    format!(
-                        "Reverse client 'pproxy-reverse-client-{}' has plaintext credentials in generated TOML",
-                        idx
-                    ),
-                );
-            }
+        }
+
+        // Multi-hop backward chains are not supported
+        if chain.hops.len() > 1 && chain.hops.iter().any(|h| h.is_backward()) {
+            output = output.with_unsupported(
+                "chain-backward-composition",
+                format!(
+                    "chain '{}' contains backward (+in) hops; multi-hop backward chain composition is not supported",
+                    chain.redacted_display()
+                ),
+            );
             continue;
         }
 
-        // Check for unsupported upstream protocols
-        match remote.scheme.as_str() {
-            "ss" | "shadowsocks" => {
-                // Shadowsocks upstream is fully supported (AEAD methods only)
-            }
-            "ssr" => {
-                output = output.with_unsupported(
-                    "ssr-upstream",
-                    format!(
-                        "ShadowsocksR (SSR) upstream '{}': SSR protocol, obfs, and legacy features are not supported",
-                        remote.redacted_display()
-                    ),
-                );
-                continue;
-            }
-            "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
-            "ssh" => {
-                output = output.with_unsupported(
-                    "ssh-upstream",
-                    format!(
-                        "SSH upstream '{}': SSH transport is not supported",
-                        remote.redacted_display()
-                    ),
-                );
-                continue;
-            }
-            "unix" => {
-                output = output.with_unsupported(
-                    "unix-upstream",
-                    format!(
-                        "Unix socket upstream '{}': Unix domain sockets are not supported",
-                        remote.redacted_display()
-                    ),
-                );
-                continue;
-            }
-            "redir" => {
-                output = output.with_unsupported(
-                    "redir-upstream",
-                    format!(
-                        "Redir upstream '{}': transparent proxy redirect is not supported as upstream",
-                        remote.redacted_display()
-                    ),
-                );
-                continue;
-            }
-            other => {
-                output = output.with_unsupported(
-                    "scheme",
-                    format!("unknown scheme '{}' in upstream URI", other),
-                );
-                continue;
+        // Check for unsupported upstream protocols across all hops
+        let mut hop_unsupported = false;
+        for hop in &chain.hops {
+            match hop.scheme.as_str() {
+                "ss" | "shadowsocks" => {}
+                "ssr" => {
+                    output = output.with_unsupported(
+                        "ssr-upstream",
+                        format!(
+                            "ShadowsocksR (SSR) upstream '{}': SSR protocol, obfs, and legacy features are not supported",
+                            hop.redacted_display()
+                        ),
+                    );
+                    hop_unsupported = true;
+                }
+                "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
+                "ssh" => {
+                    output = output.with_unsupported(
+                        "ssh-upstream",
+                        format!(
+                            "SSH upstream '{}': SSH transport is not supported",
+                            hop.redacted_display()
+                        ),
+                    );
+                    hop_unsupported = true;
+                }
+                "unix" => {
+                    output = output.with_unsupported(
+                        "unix-upstream",
+                        format!(
+                            "Unix socket upstream '{}': Unix domain sockets are not supported",
+                            hop.redacted_display()
+                        ),
+                    );
+                    hop_unsupported = true;
+                }
+                "redir" => {
+                    output = output.with_unsupported(
+                        "redir-upstream",
+                        format!(
+                            "Redir upstream '{}': transparent proxy redirect is not supported as upstream",
+                            hop.redacted_display()
+                        ),
+                    );
+                    hop_unsupported = true;
+                }
+                other => {
+                    output = output.with_unsupported(
+                        "scheme",
+                        format!("unknown scheme '{}' in upstream URI", other),
+                    );
+                    hop_unsupported = true;
+                }
             }
         }
+        if hop_unsupported {
+            continue;
+        }
 
+        // Build the upstream URI for the chain
+        let config_uri = build_chain_config_uri(chain);
         let upstream_id = format!("pproxy-upstream-{}", idx);
-        let _uri_str = remote.redacted_display();
-
-        // Build the actual URI with credentials for the config (since eggress needs them)
-        let config_uri = build_config_uri(remote);
 
         upstreams.push(UpstreamToml {
             id: upstream_id.clone(),
@@ -740,6 +763,19 @@ fn percent_encode(s: &str) -> String {
         }
     }
     result
+}
+
+fn build_chain_config_uri(chain: &PproxyChain) -> String {
+    if chain.hops.len() == 1 {
+        return build_config_uri(&chain.hops[0]);
+    }
+    // Multi-hop chain: join hops with __ separator
+    chain
+        .hops
+        .iter()
+        .map(build_config_uri)
+        .collect::<Vec<_>>()
+        .join("__")
 }
 
 fn build_config_uri(remote: &PproxyUri) -> String {
@@ -1602,8 +1638,8 @@ mod tests {
             output
                 .unsupported
                 .iter()
-                .any(|u| u.feature == "backward-jump-chain"),
-            "expected backward-jump-chain unsupported, got: {:?}",
+                .any(|u| u.feature == "chain-backward-composition"),
+            "expected chain-backward-composition unsupported, got: {:?}",
             output.unsupported
         );
         // The invalid URI should be filtered out — no reverse_clients generated
@@ -1786,5 +1822,174 @@ mod tests {
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.warnings.iter().any(|w| w.category == "get-url"));
+    }
+
+    #[test]
+    fn test_translate_two_hop_chain_one_upstream() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://a:1080__http://b:80".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams.len(), 1);
+        // Chain URI should contain __ separator
+        let uri = upstreams[0]["uri"].as_str().unwrap();
+        assert!(uri.contains("__"), "expected __ in chain URI, got: {}", uri);
+        // Verify it parses as a valid eggress chain
+        assert!(uri.starts_with("socks5://"));
+        assert!(uri.ends_with("http://b:80"));
+        // Group should be first-available (single upstream)
+        let groups = parsed["upstream_groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0]["scheduler"].as_str(), Some("first-available"));
+    }
+
+    #[test]
+    fn test_translate_three_hop_chain() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://127.0.0.1:8080".into(),
+            "-r".into(),
+            "socks5://a:1080__http://b:80__socks5://c:1080".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams.len(), 1);
+        let uri = upstreams[0]["uri"].as_str().unwrap();
+        let hop_count = uri.split("__").count();
+        assert_eq!(hop_count, 3, "expected 3 hops in chain URI: {}", uri);
+    }
+
+    #[test]
+    fn test_translate_two_r_flags_two_upstreams() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://a:1080".into(),
+            "-r".into(),
+            "http://b:80".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams.len(), 2);
+        // Two separate upstreams, not a chain
+        assert!(!upstreams[0]["uri"].as_str().unwrap().contains("__"));
+        assert!(!upstreams[1]["uri"].as_str().unwrap().contains("__"));
+        // Group should be round-robin (2 upstreams)
+        let groups = parsed["upstream_groups"].as_array().unwrap();
+        assert_eq!(groups[0]["scheduler"].as_str(), Some("round-robin"));
+    }
+
+    #[test]
+    fn test_translate_chain_with_creds_preserved() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://user:pass@a:1080__http://b:80".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        let uri = upstreams[0]["uri"].as_str().unwrap();
+        // Credentials should be preserved in the config URI
+        assert!(
+            uri.contains("user:pass@"),
+            "expected credentials in URI, got: {}",
+            uri
+        );
+    }
+
+    #[test]
+    fn test_translate_chain_with_tls_hop() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5+tls://a:1080__http://b:80".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        let uri = upstreams[0]["uri"].as_str().unwrap();
+        assert!(
+            uri.starts_with("socks5+tls://"),
+            "expected TLS modifier in first hop, got: {}",
+            uri
+        );
+    }
+
+    #[test]
+    fn test_translate_chain_ssh_hop_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://a:1080__ssh://b:22".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "ssh-upstream" || u.feature == "chain-unsupported-hop"));
+    }
+
+    #[test]
+    fn test_translate_chain_ssr_hop_unsupported() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://a:1080__ssr://b:8388".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "ssr-upstream" || u.feature == "chain-unsupported-hop"));
+    }
+
+    #[test]
+    fn test_translate_chain_valid_toml_roundtrip() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "socks5://a:1080__http://b:80".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        // Verify TOML is valid
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert_eq!(parsed["version"].as_integer(), Some(1));
+        let listeners = parsed["listeners"].as_array().unwrap();
+        assert_eq!(listeners.len(), 1);
+        let upstreams = parsed["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams.len(), 1);
+        let rules = parsed["rules"].as_array().unwrap();
+        assert!(rules
+            .iter()
+            .any(|r| r["id"].as_str() == Some("pproxy-default")));
     }
 }

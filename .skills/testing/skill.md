@@ -216,6 +216,8 @@ Only `compatible` or `implemented_interop` evidence levels support compatibility
 
 ### pproxy compat unit tests
 - `crates/eggress-pproxy-compat/src/tests.rs` — protocol aliases, diagnostics, credential redaction
+- `crates/eggress-pproxy-compat/src/uri.rs` — URI chain parsing (`__` separators, semicolon/comma rejection, per-hop validation) — 14 tests
+- `crates/eggress-pproxy-compat/src/translate.rs` — chain translation (multi-hop TOML generation, unsupported protocol diagnostics) — 8 tests
 - Diagnostics tests: `cargo test -p eggress-pproxy-compat diagnostics`
 - Exit codes tests: `cargo test -p eggress-pproxy-compat exit_codes`
 

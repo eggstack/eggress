@@ -705,26 +705,26 @@ expected_unsupported = "backward-tls"
 # ============================================================================
 
 [[cases]]
-id = "chain_syntax_unsupported"
+id = "chain_syntax_supported"
 raw_uri = "socks5://a:1080__http://b:80"
 pproxy_interpretation = "Two-hop chain: SOCKS5 → HTTP, first hop at a:1080, second at b:80"
-expected_interpretation = "Jump chain syntax not supported; each URI must be a separate -r argument"
-compatibility_tier = "unsupported"
+expected_interpretation = "Two-hop ordered chain: SOCKS5 → HTTP"
+compatibility_tier = "compatible"
 has_credentials = false
 expected_redacted_display = "socks5://a:1080__http://b:80"
 expected_warnings = []
-expected_unsupported = "backward-jump-chain"
+expected_unsupported = ""
 
 [[cases]]
 id = "chain_syntax_with_inbound_unsupported"
 raw_uri = "socks5+in://a:1__http://b:2"
 pproxy_interpretation = "Backward jump chain (not supported)"
-expected_interpretation = "Jump chain syntax not supported"
+expected_interpretation = "Multi-hop backward chain composition is not supported"
 compatibility_tier = "unsupported"
 has_credentials = false
 expected_redacted_display = "socks5+in://a:1__http://b:2"
 expected_warnings = []
-expected_unsupported = "backward-jump-chain"
+expected_unsupported = "chain-backward-composition"
 
 # ============================================================================
 # 12. TLS wrappers

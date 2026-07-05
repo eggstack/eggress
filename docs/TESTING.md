@@ -130,6 +130,18 @@ The harness uses:
 
 Parity reports are generated at:
 - `target/compat/pproxy-parity-report.json`
+
+### pproxy Chain Tests (Phase 39)
+
+Chain-related tests cover URI parsing and translation of `__`-separated multi-hop chains:
+
+- `crates/eggress-pproxy-compat/src/uri.rs` — URI chain parsing: `__` separator, semicolon/comma rejection, per-hop protocol validation (14 tests)
+- `crates/eggress-pproxy-compat/src/translate.rs` — Chain translation: multi-hop TOML generation, unsupported protocol diagnostics per hop (8 tests)
+
+Run with:
+```bash
+cargo test -p eggress-pproxy-compat
+```
 - `target/compat/pproxy-parity-report.md`
 
 ## Fuzz Smoke Testing

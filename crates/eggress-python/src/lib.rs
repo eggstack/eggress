@@ -975,13 +975,13 @@ fn translate_pproxy_uri(
     let local_uri = eggress_pproxy_compat::uri::parse_pproxy_uri(local)
         .map_err(|e| UnsupportedFeatureError::new_err(format!("invalid local URI: {e}")))?;
 
-    let remote_uris: Vec<eggress_pproxy_compat::PproxyUri> = match remotes {
+    let remote_chains: Vec<eggress_pproxy_compat::PproxyChain> = match remotes {
         Some(seq) => {
             let len = seq.len()?;
             (0..len)
                 .map(|i| {
                     let s: String = seq.get_item(i)?.extract()?;
-                    eggress_pproxy_compat::uri::parse_pproxy_uri(&s).map_err(|e| {
+                    eggress_pproxy_compat::uri::parse_pproxy_chain(&s).map_err(|e| {
                         UnsupportedFeatureError::new_err(format!("invalid remote URI: {e}"))
                     })
                 })
@@ -991,7 +991,7 @@ fn translate_pproxy_uri(
     };
 
     let output = py
-        .detach(|| eggress_pproxy_compat::translate_from_uris(&[local_uri], &remote_uris, &[]))
+        .detach(|| eggress_pproxy_compat::translate_from_uris(&[local_uri], &remote_chains, &[]))
         .map_err(|e| UnsupportedFeatureError::new_err(format!("translation failed: {e}")))?;
 
     Ok(PyTranslationResult { output })

@@ -3,6 +3,7 @@ args = ["-l", "socks5://127.0.0.1:1080", "-r", "ssh://user@host:22"]
 expected_exit_code = 5
 expected_warnings = [
     "unsupported ssh-upstream: SSH upstream 'ssh://****:****@host:22': SSH transport is not supported",
+    "unsupported chain-unsupported-hop: chain hop 1 in 'ssh://****:****@host:22' uses unsupported scheme 'ssh'",
 ]
 toml_content_must_contain = [
     "version = 1",

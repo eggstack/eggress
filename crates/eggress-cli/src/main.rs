@@ -531,7 +531,7 @@ fn handle_pproxy_check(args: &PproxyCheck) {
     };
 
     let local_uris = pproxy_args.parse_local_uris();
-    let remote_uris = pproxy_args.parse_remote_uris();
+    let remote_chains = pproxy_args.parse_remote_chains();
 
     if args.json {
         let listeners = match &local_uris {
@@ -541,12 +541,26 @@ fn handle_pproxy_check(args: &PproxyCheck) {
                 .collect(),
             Err(e) => vec![format!("error: {e}")],
         };
-        let remotes = match &remote_uris {
-            Ok(uris) => uris
-                .iter()
-                .map(|u| u.redacted_display().to_string())
-                .collect(),
+        let remotes = match &remote_chains {
+            Ok(chains) => chains.iter().map(|c| c.redacted_display()).collect(),
             Err(e) => vec![format!("error: {e}")],
+        };
+        let remote_chains_info: Vec<ChainInfo> = match &remote_chains {
+            Ok(chains) => chains
+                .iter()
+                .map(|c| ChainInfo {
+                    raw: c.raw.clone(),
+                    hops: c.hops.len(),
+                    hop_schemes: c.hops.iter().map(|h| h.scheme.clone()).collect(),
+                    is_chain: c.hops.len() > 1,
+                })
+                .collect(),
+            Err(e) => vec![ChainInfo {
+                raw: format!("error: {e}"),
+                hops: 0,
+                hop_schemes: vec![],
+                is_chain: false,
+            }],
         };
 
         let mut diagnostics: Vec<eggress_pproxy_compat::StructuredDiagnostic> = Vec::new();
@@ -589,7 +603,11 @@ fn handle_pproxy_check(args: &PproxyCheck) {
             diagnostics,
             features,
             raw_args: args.args.clone(),
-            parsed_uris: ParsedUris { listeners, remotes },
+            parsed_uris: ParsedUris {
+                listeners,
+                remotes,
+                chain_info: remote_chains_info,
+            },
         };
 
         match serde_json::to_string_pretty(&check_output) {
@@ -616,14 +634,28 @@ fn handle_pproxy_check(args: &PproxyCheck) {
             Err(e) => eprintln!("  local:  error: {e}"),
         }
 
-        match remote_uris {
-            Ok(uris) => {
-                for uri in &uris {
-                    println!(
-                        "  remote: {} -> scheme={}",
-                        uri.redacted_display(),
-                        uri.scheme
-                    );
+        match remote_chains {
+            Ok(chains) => {
+                for chain in &chains {
+                    if chain.hops.len() > 1 {
+                        println!(
+                            "  remote: {} -> chain ({} hops: {})",
+                            chain.redacted_display(),
+                            chain.hops.len(),
+                            chain
+                                .hops
+                                .iter()
+                                .map(|h| h.scheme.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" -> ")
+                        );
+                    } else if let Some(hop) = chain.hops.first() {
+                        println!(
+                            "  remote: {} -> scheme={}",
+                            hop.redacted_display(),
+                            hop.scheme
+                        );
+                    }
                 }
             }
             Err(e) => eprintln!("  remote: error: {e}"),
@@ -732,6 +764,15 @@ struct FeatureInfo {
 struct ParsedUris {
     listeners: Vec<String>,
     remotes: Vec<String>,
+    chain_info: Vec<ChainInfo>,
+}
+
+#[derive(serde::Serialize)]
+struct ChainInfo {
+    raw: String,
+    hops: usize,
+    hop_schemes: Vec<String>,
+    is_chain: bool,
 }
 
 #[derive(serde::Serialize)]

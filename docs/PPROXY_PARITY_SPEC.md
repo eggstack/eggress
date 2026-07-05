@@ -128,7 +128,27 @@ Rules:
 - The `__` separator is literal (not a regex or glob).
 - Hops are evaluated left-to-right: the first hop is the nearest upstream, the
   last hop is the final destination.
-- A single hop is equivalent to a chain of length one.
+- A single hop (no `__`) is a valid one-hop chain.
+
+### Eggress Translation
+
+Eggress parses `__`-separated multi-hop chains and translates them into TOML
+`[[upstreams]]` entries with `__`-separated URIs. Single-hop URIs (no `__`) are
+accepted as valid one-hop chains.
+
+Per-hop protocol validation detects unsupported protocols (`ssh`, `ssr`, `unix`,
+`redir`, `direct`, `h2`, `ws`, `wss`, `raw`, `tunnel`) across all hops and
+emits structured diagnostics.
+
+### Rejected Separators
+
+Semicolon (`;`) and comma (`,`) are explicitly rejected as chain separators.
+Eggress returns a structured error with a suggestion to use `__`.
+
+### Multi-hop Backward Chains
+
+Multi-hop backward (+in) chains are rejected as unsupported. Only forward
+chaining is supported.
 
 Example invocations:
 ```bash
@@ -142,6 +162,8 @@ pproxy -l http://:8080 -r direct://
 Eggress uses `ProxyHopSpec` with a `Vec<ProxyHopSpec>` in the chain executor.
 The `__` separator is parsed during URI/config processing. Multi-hop chains are
 tested in `crates/eggress-runtime/tests/integration.rs` for up to 3 hops.
+URI-level chain parsing and translation tests live in
+`crates/eggress-pproxy-compat/` (14 URI tests, 8 translate tests).
 
 ## 6. Scheduler/Load-Balancing
 

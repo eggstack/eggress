@@ -262,6 +262,24 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                         .to_string(),
                 ),
             },
+            "chain-unsupported-hop" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedProtocol,
+                feature_id: Some("chain".to_string()),
+                tier: Some("unsupported".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "remove unsupported hops or use multi-r flag for alternatives".to_string(),
+                ),
+            },
+            "chain-backward-composition" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedProtocol,
+                feature_id: Some("chain".to_string()),
+                tier: Some("unsupported".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "use single-hop backward (+in) or split into separate -r flags".to_string(),
+                ),
+            },
             _ => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: None,
@@ -290,6 +308,11 @@ fn classify_unsupported_feature(
             DiagnosticCode::UnsupportedFlag,
             "unsupported",
             Some("configure this via eggress TOML"),
+        ),
+        "chain-unsupported-hop" | "chain-backward-composition" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("remove unsupported hops or use multi-r flag for alternatives"),
         ),
         "ssr-listener" | "ssr-upstream" => (
             DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature,
@@ -325,6 +348,9 @@ pub fn classify_unsupported_feature_code(feature: &str) -> DiagnosticCode {
 fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {
     match feature {
         "daemon" | "backward-jump-chain" | "backward-tls" => DiagnosticCode::UnsupportedFlag,
+        "chain-unsupported-hop" | "chain-backward-composition" => {
+            DiagnosticCode::UnsupportedProtocol
+        }
         "ssr-listener" | "ssr-upstream" => {
             DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature
         }

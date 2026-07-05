@@ -1,5 +1,5 @@
 use crate::error::CompatError;
-use crate::uri::PproxyUri;
+use crate::uri::{PproxyChain, PproxyUri};
 use crate::warnings::{CompatWarning, TranslationOutput};
 
 /// Normalized raw flag keys that the compat layer explicitly handles.
@@ -174,6 +174,14 @@ impl PproxyArgs {
         self.remotes
             .iter()
             .map(|s| crate::uri::parse_pproxy_uri(s))
+            .collect()
+    }
+
+    /// Parse all remote URIs into chain representations (supports `__` separators).
+    pub fn parse_remote_chains(&self) -> Result<Vec<PproxyChain>, CompatError> {
+        self.remotes
+            .iter()
+            .map(|s| crate::uri::parse_pproxy_chain(s))
             .collect()
     }
 }

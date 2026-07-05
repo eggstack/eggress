@@ -151,8 +151,8 @@ class TestRedactPproxyUri:
         skip_ids = {
             "backward_parallel_connections",  # +in+in → single +in in display
             "backward_tls_unsupported",       # +ssl → +tls in display
-            "chain_syntax_unsupported",        # __ treated as host component
-            "chain_syntax_with_inbound_unsupported",
+            "chain_syntax_supported",         # chain uses PproxyChain, not single-hop PproxyUri
+            "chain_syntax_with_inbound_unsupported",  # chain uses PproxyChain
             "socks5_ssl_suffix",               # +ssl → +tls in display
             "ss_with_special_chars_in_password",  # special chars in endpoint
         }

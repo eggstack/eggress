@@ -102,7 +102,7 @@ fn translate_unknown_flag_warns() {
 }
 
 #[test]
-fn translate_ssl_unsupported() {
+fn translate_ssl_generates_tls_config() {
     let output = eggress_bin()
         .args([
             "pproxy",
@@ -115,13 +115,13 @@ fn translate_ssl_unsupported() {
         ])
         .output()
         .expect("failed to run eggress");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("ssl-listener"));
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("cert.pem"));
 }
 
 #[test]
-fn translate_block_unsupported() {
+fn translate_block_generates_reject_rule() {
     let output = eggress_bin()
         .args([
             "pproxy",
@@ -134,9 +134,9 @@ fn translate_block_unsupported() {
         ])
         .output()
         .expect("failed to run eggress");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("block-rules"));
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("pproxy-block-0"));
 }
 
 #[test]

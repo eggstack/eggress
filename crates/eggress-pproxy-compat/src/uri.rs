@@ -347,6 +347,92 @@ fn extract_rule(query: &str) -> Option<String> {
     None
 }
 
+/// A parsed pproxy chain (one or more hops separated by `__`).
+#[derive(Debug, Clone)]
+pub struct PproxyChain {
+    /// The raw input string.
+    pub raw: String,
+    /// Parsed hops in order (left = first hop, right = the last hop).
+    pub hops: Vec<PproxyUri>,
+}
+
+impl PproxyChain {
+    /// Redacted display showing all hops separated by `__`.
+    pub fn redacted_display(&self) -> String {
+        self.hops
+            .iter()
+            .map(|h| h.redacted_display())
+            .collect::<Vec<_>>()
+            .join("__")
+    }
+}
+
+/// Parse a pproxy chain URI (one or more hops separated by `__`).
+///
+/// Single-hop URIs without `__` are valid chains with one hop.
+/// Returns an error for:
+/// - Leading, trailing, or doubled `__` separators
+/// - Empty hop segments
+/// - Semicolon or comma separators (not supported in pproxy)
+pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
+    // Detect semicolon or comma separators with structured error
+    if uri.contains(';') || uri.contains(',') {
+        return Err(CompatError::InvalidUri {
+            message: format!(
+                "semicolon and comma are not chain separators in pproxy; use '__' (double underscore) to separate hops: {}",
+                uri
+            ),
+        });
+    }
+
+    // Check for leading/trailing __
+    if uri.starts_with("__") || uri.ends_with("__") {
+        return Err(CompatError::InvalidUri {
+            message: format!("chain URI has leading or trailing '__' separator: {}", uri),
+        });
+    }
+
+    // Check for doubled ____
+    if uri.contains("____") {
+        return Err(CompatError::InvalidUri {
+            message: format!("chain URI has doubled '____' separator: {}", uri),
+        });
+    }
+
+    let mut hops = Vec::new();
+    for segment in uri.split("__") {
+        if segment.is_empty() {
+            return Err(CompatError::InvalidUri {
+                message: format!("chain URI has empty hop segment: {}", uri),
+            });
+        }
+        let hop = parse_pproxy_uri(segment)?;
+        hops.push(hop);
+    }
+
+    Ok(PproxyChain {
+        raw: uri.to_string(),
+        hops,
+    })
+}
+
+/// Check if any hop in a chain uses an unsupported protocol for chaining.
+///
+/// Returns a list of (hop_index, protocol_name) for unsupported hops.
+pub fn validate_chain_hops(chain: &PproxyChain) -> Vec<(usize, String)> {
+    let mut unsupported = Vec::new();
+    for (idx, hop) in chain.hops.iter().enumerate() {
+        match hop.scheme.as_str() {
+            "ssh" | "ssr" | "unix" | "redir" | "direct" | "h2" | "ws" | "wss" | "raw"
+            | "tunnel" => {
+                unsupported.push((idx, hop.scheme.clone()));
+            }
+            _ => {} // http, https, socks4, socks4a, socks5, trojan, ss, shadowsocks are supported
+        }
+    }
+    unsupported
+}
+
 /// Check if a Shadowsocks method name is a known legacy stream cipher.
 ///
 /// Legacy stream ciphers lack authentication and are not supported by eggress.
@@ -652,5 +738,132 @@ mod tests {
         let uri = parse_pproxy_uri("socks5://proxy:1080").unwrap();
         assert!(!uri.is_backward());
         assert_eq!(uri.backward_num(), 0);
+    }
+
+    #[test]
+    fn test_parse_two_hop_chain() {
+        let chain = parse_pproxy_chain("http://hop1:8080__socks5://hop2:1080").unwrap();
+        assert_eq!(chain.hops.len(), 2);
+        assert_eq!(chain.hops[0].scheme, "http");
+        assert_eq!(chain.hops[0].host, "hop1");
+        assert_eq!(chain.hops[0].port, 8080);
+        assert_eq!(chain.hops[1].scheme, "socks5");
+        assert_eq!(chain.hops[1].host, "hop2");
+        assert_eq!(chain.hops[1].port, 1080);
+    }
+
+    #[test]
+    fn test_parse_three_hop_chain() {
+        let chain = parse_pproxy_chain("http://h1:80__socks5://h2:1080__socks4://h3:1080").unwrap();
+        assert_eq!(chain.hops.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_single_hop_chain() {
+        let chain = parse_pproxy_chain("socks5://proxy:1080").unwrap();
+        assert_eq!(chain.hops.len(), 1);
+        assert_eq!(chain.hops[0].scheme, "socks5");
+    }
+
+    #[test]
+    fn test_parse_chain_with_creds() {
+        let chain = parse_pproxy_chain("http://user:pass@h1:80__socks5://h2:1080").unwrap();
+        assert_eq!(chain.hops.len(), 2);
+        assert_eq!(chain.hops[0].username.as_deref(), Some("user"));
+        assert_eq!(chain.hops[0].password.as_deref(), Some("pass"));
+    }
+
+    #[test]
+    fn test_parse_chain_with_tls_modifier() {
+        let chain = parse_pproxy_chain("socks5+tls://h1:1080__http://h2:80").unwrap();
+        assert!(chain.hops[0].tls);
+        assert!(!chain.hops[1].tls);
+    }
+
+    #[test]
+    fn test_parse_chain_semicolon_rejected() {
+        let err = parse_pproxy_chain("http://h1:80;socks5://h2:1080").unwrap_err();
+        match err {
+            CompatError::InvalidUri { message } => {
+                assert!(message.contains("semicolon"));
+            }
+            _ => panic!("expected InvalidUri for semicolon"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chain_comma_rejected() {
+        let err = parse_pproxy_chain("http://h1:80,socks5://h2:1080").unwrap_err();
+        match err {
+            CompatError::InvalidUri { message } => {
+                assert!(message.contains("comma"));
+            }
+            _ => panic!("expected InvalidUri for comma"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chain_leading_separator() {
+        let err = parse_pproxy_chain("__http://h1:80").unwrap_err();
+        match err {
+            CompatError::InvalidUri { message } => {
+                assert!(message.contains("leading"));
+            }
+            _ => panic!("expected InvalidUri for leading separator"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chain_trailing_separator() {
+        let err = parse_pproxy_chain("http://h1:80__").unwrap_err();
+        match err {
+            CompatError::InvalidUri { message } => {
+                assert!(message.contains("trailing"));
+            }
+            _ => panic!("expected InvalidUri for trailing separator"),
+        }
+    }
+
+    #[test]
+    fn test_parse_chain_empty_segment() {
+        let err = parse_pproxy_chain("http://h1:80____socks5://h2:1080").unwrap_err();
+        match err {
+            CompatError::InvalidUri { message } => {
+                assert!(message.contains("doubled"));
+            }
+            _ => panic!("expected InvalidUri for doubled separator"),
+        }
+    }
+
+    #[test]
+    fn test_chain_redacted_display() {
+        let chain = parse_pproxy_chain("http://user:pass@h1:80__socks5://h2:1080").unwrap();
+        let display = chain.redacted_display();
+        assert!(display.contains("****"));
+        assert!(!display.contains("pass"));
+        assert!(display.contains("__"));
+    }
+
+    #[test]
+    fn test_validate_chain_hops_all_supported() {
+        let chain = parse_pproxy_chain("http://h1:80__socks5://h2:1080").unwrap();
+        let unsupported = validate_chain_hops(&chain);
+        assert!(unsupported.is_empty());
+    }
+
+    #[test]
+    fn test_validate_chain_hops_ssh_unsupported() {
+        let chain = parse_pproxy_chain("http://h1:80__ssh://h2:22").unwrap();
+        let unsupported = validate_chain_hops(&chain);
+        assert_eq!(unsupported.len(), 1);
+        assert_eq!(unsupported[0], (1, "ssh".to_string()));
+    }
+
+    #[test]
+    fn test_validate_chain_hops_ssr_unsupported() {
+        let chain = parse_pproxy_chain("http://h1:80__ssr://h2:8388").unwrap();
+        let unsupported = validate_chain_hops(&chain);
+        assert_eq!(unsupported.len(), 1);
+        assert_eq!(unsupported[0], (1, "ssr".to_string()));
     }
 }
