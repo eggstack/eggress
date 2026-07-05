@@ -40,6 +40,7 @@ cargo install shadowsocks-rust
 |----------|-------|---------|
 | `EGRESS_REQUIRE_EXTERNAL_INTEROP` | `1` | Enable pproxy differential tests |
 | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP` | `1` | Enable Shadowsocks interop tests |
+| `EGRESS_RUN_PPROXY_DIFFERENTIAL` | `1` | Enable Phase 41 differential parity harness |
 
 ### Optional Tool Path Variables
 
@@ -64,6 +65,16 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interopera
 
 # Only UDP tests
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1 udp
+```
+
+### Phase 41 Differential Parity Harness
+
+```bash
+# All Phase 41 scenario + CLI tests (gated; requires pproxy==2.7.9)
+EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
+
+# Specific scenario
+EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential differential_socks5_connect -- --ignored --nocapture
 ```
 
 ### Combined Run
@@ -133,6 +144,31 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
 | `differential_standalone_udp_oversized_datagram` | Standalone UDP oversized datagram |
 | `differential_standalone_udp_two_targets_from_same_client` | Standalone UDP two targets from same client |
 | Various `probe_*` tests | Black-box exploration of pproxy behavior |
+
+### Phase 41 Differential Parity Harness (`pproxy_differential.rs`)
+
+Structured scenario tests comparing eggress with pproxy using the reusable
+harness from `eggress_testkit::differential`. Gated on
+`EGGRESS_RUN_PPROXY_DIFFERENTIAL=1`.
+
+| Test | Description |
+|------|-------------|
+| `differential_http_connect` | HTTP CONNECT relay (TCP echo through proxy) |
+| `differential_http_forward` | HTTP forward proxy (GET to origin) |
+| `differential_socks4_connect` | SOCKS4 CONNECT relay |
+| `differential_socks5_connect` | SOCKS5 CONNECT relay |
+| `differential_socks5_auth` | SOCKS5 username/password auth |
+| `differential_socks5_udp_associate` | SOCKS5 UDP ASSOCIATE (eggress-only on macOS; pproxy UDP broken) |
+| `differential_standalone_udp` | Standalone UDP relay (eggress-only on macOS; pproxy broken) |
+| `differential_scheduler_round_robin` | Round-robin scheduler with 2 upstreams |
+| `differential_block_behavior` | Rule-based connection rejection |
+| `differential_tls_listener` | TLS listener (SOCKS5 over TLS) |
+| `differential_cli_help_output` | CLI --help output comparison |
+| `differential_cli_version_output` | CLI --version output comparison |
+| `differential_cli_pproxy_translate` | `eggress pproxy translate` output check |
+| `differential_cli_pproxy_check` | `eggress pproxy check` parity check |
+| `differential_cli_invalid_uri_diagnostic` | Invalid URI diagnostic message |
+| `differential_cli_unsupported_uri_diagnostic` | Unsupported URI diagnostic message |
 
 ### Standalone UDP Differential Tests
 

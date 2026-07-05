@@ -121,6 +121,9 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 # Run pproxy standalone UDP differential tests only
 ./scripts/compat_udp_pproxy.sh
 
+# Run Phase 41 pproxy differential parity harness tests (gated, requires pproxy==2.7.9)
+EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
+
 # Run property tests (proptest)
 cargo test -p eggress-protocol-socks --test codec_properties
 cargo test -p eggress-protocol-http --test connect_properties

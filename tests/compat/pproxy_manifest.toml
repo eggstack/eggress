@@ -251,9 +251,10 @@ id = "round_robin_scheduler"
 category = "routing"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["scheduler_runtime_tests"]
+evidence_level = "implemented_differential"
+tests = ["scheduler_runtime_tests", "differential_scheduler_round_robin"]
 divergence = "Eggress uses global atomic cursor; pproxy resets on reload"
+external_dependency = "pproxy==2.7.9"
 
 [[features]]
 id = "first_available_scheduler"
@@ -327,9 +328,10 @@ id = "socks5_username_password"
 category = "security"
 pproxy_version = "2.7.9"
 egress_status = "supported"
-evidence_level = "implemented_synthetic"
-tests = ["integration_tests"]
+evidence_level = "implemented_differential"
+tests = ["integration_tests", "differential_socks5_auth"]
 divergence = "URI-embedded credentials"
+external_dependency = "pproxy==2.7.9"
 
 [[features]]
 id = "http_basic_auth"

@@ -1421,7 +1421,7 @@ runtime = "complete"
 cli = "complete"
 python = "not_applicable"
 docs = "complete"
-evidence = "integration"
+evidence = "differential"
 tests = ["scheduler_runtime_tests"]
 notes = "Eggress uses global atomic cursor; pproxy resets on reload."
 

@@ -5,6 +5,7 @@
 
 pub mod case_model;
 pub mod corpus;
+pub mod differential;
 pub mod eggress_runner;
 pub mod fixtures;
 pub mod manifest;

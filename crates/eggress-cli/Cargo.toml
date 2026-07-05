@@ -41,6 +41,9 @@ assert_cmd.workspace = true
 predicates.workspace = true
 base64 = "0.22"
 rand.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
 toml.workspace = true
 
 [lints]

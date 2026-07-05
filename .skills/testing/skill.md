@@ -100,19 +100,25 @@ Protocol-specific tests live alongside the implementation:
 
 ### Differential tests
 - `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy
+- `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (10 scenario + 6 CLI tests)
 - `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
 
 Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.
 
-### Differential test harness primitives
+### Differential test harness
 
-The differential test file (`crates/eggress-cli/tests/differential_pproxy.rs`) provides reusable primitives:
-- `ProcessGuard` / `TaskGuard` — Drop-based cleanup for child processes and tokio tasks
-- `start_tcp_echo()` / `start_udp_echo()` — Echo server fixtures
-- `start_eggress_from_toml(config_str)` — Start eggress from TOML config
-- `compare_tcp_echo()` / `compare_udp_echo()` — Payload comparison helpers
-- `assert_coarse_failure_equivalence()` — Assert both succeeded or both failed
-- `socks5_udp_associate()` — SOCKS5 handshake + UDP ASSOCIATE helper
+The reusable harness lives in `eggress_testkit::differential` (protocol-agnostic) and provides:
+- `differential_gate_enabled()` / `require_differential_gate()` — Gate check via `EGGRESS_RUN_PPROXY_DIFFERENTIAL=1`
+- `find_python_binary()` — Auto-detects Python with pproxy (3.11/3.12/3.13)
+- `start_pproxy_server()` / `start_pproxy_server_with_auth()` / `start_pproxy_with_args()` — pproxy process management
+- `ProcessGuard` — RAII cleanup for child processes
+- `wait_for_port()` / `assert_port_ready()` — Readiness checks
+- `read_with_timeout()` — Timeout-based TCP read (avoids half-close issues)
+- `start_udp_echo()` — UDP echo server
+- `build_socks5_udp_packet()` / `extract_udp_payload()` / `recv_udp_response()` — UDP helpers
+- `compare_tcp_echo()` / `compare_udp_echo()` / `assert_coarse_failure_equivalence()` — Comparison primitives
+
+Protocol-specific helpers (SOCKS5/HTTP/SOCKS4 client helpers, eggress server helpers) live in the test file since they depend on `eggress-core` types.
 - `build_socks5_udp_packet()` / `recv_udp_response()` — UDP datagram helpers
 
 Black-box probe tests document pproxy behavior for ambiguous scenarios (refused replies, auth success shape, chained failure, UDP relay lifetime).
