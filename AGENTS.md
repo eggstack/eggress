@@ -239,6 +239,9 @@ python -m pytest python/tests/test_pproxy_diagnostics.py -v
 # Run Python pproxy differential tests (gated, requires pproxy package)
 EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python -m pytest python/tests/test_pproxy_differential.py -v
 
+# Run Phase 40 pproxy drop-in API tests
+python -m pytest python/tests/test_pproxy_dropin.py -v
+
 # Build and test Python wheel
 maturin build --release --out dist
 python -m venv .venv-wheel-test
@@ -315,6 +318,7 @@ eggress/
 │   ├── eggress-embed/      # Stable Rust embed API: config, service, handle, errors
 │   ├── eggress-python/     # Python bindings via PyO3 (wraps eggress-embed)
 │   │   └── pyproject.toml      # Authoritative release build config (maturin)
+│   ├── test_pproxy_dropin.py       # Phase 40: PPProxyService, CompatibilityReport, start_pproxy tests
 │   └── eggress-testkit/   # Test utilities
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)

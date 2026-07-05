@@ -173,3 +173,7 @@ class AsyncEggressHandle:
 
     def __repr__(self) -> str:
         return "AsyncEggressHandle(...)"
+
+
+# Type alias for the pproxy-compatible handle
+PPProxyHandle = EggressHandle

@@ -73,6 +73,28 @@ Eggress provides drop-in compatibility with pproxy for common use cases:
 
 See `docs/python/PPROXY_EMBEDDED_USAGE_PATTERNS.md` for migration guidance.
 
+### pproxy drop-in API
+
+```python
+from eggress import PPProxyService, start_pproxy, check_pproxy_args
+
+# Check compatibility before starting
+report = check_pproxy_args(["-l", "socks5://:1080", "-r", "http://proxy:8080"])
+print(f"Tier: {report.tier}, OK: {report.ok}")
+
+# Start from pproxy args
+with start_pproxy(["-l", "socks5://127.0.0.1:0"]) as handle:
+    print(handle.bound_addresses)
+
+# Start from local URI
+with PPProxyService.from_uri("socks5://127.0.0.1:0") as handle:
+    print(handle.bound_addresses)
+
+# Start from TOML
+with PPProxyService.from_toml(toml_str) as handle:
+    print(handle.bound_addresses)
+```
+
 ## Migrating from pproxy
 
 ```python

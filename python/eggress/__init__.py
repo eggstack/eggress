@@ -16,7 +16,7 @@ from eggress._eggress import (
     InternalError,
 )
 from eggress.config import EggressConfig
-from eggress.service import EggressService, EggressHandle, AsyncEggressHandle
+from eggress.service import EggressService, EggressHandle, AsyncEggressHandle, PPProxyHandle
 from eggress.pproxy import (
     TranslationResult,
     TranslationWarning,
@@ -40,31 +40,93 @@ from eggress.pproxy import (
     explain_pproxy_uri,
     route_explain,
     check_upstream,
+    CompatibilityReport,
+    FeatureInfo,
+    PPProxyService,
 )
 
 
 def start_pproxy(
-    args: Sequence[str],
+    args: Sequence[str] | None = None,
+    *,
+    local: str | None = None,
+    remote: str | Sequence[str] | None = None,
+    config: str | None = None,
+    config_path: str | None = None,
     allow_partial: bool = False,
+    background: bool = True,
+    log_format: str | None = None,
 ) -> EggressHandle:
     """Start an eggress service from pproxy-style CLI arguments.
 
-    Convenience function that translates pproxy arguments, creates a service,
-    starts it, and returns a handle.
+    Supports multiple input modes (mutually exclusive):
+
+    - ``args``: pproxy CLI-style arguments (e.g. ``["-l", "socks5://:1080"]``)
+    - ``local``: shorthand for a single local listener URI
+    - ``remote``: shorthand for remote upstream URI(s)
+    - ``config``: a TOML configuration string
+    - ``config_path``: path to a TOML configuration file
 
     Args:
-        args: pproxy-style CLI arguments.
+        args: pproxy-style CLI arguments (excluding argv[0]).
+        local: Single local listener URI (e.g. ``"socks5://127.0.0.1:1080"``).
+        remote: Remote upstream URI string or list of strings.
+        config: TOML configuration string.
+        config_path: Path to a TOML configuration file.
         allow_partial: If True, start even when unsupported features exist.
+        background: Reserved for API compatibility (currently ignored).
+        log_format: Reserved for future use.
 
     Returns:
         A handle to the running service.
+
+    Raises:
+        ValueError: If conflicting input modes are provided.
+        ConfigError: If configuration is invalid.
+        UnsupportedFeatureError: If unsupported features exist and allow_partial is False.
 
     Example::
 
         with start_pproxy(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle:
             print(handle.bound_addresses)
+
+        with start_pproxy(local="socks5://127.0.0.1:0") as handle:
+            print(handle.bound_addresses)
     """
-    return EggressService.from_pproxy_args(args, allow_partial=allow_partial).start()
+    provided = []
+    if args is not None:
+        provided.append("args")
+    if local is not None:
+        provided.append("local")
+    if config is not None:
+        provided.append("config")
+    if config_path is not None:
+        provided.append("config_path")
+    if len(provided) > 1:
+        raise ValueError(
+            f"conflicting input modes: {', '.join(provided)} are mutually exclusive"
+        )
+
+    if args is not None:
+        return EggressService.from_pproxy_args(
+            args, allow_partial=allow_partial
+        ).start()
+
+    if local is not None:
+        remote_list = [remote] if isinstance(remote, str) else list(remote or [])
+        return PPProxyService.from_uri(
+            local, remote_list, allow_partial=allow_partial
+        ).start()
+
+    if config is not None:
+        return EggressService.from_toml(config).start()
+
+    if config_path is not None:
+        return EggressService.from_file(config_path).start()
+
+    raise ValueError(
+        "at least one of args, local, config, or config_path must be provided"
+    )
 
 
 def version() -> str:
@@ -154,4 +216,8 @@ __all__ = [
     "start_pproxy",
     "version",
     "capabilities",
+    "CompatibilityReport",
+    "FeatureInfo",
+    "PPProxyService",
+    "PPProxyHandle",
 ]

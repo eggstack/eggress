@@ -648,3 +648,133 @@ section above. For CLI-based translation, you can still use:
 ```bash
 python -m eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
+
+## Phase 40: pproxy drop-in API
+
+### PPProxyService
+
+`PPProxyService` is a pproxy-compatible service builder that accepts
+pproxy-style arguments and manages the full service lifecycle.
+
+```python
+from eggress import PPProxyService
+
+# From pproxy CLI args
+with PPProxyService.from_args(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle:
+    print(handle.bound_addresses)
+
+# From local/remote URIs
+with PPProxyService.from_uri("socks5://127.0.0.1:0") as handle:
+    print(handle.bound_addresses)
+
+# From TOML string
+with PPProxyService.from_toml(toml_str) as handle:
+    print(handle.bound_addresses)
+
+# From TOML file
+with PPProxyService.from_file("config.toml") as handle:
+    print(handle.bound_addresses)
+```
+
+Factory methods:
+
+- `from_args(args, allow_partial=False)` — pproxy CLI arguments
+- `from_uri(local, remotes=(), allow_partial=False)` — local URI and optional remote URIs
+- `from_toml(toml)` — TOML configuration string
+- `from_file(path)` — path to TOML configuration file
+- `start()` — start the service and return an `EggressHandle`
+
+### PPProxyHandle
+
+`PPProxyHandle` is a type alias for `EggressHandle`. All handle
+operations (`bound_addresses`, `status`, `metrics_text`, `reload_toml`,
+`shutdown`) are available.
+
+### CompatibilityReport
+
+`check_pproxy_args` returns a `CompatibilityReport` instead of a
+`TranslationResult`. The report includes tier classification, diagnostics,
+parsed URIs, and generated TOML.
+
+```python
+from eggress import check_pproxy_args
+
+report = check_pproxy_args(["-l", "socks5://127.0.0.1:0"])
+print(report.tier)       # "full", "partial", or "unsupported"
+print(report.ok)         # True if no unsupported features
+print(report.toml)       # Generated TOML (credentials redacted)
+print(report.features)   # List[FeatureInfo]
+print(report.parsed_uris)  # Dict[str, UriInfo]
+```
+
+Fields:
+
+- `tier: str` — "full", "partial", or "unsupported"
+- `ok: bool` — True if no unsupported features
+- `warnings: list[Diagnostic]` — translation warnings
+- `unsupported: list[Diagnostic]` — unsupported feature diagnostics
+- `diagnostics: list[Diagnostic]` — all diagnostics combined
+- `features: list[FeatureInfo]` — feature tier classifications
+- `toml: str | None` — generated TOML with redacted credentials
+- `parsed_uris: dict[str, UriInfo]` — parsed URI info from args
+- `raw_args: list[str]` — original input arguments
+
+### FeatureInfo
+
+Each feature from the pproxy compatibility manifest:
+
+- `feature_id: str` — feature identifier
+- `tier: str` — "compatible", "partial", or "unsupported"
+- `supported: bool` — whether eggress supports this feature
+
+### Updated start_pproxy
+
+`start_pproxy` now supports multiple input modes (mutually exclusive):
+
+```python
+import eggress
+
+# From pproxy CLI args
+with eggress.start_pproxy(["-l", "socks5://:1080"]) as handle:
+    print(handle.bound_addresses)
+
+# From local URI
+with eggress.start_pproxy(local="socks5://127.0.0.1:0") as handle:
+    print(handle.bound_addresses)
+
+# From TOML string
+with eggress.start_pproxy(config=toml_str) as handle:
+    print(handle.bound_addresses)
+
+# From TOML file
+with eggress.start_pproxy(config_path="config.toml") as handle:
+    print(handle.bound_addresses)
+```
+
+Parameters:
+
+- `args` — pproxy CLI-style arguments
+- `local` — single local listener URI
+- `remote` — remote upstream URI or list of URIs
+- `config` — TOML configuration string
+- `config_path` — path to TOML configuration file
+- `allow_partial` — start even with unsupported features
+- `background` — reserved for API compatibility
+- `log_format` — reserved for future use
+
+### Type stubs
+
+`.pyi` stub files are provided for all public modules:
+
+- `eggress/_eggress.pyi` — native extension module
+- `eggress/__init__.pyi` — public API
+- `eggress/pproxy.pyi` — pproxy compatibility layer
+- `eggress/service.pyi` — service and handle classes
+- `eggress/config.pyi` — configuration
+- `eggress/exceptions.pyi` — exception types
+
+### Credential redaction
+
+The `CompatibilityReport.toml` output has credentials automatically
+redacted. Password values are replaced with `"****"` and URI credentials
+are replaced with `****@host:port`.
