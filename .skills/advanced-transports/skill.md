@@ -3,6 +3,9 @@
 ## When to use
 Use when implementing or modifying HTTP/2 CONNECT, WebSocket tunnels, raw fixed-target tunnels, or TLS/ALPN negotiation.
 
+## QUIC/HTTP/3 status
+QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`). The URI schemes `quic://` and `h3://` are rejected with `UnsupportedProtocol` at parse time. No `quinn`/`h3`/`h3-quinn` dependencies exist in the workspace. Do not add QUIC/H3 code without re-evaluation of the ADR conditions.
+
 ## Architecture
 - Three protocol crates: `eggress-protocol-http` (H2 CONNECT module), `eggress-protocol-websocket`, `eggress-protocol-raw`
 - Advanced transports are stream adapters, not protocol-specific special cases

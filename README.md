@@ -317,26 +317,15 @@ Note: `h2://` URIs are accepted by the URI parser and translator but are
 config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct protocol-crate
 callers only.
 
-### QUIC
+### QUIC and HTTP/3
 
-- [ ] QUIC client transport
-- [ ] QUIC server transport
-- [ ] Versioned tunnel framing
-- [ ] Multiplexed streams
-- [ ] QUIC datagrams
-- [ ] Authentication
-- [ ] Connection reuse
-- [ ] Python `pproxy` QUIC compatibility
-- [ ] Route validation for unsupported chain combinations
+Deferred by ADR (`docs/adr/ADR_quic_h3_pproxy_parity.md`). pproxy's H3/QUIC
+behavior in v2.7.9 is experimental and unstable; no interop evidence exists;
+the `quinn` dependency stack is substantial for uncertain benefit. URI schemes
+`quic://` and `h3://` are rejected with structured diagnostics at parse time.
 
-### HTTP/3
-
-- [ ] HTTP/3 CONNECT server
-- [ ] HTTP/3 CONNECT client
-- [ ] H3 stream adapter
-- [ ] H3 authentication
-- [ ] H3 connection pooling
-- [ ] HTTP/3 interoperability tests
+Re-evaluation triggers: pproxy stabilizes H3/QUIC, interop evidence exists,
+differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 
 ### Reverse and backward proxying
 
@@ -490,8 +479,8 @@ Preferred foundations include:
 
 - Tokio for asynchronous I/O;
 - rustls for TLS;
-- Quinn for QUIC;
-- Hyper/H2/H3 for HTTP transports;
+- Quinn for QUIC (aspirational; QUIC/H3 deferred by ADR);
+- Hyper/H2 for HTTP transports;
 - RustCrypto primitives;
 - `russh` for SSH where it satisfies interoperability;
 - reusable Rust crates from `shadowsocks-rust`;
