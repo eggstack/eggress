@@ -74,6 +74,8 @@ pub struct ConnectionConfig {
     /// Intended for test-only use (e.g., insecure TLS for self-signed certs).
     pub tls_client_config: Option<Arc<rustls::ClientConfig>>,
     pub shadowsocks: Option<accept::InboundShadowsocksConfig>,
+    /// Optional Trojan inbound configuration for password verification on Trojan listeners.
+    pub trojan: Option<accept::InboundTrojanConfig>,
     /// Optional Shadowsocks-specific metrics for observability. When provided,
     /// Shadowsocks TCP/UDP paths emit protocol-specific counters and gauges.
     pub shadowsocks_metrics: Option<Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
@@ -96,6 +98,7 @@ pub async fn serve_connection(
             &config.authentication,
             config.shadowsocks.as_ref(),
             config.shadowsocks_metrics.as_ref(),
+            config.trojan.as_ref(),
         ),
     )
     .await;
@@ -223,6 +226,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -287,6 +291,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -458,6 +463,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -511,6 +517,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -569,6 +576,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -616,6 +624,7 @@ mod tests {
             tls_client_config: None,
             shadowsocks: None,
             shadowsocks_metrics: None,
+            trojan: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -645,6 +654,7 @@ mod tests {
             tls_client_config: None,
             shadowsocks: None,
             shadowsocks_metrics: None,
+            trojan: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -675,6 +685,7 @@ mod tests {
             tls_client_config: None,
             shadowsocks: None,
             shadowsocks_metrics: None,
+            trojan: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -711,6 +722,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -775,6 +787,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -828,6 +841,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -883,6 +897,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -942,6 +957,7 @@ mod tests {
             tls_client_config: None,
             shadowsocks: None,
             shadowsocks_metrics: None,
+            trojan: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -1106,6 +1122,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1166,6 +1183,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1217,6 +1235,7 @@ mod tests {
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             serve_connection(boxed, config).await
         });

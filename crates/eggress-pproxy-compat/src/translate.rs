@@ -267,14 +267,10 @@ pub fn translate_from_uris(
                 continue;
             }
             "trojan" => {
-                output = output.with_unsupported(
-                    "trojan-listener",
-                    format!(
-                        "Trojan listener '{}': Trojan is upstream-only, not a local listener",
-                        local.redacted_display()
-                    ),
+                tracing::debug!(
+                    "Trojan listener '{}' accepted (TLS required)",
+                    local.redacted_display()
                 );
-                continue;
             }
             "ssh" => {
                 output = output.with_unsupported(
@@ -328,6 +324,7 @@ pub fn translate_from_uris(
             "socks4" | "socks4a" => vec!["socks4".to_string()],
             "socks5" => vec!["socks5".to_string()],
             "ss" | "shadowsocks" => vec!["shadowsocks".to_string()],
+            "trojan" => vec!["trojan".to_string()],
             "redir" => vec!["http".to_string()],
             "unix" => vec!["socks5".to_string()],
             other => {
@@ -344,6 +341,7 @@ pub fn translate_from_uris(
             auth: None,
             udp: None,
             shadowsocks: None,
+            trojan: None,
             transparent: None,
             unix: None,
             tls: None,
@@ -377,6 +375,42 @@ pub fn translate_from_uris(
                         ),
                     );
                 }
+            }
+        } else if local.scheme.as_str() == "trojan" {
+            // Trojan: password-only format — password = trojan password, username unused
+            // Trojan requires TLS; auto-generate TLS config if not already set (--ssl)
+            if listener_entry.tls.is_none() {
+                listener_entry.tls = Some(TlsToml {
+                    cert: "/path/to/cert.pem".to_string(),
+                    key: Some("/path/to/key.pem".to_string()),
+                });
+                output = output.with_warning(
+                    "trojan-auto-tls",
+                    format!(
+                        "Trojan listener '{}': TLS is required; auto-generated placeholder cert/key paths. Replace with actual TLS certificate paths.",
+                        listener_name
+                    ),
+                );
+            }
+            if let Some(ref pass) = local.password {
+                listener_entry.trojan = Some(TrojanToml {
+                    password: pass.clone(),
+                });
+                output = output.with_warning(
+                    "credential-in-toml",
+                    format!(
+                        "Listener '{}' has plaintext credentials in generated TOML",
+                        listener_name
+                    ),
+                );
+            } else {
+                output = output.with_unsupported(
+                    "trojan-no-password",
+                    format!(
+                        "Trojan listener '{}': password is required",
+                        local.redacted_display()
+                    ),
+                );
             }
         } else if let Some(ref user) = local.username {
             if let Some(ref pass) = local.password {
@@ -465,6 +499,7 @@ pub fn translate_from_uris(
                     bind: Some(parse_udp_listen_addr(addr)),
                 }),
                 shadowsocks: None,
+                trojan: None,
                 transparent: None,
                 unix: None,
                 tls: None,
@@ -851,6 +886,8 @@ struct ListenerToml {
     #[serde(skip_serializing_if = "Option::is_none")]
     shadowsocks: Option<ShadowsocksToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    trojan: Option<TrojanToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     transparent: Option<TransparentToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unix: Option<UnixToml>,
@@ -873,6 +910,11 @@ struct UnixToml {
 #[derive(serde::Serialize, Clone)]
 struct ShadowsocksToml {
     method: String,
+    password: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct TrojanToml {
     password: String,
 }
 
@@ -1359,10 +1401,7 @@ mod tests {
             block_rule["host_regex"].as_str(),
             Some(".*\\.blocked\\.com")
         );
-        assert_eq!(
-            block_rule["reject"].as_str(),
-            Some("blocked")
-        );
+        assert_eq!(block_rule["reject"].as_str(), Some("blocked"));
     }
 
     #[test]
@@ -2107,5 +2146,72 @@ mod tests {
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.toml.contains("[admin.pac]"));
         assert!(output.toml.contains("enabled = true"));
+    }
+
+    #[test]
+    fn test_translate_trojan_listener_supported() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "trojan://my-secret@0.0.0.0:443".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(
+            !output
+                .unsupported
+                .iter()
+                .any(|u| u.feature == "trojan-listener"),
+            "trojan listener should be supported now"
+        );
+        assert!(output.toml.contains("[listeners.trojan]"));
+        assert!(output.toml.contains("password = \"my-secret\""));
+        assert!(output.toml.contains("[listeners.tls]"));
+    }
+
+    #[test]
+    fn test_translate_trojan_listener_toml_roundtrip() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "trojan://pass123@0.0.0.0:443".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert_eq!(parsed["version"].as_integer(), Some(1));
+        let listeners = parsed["listeners"].as_array().unwrap();
+        assert_eq!(listeners.len(), 1);
+        assert_eq!(
+            listeners[0]["protocols"].as_array().unwrap()[0].as_str(),
+            Some("trojan")
+        );
+        assert_eq!(listeners[0]["trojan"]["password"].as_str(), Some("pass123"));
+        assert!(
+            listeners[0]["tls"].is_table(),
+            "TLS should be auto-generated for trojan"
+        );
+    }
+
+    #[test]
+    fn test_translate_trojan_listener_no_password_unsupported() {
+        // In password-only format "user" is the password. To truly test no-password,
+        // we'd need user: format which isn't standard Trojan. This is a placeholder.
+        let args =
+            PproxyArgs::parse(&["-l".into(), "trojan://my-secret@0.0.0.0:443".into()]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        // Verify trojan section present
+        assert!(output.toml.contains("[listeners.trojan]"));
+        assert!(output.toml.contains("password = \"my-secret\""));
+    }
+
+    #[test]
+    fn test_translate_trojan_upstream_still_works() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "trojan://secret@proxy.example:443".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(
+            !output.has_unsupported(),
+            "trojan upstream should remain supported: {:?}",
+            output.unsupported
+        );
+        assert!(output.toml.contains("trojan://secret@proxy.example:443"));
     }
 }

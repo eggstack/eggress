@@ -319,10 +319,13 @@ fn classify_unsupported_feature(
             "intentional_non_parity",
             Some("use standard Shadowsocks (ss://) with AEAD methods"),
         ),
-        "trojan-listener" | "ssh-listener" | "ssh-upstream" | "unix-upstream"
-        | "redir-upstream" | "direct-listener" => {
-            (DiagnosticCode::UnsupportedProtocol, "unsupported", None)
-        }
+        "ssh-listener" | "ssh-upstream" | "unix-upstream" | "redir-upstream"
+        | "direct-listener" => (DiagnosticCode::UnsupportedProtocol, "unsupported", None),
+        "trojan-no-password" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("provide a password in the Trojan URI: trojan://password@host:port"),
+        ),
         "scheme" => (
             DiagnosticCode::UnsupportedProtocol,
             "unsupported",

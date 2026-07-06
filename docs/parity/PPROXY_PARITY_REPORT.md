@@ -9,9 +9,9 @@
 |------|-------|------------|
 | `drop_in` | 63 | 59.4% |
 | `compatible_with_warning` | 8 | 7.5% |
-| `native_equivalent` | 21 | 19.8% |
+| `native_equivalent` | 22 | 20.8% |
 | `intentional_non_parity` | 5 | 4.7% |
-| `unsupported` | 9 | 8.5% |
+| `unsupported` | 8 | 7.5% |
 | **Total** | **106** | |
 
 ## Drop-In Capabilities (63)
@@ -44,7 +44,7 @@ These features work but emit diagnostics or differ in a known way.
 | `uri.semicolon_comma_rejection` | Emits invalid_chainComposition diagnostic with migration suggestion. | `` |
 | `protocol.socks5_udp_associate_server` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
 
-## Native Equivalent (21)
+## Native Equivalent (22)
 
 These features achieve the same outcome through a different mechanism.
 
@@ -57,7 +57,7 @@ These features achieve the same outcome through a different mechanism.
 | `cli.pac` | PAC is served by the eggress admin HTTP server at /proxy.pac; --pac is parsed and translated, NOT unrecognized. |
 | `cli.sys` | pproxy --sys mutates global state at startup; eggress separates inspection from mutation. Inspect-after-translation smoke evidence; mutation behavior is intentionally opt-in. |
 | `cli.test` | Translation emits a warning; --test is recognized. Actual probe behavior is exercised by the 'eggress upstream test' subcommand, which is not part of this capability entry. |
-| `uri.scheme_trojan` | Client-only; no Trojan server. Upstream-only. |
+| `uri.scheme_trojan` | Full Trojan support: client upstream and inbound listener with TLS. |
 | `uri.scheme_redir` | Linux only; requires SO_ORIGINAL_DST. Same mechanism as pproxy. |
 | `uri.scheme_unix` | Unix only; not available on Windows. |
 | `uri.scheme_raw` | Protocol-crate only; runtime refuses h2/ws/raw/tunnel. |
@@ -65,7 +65,8 @@ These features achieve the same outcome through a different mechanism.
 | `uri.scheme_ws` | Protocol-crate only; runtime refuses. |
 | `uri.scheme_wss` | Protocol-crate only; runtime refuses. |
 | `uri.scheme_h2` | Protocol-crate only; runtime refuses. |
-| `protocol.trojan_client` | Client-only; no Trojan inbound listener. Upstream-only. |
+| `protocol.trojan_client` | Trojan upstream client with rustls TLS. |
+| `protocol.trojan_server` | Inbound Trojan listener with TLS termination and SHA224 password verification. |
 | `protocol.ws_runtime` | Protocol-crate only; runtime refuses h2/ws/raw/tunnel (Phase 25-28 H5/H6/H7). |
 | `protocol.raw_runtime` | Protocol-crate only; runtime refuses. |
 | `protocol.h2_runtime` | Protocol-crate only; runtime refuses. |
@@ -84,7 +85,7 @@ These features are deliberately not replicated with rationale.
 | `protocol.quic` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental. |
 | `protocol.http3` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). |
 
-## Unsupported (9)
+## Unsupported (8)
 
 These features are not implemented.
 
@@ -95,7 +96,6 @@ These features are not implemented.
 | `uri.scheme_ssh` | SSH is not a proxy protocol. |
 | `protocol.socks4_bind` | BIND command not implemented. |
 | `protocol.socks5_bind` | BIND command not implemented. |
-| `protocol.trojan_server` | No Trojan server implemented. |
 | `protocol.ssh_upstream` | SSH transport rejected with structured diagnostic. |
 | `routing.rulefile_translation` | Use eggress TOML [[rules]]. |
 | `python.async_wrappers` | Not yet implemented as full async wrapper API. |
@@ -124,7 +124,6 @@ These capabilities require protocol-level support (commands, roles, or transport
 | `uri.scheme_ssh` | `unsupported` | transport | SSH is not a proxy protocol. |
 | `protocol.socks4_bind` | `unsupported` | command | BIND command not implemented. |
 | `protocol.socks5_bind` | `unsupported` | command | BIND command not implemented. |
-| `protocol.trojan_server` | `unsupported` | role | No Trojan server implemented. |
 | `protocol.ssh_upstream` | `unsupported` | transport | SSH transport rejected with structured diagnostic. |
 
 ## Deferred Design Areas

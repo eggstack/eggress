@@ -88,6 +88,7 @@ pub enum TunnelProtocol {
     Socks4,
     Socks5,
     Shadowsocks,
+    Trojan,
 }
 
 /// Information needed to send a protocol-specific reply later.
@@ -96,12 +97,19 @@ pub enum ReplyContext {
     Socks4,
     Socks5,
     Shadowsocks,
+    Trojan,
 }
 
 /// Configuration for Shadowsocks inbound listener.
 #[derive(Clone)]
 pub struct InboundShadowsocksConfig {
     pub method: String,
+    pub password: String,
+}
+
+/// Configuration for Trojan inbound listener.
+#[derive(Clone)]
+pub struct InboundTrojanConfig {
     pub password: String,
 }
 
@@ -166,6 +174,7 @@ pub async fn accept(
     auth: &InboundAuthentication,
     shadowsocks_config: Option<&InboundShadowsocksConfig>,
     shadowsocks_metrics: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+    trojan_config: Option<&InboundTrojanConfig>,
 ) -> Result<AcceptedSession, AcceptError> {
     #[inline]
     fn shadows_metrics(
@@ -293,6 +302,27 @@ pub async fn accept(
         }
         return Err(AcceptError::Protocol(
             "shadowsocks listener requires shadowsocks config".into(),
+        ));
+    }
+
+    // Check if Trojan is the only protocol (TLS termination already happened upstream)
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::Trojan) {
+        if let Some(trojan_cfg) = trojan_config {
+            let (trojan_stream, result) =
+                eggress_protocol_trojan::trojan_accept(stream, &trojan_cfg.password)
+                    .await
+                    .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+
+            return Ok(AcceptedSession::Tunnel(PendingTunnel {
+                target: result.target,
+                client: trojan_stream,
+                protocol: TunnelProtocol::Trojan,
+                reply_context: ReplyContext::Trojan,
+                identity: ClientIdentity::Anonymous,
+            }));
+        }
+        return Err(AcceptError::Protocol(
+            "trojan listener requires trojan config".into(),
         ));
     }
 
@@ -919,6 +949,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -962,6 +993,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -998,6 +1030,7 @@ mod tests {
                 boxed,
                 &all_protocols,
                 &InboundAuthentication::None,
+                None,
                 None,
                 None,
             )
@@ -1037,6 +1070,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -1067,9 +1101,16 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &protocols, &InboundAuthentication::None, None, None)
-                .await
-                .unwrap();
+            let session = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             match session {
                 AcceptedSession::Tunnel(pending) => {
                     assert_eq!(pending.protocol, TunnelProtocol::HttpConnect);
@@ -1096,7 +1137,15 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &protocols, &InboundAuthentication::None, None, None).await;
+            let result = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await;
             assert!(result.is_err());
         });
 
@@ -1115,7 +1164,15 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &protocols, &InboundAuthentication::None, None, None).await;
+            let result = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await;
             assert!(result.is_err());
         });
 
@@ -1137,9 +1194,16 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &protocols, &InboundAuthentication::None, None, None)
-                .await
-                .unwrap();
+            let session = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             match session {
                 AcceptedSession::Tunnel(pending) => {
                     assert_eq!(pending.protocol, TunnelProtocol::Socks5);
@@ -1173,9 +1237,16 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &protocols, &InboundAuthentication::None, None, None)
-                .await
-                .unwrap();
+            let session = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             match session {
                 AcceptedSession::Tunnel(pending) => {
                     assert_eq!(pending.protocol, TunnelProtocol::HttpConnect);
@@ -1209,6 +1280,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await;
             assert!(result.is_err());
@@ -1230,7 +1302,15 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &protocols, &InboundAuthentication::None, None, None).await;
+            let result = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await;
             assert!(result.is_err());
         });
 
@@ -1260,7 +1340,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &all_protocols, &auth, None, None)
+            let session = accept(boxed, &all_protocols, &auth, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -1315,7 +1395,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
         });
 
@@ -1353,7 +1433,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(result.is_err());
         });
 
@@ -1382,7 +1462,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &all_protocols, &auth, None, None)
+            let session = accept(boxed, &all_protocols, &auth, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -1420,7 +1500,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
         });
 
@@ -1460,7 +1540,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
         });
 
@@ -1498,7 +1578,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
         });
 
@@ -1535,7 +1615,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &all_protocols, &auth, None, None)
+            let session = accept(boxed, &all_protocols, &auth, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -1578,7 +1658,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
         });
 
@@ -1613,7 +1693,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let result = accept(boxed, &all_protocols, &auth, None, None).await;
+            let result = accept(boxed, &all_protocols, &auth, None, None, None).await;
             assert!(matches!(result, Err(AcceptError::AuthenticationFailed)));
         });
 
@@ -1651,6 +1731,7 @@ mod tests {
                 boxed,
                 &all_protocols,
                 &InboundAuthentication::None,
+                None,
                 None,
                 None,
             )
@@ -1705,6 +1786,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await;
             assert!(result.is_err());
@@ -1746,6 +1828,7 @@ mod tests {
                 boxed,
                 &all_protocols,
                 &InboundAuthentication::None,
+                None,
                 None,
                 None,
             )
@@ -1790,7 +1873,7 @@ mod tests {
         let server_jh = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let boxed: BoxStream = Box::new(stream);
-            let session = accept(boxed, &all_protocols, &auth, None, None)
+            let session = accept(boxed, &all_protocols, &auth, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -1849,6 +1932,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -1889,6 +1973,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await;
             assert!(result.is_err());
@@ -1914,6 +1999,7 @@ mod tests {
                 boxed,
                 &all_protocols,
                 &InboundAuthentication::None,
+                None,
                 None,
                 None,
             )
@@ -1967,7 +2053,7 @@ mod tests {
         let p = protocols.clone();
         let server_jh1 = tokio::spawn(async move {
             let boxed: BoxStream = Box::new(stream1);
-            let session = accept(boxed, &p, &InboundAuthentication::None, None, None)
+            let session = accept(boxed, &p, &InboundAuthentication::None, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -1999,9 +2085,16 @@ mod tests {
         let (stream2, _) = listener.accept().await.unwrap();
         let server_jh2 = tokio::spawn(async move {
             let boxed: BoxStream = Box::new(stream2);
-            let session = accept(boxed, &protocols, &InboundAuthentication::None, None, None)
-                .await
-                .unwrap();
+            let session = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             match session {
                 AcceptedSession::Tunnel(pending) => {
                     assert_eq!(pending.protocol, TunnelProtocol::Socks5);
@@ -2034,7 +2127,7 @@ mod tests {
         let p = protocols.clone();
         let server_jh1 = tokio::spawn(async move {
             let boxed: BoxStream = Box::new(stream1);
-            let session = accept(boxed, &p, &InboundAuthentication::None, None, None)
+            let session = accept(boxed, &p, &InboundAuthentication::None, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -2062,9 +2155,16 @@ mod tests {
         let (stream2, _) = listener.accept().await.unwrap();
         let server_jh2 = tokio::spawn(async move {
             let boxed: BoxStream = Box::new(stream2);
-            let session = accept(boxed, &protocols, &InboundAuthentication::None, None, None)
-                .await
-                .unwrap();
+            let session = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             match session {
                 AcceptedSession::Tunnel(pending) => {
                     assert_eq!(pending.protocol, TunnelProtocol::Socks4);
@@ -2092,6 +2192,7 @@ mod tests {
                 boxed,
                 &all_protocols,
                 &InboundAuthentication::None,
+                None,
                 None,
                 None,
             )
@@ -2142,6 +2243,7 @@ mod tests {
                 &InboundAuthentication::None,
                 None,
                 None,
+                None,
             )
             .await;
             assert!(result.is_err());
@@ -2173,6 +2275,7 @@ mod tests {
                 boxed,
                 &all_protocols,
                 &InboundAuthentication::None,
+                None,
                 None,
                 None,
             )
@@ -2210,7 +2313,7 @@ mod tests {
         let p = protocols.clone();
         let server_jh1 = tokio::spawn(async move {
             let boxed: BoxStream = Box::new(stream1);
-            let session = accept(boxed, &p, &InboundAuthentication::None, None, None)
+            let session = accept(boxed, &p, &InboundAuthentication::None, None, None, None)
                 .await
                 .unwrap();
             match session {
@@ -2241,9 +2344,16 @@ mod tests {
         let (stream2, _) = listener.accept().await.unwrap();
         let server_jh2 = tokio::spawn(async move {
             let boxed: BoxStream = Box::new(stream2);
-            let session = accept(boxed, &protocols, &InboundAuthentication::None, None, None)
-                .await
-                .unwrap();
+            let session = accept(
+                boxed,
+                &protocols,
+                &InboundAuthentication::None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
             match session {
                 AcceptedSession::Tunnel(pending) => {
                     assert_eq!(pending.protocol, TunnelProtocol::Socks5);

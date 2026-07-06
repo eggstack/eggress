@@ -99,6 +99,8 @@ pub struct ListenerConfig {
     #[serde(default)]
     pub shadowsocks: Option<ShadowsocksListenerConfig>,
     #[serde(default)]
+    pub trojan: Option<ListenerTrojanConfig>,
+    #[serde(default)]
     pub transparent: Option<TransparentConfig>,
     #[serde(default)]
     pub unix: Option<UnixListenerConfig>,
@@ -126,6 +128,13 @@ pub struct UnixListenerConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ShadowsocksListenerConfig {
     pub method: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListenerTrojanConfig {
+    /// Trojan password (hashed with SHA224 on the wire).
     pub password: String,
 }
 

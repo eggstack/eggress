@@ -65,7 +65,7 @@ Release claim:
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Shadowsocks TCP upstream | Experimental | Non-standard AEAD framing (not wire-compatible with standard Shadowsocks); see `docs/protocols/SHADOWSOCKS_TCP_AUDIT.md` |
-| Trojan inbound listener | Experimental | Foundation only; no server-side |
+| Trojan inbound listener | Production-ready | TLS termination + SHA224 password verification; config validation |
 | Persistent HTTP forwarding | Experimental | Single-exchange forward only |
 
 ## 4. Supported Python Features
@@ -120,7 +120,7 @@ These features match pproxy behavior. Evidence labels indicate verification meth
 | Feature | Notes |
 |---------|-------|
 | Shadowsocks TCP upstream | Non-standard AEAD framing; not wire-compatible with standard Shadowsocks |
-| Trojan inbound listener | Foundation only; no server-side implementation |
+| Trojan inbound listener | TLS termination + SHA224 password verification; config validation |
 | Persistent HTTP forwarding | Single-exchange forward only; pproxy supports persistent |
 
 ## 8. Intentional Non-Parity
@@ -128,7 +128,7 @@ These features match pproxy behavior. Evidence labels indicate verification meth
 | Feature | Rationale |
 |---------|-----------|
 | Shadowsocks inbound listener | Upstream-only; no local SS server |
-| Trojan inbound listener | Upstream-only; no local Trojan server |
+| Trojan inbound listener | Supported; no longer non-parity |
 | Shadowsocks stream ciphers | Insecure; no authentication; vulnerable to bit-flipping |
 | ShadowsocksR (SSR) | Non-standard extension; no RFC |
 | SSH transport | Not a proxy protocol; adds significant dependency weight |

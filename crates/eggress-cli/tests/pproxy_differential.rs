@@ -390,6 +390,7 @@ async fn start_eggress_server(
                 tls_client_config: None,
                 shadowsocks: None,
                 shadowsocks_metrics: None,
+                trojan: None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;

@@ -246,6 +246,7 @@ struct PreparedListener {
     udp: Option<eggress_config::compile::CompiledListenerUdpConfig>,
     tls: Option<eggress_config::compile::CompiledListenerTlsConfig>,
     shadowsocks: Option<eggress_config::model::ShadowsocksListenerConfig>,
+    trojan: Option<eggress_config::model::ListenerTrojanConfig>,
 }
 
 type PreparedShadowsocksUdpRelay = (
@@ -794,6 +795,7 @@ impl ServiceSupervisor {
                                     handshake_timeout,
                                     lcfg.tls.clone(),
                                     lcfg.shadowsocks.clone(),
+                                    lcfg.trojan.clone(),
                                     lcfg.udp.clone(),
                                 ));
                                 continue;
@@ -877,6 +879,7 @@ impl ServiceSupervisor {
                                 handshake_timeout,
                                 lcfg.tls.clone(),
                                 lcfg.shadowsocks.clone(),
+                                lcfg.trojan.clone(),
                                 lcfg.udp.clone(),
                             ));
                             continue;
@@ -924,6 +927,7 @@ impl ServiceSupervisor {
                     udp: lcfg.udp.clone(),
                     tls: lcfg.tls.clone(),
                     shadowsocks: lcfg.shadowsocks.clone(),
+                    trojan: lcfg.trojan.clone(),
                 });
             }
 
@@ -996,6 +1000,7 @@ impl ServiceSupervisor {
                 hs_timeout,
                 tls_cfg,
                 ss_cfg,
+                trojan_cfg,
                 udp_cfg,
             ) in transparent_listener_args
             {
@@ -1080,6 +1085,7 @@ impl ServiceSupervisor {
                         let generation = state.snapshot.load().generation;
                         let tls_config = tls_cfg.clone();
                         let ss_config = ss_cfg.clone();
+                        let trojan_config = trojan_cfg.clone();
 
                         let udp_svc = udp_cfg.as_ref().map(|udp_config| {
                             Arc::new(RuntimeUdpService {
@@ -1147,18 +1153,23 @@ impl ServiceSupervisor {
                                     },
                                 ),
                                 shadowsocks_metrics: Some(conn_ss_metrics),
+                                trojan: trojan_config.map(
+                                    |t| eggress_server::accept::InboundTrojanConfig {
+                                        password: t.password,
+                                    },
+                                ),
                             };
 
-                        let report = tokio::select! {
-                            report = eggress_server::serve_connection(stream, config)
-                                .instrument(tracing::info_span!(
-                                    "conn",
-                                    id = conn_id,
-                                    peer = %peer,
-                                    original_dst = %original_dst,
-                                    listener_type = "transparent",
-                                    listener = %listener_str,
-                                )) => {
+                            let report = tokio::select! {
+                                report = eggress_server::serve_connection(stream, config)
+                                    .instrument(tracing::info_span!(
+                                        "conn",
+                                        id = conn_id,
+                                        peer = %peer,
+                                        original_dst = %original_dst,
+                                        listener_type = "transparent",
+                                        listener = %listener_str,
+                                    )) => {
                                 report
                             }
                                 _ = conn_cancel.cancelled() => {
@@ -1197,6 +1208,7 @@ impl ServiceSupervisor {
                 hs_timeout,
                 tls_cfg,
                 ss_cfg,
+                trojan_cfg,
                 udp_cfg,
             ) in unix_listener_args
             {
@@ -1250,6 +1262,7 @@ impl ServiceSupervisor {
 
                         let tls_config = tls_cfg.clone();
                         let ss_config = ss_cfg.clone();
+                        let trojan_config = trojan_cfg.clone();
                         let socket_path_clone = socket_path.clone();
                         let listener_str_for_span = listener_str.clone();
 
@@ -1324,6 +1337,11 @@ impl ServiceSupervisor {
                                     },
                                 ),
                                 shadowsocks_metrics: Some(conn_ss_metrics),
+                                trojan: trojan_config.map(
+                                    |t| eggress_server::accept::InboundTrojanConfig {
+                                        password: t.password,
+                                    },
+                                ),
                             };
 
                             let report = tokio::select! {
@@ -1411,6 +1429,7 @@ impl ServiceSupervisor {
 
                         let tls_config = prepared_listener.tls.clone();
                         let ss_config = prepared_listener.shadowsocks.clone();
+                        let trojan_config = prepared_listener.trojan.clone();
 
                         let udp_svc = if let Some(ref udp_config) = prepared_listener.udp {
                             Some(Arc::new(RuntimeUdpService {
@@ -1477,6 +1496,11 @@ impl ServiceSupervisor {
                                     },
                                 ),
                                 shadowsocks_metrics: Some(conn_ss_metrics),
+                                trojan: trojan_config.map(
+                                    |t| eggress_server::accept::InboundTrojanConfig {
+                                        password: t.password,
+                                    },
+                                ),
                             };
 
                             let report = tokio::select! {

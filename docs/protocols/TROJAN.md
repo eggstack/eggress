@@ -3,8 +3,9 @@
 ## Overview
 
 Trojan proxy protocol implementation. Uses TLS for transport security and
-SHA224 password hashing for authentication. Connects to a Trojan server over
-TLS and sends a CONNECT request with the target address.
+SHA224 password hashing for authentication. Supports both **upstream** (client
+connecting to a Trojan server) and **inbound listener** (accepting Trojan
+connections from clients).
 
 Source: `crates/eggress-protocol-trojan/src/`
 
@@ -36,10 +37,20 @@ Source: `crates/eggress-protocol-trojan/src/`
 
 ## TLS Configuration
 
+### Upstream (Client)
+
 - Library: `rustls` with `webpki-roots` for root certificates
 - No client authentication (`with_no_client_auth`)
 - Server name taken from `ProxyHopSpec.server_name` (falls back to endpoint host)
 - TLS handshake performed before sending any Trojan protocol bytes
+
+### Inbound Listener (Server)
+
+- TLS termination happens in the runtime supervisor before `accept()`
+- `trojan_accept()` reads the Trojan handshake from the TLS stream
+- Password verification: SHA224 hash comparison
+- Only CONNECT command (0x01) supported
+- No response sent on success (silent protocol)
 
 ```rust
 // Example: trojan_connect(stream, &target, "password", "server.example.com")
@@ -87,21 +98,35 @@ Source: `crates/eggress-protocol-trojan/src/hash.rs`
   validation path exercised from `trojan_connect`)
 - `trojan_connect()` accepts 255-byte domain end-to-end through TLS
 - Wrong-password server-side rejection
+- `trojan_accept()` round-trip with `encode_trojan_request()` for IPv4, domain, and IPv6 targets
+- `trojan_accept()` returns `AuthFailed` for wrong password
+- `trojan_accept()` returns `Protocol` error for invalid ATYP
+- `trojan_accept()` returns `Protocol` error for non-CONNECT command
+- `trojan_accept()` accepts 255-byte domain end-to-end through TLS
+- Wrong-password server-side rejection
 
-Test count: 15 tests across `eggress-protocol-trojan`
+Test count: 29 tests across `eggress-protocol-trojan`
 (`hash::tests` + `tcp::tests`).
 
 ## Current Status
 
-The foundation is implemented and tested through the exported function:
+### Upstream (Client)
 
 - Password hashing: complete
 - `encode_trojan_request()` helper: complete; sole encoder path
 - `trojan_connect()`: delegates to `encode_trojan_request()` after TLS handshake
 - TLS handshake with rustls: complete
 - Request sending: complete
-- Domain-length validation (1-255 bytes): complete and tested through the
-  exported function
+- Domain-length validation (1-255 bytes): complete and tested
+
+### Inbound Listener (Server)
+
+- `trojan_accept()`: reads and validates Trojan handshake from TLS stream
+- Password verification via SHA224 hash comparison
+- Single-protocol listener mode (no mixed-protocol detection)
+- Config: `[listeners.trojan]` section with password field
+- TLS required (validated at config level)
+- Config validation: Trojan requires TLS + password section
 
 End-to-end interoperability tests against a real third-party Trojan server are
 not yet included.
@@ -110,7 +135,6 @@ not yet included.
 
 - No fallback routing (no TLS fallback to plain HTTP)
 - No UDP support (TCP only)
-- No server-side implementation (client/upstream only)
 - No multi-hop support
 - No response parsing (connection assumed successful after request send)
-- No custom TLS certificate configuration (uses webpki roots only)
+- No custom TLS certificate configuration (uses webpki roots only for upstream)

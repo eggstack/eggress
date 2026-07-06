@@ -51,6 +51,147 @@ pub fn encode_trojan_request(target: &TargetAddr, password: &str) -> Result<Vec<
     Ok(request)
 }
 
+/// Parsed result from accepting an inbound Trojan connection.
+#[derive(Debug)]
+pub struct TrojanAcceptResult {
+    /// The target address requested by the client.
+    pub target: TargetAddr,
+}
+
+/// Accept an inbound Trojan connection from a TLS-terminated stream.
+///
+/// Reads the Trojan handshake: `hash(56) + CRLF + CMD(1) + ATYP + addr + port(2) + CRLF`.
+/// Verifies the password hash and returns the parsed target address.
+///
+/// This function expects to receive a stream **after** TLS termination.
+/// The first 58 bytes (56-char SHA224 hash + `\r\n`) are the password hash,
+/// followed by the CONNECT command and target address.
+///
+/// # Arguments
+/// * `stream` - The TLS-terminated stream
+/// * `password` - The expected password (will be hashed and compared)
+pub async fn trojan_accept(
+    mut stream: BoxStream,
+    password: &str,
+) -> Result<(BoxStream, TrojanAcceptResult), TrojanError> {
+    use tokio::io::AsyncReadExt;
+
+    let expected_hash = password_hash(password);
+
+    // Read the hash (56 bytes) + CRLF (2 bytes) = 58 bytes
+    let mut hash_buf = [0u8; 58];
+    stream
+        .read_exact(&mut hash_buf)
+        .await
+        .map_err(TrojanError::Io)?;
+
+    let received_hash = std::str::from_utf8(&hash_buf[..56])
+        .map_err(|_| TrojanError::Protocol("invalid hash encoding".into()))?;
+
+    if received_hash != expected_hash {
+        return Err(TrojanError::AuthFailed);
+    }
+
+    if &hash_buf[56..58] != b"\r\n" {
+        return Err(TrojanError::Protocol("missing CRLF after hash".into()));
+    }
+
+    // Read CMD (1 byte) — must be 0x01 (CONNECT)
+    let mut cmd_buf = [0u8; 1];
+    stream
+        .read_exact(&mut cmd_buf)
+        .await
+        .map_err(TrojanError::Io)?;
+
+    if cmd_buf[0] != 0x01 {
+        return Err(TrojanError::Protocol(format!(
+            "unsupported command: {:#04x} (only CONNECT is supported)",
+            cmd_buf[0]
+        )));
+    }
+
+    // Read ATYP (1 byte)
+    let mut atyp_buf = [0u8; 1];
+    stream
+        .read_exact(&mut atyp_buf)
+        .await
+        .map_err(TrojanError::Io)?;
+
+    let target = match atyp_buf[0] {
+        // IPv4
+        0x01 => {
+            let mut addr_buf = [0u8; 4 + 2]; // 4 bytes IP + 2 bytes port
+            stream
+                .read_exact(&mut addr_buf)
+                .await
+                .map_err(TrojanError::Io)?;
+            let ip = std::net::Ipv4Addr::new(addr_buf[0], addr_buf[1], addr_buf[2], addr_buf[3]);
+            let port = u16::from_be_bytes([addr_buf[4], addr_buf[5]]);
+            TargetAddr {
+                host: TargetHost::Ip(std::net::IpAddr::V4(ip)),
+                port,
+            }
+        }
+        // Domain
+        0x03 => {
+            let mut len_buf = [0u8; 1];
+            stream
+                .read_exact(&mut len_buf)
+                .await
+                .map_err(TrojanError::Io)?;
+            let domain_len = len_buf[0] as usize;
+            if domain_len == 0 {
+                return Err(TrojanError::Protocol("empty domain".into()));
+            }
+            let mut domain_buf = vec![0u8; domain_len + 2]; // domain + port
+            stream
+                .read_exact(&mut domain_buf)
+                .await
+                .map_err(TrojanError::Io)?;
+            let domain = String::from_utf8(domain_buf[..domain_len].to_vec())
+                .map_err(|_| TrojanError::Protocol("invalid domain UTF-8".into()))?;
+            let port = u16::from_be_bytes([domain_buf[domain_len], domain_buf[domain_len + 1]]);
+            TargetAddr {
+                host: TargetHost::Domain(domain),
+                port,
+            }
+        }
+        // IPv6
+        0x04 => {
+            let mut addr_buf = [0u8; 16 + 2]; // 16 bytes IP + 2 bytes port
+            stream
+                .read_exact(&mut addr_buf)
+                .await
+                .map_err(TrojanError::Io)?;
+            let ip = std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&addr_buf[..16]).unwrap());
+            let port = u16::from_be_bytes([addr_buf[16], addr_buf[17]]);
+            TargetAddr {
+                host: TargetHost::Ip(std::net::IpAddr::V6(ip)),
+                port,
+            }
+        }
+        other => {
+            return Err(TrojanError::Protocol(format!(
+                "unsupported ATYP: {:#04x}",
+                other
+            )));
+        }
+    };
+
+    // Read trailing CRLF
+    let mut crlf_buf = [0u8; 2];
+    stream
+        .read_exact(&mut crlf_buf)
+        .await
+        .map_err(TrojanError::Io)?;
+
+    if &crlf_buf != b"\r\n" {
+        return Err(TrojanError::Protocol("missing trailing CRLF".into()));
+    }
+
+    Ok((stream, TrojanAcceptResult { target }))
+}
+
 /// Connect to a target through a Trojan server.
 ///
 /// Performs a TLS handshake, sends the Trojan password hash and CONNECT
@@ -450,5 +591,124 @@ mod tests {
         assert!(result.is_ok());
 
         server_jh.await.unwrap();
+    }
+
+    // ── trojan_accept round-trip tests ──
+
+    #[tokio::test]
+    async fn trojan_accept_roundtrip_ipv4() {
+        let password = "server-secret";
+        let target = TargetAddr {
+            host: TargetHost::Ip("93.184.216.34".parse().unwrap()),
+            port: 80,
+        };
+        let request = encode_trojan_request(&target, password).unwrap();
+        let stream: BoxStream = Box::new(std::io::Cursor::new(request));
+
+        let (mut stream, result) = trojan_accept(stream, password).await.unwrap();
+        assert_eq!(
+            result.target.host,
+            TargetHost::Ip("93.184.216.34".parse().unwrap())
+        );
+        assert_eq!(result.target.port, 80);
+
+        // Stream should be usable for data after the handshake
+        let mut buf = [0u8; 5];
+        let n = stream.read(&mut buf).await.unwrap();
+        assert_eq!(n, 0, "cursor is at EOF after handshake");
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_roundtrip_domain() {
+        let password = "my-pass";
+        let target = TargetAddr {
+            host: TargetHost::Domain("example.com".to_string()),
+            port: 443,
+        };
+        let request = encode_trojan_request(&target, password).unwrap();
+        let stream: BoxStream = Box::new(std::io::Cursor::new(request));
+
+        let (_, result) = trojan_accept(stream, password).await.unwrap();
+        assert_eq!(
+            result.target.host,
+            TargetHost::Domain("example.com".to_string())
+        );
+        assert_eq!(result.target.port, 443);
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_roundtrip_ipv6() {
+        let password = "pw";
+        let target = TargetAddr {
+            host: TargetHost::Ip("::1".parse().unwrap()),
+            port: 8080,
+        };
+        let request = encode_trojan_request(&target, password).unwrap();
+        let stream: BoxStream = Box::new(std::io::Cursor::new(request));
+
+        let (_, result) = trojan_accept(stream, password).await.unwrap();
+        assert_eq!(result.target.host, TargetHost::Ip("::1".parse().unwrap()));
+        assert_eq!(result.target.port, 8080);
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_wrong_password_returns_auth_failed() {
+        let password = "correct-password";
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+        let request = encode_trojan_request(&target, password).unwrap();
+        let stream: BoxStream = Box::new(std::io::Cursor::new(request));
+
+        let result = trojan_accept(stream, "wrong-password").await;
+        assert!(
+            matches!(result, Err(TrojanError::AuthFailed)),
+            "expected AuthFailed, got {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_bad_atyp_returns_protocol_error() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut bad_handshake = Vec::new();
+        bad_handshake.extend_from_slice(hash.as_bytes());
+        bad_handshake.extend_from_slice(b"\r\n");
+        bad_handshake.push(0x01); // CONNECT
+        bad_handshake.push(0xFF); // invalid ATYP
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(bad_handshake));
+        let result = trojan_accept(stream, password).await;
+        match result {
+            Err(TrojanError::Protocol(msg)) => {
+                assert!(msg.contains("unsupported ATYP"), "unexpected: {}", msg);
+            }
+            other => panic!("expected Protocol error, got {:?}", other.err()),
+        }
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_non_connect_command_returns_protocol_error() {
+        let password = "pass";
+        let mut request = Vec::new();
+        let hash = password_hash(password);
+        request.extend_from_slice(hash.as_bytes());
+        request.extend_from_slice(b"\r\n");
+        request.push(0x02); // UDP ASSOCIATE (unsupported)
+        request.push(0x01); // ATYP IPv4
+        request.extend_from_slice(&[127, 0, 0, 1]);
+        request.extend_from_slice(&80u16.to_be_bytes());
+        request.extend_from_slice(b"\r\n");
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(request));
+        let result = trojan_accept(stream, password).await;
+        match result {
+            Err(TrojanError::Protocol(msg)) => {
+                assert!(msg.contains("unsupported command"), "unexpected: {}", msg);
+            }
+            other => panic!("expected Protocol error, got {:?}", other.err()),
+        }
     }
 }

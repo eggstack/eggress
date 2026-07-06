@@ -36,6 +36,9 @@ pub async fn send_tunnel_success(
         (TunnelProtocol::Shadowsocks, ReplyContext::Shadowsocks) => {
             // Shadowsocks has no success reply - the server starts relaying immediately
         }
+        (TunnelProtocol::Trojan, ReplyContext::Trojan) => {
+            // Trojan has no success reply - the server starts relaying immediately
+        }
         _ => {
             return Err("mismatched protocol and reply context".into());
         }
@@ -73,6 +76,10 @@ pub async fn send_tunnel_failure(
         }
         (TunnelProtocol::Shadowsocks, ReplyContext::Shadowsocks) => {
             // Shadowsocks has no failure reply - just close the connection
+            pending.client.shutdown().await.ok();
+        }
+        (TunnelProtocol::Trojan, ReplyContext::Trojan) => {
+            // Trojan has no failure reply - just close the connection
             pending.client.shutdown().await.ok();
         }
         _ => {

@@ -154,6 +154,7 @@ pub struct ListenerConfig {
     pub udp: Option<CompiledListenerUdpConfig>,
     pub tls: Option<CompiledListenerTlsConfig>,
     pub shadowsocks: Option<crate::model::ShadowsocksListenerConfig>,
+    pub trojan: Option<crate::model::ListenerTrojanConfig>,
     pub transparent: Option<CompiledTransparentConfig>,
     pub unix: Option<CompiledUnixListenerConfig>,
 }
@@ -217,6 +218,7 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "socks4" => Ok(ProtocolId::Socks4),
         "socks5" => Ok(ProtocolId::Socks5),
         "shadowsocks" => Ok(ProtocolId::Shadowsocks),
+        "trojan" => Ok(ProtocolId::Trojan),
         // H2/WebSocket/Raw are recognized in the URI parser and exist as
         // protocol crates, but they are NOT yet integrated through the
         // supervisor. We refuse them in `[[listeners]]`/`[[upstreams]]`
@@ -702,6 +704,7 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 udp,
                 tls,
                 shadowsocks: l.shadowsocks.clone(),
+                trojan: l.trojan.clone(),
                 transparent,
                 unix,
             })

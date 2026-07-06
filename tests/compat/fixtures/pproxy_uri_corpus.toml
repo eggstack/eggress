@@ -356,15 +356,15 @@ uri = "trojan:password@server:443"
 '''
 
 [[cases]]
-id = "trojan_listener_unsupported"
+id = "trojan_listener_supported"
 raw_uri = "trojan://password@0.0.0.0:443"
 pproxy_interpretation = "Start Trojan server listener on port 443"
-expected_interpretation = "Trojan is upstream-only; listener not supported"
-compatibility_tier = "intentional_non_parity"
+expected_interpretation = "Trojan inbound listener at 0.0.0.0:443 (TLS required)"
+compatibility_tier = "supported"
 has_credentials = true
 expected_redacted_display = "trojan://****:****@0.0.0.0:443"
 expected_warnings = []
-expected_unsupported = "trojan-listener"
+expected_unsupported = ""
 
 # ============================================================================
 # 7. Standalone UDP (-ul/-ur flags)

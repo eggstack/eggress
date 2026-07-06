@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::error::{ConfigError, ConfigWarning};
 use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig};
 
-const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5", "shadowsocks"];
+const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5", "shadowsocks", "trojan"];
 
 const VALID_SCHEDULERS: &[&str] = &[
     "first-available",
@@ -128,6 +128,32 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
 
         if let Some(ref udp) = listener.udp {
             validate_listener_udp(udp, &path, errors);
+        }
+
+        // Trojan requires TLS — the TLS layer is part of the protocol
+        if listener.protocols.contains(&"trojan".to_string()) && listener.tls.is_none() {
+            errors.push(ConfigError::validation(
+                &path,
+                "trojan protocol requires TLS configuration ([listeners.tls])",
+            ));
+        }
+
+        // Trojan requires a [listeners.trojan] section with a password
+        if listener.protocols.contains(&"trojan".to_string()) && listener.trojan.is_none() {
+            errors.push(ConfigError::validation(
+                &path,
+                "trojan protocol requires [listeners.trojan] section with password",
+            ));
+        }
+
+        // Trojan password must not be empty if provided
+        if let Some(ref trojan) = listener.trojan {
+            if trojan.password.is_empty() {
+                errors.push(ConfigError::validation(
+                    &format!("{}.trojan.password", path),
+                    "trojan password must not be empty",
+                ));
+            }
         }
     }
 }
@@ -837,7 +863,8 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
                 let has_auth = listener.auth.is_some();
                 let has_tls = listener.tls.is_some();
                 let has_shadowsocks = listener.shadowsocks.is_some();
-                if !has_auth && !has_tls && !has_shadowsocks {
+                let has_trojan = listener.trojan.is_some();
+                if !has_auth && !has_tls && !has_shadowsocks && !has_trojan {
                     warnings.push(ConfigWarning {
                         path,
                         message: format!(
@@ -921,6 +948,7 @@ mod tests {
                 udp: None,
                 tls: None,
                 shadowsocks: None,
+                trojan: None,
                 transparent: None,
                 unix: None,
             }]),
@@ -954,6 +982,7 @@ mod tests {
                 udp: None,
                 tls: None,
                 shadowsocks: None,
+                trojan: None,
                 transparent: None,
                 unix: None,
             }]),
@@ -989,6 +1018,7 @@ mod tests {
                     method: "aes-256-gcm".to_string(),
                     password: "secret".to_string(),
                 }),
+                trojan: None,
                 transparent: None,
                 unix: None,
             }]),
@@ -1144,5 +1174,211 @@ mod tests {
         };
         let warnings = validate_config_security(&config);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn warn_trojan_listener_without_auth() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "public-trojan".to_string(),
+                bind: "0.0.0.0:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: Some(crate::model::ListenerTlsConfig {
+                    cert: "/path/cert.pem".to_string(),
+                    key: "/path/key.pem".to_string(),
+                    alpn: None,
+                }),
+                shadowsocks: None,
+                trojan: Some(crate::model::ListenerTrojanConfig {
+                    password: "secret".to_string(),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        // Trojan provides its own auth via password hash, no warning expected
+        let warnings = validate_config_security(&config);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn validate_trojan_requires_tls() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "trojan-notls".to_string(),
+                bind: "127.0.0.1:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: None,
+                shadowsocks: None,
+                trojan: Some(crate::model::ListenerTrojanConfig {
+                    password: "secret".to_string(),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.to_string().contains("requires TLS")));
+    }
+
+    #[test]
+    fn validate_trojan_requires_trojan_section() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "trojan-nosection".to_string(),
+                bind: "127.0.0.1:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: Some(crate::model::ListenerTlsConfig {
+                    cert: "/path/cert.pem".to_string(),
+                    key: "/path/key.pem".to_string(),
+                    alpn: None,
+                }),
+                shadowsocks: None,
+                trojan: None,
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.to_string().contains("requires [listeners.trojan]")));
+    }
+
+    #[test]
+    fn validate_trojan_empty_password_rejected() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "trojan-empty".to_string(),
+                bind: "127.0.0.1:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: Some(crate::model::ListenerTlsConfig {
+                    cert: "/path/cert.pem".to_string(),
+                    key: "/path/key.pem".to_string(),
+                    alpn: None,
+                }),
+                shadowsocks: None,
+                trojan: Some(crate::model::ListenerTrojanConfig {
+                    password: String::new(),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.to_string().contains("password must not be empty")));
+    }
+
+    #[test]
+    fn validate_trojan_with_tls_and_password_passes() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "trojan-valid".to_string(),
+                bind: "127.0.0.1:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: Some(crate::model::ListenerTlsConfig {
+                    cert: "/path/cert.pem".to_string(),
+                    key: "/path/key.pem".to_string(),
+                    alpn: None,
+                }),
+                shadowsocks: None,
+                trojan: Some(crate::model::ListenerTrojanConfig {
+                    password: "my-secret".to_string(),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(
+            result.is_ok(),
+            "valid trojan config should pass: {:?}",
+            result.err()
+        );
     }
 }
