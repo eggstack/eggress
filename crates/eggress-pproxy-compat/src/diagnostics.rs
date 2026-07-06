@@ -321,6 +321,36 @@ fn classify_unsupported_feature(
         ),
         "ssh-listener" | "ssh-upstream" | "unix-upstream" | "redir-upstream"
         | "direct-listener" => (DiagnosticCode::UnsupportedProtocol, "unsupported", None),
+        "socks4-bind" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "intentional_non_parity",
+            Some("SOCKS4 BIND is not implemented; pproxy also does not implement SOCKS4 BIND"),
+        ),
+        "socks5-bind" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "intentional_non_parity",
+            Some("SOCKS5 BIND is not implemented; pproxy also does not implement SOCKS5 BIND"),
+        ),
+        "udp-http-transport" | "udp-https-transport" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("use direct://, socks5://, or ss:// for UDP upstreams"),
+        ),
+        "udp-socks4-transport" | "udp-socks4a-transport" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("SOCKS4 does not support UDP; use socks5:// for UDP upstreams"),
+        ),
+        "udp-trojan-transport" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("Trojan does not support UDP; use direct://, socks5://, or ss://"),
+        ),
+        "udp-multihop" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("UDP multi-hop chains are not supported; use single-hop upstreams"),
+        ),
         "trojan-no-password" => (
             DiagnosticCode::UnsupportedProtocol,
             "unsupported",
@@ -359,6 +389,13 @@ fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {
         }
         "trojan-listener" | "ssh-listener" | "ssh-upstream" | "unix-upstream"
         | "redir-upstream" | "direct-listener" => DiagnosticCode::UnsupportedProtocol,
+        "socks4-bind" | "socks5-bind" => DiagnosticCode::UnsupportedProtocol,
+        "udp-http-transport"
+        | "udp-https-transport"
+        | "udp-socks4-transport"
+        | "udp-socks4a-transport"
+        | "udp-trojan-transport"
+        | "udp-multihop" => DiagnosticCode::UnsupportedProtocol,
         "scheme" => DiagnosticCode::UnsupportedProtocol,
         "legacy-cipher" => DiagnosticCode::InvalidCipherMethod,
         _ => DiagnosticCode::UnsupportedFlag,

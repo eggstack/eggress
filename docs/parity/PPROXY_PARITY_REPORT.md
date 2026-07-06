@@ -7,12 +7,12 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 63 | 59.4% |
-| `compatible_with_warning` | 8 | 7.5% |
-| `native_equivalent` | 22 | 20.8% |
-| `intentional_non_parity` | 5 | 4.7% |
-| `unsupported` | 8 | 7.5% |
-| **Total** | **106** | |
+| `drop_in` | 63 | 57.8% |
+| `compatible_with_warning` | 9 | 8.3% |
+| `native_equivalent` | 23 | 21.1% |
+| `intentional_non_parity` | 7 | 6.4% |
+| `unsupported` | 7 | 6.4% |
+| **Total** | **109** | |
 
 ## Drop-In Capabilities (63)
 
@@ -29,7 +29,7 @@ These features are drop-in replacements for pproxy. All required layers are `com
 ### Python (14)
 - `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`
 
-## Compatible-With-Warning (8)
+## Compatible-With-Warning (9)
 
 These features work but emit diagnostics or differ in a known way.
 
@@ -43,8 +43,9 @@ These features work but emit diagnostics or differ in a known way.
 | `uri.chain_validation` | Per-hop diagnostics carry unsupported_protocol or unsupported_transport_wrapper codes. | `` |
 | `uri.semicolon_comma_rejection` | Emits invalid_chainComposition diagnostic with migration suggestion. | `` |
 | `protocol.socks5_udp_associate_server` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
+| `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
 
-## Native Equivalent (22)
+## Native Equivalent (23)
 
 These features achieve the same outcome through a different mechanism.
 
@@ -65,6 +66,7 @@ These features achieve the same outcome through a different mechanism.
 | `uri.scheme_ws` | Protocol-crate only; runtime refuses. |
 | `uri.scheme_wss` | Protocol-crate only; runtime refuses. |
 | `uri.scheme_h2` | Protocol-crate only; runtime refuses. |
+| `protocol.udp_transport_validation` | Prevents generating UDP upstream configs that runtime cannot execute. pproxy silently generates non-functional configs for unsupported UDP transports. |
 | `protocol.trojan_client` | Trojan upstream client with rustls TLS. |
 | `protocol.trojan_server` | Inbound Trojan listener with TLS termination and SHA224 password verification. |
 | `protocol.ws_runtime` | Protocol-crate only; runtime refuses h2/ws/raw/tunnel (Phase 25-28 H5/H6/H7). |
@@ -73,7 +75,7 @@ These features achieve the same outcome through a different mechanism.
 | `routing.block_rules` | Different mechanism (rule action vs separate flag); same outcome. |
 | `python.migration_aliases` | Compatibility layer; not a 1:1 API match. |
 
-## Intentional Non-Parity (5)
+## Intentional Non-Parity (7)
 
 These features are deliberately not replicated with rationale.
 
@@ -81,11 +83,13 @@ These features are deliberately not replicated with rationale.
 |----|-----------|
 | `cli.reuse` | Connection pooling not implemented by design; one upstream connection per proxy session. |
 | `uri.scheme_ssr` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
+| `protocol.socks4_bind` | BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners |
+| `protocol.socks5_bind` | BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.ssr` | Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected. |
 | `protocol.quic` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental. |
 | `protocol.http3` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). |
 
-## Unsupported (8)
+## Unsupported (7)
 
 These features are not implemented.
 
@@ -94,8 +98,7 @@ These features are not implemented.
 | `cli.daemon` | Use systemd, supervisord, or process manager. |
 | `cli.get` | Utility function in pproxy; not implemented as a runtime feature in eggress. Recognized at parse time so users get a clean recommendation instead of an unknown-flag warning. |
 | `uri.scheme_ssh` | SSH is not a proxy protocol. |
-| `protocol.socks4_bind` | BIND command not implemented. |
-| `protocol.socks5_bind` | BIND command not implemented. |
+| `protocol.udp_multihop` | UDP multi-hop requires complex per-hop relay logic that is not implemented. Single-hop UDP via direct, socks5, or ss is supported. |
 | `protocol.ssh_upstream` | SSH transport rejected with structured diagnostic. |
 | `routing.rulefile_translation` | Use eggress TOML [[rules]]. |
 | `python.async_wrappers` | Not yet implemented as full async wrapper API. |
@@ -122,8 +125,6 @@ These capabilities require protocol-level support (commands, roles, or transport
 | ID | Tier | What's missing | Note |
 |----|------|----------------|------|
 | `uri.scheme_ssh` | `unsupported` | transport | SSH is not a proxy protocol. |
-| `protocol.socks4_bind` | `unsupported` | command | BIND command not implemented. |
-| `protocol.socks5_bind` | `unsupported` | command | BIND command not implemented. |
 | `protocol.ssh_upstream` | `unsupported` | transport | SSH transport rejected with structured diagnostic. |
 
 ## Deferred Design Areas
@@ -142,6 +143,8 @@ These capabilities are explicitly classified as intentional non-parity with rati
 | ID | Tier | Rationale |
 |----|------|-----------|
 | `uri.scheme_ssr` | `intentional_non_parity` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
+| `protocol.socks4_bind` | `intentional_non_parity` | BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners |
+| `protocol.socks5_bind` | `intentional_non_parity` | BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.ssr` | `intentional_non_parity` | Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected. |
 
 ## CLI / Translator Scope Gaps

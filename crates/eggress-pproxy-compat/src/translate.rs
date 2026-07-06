@@ -644,6 +644,8 @@ pub fn translate_from_uris(
             })?;
 
         // Check for unsupported upstream protocols
+        // UDP only supports direct, socks5, and shadowsocks upstreams.
+        // HTTP, HTTPS, SOCKS4, SOCKS4a, and Trojan do not support UDP relay.
         match remote_uri.scheme.as_str() {
             "ss" | "shadowsocks" => {}
             "ssr" => {
@@ -656,7 +658,38 @@ pub fn translate_from_uris(
                 );
                 continue;
             }
-            "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
+            "socks5" => {}
+            "direct" => {}
+            "http" | "https" => {
+                output = output.with_unsupported(
+                    "udp-http-transport",
+                    format!(
+                        "HTTP/HTTPS UDP upstream '{}': HTTP CONNECT does not support UDP relay; use direct://, socks5://, or ss:// for UDP upstreams",
+                        remote_uri.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "socks4" | "socks4a" => {
+                output = output.with_unsupported(
+                    "udp-socks4-transport",
+                    format!(
+                        "SOCKS4 UDP upstream '{}': SOCKS4 does not support UDP relay; use socks5:// for UDP upstreams",
+                        remote_uri.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "trojan" => {
+                output = output.with_unsupported(
+                    "udp-trojan-transport",
+                    format!(
+                        "Trojan UDP upstream '{}': Trojan does not support UDP relay; use direct://, socks5://, or ss://",
+                        remote_uri.redacted_display()
+                    ),
+                );
+                continue;
+            }
             other => {
                 output = output.with_unsupported(
                     "scheme",

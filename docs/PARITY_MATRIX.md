@@ -40,6 +40,8 @@ and verified with `--check-report`.
 | SOCKS4/4a | server + client | server + client | Compatible | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
 | SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
 | SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | eggress uses SOCKS5 UDP ASSOCIATE framing; pproxy uses its own custom framing. Both relay UDP successfully. |
+| SOCKS4 BIND | supported (deprecated) | not implemented | Intentional non-parity | none | none | BIND is deprecated; pproxy also does not implement SOCKS4 BIND. Server rejects with RFC-compliant 0x07. |
+| SOCKS5 BIND | supported (deprecated) | not implemented | Intentional non-parity | none | none | BIND is rarely used; pproxy also does not implement SOCKS5 BIND. Server rejects with RFC-compliant 0x07. |
 | Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
 | Transparent TCP proxy (`redir://`) | Linux only | Linux only | Supported | `transparent.rs` tests | none | Requires `SO_ORIGINAL_DST`; iptables/nftables REDIRECT rule needed |
 | Unix domain socket (`unix://`) | Unix only | Unix only | Supported | `unix_listener.rs` tests | none | Listen on filesystem socket path; Windows not supported |
@@ -72,7 +74,9 @@ and verified with `--check-report`.
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | SOCKS5 UDP upstream relay | supported | one-hop only | Partial | `udp_upstream.rs` | none | Eggress: one-hop; pproxy: multi-hop capable |
-| HTTP UDP upstream | N/A | unsupported | Unsupported | none | none | Not implemented |
+| HTTP/HTTPS UDP upstream | accepted (non-functional) | rejected at translation | Intentional non-parity | none | none | HTTP CONNECT does not support UDP; translator rejects with diagnostic |
+| SOCKS4/SOCKS4a UDP upstream | accepted (non-functional) | rejected at translation | Intentional non-parity | none | none | SOCKS4 has no UDP protocol support; translator rejects with diagnostic |
+| Trojan UDP upstream | accepted (non-functional) | rejected at translation | Intentional non-parity | none | none | Trojan does not support UDP; translator rejects with diagnostic |
 | Shadowsocks UDP upstream | supported | standard AEAD one-hop | Supported | `shadowsocks_udp.rs` | none | Single-hop only; pproxy: multi-hop capable |
 
 ### Chain Behavior
