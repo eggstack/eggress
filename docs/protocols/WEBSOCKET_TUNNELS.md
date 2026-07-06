@@ -6,7 +6,7 @@ WebSocket tunnel transport for proxying TCP streams. The WebSocket protocol
 provides an HTTP Upgrade handshake that establishes a bidirectional byte pipe.
 After the handshake, binary frames carry the tunneled data.
 
-Source: `crates/eggress-transport-websocket/src/`
+Source: `crates/eggress-protocol-websocket/src/`
 
 ## Wire Format
 

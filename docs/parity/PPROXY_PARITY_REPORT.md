@@ -9,8 +9,8 @@
 |------|-------|------------|
 | `drop_in` | 63 | 57.8% |
 | `compatible_with_warning` | 9 | 8.3% |
-| `native_equivalent` | 23 | 21.1% |
-| `intentional_non_parity` | 7 | 6.4% |
+| `native_equivalent` | 15 | 13.8% |
+| `intentional_non_parity` | 15 | 13.8% |
 | `unsupported` | 7 | 6.4% |
 | **Total** | **109** | |
 
@@ -45,7 +45,7 @@ These features work but emit diagnostics or differ in a known way.
 | `protocol.socks5_udp_associate_server` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
 | `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
 
-## Native Equivalent (23)
+## Native Equivalent (15)
 
 These features achieve the same outcome through a different mechanism.
 
@@ -61,21 +61,13 @@ These features achieve the same outcome through a different mechanism.
 | `uri.scheme_trojan` | Full Trojan support: client upstream and inbound listener with TLS. |
 | `uri.scheme_redir` | Linux only; requires SO_ORIGINAL_DST. Same mechanism as pproxy. |
 | `uri.scheme_unix` | Unix only; not available on Windows. |
-| `uri.scheme_raw` | Protocol-crate only; runtime refuses h2/ws/raw/tunnel. |
-| `uri.scheme_tunnel` | Protocol-crate only; runtime refuses. Alias for raw:// |
-| `uri.scheme_ws` | Protocol-crate only; runtime refuses. |
-| `uri.scheme_wss` | Protocol-crate only; runtime refuses. |
-| `uri.scheme_h2` | Protocol-crate only; runtime refuses. |
 | `protocol.udp_transport_validation` | Prevents generating UDP upstream configs that runtime cannot execute. pproxy silently generates non-functional configs for unsupported UDP transports. |
 | `protocol.trojan_client` | Trojan upstream client with rustls TLS. |
 | `protocol.trojan_server` | Inbound Trojan listener with TLS termination and SHA224 password verification. |
-| `protocol.ws_runtime` | Protocol-crate only; runtime refuses h2/ws/raw/tunnel (Phase 25-28 H5/H6/H7). |
-| `protocol.raw_runtime` | Protocol-crate only; runtime refuses. |
-| `protocol.h2_runtime` | Protocol-crate only; runtime refuses. |
 | `routing.block_rules` | Different mechanism (rule action vs separate flag); same outcome. |
 | `python.migration_aliases` | Compatibility layer; not a 1:1 API match. |
 
-## Intentional Non-Parity (7)
+## Intentional Non-Parity (15)
 
 These features are deliberately not replicated with rationale.
 
@@ -83,11 +75,19 @@ These features are deliberately not replicated with rationale.
 |----|-----------|
 | `cli.reuse` | Connection pooling not implemented by design; one upstream connection per proxy session. |
 | `uri.scheme_ssr` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
+| `uri.scheme_raw` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
+| `uri.scheme_tunnel` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
+| `uri.scheme_ws` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
+| `uri.scheme_wss` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
+| `uri.scheme_h2` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `protocol.socks4_bind` | BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.socks5_bind` | BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.ssr` | Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected. |
 | `protocol.quic` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental. |
 | `protocol.http3` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). |
+| `protocol.ws_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
+| `protocol.raw_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
+| `protocol.h2_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 
 ## Unsupported (7)
 
@@ -109,14 +109,14 @@ The following capabilities have protocol crate implementations but are **refused
 
 | ID | Tier | Refused layers | Note | Next phase |
 |----|------|----------------|------|------------|
-| `uri.scheme_raw` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses h2/ws/raw/tunnel. |  |
-| `uri.scheme_tunnel` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. Alias for raw:// |  |
-| `uri.scheme_ws` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
-| `uri.scheme_wss` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
-| `uri.scheme_h2` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
-| `protocol.ws_runtime` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses h2/ws/raw/tunnel (Phase 25-28 H5/H6/H7). | Phase 25-28 |
-| `protocol.raw_runtime` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
-| `protocol.h2_runtime` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
+| `uri.scheme_raw` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
+| `uri.scheme_tunnel` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; alias for raw://. See ADR… |  |
+| `uri.scheme_ws` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
+| `uri.scheme_wss` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
+| `uri.scheme_h2` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
+| `protocol.ws_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
+| `protocol.raw_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
+| `protocol.h2_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
 
 ## Missing Protocol Commands or Roles
 
