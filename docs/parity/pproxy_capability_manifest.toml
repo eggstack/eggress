@@ -198,6 +198,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = []
 notes = "Use systemd, supervisord, or process manager."
+caveat_class = "cli_process_model"
 
 [[capability]]
 id = "cli.verbose"
@@ -311,6 +312,7 @@ evidence = "docs_only"
 tests = []
 diagnostic = "get-url"
 notes = "Utility function in pproxy; not implemented as a runtime feature in eggress. Recognized at parse time so users get a clean recommendation instead of an unknown-flag warning."
+caveat_class = "cli_process_model"
 
 [[capability]]
 id = "cli.test"
@@ -550,6 +552,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
 rationale = "SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic."
+caveat_class = "intentional_non_parity"
 
 [[capability]]
 id = "uri.scheme_trojan"
@@ -586,6 +589,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = ["pproxy_compat_tests"]
 notes = "SSH is not a proxy protocol."
+caveat_class = "missing_protocol_transport"
 
 [[capability]]
 id = "uri.scheme_direct"
@@ -730,6 +734,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["integration_tests"]
 notes = "Protocol-crate only; runtime refuses h2/ws/raw/tunnel."
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "uri.scheme_tunnel"
@@ -748,6 +753,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["integration_tests"]
 notes = "Protocol-crate only; runtime refuses. Alias for raw://"
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "uri.scheme_ws"
@@ -766,6 +772,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["test_websocket_echo"]
 notes = "Protocol-crate only; runtime refuses."
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "uri.scheme_wss"
@@ -784,6 +791,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["test_websocket_echo"]
 notes = "Protocol-crate only; runtime refuses."
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "uri.scheme_h2"
@@ -802,6 +810,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["test_h2_connect_error_display"]
 notes = "Protocol-crate only; runtime refuses."
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "uri.modifier_ssl_tls"
@@ -1062,6 +1071,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = []
 notes = "BIND command not implemented."
+caveat_class = "missing_protocol_command"
 
 [[capability]]
 id = "protocol.socks5_connect_server"
@@ -1099,6 +1109,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = []
 notes = "BIND command not implemented."
+caveat_class = "missing_protocol_command"
 
 [[capability]]
 id = "protocol.socks5_udp_associate_server"
@@ -1209,6 +1220,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
 rationale = "Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected."
+caveat_class = "intentional_non_parity"
 
 [[capability]]
 id = "protocol.trojan_client"
@@ -1245,6 +1257,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = []
 notes = "No Trojan server implemented."
+caveat_class = "missing_protocol_role"
 
 [[capability]]
 id = "protocol.ssh_upstream"
@@ -1263,6 +1276,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = ["pproxy_compat_tests"]
 notes = "SSH transport rejected with structured diagnostic."
+caveat_class = "missing_protocol_transport"
 
 [[capability]]
 id = "protocol.quic"
@@ -1281,6 +1295,7 @@ docs = "complete"
 evidence = "none"
 tests = []
 rationale = "Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental."
+caveat_class = "deferred_by_adr"
 
 [[capability]]
 id = "protocol.http3"
@@ -1299,6 +1314,7 @@ docs = "complete"
 evidence = "none"
 tests = []
 rationale = "Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md)."
+caveat_class = "deferred_by_adr"
 
 [[capability]]
 id = "protocol.ws_runtime"
@@ -1317,6 +1333,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["test_websocket_echo"]
 notes = "Protocol-crate only; runtime refuses h2/ws/raw/tunnel (Phase 25-28 H5/H6/H7)."
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "protocol.raw_runtime"
@@ -1335,6 +1352,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["integration_tests"]
 notes = "Protocol-crate only; runtime refuses."
+caveat_class = "protocol_crate_only"
 
 [[capability]]
 id = "protocol.h2_runtime"
@@ -1353,6 +1371,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["test_h2_connect_error_display"]
 notes = "Protocol-crate only; runtime refuses."
+caveat_class = "protocol_crate_only"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Routing and Operations
@@ -1411,6 +1430,7 @@ docs = "complete"
 evidence = "docs_only"
 tests = ["pproxy_cli_tests"]
 notes = "Use eggress TOML [[rules]]."
+caveat_class = "translator_scope_gap"
 
 [[capability]]
 id = "routing.scheduler_round_robin"

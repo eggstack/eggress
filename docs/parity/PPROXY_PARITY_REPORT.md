@@ -100,31 +100,60 @@ These features are not implemented.
 | `routing.rulefile_translation` | Use eggress TOML [[rules]]. |
 | `python.async_wrappers` | Not yet implemented as full async wrapper API. |
 
-## Protocol-Crate-Only Caveats
+## Protocol-Crate-Only Runtime Refusals
 
-The following capabilities are implemented in protocol crates but **refused by the runtime/config compiler** (Phase 25-28 H5/H6/H7). They cannot be promoted to `drop_in` until the config compiler and runtime supervisor accept them.
+The following capabilities have protocol crate implementations but are **refused by the runtime/config compiler** (Phase 25-28 H5/H6/H7). They cannot be promoted to `drop_in` until the config compiler and runtime supervisor accept them.
 
-| ID | Protocol crate | Refused by |
-|----|---------------|------------|
-| `cli.daemon` | eggress protocol crate | config, runtime |
-| `uri.scheme_ssr` | eggress protocol crate | runtime |
-| `uri.scheme_ssh` | eggress protocol crate | config, runtime |
-| `uri.scheme_raw` | eggress protocol crate | config, runtime |
-| `uri.scheme_tunnel` | eggress protocol crate | config, runtime |
-| `uri.scheme_ws` | eggress protocol crate | config, runtime |
-| `uri.scheme_wss` | eggress protocol crate | config, runtime |
-| `uri.scheme_h2` | eggress protocol crate | config, runtime |
-| `protocol.socks4_bind` | eggress protocol crate | runtime |
-| `protocol.socks5_bind` | eggress protocol crate | runtime |
-| `protocol.ssr` | eggress protocol crate | config, runtime |
-| `protocol.trojan_server` | eggress protocol crate | runtime |
-| `protocol.ssh_upstream` | eggress protocol crate | config, runtime |
-| `protocol.quic` | eggress protocol crate | runtime |
-| `protocol.http3` | eggress protocol crate | runtime |
-| `protocol.ws_runtime` | eggress protocol crate | config, runtime |
-| `protocol.raw_runtime` | eggress protocol crate | config, runtime |
-| `protocol.h2_runtime` | eggress protocol crate | config, runtime |
-| `routing.rulefile_translation` | eggress protocol crate | config, runtime |
+| ID | Tier | Refused layers | Note | Next phase |
+|----|------|----------------|------|------------|
+| `uri.scheme_raw` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses h2/ws/raw/tunnel. |  |
+| `uri.scheme_tunnel` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. Alias for raw:// |  |
+| `uri.scheme_ws` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
+| `uri.scheme_wss` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
+| `uri.scheme_h2` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
+| `protocol.ws_runtime` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses h2/ws/raw/tunnel (Phase 25-28 H5/H6/H7). | Phase 25-28 |
+| `protocol.raw_runtime` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
+| `protocol.h2_runtime` | `native_equivalent` | config, runtime | Protocol-crate only; runtime refuses. |  |
+
+## Missing Protocol Commands or Roles
+
+These capabilities require protocol-level support (commands, roles, or transports) that the upstream protocol crates do not yet implement.
+
+| ID | Tier | What's missing | Note |
+|----|------|----------------|------|
+| `uri.scheme_ssh` | `unsupported` | transport | SSH is not a proxy protocol. |
+| `protocol.socks4_bind` | `unsupported` | command | BIND command not implemented. |
+| `protocol.socks5_bind` | `unsupported` | command | BIND command not implemented. |
+| `protocol.trojan_server` | `unsupported` | role | No Trojan server implemented. |
+| `protocol.ssh_upstream` | `unsupported` | transport | SSH transport rejected with structured diagnostic. |
+
+## Deferred Design Areas
+
+These capabilities are deferred pending a design decision recorded in an Architecture Decision Record (ADR).
+
+| ID | Tier | ADR reference |
+|----|------|---------------|
+| `protocol.quic` | `intentional_non_parity` | docs/adr/ADR_quic_h3_pproxy_parity.md). |
+| `protocol.http3` | `intentional_non_parity` | docs/adr/ADR_quic_h3_pproxy_parity.md). |
+
+## Intentional Non-Parity (Caveat Classified)
+
+These capabilities are explicitly classified as intentional non-parity with rationale explaining the design choice.
+
+| ID | Tier | Rationale |
+|----|------|-----------|
+| `uri.scheme_ssr` | `intentional_non_parity` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
+| `protocol.ssr` | `intentional_non_parity` | Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected. |
+
+## CLI / Translator Scope Gaps
+
+These capabilities are limited by the CLI process model or translator scope and cannot achieve full drop-in parity.
+
+| ID | Tier | Note |
+|----|------|------|
+| `cli.daemon` | `unsupported` | Use systemd, supervisord, or process manager. |
+| `cli.get` | `unsupported` | Utility function in pproxy; not implemented as a runtime feature in eggress.… |
+| `routing.rulefile_translation` | `unsupported` | Use eggress TOML [[rules]]. |
 
 ## Verification
 

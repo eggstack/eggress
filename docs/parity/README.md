@@ -35,6 +35,7 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "integration"
+caveat_class = "protocol_crate_only"
 ```
 
 ## Tiers
@@ -77,10 +78,27 @@ this capability (e.g., `runtime = "refused"` for `--daemon`).
 | `docs_only` | Documented as unsupported; no code path |
 | `none` | No tests |
 
+## Caveat Classification
+
+Optional `caveat_class` field on manifest entries classifies why a capability
+with `refused` layers cannot achieve `drop_in`. Used by the report generator
+to produce accurate caveat sections.
+
+| Value | Meaning |
+|-------|---------|
+| `protocol_crate_only` | Parser/protocol crate exists, but config/runtime refuses it |
+| `missing_protocol_command` | Protocol exists but a command/mode is missing (e.g., SOCKS BIND) |
+| `missing_protocol_role` | Protocol client exists but server/listener role is missing (e.g., Trojan server) |
+| `missing_protocol_transport` | Transport implementation needed (e.g., SSH) |
+| `deferred_by_adr` | Deliberately deferred by Architecture Decision Record |
+| `intentional_non_parity` | Deliberate non-parity with rationale |
+| `cli_process_model` | CLI/process behavior limitation (e.g., daemon mode) |
+| `translator_scope_gap` | Translator/rule compatibility gap (e.g., full rulefile parity) |
+
 ## Validation Rules
 
-The validator (`scripts/validate_pproxy_parity_manifest.py`) enforces 13
-rules (Phase 37 + Phase 42). Errors block CI; warnings are advisory (or
+The validator (`scripts/validate_pproxy_parity_manifest.py`) enforces 14
+rules (Phase 37 + Phase 42 + caveat classification). Errors block CI; warnings are advisory (or
 errors in `--strict` mode).
 
 | # | Rule | Severity |
@@ -98,6 +116,7 @@ errors in `--strict` mode).
 | 11 | Python capability marked `drop_in` with no test evidence | ERROR |
 | 12 | Stale "not recognized"/"unknown-flag" wording in `notes` (Phase 42) | WARNING |
 | 13 | `config = "not_applicable"` with parser + translator `complete` without justification (Phase 42) | WARNING |
+| 14 | Unknown `caveat_class` value; `refused` layers without classification or rationale; `protocol_crate_only` without crate/refused mention; `deferred_by_adr` without ADR reference | WARNING |
 
 ## Usage
 

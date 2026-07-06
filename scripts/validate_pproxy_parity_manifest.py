@@ -21,6 +21,10 @@ Rules enforced:
     13. config='not_applicable' for a capability whose parser+translator are
         'complete' and whose tier implies a config artifact → WARNING
         (Phase 42 corrective)
+    14. caveat_class validation: unknown value → WARNING; refused layers
+        without caveat_class or rationale → WARNING; protocol_crate_only
+        without crate/refused mention in notes → WARNING; deferred_by_adr
+        without ADR mention → WARNING (promoted under --strict)
 
 Exit code: non-zero if any errors (or warnings in --strict mode).
 """
@@ -336,6 +340,57 @@ def validate_manifest(manifest_path: Path, strict: bool = False, validate_only: 
                         "add a 'no config artifact' justification to notes or set config='complete'."
                     ))
 
+    # ── Rule 14: caveat_class validation ──────────────────────────────
+    VALID_CAVEAT_CLASSES = frozenset({
+        "protocol_crate_only",
+        "missing_protocol_command",
+        "missing_protocol_role",
+        "missing_protocol_transport",
+        "deferred_by_adr",
+        "intentional_non_parity",
+        "cli_process_model",
+        "translator_scope_gap",
+    })
+    caveat_class = cap.get("caveat_class", "")
+    if caveat_class and caveat_class not in VALID_CAVEAT_CLASSES:
+        warnings.append(Diagnostic(
+            "warning", 14, entry_id,
+            f"unknown caveat_class '{caveat_class}'; expected one of: "
+            + ", ".join(sorted(VALID_CAVEAT_CLASSES))
+        ))
+
+    config_val_r14 = cap.get("config", "")
+    runtime_val_r14 = cap.get("runtime", "")
+    rationale_r14 = cap.get("rationale", "")
+    notes_r14 = cap.get("notes", "")
+    if (config_val_r14 == "refused" or runtime_val_r14 == "refused"):
+        if not caveat_class and not rationale_r14:
+            warnings.append(Diagnostic(
+                "warning", 14, entry_id,
+                "config or runtime is 'refused' but no caveat_class or rationale "
+                "provided; add a caveat_class or rationale to explain the refusal"
+            ))
+
+    if caveat_class == "protocol_crate_only":
+        notes_lower = (notes_r14 or "").lower()
+        has_protocol_crate_ref = any(w in notes_lower for w in ("protocol", "crate", "refused"))
+        if not has_protocol_crate_ref:
+            warnings.append(Diagnostic(
+                "warning", 14, entry_id,
+                "caveat_class='protocol_crate_only' but notes do not mention "
+                "which protocol crate exists or which layer refuses it; "
+                "add 'protocol', 'crate', or 'refused' to notes"
+            ))
+
+    if caveat_class == "deferred_by_adr":
+        combined_r14 = ((rationale_r14 or "") + " " + (notes_r14 or "")).lower()
+        if "adr" not in combined_r14:
+            warnings.append(Diagnostic(
+                "warning", 14, entry_id,
+                "caveat_class='deferred_by_adr' but rationale/notes do not "
+                "mention 'ADR' or 'adr'; add an ADR reference"
+            ))
+
     # ── Report ──────────────────────────────────────────────────────────
     total_caps = len(capabilities)
     tier_counts: dict[str, int] = {}
@@ -509,31 +564,165 @@ def generate_report(manifest_path: Path, report_path: Path) -> int:
         lines.append(f"| `{cid}` | {notes} |")
     lines.append("")
 
-    # Protocol-crate-only caveat (Phase 25-28 H5/H6/H7)
-    protocol_crate_only = [
+    # ── Categorized caveat sections ─────────────────────────────────────
+    # Group capabilities by caveat_class for targeted report sections.
+
+    def _extract_next_phase(notes: str) -> str:
+        """Extract phase references like 'Phase 25-28' or 'H5/H6/H7' from notes."""
+        import re
+        m = re.search(r'(Phase\s+\S+)', notes, re.IGNORECASE)
+        if m:
+            return m.group(1)
+        m = re.search(r'((?:H\d+(?:/\d+)*))', notes)
+        if m:
+            return m.group(1)
+        return ""
+
+    def _extract_adr_ref(text: str) -> str:
+        """Extract ADR file path references from text."""
+        import re
+        m = re.search(r'(docs/adr/\S+)', text)
+        if m:
+            return m.group(1)
+        m = re.search(r'(ADR\S*)', text)
+        if m:
+            return m.group(1)
+        return ""
+
+    def _refused_layers(c: dict) -> str:
+        layers = []
+        if c.get("config") == "refused":
+            layers.append("config")
+        if c.get("runtime") == "refused":
+            layers.append("runtime")
+        if c.get("cli") == "refused":
+            layers.append("cli")
+        return ", ".join(layers) if layers else ""
+
+    def _short_note(notes: str, max_len: int = 80) -> str:
+        if len(notes) <= max_len:
+            return notes
+        return notes[:max_len - 1].rsplit(" ", 1)[0] + "\u2026"
+
+    # a. Protocol-Crate-Only Runtime Refusals
+    proto_crate = [
         c for c in capabilities
-        if c.get("runtime") == "refused" or c.get("config") == "refused"
+        if c.get("caveat_class") == "protocol_crate_only"
     ]
-    if protocol_crate_only:
-        lines.append("## Protocol-Crate-Only Caveats")
+    if proto_crate:
+        lines.append("## Protocol-Crate-Only Runtime Refusals")
         lines.append("")
         lines.append(
-            "The following capabilities are implemented in protocol crates but "
+            "The following capabilities have protocol crate implementations but are "
             "**refused by the runtime/config compiler** (Phase 25-28 H5/H6/H7). "
             "They cannot be promoted to `drop_in` until the config compiler and "
             "runtime supervisor accept them."
         )
         lines.append("")
-        lines.append("| ID | Protocol crate | Refused by |")
-        lines.append("|----|---------------|------------|")
-        for c in protocol_crate_only:
+        lines.append("| ID | Tier | Refused layers | Note | Next phase |")
+        lines.append("|----|------|----------------|------|------------|")
+        for c in proto_crate:
             cid = c.get("id", "?")
-            refused_by = []
-            if c.get("config") == "refused":
-                refused_by.append("config")
-            if c.get("runtime") == "refused":
-                refused_by.append("runtime")
-            lines.append(f"| `{cid}` | eggress protocol crate | {', '.join(refused_by)} |")
+            tier_val = c.get("tier", "?")
+            refused = _refused_layers(c)
+            notes_val = _short_note(c.get("notes", ""))
+            next_phase = _extract_next_phase(c.get("notes", ""))
+            lines.append(f"| `{cid}` | `{tier_val}` | {refused} | {notes_val} | {next_phase} |")
+        lines.append("")
+
+    # b. Missing Protocol Commands or Roles
+    missing_proto = [
+        c for c in capabilities
+        if c.get("caveat_class") in ("missing_protocol_command", "missing_protocol_role", "missing_protocol_transport")
+    ]
+    if missing_proto:
+        lines.append("## Missing Protocol Commands or Roles")
+        lines.append("")
+        lines.append(
+            "These capabilities require protocol-level support (commands, roles, "
+            "or transports) that the upstream protocol crates do not yet implement."
+        )
+        lines.append("")
+        lines.append("| ID | Tier | What's missing | Note |")
+        lines.append("|----|------|----------------|------|")
+        for c in missing_proto:
+            cid = c.get("id", "?")
+            tier_val = c.get("tier", "?")
+            cc = c.get("caveat_class", "")
+            missing_map = {
+                "missing_protocol_command": "command",
+                "missing_protocol_role": "role",
+                "missing_protocol_transport": "transport",
+            }
+            what = missing_map.get(cc, cc)
+            notes_val = _short_note(c.get("notes", ""))
+            lines.append(f"| `{cid}` | `{tier_val}` | {what} | {notes_val} |")
+        lines.append("")
+
+    # c. Deferred Design Areas
+    deferred = [
+        c for c in capabilities
+        if c.get("caveat_class") == "deferred_by_adr"
+    ]
+    if deferred:
+        lines.append("## Deferred Design Areas")
+        lines.append("")
+        lines.append(
+            "These capabilities are deferred pending a design decision recorded "
+            "in an Architecture Decision Record (ADR)."
+        )
+        lines.append("")
+        lines.append("| ID | Tier | ADR reference |")
+        lines.append("|----|------|---------------|")
+        for c in deferred:
+            cid = c.get("id", "?")
+            tier_val = c.get("tier", "?")
+            adr = _extract_adr_ref(c.get("rationale", "") + " " + c.get("notes", ""))
+            lines.append(f"| `{cid}` | `{tier_val}` | {adr} |")
+        lines.append("")
+
+    # d. Intentional Non-Parity (from caveat_class, not the existing tier section)
+    intentional_cc = [
+        c for c in capabilities
+        if c.get("caveat_class") == "intentional_non_parity"
+    ]
+    if intentional_cc:
+        lines.append("## Intentional Non-Parity (Caveat Classified)")
+        lines.append("")
+        lines.append(
+            "These capabilities are explicitly classified as intentional "
+            "non-parity with rationale explaining the design choice."
+        )
+        lines.append("")
+        lines.append("| ID | Tier | Rationale |")
+        lines.append("|----|------|-----------|")
+        for c in intentional_cc:
+            cid = c.get("id", "?")
+            tier_val = c.get("tier", "?")
+            rationale_val = c.get("rationale", "")
+            lines.append(f"| `{cid}` | `{tier_val}` | {rationale_val} |")
+        lines.append("")
+
+    # e. CLI / Translator Scope Gaps
+    scope_gaps = [
+        c for c in capabilities
+        if c.get("caveat_class") in ("cli_process_model", "translator_scope_gap")
+    ]
+    if scope_gaps:
+        lines.append("## CLI / Translator Scope Gaps")
+        lines.append("")
+        lines.append(
+            "These capabilities are limited by the CLI process model or "
+            "translator scope and cannot achieve full drop-in parity."
+        )
+        lines.append("")
+        lines.append("| ID | Tier | Note |")
+        lines.append("|----|------|------|")
+        for c in scope_gaps:
+            cid = c.get("id", "?")
+            tier_val = c.get("tier", "?")
+            notes_val = _short_note(c.get("notes", ""))
+            lines.append(f"| `{cid}` | `{tier_val}` | {notes_val} |")
         lines.append("")
 
     lines.append("## Verification")
