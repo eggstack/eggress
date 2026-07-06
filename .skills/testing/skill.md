@@ -99,8 +99,8 @@ Protocol-specific tests live alongside the implementation:
 - `crates/eggress-cli/tests/interoperability_pproxy.rs` — pproxy-based
 
 ### Differential tests
-- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy
-- `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (10 scenario + 6 CLI tests)
+- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (27 scenarios, `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
+- `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (11 scenarios, `EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
 - `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
 
 Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.
@@ -169,9 +169,23 @@ cargo test -p eggress-pproxy-compat ssr
 # Gated differential/interop tests (requires external tools)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
+EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
+
+# Python tests
+python -m pytest python/tests/test_pproxy_dropin.py -v
+python -m pytest python/tests/test_pproxy_differential.py -v
+python -m pytest python/tests/test_pproxy_compat.py -v
+python -m pytest python/tests/test_pproxy_redaction.py -v
+python -m pytest python/tests/test_pproxy_concurrency.py -v
+python -m pytest python/tests/test_performance_smoke.py -v
+python -m pytest python/tests -v  # all Python tests
 
 # pproxy oracle tests (Phase 18, requires pproxy==2.7.9)
 cargo test -p eggress-testkit pproxy_oracle -- --ignored
+
+# Parity manifest validation (Phase 37)
+python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
+python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 
 # Fuzz targets (requires cargo-fuzz)
 cargo fuzz run uri_parse
@@ -210,6 +224,23 @@ The `eggress-embed` crate has integration tests in `crates/eggress-embed/tests/`
 Run: `cargo test -p eggress-embed`
 
 Tests use local TCP echo servers (no public internet required).
+
+## Python tests
+
+Python tests exercise the PyO3 bindings and pproxy compatibility layer:
+
+- `python/tests/test_pproxy_dropin.py` — Phase 40 PPProxyService, CompatibilityReport, start_pproxy tests
+- `python/tests/test_pproxy_differential.py` — Phase 41 differential parity structural tests (gated)
+- `python/tests/test_pproxy_compat.py` — pproxy translation helpers
+- `python/tests/test_pproxy_redaction.py` — credential redaction in repr/diagnostics
+- `python/tests/test_pproxy_concurrency.py` — concurrent start/shutdown safety
+- `python/tests/test_performance_smoke.py` — Python binding overhead, GIL release
+- `python/tests/test_wheel_import_smoke.py` — wheel import verification
+
+Run:
+```bash
+python -m pytest python/tests -v
+```
 
 ## pproxy compatibility harness (Phase 18)
 

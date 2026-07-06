@@ -175,7 +175,38 @@ pproxy compatibility layer:
 - `pproxy check` — validates translated configuration
 - `pproxy run` — runs eggress with pproxy-style arguments (translated internally)
 - URI translation from pproxy listen/remote format to eggress TOML
-- Flag mapping: `-l`, `-r`, `-s`, `-v`, `-a`; unsupported flags (`-ul`, `-ur`, `--ssl`, `-b`, `--daemon`) emit diagnostics
+- Flag mapping: `-l`, `-r`, `-s`, `-v`, `-a`, `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys`
+- Default port inference for pproxy URI schemes (`default_port_for_scheme()`)
+- `__` chain separator parsing
+- Structured diagnostics with stable `DiagnosticCode` enum and `StructuredDiagnostic` JSON output
+
+### eggress-embed
+Rust embed API for in-process embedding:
+- `EggressConfig::from_toml_str()` / `from_toml_file()` — parse and validate config
+- `EggressService::new(config).start_blocking()` — blocking start, returns `EggressHandle`
+- `EggressService::new(config).start().await` — async start within a Tokio runtime
+- `handle.bound_addresses()` — discover listener ports (supports port-0)
+- `handle.status()` — generation, readiness, uptime, active connections
+- `handle.metrics_text()` — Prometheus metrics without HTTP
+- `handle.reload_toml_str()` — hot-reload routing/upstreams
+- `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown (idempotent)
+- Thread ownership: async path uses Tokio blocking-pool thread + dedicated OS thread; blocking path uses outer startup thread + inner run thread
+
+### eggress-python
+Python bindings via PyO3 wrapping `eggress-embed`:
+- `EggressConfig`, `EggressService`, `EggressHandle` — direct Rust wrappers
+- `PPProxyService` — pproxy-compatible service builder (`from_args`, `from_uri`, `from_toml`, `from_file`, `start`, context manager)
+- `PPProxyHandle` — alias for `EggressHandle`
+- `CompatibilityReport`, `FeatureInfo` — tier classification and diagnostics
+- `start_pproxy()` — multi-mode convenience function (args, local/remote, config, config_path)
+- `Server` — pproxy-compatible server wrapper with sync/async context managers
+- URI helpers: `check_pproxy_uri`, `redact_pproxy_uri`, `diagnostics_for_uri`, `supported_features`
+- Config explanation: `explain_config_toml`, `explain_pproxy_args`, `explain_pproxy_uri`
+- Translation: `translate_pproxy_args`, `translate_pproxy_uri`, `check_pproxy_args`
+- Route/upstream: `route_explain`, `test_upstream_connect`
+- GIL release via `py.detach()` on all blocking Rust calls
+- `.pyi` type stubs for all public modules
+- Package: `eggress` on PyPI, wheels for Linux/macOS/Windows, `py.typed` PEP 561 marker
 
 ### eggress-udp
 UDP association management and direct forwarding:

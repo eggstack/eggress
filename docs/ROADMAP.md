@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 17: True pproxy parity release candidate audit (complete)
+Phase 41: Differential parity harness (complete)
 
 ## Completed Milestones
 
@@ -34,122 +34,123 @@ Phase 17: True pproxy parity release candidate audit (complete)
 - [x] 2.8: Reload and graceful shutdown (ArcSwap, SIGHUP, drain timeout)
 - [x] 2.9: Route explanation and upstream test command (human/JSON output, reachability testing)
 - [x] 2.10: Phase closure (README, ARCHITECTURE, AGENTS.md updates)
-- [x] 2.11: Corrective integration — scheduler persistence, lease lifecycle, group fallback, connect timeout, context propagation, stable IDs, runtime supervisor, metrics trait, expanded TOML matchers
-- [x] 2.12: Shared runtime snapshot and upstream registry
-- [x] 2.13: Health configuration from TOML
-- [x] 2.14: Pre-bind listeners before readiness
-- [x] 2.15: Unified generation and live admin state
-- [x] 2.16: Correct graceful shutdown sequencing
-- [x] 2.17: Atomic reload with topology validation
-- [x] 2.18: PAC/static content TOML configuration
-- [x] 2.19: Direct fallback metadata and failure categories
-- [x] 2.20: End-to-end integration tests
+- [x] 2.11–2.20: Corrective integration and end-to-end tests
 
 ### Phase 3: UDP foundation — complete
 
-- [x] 3.1: SOCKS5 UDP ASSOCIATE server
-- [x] 3.2: UDP datagram codec (IPv4, IPv6, domain)
-- [x] 3.3: Association registry with bounded limits
-- [x] 3.4: Direct UDP forwarding
-- [x] 3.5: Transport-aware routing
-- [x] 3.6: UDP metrics and admin visibility
-- [x] 3.7: Security controls (client pinning, multicast rejection, size limits)
-- [x] 3.8: Shutdown integration
-- [x] 3.9: Corrective closure — lifecycle, config, metrics, routing, docs
+- [x] 3.1–3.9: SOCKS5 UDP ASSOCIATE, datagram codec, association registry, direct forwarding, metrics, security, shutdown, corrective closure
 
 ### Phase 4: UDP upstream relay — complete
 
-- [x] 4.1: UDP capability model (UdpRelayCapability)
-- [x] 4.2: SOCKS5 upstream client (handshake, auth, UDP ASSOCIATE)
-- [x] 4.3: Flow model (UdpFlowKind, UdpFlowKey, per-target upstream association)
-- [x] 4.4: Relay integration (handle_client_datagram refactor)
-- [x] 4.5: Upstream metrics and admin visibility
-- [x] 4.6: Codec rename with backward-compatible wrappers
-- [x] 4.7: Synthetic test server (Socks5UdpTestServer)
-- [x] 4.8: Integration tests (socks5_upstream, udp_upstream)
+- [x] 4.1–4.8: Capability model, SOCKS5 upstream client, flow model, relay integration, metrics, codec rename, synthetic tests, integration tests
 
 ### Phase 5: Upstream protocol parity — complete
 
-- [x] 5.1: Upstream capability matrix (classify_upstream_chain)
-- [x] 5.2: HTTP CONNECT upstream polish (HttpConnectLimits, credential validation, synthetic server tests)
-- [x] 5.3: SOCKS4/SOCKS4a upstream polish (synthetic server tests, all status codes)
-- [x] 5.4: Shadowsocks TCP foundation (AEAD methods, key derivation, address encoding, tcp connect)
-- [x] 5.5: Shadowsocks UDP foundation (packet encode/decode, one-hop upstream)
-- [x] 5.6: Trojan TCP foundation (SHA224 hash, wire format, rustls TLS)
-- [x] 5.7: URI/config integration (ProtocolSpec::Shadowsocks, ProtocolSpec::Trojan)
-- [x] 5.8: Chain executor integration (ShadowsocksHopHandler, TrojanHopHandler)
-- [x] 5.9: Protocol documentation (HTTP_CONNECT.md, SOCKS4.md, SHADOWSOCKS.md, TROJAN.md)
+- [x] 5.1–5.9: Capability matrix, HTTP/SOCKS4/SOCKS5 polish, Shadowsocks TCP/UDP foundation, Trojan TCP, URI/config integration, chain executor integration, protocol documentation
 
 ### Phase 7: pproxy parity specification — complete
 
-- [x] 7.1: pproxy parity spec (`docs/PPROXY_PARITY_SPEC.md`)
-- [x] 7.2: Compatibility tier taxonomy
-- [x] 7.3: Expanded parity matrix (`docs/PARITY_MATRIX.md`)
-- [x] 7.4: Refactored differential test harness primitives
-- [x] 7.5: Black-box probe tests for ambiguous pproxy behavior
-- [x] 7.6: Intentional non-parity documentation
+- [x] 7.1–7.6: Parity spec, tier taxonomy, expanded matrix, differential harness primitives, probe tests, intentional non-parity documentation
 
 ### Phase 8: pproxy-compatible CLI and URI translation — complete
 
-- [x] 8.1: `eggress-pproxy-compat` crate with URI parser and TOML translator
-- [x] 8.2: CLI subcommands (`pproxy translate`, `pproxy check`, `pproxy run`)
-- [x] 8.3: Flag translation with structured warnings (`-v`, `-s`, `-a`, `--ssl`, `-b`)
-- [x] 8.4: Unknown flag detection and warnings
-- [x] 8.5: Credential redaction in all output
-- [x] 8.6: Migration guide (`docs/PPROXY_MIGRATION.md`)
-- [x] 8.7: CLI integration tests for pproxy subcommands
+- [x] 8.1–8.7: `eggress-pproxy-compat` crate, CLI subcommands, flag translation, credential redaction, migration guide, integration tests
 
 ### Phase 13: Rust embed API stabilization — complete
 
-- [x] 13.1: `eggress-embed` crate skeleton with public error types
-- [x] 13.2: Config constructors (`from_toml_str`, `from_toml_file`, `source_toml`)
-- [x] 13.3: Async start/handle/status/bound-address API
-- [x] 13.4: Blocking owned-runtime API (`start_blocking`, `shutdown_blocking`)
-- [x] 13.5: Metrics, status, and reload APIs
-- [x] 13.6: Integration tests (start/stop, proxy traffic, reload, metrics, error redaction)
-- [x] 13.7: Documentation (`EMBED_API.md`) and workspace updates
+- [x] 13.1–13.7: `eggress-embed` crate, config constructors, async/blocking start/handle API, metrics/reload, integration tests, documentation
 
 ### Phase 14: Python bindings — complete
 
-- [x] 14.1: `eggress-python` crate with PyO3 native module (`_eggress`)
-- [x] 14.2: `EggressConfig`, `EggressService`, `EggressHandle` Python classes
-- [x] 14.3: Exception hierarchy (`EggressError` and five subclasses)
-- [x] 14.4: GIL release via `py.detach()` on all blocking Rust calls
-- [x] 14.5: Context manager protocol on `EggressHandle`
-- [x] 14.6: Python test suite (14 tests, 5 files)
-- [x] 14.7: Documentation (`PYTHON_BINDINGS.md`) and workspace updates
+- [x] 14.1–14.7: PyO3 native module, Python classes, exception hierarchy, GIL release, context manager, tests, documentation
 
 ### Phase 15: PyPI/wheel release pipeline — complete
 
-- [x] 15.1: Wheel build infrastructure (maturin, platform targets)
-- [x] 15.2: Wheel testing script and CI integration
-- [x] 15.3: PyPI release documentation (`PYPI_RELEASE.md`)
-- [x] 15.4: Supply chain checks (`cargo deny`, `cargo audit`)
+- [x] 15.1–15.4: Wheel build infrastructure, testing, PyPI docs, supply chain checks
 
 ### Phase 16: Python pproxy library helpers — complete
 
-- [x] 16.1: `translate_pproxy_args`, `translate_pproxy_uri`, `check_pproxy_args`
-- [x] 16.2: `start_pproxy`, `EggressService.from_pproxy_args` convenience APIs
-- [x] 16.3: Async lifecycle (`astart`, `AsyncEggressHandle`)
-- [x] 16.4: pproxy compat tests, redaction tests, concurrency tests (45 passing)
+- [x] 16.1–16.4: Translation helpers, convenience APIs, async lifecycle, compat/redaction/concurrency tests
 
 ### Phase 17: True pproxy parity release candidate audit — complete
 
-- [x] 17.1: Final parity matrix audit and evidence taxonomy
-- [x] 17.2: Rust runtime release audit (all tests pass)
-- [x] 17.3: Python package release audit
-- [x] 17.4: Differential/interop evidence audit
-- [x] 17.5: Security/redaction audit (Python binding surface)
-- [x] 17.6: Packaging/supply-chain audit
-- [x] 17.7: Documentation consistency pass
-- [x] 17.8: Release candidate document (`TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`)
+- [x] 17.1–17.8: Final parity matrix audit, runtime/package release audit, differential/interop evidence audit, security/redaction audit, packaging audit, documentation consistency, release candidate document
+
+### Phase 18: pproxy oracle and evidence harness — complete
+
+- [x] Oracle process runner for real pproxy differential testing
+
+### Phase 19: HTTP/SOCKS baseline closure — complete
+
+- [x] Persistent HTTP forwarding, expanded differential tests for HTTP CONNECT, SOCKS4/4a, SOCKS5
+
+### Phases 20–24: Standalone UDP, evidence cleanup, hardening — complete
+
+- [x] Standalone UDP relay, manifest validation, evidence taxonomy, shadowsocks standardization
+
+### Phases 25–28: Hardening and advanced transports — complete
+
+- [x] Transparent proxy, Unix domain sockets, reverse proxy supervisor integration, H2/WS/Raw protocol-crate only, QUIC/H3 rejection, CLI native-equivalent closure
+
+### Phase 29–32: Python API parity and hardening — complete
+
+- [x] Python API parity inventory (114 entries), Python hardening (GIL release, tier normalization, evidence reclassification), Python packaging (py.typed, version metadata, capability introspection)
+
+### Phase 36: Final parity release audit — complete
+
+- [x] Frozen targets, manifest completeness audit, manifest corrections, docs consistency audit, final parity report (171 features), full workspace validation, go/no-go decision
+
+### Phase 37: Parity capability manifest and validator — complete
+
+- [x] `docs/parity/pproxy_capability_manifest.toml` — 109 capabilities, 5 categories, 7 layers
+- [x] `docs/parity/README.md` — tiers, layers, evidence, 11 validation rules
+- [x] `docs/parity/PPROXY_PARITY_REPORT.md` — 60 drop_in, 3 compatible_with_warning, 18 native_equivalent, 5 intentional_non_parity, 13 unsupported
+- [x] `scripts/validate_pproxy_parity_manifest.py` — Python validator, 11 rules, strict mode
+
+### Phase 38: pproxy CLI native-equivalent closure — complete
+
+- [x] `--ssl` generates TLS TOML config
+- [x] `-b` generates `[[rules]] reject` entries
+- [x] `--rulefile` translates pproxy rulefiles to `[[rules]]` with diagnostics
+- [x] `-a N` generates `[health] interval = "Ns"`
+- [x] `--pac` generates `[admin.pac] enabled = true`
+- [x] `--test` translates and runs `eggress upstream test`, then exits
+- [x] `--sys` auto-invokes `eggress system-proxy inspect` before starting
+- [x] `--log`, `--get`, `--reuse` emit structured diagnostics
+
+### Phase 39: pproxy URI grammar and chain semantics — complete
+
+- [x] `__` chain separator
+- [x] Modifiers (`+ssl`, `+tls`, `+in`)
+- [x] `backward://`, `bind://`, `listen://` schemes
+- [x] Default port inference (`default_port_for_scheme()`)
+- [x] `parse_endpoint` relaxed for bare hosts
+
+### Phase 40: Python pproxy drop-in API — complete
+
+- [x] `PPProxyService` class — `from_args`, `from_uri`, `from_toml`, `from_file`, `start`, context manager
+- [x] `CompatibilityReport` dataclass — tier, ok, warnings, unsupported, diagnostics, features, toml, parsed_uris, raw_args
+- [x] `FeatureInfo` dataclass — feature_id, tier, supported
+- [x] `check_pproxy_args()` returns `CompatibilityReport`
+- [x] Updated `start_pproxy` — multiple input modes (args, local/remote, config, config_path)
+- [x] `PPProxyHandle` type alias for `EggressHandle`
+- [x] `.pyi` type stubs for all public modules
+- [x] Credential redaction in repr and TOML output
+- [x] Comprehensive test suite (296 lines)
+
+### Phase 41: Differential parity harness — complete
+
+- [x] Reusable harness in `eggress-testkit::differential` (455 lines)
+- [x] Primary differential suite — 27 scenarios against pproxy 2.7.9 (2938+ lines)
+- [x] Extended differential suite — 11 scenarios using reusable harness (1254 lines)
+- [x] Python differential tests — 3 structural tests (126 lines)
+- [x] Two-gate strategy: `EGRESS_REQUIRE_EXTERNAL_INTEROP` and `EGRESS_RUN_PPROXY_DIFFERENTIAL`
+- [x] Parity manifest updated with differential evidence entries
 
 ## Remaining Work
 
-None — Phases 1–8, 13–17 are complete.
+Phases 42–49 are defined in `plans/pproxy_parity_python_dropin_roadmap.md` and cover advanced transport hardening, Python async API, CI integration, and release automation. These are post-release scope.
 
 ## Next Phase
 
-Phase 18: (to be determined)
-
-See the main roadmap for detailed descriptions of each phase.
+Phase 42: (post-release scope — see roadmap)

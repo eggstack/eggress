@@ -148,6 +148,12 @@ EGRESS_REQUIRE_PPROXY_PERF=1 ./scripts/perf/run_pproxy_comparison.sh
 # Run Python binding performance tests
 python -m pytest python/tests/test_performance_smoke.py -v
 
+# Run Python pproxy drop-in API tests (Phase 40)
+python -m pytest python/tests/test_pproxy_dropin.py -v
+
+# Run Python pproxy differential tests (Phase 41, gated)
+EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python -m pytest python/tests/test_pproxy_differential.py -v
+
 # Run lifecycle invariant tests
 cargo test -p eggress-runtime --test lifecycle_invariants
 

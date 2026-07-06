@@ -105,17 +105,24 @@ For the canonical per-feature evidence table with test commands, see
 | `-r` remote flag | supported | supported | Compatible | cli_tests | none | Same syntax |
 | `-ul` UDP listen | supported | supported | Compatible | cli_tests, pproxy_cli_tests | none | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
 | `-ur` UDP remote | supported | supported | Compatible | cli_tests, pproxy_cli_tests | none | Generates UDP upstream config with transport-matching rule |
-| `--config` TOML | supported | supported | Supported | integration tests | none | Different schema |
-| `--rulefile` | supported | rejected | Intentional non-parity | cli_tests | none | Use eggress TOML routing rules |
+| `--config` TOML | supported | supported (different schema) | Partial | integration tests | none | Different schema |
+| `--rulefile` | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
 | `--daemon` | supported | rejected | Intentional non-parity | none | none | Use systemd or a process manager |
-| `-b` bind | supported | supported via `-l` | Partial | cli_tests | none | Different flag syntax |
+| `-b` bind | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[[rules]] reject` entries |
+| `--ssl` TLS listener | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates TLS listener TOML config |
+| `-a` alive/health | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[health] interval = "Ns"` |
+| `--pac` PAC serving | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[admin.pac] enabled = true` |
+| `--test` test-and-exit | supported | supported | Compatible | cli_tests | none | Phase 38: translates config and runs `eggress upstream test` |
+| `--sys` system proxy | supported | supported | Compatible | cli_tests | none | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
+| `--log` logging | supported | diagnostic only | Intentional non-parity | cli_tests | none | Phase 38: emits structured diagnostic |
+| `--get` connection reuse | supported | diagnostic only | Intentional non-parity | cli_tests | none | Phase 38: emits structured diagnostic |
+| `--reuse` | supported | diagnostic only | Intentional non-parity | cli_tests | none | Phase 38: emits structured diagnostic |
 | pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | Compatible | cli_tests | none | Translates pproxy CLI args to TOML config |
 | pproxy URI translation | N/A | `eggress pproxy translate` | Compatible | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
-| `--reuse` | supported | N/A | Intentional non-parity | none | none | Connection pooling not implemented |
 | Exit codes | generic (1 for all errors) | granular (0–7, 130, 143) | Intentional non-parity | `cli_exit_codes.rs` | none | pproxy uses 1 for all failures; eggress provides differentiated codes per error class |
 | JSON output (`--json`) | N/A | `pproxy check --json`, `route explain --json`, `upstream test --json` | Intentional non-parity | `cli_exit_codes.rs` | none | Machine-readable JSON output with tier, diagnostics, features, parsed URIs |
 | Structured diagnostics | N/A | `StructuredDiagnostic` with stable `DiagnosticCode` | Intentional non-parity | `diagnostics.rs` | none | 13 stable diagnostic codes; serializable to JSON; includes tier and suggestion fields |
-| CLI inventory completeness | all flags mapped | 5 of 14 pproxy flags mapped | Partial | `cli_tests` | none | `-l`, `-r`, `-ul`, `-ur`, `-s`, `-v`, `-a` mapped; `--daemon`, `--ssl`, `-b`, `--rulefile`, `--reuse`, `--log`, `--sys`, `--pac` intentionally rejected |
+| CLI inventory completeness | all flags mapped | 14 of 14 pproxy flags mapped | Supported | `cli_tests` | none | Phase 38: all flags now have equivalent behavior (TOML generation, diagnostic, or rejection) |
 
 ## Remaining Protocol Audit
 
@@ -177,12 +184,12 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `-ul` UDP listen | Supported | Supported | **Compatible** | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
 | `-ur` UDP remote | Supported | Supported | **Compatible** | Generates UDP upstream config with transport-matching rule |
 | `--daemon` | Supported | Rejected | **Intentional non-parity** | Use systemd or process manager |
-| `--ssl` TLS listener | Supported | Rejected | **Intentional non-parity** | Configure TLS in eggress TOML |
-| `-b` block rules | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
+| `--ssl` TLS listener | Supported | Supported | **Compatible** | Phase 38: generates TLS listener TOML config |
+| `-b` block rules | Supported | Supported | **Compatible** | Phase 38: generates `[[rules]] reject` entries |
 | `--reuse` | Supported | Rejected | **Intentional non-parity** | Connection pooling not implemented |
-| `--log` | Supported | Rejected | **Intentional non-parity** | Use tracing-subscriber |
-| `--sys` | Supported | Inspection supported; apply is explicit dry-run only | **Supported (divergent)** | System proxy inspection via `eggress system-proxy inspect`; apply requires explicit `--apply` flag with dry-run support. No hidden global mutation. See `docs/system_proxy/` |
-| `--rulefile` | Supported | Rejected | **Intentional non-parity** | Use eggress TOML routing rules |
+| `--log` | Supported | Supported | **Compatible** | Phase 38: emits structured diagnostic |
+| `--sys` | Supported | Supported | **Compatible** | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
+| `--rulefile` | Supported | Supported | **Compatible** | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics |
 | Multi-hop UDP chains | Supported | Rejected | **Intentional non-parity** | One-hop only |
 | Persistent HTTP forwarding | Supported | Supported | **Compatible** | Persistent session model with HTTP/1.1 keep-alive |
 | Python library | `pproxy.Server()` API | `eggress` package via PyO3 | **Supported** | Python bindings wrap `eggress-embed` API | Not a 1:1 API match; see Python Bindings doc |
@@ -231,6 +238,7 @@ All diagnostic messages redact credentials.
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | Python library | `pproxy.Server()` API | `eggress` package (PyO3) | Supported | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py`, `test_server_lifecycle.py`, `test_pproxy_oracle.py` | none | `EggressService`, `EggressHandle`, `Server`, `start_pproxy`, translation helpers |
+| pproxy drop-in API | `pproxy.Server(listen, remote)` | `PPProxyService.from_args()`, `from_uri()`, `from_toml()`, `from_file()` | Supported | `test_pproxy_dropin.py` | none | Phase 40: `PPProxyService`, `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs |
 | PyPI package | `pip install pproxy` | `pip install eggress` | Supported | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
 
 #### Phase 29 Python API Inventory (114 entries)
@@ -261,11 +269,11 @@ Full inventory: `docs/python/PPROXY_API_INVENTORY.md`
 - **UDP relay (Supported)**: Both relay UDP datagrams successfully. Standalone UDP mode (`mode = "standalone_pproxy_udp"`) provides pproxy-compatible behavior without TCP control connection. SOCKS5 UDP ASSOCIATE is also supported for TCP-controlled UDP relay.
 - **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
-- **CLI (Compatible / Partial)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as compatible. `--daemon` is not yet implemented.
+- **CLI (Compatible)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as compatible. Phase 38 closed remaining gaps: `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` now generate equivalent TOML config or auto-invoke eggress subcommands. All 14 pproxy flags are now mapped.
 - **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan is client-only. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
 - **Transparent proxy (Supported)**: Linux-only transparent TCP proxy via `SO_ORIGINAL_DST`. Requires iptables/nftables REDIRECT rules. macOS PF transparent proxy is intentional non-parity (use pfctl with standard listener).
 - **Unix domain sockets (Supported)**: Unix-only listener on filesystem socket paths. Not available on Windows. Socket file management and permissions are operator-managed.
-- **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. Phase 29 inventoried pproxy's 114-entry Python API surface and classified compatibility tiers. See `docs/PYTHON_BINDINGS.md` and `docs/python/`.
+- **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. Phase 29 inventoried pproxy's 114-entry Python API surface and classified compatibility tiers. Phase 40 added `PPProxyService` drop-in API with `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs, and multi-mode `start_pproxy`. See `docs/PYTHON_BINDINGS.md` and `docs/python/`.
 
 ## Limitations
 

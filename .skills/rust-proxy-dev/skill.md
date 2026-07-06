@@ -113,6 +113,17 @@ For Python embedding, use the `eggress-python` crate and `python/eggress` packag
 - `handle.shutdown()` — graceful shutdown (idempotent)
 - `with handle:` — context manager shuts down on exit
 
+### pproxy drop-in API (Phase 40)
+
+- `PPProxyService.from_args(args)` / `from_uri(local, remotes)` / `from_toml(toml)` / `from_file(path)` — pproxy-compatible service builder
+- `service.start()` / `with service:` — start and manage lifecycle
+- `check_pproxy_args(args)` → `CompatibilityReport` — tier classification, diagnostics, TOML output
+- `start_pproxy(args=, local=, remote=, config=, config_path=)` — multi-mode convenience function
+- `PPProxyHandle` — alias for `EggressHandle`
+- `CompatibilityReport` — dataclass with tier, ok, warnings, unsupported, diagnostics, features, toml, parsed_uris, raw_args
+- `FeatureInfo` — dataclass with feature_id, tier, supported
+- `.pyi` type stubs for all public modules
+
 ### Building
 
 ```bash
