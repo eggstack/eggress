@@ -461,7 +461,7 @@ policy, architecture, or scope.
 | Raw tunnels | pproxy raw/tunnel schemes | **Supported** — synthetic tests. Fixed-target TCP tunnel implemented. |
 | QUIC transport | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. pproxy behavior experimental, dependency significant. |
 | HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
-| SSH transport | `ssh://` | Out of scope. SSH is a general-purpose encrypted tunnel, not a proxy protocol. Adds significant dependency weight. |
+| SSH transport | `ssh://` | Intentional non-parity. SSH is a general-purpose encrypted tunnel, not a proxy protocol. URIs recognized for clean diagnostics. See ADR at `docs/adr/ADR_ssh_upstream_parity.md`. |
 | Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with raw-relay control channel (Phase 27). TCP only; one session per control channel; no multiplexing. |
 | Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |

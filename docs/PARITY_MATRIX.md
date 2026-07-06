@@ -215,7 +215,7 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 
 | Input | Diagnostic type | Error message |
 |-------|----------------|---------------|
-| `ssh://...` as upstream | `UnsupportedFeature` | "SSH transport is not supported" |
+| `ssh://...` as upstream | `UnsupportedFeature` | "SSH is not a proxy protocol; use OpenSSH dynamic forwarding (ssh -D) or an external SOCKS proxy" |
 | `redir://...` as upstream listener | N/A | Now supported as transparent TCP proxy (Linux only) |
 | `unix://...` as upstream | `UnsupportedFeature` | "Unix domain sockets are not supported as upstream" |
 | `unix://...` as listener | N/A | Now supported as Unix domain socket listener (Unix only) |

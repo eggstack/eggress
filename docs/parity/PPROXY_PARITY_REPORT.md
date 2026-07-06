@@ -10,8 +10,8 @@
 | `drop_in` | 63 | 57.8% |
 | `compatible_with_warning` | 9 | 8.3% |
 | `native_equivalent` | 15 | 13.8% |
-| `intentional_non_parity` | 15 | 13.8% |
-| `unsupported` | 7 | 6.4% |
+| `intentional_non_parity` | 17 | 15.6% |
+| `unsupported` | 5 | 4.6% |
 | **Total** | **109** | |
 
 ## Drop-In Capabilities (63)
@@ -67,7 +67,7 @@ These features achieve the same outcome through a different mechanism.
 | `routing.block_rules` | Different mechanism (rule action vs separate flag); same outcome. |
 | `python.migration_aliases` | Compatibility layer; not a 1:1 API match. |
 
-## Intentional Non-Parity (15)
+## Intentional Non-Parity (17)
 
 These features are deliberately not replicated with rationale.
 
@@ -75,6 +75,7 @@ These features are deliberately not replicated with rationale.
 |----|-----------|
 | `cli.reuse` | Connection pooling not implemented by design; one upstream connection per proxy session. |
 | `uri.scheme_ssr` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
+| `uri.scheme_ssh` | SSH is not a proxy protocol; adds significant dependency weight (no pure-Rust SSH library avoids C/OpenSSL complexity). Use OpenSSH dynamic forwarding (ssh -D) instead. See ADR docs/adr/ADR_ssh_upstream_parity.md. |
 | `uri.scheme_raw` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `uri.scheme_tunnel` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `uri.scheme_ws` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
@@ -83,13 +84,14 @@ These features are deliberately not replicated with rationale.
 | `protocol.socks4_bind` | BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.socks5_bind` | BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.ssr` | Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected. |
+| `protocol.ssh_upstream` | SSH is not a proxy protocol; maintaining a secure SSH client implementation (host-key verification, auth methods, direct-tcpip channels, keepalive) is disproportionate to the proxy use case. See ADR docs/adr/ADR_ssh_upstream_parity.md. |
 | `protocol.quic` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental. |
 | `protocol.http3` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). |
 | `protocol.ws_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `protocol.raw_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `protocol.h2_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 
-## Unsupported (7)
+## Unsupported (5)
 
 These features are not implemented.
 
@@ -97,9 +99,7 @@ These features are not implemented.
 |----|-------|
 | `cli.daemon` | Use systemd, supervisord, or process manager. |
 | `cli.get` | Utility function in pproxy; not implemented as a runtime feature in eggress. Recognized at parse time so users get a clean recommendation instead of an unknown-flag warning. |
-| `uri.scheme_ssh` | SSH is not a proxy protocol. |
 | `protocol.udp_multihop` | UDP multi-hop requires complex per-hop relay logic that is not implemented. Single-hop UDP via direct, socks5, or ss is supported. |
-| `protocol.ssh_upstream` | SSH transport rejected with structured diagnostic. |
 | `routing.rulefile_translation` | Use eggress TOML [[rules]]. |
 | `python.async_wrappers` | Not yet implemented as full async wrapper API. |
 
@@ -124,8 +124,8 @@ These capabilities require protocol-level support (commands, roles, or transport
 
 | ID | Tier | What's missing | Note |
 |----|------|----------------|------|
-| `uri.scheme_ssh` | `unsupported` | transport | SSH is not a proxy protocol. |
-| `protocol.ssh_upstream` | `unsupported` | transport | SSH transport rejected with structured diagnostic. |
+| `uri.scheme_ssh` | `intentional_non_parity` | transport | Intentional non-parity per ADR. SSH is not a proxy protocol; use OpenSSH… |
+| `protocol.ssh_upstream` | `intentional_non_parity` | transport | Intentional non-parity per ADR. Use OpenSSH dynamic forwarding or external… |
 
 ## Deferred Design Areas
 

@@ -42,7 +42,7 @@ The `eggress-pproxy-compat` crate provides:
 - Structured diagnostic codes for all CLI operations with `--json` flag support
 - Exit code differentiation for process lifecycle and error handling (see `docs/cli/EXIT_CODES.md`)
 - Full CLI flag inventory documenting parity with pproxy (`docs/cli/PPROXY_CLI_INVENTORY.md`)
-- SSR and SSH URIs rejected with structured diagnostics (intentional non-parity)
+- SSR and SSH URIs rejected with structured diagnostics (intentional non-parity; SSH documented in ADR at `docs/adr/ADR_ssh_upstream_parity.md`)
 
 ## Usage
 

@@ -17,7 +17,7 @@ protocol     = "http" | "https"
              | "ss" | "shadowsocks"
              | "trojan"
              | "ssr"                          # recognized → rejected
-             | "ssh"                          # recognized → rejected
+             | "ssh"                          # recognized → intentional non-parity
              | "direct"
              | "unix"
              | "redir"

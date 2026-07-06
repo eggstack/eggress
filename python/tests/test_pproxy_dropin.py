@@ -365,10 +365,10 @@ class TestCompatibilityReport:
                                  "unsupported")
             assert isinstance(feat.supported, bool)
 
-    def test_features_contain_unsupported_when_ssh(self):
+    def test_features_contain_intentional_non_parity_when_ssh(self):
         report = check_pproxy_args(["-l", "ssh://user@host:22"])
         assert any(
-            f.tier == "unsupported" and not f.supported
+            f.tier == "intentional_non_parity" and not f.supported
             for f in report.features
         )
 

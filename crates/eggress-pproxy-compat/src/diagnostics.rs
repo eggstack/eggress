@@ -319,7 +319,12 @@ fn classify_unsupported_feature(
             "intentional_non_parity",
             Some("use standard Shadowsocks (ss://) with AEAD methods"),
         ),
-        "ssh-listener" | "ssh-upstream" | "unix-upstream" | "redir-upstream"
+        "ssh-listener" | "ssh-upstream" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "intentional_non_parity",
+            Some("SSH is not a proxy protocol; use OpenSSH dynamic forwarding (ssh -D) or an external SOCKS proxy"),
+        ),
+        "unix-upstream" | "redir-upstream"
         | "direct-listener" => (DiagnosticCode::UnsupportedProtocol, "unsupported", None),
         "socks4-bind" => (
             DiagnosticCode::UnsupportedProtocol,

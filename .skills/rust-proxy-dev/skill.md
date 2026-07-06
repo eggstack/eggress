@@ -17,6 +17,10 @@ SSR and legacy stream ciphers are intentionally unsupported. The codebase provid
 - `SsrUnsupported` error variant — produced when an SSR URI (`ssr://`) is encountered.
 - `is_legacy_method()` in `eggress-protocol-shadowsocks::method` — detects known legacy methods.
 
+## SSH upstream parity
+
+SSH upstream transport is intentional non-parity (Phase 47 ADR). SSH URIs are recognized at parse time for clean diagnostics but rejected with an actionable recommendation to use OpenSSH dynamic forwarding (`ssh -D`). See `docs/adr/ADR_ssh_upstream_parity.md`.
+
 ## Adding a new protocol
 
 ### 1. Protocol detection

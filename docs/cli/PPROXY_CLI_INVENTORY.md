@@ -20,7 +20,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Specify upstream proxy URIs. Supports `http://`, `socks4://`, `socks4a://`, `socks5://`, `ss://`, `trojan://`, `ssh://`, `direct://`. Multiple `-r` flags create upstream groups. Chaining via `__` separator. |
-| Eggress handling | **Supported** — translates to `[[upstreams]]` and `[[upstream_groups]]`. Multiple remotes generate a group with round-robin (default for 2+) or first-available (single). SSH rejected. `__` jump chains rejected with diagnostic. |
+| Eggress handling | **Supported** — translates to `[[upstreams]]` and `[[upstream_groups]]`. Multiple remotes generate a group with round-robin (default for 2+) or first-available (single). SSH intentionally non-parity (use OpenSSH `ssh -D` instead). `__` jump chains rejected with diagnostic. |
 | Example | `pproxy -l socks5://:1080 -r http://proxy:8080` |
 
 #### `-ul` / `--udp-listen` — UDP Listen URI(s)
