@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from eggress._eggress import UnsupportedFeatureError
+from eggress.service import EggressHandle
 
 _PPROXY_COMPATIBILITY_VERSION: str
 
@@ -78,12 +79,29 @@ class Diagnostic:
 
 @dataclass(frozen=True)
 class FeatureInfo:
+    """A single feature from the pproxy compatibility manifest.
+
+    ``tier`` uses the manifest-aligned vocabulary
+    (``drop_in`` / ``compatible_with_warning`` / ``native_equivalent`` /
+    ``intentional_non_parity`` / ``unsupported``).
+    """
     feature_id: str
     tier: str
     supported: bool
 
 @dataclass(frozen=True)
 class CompatibilityReport:
+    """Structured compatibility report for pproxy args.
+
+    The ``tier`` field uses the same five-tier vocabulary as
+    ``docs/parity/pproxy_capability_manifest.toml``:
+
+    - ``drop_in``
+    - ``compatible_with_warning``
+    - ``native_equivalent``
+    - ``intentional_non_parity``
+    - ``unsupported``
+    """
     tier: str
     ok: bool
     warnings: list[Diagnostic]
@@ -147,9 +165,11 @@ class PPProxyService:
     def from_toml(cls, toml: str) -> PPProxyService: ...
     @classmethod
     def from_file(cls, path: str) -> PPProxyService: ...
-    def start(self) -> Server: ...
-    def __enter__(self) -> Server: ...
+    def start(self) -> EggressHandle: ...
+    def __enter__(self) -> EggressHandle: ...
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool: ...
+    @property
+    def config(self) -> EggressConfig: ...
 
 def explain_config_toml(toml_str: str) -> dict: ...
 def explain_pproxy_args(args: list[str]) -> dict: ...

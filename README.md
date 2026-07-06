@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 41 differential parity harness complete. Phases 37–41 delivered: parity capability manifest (109 capabilities, machine-validated), pproxy CLI native-equivalent closure, URI grammar chain semantics, Python pproxy drop-in API (`PPProxyService`, `CompatibilityReport`, `.pyi` stubs), and a reusable differential test harness (27 scenarios against pproxy 2.7.9). Release candidate: `docs/release/`.
+> Status: Phase 42 corrective consistency pass complete. Phases 37–42 delivered: parity capability manifest (106 capabilities, machine-validated), pproxy CLI native-equivalent closure, URI grammar chain semantics, Python pproxy drop-in API (`PPProxyService`, `CompatibilityReport`, `.pyi` stubs), a reusable differential test harness (27 scenarios against pproxy 2.7.9), and a corrective consistency pass: `--ssl` now applies to all listeners (matches pproxy); `CompatibilityReport.tier` uses the manifest-aligned five-tier vocabulary; parity report can be regenerated and consistency-checked from the manifest. Release candidate: `docs/release/`.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -32,8 +32,9 @@ The `eggress-pproxy-compat` crate provides:
 - Python pproxy drop-in API (`PPProxyService`, `CompatibilityReport`, `start_pproxy` multi-mode) — Phase 40
 - `.pyi` type stubs for all public modules
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
-- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 109 capabilities across 5 categories with tier classification and machine-readable validation
+- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 106 capabilities across 5 categories with tier classification and machine-readable validation
 - Reusable differential parity harness (`eggress-testkit::differential`) — 27 scenarios against pproxy 2.7.9 — Phase 41
+- Phase 42 corrective consistency pass: `CompatibilityReport` uses the five-tier manifest vocabulary; `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies to all listeners (matches pproxy); parity report can be regenerated (`--write-report`) and consistency-checked (`--check-report`) from the manifest
 
 ### Phase 28: CLI compatibility enhancements
 
@@ -446,11 +447,12 @@ callers only.
 - [x] `--json` flag for machine-readable pproxy check output (Phase 28)
 - [x] CLI flag inventory: full parity documentation of translate/check/run subcommands (Phase 28)
 - [x] Compatibility manifest tracking all parity features with evidence levels (`tests/compat/pproxy_manifest.toml`)
-- [x] Authoritative parity capability manifest — 109 capabilities, 5 categories, machine-validated (Phase 37)
+- [x] Authoritative parity capability manifest — 106 capabilities, 5 categories, machine-validated (Phase 37)
 - [x] pproxy CLI native-equivalent closure — `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` generate TOML (Phase 38)
 - [x] URI grammar chain semantics — `__` separator, modifiers, default port inference (Phase 39)
 - [x] Python pproxy drop-in API — `PPProxyService`, `CompatibilityReport`, `.pyi` stubs (Phase 40)
 - [x] Reusable differential parity harness — 27 scenarios against pproxy 2.7.9 (Phase 41)
+- [x] Corrective consistency pass — `CompatibilityReport` five-tier manifest vocabulary, `PPProxyService.from_args` full argument vector, `--ssl` applies to all listeners, parity report `--write-report`/`--check-report` (Phase 42)
 - Oracle process runner for real pproxy differential testing (`eggress-testkit`)
 - Machine-readable parity reports generated after differential test runs
 

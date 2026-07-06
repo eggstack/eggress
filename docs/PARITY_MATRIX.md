@@ -7,6 +7,17 @@ or document supported-but-unverified functionality.
 For the canonical per-feature evidence table with test commands, see
 [COMPATIBILITY_EVIDENCE.md](COMPATIBILITY_EVIDENCE.md).
 
+For the machine-validated pproxy capability manifest (106 capabilities, 5
+tiers: `drop_in`, `compatible_with_warning`, `native_equivalent`,
+`intentional_non_parity`, `unsupported`), see
+[`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
+and the auto-generated summary
+[`docs/parity/PPROXY_PARITY_REPORT.md`](parity/PPROXY_PARITY_REPORT.md). The
+report can be regenerated with
+`python3 scripts/validate_pproxy_parity_manifest.py --write-report
+docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml`
+and verified with `--check-report`.
+
 ## Compatibility Tiers
 
 | Tier | Meaning |
@@ -109,7 +120,7 @@ For the canonical per-feature evidence table with test commands, see
 | `--rulefile` | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
 | `--daemon` | supported | rejected | Intentional non-parity | none | none | Use systemd or a process manager |
 | `-b` bind | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[[rules]] reject` entries |
-| `--ssl` TLS listener | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates TLS listener TOML config |
+| `--ssl` TLS listener | supported | supported (generates TOML) | Native equivalent | cli_tests, pproxy_compat_manifest, pproxy_compat_report | none | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
 | `-a` alive/health | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[health] interval = "Ns"` |
 | `--pac` PAC serving | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[admin.pac] enabled = true` |
 | `--test` test-and-exit | supported | supported | Compatible | cli_tests | none | Phase 38: translates config and runs `eggress upstream test` |
@@ -184,7 +195,7 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | `-ul` UDP listen | Supported | Supported | **Compatible** | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
 | `-ur` UDP remote | Supported | Supported | **Compatible** | Generates UDP upstream config with transport-matching rule |
 | `--daemon` | Supported | Rejected | **Intentional non-parity** | Use systemd or process manager |
-| `--ssl` TLS listener | Supported | Supported | **Compatible** | Phase 38: generates TLS listener TOML config |
+| `--ssl` TLS listener | Supported | Supported | **Native equivalent** | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
 | `-b` block rules | Supported | Supported | **Compatible** | Phase 38: generates `[[rules]] reject` entries |
 | `--reuse` | Supported | Rejected | **Intentional non-parity** | Connection pooling not implemented |
 | `--log` | Supported | Supported | **Compatible** | Phase 38: emits structured diagnostic |

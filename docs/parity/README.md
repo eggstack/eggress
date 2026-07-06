@@ -79,8 +79,9 @@ this capability (e.g., `runtime = "refused"` for `--daemon`).
 
 ## Validation Rules
 
-The validator (`scripts/validate_pproxy_parity_manifest.py`) enforces 11
-rules. Errors block CI; warnings are advisory (or errors in `--strict` mode).
+The validator (`scripts/validate_pproxy_parity_manifest.py`) enforces 13
+rules (Phase 37 + Phase 42). Errors block CI; warnings are advisory (or
+errors in `--strict` mode).
 
 | # | Rule | Severity |
 |---|------|----------|
@@ -95,6 +96,8 @@ rules. Errors block CI; warnings are advisory (or errors in `--strict` mode).
 | 9 | Protocol-crate-only feature marked `drop_in` before config/compiler/runtime | ERROR |
 | 10 | CLI capability with no stdout/stderr/exit-code expectation | WARNING |
 | 11 | Python capability marked `drop_in` with no test evidence | ERROR |
+| 12 | Stale "not recognized"/"unknown-flag" wording in `notes` (Phase 42) | WARNING |
+| 13 | `config = "not_applicable"` with parser + translator `complete` without justification (Phase 42) | WARNING |
 
 ## Usage
 
@@ -107,6 +110,12 @@ python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_c
 
 # Schema-only validation
 python3 scripts/validate_pproxy_parity_manifest.py --validate-only docs/parity/pproxy_capability_manifest.toml
+
+# Regenerate the parity report from the manifest (Phase 42)
+python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
+
+# Verify the parity report is consistent with the manifest (Phase 42; CI runs this)
+python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 ```
 
 ## Design Principles

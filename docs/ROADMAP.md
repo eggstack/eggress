@@ -4,7 +4,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Phase
 
-Phase 41: Differential parity harness (complete)
+Phase 42: pproxy parity corrective consistency pass (complete)
 
 ## Completed Milestones
 
@@ -102,14 +102,14 @@ Phase 41: Differential parity harness (complete)
 
 ### Phase 37: Parity capability manifest and validator — complete
 
-- [x] `docs/parity/pproxy_capability_manifest.toml` — 109 capabilities, 5 categories, 7 layers
-- [x] `docs/parity/README.md` — tiers, layers, evidence, 11 validation rules
-- [x] `docs/parity/PPROXY_PARITY_REPORT.md` — 60 drop_in, 3 compatible_with_warning, 18 native_equivalent, 5 intentional_non_parity, 13 unsupported
-- [x] `scripts/validate_pproxy_parity_manifest.py` — Python validator, 11 rules, strict mode
+- [x] `docs/parity/pproxy_capability_manifest.toml` — 106 capabilities, 5 categories, 7 layers
+- [x] `docs/parity/README.md` — tiers, layers, evidence, 13 validation rules
+- [x] `docs/parity/PPROXY_PARITY_REPORT.md` — auto-generated from the manifest
+- [x] `scripts/validate_pproxy_parity_manifest.py` — Python validator, 13 rules, strict mode
 
 ### Phase 38: pproxy CLI native-equivalent closure — complete
 
-- [x] `--ssl` generates TLS TOML config
+- [x] `--ssl` generates TLS TOML config (Phase 42: applies to all compatible listeners)
 - [x] `-b` generates `[[rules]] reject` entries
 - [x] `--rulefile` translates pproxy rulefiles to `[[rules]]` with diagnostics
 - [x] `-a N` generates `[health] interval = "Ns"`
@@ -147,10 +147,20 @@ Phase 41: Differential parity harness (complete)
 - [x] Two-gate strategy: `EGRESS_REQUIRE_EXTERNAL_INTEROP` and `EGRESS_RUN_PPROXY_DIFFERENTIAL`
 - [x] Parity manifest updated with differential evidence entries
 
+### Phase 42: pproxy parity corrective consistency pass — complete
+
+- [x] `CompatibilityReport.tier` uses the five-tier manifest vocabulary
+- [x] `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`
+- [x] Manifest validator gains Rule 12 (stale "not recognized"/"unknown-flag" wording) and Rule 13 (`config = not_applicable` justification)
+- [x] Manifest stale wording fixed for `cli.alive`, `cli.ssl_listener`, `cli.block`, `cli.rulefile`, `cli.reuse`, `cli.get`, `cli.pac`, `cli.test`, `cli.sys`
+- [x] `--ssl` applies TLS to all compatible listeners (matches pproxy, which loads the cert chain into every ssl context); new unit test
+- [x] Parity report is now generated from the manifest (`--write-report`) and CI verifies consistency (`--check-report`)
+- [x] Stale tier/notes fields harmonized in `docs/PARITY_MATRIX.md`, `README.md`, `AGENTS.md`, `.skills/testing/skill.md`, `docs/parity/README.md`
+
 ## Remaining Work
 
-Phases 42–49 are defined in `plans/pproxy_parity_python_dropin_roadmap.md` and cover advanced transport hardening, Python async API, CI integration, and release automation. These are post-release scope.
+Phases 43+ are defined in `plans/pproxy_parity_python_dropin_roadmap.md` and cover advanced transport hardening, Python async API, CI integration, and release automation. These are post-release scope.
 
 ## Next Phase
 
-Phase 42: (post-release scope — see roadmap)
+Phase 43: (post-release scope — see roadmap)

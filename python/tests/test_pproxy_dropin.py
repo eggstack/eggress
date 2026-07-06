@@ -77,6 +77,118 @@ class TestPPProxyServiceFromArgs:
         assert svc is not None
 
 
+class TestPPProxyServiceFromArgsPreservesFlags:
+    """Regression tests: ``from_args`` must preserve the full pproxy flag vector.
+
+    Pre-Phase 42, ``from_args`` only extracted ``-l``/``-r`` and silently
+    dropped every other pproxy flag. These tests pin the corrected behavior.
+    """
+
+    def test_ssl_flag_preserved_in_config(self, tmp_path):
+        # Generate a self-signed cert so the listener can actually start
+        # in TLS mode. We only assert config presence, not that start()
+        # succeeds, but having a real cert lets us go further.
+        try:
+            import subprocess
+            cert = tmp_path / "cert.pem"
+            key = tmp_path / "key.pem"
+            subprocess.run(
+                [
+                    "openssl", "req", "-x509", "-newkey", "rsa:2048",
+                    "-keyout", str(key), "-out", str(cert),
+                    "-days", "1", "-nodes", "-subj", "/CN=localhost",
+                ],
+                check=True, capture_output=True,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pytest.skip("openssl not available to generate self-signed cert")
+
+        args = [
+            "-l", "socks5://127.0.0.1:0",
+            "--ssl", f"{cert},{key}",
+        ]
+        svc = PPProxyService.from_args(args, allow_partial=True)
+        # Cert path appears in the raw translator output; the key path
+        # is redacted in the live config (it's a credential) but a
+        # redaction marker must be present.
+        report = check_pproxy_args(args)
+        assert str(cert) in report.toml
+        redacted_toml = svc.config.redacted_toml()
+        assert "[listeners.tls]" in redacted_toml
+        assert "key = " in redacted_toml
+
+    def test_block_flag_preserved_in_config(self):
+        args = [
+            "-l", "socks5://127.0.0.1:0",
+            "-b", r".*\.example\.com",
+        ]
+        PPProxyService.from_args(args)
+        # Reject rule for the block pattern should be in the config
+        report = check_pproxy_args(args)
+        assert r".*\.example\.com" in report.toml
+        assert "pproxy-block-0" in report.toml
+
+    def test_pac_flag_preserved_in_config(self):
+        args = ["-l", "socks5://127.0.0.1:0", "--pac"]
+        PPProxyService.from_args(args)
+        report = check_pproxy_args(args)
+        # PAC section is enabled in the admin block
+        assert "pac" in report.toml.lower()
+
+    def test_scheduler_preserved_in_config(self):
+        args = [
+            "-l", "socks5://127.0.0.1:0",
+            "-r", "http://proxy1:8080",
+            "-r", "http://proxy2:8080",
+            "-s", "rr",
+        ]
+        PPProxyService.from_args(args)
+        report = check_pproxy_args(args)
+        assert "round-robin" in report.toml
+
+    def test_alive_flag_preserved_in_config(self):
+        args = [
+            "-l", "socks5://127.0.0.1:0",
+            "-r", "http://proxy:8080",
+            "-a", "10",
+        ]
+        PPProxyService.from_args(args)
+        report = check_pproxy_args(args)
+        # Health interval should be applied
+        assert "10s" in report.toml
+
+    def test_ul_no_remote_preserved(self):
+        # -ul standalone UDP should not require -r
+        svc = PPProxyService.from_args(
+            ["-l", "socks5://127.0.0.1:0", "-ul", ":0"]
+        )
+        # No exception means the flag was preserved; the service can start
+        with svc as handle:
+            addrs = handle.bound_addresses
+            assert isinstance(addrs, dict)
+
+    def test_ul_no_l_works(self):
+        # -ul without -l should produce a default SOCKS5 listener + ul config
+        svc = PPProxyService.from_args(["-ul", ":0"])
+        with svc as handle:
+            addrs = handle.bound_addresses
+            assert isinstance(addrs, dict)
+            assert len(addrs) > 0
+
+    def test_from_args_equivalent_to_start_pproxy(self, tmp_path):
+        # PPProxyService.from_args and check_pproxy_args() must produce
+        # equivalent translated TOML configs for the same args.
+        args = [
+            "-l", "socks5://127.0.0.1:0",
+            "-r", "http://proxy:8080",
+            "-b", r".*\.blocked\.com",
+        ]
+        PPProxyService.from_args(args)
+        report = check_pproxy_args(args)
+        # Both should have produced reject rule for the block pattern
+        assert "pproxy-block-0" in report.toml
+
+
 class TestPPProxyServiceFromUri:
     """Test PPProxyService.from_uri factory method."""
 
@@ -222,7 +334,8 @@ class TestCompatibilityReport:
 
     def test_supported_args_full_tier(self):
         report = check_pproxy_args(["-l", "socks5://127.0.0.1:0"])
-        assert report.tier in ("full", "partial")
+        assert report.tier in ("drop_in", "compatible_with_warning",
+                               "native_equivalent", "intentional_non_parity")
         assert report.ok is True
         assert isinstance(report.warnings, list)
         assert isinstance(report.unsupported, list)
@@ -240,12 +353,43 @@ class TestCompatibilityReport:
 
     def test_features_populated(self):
         report = check_pproxy_args(["-l", "socks5://127.0.0.1:0"])
-        assert len(report.features) > 0
+        # No unsupported features triggered by a bare -l, so features
+        # list should be empty (it is now scoped to the args, not the
+        # full supported_features() set).
+        assert report.features == []
         for feat in report.features:
             assert isinstance(feat, FeatureInfo)
             assert feat.feature_id
-            assert feat.tier in ("compatible", "partial", "unsupported")
+            assert feat.tier in ("drop_in", "compatible_with_warning",
+                                 "native_equivalent", "intentional_non_parity",
+                                 "unsupported")
             assert isinstance(feat.supported, bool)
+
+    def test_features_contain_unsupported_when_ssh(self):
+        report = check_pproxy_args(["-l", "ssh://user@host:22"])
+        assert any(
+            f.tier == "unsupported" and not f.supported
+            for f in report.features
+        )
+
+    def test_native_equivalent_for_verbose(self):
+        report = check_pproxy_args(
+            ["-l", "socks5://127.0.0.1:0", "-v"]
+        )
+        assert report.tier in ("native_equivalent", "compatible_with_warning")
+        # Diagnostic tier for verbose should be "native_equivalent"
+        assert any(
+            d.tier == "native_equivalent" for d in report.diagnostics
+        )
+
+    def test_intentional_non_parity_for_reuse(self):
+        report = check_pproxy_args(
+            ["-l", "socks5://127.0.0.1:0", "--reuse"]
+        )
+        assert report.tier == "intentional_non_parity"
+        assert any(
+            d.tier == "intentional_non_parity" for d in report.diagnostics
+        )
 
     def test_parsed_uris_populated(self):
         report = check_pproxy_args(["-l", "socks5://127.0.0.1:0"])

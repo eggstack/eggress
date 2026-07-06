@@ -113,25 +113,25 @@ id = "cli.alive"
 category = "cli"
 pproxy_surface = "-a / --alive"
 pproxy_behavior = "Set alive check interval in seconds."
-eggress_behavior = "Emits diagnostic with interval value; maps to health.interval on upstreams in TOML."
+eggress_behavior = "Maps to [health] interval on upstreams; emits diagnostic pointing to the equivalent eggress health section."
 tier = "native_equivalent"
 parser = "complete"
 translator = "complete"
-config = "not_applicable"
-runtime = "not_applicable"
+config = "complete"
+runtime = "complete"
 cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests"]
-notes = "pproxy interval-based; eggress uses hysteresis state machine with TCP probes. Different mechanism, same outcome."
+notes = "pproxy interval-based; eggress uses hysteresis state machine with TCP probes. Different mechanism, same outcome. Translation evidence (unit/integration) only; no pproxy differential test for health-probe timing equivalence."
 
 [[capability]]
 id = "cli.ssl_listener"
 category = "cli"
 pproxy_surface = "--ssl"
 pproxy_behavior = "Enable TLS on listener (certfile,keyfile)."
-eggress_behavior = "Translates cert[,key] to listeners.tls config in TOML."
+eggress_behavior = "Translates cert[,key] to listeners.tls config in TOML; TLS is applied to all compatible TCP listeners (matches pproxy, which loads the cert chain into every ssl context)."
 tier = "native_equivalent"
 parser = "complete"
 translator = "complete"
@@ -141,8 +141,8 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "unit"
-tests = ["test_ssl_flag_generates_tls_config", "test_ssl_cert_only_generates_tls_config"]
-notes = "Generates TOML TLS config; runtime uses eggress TLS transport layer."
+tests = ["test_ssl_flag_generates_tls_config", "test_ssl_cert_only_generates_tls_config", "test_ssl_flag_applies_to_all_listeners"]
+notes = "Translation + runtime smoke evidence; no pproxy differential coverage of --ssl semantics. Multi-listener scope matches pproxy (TLS on every listener); verified by translator unit test."
 
 [[capability]]
 id = "cli.block"
@@ -160,14 +160,14 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_block_flag_generates_reject_rule", "test_block_flag_toml_roundtrip"]
-notes = "Generates TOML reject rules; first-match-wins semantics preserved."
+notes = "Translation + config evidence; no pproxy differential coverage. Reject-rule grammar is limited to host-regex matchers (no port/transport qualifiers in pproxy regex scope)."
 
 [[capability]]
 id = "cli.rulefile"
 category = "cli"
 pproxy_surface = "--rulefile / -rulefile"
 pproxy_behavior = "Load routing rules from a line-based file."
-eggress_behavior = "Parses line-based rulefile; generates reject rules for simple patterns, warnings for complex rules."
+eggress_behavior = "Parses line-based rulefile; auto-translates simple 'pattern -> reject|block' lines to reject rules, emits diagnostic for complex rules or unrecognized formats."
 tier = "compatible_with_warning"
 parser = "complete"
 translator = "complete"
@@ -178,7 +178,8 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_rulefile_missing_file_emits_warning", "test_rulefile_generates_block_rules"]
-notes = "Simple reject/block rules auto-translated; complex rules emit warnings."
+diagnostic = "rulefile-partial"
+notes = "Simple reject/block rules auto-translated; complex rules emit warnings. Grammar subset only — non-reject actions and structured matchers must be configured in eggress TOML [[rules]]."
 
 [[capability]]
 id = "cli.daemon"
@@ -215,7 +216,7 @@ docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
 diagnostic = "verbose-mode"
-notes = "Different mechanism (env var vs flag); same outcome."
+notes = "Different mechanism (env var vs flag); same outcome. No config artifact is produced; the verbose flag is recognized at parse time and emits a diagnostic."
 
 [[capability]]
 id = "cli.log"
@@ -233,14 +234,14 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_log_flag_emits_warning"]
-notes = "Different mechanism (tracing-subscriber vs file); same outcome."
+notes = "Different mechanism (tracing-subscriber vs file); same outcome. No config artifact is produced; the log= flag is recognized at parse time and emits a diagnostic."
 
 [[capability]]
 id = "cli.reuse"
 category = "cli"
 pproxy_surface = "--reuse"
 pproxy_behavior = "Enable connection reuse/pooling."
-eggress_behavior = "Emits intentional non-parity diagnostic; one upstream connection per session by design."
+eggress_behavior = "Flag parsed as a known raw flag; emits a 'reuse-connection' warning indicating this is an intentional non-parity behavior."
 tier = "intentional_non_parity"
 parser = "complete"
 translator = "complete"
@@ -252,32 +253,33 @@ docs = "complete"
 evidence = "none"
 tests = []
 rationale = "Connection pooling not implemented by design; one upstream connection per proxy session."
-notes = "Flag parsed but emits unknown-flag warning. No connection pooling or session reuse."
+notes = "Flag is recognized (in the known raw-flag set) and emits the 'reuse-connection' diagnostic, NOT an 'unknown-flag' warning. No connection pooling or session reuse."
 
 [[capability]]
 id = "cli.pac"
 category = "cli"
 pproxy_surface = "--pac"
 pproxy_behavior = "Serve a PAC file for browser auto-configuration."
-eggress_behavior = "Emits diagnostic; configure PAC serving in TOML admin.pac block."
+eggress_behavior = "Flag parsed and translated; emits 'pac-serving' diagnostic and sets admin.pac.enabled = true in generated TOML."
 tier = "native_equivalent"
 parser = "complete"
 translator = "complete"
 config = "complete"
 runtime = "complete"
-cli = "not_applicable"
+cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["pac_static_tests"]
-notes = "Use admin API or configure PAC serving in TOML."
+diagnostic = "pac-serving"
+notes = "PAC is served by the eggress admin HTTP server at /proxy.pac; --pac is parsed and translated, NOT unrecognized."
 
 [[capability]]
 id = "cli.sys"
 category = "cli"
 pproxy_surface = "--sys"
 pproxy_behavior = "Automatically configure system proxy settings."
-eggress_behavior = "Emits diagnostic pointing to eggress system-proxy inspect."
+eggress_behavior = "Flag parsed and translated; emits 'system-proxy' diagnostic pointing to 'eggress system-proxy inspect'. The eggress equivalent exposes read-only inspection and explicit --apply/dry-run, not implicit mutation."
 tier = "native_equivalent"
 parser = "complete"
 translator = "complete"
@@ -288,14 +290,15 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["system_proxy_inspect"]
-notes = "pproxy --sys mutates global state; eggress provides read-only inspection and explicit dry-run apply."
+diagnostic = "system-proxy"
+notes = "pproxy --sys mutates global state at startup; eggress separates inspection from mutation. Inspect-after-translation smoke evidence; mutation behavior is intentionally opt-in."
 
 [[capability]]
 id = "cli.get"
 category = "cli"
 pproxy_surface = "--get"
 pproxy_behavior = "Fetch a URL through the configured proxy."
-eggress_behavior = "Not recognized; use curl --proxy instead."
+eggress_behavior = "Flag parsed as a known raw flag; emits 'get-url' diagnostic recommending 'curl --proxy <uri> <url>'."
 tier = "unsupported"
 parser = "complete"
 translator = "complete"
@@ -306,14 +309,15 @@ python = "not_applicable"
 docs = "complete"
 evidence = "docs_only"
 tests = []
-notes = "Utility function; use curl."
+diagnostic = "get-url"
+notes = "Utility function in pproxy; not implemented as a runtime feature in eggress. Recognized at parse time so users get a clean recommendation instead of an unknown-flag warning."
 
 [[capability]]
 id = "cli.test"
 category = "cli"
 pproxy_surface = "--test"
 pproxy_behavior = "Test all remote proxies and exit."
-eggress_behavior = "Emits diagnostic pointing to eggress upstream test -c config."
+eggress_behavior = "Flag parsed and translated; emits 'test-mode' diagnostic pointing to 'eggress upstream test -c <config>'. The actual connectivity check is performed by that subcommand, not by the translator."
 tier = "native_equivalent"
 parser = "complete"
 translator = "complete"
@@ -324,7 +328,8 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests"]
-notes = "Different subcommand name; same verification outcome."
+diagnostic = "test-mode"
+notes = "Translation emits a warning; --test is recognized. Actual probe behavior is exercised by the 'eggress upstream test' subcommand, which is not part of this capability entry."
 
 [[capability]]
 id = "cli.config"
@@ -1733,7 +1738,7 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_compat.py::test_local_socks5_direct"]
-notes = ""
+notes = "No config artifact is produced; check_pproxy_args returns a structured report object in Python without generating TOML."
 
 [[capability]]
 id = "python.start_pproxy"

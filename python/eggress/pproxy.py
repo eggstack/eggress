@@ -128,38 +128,112 @@ def translate_pproxy_uri(
     return TranslationResult(_translate_pproxy_uri(local, list(remotes)))
 
 
+def _manifest_tier_for_diagnostic(code: str) -> str:
+    """Map a translator warning code to its manifest-aligned tier.
+
+    The translator emits structured warning codes for known modifier flags
+    and unsupported cases. This helper classifies them according to the
+    same five-tier vocabulary as
+    ``docs/parity/pproxy_capability_manifest.toml``:
+
+    - ``intentional_non_parity`` — flag parsed, no plan to implement
+    - ``native_equivalent`` — outcome same as pproxy, different mechanism
+    - ``compatible_with_warning`` — works but emits a diagnostic
+    - ``unsupported`` — flag or feature not implemented
+    - ``drop_in`` — no warning expected
+    """
+    # Intentional non-parity: connection pooling, etc.
+    intentional = {
+        "reuse-connection",
+    }
+    # Native equivalent: same outcome through different mechanism.
+    native_equivalent = {
+        "alive-check",
+        "pac-serving",
+        "test-mode",
+        "system-proxy",
+        "log-file",
+        "verbose-mode",
+    }
+    # Compatible with warning: works but emits a diagnostic.
+    compatible_with_warning = {
+        "scheduler",
+        "credential-in-toml",
+        "rulefile-partial",
+        "rulefile-parse",
+        "rulefile-read",
+        "direct-mode",
+        "ul-no-listener",
+    }
+    if code in intentional:
+        return "intentional_non_parity"
+    if code in native_equivalent:
+        return "native_equivalent"
+    if code in compatible_with_warning:
+        return "compatible_with_warning"
+    return "unsupported"
+
+
+def _classify_aggregate_tier(
+    warnings: list[Diagnostic], unsupported: list[Diagnostic]
+) -> str:
+    """Pick the worst manifest-aligned tier from the diagnostics.
+
+    Deterministic severity order (worst first):
+        1. any unsupported hard failure -> ``unsupported``
+        2. any intentional non-parity   -> ``intentional_non_parity``
+        3. any native-equivalent warning -> ``native_equivalent``
+        4. any compatible-with-warning  -> ``compatible_with_warning``
+        5. no diagnostics               -> ``drop_in``
+    """
+    if unsupported:
+        return "unsupported"
+    has_intentional = any(
+        (w.tier or "") == "intentional_non_parity" for w in warnings
+    )
+    if has_intentional:
+        return "intentional_non_parity"
+    has_native = any(
+        (w.tier or "") == "native_equivalent" for w in warnings
+    )
+    if has_native:
+        return "native_equivalent"
+    if warnings:
+        return "compatible_with_warning"
+    return "drop_in"
+
+
 def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
     """Translate pproxy args and return a full compatibility report.
 
     Returns a :class:`CompatibilityReport` with tier classification,
     diagnostics, parsed URIs, and generated TOML.
+
+    The aggregate ``tier`` field uses the same five-tier vocabulary as
+    ``docs/parity/pproxy_capability_manifest.toml``:
+
+    - ``drop_in``
+    - ``compatible_with_warning``
+    - ``native_equivalent``
+    - ``intentional_non_parity``
+    - ``unsupported``
+
+    Each ``Diagnostic`` also carries its own ``tier`` so callers can
+    attribute the aggregate classification to specific warnings. The
+    ``features`` list reflects only capabilities actually referenced by
+    the supplied args (not the full ``supported_features()`` set), so a
+    feature is only marked ``unsupported`` when the user's args triggered
+    an unsupported diagnostic for it.
     """
     result = _translate_pproxy_args(list(args))
 
-    diagnostics: list[Diagnostic] = []
-    for w in result.warnings:
-        diagnostics.append(Diagnostic(
-            code=getattr(w, "category", "warning"),
-            feature_id=None,
-            tier=None,
-            message=getattr(w, "message", str(w)),
-            suggestion=None,
-        ))
-    for u in result.unsupported:
-        diagnostics.append(Diagnostic(
-            code="unsupported_protocol",
-            feature_id=getattr(u, "feature", None),
-            tier="unsupported",
-            message=getattr(u, "message", str(u)),
-            suggestion=None,
-        ))
-
     warn_diags: list[Diagnostic] = []
     for w in result.warnings:
+        code = getattr(w, "category", "warning")
         warn_diags.append(Diagnostic(
-            code=getattr(w, "category", "warning"),
+            code=code,
             feature_id=None,
-            tier=None,
+            tier=_manifest_tier_for_diagnostic(code),
             message=getattr(w, "message", str(w)),
             suggestion=None,
         ))
@@ -174,12 +248,8 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
             suggestion=None,
         ))
 
-    if result.unsupported:
-        tier = "unsupported"
-    elif result.warnings:
-        tier = "partial"
-    else:
-        tier = "full"
+    diagnostics = list(warn_diags) + list(unsupported_diags)
+    tier = _classify_aggregate_tier(warn_diags, unsupported_diags)
 
     parsed_uris: dict[str, UriInfo] = {}
     i = 0
@@ -192,14 +262,21 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
         else:
             i += 1
 
-    all_features = supported_features()
-    features = []
-    unsupported_feature_ids = {u.feature for u in result.unsupported}
-    for feat_id in all_features:
-        if feat_id in unsupported_feature_ids:
-            features.append(FeatureInfo(feature_id=feat_id, tier="unsupported", supported=False))
-        else:
-            features.append(FeatureInfo(feature_id=feat_id, tier="compatible", supported=True))
+    # Only mark features as "unsupported" when the args actually triggered
+    # an unsupported diagnostic for them. A bare "-l socks5://:0" should
+    # not mark every known pproxy feature as "compatible by default";
+    # that conflated "convenience list" with "evidence-based capability
+    # classification" and is replaced by leaving unrelated features out.
+    features: list[FeatureInfo] = []
+    unsupported_feature_ids = {
+        u.feature for u in result.unsupported if getattr(u, "feature", None)
+    }
+    for feat_id in unsupported_feature_ids:
+        features.append(
+            FeatureInfo(
+                feature_id=feat_id, tier="unsupported", supported=False
+            )
+        )
 
     return CompatibilityReport(
         tier=tier,
@@ -642,6 +719,7 @@ class PPProxyService:
             eggress_config = result.config()
 
         self._service = EggressService(eggress_config)
+        self._config = eggress_config
         self._handle = None
 
     @classmethod
@@ -649,6 +727,13 @@ class PPProxyService:
         cls, args: Sequence[str], allow_partial: bool = False
     ) -> PPProxyService:
         """Create a service from pproxy-style CLI arguments.
+
+        The full pproxy argument vector is preserved and routed through
+        :func:`translate_pproxy_args`, so modifier flags such as ``--ssl``,
+        ``-b``, ``--pac``, ``-s``, ``-a``, ``--rulefile``, ``-ul``/``-ur``,
+        ``--test``, ``--sys``, ``--log``, ``--reuse``, and ``--get`` are not
+        silently dropped. This matches the behavior of the top-level
+        :func:`eggress.start_pproxy` entry point.
 
         Args:
             args: pproxy-style CLI arguments (e.g. ["-l", "socks5://:1080"]).
@@ -658,26 +743,30 @@ class PPProxyService:
             A pre-start PPProxyService.
 
         Raises:
-            UnsupportedFeatureError: If unsupported features exist and allow_partial is False.
+            UnsupportedFeatureError: If unsupported features exist and
+                ``allow_partial`` is False.
         """
-        args_list = list(args)
-        listen: list[str] = []
-        remote: list[str] = []
-        i = 0
-        while i < len(args_list):
-            if args_list[i] in ("-l", "--listen") and i + 1 < len(args_list):
-                listen.append(args_list[i + 1])
-                i += 2
-            elif args_list[i] in ("-r", "--remote") and i + 1 < len(args_list):
-                remote.append(args_list[i + 1])
-                i += 2
-            else:
-                i += 1
-        return cls(
-            listen=listen or None,
-            remote=remote or None,
-            allow_partial=allow_partial,
-        )
+        from eggress.config import EggressConfig
+        from eggress.service import EggressService
+
+        result = translate_pproxy_args(list(args))
+        if not allow_partial and not result.ok:
+            features = ", ".join(
+                f"{u.feature}: {u.message}" for u in result.unsupported
+            )
+            raise UnsupportedFeatureError(
+                f"unsupported pproxy features: {features}"
+            )
+        # Build a service directly from the translated config rather than
+        # reconstructing the listen/remote URI list. This is the only way
+        # to preserve --ssl, -b, --pac, -s, -a, --rulefile, -ul, -ur,
+        # --test, --sys, --log, --reuse, and --get semantics.
+        eggress_config: EggressConfig = result.config()
+        instance = cls.__new__(cls)
+        instance._service = EggressService(eggress_config)
+        instance._config = eggress_config
+        instance._handle = None
+        return instance
 
     @classmethod
     def from_uri(
@@ -741,6 +830,16 @@ class PPProxyService:
             raise AlreadyStartedError("service is already running")
         self._handle = self._service.start()
         return self._handle
+
+    @property
+    def config(self) -> "EggressConfig":
+        """The eggress configuration produced from the pproxy inputs.
+
+        Useful for inspecting the translated TOML config that the service
+        will run (for example, to verify that ``--ssl`` translated to a
+        ``listeners.tls`` block). Available before and after ``start()``.
+        """
+        return self._config
 
     def __enter__(self) -> EggressHandle:
         self.start()

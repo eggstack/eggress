@@ -429,10 +429,19 @@ pub fn translate_from_uris(
         }
     }
 
-    // Apply --ssl TLS config to the first listener
+    // Apply --ssl TLS config to all compatible listeners.
+    // pproxy loads the cert chain into every ssl context (one per listener),
+    // so TLS is enabled on all listeners, not just the first.
     if let Some(tls) = ssl_config {
-        if let Some(listener) = listeners.first_mut() {
-            listener.tls = Some(tls);
+        if !listeners.is_empty() {
+            for listener in listeners.iter_mut() {
+                listener.tls = Some(tls.clone());
+            }
+        } else {
+            output = output.with_warning(
+                "ssl-no-listener",
+                "--ssl specified but no compatible TCP listener was generated; cert/key are recorded as a no-op",
+            );
         }
     }
 
@@ -707,7 +716,7 @@ pub fn translate_from_uris(
                 upstream_group: String::new(),
                 r#match: None,
                 host_regex: Some(pattern.clone()),
-                reject: Some("blocked by pproxy -b rule".to_string()),
+                reject: Some("blocked".to_string()),
             });
         }
         all_rules.extend(rules);
@@ -903,6 +912,7 @@ struct UpstreamGroupToml {
 struct RuleToml {
     id: String,
     any: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
     upstream_group: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "match")]
@@ -968,6 +978,12 @@ struct HealthToml {
 #[derive(serde::Serialize, Clone)]
 struct PacToml {
     enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proxy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direct_fallback: Option<bool>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -993,7 +1009,12 @@ fn generate_toml(input: TomlInput<'_>) -> String {
 
     let admin = if input.pac_enabled {
         Some(AdminToml {
-            pac: PacToml { enabled: true },
+            pac: PacToml {
+                enabled: true,
+                path: Some("/proxy.pac".to_string()),
+                proxy: Some("PROXY {}".to_string()),
+                direct_fallback: Some(true),
+            },
         })
     } else {
         None
@@ -1276,6 +1297,33 @@ mod tests {
     }
 
     #[test]
+    fn test_ssl_flag_applies_to_all_listeners() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-l".into(),
+            "http://127.0.0.1:8080".into(),
+            "--ssl".into(),
+            "cert.pem,key.pem".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(!output.has_unsupported());
+        let listener_count = output.toml.matches("[[listeners]]").count();
+        assert_eq!(
+            listener_count, 2,
+            "expected 2 listeners, got: {}",
+            output.toml
+        );
+        let tls_block_count = output.toml.matches("[listeners.tls]").count();
+        assert_eq!(
+            tls_block_count, 2,
+            "expected 2 [listeners.tls] blocks (one per listener), got: {}",
+            output.toml
+        );
+    }
+
+    #[test]
     fn test_block_flag_generates_reject_rule() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
@@ -1313,7 +1361,7 @@ mod tests {
         );
         assert_eq!(
             block_rule["reject"].as_str(),
-            Some("blocked by pproxy -b rule")
+            Some("blocked")
         );
     }
 
