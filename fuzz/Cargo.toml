@@ -25,6 +25,15 @@ path = "../crates/eggress-uri"
 [dependencies.eggress-routing]
 path = "../crates/eggress-routing"
 
+[dependencies.eggress-protocol-shadowsocks]
+path = "../crates/eggress-protocol-shadowsocks"
+
+[dependencies.eggress-config]
+path = "../crates/eggress-config"
+
+[dependencies.toml]
+version = "0.8"
+
 [workspace]
 members = ["."]
 
@@ -66,6 +75,20 @@ bench = false
 [[bin]]
 name = "uri_parse"
 path = "fuzz_targets/uri_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "shadowsocks_frame"
+path = "fuzz_targets/shadowsocks_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "toml_config"
+path = "fuzz_targets/toml_config.rs"
 test = false
 doc = false
 bench = false

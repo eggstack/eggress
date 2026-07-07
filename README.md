@@ -428,17 +428,17 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - [ ] Proxy-loop detection
 - [ ] Private-network egress policy
 - [ ] DNS policy
-- [ ] DNS rebinding-aware routing
+- [x] DNS rebinding-aware routing
 - [ ] Secret zeroization where practical
-- [ ] Unsafe-code audit
+- [x] Unsafe-code audit
 - [x] Dependency audit in CI (deny.toml with explicit bans: openssl-sys, native-tls, aws-lc-sys, cmake)
 - [x] Property tests for codecs/parsers
 - [x] Fuzz harness smoke foundation
 - [x] Security invariant tests
-- [ ] Fuzzing corpus (seed corpus)
-- [ ] Long-running soak tests
-- [ ] Resource-exhaustion tests
-- [ ] Security disclosure process
+- [x] Fuzzing corpus (seed corpus)
+- [x] Long-running soak tests
+- [x] Resource-exhaustion tests
+- [x] Security disclosure process
 
 ### Packaging
 
@@ -544,6 +544,11 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Phase 5 upstream protocol parity](docs/PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md)
 - [Testing](docs/TESTING.md)
 - [Security review](docs/SECURITY_REVIEW.md)
+- [Security disclosure](SECURITY.md)
+- [Secure configuration guide](docs/security/SECURE_CONFIGURATION.md)
+- [pproxy security differences](docs/security/PPROXY_COMPAT_SECURITY_DIFFERENCES.md)
+- [Threat model](docs/security/THREAT_MODEL.md)
+- [Redaction policy](docs/security/REDACTION_POLICY.md)
 - [Parity matrix](docs/PARITY_MATRIX.md)
 - [Config reference](docs/CONFIG_REFERENCE.md)
 - [Metrics](docs/METRICS.md)

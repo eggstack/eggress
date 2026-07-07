@@ -16,7 +16,7 @@ use crate::flow::{
 };
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
-use crate::security::validate_target;
+use crate::security::validate_standalone_target;
 use crate::udp_capability::{udp_capability, UdpRelayCapability};
 use crate::upstream_socks5::{open_socks5_udp_upstream, Socks5UdpUpstreamConfig};
 use eggress_core::{ClientIdentity, ProtocolId};
@@ -82,7 +82,7 @@ pub async fn standalone_udp_relay(
                     }
                 };
 
-                if validate_target(&request.target).is_err() {
+                if validate_standalone_target(&request.target, true).is_err() {
                     config.udp_metrics.record_standalone_rejected();
                     continue;
                 }

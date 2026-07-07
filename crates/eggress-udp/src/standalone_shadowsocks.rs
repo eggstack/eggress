@@ -15,7 +15,7 @@ use crate::flow::{
 };
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
-use crate::security::validate_target;
+use crate::security::validate_standalone_target;
 use crate::udp_capability::{udp_capability, UdpRelayCapability};
 use crate::upstream_socks5::{open_socks5_udp_upstream, Socks5UdpUpstreamConfig};
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr};
@@ -114,7 +114,7 @@ pub async fn shadowsocks_standalone_udp_relay(
 
                 let target_socks = target_to_socks_addr(&target_addr);
 
-                if validate_target(&target_socks).is_err() {
+                if validate_standalone_target(&target_socks, true).is_err() {
                     config.udp_metrics.record_standalone_rejected();
                     continue;
                 }

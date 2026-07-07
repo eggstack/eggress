@@ -199,6 +199,8 @@ pub enum ConnectError {
     DnsResolution(String),
     #[error("TLS handshake failed: {0}")]
     TlsHandshake(String),
+    #[error("reserved or private target IP: {0}")]
+    ReservedTarget(std::net::IpAddr),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

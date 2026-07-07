@@ -31,6 +31,10 @@ impl eggress_server::SessionMetrics for MetricsRegistry {
     fn record_upstream_failure(&self, protocol: &str, reason: &str) {
         MetricsRegistry::record_upstream_failure(self, protocol, reason);
     }
+
+    fn record_auth_failure(&self) {
+        MetricsRegistry::record_auth_failure(self);
+    }
 }
 
 #[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
@@ -75,6 +79,7 @@ pub struct MetricsRegistry {
     connections_active: Gauge,
     connections_total: Counter,
     connection_failures: Counter,
+    auth_failures: Counter,
     bytes_upstream_total: Counter,
     bytes_downstream_total: Counter,
     route_decisions: Family<RouteLabels, Counter>,
@@ -209,6 +214,13 @@ impl MetricsRegistry {
             "eggress_connection_failures_total",
             "Total failed connections",
             connection_failures.clone(),
+        );
+
+        let auth_failures = Counter::default();
+        registry.register(
+            "eggress_auth_failures_total",
+            "Total authentication failures",
+            auth_failures.clone(),
         );
 
         let bytes_upstream_total = Counter::default();
@@ -629,6 +641,7 @@ impl MetricsRegistry {
             connections_active,
             connections_total,
             connection_failures,
+            auth_failures,
             bytes_upstream_total,
             bytes_downstream_total,
             route_decisions,
@@ -818,6 +831,10 @@ impl MetricsRegistry {
 
     pub fn record_session_start(&self) {
         self.connections_active.inc();
+    }
+
+    pub fn record_auth_failure(&self) {
+        self.auth_failures.inc();
     }
 
     pub fn record_session(&self, report: &SessionReport) {
@@ -1377,6 +1394,7 @@ mod tests {
         assert!(output.contains("eggress_connections_active"));
         assert!(output.contains("eggress_connections_total"));
         assert!(output.contains("eggress_connection_failures_total"));
+        assert!(output.contains("eggress_auth_failures_total"));
         assert!(output.contains("eggress_bytes_upstream_total"));
         assert!(output.contains("eggress_bytes_downstream_total"));
         assert!(output.contains("eggress_route_decisions_total"));
@@ -1568,6 +1586,15 @@ mod tests {
         let output = m.render_prometheus();
         assert!(output.contains("eggress_reload_total"));
         assert!(output.contains("eggress_reload_failures_total"));
+    }
+
+    #[test]
+    fn auth_failure_metric() {
+        let m = MetricsRegistry::new();
+        m.record_auth_failure();
+        m.record_auth_failure();
+        let output = m.render_prometheus();
+        assert!(output.contains("eggress_auth_failures_total"));
     }
 
     #[test]

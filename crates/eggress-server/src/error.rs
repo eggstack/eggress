@@ -33,6 +33,9 @@ impl From<eggress_core::ConnectError> for SessionOpenError {
                 SessionOpenError::Other("TLS handshake failed".into())
             }
             eggress_core::ConnectError::Io(io) => SessionOpenError::Other(io.to_string()),
+            eggress_core::ConnectError::ReservedTarget(addr) => {
+                SessionOpenError::Other(format!("reserved target: {addr}"))
+            }
         }
     }
 }

@@ -291,6 +291,18 @@ mod tests {
     }
 
     #[test]
+    fn standalone_path_allows_public_egress() {
+        let target = SocksAddr::IPv4([8, 8, 4, 4], 53);
+        assert!(validate_standalone_target(&target, false).is_ok());
+    }
+
+    #[test]
+    fn standalone_path_rejects_192_168_egress() {
+        let target = SocksAddr::IPv4([192, 168, 0, 1], 8080);
+        assert!(validate_standalone_target(&target, false).is_err());
+    }
+
+    #[test]
     fn validate_datagram_size_within_limit() {
         assert!(validate_datagram_size(100, 200).is_ok());
     }
