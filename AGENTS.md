@@ -297,6 +297,31 @@ cargo fuzz run route_match -- -runs=1000
 cargo run --bin eggress -- --help
 cargo run --bin eggress -- -l http://:8080
 cargo run --bin eggress -- --config path/to/config.toml
+
+# Build release binary for current platform
+cargo build --release -p eggress-cli
+
+# Build release binary for specific target
+cargo build --release --target x86_64-unknown-linux-gnu -p eggress-cli
+cargo build --release --target aarch64-unknown-linux-gnu -p eggress-cli
+cargo build --release --target x86_64-apple-darwin -p eggress-cli
+cargo build --release --target aarch64-apple-darwin -p eggress-cli
+cargo build --release --target x86_64-pc-windows-msvc -p eggress-cli
+
+# Build container image
+docker build -t eggress:local .
+
+# Validate release docs consistency
+python3 scripts/check_release_docs.py
+
+# Validate parity manifest
+python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
+
+# Generate parity report
+python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
+
+# Verify parity report consistency
+python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 ```
 
 ## Project Structure
@@ -304,6 +329,7 @@ cargo run --bin eggress -- --config path/to/config.toml
 ```text
 eggress/
 ├── Cargo.toml              # Workspace root
+├── Containerfile           # Multi-arch container image (Phase 49)
 ├── .skills/                # Agent skill files for this codebase
 ├── crates/
 │   ├── eggress-core/      # Core types, traits, relay, listener, connector, chain
@@ -371,6 +397,18 @@ eggress/
     ├── cli/
     │   ├── PPROXY_CLI_INVENTORY.md
     │   └── EXIT_CODES.md
+    ├── release/
+    │   ├── PARITY_TARGET_FREEZE.md
+    │   ├── FINAL_PPROXY_PARITY_REPORT.md
+    │   ├── RELEASE_NOTES_PARITY_RC.md
+    │   ├── PLATFORM_SUPPORT_MATRIX.md
+    │   ├── MIGRATION_FROM_PPROXY_FINAL.md
+    │   ├── PARITY_RELEASE_GO_NO_GO.md
+    │   ├── RELEASE_PROCESS.md
+    │   ├── ARTIFACT_MATRIX.md
+    │   ├── BINARY_MATRIX.md
+    │   ├── BINARY_INSTALL.md
+    │   └── CONTAINER.md
     └── protocols/
         ├── HTTP_CONNECT.md
         ├── SOCKS4.md
@@ -413,6 +451,13 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 
 - `.github/workflows/ci.yml` exists with separate visible jobs: fmt, check,
   test, clippy, deny, audit, interoperability.
+- `.github/workflows/release.yml` builds CLI binaries (5 targets), Python
+  wheels (5 platforms), generates SHA-256 checksums, SBOM, builds container
+  image, and creates a GitHub Release — triggered by `v*` tags.
+- `.github/workflows/python-wheels.yml` builds Python wheels on `v*` tags
+  (standalone, uploaded as artifacts).
+- `.github/workflows/publish-pypi.yml` publishes to PyPI/TestPyPI (manual
+  workflow_dispatch).
 - Hosted CI run status is **not** currently visible via the
   `commits/{sha}/status` endpoint for `main` (returns `state: pending,
   statuses: []`). Recent runs surfaced via `gh run list` are reported as

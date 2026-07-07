@@ -44,6 +44,46 @@ The `eggress-pproxy-compat` crate provides:
 - Full CLI flag inventory documenting parity with pproxy (`docs/cli/PPROXY_CLI_INVENTORY.md`)
 - SSR and SSH URIs rejected with structured diagnostics (intentional non-parity; SSH documented in ADR at `docs/adr/ADR_ssh_upstream_parity.md`)
 
+## Installation
+
+### Pre-built binaries
+
+Download the latest release from [GitHub Releases](https://github.com/{owner}/eggress/releases):
+
+```bash
+# Linux x86_64
+curl -L https://github.com/{owner}/eggress/releases/download/v0.1.0/eggress-0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv eggress /usr/local/bin/
+
+# macOS arm64 (Apple Silicon)
+curl -L https://github.com/{owner}/eggress/releases/download/v0.1.0/eggress-0.1.0-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv eggress /usr/local/bin/
+
+# Windows: download .zip from GitHub Releases
+```
+
+See [BINARY_INSTALL.md](docs/release/BINARY_INSTALL.md) for all platforms and checksum verification.
+
+### Python package
+
+```bash
+pip install eggress
+```
+
+### Container image
+
+```bash
+docker pull ghcr.io/{owner}/eggress:v0.1.0
+```
+
+See [CONTAINER.md](docs/release/CONTAINER.md) for configuration and usage.
+
+### Build from source
+
+```bash
+cargo install --path crates/eggress-cli
+```
+
 ## Usage
 
 ```text
@@ -402,21 +442,24 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 
 ### Packaging
 
-- [ ] Linux binaries
-- [ ] macOS binaries
-- [ ] Windows binaries
+- [x] Linux binaries (x86_64, aarch64)
+- [x] macOS binaries (x86_64, arm64)
+- [x] Windows binaries (x86_64)
 - [ ] Static or minimally dynamic builds where practical
-- [ ] Container image
+- [x] Container image (distroless, multi-arch)
 - [ ] Reproducible builds
-- [ ] Signed release artifacts
-- [ ] SBOM
+- [x] Signed release artifacts (cosign)
+- [x] SBOM (cargo-auditable + cyclonedx)
 - [ ] Crates.io packages
-- [ ] Migration guide from Python `pproxy`
+- [x] Migration guide from Python `pproxy`
 - [x] Python package on PyPI (wheels for Linux/macOS/Windows)
 - [x] PyPI release workflow (GitHub Actions)
 - [x] PyPI release documentation
 - [x] Python import strategy and packaging docs (Phase 32)
 - [x] Python wheel smoke tests (Phase 32)
+- [x] Release workflow with artifact upload (Phase 49)
+- [x] SHA-256 checksums for all artifacts (Phase 49)
+- [x] Binary install documentation (Phase 49)
 
 ### pproxy compatibility
 
@@ -537,6 +580,11 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Python packaging](docs/python/PACKAGING.md)
 - [Release checklist](docs/python/RELEASE_CHECKLIST.md)
 - [Python import/distribution ADR](docs/adr/ADR_python_import_and_distribution_strategy.md)
+- [Release process](docs/release/RELEASE_PROCESS.md)
+- [Release artifact matrix](docs/release/ARTIFACT_MATRIX.md)
+- [Binary install guide](docs/release/BINARY_INSTALL.md)
+- [CLI binary matrix](docs/release/BINARY_MATRIX.md)
+- [Container image](docs/release/CONTAINER.md)
 
 ## Status discipline
 

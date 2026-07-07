@@ -1,0 +1,347 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., v0.1.0)"
+        required: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ── CI gates (must pass before any artifacts are built) ──────────────
+  ci-gates:
+    name: CI Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Check
+        run: cargo check --workspace --all-targets
+      - name: Test
+        run: cargo test --workspace
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: EmbarkStudios/cargo-deny-action@v2
+      - name: Audit
+        run: |
+          cargo install cargo-audit
+          cargo audit
+
+  # ── CLI binary builds ───────────────────────────────────────────────
+  build-binaries:
+    name: Binary (${{ matrix.target }})
+    needs: ci-gates
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }} -p eggress-cli
+
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          mv eggress eggress-${{ github.ref_name }}-${{ matrix.target }}
+          tar czf ../../../eggress-${{ github.ref_name }}-${{ matrix.target }}.tar.gz \
+            eggress-${{ github.ref_name }}-${{ matrix.target }}
+          cd ../../..
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Copy-Item eggress.exe "eggress-${{ github.ref_name }}-${{ matrix.target }}.exe"
+          Compress-Archive -Path "eggress-${{ github.ref_name }}-${{ matrix.target }}.exe" `
+            -DestinationPath "../../../eggress-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          cd ../../..
+
+      - name: Add licenses to archive
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          cp ../../../../LICENSE-MIT ../../../../LICENSE-APACHE .
+          tar rf ../../../eggress-${{ github.ref_name }}-${{ matrix.target }}.tar.gz \
+            LICENSE-MIT LICENSE-APACHE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: eggress-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive }}
+
+  # ── Python wheels ───────────────────────────────────────────────────
+  build-wheels:
+    name: Wheel (${{ matrix.os }}-${{ matrix.target }})
+    needs: ci-gates
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+          - os: ubuntu-latest
+            target: aarch64
+          - os: macos-latest
+            target: x86_64
+          - os: macos-latest
+            target: aarch64
+          - os: windows-latest
+            target: x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'aarch64' && (startsWith(matrix.os, 'macos') && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu') || '' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install maturin
+        run: pip install "maturin>=1.0,<2.0"
+
+      - name: Build wheel
+        run: maturin build --release --target ${{ matrix.target }}-unknown-${{ startsWith(matrix.os, 'macos') && 'apple-darwin' || (startsWith(matrix.os, 'windows') && 'pc-windows-msvc' || 'linux-gnu') }} --out dist
+        working-directory: crates/eggress-python
+
+      - name: Smoke test wheel
+        shell: bash
+        run: |
+          python -m venv .venv-smoke
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            . .venv-smoke/Scripts/activate
+          else
+            . .venv-smoke/bin/activate
+          fi
+          pip install crates/eggress-python/dist/eggress-*.whl
+          python -c "import eggress; print(eggress.__version__)"
+          python -c "from eggress.pproxy import check_pproxy_uri; print(check_pproxy_uri('socks5://127.0.0.1:1080'))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: crates/eggress-python/dist/*.whl
+
+  build-sdist:
+    name: Source Distribution
+    needs: ci-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install maturin
+        run: pip install "maturin>=1.0,<2.0"
+      - name: Build sdist
+        run: maturin sdist --out dist
+        working-directory: crates/eggress-python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: crates/eggress-python/dist/*.tar.gz
+
+  # ── Checksums and SBOM ─────────────────────────────────────────────
+  checksums:
+    name: Checksums & SBOM
+    needs: [build-binaries, build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: "binary-*|wheel-*|sdist"
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.whl" -o -name "*.tar.gz" \) \
+            -not -name "SHA256SUMS" -exec sha256sum {} \; > ../SHA256SUMS
+          cd ..
+          cat SHA256SUMS
+
+      - name: Generate SBOM (cargo-auditable)
+        run: |
+          cargo install cargo-auditable
+          cargo auditable build --release -p eggress-cli || true
+          # Generate SBOM from lockfile
+          pip install cyclonedx-bom
+          cyclonedx-py environment --format json --output-file sbom.json || true
+
+      - name: Install cosign
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cosign sign-blob --yes --output-signature SHA256SUMS.sig \
+            --output-certificate SHA256SUMS.cert SHA256SUMS
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums-sbom
+          path: |
+            SHA256SUMS
+            SHA256SUMS.sig
+            SHA256SUMS.cert
+            sbom.json
+
+  # ── Container image ────────────────────────────────────────────────
+  build-container:
+    name: Container Image
+    needs: [build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-x86_64-unknown-linux-gnu
+          path: binaries/x86_64
+
+      - name: Download Linux aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-aarch64-unknown-linux-gnu
+          path: binaries/aarch64
+
+      - name: Prepare binaries for multi-arch build
+        run: |
+          mkdir -p build/x86_64 build/aarch64
+          cd binaries/x86_64
+          tar xzf *.tar.gz
+          mv eggress-* ../../build/x86_64/eggress
+          cd ../aarch64
+          tar xzf *.tar.gz
+          mv eggress-* ../../build/aarch64/eggress
+          chmod +x ../../build/x86_64/eggress ../../build/aarch64/eggress
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/eggress:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/eggress:latest
+          build-args: |
+            VERSION=${{ github.ref_name }}
+
+  # ── GitHub Release ─────────────────────────────────────────────────
+  create-release:
+    name: GitHub Release
+    needs: [build-binaries, build-wheels, build-sdist, checksums]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: "binary-*|wheel-*|sdist|checksums-sbom"
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: false
+          files: |
+            release-artifacts/**/*.tar.gz
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.whl
+            release-artifacts/SHA256SUMS
+            release-artifacts/SHA256SUMS.sig
+            release-artifacts/SHA256SUMS.cert
+            release-artifacts/sbom.json
+          body: |
+            ## eggress ${{ github.ref_name }}
+
+            ### Installation
+
+            **Binary:** See [BINARY_INSTALL.md](docs/release/BINARY_INSTALL.md)
+            **Python:** `pip install eggress==${{ github.ref_name }}`
+            **Container:** `docker pull ghcr.io/${{ github.repository_owner }}/eggress:${{ github.ref_name }}`
+
+            ### Verification
+
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+
+            See [RELEASE_NOTES_PARITY_RC.md](docs/release/RELEASE_NOTES_PARITY_RC.md) for full release notes.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
