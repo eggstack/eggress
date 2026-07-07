@@ -107,7 +107,7 @@ documented above and do not affect correctness.
 - [PARITY_TARGET_FREEZE.md](PARITY_TARGET_FREEZE.md)
 - [FINAL_PPROXY_PARITY_REPORT.md](FINAL_PPROXY_PARITY_REPORT.md)
 - [PARITY_RELEASE_GO_NO_GO.md](PARITY_RELEASE_GO_NO_GO.md)
-- [RELEASE_NOTES_PARITY_RC.md](RELEASE_NOTES_PARITY_RC.md)
+- [RELEASE_NOTES_PHASE_51.md](RELEASE_NOTES_PHASE_51.md)
 - [PLATFORM_SUPPORT_MATRIX.md](PLATFORM_SUPPORT_MATRIX.md)
 - Manifest: `docs/parity/pproxy_capability_manifest.toml`
 - Validator: `scripts/validate_pproxy_parity_manifest.py`

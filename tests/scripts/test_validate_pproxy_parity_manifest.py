@@ -301,7 +301,4 @@ class TestRule14OnRealManifest:
         finally:
             sys.stdout = old_stdout
         output = buf.getvalue()
-        # Strict mode may have warnings promoted; record but don't hard-fail
-        # unless it's an actual structural issue.
-        if exit_code != 0:
-            print(f"Strict mode output:\n{output}")
+        assert exit_code == 0, f"Validator failed in strict mode on real manifest:\n{output}"

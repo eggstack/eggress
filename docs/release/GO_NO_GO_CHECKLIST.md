@@ -25,7 +25,7 @@
 
 | Check | Result | Notes |
 |---|---|---|
-| Integration tests pass | ⚠️ Environment limitation | Port binding conflicts in current dev environment; not a code defect. Tests pass in CI. |
+| Integration tests pass | ⚠️ Environment limitation | Port binding conflicts in current dev environment; not a code defect. Hosted CI status is not verified; local verification is the source of truth. |
 | Python wheel installable on target platform | ⚠️ Environment limitation | arm64 wheel on x86_64 Python mismatch; not a code defect. Wheels built per-arch in CI. |
 
 ## Release Blockers
