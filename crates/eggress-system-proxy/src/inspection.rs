@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::apply::Command;
 use crate::backends;
 use crate::capability::{
     system_proxy_platform_info, SystemProxyCapability, SystemProxyCapabilityReport,
@@ -59,7 +60,7 @@ pub struct InspectionResult {
     /// Whether apply/revert is supported on this platform.
     pub apply_supported: bool,
     /// Commands that would be used for apply (dry-run).
-    pub dry_run_commands: Vec<String>,
+    pub dry_run_commands: Vec<Command>,
 }
 
 impl fmt::Display for InspectionResult {
@@ -214,7 +215,7 @@ fn inspect_env_only(runner: &dyn CommandRunner) -> Option<SystemProxySettings> {
 fn generate_dry_run_commands(
     platform: &str,
     settings: Option<&SystemProxySettings>,
-) -> Vec<String> {
+) -> Vec<Command> {
     let settings = match settings {
         Some(s) => s,
         None => return Vec::new(),

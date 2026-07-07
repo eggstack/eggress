@@ -37,7 +37,12 @@ jobs:
       - name: Audit
         run: |
           cargo install cargo-audit
-          cargo audit
+          # RUSTSEC-2025-0134: rustls-pemfile is unmaintained. The crate is the
+          # only published version on crates.io and is needed by
+          # eggress-transport-tls for PEM cert chain loading. Tracked for
+          # removal once a maintained successor (or upstream rustls
+          # integration) is available.
+          cargo audit --ignore RUSTSEC-2025-0134
 
   # ── CLI binary builds ───────────────────────────────────────────────
   build-binaries:

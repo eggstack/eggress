@@ -1,3 +1,4 @@
+use crate::apply::Command;
 use crate::command_runner::CommandRunner;
 use crate::inspection::SystemProxySettings;
 
@@ -89,38 +90,78 @@ pub fn generate_macos_apply_commands(
     https_proxy: Option<&str>,
     socks_proxy: Option<&str>,
     no_proxy: Option<&str>,
-) -> Vec<String> {
+) -> Vec<Command> {
     let mut commands = Vec::new();
     if let Some(http) = http_proxy {
-        commands.push(format!("networksetup -setwebproxy {service} on"));
-        commands.push(format!("networksetup -setwebproxyservers {service} {http}"));
+        commands.push(Command::new(
+            "networksetup",
+            vec!["-setwebproxy".into(), service.into(), "on".into()],
+        ));
+        commands.push(Command::new(
+            "networksetup",
+            vec!["-setwebproxyservers".into(), service.into(), http.into()],
+        ));
     }
     if let Some(https) = https_proxy {
-        commands.push(format!("networksetup -setsecurewebproxy {service} on"));
-        commands.push(format!(
-            "networksetup -setsecurewebproxyservers {service} {https}"
+        commands.push(Command::new(
+            "networksetup",
+            vec!["-setsecurewebproxy".into(), service.into(), "on".into()],
+        ));
+        commands.push(Command::new(
+            "networksetup",
+            vec![
+                "-setsecurewebproxyservers".into(),
+                service.into(),
+                https.into(),
+            ],
         ));
     }
     if let Some(socks) = socks_proxy {
-        commands.push(format!("networksetup -setsocksfirewallproxy {service} on"));
-        commands.push(format!(
-            "networksetup -setsocksfirewallproxyserver {service} {socks}"
+        commands.push(Command::new(
+            "networksetup",
+            vec!["-setsocksfirewallproxy".into(), service.into(), "on".into()],
+        ));
+        commands.push(Command::new(
+            "networksetup",
+            vec![
+                "-setsocksfirewallproxyserver".into(),
+                service.into(),
+                socks.into(),
+            ],
         ));
     }
     if let Some(no_proxy) = no_proxy {
-        commands.push(format!(
-            "networksetup -setwebproxybypassdomains {service} {no_proxy}"
+        commands.push(Command::new(
+            "networksetup",
+            vec![
+                "-setwebproxybypassdomains".into(),
+                service.into(),
+                no_proxy.into(),
+            ],
         ));
     }
     commands
 }
 
 /// Generate `networksetup` commands to disable proxy settings (dry-run).
-pub fn generate_macos_disable_commands(service: &str) -> Vec<String> {
+pub fn generate_macos_disable_commands(service: &str) -> Vec<Command> {
     vec![
-        format!("networksetup -setwebproxy {service} off"),
-        format!("networksetup -setsecurewebproxy {service} off"),
-        format!("networksetup -setsocksfirewallproxy {service} off"),
+        Command::new(
+            "networksetup",
+            vec!["-setwebproxy".into(), service.into(), "off".into()],
+        ),
+        Command::new(
+            "networksetup",
+            vec!["-setsecurewebproxy".into(), service.into(), "off".into()],
+        ),
+        Command::new(
+            "networksetup",
+            vec![
+                "-setsocksfirewallproxy".into(),
+                service.into(),
+                "off".into(),
+            ],
+        ),
     ]
 }
 
@@ -207,20 +248,24 @@ mod tests {
             Some("socks:1080"),
             Some("localhost,127.0.0.1"),
         );
-        assert!(commands.iter().any(|c| c.contains("-setwebproxy")));
-        assert!(commands.iter().any(|c| c.contains("-setsecurewebproxy")));
         assert!(commands
             .iter()
-            .any(|c| c.contains("-setsocksfirewallproxy")));
+            .any(|c| c.to_string().contains("-setwebproxy")));
         assert!(commands
             .iter()
-            .any(|c| c.contains("-setwebproxybypassdomains")));
+            .any(|c| c.to_string().contains("-setsecurewebproxy")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("-setsocksfirewallproxy")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("-setwebproxybypassdomains")));
     }
 
     #[test]
     fn generate_disable_commands() {
         let commands = generate_macos_disable_commands("*Wi-Fi");
         assert_eq!(commands.len(), 3);
-        assert!(commands.iter().all(|c| c.contains("off")));
+        assert!(commands.iter().all(|c| c.to_string().contains("off")));
     }
 }

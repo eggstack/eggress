@@ -30,6 +30,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install maturin
         run: pip install "maturin>=1.0,<2.0"
+      - name: Clean stale native extension
+        # Maturin leaves a per-build `_eggress.cpython-*.so` under python/eggress/
+        # which is .gitignored. If a stale build from a different architecture
+        # or Python interpreter is present, pytest collection will fail with
+        # import errors. Remove any such stale artifacts before building.
+        run: git clean -fX python/eggress
       - name: Build and install
         run: maturin develop
         working-directory: crates/eggress-python

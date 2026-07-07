@@ -1,3 +1,4 @@
+use crate::apply::Command;
 use crate::command_runner::CommandRunner;
 use crate::inspection::SystemProxySettings;
 
@@ -114,7 +115,7 @@ pub fn generate_windows_apply_commands(
     https_proxy: Option<&str>,
     socks_proxy: Option<&str>,
     no_proxy: Option<&str>,
-) -> Vec<String> {
+) -> Vec<Command> {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
     let mut commands = Vec::new();
 
@@ -131,18 +132,51 @@ pub fn generate_windows_apply_commands(
     }
 
     if !parts.is_empty() {
-        commands.push(format!(
-            "reg add \"{key}\" /v ProxyServer /t REG_SZ /d \"{}\" /f",
-            parts.join(";")
+        let proxy_value = parts.join(";");
+        commands.push(Command::new(
+            "reg",
+            vec![
+                "add".into(),
+                key.into(),
+                "/v".into(),
+                "ProxyServer".into(),
+                "/t".into(),
+                "REG_SZ".into(),
+                "/d".into(),
+                proxy_value,
+                "/f".into(),
+            ],
         ));
-        commands.push(format!(
-            "reg add \"{key}\" /v ProxyEnable /t REG_DWORD /d 1 /f"
+        commands.push(Command::new(
+            "reg",
+            vec![
+                "add".into(),
+                key.into(),
+                "/v".into(),
+                "ProxyEnable".into(),
+                "/t".into(),
+                "REG_DWORD".into(),
+                "/d".into(),
+                "1".into(),
+                "/f".into(),
+            ],
         ));
     }
 
     if let Some(no_proxy) = no_proxy {
-        commands.push(format!(
-            "reg add \"{key}\" /v ProxyOverride /t REG_SZ /d \"{no_proxy}\" /f"
+        commands.push(Command::new(
+            "reg",
+            vec![
+                "add".into(),
+                key.into(),
+                "/v".into(),
+                "ProxyOverride".into(),
+                "/t".into(),
+                "REG_SZ".into(),
+                "/d".into(),
+                no_proxy.into(),
+                "/f".into(),
+            ],
         ));
     }
 
@@ -150,10 +184,21 @@ pub fn generate_windows_apply_commands(
 }
 
 /// Generate commands to disable Windows proxy settings (dry-run only).
-pub fn generate_windows_disable_commands() -> Vec<String> {
+pub fn generate_windows_disable_commands() -> Vec<Command> {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-    vec![format!(
-        "reg add \"{key}\" /v ProxyEnable /t REG_DWORD /d 0 /f"
+    vec![Command::new(
+        "reg",
+        vec![
+            "add".into(),
+            key.into(),
+            "/v".into(),
+            "ProxyEnable".into(),
+            "/t".into(),
+            "REG_DWORD".into(),
+            "/d".into(),
+            "0".into(),
+            "/f".into(),
+        ],
     )]
 }
 
@@ -197,16 +242,22 @@ mod tests {
             None,
             Some("localhost"),
         );
-        assert!(commands.iter().any(|c| c.contains("ProxyServer")));
-        assert!(commands.iter().any(|c| c.contains("ProxyEnable")));
-        assert!(commands.iter().any(|c| c.contains("ProxyOverride")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("ProxyServer")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("ProxyEnable")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("ProxyOverride")));
     }
 
     #[test]
     fn generate_disable_commands() {
         let commands = generate_windows_disable_commands();
         assert_eq!(commands.len(), 1);
-        assert!(commands[0].contains("ProxyEnable"));
-        assert!(commands[0].contains("/d 0"));
+        assert!(commands[0].to_string().contains("ProxyEnable"));
+        assert!(commands[0].to_string().contains("/d 0"));
     }
 }

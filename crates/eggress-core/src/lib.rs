@@ -109,7 +109,10 @@ pub struct TargetAddr {
 
 impl fmt::Display for TargetAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.host, self.port)
+        match &self.host {
+            TargetHost::Ip(IpAddr::V6(_)) => write!(f, "[{}]:{}", self.host, self.port),
+            _ => write!(f, "{}:{}", self.host, self.port),
+        }
     }
 }
 
@@ -117,7 +120,30 @@ impl std::str::FromStr for TargetAddr {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(idx) = s.rfind(':') {
+        if let Some(rest) = s.strip_prefix('[') {
+            let close = rest
+                .find(']')
+                .ok_or_else(|| format!("invalid target format: missing closing ']' in '{s}'"))?;
+            let host_str = &rest[..close];
+            let after = &rest[close + 1..];
+            let port_str = after.strip_prefix(':').ok_or_else(|| {
+                format!("invalid target format: missing ':port' after ']' in '{s}'")
+            })?;
+            let port: u16 = port_str
+                .parse()
+                .map_err(|e| format!("invalid port '{port_str}': {e}"))?;
+            let ip: IpAddr = host_str
+                .parse()
+                .map_err(|e| format!("invalid IPv6 address '{host_str}': {e}"))?;
+            Ok(TargetAddr {
+                host: TargetHost::Ip(ip),
+                port,
+            })
+        } else if s.matches(':').count() > 1 {
+            Err(format!(
+                "invalid target format: unbracketed IPv6 literal in '{s}' (use [addr]:port)"
+            ))
+        } else if let Some(idx) = s.rfind(':') {
             let host_part = &s[..idx];
             let port_part = &s[idx + 1..];
             let port: u16 = port_part
@@ -274,5 +300,52 @@ mod tests {
             RejectReason::AuthRequired.to_string(),
             "authentication required"
         );
+    }
+
+    #[test]
+    fn test_target_addr_from_str_bracketed_ipv6() {
+        let addr: TargetAddr = "[::1]:443".parse().unwrap();
+        assert_eq!(addr.host, TargetHost::Ip("::1".parse::<IpAddr>().unwrap()));
+        assert_eq!(addr.port, 443);
+    }
+
+    #[test]
+    fn test_target_addr_from_str_full_ipv6() {
+        let addr: TargetAddr = "[2001:db8::1]:80".parse().unwrap();
+        assert_eq!(
+            addr.host,
+            TargetHost::Ip("2001:db8::1".parse::<IpAddr>().unwrap())
+        );
+        assert_eq!(addr.port, 80);
+    }
+
+    #[test]
+    fn test_target_addr_from_str_rejects_unbracketed_ipv6() {
+        let err = "::1:443".parse::<TargetAddr>().unwrap_err();
+        assert!(err.contains("unbracketed IPv6"));
+    }
+
+    #[test]
+    fn test_target_addr_from_str_rejects_unclosed_bracket() {
+        let err = "[::1:443".parse::<TargetAddr>().unwrap_err();
+        assert!(err.contains("closing ']'"));
+    }
+
+    #[test]
+    fn test_target_addr_display_brackets_ipv6() {
+        let addr = TargetAddr {
+            host: TargetHost::Ip("::1".parse().unwrap()),
+            port: 443,
+        };
+        assert_eq!(addr.to_string(), "[::1]:443");
+    }
+
+    #[test]
+    fn test_target_addr_display_does_not_bracket_ipv4() {
+        let addr = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+        assert_eq!(addr.to_string(), "127.0.0.1:80");
     }
 }

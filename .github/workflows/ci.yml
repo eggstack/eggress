@@ -70,7 +70,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-audit
-      - run: cargo audit
+      # RUSTSEC-2025-0134: rustls-pemfile is unmaintained. The crate is the
+      # only published version on crates.io and is needed by eggress-transport-tls
+      # for PEM cert chain loading. Tracked for removal once a maintained
+      # successor (or upstream rustls integration) is available.
+      - run: cargo audit --ignore RUSTSEC-2025-0134
 
   interoperability:
     name: Interoperability (Ubuntu)

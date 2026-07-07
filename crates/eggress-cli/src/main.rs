@@ -279,16 +279,25 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
     let url = format!("{base}/-/route-explain");
 
     let (host, port, path) = parse_admin_url(&url);
+    let host_header = if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
 
     let body_str = body.to_string();
     let request = format!(
-        "POST {path} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_str}",
+        "POST {path} HTTP/1.1\r\nHost: {host_header}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body_str}",
         body_str.len(),
     );
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let result = runtime.block_on(async {
-        let addr = format!("{host}:{port}");
+        let addr = if host.contains(':') {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
         let mut stream = match tokio::net::TcpStream::connect(&addr).await {
             Ok(s) => s,
             Err(e) => {
@@ -353,12 +362,23 @@ fn parse_admin_url(url: &str) -> (String, u16, String) {
         Some(i) => (&without_proto[..i], &without_proto[i..]),
         None => (without_proto, "/"),
     };
-    let (host, port) = match host_port.rfind(':') {
-        Some(i) => (
-            host_port[..i].to_string(),
-            host_port[i + 1..].parse::<u16>().unwrap_or(9090),
-        ),
-        None => (host_port.to_string(), 9090),
+    let (host, port) = if let Some(rest) = host_port.strip_prefix('[') {
+        let close = rest.find(']').unwrap_or(rest.len());
+        let host = rest[..close].to_string();
+        let after = rest[close..].strip_prefix(']').unwrap_or("");
+        let port = after
+            .strip_prefix(':')
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(9090);
+        (host, port)
+    } else {
+        match host_port.rfind(':') {
+            Some(i) => (
+                host_port[..i].to_string(),
+                host_port[i + 1..].parse::<u16>().unwrap_or(9090),
+            ),
+            None => (host_port.to_string(), 9090),
+        }
     };
     (host, port, path.to_string())
 }
@@ -1747,5 +1767,43 @@ mod tests {
         assert!(json.contains("\"reachable\": true"));
         assert!(json.contains("\"latency_ms\": 15"));
         assert!(!json.contains("secret"));
+    }
+
+    #[test]
+    fn parse_admin_url_default_port_ipv6_loopback() {
+        let (host, port, path) = parse_admin_url("http://[::1]/-/route-explain");
+        assert_eq!(host, "::1");
+        assert_eq!(port, 9090);
+        assert_eq!(path, "/-/route-explain");
+    }
+
+    #[test]
+    fn parse_admin_url_explicit_port_ipv6_loopback() {
+        let (host, port, path) = parse_admin_url("http://[::1]:9090/admin");
+        assert_eq!(host, "::1");
+        assert_eq!(port, 9090);
+        assert_eq!(path, "/admin");
+    }
+
+    #[test]
+    fn parse_admin_url_full_ipv6() {
+        let (host, port, _path) = parse_admin_url("http://[2001:db8::1]:8080/-/route-explain");
+        assert_eq!(host, "2001:db8::1");
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn parse_admin_url_default_port_ipv4() {
+        let (host, port, path) = parse_admin_url("http://127.0.0.1/admin");
+        assert_eq!(host, "127.0.0.1");
+        assert_eq!(port, 9090);
+        assert_eq!(path, "/admin");
+    }
+
+    #[test]
+    fn parse_admin_url_domain_with_port() {
+        let (host, port, _path) = parse_admin_url("http://admin.example.com:8080/-/x");
+        assert_eq!(host, "admin.example.com");
+        assert_eq!(port, 8080);
     }
 }

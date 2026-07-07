@@ -1,7 +1,37 @@
+use std::fmt;
 use std::path::PathBuf;
 
 use crate::command_runner::CommandRunner;
 use crate::inspection::SystemProxySettings;
+
+/// A structured system command. Programs and arguments are kept separate so
+/// that callers can pass them directly to `Command::new(program).args(args)`
+/// without relying on shell-style splitting, which would mishandle names
+/// containing spaces (e.g. Windows registry keys, macOS network services).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Command {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+impl Command {
+    pub fn new(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            program: program.into(),
+            args,
+        }
+    }
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.program)?;
+        for arg in &self.args {
+            write!(f, " {}", arg)?;
+        }
+        Ok(())
+    }
+}
 
 /// Plan for applying system proxy settings.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -19,7 +49,7 @@ pub struct ApplyPlan {
     /// No-proxy/bypass list.
     pub no_proxy: Option<String>,
     /// Commands that would be executed.
-    pub commands: Vec<String>,
+    pub commands: Vec<Command>,
     /// Previous settings captured for rollback.
     pub previous_settings: Option<SystemProxySettings>,
 }
@@ -125,18 +155,12 @@ pub fn create_rollback(
 }
 
 /// Execute an apply plan using the provided command runner.
-pub fn execute_apply(plan: &ApplyPlan, runner: &dyn CommandRunner) -> Result<Vec<String>, String> {
+pub fn execute_apply(plan: &ApplyPlan, runner: &dyn CommandRunner) -> Result<Vec<Command>, String> {
     let mut executed = Vec::new();
     for cmd in &plan.commands {
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        if parts.is_empty() {
-            continue;
-        }
-        let program = parts[0];
-        let args = &parts[1..];
-
+        let arg_refs: Vec<&str> = cmd.args.iter().map(String::as_str).collect();
         runner
-            .run(program, args)
+            .run(&cmd.program, &arg_refs)
             .map_err(|e| format!("failed to execute '{cmd}': {e}"))?;
         executed.push(cmd.clone());
     }
@@ -144,30 +168,52 @@ pub fn execute_apply(plan: &ApplyPlan, runner: &dyn CommandRunner) -> Result<Vec
 }
 
 /// Generate revert commands from rollback state.
-pub fn generate_revert_commands(rollback: &RollbackState) -> Vec<String> {
+pub fn generate_revert_commands(rollback: &RollbackState) -> Vec<Command> {
     match rollback.platform.as_str() {
         "macos" => {
             let svc = rollback.service.as_deref().unwrap_or("*Wi-Fi");
             let mut commands = crate::backends::macos::generate_macos_disable_commands(svc);
             if let Some(ref http) = rollback.http_proxy {
                 if !http.is_empty() {
-                    commands.push(format!("networksetup -setwebproxy {svc} on"));
-                    commands.push(format!("networksetup -setwebproxyservers {svc} {http}"));
+                    commands.push(Command::new(
+                        "networksetup",
+                        vec!["-setwebproxy".into(), svc.into(), "on".into()],
+                    ));
+                    commands.push(Command::new(
+                        "networksetup",
+                        vec!["-setwebproxyservers".into(), svc.into(), http.clone()],
+                    ));
                 }
             }
             if let Some(ref https) = rollback.https_proxy {
                 if !https.is_empty() {
-                    commands.push(format!("networksetup -setsecurewebproxy {svc} on"));
-                    commands.push(format!(
-                        "networksetup -setsecurewebproxyservers {svc} {https}"
+                    commands.push(Command::new(
+                        "networksetup",
+                        vec!["-setsecurewebproxy".into(), svc.into(), "on".into()],
+                    ));
+                    commands.push(Command::new(
+                        "networksetup",
+                        vec![
+                            "-setsecurewebproxyservers".into(),
+                            svc.into(),
+                            https.clone(),
+                        ],
                     ));
                 }
             }
             if let Some(ref socks) = rollback.socks_proxy {
                 if !socks.is_empty() {
-                    commands.push(format!("networksetup -setsocksfirewallproxy {svc} on"));
-                    commands.push(format!(
-                        "networksetup -setsocksfirewallproxyserver {svc} {socks}"
+                    commands.push(Command::new(
+                        "networksetup",
+                        vec!["-setsocksfirewallproxy".into(), svc.into(), "on".into()],
+                    ));
+                    commands.push(Command::new(
+                        "networksetup",
+                        vec![
+                            "-setsocksfirewallproxyserver".into(),
+                            svc.into(),
+                            socks.clone(),
+                        ],
                     ));
                 }
             }
@@ -187,12 +233,34 @@ pub fn generate_revert_commands(rollback: &RollbackState) -> Vec<String> {
             }
             if !parts.is_empty() {
                 let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-                commands.push(format!(
-                    "reg add \"{key}\" /v ProxyServer /t REG_SZ /d \"{}\" /f",
-                    parts.join(";")
+                let proxy_value = parts.join(";");
+                commands.push(Command::new(
+                    "reg",
+                    vec![
+                        "add".into(),
+                        key.into(),
+                        "/v".into(),
+                        "ProxyServer".into(),
+                        "/t".into(),
+                        "REG_SZ".into(),
+                        "/d".into(),
+                        proxy_value,
+                        "/f".into(),
+                    ],
                 ));
-                commands.push(format!(
-                    "reg add \"{key}\" /v ProxyEnable /t REG_DWORD /d 1 /f"
+                commands.push(Command::new(
+                    "reg",
+                    vec![
+                        "add".into(),
+                        key.into(),
+                        "/v".into(),
+                        "ProxyEnable".into(),
+                        "/t".into(),
+                        "REG_DWORD".into(),
+                        "/d".into(),
+                        "1".into(),
+                        "/f".into(),
+                    ],
                 ));
             }
             commands
@@ -243,21 +311,70 @@ mod tests {
             None,
         );
         assert_eq!(plan.platform, "macos");
-        assert!(plan.commands.iter().any(|c| c.contains("networksetup")));
+        assert!(plan
+            .commands
+            .iter()
+            .any(|c| c.to_string().contains("networksetup")));
     }
 
     #[test]
     fn plan_apply_windows_produces_commands() {
         let plan = plan_apply("windows", None, Some("proxy:8080"), None, None, None, None);
         assert_eq!(plan.platform, "windows");
-        assert!(plan.commands.iter().any(|c| c.contains("reg add")));
+        assert!(plan
+            .commands
+            .iter()
+            .any(|c| c.to_string().contains("reg add")));
     }
 
     #[test]
     fn plan_apply_linux_produces_commands() {
         let plan = plan_apply("linux", None, Some("proxy:8080"), None, None, None, None);
         assert_eq!(plan.platform, "linux");
-        assert!(plan.commands.iter().any(|c| c.contains("gsettings")));
+        assert!(plan
+            .commands
+            .iter()
+            .any(|c| c.to_string().contains("gsettings")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_apply_preserves_spaces_in_args() {
+        use std::os::unix::process::ExitStatusExt;
+        let runner = MockCommandRunner::new().add_always(
+            "networksetup",
+            Ok(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            }),
+        );
+
+        let plan = ApplyPlan {
+            platform: "macos".to_string(),
+            service: Some("USB 10/100/1000 LAN".to_string()),
+            http_proxy: Some("proxy:8080".to_string()),
+            https_proxy: None,
+            socks_proxy: None,
+            no_proxy: None,
+            commands: vec![Command::new(
+                "networksetup",
+                vec![
+                    "-setwebproxy".into(),
+                    "USB 10/100/1000 LAN".into(),
+                    "on".into(),
+                ],
+            )],
+            previous_settings: None,
+        };
+
+        let _ = execute_apply(&plan, &runner).unwrap();
+        let calls = runner.calls();
+        assert_eq!(calls[0].0, "networksetup");
+        assert_eq!(
+            calls[0].1,
+            vec!["-setwebproxy", "USB 10/100/1000 LAN", "on"]
+        );
     }
 
     #[test]
@@ -316,12 +433,18 @@ mod tests {
             https_proxy: None,
             socks_proxy: None,
             no_proxy: None,
-            commands: vec!["networksetup -setwebproxy *Wi-Fi on".to_string()],
+            commands: vec![Command::new(
+                "networksetup",
+                vec!["-setwebproxy".into(), "*Wi-Fi".into(), "on".into()],
+            )],
             previous_settings: None,
         };
 
         let executed = execute_apply(&plan, &runner).unwrap();
         assert_eq!(executed.len(), 1);
+        let calls = runner.calls();
+        assert_eq!(calls[0].0, "networksetup");
+        assert_eq!(calls[0].1, vec!["-setwebproxy", "*Wi-Fi", "on"]);
     }
 
     #[test]
@@ -336,7 +459,9 @@ mod tests {
             no_proxy: None,
         };
         let commands = generate_revert_commands(&rollback);
-        assert!(commands.iter().any(|c| c.contains("off")));
-        assert!(commands.iter().any(|c| c.contains("setwebproxy")));
+        assert!(commands.iter().any(|c| c.to_string().contains("off")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("setwebproxy")));
     }
 }

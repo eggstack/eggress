@@ -8,24 +8,41 @@ use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 /// unsuitable for direct outbound connections (DNS rebinding protection).
 ///
 /// Used as a domain-resolution guard: after resolving a domain name,
-/// this checks whether the result points to a private/reserved range.
-/// Literal IP targets bypass this check for pproxy compatibility.
+/// this checks whether the result points to a private/reserved/special-use
+/// range. Literal IP targets bypass this check for pproxy compatibility.
 ///
 /// Rejected ranges:
 /// - IPv4: loopback (127.0.0.0/8), link-local (169.254.0.0/16),
-///   private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), unspecified (0.0.0.0)
+///   private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), unspecified (0.0.0.0),
+///   broadcast (255.255.255.255), multicast (224.0.0.0/4),
+///   documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24),
+///   benchmarking (198.18.0.0/15), reserved future (240.0.0.0/4),
+///   this-network (0.0.0.0/8)
 /// - IPv6: loopback (::1), link-local (fe80::/10), unique-local (fc00::/7),
-///   unspecified (::)
+///   unspecified (::), multicast (ff00::/8),
+///   documentation (2001:db8::/32), discard prefix (0100::/64)
 pub fn is_reserved_or_private_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            v4.is_loopback() || v4.is_link_local() || v4.is_private() || v4.is_unspecified()
+            v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_private()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || is_v4_documentation(v4)
+                || is_v4_benchmarking(v4)
+                || is_v4_reserved(v4)
+                || is_v4_this_network(v4)
         }
         IpAddr::V6(v6) => {
             v6.is_loopback()
                 || v6.is_unspecified()
+                || v6.is_multicast()
+                || is_v6_documentation(v6)
                 || is_unicast_link_local_v6(v6)
                 || is_unique_local_v6(v6)
+                || is_v6_discard_prefix(v6)
         }
     }
 }
@@ -40,6 +57,47 @@ fn is_unique_local_v6(ip: &Ipv6Addr) -> bool {
 fn is_unicast_link_local_v6(ip: &Ipv6Addr) -> bool {
     let octets = ip.octets();
     octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80
+}
+
+/// Check if an IPv6 address is in the 0100::/64 discard prefix.
+fn is_v6_discard_prefix(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 0x01 && octets[1..8].iter().all(|b| *b == 0)
+}
+
+/// Check if an IPv4 address is in the 0.0.0.0/8 "this network" range.
+fn is_v4_this_network(ip: &std::net::Ipv4Addr) -> bool {
+    ip.octets()[0] == 0
+}
+
+/// Check if an IPv4 address is in any of the documentation ranges
+/// (TEST-NET-1: 192.0.2.0/24, TEST-NET-2: 198.51.100.0/24,
+/// TEST-NET-3: 203.0.113.0/24, 192.88.99.0/24).
+fn is_v4_documentation(ip: &std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    matches!(
+        octets,
+        [192, 0, 2, _] | [198, 51, 100, _] | [203, 0, 113, _] | [192, 88, 99, _]
+    )
+}
+
+/// Check if an IPv4 address is in the benchmarking range (198.18.0.0/15).
+fn is_v4_benchmarking(ip: &std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 198 && (octets[1] == 18 || octets[1] == 19)
+}
+
+/// Check if an IPv4 address is in the reserved-for-future-use range
+/// (240.0.0.0/4 — first octet >= 240 and not broadcast).
+fn is_v4_reserved(ip: &std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] >= 240 && octets[0] < 255
+}
+
+/// Check if an IPv6 address is in the documentation range (2001:db8::/32).
+fn is_v6_documentation(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 0x20 && octets[1] == 0x01 && octets[2] == 0x0d && octets[3] == 0xb8
 }
 
 /// Check if a resolved IP address represents a DNS rebinding risk.
@@ -195,8 +253,72 @@ mod tests {
 
     #[test]
     fn not_reserved_ipv6_public() {
-        let ip = "2001:db8::1".parse::<Ipv6Addr>().unwrap();
+        let ip = "2606:4700:4700::1111".parse::<Ipv6Addr>().unwrap();
         assert!(!is_reserved_or_private_ip(&IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn reserved_ipv4_multicast() {
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            224, 0, 0, 1
+        ))));
+    }
+
+    #[test]
+    fn reserved_ipv4_broadcast() {
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::BROADCAST)));
+    }
+
+    #[test]
+    fn reserved_ipv4_documentation() {
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            192, 0, 2, 1
+        ))));
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            198, 51, 100, 1
+        ))));
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            203, 0, 113, 1
+        ))));
+    }
+
+    #[test]
+    fn reserved_ipv4_benchmarking() {
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            198, 18, 0, 1
+        ))));
+    }
+
+    #[test]
+    fn reserved_ipv4_reserved_future() {
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            240, 0, 0, 1
+        ))));
+    }
+
+    #[test]
+    fn reserved_ipv4_this_network() {
+        assert!(is_reserved_or_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            0, 1, 2, 3
+        ))));
+    }
+
+    #[test]
+    fn reserved_ipv6_multicast() {
+        let ip = "ff02::1".parse::<Ipv6Addr>().unwrap();
+        assert!(is_reserved_or_private_ip(&IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn reserved_ipv6_documentation() {
+        let ip = "2001:db8::1".parse::<Ipv6Addr>().unwrap();
+        assert!(is_reserved_or_private_ip(&IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn reserved_ipv6_discard_prefix() {
+        let ip = "0100::1".parse::<Ipv6Addr>().unwrap();
+        assert!(is_reserved_or_private_ip(&IpAddr::V6(ip)));
     }
 
     #[tokio::test]

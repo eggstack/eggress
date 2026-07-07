@@ -1,3 +1,4 @@
+use crate::apply::Command;
 use crate::command_runner::CommandRunner;
 use crate::inspection::SystemProxySettings;
 
@@ -67,43 +68,87 @@ pub fn generate_gnome_apply_commands(
     https_proxy: Option<&str>,
     socks_proxy: Option<&str>,
     no_proxy: Option<&str>,
-) -> Vec<String> {
+) -> Vec<Command> {
     let mut commands = Vec::new();
 
     let has_any = http_proxy.is_some() || https_proxy.is_some() || socks_proxy.is_some();
     if has_any {
-        commands.push("gsettings set org.gnome.system.proxy mode 'manual'".to_string());
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy".into(),
+                "mode".into(),
+                "manual".into(),
+            ],
+        ));
     }
 
     if let Some(http) = http_proxy {
         if let Some((host, port)) = parse_proxy_address(http) {
-            commands.push(format!(
-                "gsettings set org.gnome.system.proxy.http host '{host}'"
+            commands.push(Command::new(
+                "gsettings",
+                vec![
+                    "set".into(),
+                    "org.gnome.system.proxy.http".into(),
+                    "host".into(),
+                    host,
+                ],
             ));
-            commands.push(format!(
-                "gsettings set org.gnome.system.proxy.http port {port}"
+            commands.push(Command::new(
+                "gsettings",
+                vec![
+                    "set".into(),
+                    "org.gnome.system.proxy.http".into(),
+                    "port".into(),
+                    port.to_string(),
+                ],
             ));
         }
     }
 
     if let Some(https) = https_proxy {
         if let Some((host, port)) = parse_proxy_address(https) {
-            commands.push(format!(
-                "gsettings set org.gnome.system.proxy.https host '{host}'"
+            commands.push(Command::new(
+                "gsettings",
+                vec![
+                    "set".into(),
+                    "org.gnome.system.proxy.https".into(),
+                    "host".into(),
+                    host,
+                ],
             ));
-            commands.push(format!(
-                "gsettings set org.gnome.system.proxy.https port {port}"
+            commands.push(Command::new(
+                "gsettings",
+                vec![
+                    "set".into(),
+                    "org.gnome.system.proxy.https".into(),
+                    "port".into(),
+                    port.to_string(),
+                ],
             ));
         }
     }
 
     if let Some(socks) = socks_proxy {
         if let Some((host, port)) = parse_proxy_address(socks) {
-            commands.push(format!(
-                "gsettings set org.gnome.system.proxy.socks host '{host}'"
+            commands.push(Command::new(
+                "gsettings",
+                vec![
+                    "set".into(),
+                    "org.gnome.system.proxy.socks".into(),
+                    "host".into(),
+                    host,
+                ],
             ));
-            commands.push(format!(
-                "gsettings set org.gnome.system.proxy.socks port {port}"
+            commands.push(Command::new(
+                "gsettings",
+                vec![
+                    "set".into(),
+                    "org.gnome.system.proxy.socks".into(),
+                    "port".into(),
+                    port.to_string(),
+                ],
             ));
         }
     }
@@ -113,9 +158,15 @@ pub fn generate_gnome_apply_commands(
             .split(',')
             .map(|s| format!("'{}'", s.trim()))
             .collect();
-        commands.push(format!(
-            "gsettings set org.gnome.system.proxy ignore-hosts [{}]",
-            gsettings_list.join(", ")
+        let value = format!("[{}]", gsettings_list.join(", "));
+        commands.push(Command::new(
+            "gsettings",
+            vec![
+                "set".into(),
+                "org.gnome.system.proxy".into(),
+                "ignore-hosts".into(),
+                value,
+            ],
         ));
     }
 
@@ -123,8 +174,16 @@ pub fn generate_gnome_apply_commands(
 }
 
 /// Generate `gsettings` commands to disable GNOME proxy (dry-run).
-pub fn generate_gnome_disable_commands() -> Vec<String> {
-    vec!["gsettings set org.gnome.system.proxy mode 'none'".to_string()]
+pub fn generate_gnome_disable_commands() -> Vec<Command> {
+    vec![Command::new(
+        "gsettings",
+        vec![
+            "set".into(),
+            "org.gnome.system.proxy".into(),
+            "mode".into(),
+            "none".into(),
+        ],
+    )]
 }
 
 fn get_gsettings_value(
@@ -303,17 +362,24 @@ mod tests {
             None,
             Some("localhost"),
         );
-        assert!(commands.iter().any(|c| c.contains("mode 'manual'")));
-        assert!(commands.iter().any(|c| c.contains("http host")));
-        assert!(commands.iter().any(|c| c.contains("https host")));
-        assert!(commands.iter().any(|c| c.contains("ignore-hosts")));
+        assert!(commands.iter().any(|c| {
+            let s = c.to_string();
+            s.contains("mode") && s.contains("manual")
+        }));
+        assert!(commands.iter().any(|c| c.to_string().contains("http host")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("https host")));
+        assert!(commands
+            .iter()
+            .any(|c| c.to_string().contains("ignore-hosts")));
     }
 
     #[test]
     fn generate_gnome_disable_commands_works() {
         let commands = generate_gnome_disable_commands();
         assert_eq!(commands.len(), 1);
-        assert!(commands[0].contains("mode 'none'"));
+        assert!(commands[0].to_string().contains("none"));
     }
 
     #[test]
