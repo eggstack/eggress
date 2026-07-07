@@ -45,7 +45,8 @@ a documentation and certification milestone.
 
 1. **Integration tests require port binding** — integration tests may
    hang in environments with port binding conflicts. This is
-   environment-specific; tests pass in CI with isolated networking.
+   environment-specific; hosted CI status is not verified; local
+   verification is the source of truth.
 
 2. **Python wheel requires matching architecture** — the arm64 wheel
    does not install on x86_64 Python. Wheels are built per-architecture
@@ -57,6 +58,9 @@ a documentation and certification milestone.
 
 4. **No hosted CI visibility** — local verification is the source of
    truth; see `docs/CI_STATUS.md`.
+
+5. **Certification is conditional** — certification is conditional on
+   hosted CI/release workflow validation if not yet executed.
 
 ## 5. Links
 

@@ -25,12 +25,25 @@ All **109 capabilities** across 5 categories:
 
 | Tier | Count | Description |
 |---|---|---|
-| `drop_in` | 63 | Behavioral parity with pproxy 2.7.9, backed by differential evidence |
+| `drop_in` | 63 | Behavioral parity with pproxy 2.7.9; evidence is integration or stronger (differential where available) |
 | `compatible_with_warning` | 9 | Compatible but with documented caveats |
 | `native_equivalent` | 15 | eggress-native functionality with no pproxy equivalent |
 | `intentional_non_parity` | 17 | Deliberate divergence with documented rationale |
 | `unsupported` | 5 | Not implemented by design |
 | **Total** | **109** | |
+
+## Evidence Breakdown (drop_in)
+
+| Evidence Level | Count |
+|---|---|
+| `differential` | 6 |
+| `integration` | 42 |
+| `unit` | 15 |
+| **Total drop_in** | **63** |
+
+Differential evidence is present where byte-exact payload equivalence with
+pproxy 2.7.9 is verifiable. Integration and unit evidence cover remaining
+capabilities where differential testing is not applicable.
 
 ## Verification Summary
 
@@ -55,7 +68,8 @@ The following are environment-specific constraints, **not** code defects:
 1. **Integration tests hang in current environment** — port binding
    conflicts prevent integration tests from completing in this
    development environment. This is a host-specific networking
-   constraint; tests pass in CI with isolated network namespaces.
+   constraint. Hosted CI status is not verified in this certification;
+   local verification is the source of truth.
 
 2. **Python wheel arch mismatch** — the arm64 wheel does not install on
    x86_64 Python. This is expected cross-platform behavior; wheels are
@@ -82,7 +96,9 @@ The parity capability manifest is **complete, validated, and frozen**.
 All 109 capabilities are classified, evidence-backed where required,
 and consistent with the codebase. The release candidate is **ready**.
 
-No code defects were identified. Two environment-specific limitations
+No release-blocking runtime defects are known after this corrective
+pass. Certification is conditional on hosted CI/release workflow
+validation if not yet executed. Two environment-specific limitations
 (integration test port binding, Python wheel arch mismatch) are
 documented above and do not affect correctness.
 

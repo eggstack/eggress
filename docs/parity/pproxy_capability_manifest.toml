@@ -1211,6 +1211,7 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+rationale = "Multi-hop UDP chains require complex per-hop relay logic with session state tracking across hops; the complexity is not justified given single-hop UDP covers all practical use cases."
 notes = "UDP multi-hop requires complex per-hop relay logic that is not implemented. Single-hop UDP via direct, socks5, or ss is supported."
 
 [[capability]]

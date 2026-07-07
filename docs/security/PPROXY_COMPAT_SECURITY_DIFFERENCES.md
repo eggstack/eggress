@@ -52,6 +52,14 @@ pproxy's backward mode (`-R`) can be invoked without authentication. The compat 
 
 **Contrast with eggress-native:** Config validation emits a warning for non-loopback reverse control binds without auth.
 
+## DNS Rebinding Protection
+
+Eggress blocks DNS resolutions that resolve to private/reserved IP ranges (loopback, link-local, RFC 1918, etc.). This prevents DNS rebinding attacks where a malicious domain resolves to a private IP to access internal services.
+
+Literal private IP targets (e.g., `192.168.1.1`) are allowed for pproxy compatibility with local/LAN proxy usage. This is the deliberate default — pproxy users commonly proxy to local network addresses.
+
+A strict mode could block both DNS-resolved and literal private IPs, but the default favors compatibility. For hardened deployments, use routing rules (`destination_cidr` matchers) to restrict accessible destinations.
+
 ## What pproxy Compat Mode Exposes That Hardened Mode Doesn't
 
 | Surface | pproxy compat default | Hardened eggress-native |

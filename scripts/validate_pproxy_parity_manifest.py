@@ -340,56 +340,56 @@ def validate_manifest(manifest_path: Path, strict: bool = False, validate_only: 
                         "add a 'no config artifact' justification to notes or set config='complete'."
                     ))
 
-    # ── Rule 14: caveat_class validation ──────────────────────────────
-    VALID_CAVEAT_CLASSES = frozenset({
-        "protocol_crate_only",
-        "missing_protocol_command",
-        "missing_protocol_role",
-        "missing_protocol_transport",
-        "deferred_by_adr",
-        "intentional_non_parity",
-        "cli_process_model",
-        "translator_scope_gap",
-    })
-    caveat_class = cap.get("caveat_class", "")
-    if caveat_class and caveat_class not in VALID_CAVEAT_CLASSES:
-        warnings.append(Diagnostic(
-            "warning", 14, entry_id,
-            f"unknown caveat_class '{caveat_class}'; expected one of: "
-            + ", ".join(sorted(VALID_CAVEAT_CLASSES))
-        ))
-
-    config_val_r14 = cap.get("config", "")
-    runtime_val_r14 = cap.get("runtime", "")
-    rationale_r14 = cap.get("rationale", "")
-    notes_r14 = cap.get("notes", "")
-    if (config_val_r14 == "refused" or runtime_val_r14 == "refused"):
-        if not caveat_class and not rationale_r14:
+        # ── Rule 14: caveat_class validation ──────────────────────────────
+        VALID_CAVEAT_CLASSES = frozenset({
+            "protocol_crate_only",
+            "missing_protocol_command",
+            "missing_protocol_role",
+            "missing_protocol_transport",
+            "deferred_by_adr",
+            "intentional_non_parity",
+            "cli_process_model",
+            "translator_scope_gap",
+        })
+        caveat_class = cap.get("caveat_class", "")
+        if caveat_class and caveat_class not in VALID_CAVEAT_CLASSES:
             warnings.append(Diagnostic(
                 "warning", 14, entry_id,
-                "config or runtime is 'refused' but no caveat_class or rationale "
-                "provided; add a caveat_class or rationale to explain the refusal"
+                f"unknown caveat_class '{caveat_class}'; expected one of: "
+                + ", ".join(sorted(VALID_CAVEAT_CLASSES))
             ))
 
-    if caveat_class == "protocol_crate_only":
-        notes_lower = (notes_r14 or "").lower()
-        has_protocol_crate_ref = any(w in notes_lower for w in ("protocol", "crate", "refused"))
-        if not has_protocol_crate_ref:
-            warnings.append(Diagnostic(
-                "warning", 14, entry_id,
-                "caveat_class='protocol_crate_only' but notes do not mention "
-                "which protocol crate exists or which layer refuses it; "
-                "add 'protocol', 'crate', or 'refused' to notes"
-            ))
+        config_val_r14 = cap.get("config", "")
+        runtime_val_r14 = cap.get("runtime", "")
+        rationale_r14 = cap.get("rationale", "")
+        notes_r14 = cap.get("notes", "")
+        if (config_val_r14 == "refused" or runtime_val_r14 == "refused"):
+            if not caveat_class and not rationale_r14:
+                warnings.append(Diagnostic(
+                    "warning", 14, entry_id,
+                    "config or runtime is 'refused' but no caveat_class or rationale "
+                    "provided; add a caveat_class or rationale to explain the refusal"
+                ))
 
-    if caveat_class == "deferred_by_adr":
-        combined_r14 = ((rationale_r14 or "") + " " + (notes_r14 or "")).lower()
-        if "adr" not in combined_r14:
-            warnings.append(Diagnostic(
-                "warning", 14, entry_id,
-                "caveat_class='deferred_by_adr' but rationale/notes do not "
-                "mention 'ADR' or 'adr'; add an ADR reference"
-            ))
+        if caveat_class == "protocol_crate_only":
+            notes_lower = (notes_r14 or "").lower()
+            has_protocol_crate_ref = any(w in notes_lower for w in ("protocol", "crate", "refused"))
+            if not has_protocol_crate_ref:
+                warnings.append(Diagnostic(
+                    "warning", 14, entry_id,
+                    "caveat_class='protocol_crate_only' but notes do not mention "
+                    "which protocol crate exists or which layer refuses it; "
+                    "add 'protocol', 'crate', or 'refused' to notes"
+                ))
+
+        if caveat_class == "deferred_by_adr":
+            combined_r14 = ((rationale_r14 or "") + " " + (notes_r14 or "")).lower()
+            if "adr" not in combined_r14:
+                warnings.append(Diagnostic(
+                    "warning", 14, entry_id,
+                    "caveat_class='deferred_by_adr' but rationale/notes do not "
+                    "mention 'ADR' or 'adr'; add an ADR reference"
+                ))
 
     # ── Report ──────────────────────────────────────────────────────────
     total_caps = len(capabilities)

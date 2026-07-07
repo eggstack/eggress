@@ -7,6 +7,10 @@ use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 /// Returns `true` if the IP address is reserved, private, or otherwise
 /// unsuitable for direct outbound connections (DNS rebinding protection).
 ///
+/// Used as a domain-resolution guard: after resolving a domain name,
+/// this checks whether the result points to a private/reserved range.
+/// Literal IP targets bypass this check for pproxy compatibility.
+///
 /// Rejected ranges:
 /// - IPv4: loopback (127.0.0.0/8), link-local (169.254.0.0/16),
 ///   private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), unspecified (0.0.0.0)
@@ -38,6 +42,15 @@ fn is_unicast_link_local_v6(ip: &Ipv6Addr) -> bool {
     octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80
 }
 
+/// Check if a resolved IP address represents a DNS rebinding risk.
+///
+/// Used as a domain-resolution guard: after resolving a domain name,
+/// this checks whether the result points to a private/reserved range.
+/// Literal IP targets bypass this check for pproxy compatibility.
+pub fn is_dns_rebinding_risk(ip: &IpAddr) -> bool {
+    is_reserved_or_private_ip(ip)
+}
+
 /// Trait for connecting to target servers.
 #[trait_variant::make(Connector: Send)]
 pub trait LocalConnector {
@@ -60,7 +73,7 @@ impl Connector for DirectConnector {
                     .next()
                     .ok_or_else(|| ConnectError::DnsResolution("no addresses found".to_string()))?;
 
-                if is_reserved_or_private_ip(&resolved.ip()) {
+                if is_dns_rebinding_risk(&resolved.ip()) {
                     return Err(ConnectError::ReservedTarget(resolved.ip()));
                 }
 

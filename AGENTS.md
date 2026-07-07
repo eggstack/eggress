@@ -199,6 +199,9 @@ python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PP
 # Verify the parity report is consistent with the manifest (Phase 42; CI runs this)
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 
+# Run validator Rule 14 regression tests (Phase 52)
+python -m pytest tests/scripts/test_validate_pproxy_parity_manifest.py -v
+
 # Run full Phase 36 release audit locally (Python 3.11 required for pproxy 2.7.9 interop)
 python3.11 -m pip install "pproxy==2.7.9"
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
@@ -431,6 +434,7 @@ round-trips, route match consistency). Fuzz smoke tests exercise seed inputs for
 Differential tests against `pproxy` are gated and live in `crates/eggress-cli/tests/`.
 pproxy compat tests live in `crates/eggress-pproxy-compat/src/tests.rs` and cover protocol aliases, unsupported scheme diagnostics, and credential redaction.
 Shadowsocks interop tests live in `crates/eggress-cli/tests/interoperability_shadowsocks.rs` (gated).
+Validator regression tests live in `tests/scripts/test_validate_pproxy_parity_manifest.py` (Rule 14 scope, caveat_class validation).
 See `docs/TESTING.md` for comprehensive testing guidance.
 See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability test details.
 

@@ -125,6 +125,8 @@ See [REVERSE_SECURITY.md](REVERSE_SECURITY.md) for full details.
 
 Eggress does not have built-in IP allowlist/denylist on listeners. Use routing rules to control which destinations are accessible:
 
+**DNS rebinding protection:** Eggress rejects DNS resolutions that resolve to private/reserved IP ranges (loopback, link-local, RFC 1918, etc.). This prevents DNS rebinding attacks. Literal private IP targets (e.g., `192.168.1.1`) are allowed for pproxy compatibility with local/LAN proxy usage.
+
 ```toml
 # Block access to internal networks
 [[rules]]
