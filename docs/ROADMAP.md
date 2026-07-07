@@ -102,7 +102,7 @@ Phase 42: pproxy parity corrective consistency pass (complete)
 
 ### Phase 37: Parity capability manifest and validator — complete
 
-- [x] `docs/parity/pproxy_capability_manifest.toml` — 106 capabilities, 5 categories, 7 layers
+- [x] `docs/parity/pproxy_capability_manifest.toml` — 109 capabilities, 5 categories, 7 layers (updated Phase 51)
 - [x] `docs/parity/README.md` — tiers, layers, evidence, 13 validation rules
 - [x] `docs/parity/PPROXY_PARITY_REPORT.md` — auto-generated from the manifest
 - [x] `scripts/validate_pproxy_parity_manifest.py` — Python validator, 13 rules, strict mode

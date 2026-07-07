@@ -187,10 +187,10 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 
-# Regenerate the parity report from the manifest (Phase 42)
+# Regenerate the parity report from the manifest (Phase 42+, frozen Phase 51)
 python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 
-# Verify the parity report is consistent with the manifest (Phase 42; CI runs this)
+# Verify the parity report is consistent with the manifest (Phase 42+, CI runs this)
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 
 # Fuzz targets (requires cargo-fuzz)
@@ -323,7 +323,7 @@ python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 ```
 
-Regenerate / verify the parity report from the manifest (Phase 42):
+Regenerate / verify the parity report from the manifest (Phase 42+, frozen Phase 51):
 ```bash
 python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml

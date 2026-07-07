@@ -7,7 +7,7 @@ or document supported-but-unverified functionality.
 For the canonical per-feature evidence table with test commands, see
 [COMPATIBILITY_EVIDENCE.md](COMPATIBILITY_EVIDENCE.md).
 
-For the machine-validated pproxy capability manifest (106 capabilities, 5
+For the machine-validated pproxy capability manifest (109 capabilities, 5
 tiers: `drop_in`, `compatible_with_warning`, `native_equivalent`,
 `intentional_non_parity`, `unsupported`), see
 [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
