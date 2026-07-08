@@ -38,6 +38,14 @@ pub enum DiagnosticCode {
     PrivilegeCapabilityMissing,
     /// An external dependency required for this feature is not available.
     ExternalDependencyMissing,
+    /// A rule file could not be read or parsed.
+    RulefileError,
+    /// A regex pattern in a rule file or block rule is invalid.
+    InvalidRegexPattern,
+    /// A rule uses the fancy_regex compatibility backend (info-level).
+    FancyRegexBackend,
+    /// A URI contains a component that is preserved but not supported at runtime.
+    UriPreservedUnsupportedComponent,
 }
 
 impl fmt::Display for DiagnosticCode {
@@ -58,6 +66,10 @@ impl fmt::Display for DiagnosticCode {
             Self::BindFailure => "bind_failure",
             Self::PrivilegeCapabilityMissing => "privilege_capability_missing",
             Self::ExternalDependencyMissing => "external_dependency_missing",
+            Self::RulefileError => "rulefile_error",
+            Self::InvalidRegexPattern => "invalid_regex_pattern",
+            Self::FancyRegexBackend => "fancy_regex_backend",
+            Self::UriPreservedUnsupportedComponent => "uri_preserved_unsupported_component",
         };
         f.write_str(label)
     }
@@ -254,7 +266,7 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                 suggestion: Some("use curl --proxy <proxy-uri> <url>".to_string()),
             },
             "rulefile-read" | "rulefile-parse" | "rulefile-partial" => StructuredDiagnostic {
-                code: DiagnosticCode::UnsupportedFlag,
+                code: DiagnosticCode::RulefileError,
                 feature_id: Some("rulefile".to_string()),
                 tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
@@ -646,6 +658,10 @@ mod tests {
             DiagnosticCode::BindFailure,
             DiagnosticCode::PrivilegeCapabilityMissing,
             DiagnosticCode::ExternalDependencyMissing,
+            DiagnosticCode::RulefileError,
+            DiagnosticCode::InvalidRegexPattern,
+            DiagnosticCode::FancyRegexBackend,
+            DiagnosticCode::UriPreservedUnsupportedComponent,
         ];
         for code in &codes {
             let json = serde_json::to_string(code).unwrap();

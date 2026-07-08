@@ -126,6 +126,7 @@ mod tests {
             inbound: false,
             backward_num: 0,
             rule: None,
+            rules_file: None,
             path: None,
         };
         let diag = diagnostic_transparent_proxy_unsupported(&uri);
@@ -183,6 +184,7 @@ mod tests {
             inbound: false,
             backward_num: 0,
             rule: None,
+            rules_file: None,
             path: None,
         };
         let diagnostics = validate_redir_listener(&uri);
@@ -202,6 +204,7 @@ mod tests {
             inbound: false,
             backward_num: 0,
             rule: None,
+            rules_file: None,
             path: None,
         };
         let diagnostics = validate_unix_listener(&uri);

@@ -7,19 +7,19 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 63 | 57.8% |
+| `drop_in` | 64 | 58.7% |
 | `compatible_with_warning` | 9 | 8.3% |
-| `native_equivalent` | 15 | 13.8% |
+| `native_equivalent` | 14 | 12.8% |
 | `intentional_non_parity` | 17 | 15.6% |
 | `unsupported` | 5 | 4.6% |
 | **Total** | **109** | |
 
-## Drop-In Capabilities (63)
+## Drop-In Capabilities (64)
 
 These features are drop-in replacements for pproxy. All required layers are `complete` and evidence is `integration` or stronger.
 
-### CLI (7)
-- `cli.listen`, `cli.remote`, `cli.udp_listen`, `cli.udp_remote`, `cli.config`, `cli.version`, `cli.help`
+### CLI (8)
+- `cli.listen`, `cli.remote`, `cli.udp_listen`, `cli.udp_remote`, `cli.block`, `cli.config`, `cli.version`, `cli.help`
 ### URI Grammar (18)
 - `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_direct`, `uri.scheme_bind`, `uri.scheme_listen`, `uri.scheme_backward`, `uri.scheme_rebind`, `uri.modifier_ssl_tls`, `uri.modifier_inbound`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
 ### Runtime Protocols (9)
@@ -36,7 +36,7 @@ These features work but emit diagnostics or differ in a known way.
 | ID | Warning | Diagnostic |
 |----|---------|------------|
 | `cli.scheduler` | Warns on unrecognized values; eggress-only schedulers (least-connections) available. | `scheduler` |
-| `cli.rulefile` | Simple reject/block rules auto-translated; complex rules emit warnings. Grammar subset only — non-reject actions and structured matchers must be configured in eggress TOML [[rules]]. | `rulefile-partial` |
+| `cli.rulefile` | Regex validated at load time via CompatRegex. Simple reject/block rules auto-translated; complex rules emit warnings. Grammar subset only — non-reject actions and structured matchers must be configured in eggress TOML [[rules]]. Fancy regex backend activated for lookahead/lookbehind/backreference patterns. | `rulefile-partial` |
 | `cli.verbose` | Different mechanism (env var vs flag); same outcome. No config artifact is produced; the verbose flag is recognized at parse time and emits a diagnostic. | `verbose-mode` |
 | `cli.check_json_chain_info` | pproxy does not emit chain_info in check output; eggress extends with chain metadata. | `` |
 | `uri.chain_separator` | Semicolon and comma are explicitly rejected with diagnostics suggesting __. | `` |
@@ -45,7 +45,7 @@ These features work but emit diagnostics or differ in a known way.
 | `protocol.socks5_udp_associate_server` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
 | `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
 
-## Native Equivalent (15)
+## Native Equivalent (14)
 
 These features achieve the same outcome through a different mechanism.
 
@@ -53,7 +53,6 @@ These features achieve the same outcome through a different mechanism.
 |----|---------------------|
 | `cli.alive` | pproxy interval-based; eggress uses hysteresis state machine with TCP probes. Different mechanism, same outcome. Translation evidence (unit/integration) only; no pproxy differential test for health-probe timing equivalence. |
 | `cli.ssl_listener` | Translation + runtime smoke evidence; no pproxy differential coverage of --ssl semantics. Multi-listener scope matches pproxy (TLS on every listener); verified by translator unit test. |
-| `cli.block` | Translation + config evidence; no pproxy differential coverage. Reject-rule grammar is limited to host-regex matchers (no port/transport qualifiers in pproxy regex scope). |
 | `cli.log` | Different mechanism (tracing-subscriber vs file); same outcome. No config artifact is produced; the log= flag is recognized at parse time and emits a diagnostic. |
 | `cli.pac` | PAC is served by the eggress admin HTTP server at /proxy.pac; --pac is parsed and translated, NOT unrecognized. |
 | `cli.sys` | pproxy --sys mutates global state at startup; eggress separates inspection from mutation. Inspect-after-translation smoke evidence; mutation behavior is intentionally opt-in. |

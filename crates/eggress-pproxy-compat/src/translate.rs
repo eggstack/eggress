@@ -91,43 +91,42 @@ pub fn translate_from_uris(
             udp_remotes.push(remote.to_string());
         }
         if let Some(rulefile_path) = flag.strip_prefix("rulefile=") {
-            match std::fs::read_to_string(rulefile_path) {
-                Ok(content) => {
-                    for (line_num, line) in content.lines().enumerate() {
-                        let line = line.trim();
-                        if line.is_empty() || line.starts_with('#') {
-                            continue;
-                        }
-                        if let Some((pattern, action)) = line.split_once("->") {
-                            let pattern = pattern.trim().to_string();
-                            let action = action.trim();
-                            if action == "reject" || action == "block" {
-                                block_rules.push(pattern);
-                            } else {
+            let path = std::path::Path::new(rulefile_path);
+            match crate::regex_compat::PproxyRuleFile::load(path) {
+                Ok(rule_file) => {
+                    // Emit diagnostics from rulefile loading
+                    for diag in &rule_file.diagnostics {
+                        match diag.severity {
+                            crate::regex_compat::RuleSeverity::Error => {
                                 output = output.with_warning(
-                                    "rulefile-partial",
-                                    format!(
-                                        "rulefile line {}: complex rule '{}' -> '{}' cannot be auto-translated; use eggress TOML [[rules]] with structured matchers",
-                                        line_num + 1, pattern.trim(), action
-                                    ),
+                                    "rulefile-read",
+                                    diag.message.clone(),
                                 );
                             }
-                        } else {
-                            output = output.with_warning(
-                                "rulefile-parse",
-                                format!(
-                                    "rulefile line {}: unrecognized format '{}'; expected 'pattern -> action'",
-                                    line_num + 1, line
-                                ),
-                            );
+                            crate::regex_compat::RuleSeverity::Warning => {
+                                output = output.with_warning(
+                                    "rulefile-partial",
+                                    diag.message.clone(),
+                                );
+                            }
+                            crate::regex_compat::RuleSeverity::Info => {
+                                output = output.with_warning(
+                                    "rulefile-fancy-regex",
+                                    diag.message.clone(),
+                                );
+                            }
                         }
+                    }
+                    // Collect reject/block patterns from compiled entries
+                    for entry in &rule_file.entries {
+                        block_rules.push(entry.raw.clone());
                     }
                 }
                 Err(e) => {
                     output = output.with_warning(
                         "rulefile-read",
                         format!(
-                            "failed to read rulefile '{}': {}; configure rules in eggress TOML instead",
+                            "failed to load rulefile '{}': {}; configure rules in eggress TOML instead",
                             rulefile_path, e
                         ),
                     );
@@ -181,7 +180,20 @@ pub fn translate_from_uris(
             ssl_config = Some(TlsToml { cert, key });
         }
         if let Some(block_value) = flag.strip_prefix("block=") {
-            block_rules.push(block_value.to_string());
+            match crate::regex_compat::compile_block_pattern(block_value) {
+                Ok(_) => {
+                    block_rules.push(block_value.to_string());
+                }
+                Err(e) => {
+                    output = output.with_warning(
+                        "rulefile-read",
+                        format!(
+                            "block regex '{}' is invalid: {}",
+                            block_value, e
+                        ),
+                    );
+                }
+            }
         }
         if flag == "pac" {
             pac_enabled = true;

@@ -90,6 +90,13 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Recursive matchers (`all`, `any_of`, `not`) are supported with a maximum
   depth of 10 and a maximum of 100 matcher nodes per expression.
 
+**pproxy Compat Regex Validation** (`eggress-pproxy-compat/src/regex_compat.rs`):
+- `-b` and `--rulefile` regex patterns validated at parse time via `CompatRegex`.
+- Dual backend: fast `regex` first, `fancy_regex` fallback for lookahead/lookbehind/backreferences.
+- Pattern length limit: 4096 characters (`MAX_PATTERN_LEN`).
+- Rulefile entry limit: 10,000 (`MAX_RULE_ENTRIES`).
+- Fancy regex usage emits `FancyRegexBackend` diagnostic.
+
 **Configuration Validation** (`eggress-config/src/validate.rs`):
 - Duplicate listener names, upstream IDs, and group IDs are rejected.
 - Unknown group references in rules are rejected.

@@ -23,6 +23,8 @@ pub struct PproxyUri {
     pub backward_num: u32,
     /// Optional rule parameter from query string.
     pub rule: Option<String>,
+    /// Optional rules_file parameter from query string (pproxy URI-attached rule file).
+    pub rules_file: Option<String>,
     /// Optional path (used for unix:// scheme).
     pub path: Option<String>,
 }
@@ -68,12 +70,17 @@ impl PproxyUri {
             Some(r) => format!("?rule={}", r),
             None => String::new(),
         };
+        let rules_file_str = match &self.rules_file {
+            Some(rf) => format!("?rules_file={}", rf),
+            None => String::new(),
+        };
         format!(
-            "{}://{}{}{}",
+            "{}://{}{}{}{}",
             self.scheme_with_tls(),
             cred_str,
             self.endpoint_display(),
             rule_str,
+            rules_file_str,
         )
     }
 
@@ -204,7 +211,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             // Treat bare content as a relative path
             format!("/{}", after_scheme)
         };
-        let rule = query.and_then(extract_rule);
+        let (rule, rules_file) = query.map(extract_query_params).unwrap_or((None, None));
         return Ok(PproxyUri {
             scheme,
             username: None,
@@ -216,6 +223,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             inbound,
             backward_num,
             rule,
+            rules_file,
             path: Some(path),
         });
     }
@@ -234,7 +242,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
 
         // redir://:12345 means empty host (bind all), redir://127.0.0.1:12345 means specific
         let (host, port, _) = parse_endpoint(endpoint_str)?;
-        let rule = query.and_then(extract_rule);
+        let (rule, rules_file) = query.map(extract_query_params).unwrap_or((None, None));
         return Ok(PproxyUri {
             scheme,
             username: credentials.as_ref().map(|c| c.0.clone()),
@@ -246,6 +254,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             inbound,
             backward_num,
             rule,
+            rules_file,
             path: None,
         });
     }
@@ -270,7 +279,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     }
 
     // Parse query parameters
-    let rule = query.and_then(extract_rule);
+    let (rule, rules_file) = query.map(extract_query_params).unwrap_or((None, None));
 
     Ok(PproxyUri {
         scheme,
@@ -283,6 +292,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         inbound,
         backward_num,
         rule,
+        rules_file,
         path: None,
     })
 }
@@ -372,17 +382,23 @@ fn default_port_for_scheme(scheme: &str) -> Option<u16> {
     }
 }
 
-fn extract_rule(query: &str) -> Option<String> {
+fn extract_query_params(query: &str) -> (Option<String>, Option<String>) {
+    let mut rule = None;
+    let mut rules_file = None;
     for param in query.split('&') {
         if let Some(eq_pos) = param.find('=') {
             let key = &param[..eq_pos];
             let value = &param[eq_pos + 1..];
-            if key == "rule" && !value.is_empty() {
-                return Some(value.to_string());
+            if !value.is_empty() {
+                match key {
+                    "rule" => rule = Some(value.to_string()),
+                    "rules_file" => rules_file = Some(value.to_string()),
+                    _ => {}
+                }
             }
         }
     }
-    None
+    (rule, rules_file)
 }
 
 /// A parsed pproxy chain (one or more hops separated by `__`).
@@ -1065,5 +1081,18 @@ mod tests {
         assert_eq!(uri.password.as_deref(), Some("my_p@ssw0rd"));
         assert_eq!(uri.host, "server");
         assert_eq!(uri.port, 443);
+    }
+
+    #[test]
+    fn test_with_rules_file() {
+        let uri = parse_pproxy_uri("socks5://127.0.0.1:1080?rules_file=/path/to/rules.txt").unwrap();
+        assert_eq!(uri.rules_file.as_deref(), Some("/path/to/rules.txt"));
+    }
+
+    #[test]
+    fn test_with_rules_file_and_rule() {
+        let uri = parse_pproxy_uri("socks5://127.0.0.1:1080?rule=.*\\.com&rules_file=/path/to/rules.txt").unwrap();
+        assert_eq!(uri.rule.as_deref(), Some(".*\\.com"));
+        assert_eq!(uri.rules_file.as_deref(), Some("/path/to/rules.txt"));
     }
 }

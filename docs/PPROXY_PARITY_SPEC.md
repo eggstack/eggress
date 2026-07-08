@@ -194,11 +194,14 @@ Detailed behavior comparison for scheduler implementations:
 | Retry within group | Not documented | Not implemented (single attempt) | Eggress makes one selection per request |
 | Active lease tracking | Not documented | PendingLease/ActiveLease two-phase | Precise connection accounting |
 
-pproxy's `--rulefile` uses a line-based format with regex patterns and
-destination actions. Eggress uses a TOML-based rule engine with structured
-matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`). The
-pproxy compat translator reports `--rulefile` as an unsupported feature rather
-than attempting a lossy conversion.
+pproxy's `--rulefile` uses a line-based format (`pattern -> action`) with regex
+patterns and destination actions. Eggress uses a TOML-based rule engine with
+structured matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`).
+The compat translator loads rulefiles via `PproxyRuleFile::load()`, which validates
+regex patterns using the dual backend (`fast regex` + `fancy_regex` for lookahead
+and backreferences) and enforces `MAX_RULE_ENTRIES = 10_000`. Simple `reject`/`block`
+actions are auto-translated to `[[rules]]` entries; complex actions emit diagnostics.
+See `eggress-pproxy-compat::regex_compat`.
 
 ## 7. Authentication
 
@@ -555,7 +558,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, WebSocket tunnels, Raw fixed-target tunnels, TLS ALPN negotiation
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
-- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `-b` block rules, `--rulefile`, `--reuse`, `--log`, `--sys`, multi-hop UDP
+- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--reuse`, `--log`, `--sys`, multi-hop UDP
 - **Partial**: Trojan inbound listener
 
 ### Diagnostic behavior
@@ -687,7 +690,7 @@ The following items need further investigation or testing to confirm behavior:
 | pproxy HTTP forward proxy (non-CONNECT) | resolved | pproxy supports plain HTTP forwarding with persistent connections; eggress now matches (Phase 19) |
 | pproxy multi-hop chain behavior | `needs-probe` | Behavior for chains longer than 2 hops (error handling, protocol negotiation) |
 | pproxy connection reuse semantics | `needs-probe` | How `--reuse` interacts with chained upstreams and health state |
-| pproxy `--rulefile` format details | `needs-probe` | Exact syntax for rule-file entries and regex patterns |
+| pproxy `--rulefile` format details | resolved | `pattern -> reject|block` format; eggress loads and validates via `PproxyRuleFile::load()` (Phase A.03) |
 | pproxy SOCKS4a domain resolution | resolved | pproxy resolves domains at the SOCKS4a server; eggress matches (Phase 19) |
 
 ## 16. pproxy Compatibility CLI Layer
@@ -825,8 +828,8 @@ pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
 | `-a` | Health probe config | Mapped |
 | `--daemon` | rejected | Intentional non-parity |
 | `--ssl` | TLS config in TOML | Native equivalent — generates TLS listener TOML (Phase 38) |
-| `-b` | rejected | Compatible — generates `[[rules]] reject` entries (Phase 38) |
-| `--rulefile` | rejected | Compatible — translates pproxy rulefiles to `[[rules]]` (Phase 38) |
+| `-b` | rejected | Native equivalent — validates regex via `CompatRegex`, generates `[[rules]] reject` entries (Phase 38, A.03) |
+| `--rulefile` | rejected | Compatible — loads and validates rulefile via `PproxyRuleFile`, translates `reject`/`block` rules (Phase 38, A.03) |
 | `--reuse` | rejected | Intentional non-parity — emits structured diagnostic |
 | `--log` | rejected | Intentional non-parity — emits structured diagnostic |
 | `--sys` | rejected | Compatible — auto-invokes `eggress system-proxy inspect` (Phase 38) |
