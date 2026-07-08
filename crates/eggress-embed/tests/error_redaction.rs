@@ -188,3 +188,35 @@ uri = "socks5://user:pass@10.0.0.1:1080"
     let parsed: toml::Value = toml::from_str(&redacted).unwrap();
     assert_eq!(parsed["version"].as_integer(), Some(1));
 }
+
+#[test]
+fn to_redacted_toml_preserves_password_containing_at_sign() {
+    // Regression: a raw '@' inside the password must not be treated as
+    // the userinfo/host separator. The userinfo separator is the LAST
+    // unbracketed '@' after the scheme.
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[upstreams]]
+id = "up1"
+uri = "socks5://admin:s3cret_p@ssw0rd@10.0.0.1:1080"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    assert!(
+        !redacted.contains("s3cret_p"),
+        "redacted TOML leaked password prefix: {redacted}"
+    );
+    assert!(
+        !redacted.contains("ssw0rd"),
+        "redacted TOML leaked password suffix: {redacted}"
+    );
+    assert!(
+        !redacted.contains("admin"),
+        "redacted TOML leaked username: {redacted}"
+    );
+    assert!(redacted.contains("****:****@10.0.0.1:1080"));
+}

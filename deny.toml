@@ -4,6 +4,16 @@ targets = []
 [advisories]
 ignore = []
 
+# Note: `rustls-pemfile` (RUSTSEC-2025-0134) is flagged as unmaintained by
+# `cargo audit` (informational, no CVE). The crate is a thin wrapper around
+# `rustls-pki-types` PEM parsing code. `cargo deny check advisories` does not
+# flag it; `cargo audit` emits an "unmaintained" warning only. We accept this
+# dependency until a planned migration replaces `rustls_pemfile::certs` /
+# `rustls_pemfile::pkcs8_private_keys` in `eggress-transport-tls` and
+# `eggress-protocol-trojan` with the `rustls_pki_types::pem::PemObject` API.
+# Until then, do NOT add this advisory to `ignore` — it is intentionally
+# visible to `cargo audit` so it surfaces in local verification.
+
 [licenses]
 allow = [
     "MIT",

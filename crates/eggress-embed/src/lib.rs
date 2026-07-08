@@ -751,14 +751,24 @@ fn looks_like_proxy_uri(s: &str) -> bool {
 /// Also redacts username-only authorities (`proto://user@host:port`) so that
 /// bare usernames never leak into diagnostic or `redacted_*` output.
 /// If no `userinfo` is present, the URI is returned unchanged.
+///
+/// The userinfo separator is the LAST unbracketed `@` after the scheme;
+/// a raw password containing `@` must not be treated as a separator.
 fn redact_uri(uri: &str) -> String {
     if let Some(scheme_end) = uri.find("://") {
         let rest = &uri[scheme_end + 3..];
-        if let Some(at_pos) = rest.find('@') {
-            // Any authority between `://` and `@` is treated as credentials
-            // and replaced with `****:****`. This covers both `user:pass@` and
-            // username-only `user@` forms, plus any other characters that
-            // appeared between them.
+        // Find LAST unbracketed '@' so a raw '@' in the password is preserved.
+        let mut last_at: Option<usize> = None;
+        let mut bracket_depth = 0u32;
+        for (i, c) in rest.char_indices() {
+            match c {
+                '[' => bracket_depth += 1,
+                ']' => bracket_depth = bracket_depth.saturating_sub(1),
+                '@' if bracket_depth == 0 => last_at = Some(i),
+                _ => {}
+            }
+        }
+        if let Some(at_pos) = last_at {
             let authority_after = &rest[at_pos + 1..];
             return format!("{}://****:****@{}", &uri[..scheme_end], authority_after);
         }

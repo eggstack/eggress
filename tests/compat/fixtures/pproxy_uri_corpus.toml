@@ -1278,18 +1278,19 @@ password = ""
 id = "ss_with_special_chars_in_password"
 raw_uri = "ss://aes-256-gcm:p@ss:word@proxy:8388"
 pproxy_interpretation = "Shadowsocks with password containing @ and : — URI parsing splits at first @ after port"
-expected_interpretation = "Shadowsocks upstream; password may be truncated at first : after method"
+expected_interpretation = "Shadowsocks upstream with full password preserved (userinfo separator is last @)"
 compatibility_tier = "supported"
 has_credentials = true
 expected_redacted_display = "ss://****:****@proxy:8388"
 expected_warnings = []
-# Note: URI parser splits at last colon in endpoint, so host gets "proxy" and
-# port gets 8388. The userinfo "aes-256-gcm:p@ss" gets split at first colon
-# into username="aes-256-gcm" and password="p@ss".
+# Note: eggress uses the LAST unbracketed '@' as the userinfo separator.
+# userinfo = "aes-256-gcm:p@ss:word", endpoint = "proxy:8388".
+# parse_userinfo splits on first ':' → username="aes-256-gcm", password="p@ss:word".
+# parse_endpoint uses rfind(':') so host="proxy", port=8388.
 expected_toml = '''
 [[upstreams]]
 id = "pproxy-upstream-0"
-uri = "ss:aes-256-gcm:p@ss@proxy:8388"
+uri = "ss:aes-256-gcm:p@ss:word@proxy:8388"
 '''
 
 [[cases]]

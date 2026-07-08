@@ -146,13 +146,13 @@ EGRESS_REQUIRE_SOAK=1 cargo test -p eggress-runtime --test reverse_soak -- --ign
 EGRESS_REQUIRE_PPROXY_PERF=1 ./scripts/perf/run_pproxy_comparison.sh
 
 # Run Python binding performance tests
-python -m pytest python/tests/test_performance_smoke.py -v
+python3.11 -m pytest python/tests/test_performance_smoke.py -v
 
 # Run Python pproxy drop-in API tests (Phase 40)
-python -m pytest python/tests/test_pproxy_dropin.py -v
+python3.11 -m pytest python/tests/test_pproxy_dropin.py -v
 
 # Run Python pproxy differential tests (Phase 41, gated)
-EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python -m pytest python/tests/test_pproxy_differential.py -v
+EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3.11 -m pytest python/tests/test_pproxy_differential.py -v
 
 # Run lifecycle invariant tests
 cargo test -p eggress-runtime --test lifecycle_invariants
@@ -200,7 +200,7 @@ python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PP
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 
 # Run validator Rule 14 regression tests (Phase 52)
-python -m pytest tests/scripts/test_validate_pproxy_parity_manifest.py -v
+python3.11 -m pytest tests/scripts/test_validate_pproxy_parity_manifest.py -v
 
 # Run full Phase 36 release audit locally (Python 3.11 required for pproxy 2.7.9 interop)
 python3.11 -m pip install "pproxy==2.7.9"
@@ -235,51 +235,65 @@ cargo test -p eggress-runtime retry_fallback
 cargo bench --workspace
 
 # Build and test Python bindings
+# IMPORTANT: Python tests import the compiled `eggress._eggress` native
+# extension. Either install a prebuilt wheel (pip install ...) or build
+# the extension in place (maturin develop) BEFORE running pytest, or the
+# tests will fail at collection with `ModuleNotFoundError: No module named
+# 'eggress._eggress'`. The repository's bare `python` is Python 2.7.18 in
+# some environments — use `python3.11` (or your Python 3.x interpreter)
+# for all commands below.
 cd crates/eggress-python && maturin build --target x86_64-apple-darwin
 pip install --force-reinstall target/wheels/eggress-0.1.0-*.whl
-python -m pytest python/tests
+python3.11 -m pytest python/tests
+
+# Alternative: build the native extension in place (faster for local dev)
+python3.11 -m pip install maturin pytest
+python3.11 -m maturin develop -m crates/eggress-python/Cargo.toml
+python3.11 -m pytest python/tests
 
 # Run Python pproxy compat tests
-python -m pytest python/tests/test_pproxy_compat.py -v
+python3.11 -m pytest python/tests/test_pproxy_compat.py -v
 
 # Run Python pproxy redaction tests
-python -m pytest python/tests/test_pproxy_redaction.py -v
+python3.11 -m pytest python/tests/test_pproxy_redaction.py -v
 
 # Run Python pproxy concurrency tests
-python -m pytest python/tests/test_pproxy_concurrency.py -v
+python3.11 -m pytest python/tests/test_pproxy_concurrency.py -v
 
 # Run Python utility/fixture tests (Phase 31)
-python -m pytest python/tests/test_pproxy_utility_fixtures.py -v
+python3.11 -m pytest python/tests/test_pproxy_utility_fixtures.py -v
 
 # Run Python diagnostics tests (Phase 31)
-python -m pytest python/tests/test_pproxy_diagnostics.py -v
+python3.11 -m pytest python/tests/test_pproxy_diagnostics.py -v
 
 # Run Python pproxy differential tests (gated, requires pproxy package)
-EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python -m pytest python/tests/test_pproxy_differential.py -v
+EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3.11 -m pytest python/tests/test_pproxy_differential.py -v
 
 # Run Phase 40 pproxy drop-in API tests
-python -m pytest python/tests/test_pproxy_dropin.py -v
+python3.11 -m pytest python/tests/test_pproxy_dropin.py -v
 
 # Build and test Python wheel
 maturin build --release --out dist
-python -m venv .venv-wheel-test
+python3.11 -m venv .venv-wheel-test
 . .venv-wheel-test/bin/activate
 pip install dist/eggress-*.whl
 pip install pytest
-python -m pytest python/tests
+python3.11 -m pytest python/tests
 deactivate
 
 # Or use the helper script
 ./scripts/test_wheel.sh
 
 # Run Python wheel import smoke tests
-python -m pytest python/tests/test_wheel_import_smoke.py -v
+python3.11 -m pytest python/tests/test_wheel_import_smoke.py -v
+
+#
 
 # Build sdist
 cd crates/eggress-python && maturin sdist --out ../../dist
 
 # Check wheel/sdist metadata
-python -m twine check dist/*
+python3.11 -m twine check dist/*
 
 # Run fuzz targets (standalone `fuzz/` workspace; libfuzzer-sys based)
 cargo check --manifest-path fuzz/Cargo.toml --bins

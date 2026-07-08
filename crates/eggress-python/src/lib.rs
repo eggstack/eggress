@@ -617,13 +617,30 @@ fn parse_toml_config(py: Python<'_>, toml_str: &str) -> PyResult<Py<PyDict>> {
 }
 
 /// Redact credentials from a config URI for safe display.
+///
+/// The userinfo separator is the LAST unbracketed `@` after the scheme,
+/// not the first; a raw password containing `@` must not be split.
 fn redact_config_uri(uri: &str) -> String {
-    // Simple redaction: replace userinfo before @
-    if let Some(at_pos) = uri.find('@') {
-        let scheme_end = uri.find("://").map(|p| p + 3).unwrap_or(0);
-        if at_pos > scheme_end {
-            return format!("{}****@{}", &uri[..scheme_end], &uri[at_pos + 1..]);
+    let Some(scheme_end) = uri.find("://") else {
+        return uri.to_string();
+    };
+    let after_scheme = &uri[scheme_end + 3..];
+    let mut last_at: Option<usize> = None;
+    let mut bracket_depth = 0u32;
+    for (i, c) in after_scheme.char_indices() {
+        match c {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '@' if bracket_depth == 0 => last_at = Some(i),
+            _ => {}
         }
+    }
+    if let Some(at_pos) = last_at {
+        return format!(
+            "{}****@{}",
+            &uri[..scheme_end + 3],
+            &after_scheme[at_pos + 1..]
+        );
     }
     uri.to_string()
 }

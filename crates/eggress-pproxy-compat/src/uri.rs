@@ -222,14 +222,15 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
 
     // Handle redir:// scheme — supports host:port or just :port
     if scheme == "redir" {
-        let (credentials, endpoint_str) = if let Some(at_pos) = after_scheme.find('@') {
-            let userinfo = &after_scheme[..at_pos];
-            let ep = &after_scheme[at_pos + 1..];
-            let (user, pass) = parse_userinfo(userinfo)?;
-            (Some((user, pass)), ep)
-        } else {
-            (None, after_scheme)
-        };
+        let (credentials, endpoint_str) =
+            if let Some(at_pos) = find_last_at_outside_brackets(after_scheme) {
+                let userinfo = &after_scheme[..at_pos];
+                let ep = &after_scheme[at_pos + 1..];
+                let (user, pass) = parse_userinfo(userinfo)?;
+                (Some((user, pass)), ep)
+            } else {
+                (None, after_scheme)
+            };
 
         // redir://:12345 means empty host (bind all), redir://127.0.0.1:12345 means specific
         let (host, port, _) = parse_endpoint(endpoint_str)?;
@@ -250,14 +251,15 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     }
 
     // Extract credentials
-    let (credentials, endpoint_str) = if let Some(at_pos) = after_scheme.find('@') {
-        let userinfo = &after_scheme[..at_pos];
-        let ep = &after_scheme[at_pos + 1..];
-        let (user, pass) = parse_userinfo(userinfo)?;
-        (Some((user, pass)), ep)
-    } else {
-        (None, after_scheme)
-    };
+    let (credentials, endpoint_str) =
+        if let Some(at_pos) = find_last_at_outside_brackets(after_scheme) {
+            let userinfo = &after_scheme[..at_pos];
+            let ep = &after_scheme[at_pos + 1..];
+            let (user, pass) = parse_userinfo(userinfo)?;
+            (Some((user, pass)), ep)
+        } else {
+            (None, after_scheme)
+        };
 
     // Parse host:port
     let (host, mut port, port_specified) = parse_endpoint(endpoint_str)?;
@@ -283,6 +285,23 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         rule,
         path: None,
     })
+}
+
+/// Find the position of the LAST unbracketed `@` in `s`. The userinfo
+/// separator is the last `@` after the scheme, not the first; a raw
+/// password containing `@` must not be truncated by the parser.
+fn find_last_at_outside_brackets(s: &str) -> Option<usize> {
+    let mut last_at: Option<usize> = None;
+    let mut bracket_depth = 0u32;
+    for (i, c) in s.char_indices() {
+        match c {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '@' if bracket_depth == 0 => last_at = Some(i),
+            _ => {}
+        }
+    }
+    last_at
 }
 
 fn parse_userinfo(userinfo: &str) -> Result<(String, String), CompatError> {
@@ -974,5 +993,77 @@ mod tests {
         let uri = parse_pproxy_uri("trojan://password@example.com:0").unwrap();
         assert_eq!(uri.host, "example.com");
         assert_eq!(uri.port, 0);
+    }
+
+    #[test]
+    fn test_password_containing_at_sign() {
+        // Regression: raw '@' inside the password must not be treated as
+        // the userinfo/host separator. The userinfo separator is the LAST
+        // unbracketed '@' after the scheme.
+        let uri = parse_pproxy_uri("socks5://admin:s3cret_p@ssw0rd@127.0.0.1:1080").unwrap();
+        assert_eq!(uri.scheme, "socks5");
+        assert_eq!(uri.username.as_deref(), Some("admin"));
+        assert_eq!(uri.password.as_deref(), Some("s3cret_p@ssw0rd"));
+        assert_eq!(uri.host, "127.0.0.1");
+        assert_eq!(uri.port, 1080);
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_redacted_display() {
+        // Regression: redacted display must not leak any part of the
+        // password even when the password contains '@'.
+        let uri = parse_pproxy_uri("socks5://admin:s3cret_p@ssw0rd@127.0.0.1:1080").unwrap();
+        let display = uri.redacted_display();
+        assert_eq!(display, "socks5://****:****@127.0.0.1:1080");
+        assert!(!display.contains("s3cret_p"));
+        assert!(!display.contains("ssw0rd"));
+        assert!(!display.contains("admin"));
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_chain() {
+        // Regression: last '@' must also be honored inside chain hops.
+        let chain = parse_pproxy_chain("socks5://user:p@ss@proxy1:1080__http://h2:8080").unwrap();
+        assert_eq!(chain.hops.len(), 2);
+        assert_eq!(chain.hops[0].username.as_deref(), Some("user"));
+        assert_eq!(chain.hops[0].password.as_deref(), Some("p@ss"));
+        assert_eq!(chain.hops[0].host, "proxy1");
+        assert_eq!(chain.hops[0].port, 1080);
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_redir() {
+        // Regression: redir:// must also use the LAST unbracketed '@'.
+        let uri = parse_pproxy_uri("redir://admin:s3cret_p@ssw0rd@127.0.0.1:12345").unwrap();
+        assert_eq!(uri.scheme, "redir");
+        assert_eq!(uri.username.as_deref(), Some("admin"));
+        assert_eq!(uri.password.as_deref(), Some("s3cret_p@ssw0rd"));
+        assert_eq!(uri.host, "127.0.0.1");
+        assert_eq!(uri.port, 12345);
+        assert_eq!(uri.redacted_display(), "redir://****:****@127.0.0.1:12345");
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_shadowsocks() {
+        // Regression: ss:// userinfo "method:password@host:port" with '@' in
+        // the password must keep the full password.
+        let uri = parse_pproxy_uri("ss://aes-256-gcm:p@ssw0rd@proxy:8388").unwrap();
+        assert_eq!(uri.scheme, "ss");
+        assert_eq!(uri.username.as_deref(), Some("aes-256-gcm"));
+        assert_eq!(uri.password.as_deref(), Some("p@ssw0rd"));
+        assert_eq!(uri.host, "proxy");
+        assert_eq!(uri.port, 8388);
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_trojan() {
+        // Regression: trojan:// accepts password-only creds; '@' in the
+        // password must be preserved.
+        let uri = parse_pproxy_uri("trojan://my_p@ssw0rd@server:443").unwrap();
+        assert_eq!(uri.scheme, "trojan");
+        assert_eq!(uri.username.as_deref(), Some(""));
+        assert_eq!(uri.password.as_deref(), Some("my_p@ssw0rd"));
+        assert_eq!(uri.host, "server");
+        assert_eq!(uri.port, 443);
     }
 }

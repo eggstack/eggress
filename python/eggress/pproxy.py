@@ -29,11 +29,23 @@ def _redact_config_toml(toml_str: str) -> str:
 
     def _redact_uri(match: re.Match) -> str:
         uri = match.group(0)
-        at_pos = uri.find("@")
-        if at_pos >= 0:
-            scheme_end = uri.find("://")
-            if scheme_end >= 0 and at_pos > scheme_end:
-                return f"{uri[:scheme_end + 3]}****{uri[at_pos:]}"
+        scheme_end = uri.find("://")
+        if scheme_end < 0:
+            return uri
+        after_scheme = uri[scheme_end + 3:]
+        # The userinfo separator is the LAST unbracketed '@' after the
+        # scheme; a raw password containing '@' must not be split.
+        last_at = -1
+        bracket_depth = 0
+        for i, c in enumerate(after_scheme):
+            if c == "[":
+                bracket_depth += 1
+            elif c == "]":
+                bracket_depth = max(0, bracket_depth - 1)
+            elif c == "@" and bracket_depth == 0:
+                last_at = i
+        if last_at >= 0:
+            return f"{uri[:scheme_end + 3]}****{uri[scheme_end + 3 + last_at:]}"
         return uri
 
     def _redact_kv(match: re.Match) -> str:

@@ -460,18 +460,22 @@ fn parse_query_rule(query: Option<&str>) -> Option<String> {
     None
 }
 
-/// Find '@' position that's not inside brackets
+/// Find the position of the LAST `@` that's not inside brackets.
+/// The userinfo separator is the last unbracketed `@` after the
+/// scheme, not the first; a raw password containing `@` must not be
+/// truncated by the parser.
 fn find_at_outside_brackets(s: &str) -> Option<usize> {
+    let mut last_at: Option<usize> = None;
     let mut bracket_depth = 0u32;
     for (i, c) in s.char_indices() {
         match c {
             '[' => bracket_depth += 1,
             ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '@' if bracket_depth == 0 => return Some(i),
+            '@' if bracket_depth == 0 => last_at = Some(i),
             _ => {}
         }
     }
-    None
+    last_at
 }
 
 /// Find last '@' that's outside brackets and not part of a scheme.
@@ -851,6 +855,42 @@ mod tests {
     fn test_socks4a_scheme() {
         let result = parse_proxy_chain("socks4a://host:1080").unwrap();
         assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Socks4]);
+    }
+
+    #[test]
+    fn test_password_containing_at_sign() {
+        // Regression: a raw '@' inside the password must not be treated
+        // as the userinfo/host separator. The userinfo separator is the
+        // LAST unbracketed '@' after the scheme.
+        let result = parse_proxy_chain("http://admin:s3cret_p@ssw0rd@proxy:8080").unwrap();
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "admin");
+        assert_eq!(creds.password, "s3cret_p@ssw0rd");
+        assert_eq!(result.hops[0].endpoint.host, "proxy");
+        assert_eq!(result.hops[0].endpoint.port, 8080);
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_redacted() {
+        // Regression: the redacted display must not leak any part of a
+        // password that contains '@'.
+        let result = parse_proxy_chain("http://admin:s3cret_p@ssw0rd@proxy:8080").unwrap();
+        let redacted = RedactedUri::new(&result).to_string();
+        assert_eq!(redacted, "http://****:****@proxy:8080");
+        assert!(!redacted.contains("s3cret_p"));
+        assert!(!redacted.contains("ssw0rd"));
+    }
+
+    #[test]
+    fn test_password_containing_at_sign_ipv6_endpoint() {
+        // Regression: bracketed IPv6 must still allow '@' inside the
+        // userinfo without being confused for an endpoint '@'.
+        let result = parse_proxy_chain("http://user:p@ss@[::1]:8080").unwrap();
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "user");
+        assert_eq!(creds.password, "p@ss");
+        assert_eq!(result.hops[0].endpoint.host, "::1");
+        assert_eq!(result.hops[0].endpoint.port, 8080);
     }
 }
 
