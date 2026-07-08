@@ -15,6 +15,7 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 rustls.workspace = true
 rcgen = "0.13"
+regex.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true

@@ -10,7 +10,7 @@ stamp of readiness for the parity release candidate.
 
 ## Scope
 
-All **109 capabilities** across 5 categories:
+All **139 capabilities** across 5 categories:
 
 | Category | Count |
 |---|---|
@@ -93,7 +93,7 @@ the single source of truth for all compatibility claims.
 ## Conclusion
 
 The parity capability manifest is **complete, validated, and frozen**.
-All 109 capabilities are classified, evidence-backed where required,
+All 139 capabilities are classified, evidence-backed where required,
 and consistent with the codebase. The release candidate is **ready**.
 
 No release-blocking runtime defects are known after this corrective

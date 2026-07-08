@@ -1085,13 +1085,16 @@ mod tests {
 
     #[test]
     fn test_with_rules_file() {
-        let uri = parse_pproxy_uri("socks5://127.0.0.1:1080?rules_file=/path/to/rules.txt").unwrap();
+        let uri =
+            parse_pproxy_uri("socks5://127.0.0.1:1080?rules_file=/path/to/rules.txt").unwrap();
         assert_eq!(uri.rules_file.as_deref(), Some("/path/to/rules.txt"));
     }
 
     #[test]
     fn test_with_rules_file_and_rule() {
-        let uri = parse_pproxy_uri("socks5://127.0.0.1:1080?rule=.*\\.com&rules_file=/path/to/rules.txt").unwrap();
+        let uri =
+            parse_pproxy_uri("socks5://127.0.0.1:1080?rule=.*\\.com&rules_file=/path/to/rules.txt")
+                .unwrap();
         assert_eq!(uri.rule.as_deref(), Some(".*\\.com"));
         assert_eq!(uri.rules_file.as_deref(), Some("/path/to/rules.txt"));
     }

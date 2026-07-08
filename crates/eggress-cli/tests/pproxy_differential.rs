@@ -1077,6 +1077,166 @@ default = "direct"
 }
 
 // ========================================================================
+// Chain Matrix Differential Tests
+// ========================================================================
+
+/// HTTP CONNECT listener chained through SOCKS5 upstream (pproxy).
+///
+/// eggress runs an HTTP CONNECT listener with a SOCKS5 upstream pointing at
+/// pproxy. Sends a request through eggress → pproxy → echo target and verifies
+/// the payload matches a direct pproxy connection.
+#[tokio::test]
+#[ignore = "requires EGRESS_RUN_PPROXY_DIFFERENTIAL=1"]
+async fn differential_http_to_socks5_upstream() {
+    require_differential_gate();
+
+    let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // Start pproxy as SOCKS5 upstream
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("socks5", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Start eggress with HTTP CONNECT listener chained through pproxy SOCKS5
+    let egress_port = eggress_testkit::get_free_port().await;
+    let toml = format!(
+        r#"version = 1
+
+[[listeners]]
+name = "http-chain"
+bind = "127.0.0.1:{egress_port}"
+protocols = ["http"]
+
+[[upstreams]]
+name = "pproxy-socks5"
+uri = "socks5://127.0.0.1:{pproxy_port}"
+
+[[upstream_groups]]
+name = "default"
+upstreams = ["pproxy-socks5"]
+
+[routing]
+default = "pproxy-socks5"
+"#,
+    );
+    let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
+
+    // Send through eggress HTTP → pproxy SOCKS5 → echo
+    let chain_result = send_through_http(egress_addr, &target, b"chain http->socks5").await;
+
+    // Send directly through pproxy SOCKS5 → echo for comparison
+    let direct_result = send_through_socks5(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"chain http->socks5",
+    )
+    .await;
+
+    cancel.cancel();
+    let _ = jh.await;
+    pproxy_child.kill();
+    echo_jh.abort();
+
+    // Both should succeed and return the same payload
+    match (&chain_result, &direct_result) {
+        (Ok(chain_payload), Ok(direct_payload)) => {
+            assert_eq!(
+                chain_payload, direct_payload,
+                "chain payload mismatch with direct pproxy"
+            );
+            assert_eq!(*chain_payload, b"chain http->socks5");
+        }
+        (Err(e), _) => panic!("chain through eggress HTTP -> pproxy SOCKS5 failed: {e}"),
+        (_, Err(e)) => panic!("direct pproxy SOCKS5 failed: {e}"),
+    }
+}
+
+/// HTTP CONNECT listener chained through HTTP upstream (pproxy).
+///
+/// eggress runs an HTTP CONNECT listener with an HTTP upstream pointing at
+/// pproxy. Sends a request through eggress → pproxy → echo target and verifies
+/// the payload matches a direct pproxy connection.
+#[tokio::test]
+#[ignore = "requires EGRESS_RUN_PPROXY_DIFFERENTIAL=1"]
+async fn differential_http_to_http_upstream() {
+    require_differential_gate();
+
+    let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // Start pproxy as HTTP upstream
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let mut pproxy_child = start_pproxy_server("http", pproxy_port).await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Start eggress with HTTP CONNECT listener chained through pproxy HTTP
+    let egress_port = eggress_testkit::get_free_port().await;
+    let toml = format!(
+        r#"version = 1
+
+[[listeners]]
+name = "http-chain"
+bind = "127.0.0.1:{egress_port}"
+protocols = ["http"]
+
+[[upstreams]]
+name = "pproxy-http"
+uri = "http://127.0.0.1:{pproxy_port}"
+
+[[upstream_groups]]
+name = "default"
+upstreams = ["pproxy-http"]
+
+[routing]
+default = "pproxy-http"
+"#,
+    );
+    let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
+
+    // Send through eggress HTTP → pproxy HTTP → echo
+    let chain_result = send_through_http(egress_addr, &target, b"chain http->http").await;
+
+    // Send directly through pproxy HTTP → echo for comparison
+    let direct_result = send_through_http(
+        socket_addr("127.0.0.1", pproxy_port),
+        &target,
+        b"chain http->http",
+    )
+    .await;
+
+    cancel.cancel();
+    let _ = jh.await;
+    pproxy_child.kill();
+    echo_jh.abort();
+
+    // Both should succeed and return the same payload
+    match (&chain_result, &direct_result) {
+        (Ok(chain_payload), Ok(direct_payload)) => {
+            assert_eq!(
+                chain_payload, direct_payload,
+                "chain payload mismatch with direct pproxy"
+            );
+            assert_eq!(*chain_payload, b"chain http->http");
+        }
+        (Err(e), _) => panic!("chain through eggress HTTP -> pproxy HTTP failed: {e}"),
+        (_, Err(e)) => panic!("direct pproxy HTTP failed: {e}"),
+    }
+}
+
+// ========================================================================
 // CLI Snapshot Comparison Tests
 // ========================================================================
 

@@ -10,6 +10,7 @@ pub mod differential;
 pub mod eggress_runner;
 pub mod fixtures;
 pub mod manifest;
+pub mod oracle;
 pub mod pproxy_oracle;
 pub mod report;
 

@@ -7,7 +7,7 @@ or document supported-but-unverified functionality.
 For the canonical per-feature evidence table with test commands, see
 [COMPATIBILITY_EVIDENCE.md](COMPATIBILITY_EVIDENCE.md).
 
-For the machine-validated pproxy capability manifest (109 capabilities, 5
+For the machine-validated pproxy capability manifest (139 capabilities, 5
 tiers: `drop_in`, `compatible_with_warning`, `native_equivalent`,
 `intentional_non_parity`, `unsupported`), see
 [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
@@ -83,7 +83,7 @@ and verified with `--check-report`.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Single-hop TCP chain | supported | supported | Compatible | integration tests | `differential_socks5_through_*` | Tested through pproxy upstream |
+| Single-hop TCP chain | supported | supported | Compatible | integration tests | `differential_socks5_through_*`, `differential_http_to_socks5_upstream`, `differential_http_to_http_upstream` | Tested through pproxy upstream |
 | Multi-hop TCP chain | supported | basic support | Partial | integration tests | none | 3+ hops exist but compatibility untested |
 | UDP chain | supported (SOCKS5 relay) | one-hop SOCKS5 only | Partial | `udp_upstream.rs` | none | No multi-hop UDP chains |
 | Chain capability validation | implicit | explicit validation | Supported | integration tests | none | Rejects invalid combos |
@@ -282,7 +282,7 @@ Full inventory: `docs/python/PPROXY_API_INVENTORY.md`
 - **TCP proxying (Compatible)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, SOCKS4/4a, HTTP forward proxy, and direct upstream — differential tests produce byte-exact echo payloads.
 - **TCP proxying (Supported)**: SOCKS5 UDP ASSOCIATE inbound is fully implemented; unit tested but not differentially verified against pproxy.
 - **UDP relay (Supported)**: Both relay UDP datagrams successfully. Standalone UDP mode (`mode = "standalone_pproxy_udp"`) provides pproxy-compatible behavior without TCP control connection. SOCKS5 UDP ASSOCIATE is also supported for TCP-controlled UDP relay.
-- **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
+- **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact, with differential tests for HTTP→SOCKS5, HTTP→HTTP, SOCKS5→HTTP, and SOCKS5→SOCKS5 combinations. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
 - **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
 - **CLI (Compatible)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as compatible. Phase 38 closed remaining gaps: `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` now generate equivalent TOML config or auto-invoke eggress subcommands. All 14 pproxy flags are now mapped.
 - **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan inbound listener and upstream both supported. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).

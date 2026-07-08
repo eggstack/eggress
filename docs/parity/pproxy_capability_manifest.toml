@@ -985,11 +985,11 @@ notes = ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [[capability]]
-id = "protocol.http_connect_server"
+id = "protocol.http_connect.ipv4"
 category = "protocol"
-pproxy_surface = "HTTP CONNECT inbound"
-pproxy_behavior = "Accept HTTP CONNECT and relay to target."
-eggress_behavior = "Full HTTP CONNECT server with differential test evidence."
+pproxy_surface = "HTTP CONNECT with IPv4 target"
+pproxy_behavior = "Accept HTTP CONNECT and relay to IPv4 target."
+eggress_behavior = "HTTP CONNECT to IPv4 target with differential test evidence."
 tier = "drop_in"
 parser = "complete"
 translator = "complete"
@@ -999,16 +999,16 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "differential"
-tests = ["differential_http_connect_tcp_echo"]
+tests = ["differential_http_connect_tcp_echo", "differential_http_connect_ipv4_target"]
 differential_exception = true
 notes = "Byte-exact payload match verified."
 
 [[capability]]
-id = "protocol.http_forward_proxy"
+id = "protocol.http_connect.ipv6"
 category = "protocol"
-pproxy_surface = "HTTP ordinary forward proxying"
-pproxy_behavior = "Forward HTTP requests (GET, POST, HEAD) to target."
-eggress_behavior = "Persistent session forward proxy with differential test evidence."
+pproxy_surface = "HTTP CONNECT with IPv6 target"
+pproxy_behavior = "Accept HTTP CONNECT and relay to IPv6 target."
+eggress_behavior = "HTTP CONNECT to IPv6 target with differential test evidence."
 tier = "drop_in"
 parser = "complete"
 translator = "complete"
@@ -1018,16 +1018,320 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "differential"
-tests = ["differential_http_forward_get", "differential_http_forward_persistent_connection"]
+tests = ["differential_http_connect_ipv6_target"]
 differential_exception = true
-notes = "Persistent session model; byte-exact match verified."
+notes = "Byte-exact payload match verified."
 
 [[capability]]
-id = "protocol.socks4_connect_server"
+id = "protocol.http_connect.domain"
 category = "protocol"
-pproxy_surface = "SOCKS4 CONNECT inbound"
-pproxy_behavior = "Accept SOCKS4 CONNECT and relay to target."
-eggress_behavior = "Full SOCKS4 CONNECT server with differential test evidence."
+pproxy_surface = "HTTP CONNECT with domain target"
+pproxy_behavior = "Accept HTTP CONNECT and relay to domain target."
+eggress_behavior = "HTTP CONNECT to domain target with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_connect_domain_target"]
+differential_exception = true
+notes = "Byte-exact payload match verified."
+
+[[capability]]
+id = "protocol.http_connect.auth_success"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT with proxy authentication (success)"
+pproxy_behavior = "Accept HTTP CONNECT with valid proxy credentials."
+eggress_behavior = "HTTP CONNECT with proxy auth accepted; relay proceeds."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_connect_auth_success"]
+differential_exception = true
+notes = "Proxy auth with valid credentials succeeds on both implementations."
+
+[[capability]]
+id = "protocol.http_connect.auth_failure"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT with proxy authentication (failure)"
+pproxy_behavior = "Reject HTTP CONNECT with invalid proxy credentials."
+eggress_behavior = "HTTP CONNECT with invalid credentials rejected."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_auth_failure"]
+differential_exception = true
+notes = "Auth failure class matches pproxy behavior."
+
+[[capability]]
+id = "protocol.http_connect.refused"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT to refused target"
+pproxy_behavior = "Reject HTTP CONNECT when upstream target refuses connection."
+eggress_behavior = "HTTP CONNECT to refused target produces equivalent error."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_connect_refused_target"]
+differential_exception = true
+notes = "Failure class matches; HTTP status may differ."
+
+[[capability]]
+id = "protocol.http_connect.half_close"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT half-close behavior"
+pproxy_behavior = "Relay half-close correctly during CONNECT tunnel."
+eggress_behavior = "Client and server half-close handled correctly in CONNECT tunnel."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_connect_client_half_close", "differential_http_connect_server_half_close"]
+differential_exception = true
+notes = "Both client and server half-close paths verified."
+
+[[capability]]
+id = "protocol.http_connect.fragmented"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT fragmented payload relay"
+pproxy_behavior = "Relay fragmented payloads correctly during CONNECT tunnel."
+eggress_behavior = "Fragmented client and upstream payloads relayed correctly."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_connect_fragmented_client_payload", "differential_http_connect_fragmented_upstream_payload"]
+differential_exception = true
+notes = "Fragmented payload relay verified on both directions."
+
+[[capability]]
+id = "protocol.http_connect.timeout"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT upstream timeout"
+pproxy_behavior = "Handle upstream connect timeout gracefully."
+eggress_behavior = "Upstream timeout produces equivalent failure class."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_connect_timeout"]
+differential_exception = true
+notes = "Failure class matches; exact error message may differ."
+
+[[capability]]
+id = "protocol.http_forward.get"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy GET request"
+pproxy_behavior = "Forward HTTP GET requests to target."
+eggress_behavior = "HTTP forward proxy GET with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_get"]
+differential_exception = true
+notes = "Byte-exact body match verified."
+
+[[capability]]
+id = "protocol.http_forward.post_content_length"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy POST with Content-Length"
+pproxy_behavior = "Forward HTTP POST requests with Content-Length to target."
+eggress_behavior = "HTTP forward proxy POST with Content-Length; byte-exact match."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_post_with_body"]
+differential_exception = true
+notes = "Byte-exact body match with Content-Length verified."
+
+[[capability]]
+id = "protocol.http_forward.head"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy HEAD request"
+pproxy_behavior = "Forward HTTP HEAD requests to target."
+eggress_behavior = "HTTP forward proxy HEAD with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_head"]
+differential_exception = true
+notes = "HEAD response headers match."
+
+[[capability]]
+id = "protocol.http_forward.chunked"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy chunked transfer encoding"
+pproxy_behavior = "Forward HTTP requests with chunked transfer encoding."
+eggress_behavior = "HTTP forward proxy chunked encoding relay verified."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_chunked_body"]
+differential_exception = true
+notes = "Chunked body relay verified."
+
+[[capability]]
+id = "protocol.http_forward.persistent"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy persistent connection"
+pproxy_behavior = "Support persistent (keep-alive) forward proxy connections."
+eggress_behavior = "Persistent connection with sequential requests verified."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_persistent_connection"]
+differential_exception = true
+notes = "Persistent session model; sequential requests on same connection."
+
+[[capability]]
+id = "protocol.http_forward.connection_close"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy Connection: close"
+pproxy_behavior = "Handle Connection: close header correctly."
+eggress_behavior = "Connection: close behavior matches pproxy."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_connection_close"]
+differential_exception = true
+notes = "Connection close timing verified."
+
+[[capability]]
+id = "protocol.http_forward.auth_success"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy authentication (success)"
+pproxy_behavior = "Accept forward proxy requests with valid credentials."
+eggress_behavior = "Forward proxy auth accepted; request proceeds."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_auth_success"]
+differential_exception = true
+notes = "Proxy auth with valid credentials succeeds on both implementations."
+
+[[capability]]
+id = "protocol.http_forward.malformed"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy malformed request"
+pproxy_behavior = "Handle malformed HTTP request gracefully."
+eggress_behavior = "Malformed request produces equivalent error response."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_malformed_request"]
+differential_exception = true
+notes = "Error class matches; exact status may differ."
+
+[[capability]]
+id = "protocol.http_forward.upstream_close"
+category = "protocol"
+pproxy_surface = "HTTP forward proxy upstream connection close"
+pproxy_behavior = "Handle upstream connection close during forward proxy."
+eggress_behavior = "Upstream close during forward proxy handled correctly."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_forward_upstream_connection_close"]
+differential_exception = true
+notes = "Upstream connection close handling verified."
+
+[[capability]]
+id = "protocol.socks4.connect_ipv4"
+category = "protocol"
+pproxy_surface = "SOCKS4 CONNECT with IPv4 target"
+pproxy_behavior = "Accept SOCKS4 CONNECT and relay to IPv4 target."
+eggress_behavior = "SOCKS4 CONNECT to IPv4 target with differential test evidence."
 tier = "drop_in"
 parser = "complete"
 translator = "complete"
@@ -1042,11 +1346,68 @@ differential_exception = true
 notes = "Differential tests with pproxy 2.7.9."
 
 [[capability]]
-id = "protocol.socks4a_connect_server"
+id = "protocol.socks4.user_id"
 category = "protocol"
-pproxy_surface = "SOCKS4a CONNECT inbound"
-pproxy_behavior = "Accept SOCKS4a CONNECT with domain resolution."
-eggress_behavior = "Full SOCKS4a CONNECT server with differential test evidence."
+pproxy_surface = "SOCKS4 user ID propagation"
+pproxy_behavior = "SOCKS4 user ID field is forwarded in the CONNECT request."
+eggress_behavior = "User ID field propagated; behavior matches pproxy."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks4_user_id_propagation"]
+differential_exception = true
+notes = "User ID field handling verified."
+
+[[capability]]
+id = "protocol.socks4.refused"
+category = "protocol"
+pproxy_surface = "SOCKS4 CONNECT to refused target"
+pproxy_behavior = "Reject SOCKS4 CONNECT when target refuses connection."
+eggress_behavior = "SOCKS4 CONNECT to refused target produces equivalent error."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks4_refused_target"]
+differential_exception = true
+notes = "Failure class matches pproxy behavior."
+
+[[capability]]
+id = "protocol.socks4.malformed"
+category = "protocol"
+pproxy_surface = "SOCKS4 malformed request handling"
+pproxy_behavior = "Handle malformed SOCKS4 requests gracefully."
+eggress_behavior = "Malformed SOCKS4 requests produce equivalent error."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks4_malformed_version", "differential_socks4_truncated_request"]
+differential_exception = true
+notes = "Version byte and truncated request handling verified."
+
+[[capability]]
+id = "protocol.socks4a.connect_domain"
+category = "protocol"
+pproxy_surface = "SOCKS4a CONNECT with domain resolution"
+pproxy_behavior = "Accept SOCKS4a CONNECT and resolve domain to target."
+eggress_behavior = "SOCKS4a CONNECT with domain resolution; differential test evidence."
 tier = "drop_in"
 parser = "complete"
 translator = "complete"
@@ -1058,7 +1419,7 @@ docs = "complete"
 evidence = "differential"
 tests = ["differential_socks4a_connect_domain"]
 differential_exception = true
-notes = "Differential tests with pproxy 2.7.9."
+notes = "Domain resolution in SOCKS4a verified."
 
 [[capability]]
 id = "protocol.socks4_bind"
@@ -1082,11 +1443,11 @@ rationale = "BIND is deprecated in SOCKS4; pproxy does not implement it; securit
 diagnostic = "socks4_bind_unsupported"
 
 [[capability]]
-id = "protocol.socks5_connect_server"
+id = "protocol.socks5.connect_ipv4"
 category = "protocol"
-pproxy_surface = "SOCKS5 CONNECT inbound"
-pproxy_behavior = "Accept SOCKS5 CONNECT and relay to target."
-eggress_behavior = "Full SOCKS5 CONNECT server with differential test evidence."
+pproxy_surface = "SOCKS5 CONNECT with IPv4 target"
+pproxy_behavior = "Accept SOCKS5 CONNECT and relay to IPv4 target."
+eggress_behavior = "SOCKS5 CONNECT to IPv4 target with differential test evidence."
 tier = "drop_in"
 parser = "complete"
 translator = "complete"
@@ -1096,9 +1457,142 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "differential"
-tests = ["differential_socks5_connect_tcp_echo", "differential_socks5_connect_ipv6", "differential_socks5_connect_domain", "differential_socks5_refused_target"]
+tests = ["differential_socks5_connect_tcp_echo"]
 differential_exception = true
-notes = "Byte-exact payload match; expanded differential coverage."
+notes = "Byte-exact payload match verified."
+
+[[capability]]
+id = "protocol.socks5.connect_ipv6"
+category = "protocol"
+pproxy_surface = "SOCKS5 CONNECT with IPv6 target"
+pproxy_behavior = "Accept SOCKS5 CONNECT and relay to IPv6 target."
+eggress_behavior = "SOCKS5 CONNECT to IPv6 target with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_connect_ipv6"]
+differential_exception = true
+notes = "IPv6 target address type verified."
+
+[[capability]]
+id = "protocol.socks5.connect_domain"
+category = "protocol"
+pproxy_surface = "SOCKS5 CONNECT with domain target"
+pproxy_behavior = "Accept SOCKS5 CONNECT and relay to domain target."
+eggress_behavior = "SOCKS5 CONNECT to domain target with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_connect_domain"]
+differential_exception = true
+notes = "Domain target address type verified."
+
+[[capability]]
+id = "protocol.socks5.connect_refused"
+category = "protocol"
+pproxy_surface = "SOCKS5 CONNECT to refused target"
+pproxy_behavior = "Reject SOCKS5 CONNECT when target refuses connection."
+eggress_behavior = "SOCKS5 CONNECT to refused target produces equivalent error."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_refused_target"]
+differential_exception = true
+notes = "Failure class matches pproxy behavior."
+
+[[capability]]
+id = "protocol.socks5.auth_success"
+category = "protocol"
+pproxy_surface = "SOCKS5 username/password authentication (success)"
+pproxy_behavior = "Accept SOCKS5 CONNECT with valid username/password credentials."
+eggress_behavior = "SOCKS5 auth accepted; relay proceeds."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_auth"]
+differential_exception = true
+notes = "Auth success path verified with pproxy."
+
+[[capability]]
+id = "protocol.socks5.auth_failure"
+category = "protocol"
+pproxy_surface = "SOCKS5 username/password authentication (failure)"
+pproxy_behavior = "Reject SOCKS5 CONNECT with invalid username/password credentials."
+eggress_behavior = "SOCKS5 auth rejected; failure class matches pproxy."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_auth_failure"]
+differential_exception = true
+notes = "Auth failure class matches pproxy behavior."
+
+[[capability]]
+id = "protocol.socks5.malformed"
+category = "protocol"
+pproxy_surface = "SOCKS5 malformed request handling"
+pproxy_behavior = "Handle malformed SOCKS5 requests gracefully."
+eggress_behavior = "Malformed SOCKS5 requests produce equivalent error."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_malformed_address_type", "differential_socks5_unsupported_udp_command"]
+differential_exception = true
+notes = "Invalid address type and unsupported command handling verified."
+
+[[capability]]
+id = "protocol.socks5.half_close"
+category = "protocol"
+pproxy_surface = "SOCKS5 connection lifecycle (early close, half-close)"
+pproxy_behavior = "Handle early client close and server half-close gracefully."
+eggress_behavior = "Early close during greeting/request and server half-close handled correctly."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_early_close_greeting", "differential_socks5_early_close_request", "differential_socks5_server_half_close"]
+differential_exception = true
+notes = "Connection lifecycle edge cases verified."
 
 [[capability]]
 id = "protocol.socks5_bind"
@@ -1122,7 +1616,7 @@ rationale = "BIND is rarely used; pproxy does not implement it; security risk of
 diagnostic = "socks5_bind_unsupported"
 
 [[capability]]
-id = "protocol.socks5_udp_associate_server"
+id = "protocol.socks5.udp_associate"
 category = "protocol"
 pproxy_surface = "SOCKS5 UDP ASSOCIATE inbound"
 pproxy_behavior = "Accept SOCKS5 UDP ASSOCIATE and relay UDP datagrams."
@@ -1135,10 +1629,86 @@ runtime = "complete"
 cli = "complete"
 python = "not_applicable"
 docs = "complete"
-evidence = "integration"
+evidence = "differential"
 tests = ["differential_socks5_udp_associate"]
 diagnostic = "socks5_udp_framing_divergence"
 notes = "Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE."
+
+[[capability]]
+id = "protocol.chain.socks5_to_http"
+category = "protocol"
+pproxy_surface = "SOCKS5 listener chained to HTTP upstream"
+pproxy_behavior = "Chain SOCKS5 listener through HTTP upstream proxy."
+eggress_behavior = "SOCKS5→HTTP chain with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_through_http_upstream"]
+differential_exception = true
+notes = "SOCKS5 inbound through HTTP upstream verified."
+
+[[capability]]
+id = "protocol.chain.socks5_to_socks5"
+category = "protocol"
+pproxy_surface = "SOCKS5 listener chained to SOCKS5 upstream"
+pproxy_behavior = "Chain SOCKS5 listener through SOCKS5 upstream proxy."
+eggress_behavior = "SOCKS5→SOCKS5 chain with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_socks5_through_socks5_upstream"]
+differential_exception = true
+notes = "SOCKS5 inbound through SOCKS5 upstream verified."
+
+[[capability]]
+id = "protocol.chain.http_to_socks5"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT listener chained to SOCKS5 upstream"
+pproxy_behavior = "Chain HTTP CONNECT listener through SOCKS5 upstream proxy."
+eggress_behavior = "HTTP→SOCKS5 chain with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_to_socks5_upstream"]
+differential_exception = true
+notes = "HTTP CONNECT inbound through SOCKS5 upstream verified."
+
+[[capability]]
+id = "protocol.chain.http_to_http"
+category = "protocol"
+pproxy_surface = "HTTP CONNECT listener chained to HTTP upstream"
+pproxy_behavior = "Chain HTTP CONNECT listener through HTTP upstream proxy."
+eggress_behavior = "HTTP→HTTP chain with differential test evidence."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["differential_http_to_http_upstream"]
+differential_exception = true
+notes = "HTTP CONNECT inbound through HTTP upstream verified."
 
 [[capability]]
 id = "protocol.direct_tcp"

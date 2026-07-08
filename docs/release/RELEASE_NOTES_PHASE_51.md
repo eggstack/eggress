@@ -9,8 +9,8 @@
 Phase 51 is a documentation and certification pass — no code changes.
 The following artifacts were produced:
 
-- **Manifest frozen** at 109 capabilities across 5 categories (CLI=21,
-  URI=22, Protocol=44, Routing=10, Python=12).
+- **Manifest frozen** at 139 capabilities across 5 categories (CLI=21,
+  URI=22, Protocol=74, Routing=10, Python=12).
 - **Certification document** created:
   `docs/release/FINAL_PPROXY_PARITY_CERTIFICATION.md`
 - **Release notes** created:

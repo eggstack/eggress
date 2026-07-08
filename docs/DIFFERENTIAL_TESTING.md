@@ -77,6 +77,21 @@ EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differe
 EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential differential_socks5_connect -- --ignored --nocapture
 ```
 
+### Scenario-Driven Oracle Harness
+
+Gate: `EGRESS_ORACLE=1`
+
+```bash
+# All oracle scenarios (31 scenarios across 5 categories)
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+
+# Specific scenario
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_tcp_socks5_connect -- --ignored
+
+# Generate JSON report
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_generate_report -- --ignored
+```
+
 ### Combined Run
 
 ```bash

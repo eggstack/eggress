@@ -98,22 +98,15 @@ pub fn translate_from_uris(
                     for diag in &rule_file.diagnostics {
                         match diag.severity {
                             crate::regex_compat::RuleSeverity::Error => {
-                                output = output.with_warning(
-                                    "rulefile-read",
-                                    diag.message.clone(),
-                                );
+                                output = output.with_warning("rulefile-read", diag.message.clone());
                             }
                             crate::regex_compat::RuleSeverity::Warning => {
-                                output = output.with_warning(
-                                    "rulefile-partial",
-                                    diag.message.clone(),
-                                );
+                                output =
+                                    output.with_warning("rulefile-partial", diag.message.clone());
                             }
                             crate::regex_compat::RuleSeverity::Info => {
-                                output = output.with_warning(
-                                    "rulefile-fancy-regex",
-                                    diag.message.clone(),
-                                );
+                                output = output
+                                    .with_warning("rulefile-fancy-regex", diag.message.clone());
                             }
                         }
                     }
@@ -187,10 +180,7 @@ pub fn translate_from_uris(
                 Err(e) => {
                     output = output.with_warning(
                         "rulefile-read",
-                        format!(
-                            "block regex '{}' is invalid: {}",
-                            block_value, e
-                        ),
+                        format!("block regex '{}' is invalid: {}", block_value, e),
                     );
                 }
             }

@@ -99,9 +99,10 @@ Protocol-specific tests live alongside the implementation:
 - `crates/eggress-cli/tests/interoperability_pproxy.rs` — pproxy-based
 
 ### Differential tests
-- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (27 scenarios, `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
-- `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (11 scenarios, `EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
+- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (28 scenarios, `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
+- `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (18 scenarios, `EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
 - `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
+- `crates/eggress-cli/tests/oracle.rs` — scenario-driven oracle harness (31 scenarios, `EGRESS_ORACLE=1`)
 
 Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.
 
@@ -139,6 +140,7 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - Fixture servers (`fixtures` module) — TCP/UDP echo, HTTP origin, HTTP CONNECT upstream, SOCKS4/5 upstream, TLS echo
 - Differential case model (`case_model` module) — `PproxyCase`, `CaseOutcome`, comparison helpers
 - Parity report generator (`report` module) — JSON and markdown reports from manifest + test results
+- Oracle harness (`oracle` module) — scenario registry, JSON report generation, gate functions (`EGRESS_ORACLE`)
 
 ## Running tests
 ```bash
@@ -170,6 +172,9 @@ cargo test -p eggress-pproxy-compat ssr
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
 EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
+
+# Scenario-driven oracle harness (gated, requires pproxy==2.7.9)
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
 
 # Python tests
 python -m pytest python/tests/test_pproxy_dropin.py -v

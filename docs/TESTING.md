@@ -131,6 +131,33 @@ The harness uses:
 Parity reports are generated at:
 - `target/compat/pproxy-parity-report.json`
 
+### Scenario-Driven Oracle Harness (Track A.01)
+
+The oracle harness provides scenario-driven comparison of eggress vs pproxy
+under equivalent conditions. 31 scenarios across 5 categories: CLI/defaults,
+HTTP/SOCKS TCP, Chains, Rules, UDP.
+
+Gate: `EGRESS_ORACLE=1`
+
+```bash
+# Run all oracle scenarios
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+
+# Run a specific scenario
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_tcp_socks5_connect -- --ignored --nocapture
+
+# Generate a JSON comparison report
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_generate_report -- --ignored
+```
+
+Always-run unit tests (no gate needed):
+```bash
+cargo test -p eggress-cli --test oracle
+cargo test -p eggress-testkit oracle
+```
+
+Scenario registry and report types live in `eggress_testkit::oracle`.
+
 ### pproxy Chain Tests (Phase 39)
 
 Chain-related tests cover URI parsing and translation of `__`-separated multi-hop chains:

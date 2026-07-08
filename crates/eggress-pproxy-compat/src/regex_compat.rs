@@ -234,12 +234,11 @@ impl PproxyRuleFile {
     /// - Other `pattern -> action` lines produce a partial-compatibility warning.
     /// - Lines without `->` produce a parse warning.
     pub fn load(path: &Path) -> Result<Self, RegexCompileError> {
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            RegexCompileError::CompileError {
+        let content =
+            std::fs::read_to_string(path).map_err(|e| RegexCompileError::CompileError {
                 pattern: String::new(),
                 message: format!("failed to read '{}': {}", path.display(), e),
-            }
-        })?;
+            })?;
 
         let mut entries = Vec::new();
         let mut diagnostics = Vec::new();
