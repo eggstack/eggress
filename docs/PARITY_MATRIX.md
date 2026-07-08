@@ -223,7 +223,7 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 | `trojan://...` as listener | N/A | Now supported as inbound Trojan listener with TLS + SHA224 password auth |
 | Legacy stream cipher URI | `UnsupportedFeature` | "Legacy stream ciphers are not supported; use AEAD methods" |
 | `--daemon` flag | `UnsupportedFeature` | "--daemon mode is not supported; use systemd or process manager" |
-| `--rulefile` flag | `UnsupportedFeature` | "--rulefile is not supported; use eggress TOML routing rules" |
+| `--rulefile` flag | N/A | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
 | Unknown URI scheme | `CompatError` | "unsupported protocol: {scheme}" |
 
 All diagnostic messages redact credentials.

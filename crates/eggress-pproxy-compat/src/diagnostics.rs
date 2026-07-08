@@ -75,7 +75,8 @@ pub struct StructuredDiagnostic {
     /// Manifest feature id, if this diagnostic maps to a known feature.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feature_id: Option<String>,
-    /// Compatibility tier: "unsupported", "partial", or "intentional_non_parity".
+    /// Compatibility tier: "drop_in", "compatible_with_warning", "native_equivalent",
+    /// "intentional_non_parity", or "unsupported".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tier: Option<String>,
     /// Human-readable description of the issue.

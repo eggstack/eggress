@@ -3,6 +3,7 @@
 //! Provides async test servers, port allocation helpers, and
 //! protocol test harnesses for fragmented and slow I/O scenarios.
 
+pub mod canonical_manifest;
 pub mod case_model;
 pub mod corpus;
 pub mod differential;

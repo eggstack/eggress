@@ -1,7 +1,7 @@
 # Compatibility Evidence Table
 
-Canonical evidence source for pproxy compatibility claims. Manually synchronized
-from the manifest at [`tests/compat/pproxy_manifest.toml`](../tests/compat/pproxy_manifest.toml).
+Canonical evidence source for pproxy compatibility claims. Derived from
+the parity manifest at [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml).
 Keep this document in sync with the manifest.
 
 ## Evidence Tiers
@@ -281,8 +281,8 @@ no longer required.
 
 ```bash
 # Oracle tests (auto-skips if pproxy is not installed)
-python -m pytest python/tests/test_pproxy_oracle.py -v
+python3.11 -m pytest python/tests/test_pproxy_oracle.py -v
 
 # pproxy compat tests
-python -m pytest python/tests/test_pproxy_compat.py -v
+python3.11 -m pytest python/tests/test_pproxy_compat.py -v
 ```

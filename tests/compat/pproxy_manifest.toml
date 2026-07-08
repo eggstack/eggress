@@ -1,5 +1,11 @@
 # Phase 18 Compatibility Manifest
 #
+# DEPRECATED: The canonical parity contract is now
+# docs/parity/pproxy_capability_manifest.toml (Phase 37+).
+# This file is retained as an evidence index for legacy Rust cross-check
+# tests (validate_real_manifest, manifest_test_names_exist, etc.).
+# Do not add new capabilities here — use the canonical manifest instead.
+#
 # Authoritative evidence index for pproxy feature parity.
 # Each entry tracks a stable feature id, its category, evidence level,
 # and which tests support the claim.

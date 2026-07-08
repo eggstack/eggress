@@ -419,7 +419,7 @@ class Diagnostic:
 class FeatureInfo:
     """A single feature from the pproxy compatibility manifest."""
     feature_id: str
-    tier: str  # "compatible", "partial", "unsupported"
+    tier: str  # "drop_in", "compatible_with_warning", "native_equivalent", "intentional_non_parity", "unsupported"
     supported: bool
 
 

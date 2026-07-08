@@ -824,12 +824,12 @@ pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
 | `-v` | `RUST_LOG=debug` | Mapped |
 | `-a` | Health probe config | Mapped |
 | `--daemon` | rejected | Intentional non-parity |
-| `--ssl` | TLS config in TOML | Intentional non-parity |
-| `-b` | rejected | Intentional non-parity |
-| `--rulefile` | rejected | Intentional non-parity |
-| `--reuse` | rejected | Intentional non-parity |
-| `--log` | rejected | Intentional non-parity |
-| `--sys` | rejected | Intentional non-parity |
+| `--ssl` | TLS config in TOML | Native equivalent — generates TLS listener TOML (Phase 38) |
+| `-b` | rejected | Compatible — generates `[[rules]] reject` entries (Phase 38) |
+| `--rulefile` | rejected | Compatible — translates pproxy rulefiles to `[[rules]]` (Phase 38) |
+| `--reuse` | rejected | Intentional non-parity — emits structured diagnostic |
+| `--log` | rejected | Intentional non-parity — emits structured diagnostic |
+| `--sys` | rejected | Compatible — auto-invokes `eggress system-proxy inspect` (Phase 38) |
 
 For the complete inventory with diagnostic codes, see
 [`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).
