@@ -64,6 +64,14 @@ sudo mv eggress /usr/local/bin/
 
 See [BINARY_INSTALL.md](docs/release/BINARY_INSTALL.md) for all platforms and checksum verification.
 
+The release archive includes a `pproxy` compatibility binary alongside `eggress`. Users can run `pproxy` directly as a drop-in replacement for the original `pproxy` command:
+
+```bash
+pproxy -l http://:8080 -r socks5://127.0.0.1:1080
+pproxy --help
+pproxy --version
+```
+
 ### Python package
 
 ```bash
@@ -485,6 +493,7 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - [x] Python pproxy drop-in API — `PPProxyService`, `CompatibilityReport`, `.pyi` stubs (Phase 40)
 - [x] Reusable differential parity harness — 27 scenarios against pproxy 2.7.9 (Phase 41)
 - [x] Corrective consistency pass — `CompatibilityReport` five-tier manifest vocabulary, `PPProxyService.from_args` full argument vector, `--ssl` applies to all listeners, parity report `--write-report`/`--check-report` (Phase 42)
+- [x] `pproxy` drop-in binary — run `pproxy -l http://:8080 -r socks5://127.0.0.1:1080` directly, with `--help`, `--version`, `-v/-vv/-vvv` verbosity, startup banner, `--test`, `--sys`
 - Oracle process runner for real pproxy differential testing (`eggress-testkit`)
 - Machine-readable parity reports generated after differential test runs
 

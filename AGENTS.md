@@ -121,6 +121,9 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 # Run pproxy standalone UDP differential tests only
 ./scripts/compat_udp_pproxy.sh
 
+# Run pproxy binary drop-in tests
+cargo test -p eggress-cli --test pproxy_binary
+
 # Run Phase 41 pproxy differential parity harness tests (gated, requires pproxy==2.7.9)
 EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
 
@@ -174,6 +177,9 @@ cargo test -p eggress-pproxy-compat
 
 # Run pproxy oracle tests (Phase 18, requires pproxy==2.7.9)
 cargo test -p eggress-testkit pproxy_oracle -- --ignored
+
+# Run scenario-driven oracle harness (gated, requires pproxy==2.7.9)
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
 
 # Run pproxy differential tests (gated, requires pproxy==2.7.9)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
@@ -359,7 +365,7 @@ eggress/
 ├── .skills/                # Agent skill files for this codebase
 ├── crates/
 │   ├── eggress-core/      # Core types, traits, relay, listener, connector, chain
-│   ├── eggress-cli/       # CLI binary
+│   ├── eggress-cli/       # CLI binary (eggress + pproxy drop-in binary)
 │   ├── eggress-server/    # Server orchestration: accept, execute, reply, error
 │   ├── eggress-runtime/   # Service supervisor, composition layer, signal handling
 │   ├── eggress-uri/       # URI parser and AST
@@ -500,7 +506,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 
 ## Key Architecture Facts
 
-- **Entry point**: `eggress-cli` binary → `eggress-runtime` `ServiceSupervisor::run()` → `eggress-server` `serve_connection()`
+- **Entry point**: `eggress-cli` binary → `eggress-runtime` `ServiceSupervisor::run()` → `eggress-server` `serve_connection()`. The `pproxy` binary is a drop-in compatibility wrapper that translates pproxy-style args to TOML and delegates to the same runtime.
 - **Streams are boxed** at protocol/transport boundaries (`BoxStream`) — don't propagate generic stream types
 - **Protocol detection** uses ordered `ProtocolDetector` implementations; mixed-protocol listeners are the norm
 - **Chain executor** folds over hop list with protocol-specific handlers — validate chain capabilities before executing

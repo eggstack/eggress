@@ -9,6 +9,10 @@ license.workspace = true
 name = "eggress"
 path = "src/main.rs"
 
+[[bin]]
+name = "pproxy"
+path = "src/pproxy_main.rs"
+
 [dependencies]
 eggress-core.workspace = true
 eggress-server.workspace = true

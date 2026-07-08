@@ -41,6 +41,8 @@ pub struct PproxyArgs {
     pub remotes: Vec<String>,
     /// Raw flags that are not recognized.
     pub raw_flags: Vec<String>,
+    /// Verbosity level derived from `-v`/`-vv`/`-vvv` flags.
+    pub verbose_level: u8,
 }
 
 impl PproxyArgs {
@@ -49,6 +51,7 @@ impl PproxyArgs {
         let mut local = Vec::new();
         let mut remotes = Vec::new();
         let mut raw_flags = Vec::new();
+        let mut verbose_level: u8 = 0;
         let mut i = 0;
 
         while i < raw.len() {
@@ -79,8 +82,10 @@ impl PproxyArgs {
                     let value = take_required_value(raw, &mut i, arg)?;
                     raw_flags.push(format!("rulefile={value}"));
                 }
-                "-v" => {
+                "-v" | "-vv" | "-vvv" => {
+                    // Normalize verbosity levels: -v, -vv, -vvv all map to "verbose"
                     raw_flags.push("verbose".to_string());
+                    verbose_level = verbose_level.max(arg.len() as u8 - 1);
                 }
                 "-s" => {
                     let value = take_required_value(raw, &mut i, arg)?;
@@ -132,6 +137,7 @@ impl PproxyArgs {
             local,
             remotes,
             raw_flags,
+            verbose_level,
         })
     }
 
@@ -470,5 +476,44 @@ mod tests {
         .unwrap();
         let warnings = args.unknown_flag_warnings();
         assert!(warnings.is_empty(), "unexpected warnings: {:?}", warnings);
+    }
+
+    #[test]
+    fn test_verbose_level_single() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-v".into()]).unwrap();
+        assert_eq!(args.verbose_level, 1);
+        assert!(args.raw_flags.contains(&"verbose".to_string()));
+    }
+
+    #[test]
+    fn test_verbose_level_double() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vv".into()]).unwrap();
+        assert_eq!(args.verbose_level, 2);
+        assert!(args.raw_flags.contains(&"verbose".to_string()));
+    }
+
+    #[test]
+    fn test_verbose_level_triple() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vvv".into()]).unwrap();
+        assert_eq!(args.verbose_level, 3);
+        assert!(args.raw_flags.contains(&"verbose".to_string()));
+    }
+
+    #[test]
+    fn test_verbose_level_default_zero() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into()]).unwrap();
+        assert_eq!(args.verbose_level, 0);
+    }
+
+    #[test]
+    fn test_verbose_level_max_of_multiple() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-v".into(),
+            "-vvv".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.verbose_level, 3);
     }
 }

@@ -128,6 +128,18 @@ For Python embedding, use the `eggress-python` crate and `python/eggress` packag
 - `FeatureInfo` — dataclass with feature_id, tier, supported
 - `.pyi` type stubs for all public modules
 
+### pproxy drop-in binary
+
+- `pproxy` binary target in `eggress-cli` — direct drop-in replacement for the original pproxy command
+- Source: `crates/eggress-cli/src/pproxy_main.rs` — raw arg parsing (not clap), delegates to `PproxyArgs::parse()` → `translate_pproxy_args()`
+- Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `--ssl`, `--pac`, `--test`, `--sys`, `--daemon/-d`, `--reuse`, `--get`, `--log`, `--rulefile`, `--version`, `-h/--help`
+- `--help` prints comprehensive flag reference; `--version` prints `eggress-pproxy-compat {VERSION}`
+- `--test` spawns `eggress upstream test -c <config>` and exits with its status
+- `--sys` calls `inspect_system_proxy()` and prints results before starting
+- `-v/-vv/-vvv` maps to RUST_LOG levels: 0→info, 1-2→debug, 3+→trace
+- Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
+- Tests: `cargo test -p eggress-cli --test pproxy_binary`
+
 ### Building
 
 ```bash
