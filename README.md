@@ -297,7 +297,7 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 ### Trojan
 
 - [x] Trojan client
-- [ ] Trojan server
+- [x] Trojan server
 - [x] Trojan authentication
 - [x] Trojan TCP target framing
 - [x] Domain length validation (1-255 bytes) through `encode_trojan_request()`

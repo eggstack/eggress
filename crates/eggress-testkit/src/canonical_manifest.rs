@@ -1483,4 +1483,67 @@ mod tests {
             assert!(p.exists(), "path should exist");
         }
     }
+
+    /// Verify that the manifest's Python-layer status is consistent with the
+    /// expected `supported_features()` list from `eggress-python`.
+    ///
+    /// Protocol-crate-only protocols (ws, wss, raw, tunnel, h2) must NOT have
+    /// `python = "complete"` in the manifest — they are not exposed through
+    /// the Python bindings or runtime supervisor.
+    #[test]
+    fn python_features_manifest_consistency() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping python features consistency");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        // Protocols that are protocol-crate-only: must NOT have python = "complete"
+        let crate_only_protocols = ["ws", "wss", "raw", "tunnel", "h2"];
+
+        for cap in &manifest.capability {
+            if cap.category == "protocol" || cap.category == "uri" {
+                // Extract the protocol name from the capability ID
+                // e.g. "protocol.ws_runtime" -> "ws", "uri.scheme_wss" -> "wss"
+                let proto = cap.id.split('.').last().unwrap_or("");
+                let proto = proto.strip_prefix("scheme_").unwrap_or(proto);
+                let proto = proto.strip_suffix("_runtime").unwrap_or(proto);
+
+                if crate_only_protocols.contains(&proto) {
+                    assert_ne!(
+                        cap.python, "complete",
+                        "protocol-crate-only protocol '{}' should NOT have python = \"complete\" \
+                         in the manifest (found in capability '{}')",
+                        proto, cap.id,
+                    );
+                }
+            }
+        }
+
+        // All protocol capabilities with python = "complete" should be in the
+        // expected supported_features() list
+        let expected_python_supported: Vec<&str> =
+            vec!["http", "socks4", "socks5", "shadowsocks", "trojan"];
+
+        for cap in &manifest.capability {
+            if cap.category == "protocol" && cap.python == "complete" {
+                let proto = cap.id.split('.').last().unwrap_or("");
+                let proto = proto.strip_prefix("scheme_").unwrap_or(proto);
+                let proto = proto.strip_suffix("_runtime").unwrap_or(proto);
+
+                assert!(
+                    expected_python_supported.contains(&proto),
+                    "protocol capability '{}' has python = \"complete\" but '{}' is not in the \
+                     expected supported_features() list. Either add it to supported_features() \
+                     or change python layer to \"not_applicable\"",
+                    cap.id,
+                    proto,
+                );
+            }
+        }
+    }
 }
