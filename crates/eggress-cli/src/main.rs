@@ -587,10 +587,11 @@ fn handle_pproxy_check(args: &PproxyCheck) {
         let mut features: Vec<FeatureInfo> = Vec::new();
 
         for w in &output.warnings {
+            let feature_tier = eggress_pproxy_compat::manifest_tier_for_category(w.category);
             diagnostics.push(eggress_pproxy_compat::StructuredDiagnostic::from(w));
             features.push(FeatureInfo {
                 name: w.category.to_string(),
-                tier: "supported".to_string(),
+                tier: feature_tier.as_str().to_string(),
                 diagnostic_code: Some(w.diagnostic_code()),
             });
         }
@@ -598,28 +599,29 @@ fn handle_pproxy_check(args: &PproxyCheck) {
             let diag = eggress_pproxy_compat::StructuredDiagnostic {
                 code: eggress_pproxy_compat::DiagnosticCode::UnsupportedProtocol,
                 feature_id: Some(u.feature.to_string()),
-                tier: Some("unsupported".to_string()),
+                tier: Some(
+                    eggress_pproxy_compat::ManifestTier::Unsupported
+                        .as_str()
+                        .to_string(),
+                ),
                 message: u.detail.clone(),
                 suggestion: None,
             };
             diagnostics.push(diag);
             features.push(FeatureInfo {
                 name: u.feature.to_string(),
-                tier: "unsupported".to_string(),
+                tier: eggress_pproxy_compat::ManifestTier::Unsupported
+                    .as_str()
+                    .to_string(),
                 diagnostic_code: Some(eggress_pproxy_compat::DiagnosticCode::UnsupportedProtocol),
             });
         }
 
-        let tier = if output.warnings.is_empty() && output.unsupported.is_empty() {
-            "compatible"
-        } else if output.unsupported.is_empty() {
-            "supported"
-        } else {
-            "unsupported"
-        };
+        let tier =
+            eggress_pproxy_compat::classify_aggregate_tier(&output.warnings, &output.unsupported);
 
         let check_output = PproxyCheckOutput {
-            tier: tier.to_string(),
+            tier: tier.as_str().to_string(),
             diagnostics,
             features,
             raw_args: args.args.clone(),
@@ -681,13 +683,9 @@ fn handle_pproxy_check(args: &PproxyCheck) {
             Err(e) => eprintln!("  remote: error: {e}"),
         }
 
-        if output.warnings.is_empty() && output.unsupported.is_empty() {
-            println!("\nparity tier: Compatible");
-        } else if output.unsupported.is_empty() {
-            println!("\nparity tier: Supported (with warnings)");
-        } else {
-            println!("\nparity tier: Partial");
-        }
+        let tier =
+            eggress_pproxy_compat::classify_aggregate_tier(&output.warnings, &output.unsupported);
+        println!("\nparity tier: {}", tier_label(&tier));
 
         if !output.warnings.is_empty() {
             println!("\nwarnings:");
@@ -834,6 +832,16 @@ struct UpstreamTestResult {
     error: Option<String>,
     failure: Option<String>,
     failed_hop: Option<usize>,
+}
+
+fn tier_label(tier: &eggress_pproxy_compat::ManifestTier) -> &'static str {
+    match tier {
+        eggress_pproxy_compat::ManifestTier::DropIn => "Drop-in",
+        eggress_pproxy_compat::ManifestTier::CompatibleWithWarning => "Compatible (with warnings)",
+        eggress_pproxy_compat::ManifestTier::NativeEquivalent => "Native equivalent",
+        eggress_pproxy_compat::ManifestTier::IntentionalNonParity => "Intentional non-parity",
+        eggress_pproxy_compat::ManifestTier::Unsupported => "Unsupported",
+    }
 }
 
 fn build_test_chain_executor() -> ChainExecutor {

@@ -108,6 +108,13 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
             ));
         }
 
+        if listener.protocols.is_empty() {
+            errors.push(ConfigError::validation(
+                &path,
+                "protocols must not be empty",
+            ));
+        }
+
         for protocol in &listener.protocols {
             if !VALID_PROTOCOLS.contains(&protocol.as_str()) {
                 errors.push(ConfigError::validation(
@@ -1337,6 +1344,43 @@ mod tests {
         assert!(errors
             .iter()
             .any(|e| e.to_string().contains("password must not be empty")));
+    }
+
+    #[test]
+    fn validate_empty_protocols_rejected() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "bad".to_string(),
+                bind: "127.0.0.1:0".to_string(),
+                protocols: vec![],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: None,
+                shadowsocks: None,
+                trojan: None,
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.to_string().contains("protocols must not be empty")));
     }
 
     #[test]

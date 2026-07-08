@@ -604,6 +604,13 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 .map(|p| compile_protocol(p))
                 .collect::<Result<Vec<_>, _>>()?;
 
+            if protocols.is_empty() {
+                return Err(ConfigError::validation(
+                    &path,
+                    "protocols must not be empty",
+                ));
+            }
+
             let udp = match (l.udp_enabled, l.udp.as_ref()) {
                 (None, None) => None,
                 (None, Some(udp_cfg)) => {

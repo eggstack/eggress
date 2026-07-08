@@ -163,14 +163,14 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "direct-mode" => StructuredDiagnostic {
                 code: DiagnosticCode::MissingTarget,
                 feature_id: None,
-                tier: Some("partial".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some("add -r <upstream-uri> for proxied connections".to_string()),
             },
             "credential-in-toml" => StructuredDiagnostic {
                 code: DiagnosticCode::MissingCredential,
                 feature_id: None,
-                tier: Some("partial".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some(
                     "use secret sources or environment variables for credentials".to_string(),
@@ -179,14 +179,14 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "verbose-mode" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("verbose".to_string()),
-                tier: Some("unsupported".to_string()),
+                tier: Some("native_equivalent".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some("set RUST_LOG=debug".to_string()),
             },
             "scheduler" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("scheduler".to_string()),
-                tier: Some("partial".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some(
                     "use first-available, round-robin, or least-connections".to_string(),
@@ -195,14 +195,14 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "alive-check" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("alive".to_string()),
-                tier: Some("unsupported".to_string()),
+                tier: Some("native_equivalent".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some("configure health probes in eggress TOML".to_string()),
             },
             "ul-no-listener" => StructuredDiagnostic {
                 code: DiagnosticCode::MissingTarget,
                 feature_id: None,
-                tier: Some("partial".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: None,
             },
@@ -255,7 +255,7 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "rulefile-read" | "rulefile-parse" | "rulefile-partial" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("rulefile".to_string()),
-                tier: Some("partial".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some(
                     "configure rules in eggress TOML [[rules]] with structured matchers"

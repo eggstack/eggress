@@ -38,6 +38,7 @@ pub struct LeafMatcher {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     pub version: Option<u32>,
     pub process: Option<ProcessConfig>,
@@ -56,6 +57,7 @@ pub struct ConfigFile {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProcessConfig {
     pub log_format: Option<String>,
     pub log_level: Option<String>,
@@ -63,6 +65,7 @@ pub struct ProcessConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TimeoutConfig {
     pub handshake: Option<String>,
     pub connect: Option<String>,
@@ -84,6 +87,7 @@ pub struct ListenerUdpConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListenerConfig {
     pub name: String,
     pub bind: String,
@@ -126,6 +130,7 @@ pub struct UnixListenerConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShadowsocksListenerConfig {
     pub method: String,
     pub password: String,
@@ -148,6 +153,7 @@ pub struct ListenerTlsConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     #[serde(rename = "type")]
     pub auth_type: String,
@@ -157,6 +163,7 @@ pub struct AuthConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpstreamConfig {
     pub id: String,
     pub uri: String,
@@ -165,6 +172,7 @@ pub struct UpstreamConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HealthConfigToml {
     pub mode: Option<String>,
     pub interval: Option<String>,
@@ -175,6 +183,7 @@ pub struct HealthConfigToml {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpstreamGroupConfig {
     pub id: String,
     pub scheduler: Option<String>,
@@ -183,6 +192,7 @@ pub struct UpstreamGroupConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuleConfig {
     pub id: String,
     pub host_exact: Option<String>,
@@ -199,11 +209,13 @@ pub struct RuleConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoutingConfig {
     pub default: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdminConfig {
     pub bind: Option<String>,
     pub enabled: Option<bool>,
@@ -213,6 +225,7 @@ pub struct AdminConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PacConfigToml {
     pub path: Option<String>,
     pub proxy: String,
@@ -222,6 +235,7 @@ pub struct PacConfigToml {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StaticContentToml {
     pub path: String,
     pub content_type: Option<String>,

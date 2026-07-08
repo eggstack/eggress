@@ -232,7 +232,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         };
 
         // redir://:12345 means empty host (bind all), redir://127.0.0.1:12345 means specific
-        let (host, port) = parse_endpoint(endpoint_str)?;
+        let (host, port, _) = parse_endpoint(endpoint_str)?;
         let rule = query.and_then(extract_rule);
         return Ok(PproxyUri {
             scheme,
@@ -260,8 +260,8 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     };
 
     // Parse host:port
-    let (host, mut port) = parse_endpoint(endpoint_str)?;
-    if port == 0 && !host.is_empty() {
+    let (host, mut port, port_specified) = parse_endpoint(endpoint_str)?;
+    if !port_specified && !host.is_empty() {
         if let Some(default) = default_port_for_scheme(&scheme) {
             port = default;
         }
@@ -299,9 +299,9 @@ fn parse_userinfo(userinfo: &str) -> Result<(String, String), CompatError> {
     }
 }
 
-fn parse_endpoint(endpoint: &str) -> Result<(String, u16), CompatError> {
+fn parse_endpoint(endpoint: &str) -> Result<(String, u16, bool), CompatError> {
     if endpoint.is_empty() {
-        return Ok((String::new(), 0));
+        return Ok((String::new(), 0, false));
     }
 
     // Handle bracketed IPv6: [::1]:8080
@@ -321,14 +321,14 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), CompatError> {
             .map_err(|e| CompatError::InvalidUri {
                 message: format!("invalid port: {}", e),
             })?;
-        return Ok((host.to_string(), port));
+        return Ok((host.to_string(), port, true));
     }
 
     // Regular host:port
     let colon_pos = match endpoint.rfind(':') {
         Some(pos) => pos,
         None => {
-            return Ok((endpoint.to_string(), 0));
+            return Ok((endpoint.to_string(), 0, false));
         }
     };
     let host = &endpoint[..colon_pos];
@@ -339,7 +339,7 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), CompatError> {
             message: format!("invalid port '{}': {}", port_str, e),
         })?;
 
-    Ok((host.to_string(), port))
+    Ok((host.to_string(), port, true))
 }
 
 fn default_port_for_scheme(scheme: &str) -> Option<u16> {
@@ -574,6 +574,12 @@ mod tests {
     fn test_redacted_display_tls_suffix_in_scheme() {
         let uri = parse_pproxy_uri("socks5+tls://proxy:1080").unwrap();
         assert_eq!(uri.redacted_display(), "socks5+tls://proxy:1080");
+    }
+
+    #[test]
+    fn test_redacted_display_explicit_zero_port() {
+        let uri = parse_pproxy_uri("socks5://host:0").unwrap();
+        assert_eq!(uri.redacted_display(), "socks5://host:0");
     }
 
     #[test]
@@ -940,5 +946,33 @@ mod tests {
         let chain = parse_pproxy_chain("socks5://h1__http://h2").unwrap();
         assert_eq!(chain.hops[0].port, 1080);
         assert_eq!(chain.hops[1].port, 80);
+    }
+
+    #[test]
+    fn test_explicit_zero_port_preserved_socks5() {
+        let uri = parse_pproxy_uri("socks5://127.0.0.1:0").unwrap();
+        assert_eq!(uri.host, "127.0.0.1");
+        assert_eq!(uri.port, 0);
+    }
+
+    #[test]
+    fn test_explicit_zero_port_preserved_http() {
+        let uri = parse_pproxy_uri("http://example.com:0").unwrap();
+        assert_eq!(uri.host, "example.com");
+        assert_eq!(uri.port, 0);
+    }
+
+    #[test]
+    fn test_explicit_zero_port_preserved_https() {
+        let uri = parse_pproxy_uri("https://example.com:0").unwrap();
+        assert_eq!(uri.host, "example.com");
+        assert_eq!(uri.port, 0);
+    }
+
+    #[test]
+    fn test_explicit_zero_port_preserved_trojan() {
+        let uri = parse_pproxy_uri("trojan://password@example.com:0").unwrap();
+        assert_eq!(uri.host, "example.com");
+        assert_eq!(uri.port, 0);
     }
 }

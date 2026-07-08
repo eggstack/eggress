@@ -867,7 +867,7 @@ direct = true
 
 [[rules]]
 id = "reject-example"
-hostname = "blocked.example.com"
+host_exact = "blocked.example.com"
 reject = "blocked"
 "#;
     {

@@ -155,7 +155,7 @@ fn check_compatible_tier() {
         .expect("failed to run eggress");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("parity tier: Compatible"));
+    assert!(stdout.contains("parity tier: Drop-in"));
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn check_compatible_tier_for_shadowsocks() {
         .expect("failed to run eggress");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("parity tier: Supported (with warnings)"));
+    assert!(stdout.contains("parity tier: Compatible (with warnings)"));
 }
 
 #[test]

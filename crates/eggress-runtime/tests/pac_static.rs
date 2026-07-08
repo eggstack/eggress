@@ -75,9 +75,8 @@ bind = "127.0.0.1:0"
 enabled = true
 
 [admin.pac]
-direct = ["localhost", "127.0.0.1"]
+direct_hosts = ["localhost", "127.0.0.1"]
 proxy = "PROXY 127.0.0.1:8080"
-fallback = "DIRECT"
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -309,9 +308,8 @@ bind = "127.0.0.1:0"
 enabled = true
 
 [admin.pac]
-direct = ["localhost"]
+direct_hosts = ["localhost"]
 proxy = "PROXY 127.0.0.1:8080"
-fallback = "DIRECT"
 "#;
     let config2 = r#"
 version = 1
@@ -326,9 +324,8 @@ bind = "127.0.0.1:0"
 enabled = true
 
 [admin.pac]
-direct = ["localhost"]
+direct_hosts = ["localhost"]
 proxy = "PROXY 127.0.0.1:9999"
-fallback = "DIRECT"
 "#;
 
     let f = write_config(config1);
