@@ -1,3 +1,7 @@
+// The transparent proxy module uses libc FFI (getsockopt) on Linux only.
+// Workspace lints deny unsafe_code; this is the single, documented exception
+// per docs/adr/ADR_transparent_proxy_unsafe_boundary.md.
+
 use std::fmt;
 use std::net::SocketAddr;
 #[cfg(target_os = "linux")]
@@ -132,6 +136,7 @@ fn get_original_destination_impl(_stream: &TcpStream) -> Result<SocketAddr, Tran
 /// Uses `libc::getsockopt` directly. The `SO_ORIGINAL_DST` option returns
 /// a `sockaddr_in` (IPv4) or `sockaddr_in6` (IPv6) structure.
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
 fn query_original_dst(fd: std::os::raw::c_int, level: i32, optname: i32) -> Option<SocketAddr> {
     // SAFETY: `sockaddr_storage` is a POD type whose layout is defined by the
     // platform libc. Initializing all bytes to zero is valid for any fully

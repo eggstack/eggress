@@ -822,6 +822,7 @@ dependencies = [
  "eggress-transport-tls",
  "eggress-udp",
  "eggress-uri",
+ "libc",
  "rustls",
  "socket2 0.5.10",
  "subtle",
