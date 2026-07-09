@@ -20,14 +20,17 @@ and verified with `--check-report`.
 
 ## Compatibility Tiers
 
+This matrix uses the canonical manifest tier vocabulary. See
+[`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
+for the authoritative 139-capability manifest with per-layer evidence tracking.
+
 | Tier | Meaning |
 |------|---------|
-| **Compatible** | Eggress behavior matches pproxy for tested scenarios (has runtime or differential test reference) |
-| **Supported** | Eggress supports the feature, but pproxy equivalence is not claimed |
-| **Partial** | Usable subset exists but not enough for compatibility |
-| **Experimental** | Code exists but no compatibility/stability promise |
-| **Intentional non-parity** | Deliberately not replicated with rationale |
-| **Unsupported** | Not implemented |
+| **drop_in** | Eggress behavior matches pproxy for all tested scenarios; has integration or differential test evidence |
+| **compatible_with_warning** | Eggress supports the feature with minor behavioral differences or diagnostics; has test evidence |
+| **native_equivalent** | Eggress provides equivalent functionality via its own mechanism (not a direct pproxy mapping) |
+| **intentional_non_parity** | Deliberately not replicated with documented rationale |
+| **unsupported** | Not implemented |
 
 ## Feature Matrix
 
@@ -35,109 +38,109 @@ and verified with `--check-report`.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| HTTP CONNECT | server + client | server + client | Compatible | integration tests | `differential_http_connect_tcp_echo` | Byte-exact payload match |
-| HTTP forward proxy | ordinary HTTP request handling | persistent session forward | Compatible | integration tests | `differential_http_forward_get` | Persistent session model implemented (19.1). Differential tests added (19.3). |
-| SOCKS4/4a | server + client | server + client | Compatible | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
-| SOCKS5 CONNECT | server + client | server + client | Compatible | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
-| SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | Supported | `udp.rs` integration | `differential_socks5_udp_associate` | eggress uses SOCKS5 UDP ASSOCIATE framing; pproxy uses its own custom framing. Both relay UDP successfully. |
-| SOCKS4 BIND | supported (deprecated) | not implemented | Intentional non-parity | none | none | BIND is deprecated; pproxy also does not implement SOCKS4 BIND. Server rejects with RFC-compliant 0x07. |
-| SOCKS5 BIND | supported (deprecated) | not implemented | Intentional non-parity | none | none | BIND is rarely used; pproxy also does not implement SOCKS5 BIND. Server rejects with RFC-compliant 0x07. |
-| Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | Supported | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
-| Transparent TCP proxy (`redir://`) | Linux only | Linux only | Supported | `transparent.rs` tests | none | Requires `SO_ORIGINAL_DST`; iptables/nftables REDIRECT rule needed |
-| Unix domain socket (`unix://`) | Unix only | Unix only | Supported | `unix_listener.rs` tests | none | Listen on filesystem socket path; Windows not supported |
-| Reverse/backward proxy (`+in`/`bind://`/`listen://`) | TCP-only raw relay, optional plaintext auth, one session per control channel | Reverse acceptor + control client (`crates/eggress-protocol-reverse`) | Supported | `integration.rs`, `reverse_runtime.rs` (10 supervisor-wiring tests), `reverse_interop.rs` | `reverse_payload_byte_equality_eggress_loopback` (self-interop payload byte-equality) | TCP only; UDP not supported by pproxy either; no built-in TLS; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind (Phase 25-28 H11) |
-| macOS PF transparent proxy | supported | not implemented | Intentional non-parity | none | none | Use pfctl with standard listener instead |
-| Trojan | server + client | server + client | Supported | unit tests | none | Inbound listener with TLS + SHA224; upstream client |
+| HTTP CONNECT | server + client | server + client | drop_in | integration tests | `differential_http_connect_tcp_echo` | Byte-exact payload match |
+| HTTP forward proxy | ordinary HTTP request handling | persistent session forward | drop_in | integration tests | `differential_http_forward_get` | Persistent session model implemented (19.1). Differential tests added (19.3). |
+| SOCKS4/4a | server + client | server + client | drop_in | integration tests | `differential_socks4_connect_tcp_echo`, `differential_socks4a_connect_domain` | Differential tests with pproxy 2.7.9 added (19.4). |
+| SOCKS5 CONNECT | server + client | server + client | drop_in | integration tests | `differential_socks5_connect_tcp_echo`, `differential_socks5_connect_ipv6`, `differential_socks5_connect_domain`, `differential_socks5_refused_target` | Expanded differential test coverage including auth, IPv6, domain, refused targets (19.5). |
+| SOCKS5 UDP ASSOCIATE | client only (relay uses own protocol) | server + client + standalone mode | compatible_with_warning | `udp.rs` integration | `differential_socks5_udp_associate` | eggress uses SOCKS5 UDP ASSOCIATE framing; pproxy uses its own custom framing. Both relay UDP successfully. |
+| SOCKS4 BIND | supported (deprecated) | not implemented | intentional_non_parity | none | none | BIND is deprecated; pproxy also does not implement SOCKS4 BIND. Server rejects with RFC-compliant 0x07. |
+| SOCKS5 BIND | supported (deprecated) | not implemented | intentional_non_parity | none | none | BIND is rarely used; pproxy also does not implement SOCKS5 BIND. Server rejects with RFC-compliant 0x07. |
+| Shadowsocks TCP | full AEAD + stream | server + client (explicit protocol mode) | compatible_with_warning | integration tests | none | Standard SIP003 AEAD framing; interoperable with standard Shadowsocks (ssserver/sslocal). Not pproxy-differential tested. |
+| Transparent TCP proxy (`redir://`) | Linux only | Linux only | compatible_with_warning | `transparent.rs` tests | none | Requires `SO_ORIGINAL_DST`; iptables/nftables REDIRECT rule needed |
+| Unix domain socket (`unix://`) | Unix only | Unix only | compatible_with_warning | `unix_listener.rs` tests | none | Listen on filesystem socket path; Windows not supported |
+| Reverse/backward proxy (`+in`/`bind://`/`listen://`) | TCP-only raw relay, optional plaintext auth, one session per control channel | Reverse acceptor + control client (`crates/eggress-protocol-reverse`) | compatible_with_warning | `integration.rs`, `reverse_runtime.rs` (10 supervisor-wiring tests), `reverse_interop.rs` | `reverse_payload_byte_equality_eggress_loopback` (self-interop payload byte-equality) | TCP only; UDP not supported by pproxy either; no built-in TLS; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind (Phase 25-28 H11) |
+| macOS PF transparent proxy | supported | not implemented | intentional_non_parity | none | none | Use pfctl with standard listener instead |
+| Trojan | server + client | server + client | compatible_with_warning | unit tests | none | Inbound listener with TLS + SHA224; upstream client |
 
 ### Inbound UDP Protocols
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| SOCKS5 UDP ASSOCIATE relay | own UDP framing protocol | SOCKS5 UDP ASSOCIATE | Partial | `udp.rs` | `differential_socks5_udp_associate` | Framing differs; relay success matches |
-| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | Compatible | `udp.rs` | `differential_standalone_udp_direct_echo, differential_standalone_udp_domain_target` | pproxy-compatible standalone UDP mode; differential tests verify behavioral parity with pproxy -ul |
-| Shadowsocks UDP | supported | standard AEAD format | Supported | `shadowsocks_udp.rs` | none | Standard AEAD format; interoperable with standard Shadowsocks. Not pproxy-differential tested. |
-| Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE or standalone mode | Supported | `udp.rs` | none | Both entry points supported |
+| SOCKS5 UDP ASSOCIATE relay | own UDP framing protocol | SOCKS5 UDP ASSOCIATE | compatible_with_warning | `udp.rs` | `differential_socks5_udp_associate` | Framing differs; relay success matches |
+| Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | drop_in | `udp.rs` | `differential_standalone_udp_direct_echo, differential_standalone_udp_domain_target` | pproxy-compatible standalone UDP mode; differential tests verify behavioral parity with pproxy -ul |
+| Shadowsocks UDP | supported | standard AEAD format | compatible_with_warning | `shadowsocks_udp.rs` | none | Standard AEAD format; interoperable with standard Shadowsocks. Not pproxy-differential tested. |
+| Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE or standalone mode | compatible_with_warning | `udp.rs` | none | Both entry points supported |
 
 ### Upstream TCP Protocols
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| HTTP CONNECT upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_http_upstream` | Chain payloads match |
-| SOCKS4/SOCKS4a upstream | supported | supported | Supported | integration tests | none | Unit tested |
-| SOCKS5 upstream | supported | supported | Compatible | integration tests | `differential_socks5_through_socks5_upstream` | Chain payloads match |
-| Shadowsocks upstream | supported | supported | Supported | `shadowsocks_tcp.rs` | none | Standard AEAD framing; interoperable with standard Shadowsocks |
-| Trojan upstream | supported | supported | Supported | unit tests | none | Client with rustls TLS |
-| Direct upstream | supported | supported | Compatible | integration tests | implicit in echo tests | Both connect directly |
+| HTTP CONNECT upstream | supported | supported | drop_in | integration tests | `differential_socks5_through_http_upstream` | Chain payloads match |
+| SOCKS4/SOCKS4a upstream | supported | supported | compatible_with_warning | integration tests | none | Unit tested |
+| SOCKS5 upstream | supported | supported | drop_in | integration tests | `differential_socks5_through_socks5_upstream` | Chain payloads match |
+| Shadowsocks upstream | supported | supported | compatible_with_warning | `shadowsocks_tcp.rs` | none | Standard AEAD framing; interoperable with standard Shadowsocks |
+| Trojan upstream | supported | supported | compatible_with_warning | unit tests | none | Client with rustls TLS |
+| Direct upstream | supported | supported | drop_in | integration tests | implicit in echo tests | Both connect directly |
 
 ### Upstream UDP Protocols
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| SOCKS5 UDP upstream relay | supported | one-hop only | Partial | `udp_upstream.rs` | none | Eggress: one-hop; pproxy: multi-hop capable |
-| HTTP/HTTPS UDP upstream | accepted (non-functional) | rejected at translation | Intentional non-parity | none | none | HTTP CONNECT does not support UDP; translator rejects with diagnostic |
-| SOCKS4/SOCKS4a UDP upstream | accepted (non-functional) | rejected at translation | Intentional non-parity | none | none | SOCKS4 has no UDP protocol support; translator rejects with diagnostic |
-| Trojan UDP upstream | accepted (non-functional) | rejected at translation | Intentional non-parity | none | none | Trojan does not support UDP; translator rejects with diagnostic |
-| Shadowsocks UDP upstream | supported | standard AEAD one-hop | Supported | `shadowsocks_udp.rs` | none | Single-hop only; pproxy: multi-hop capable |
+| SOCKS5 UDP upstream relay | supported | one-hop only | compatible_with_warning | `udp_upstream.rs` | none | Eggress: one-hop; pproxy: multi-hop capable |
+| HTTP/HTTPS UDP upstream | accepted (non-functional) | rejected at translation | intentional_non_parity | none | none | HTTP CONNECT does not support UDP; translator rejects with diagnostic |
+| SOCKS4/SOCKS4a UDP upstream | accepted (non-functional) | rejected at translation | intentional_non_parity | none | none | SOCKS4 has no UDP protocol support; translator rejects with diagnostic |
+| Trojan UDP upstream | accepted (non-functional) | rejected at translation | intentional_non_parity | none | none | Trojan does not support UDP; translator rejects with diagnostic |
+| Shadowsocks UDP upstream | supported | standard AEAD one-hop | compatible_with_warning | `shadowsocks_udp.rs` | none | Single-hop only; pproxy: multi-hop capable |
 
 ### Chain Behavior
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Single-hop TCP chain | supported | supported | Compatible | integration tests | `differential_socks5_through_*`, `differential_http_to_socks5_upstream`, `differential_http_to_http_upstream` | Tested through pproxy upstream |
-| Multi-hop TCP chain | supported | basic support | Partial | integration tests | none | 3+ hops exist but compatibility untested |
-| UDP chain | supported (SOCKS5 relay) | one-hop SOCKS5 only | Partial | `udp_upstream.rs` | none | No multi-hop UDP chains |
-| Chain capability validation | implicit | explicit validation | Supported | integration tests | none | Rejects invalid combos |
+| Single-hop TCP chain | supported | supported | drop_in | integration tests | `differential_socks5_through_*`, `differential_http_to_socks5_upstream`, `differential_http_to_http_upstream` | Tested through pproxy upstream |
+| Multi-hop TCP chain | supported | basic support | compatible_with_warning | integration tests | none | 3+ hops exist but compatibility untested |
+| UDP chain | supported (SOCKS5 relay) | one-hop SOCKS5 only | compatible_with_warning | `udp_upstream.rs` | none | No multi-hop UDP chains |
+| Chain capability validation | implicit | explicit validation | compatible_with_warning | integration tests | none | Rejects invalid combos |
 
 ### Scheduler Behavior
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Round-robin | default for multiple remotes (`-s rr`) | default for groups | Supported | `scheduler_runtime.rs` | none | Uses global atomic cursor; pproxy resets on reload. No pproxy differential test. |
-| First-available | via `-s fa` | `FirstAvailable` scheduler | Supported | `scheduler_runtime.rs` | none | Both return first eligible upstream |
-| Random | not default | `Random` scheduler | Supported | `scheduler_runtime.rs` | none | Eggress-specific; deterministic variant for testing |
-| Least-connections | not available | `LeastConnections` scheduler | Supported | `scheduler_runtime.rs` | none | Uses active + in_flight count |
-| Health-aware skip | implicit via alive check | explicit health state machine | Supported | `scheduler_runtime.rs` | none | Eggress: hysteresis state machine |
-| Fallback on all fail | `-F` flag (direct only) | `GroupFallback`: reject/direct/use-unhealthy | Partial | `scheduler_runtime.rs` | none | Eggress offers more granular control |
-| Retry within group | not documented | not implemented | Supported | none | none | Single attempt per request; pproxy behavior undocumented |
-| Active lease tracking | not documented | `PendingLease`/`ActiveLease` two-phase | Supported | `scheduler_runtime.rs` | none | Precise connection accounting |
-| Scheduler state persistence | resets on reload | persists across reloads | Intentional non-parity | none | none | Eggress preserves cursor for unchanged groups |
+| Round-robin | default for multiple remotes (`-s rr`) | default for groups | compatible_with_warning | `scheduler_runtime.rs` | none | Uses global atomic cursor; pproxy resets on reload. No pproxy differential test. |
+| First-available | via `-s fa` | `FirstAvailable` scheduler | compatible_with_warning | `scheduler_runtime.rs` | none | Both return first eligible upstream |
+| Random | not default | `Random` scheduler | compatible_with_warning | `scheduler_runtime.rs` | none | Eggress-specific; deterministic variant for testing |
+| Least-connections | not available | `LeastConnections` scheduler | compatible_with_warning | `scheduler_runtime.rs` | none | Uses active + in_flight count |
+| Health-aware skip | implicit via alive check | explicit health state machine | compatible_with_warning | `scheduler_runtime.rs` | none | Eggress: hysteresis state machine |
+| Fallback on all fail | `-F` flag (direct only) | `GroupFallback`: reject/direct/use-unhealthy | compatible_with_warning | `scheduler_runtime.rs` | none | Eggress offers more granular control |
+| Retry within group | not documented | not implemented | compatible_with_warning | none | none | Single attempt per request; pproxy behavior undocumented |
+| Active lease tracking | not documented | `PendingLease`/`ActiveLease` two-phase | compatible_with_warning | `scheduler_runtime.rs` | none | Precise connection accounting |
+| Scheduler state persistence | resets on reload | persists across reloads | intentional_non_parity | none | none | Eggress preserves cursor for unchanged groups |
 
 ### Authentication Behavior
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| SOCKS5 auth rejection | rejects unauthenticated | rejects unauthenticated | Compatible | integration tests | `differential_socks5_auth_failure` | Both reject |
-| HTTP auth rejection | rejects unauthenticated | rejects unauthenticated | Compatible | integration tests | `differential_http_auth_failure` | Both reject |
-| SOCKS5 username/password | URI-embedded | URI-embedded | Supported | integration tests | none | |
-| HTTP Basic auth | URI-embedded | URI-embedded | Supported | integration tests | none | |
-| Shadowsocks password | URI-embedded | URI-embedded | Supported | `shadowsocks_tcp.rs` | none | |
+| SOCKS5 auth rejection | rejects unauthenticated | rejects unauthenticated | drop_in | integration tests | `differential_socks5_auth_failure` | Both reject |
+| HTTP auth rejection | rejects unauthenticated | rejects unauthenticated | drop_in | integration tests | `differential_http_auth_failure` | Both reject |
+| SOCKS5 username/password | URI-embedded | URI-embedded | compatible_with_warning | integration tests | none | |
+| HTTP Basic auth | URI-embedded | URI-embedded | compatible_with_warning | integration tests | none | |
+| Shadowsocks password | URI-embedded | URI-embedded | compatible_with_warning | `shadowsocks_tcp.rs` | none | |
 
 ### CLI Compatibility
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| `-l` listen flag | supported | supported | Compatible | cli_tests | none | Same syntax |
-| `-r` remote flag | supported | supported | Compatible | cli_tests | none | Same syntax |
-| `-ul` UDP listen | supported | supported | Compatible | cli_tests, pproxy_cli_tests | none | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
-| `-ur` UDP remote | supported | supported | Compatible | cli_tests, pproxy_cli_tests | none | Generates UDP upstream config with transport-matching rule |
-| `--config` TOML | supported | supported (different schema) | Partial | integration tests | none | Different schema |
-| `--rulefile` | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
-| `--daemon` | supported | rejected | Intentional non-parity | none | none | Use systemd or a process manager |
-| `-b` bind | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[[rules]] reject` entries |
-| `--ssl` TLS listener | supported | supported (generates TOML) | Native equivalent | cli_tests, pproxy_compat_manifest, pproxy_compat_report | none | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
-| `-a` alive/health | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[health] interval = "Ns"` |
-| `--pac` PAC serving | supported | supported (generates TOML) | Compatible | cli_tests | none | Phase 38: generates `[admin.pac] enabled = true` |
-| `--test` test-and-exit | supported | supported | Compatible | cli_tests | none | Phase 38: translates config and runs `eggress upstream test` |
-| `--sys` system proxy | supported | supported | Compatible | cli_tests | none | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
-| `--log` logging | supported | diagnostic only | Intentional non-parity | cli_tests | none | Phase 38: emits structured diagnostic |
-| `--get` connection reuse | supported | diagnostic only | Intentional non-parity | cli_tests | none | Phase 38: emits structured diagnostic |
-| `--reuse` | supported | diagnostic only | Intentional non-parity | cli_tests | none | Phase 38: emits structured diagnostic |
-| pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | Compatible | cli_tests | none | Translates pproxy CLI args to TOML config |
-| pproxy URI translation | N/A | `eggress pproxy translate` | Compatible | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
-| Exit codes | generic (1 for all errors) | granular (0–7, 130, 143) | Intentional non-parity | `cli_exit_codes.rs` | none | pproxy uses 1 for all failures; eggress provides differentiated codes per error class |
-| JSON output (`--json`) | N/A | `pproxy check --json`, `route explain --json`, `upstream test --json` | Intentional non-parity | `cli_exit_codes.rs` | none | Machine-readable JSON output with tier, diagnostics, features, parsed URIs |
-| Structured diagnostics | N/A | `StructuredDiagnostic` with stable `DiagnosticCode` | Intentional non-parity | `diagnostics.rs` | none | 13 stable diagnostic codes; serializable to JSON; includes tier and suggestion fields |
-| CLI inventory completeness | all flags mapped | 14 of 14 pproxy flags mapped | Supported | `cli_tests` | none | Phase 38: all flags now have equivalent behavior (TOML generation, diagnostic, or rejection) |
+| `-l` listen flag | supported | supported | drop_in | cli_tests | none | Same syntax |
+| `-r` remote flag | supported | supported | drop_in | cli_tests | none | Same syntax |
+| `-ul` UDP listen | supported | supported | drop_in | cli_tests, pproxy_cli_tests | none | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
+| `-ur` UDP remote | supported | supported | drop_in | cli_tests, pproxy_cli_tests | none | Generates UDP upstream config with transport-matching rule |
+| `--config` TOML | supported | supported (different schema) | compatible_with_warning | integration tests | none | Different schema |
+| `--rulefile` | supported | supported (generates TOML) | drop_in | cli_tests | none | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
+| `--daemon` | supported | rejected | intentional_non_parity | none | none | Use systemd or a process manager |
+| `-b` bind | supported | supported (generates TOML) | drop_in | cli_tests | none | Phase 38: generates `[[rules]] reject` entries |
+| `--ssl` TLS listener | supported | supported (generates TOML) | native_equivalent | cli_tests, pproxy_compat_manifest, pproxy_compat_report | none | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
+| `-a` alive/health | supported | supported (generates TOML) | drop_in | cli_tests | none | Phase 38: generates `[health] interval = "Ns"` |
+| `--pac` PAC serving | supported | supported (generates TOML) | drop_in | cli_tests | none | Phase 38: generates `[admin.pac] enabled = true` |
+| `--test` test-and-exit | supported | supported | drop_in | cli_tests | none | Phase 38: translates config and runs `eggress upstream test` |
+| `--sys` system proxy | supported | supported | drop_in | cli_tests | none | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
+| `--log` logging | supported | diagnostic only | intentional_non_parity | cli_tests | none | Phase 38: emits structured diagnostic |
+| `--get` connection reuse | supported | diagnostic only | intentional_non_parity | cli_tests | none | Phase 38: emits structured diagnostic |
+| `--reuse` | supported | diagnostic only | intentional_non_parity | cli_tests | none | Phase 38: emits structured diagnostic |
+| pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | drop_in | cli_tests | none | Translates pproxy CLI args to TOML config |
+| pproxy URI translation | N/A | `eggress pproxy translate` | drop_in | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
+| Exit codes | generic (1 for all errors) | granular (0–7, 130, 143) | intentional_non_parity | `cli_exit_codes.rs` | none | pproxy uses 1 for all failures; eggress provides differentiated codes per error class |
+| JSON output (`--json`) | N/A | `pproxy check --json`, `route explain --json`, `upstream test --json` | intentional_non_parity | `cli_exit_codes.rs` | none | Machine-readable JSON output with tier, diagnostics, features, parsed URIs |
+| Structured diagnostics | N/A | `StructuredDiagnostic` with stable `DiagnosticCode` | intentional_non_parity | `diagnostics.rs` | none | 13 stable diagnostic codes; serializable to JSON; includes tier and suggestion fields |
+| CLI inventory completeness | all flags mapped | 14 of 14 pproxy flags mapped | compatible_with_warning | `cli_tests` | none | Phase 38: all flags now have equivalent behavior (TOML generation, diagnostic, or rejection) |
 
 ## Remaining Protocol Audit
 
@@ -147,67 +150,67 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 
 | Scheme | pproxy role | TCP/UDP | Auth/Encryption | Eggress status | Decision | Rationale |
 |--------|-------------|---------|-----------------|----------------|----------|-----------|
-| `http://` | inbound | TCP | Basic auth, optional TLS | Supported | **Compatible** | Full parity with differential tests |
-| `https://` | inbound | TCP | TLS + Basic auth | Supported | **Compatible** | Maps to `http+tls` in eggress |
-| `socks4://` | inbound | TCP | User ID | Supported | **Compatible** | Differential tests with pproxy 2.7.9 |
-| `socks4a://` | inbound | TCP | User ID | Supported | **Compatible** | Differential tests with pproxy 2.7.9 |
-| `socks5://` | inbound | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
-| `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Supported | **Supported** | Explicit protocol mode only; no mixed-listener auto-detection |
-| `trojan://` | inbound | TCP | Password (SHA224) | Supported | **Supported** | Inbound listener with TLS + SHA224 password verification |
-| `redir://` | inbound | TCP | None | Supported | **Supported** | Linux only; requires `SO_ORIGINAL_DST` via iptables REDIRECT/nftables |
-| `unix://` | inbound | TCP | None | Supported | **Supported** | Unix only; listen on Unix domain socket path |
-| `ssh://` | inbound | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH is not a proxy protocol |
-| `bind://` / `listen://` | inbound (reverse) | TCP | Optional plaintext auth | Supported | **Supported** | Reverse acceptor; raw-relay control channel |
-| `backward://` / `rebind://` | upstream (reverse) | TCP | Optional plaintext auth | Supported | **Supported** | Reverse control client; raw-relay control channel |
-| `+in` modifier | upstream (reverse) | TCP | Optional plaintext auth | Supported | **Supported** | Activates reverse/backward mode on any protocol scheme |
+| `http://` | inbound | TCP | Basic auth, optional TLS | Supported | **drop_in** | Full parity with differential tests |
+| `https://` | inbound | TCP | TLS + Basic auth | Supported | **drop_in** | Maps to `http+tls` in eggress |
+| `socks4://` | inbound | TCP | User ID | Supported | **drop_in** | Differential tests with pproxy 2.7.9 |
+| `socks4a://` | inbound | TCP | User ID | Supported | **drop_in** | Differential tests with pproxy 2.7.9 |
+| `socks5://` | inbound | TCP+UDP | Username/password | Supported | **drop_in** | Full parity with differential tests |
+| `ss://` / `shadowsocks://` | inbound | TCP | AEAD password | Supported | **compatible_with_warning** | Explicit protocol mode only; no mixed-listener auto-detection |
+| `trojan://` | inbound | TCP | Password (SHA224) | Supported | **compatible_with_warning** | Inbound listener with TLS + SHA224 password verification |
+| `redir://` | inbound | TCP | None | Supported | **compatible_with_warning** | Linux only; requires `SO_ORIGINAL_DST` via iptables REDIRECT/nftables |
+| `unix://` | inbound | TCP | None | Supported | **compatible_with_warning** | Unix only; listen on Unix domain socket path |
+| `ssh://` | inbound | TCP | SSH auth | Rejected | **intentional_non_parity** | SSH is not a proxy protocol |
+| `bind://` / `listen://` | inbound (reverse) | TCP | Optional plaintext auth | Supported | **compatible_with_warning** | Reverse acceptor; raw-relay control channel |
+| `backward://` / `rebind://` | upstream (reverse) | TCP | Optional plaintext auth | Supported | **compatible_with_warning** | Reverse control client; raw-relay control channel |
+| `+in` modifier | upstream (reverse) | TCP | Optional plaintext auth | Supported | **compatible_with_warning** | Activates reverse/backward mode on any protocol scheme |
 
 ### Upstream Protocols
 
 | Scheme | pproxy role | TCP/UDP | Auth/Encryption | Eggress status | Decision | Rationale |
 |--------|-------------|---------|-----------------|----------------|----------|-----------|
-| `http://` | upstream | TCP | Basic auth | Supported | **Compatible** | Full parity with differential tests |
-| `https://` | upstream | TCP | TLS + Basic auth | Supported | **Compatible** | Maps to `http+tls` in eggress |
-| `socks4://` | upstream | TCP | User ID | Supported | **Supported** | Unit tested |
-| `socks4a://` | upstream | TCP | User ID | Supported | **Supported** | Alias for `socks4` |
-| `socks5://` | upstream | TCP+UDP | Username/password | Supported | **Compatible** | Full parity with differential tests |
-| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **Supported** | Standard AEAD framing; interoperable with standard Shadowsocks |
-| `trojan://` | upstream | TCP | Password (SHA224) | Supported | **Supported** | Client with rustls TLS |
-| `ssh://` | upstream | TCP | SSH auth | Rejected | **Intentional non-parity** | SSH transport is out-of-scope for a proxy |
-| `direct://` | upstream | TCP+UDP | None | Supported | **Compatible** | Direct connection, no proxy |
+| `http://` | upstream | TCP | Basic auth | Supported | **drop_in** | Full parity with differential tests |
+| `https://` | upstream | TCP | TLS + Basic auth | Supported | **drop_in** | Maps to `http+tls` in eggress |
+| `socks4://` | upstream | TCP | User ID | Supported | **compatible_with_warning** | Unit tested |
+| `socks4a://` | upstream | TCP | User ID | Supported | **compatible_with_warning** | Alias for `socks4` |
+| `socks5://` | upstream | TCP+UDP | Username/password | Supported | **drop_in** | Full parity with differential tests |
+| `ss://` / `shadowsocks://` | upstream | TCP+UDP | AEAD password | Supported | **compatible_with_warning** | Standard AEAD framing; interoperable with standard Shadowsocks |
+| `trojan://` | upstream | TCP | Password (SHA224) | Supported | **compatible_with_warning** | Client with rustls TLS |
+| `ssh://` | upstream | TCP | SSH auth | Rejected | **intentional_non_parity** | SSH transport is out-of-scope for a proxy |
+| `direct://` | upstream | TCP+UDP | None | Supported | **drop_in** | Direct connection, no proxy |
 
 ### Transport/Wrapping
 
 | Feature | pproxy support | Eggress status | Decision | Rationale |
 |---------|---------------|----------------|----------|-----------|
-| `+tls` suffix | `socks5+tls://` etc. | Supported | **Supported** | Maps to TLS wrapper via `eggress-transport-tls` |
-| Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **Compatible** | All three AEAD methods supported; standard TCP framing |
-| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **Intentional non-parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
-| ShadowsocksR (SSR) | Supported in some forks | Rejected | **Intentional non-parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
-| HTTP/2 CONNECT | Supported | Protocol-crate only | **Intentional non-parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
-| WebSocket tunnels | Supported | Protocol-crate only | **Intentional non-parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
-| Raw fixed-target tunnels | Supported | Protocol-crate only | **Intentional non-parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
-| TLS ALPN negotiation | Supported | Supported | **Supported** | Phase 26, synthetic |
-| QUIC transport | Deferred | Deferred | **Intentional non-parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
-| HTTP/3 | Deferred | Deferred | **Intentional non-parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
+| `+tls` suffix | `socks5+tls://` etc. | Supported | **compatible_with_warning** | Maps to TLS wrapper via `eggress-transport-tls` |
+| Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **drop_in** | All three AEAD methods supported; standard TCP framing |
+| Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **intentional_non_parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
+| ShadowsocksR (SSR) | Supported in some forks | Rejected | **intentional_non_parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
+| HTTP/2 CONNECT | Supported | Protocol-crate only | **intentional_non_parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
+| WebSocket tunnels | Supported | Protocol-crate only | **intentional_non_parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
+| Raw fixed-target tunnels | Supported | Protocol-crate only | **intentional_non_parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
+| TLS ALPN negotiation | Supported | Supported | **compatible_with_warning** | Phase 26, synthetic |
+| QUIC transport | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
+| HTTP/3 | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
 
 ### CLI/Config Features
 
 | Feature | pproxy support | Eggress status | Decision | Rationale |
 |---------|---------------|----------------|----------|-----------|
-| `-l` listen flag | Supported | Supported | **Compatible** | Same syntax |
-| `-r` remote flag | Supported | Supported | **Compatible** | Same syntax |
-| `-ul` UDP listen | Supported | Supported | **Compatible** | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
-| `-ur` UDP remote | Supported | Supported | **Compatible** | Generates UDP upstream config with transport-matching rule |
-| `--daemon` | Supported | Rejected | **Intentional non-parity** | Use systemd or process manager |
-| `--ssl` TLS listener | Supported | Supported | **Native equivalent** | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
-| `-b` block rules | Supported | Supported | **Compatible** | Phase 38: generates `[[rules]] reject` entries |
-| `--reuse` | Supported | Rejected | **Intentional non-parity** | Connection pooling not implemented |
-| `--log` | Supported | Supported | **Compatible** | Phase 38: emits structured diagnostic |
-| `--sys` | Supported | Supported | **Compatible** | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
-| `--rulefile` | Supported | Supported | **Compatible** | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics |
-| Multi-hop UDP chains | Supported | Rejected | **Intentional non-parity** | One-hop only |
-| Persistent HTTP forwarding | Supported | Supported | **Compatible** | Persistent session model with HTTP/1.1 keep-alive |
-| Python library | `pproxy.Server()` API | `eggress` package via PyO3 | **Supported** | Python bindings wrap `eggress-embed` API | Not a 1:1 API match; see Python Bindings doc |
+| `-l` listen flag | Supported | Supported | **drop_in** | Same syntax |
+| `-r` remote flag | Supported | Supported | **drop_in** | Same syntax |
+| `-ul` UDP listen | Supported | Supported | **drop_in** | Generates standalone UDP listener config (`mode = "standalone_pproxy_udp"`) |
+| `-ur` UDP remote | Supported | Supported | **drop_in** | Generates UDP upstream config with transport-matching rule |
+| `--daemon` | Supported | Rejected | **intentional_non_parity** | Use systemd or process manager |
+| `--ssl` TLS listener | Supported | Supported | **native_equivalent** | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
+| `-b` block rules | Supported | Supported | **drop_in** | Phase 38: generates `[[rules]] reject` entries |
+| `--reuse` | Supported | Rejected | **intentional_non_parity** | Connection pooling not implemented |
+| `--log` | Supported | Supported | **drop_in** | Phase 38: emits structured diagnostic |
+| `--sys` | Supported | Supported | **drop_in** | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
+| `--rulefile` | Supported | Supported | **drop_in** | Phase 38: translates pproxy rulefiles to `[[rules]]` with diagnostics |
+| Multi-hop UDP chains | Supported | Rejected | **intentional_non_parity** | One-hop only |
+| Persistent HTTP forwarding | Supported | Supported | **drop_in** | Persistent session model with HTTP/1.1 keep-alive |
+| Python library | `pproxy.Server()` API | `eggress` package via PyO3 | **compatible_with_warning** | Python bindings wrap `eggress-embed` API | Not a 1:1 API match; see Python Bindings doc |
 
 ### Diagnostics for Unsupported Features
 
@@ -232,29 +235,29 @@ All diagnostic messages redact credentials.
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| `http://` scheme | supported | supported | Supported | cli_tests | none | |
-| `socks5://` scheme | supported | supported | Supported | cli_tests | none | |
-| `socks4://` scheme | supported | supported | Supported | cli_tests | none | |
-| `ss://` scheme | supported | supported | Supported | cli_tests | none | |
-| `trojan://` scheme | supported | supported | Supported | unit tests | none | |
-| `__` chain separator | supported | supported | Supported | integration tests | none | |
-| `user:pass@` auth | supported | supported | Supported | integration tests | none | |
+| `http://` scheme | supported | supported | compatible_with_warning | cli_tests | none | |
+| `socks5://` scheme | supported | supported | compatible_with_warning | cli_tests | none | |
+| `socks4://` scheme | supported | supported | compatible_with_warning | cli_tests | none | |
+| `ss://` scheme | supported | supported | compatible_with_warning | cli_tests | none | |
+| `trojan://` scheme | supported | supported | compatible_with_warning | unit tests | none | |
+| `__` chain separator | supported | supported | compatible_with_warning | integration tests | none | |
+| `user:pass@` auth | supported | supported | compatible_with_warning | integration tests | none | |
 
 ### Config/Reload Behavior
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Hot reload | SIGHUP | SIGHUP (routing only) | Partial | `reload.rs` | none | Eggress: routing/upstreams only; pproxy: full config |
-| TOML config | supported | supported (different schema) | Partial | integration tests | none | Different schema |
-| Runtime state preservation | varies | atomic swap via ArcSwap | Supported | `reload.rs` | none | |
+| Hot reload | SIGHUP | SIGHUP (routing only) | compatible_with_warning | `reload.rs` | none | Eggress: routing/upstreams only; pproxy: full config |
+| TOML config | supported | supported (different schema) | compatible_with_warning | integration tests | none | Different schema |
+| Runtime state preservation | varies | atomic swap via ArcSwap | compatible_with_warning | `reload.rs` | none | |
 
 ### Python Library/Bindings
 
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
-| Python library | `pproxy.Server()` API | `eggress` package (PyO3) | Supported | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py`, `test_server_lifecycle.py`, `test_pproxy_oracle.py` | none | `EggressService`, `EggressHandle`, `Server`, `start_pproxy`, translation helpers |
-| pproxy drop-in API | `pproxy.Server(listen, remote)` | `PPProxyService.from_args()`, `from_uri()`, `from_toml()`, `from_file()` | Supported | `test_pproxy_dropin.py` | none | Phase 40: `PPProxyService`, `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs |
-| PyPI package | `pip install pproxy` | `pip install eggress` | Supported | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
+| Python library | `pproxy.Server()` API | `eggress` package (PyO3) | compatible_with_warning | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py`, `test_server_lifecycle.py`, `test_pproxy_oracle.py` | none | `EggressService`, `EggressHandle`, `Server`, `start_pproxy`, translation helpers |
+| pproxy drop-in API | `pproxy.Server(listen, remote)` | `PPProxyService.from_args()`, `from_uri()`, `from_toml()`, `from_file()` | compatible_with_warning | `test_pproxy_dropin.py` | none | Phase 40: `PPProxyService`, `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs |
+| PyPI package | `pip install pproxy` | `pip install eggress` | compatible_with_warning | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
 
 #### Phase 29 Python API Inventory (114 entries)
 
@@ -279,16 +282,16 @@ Full inventory: `docs/python/PPROXY_API_INVENTORY.md`
 
 ## Coverage Summary
 
-- **TCP proxying (Compatible)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, SOCKS4/4a, HTTP forward proxy, and direct upstream — differential tests produce byte-exact echo payloads.
-- **TCP proxying (Supported)**: SOCKS5 UDP ASSOCIATE inbound is fully implemented; unit tested but not differentially verified against pproxy.
-- **UDP relay (Supported)**: Both relay UDP datagrams successfully. Standalone UDP mode (`mode = "standalone_pproxy_udp"`) provides pproxy-compatible behavior without TCP control connection. SOCKS5 UDP ASSOCIATE is also supported for TCP-controlled UDP relay.
-- **Chaining (Compatible / Partial)**: Single-hop TCP chains through pproxy upstream are byte-exact, with differential tests for HTTP→SOCKS5, HTTP→HTTP, SOCKS5→HTTP, and SOCKS5→SOCKS5 combinations. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
-- **Auth (Compatible)**: Both reject unauthenticated SOCKS5 and HTTP connections.
-- **CLI (Compatible)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as compatible. Phase 38 closed remaining gaps: `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` now generate equivalent TOML config or auto-invoke eggress subcommands. All 14 pproxy flags are now mapped.
-- **Shadowsocks (Supported / Partial / Supported)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan inbound listener and upstream both supported. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
-- **Transparent proxy (Supported)**: Linux-only transparent TCP proxy via `SO_ORIGINAL_DST`. Requires iptables/nftables REDIRECT rules. macOS PF transparent proxy is intentional non-parity (use pfctl with standard listener).
-- **Unix domain sockets (Supported)**: Unix-only listener on filesystem socket paths. Not available on Windows. Socket file management and permissions are operator-managed.
-- **Python bindings (Supported)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. Phase 29 inventoried pproxy's 114-entry Python API surface and classified compatibility tiers. Phase 40 added `PPProxyService` drop-in API with `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs, and multi-mode `start_pproxy`. See `docs/PYTHON_BINDINGS.md` and `docs/python/`.
+- **TCP proxying (drop_in)**: Full parity for SOCKS5 CONNECT, HTTP CONNECT, SOCKS4/4a, HTTP forward proxy, and direct upstream — differential tests produce byte-exact echo payloads.
+- **TCP proxying (compatible_with_warning)**: SOCKS5 UDP ASSOCIATE inbound is fully implemented; unit tested but not differentially verified against pproxy.
+- **UDP relay (compatible_with_warning)**: Both relay UDP datagrams successfully. Standalone UDP mode (`mode = "standalone_pproxy_udp"`) provides pproxy-compatible behavior without TCP control connection. SOCKS5 UDP ASSOCIATE is also supported for TCP-controlled UDP relay.
+- **Chaining (drop_in / compatible_with_warning)**: Single-hop TCP chains through pproxy upstream are byte-exact, with differential tests for HTTP→SOCKS5, HTTP→HTTP, SOCKS5→HTTP, and SOCKS5→SOCKS5 combinations. Multi-hop chains exist but compatibility with pproxy multi-hop is untested.
+- **Auth (drop_in)**: Both reject unauthenticated SOCKS5 and HTTP connections.
+- **CLI (drop_in)**: `-l`, `-r`, `-ul`, and `-ur` flags share syntax and are properly classified as drop_in. Phase 38 closed remaining gaps: `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` now generate equivalent TOML config or auto-invoke eggress subcommands. All 14 pproxy flags are now mapped.
+- **Shadowsocks (compatible_with_warning / native_equivalent)**: Shadowsocks inbound listener and upstream both use standard AEAD framing and are interoperable with standard Shadowsocks. Trojan inbound listener and upstream both supported. Shadowsocks inbound is explicit protocol mode only (no mixed-listener auto-detection).
+- **Transparent proxy (compatible_with_warning)**: Linux-only transparent TCP proxy via `SO_ORIGINAL_DST`. Requires iptables/nftables REDIRECT rules. macOS PF transparent proxy is intentional non-parity (use pfctl with standard listener).
+- **Unix domain sockets (compatible_with_warning)**: Unix-only listener on filesystem socket paths. Not available on Windows. Socket file management and permissions are operator-managed.
+- **Python bindings (compatible_with_warning)**: `eggress` package via PyO3 wraps `eggress-embed` with `EggressConfig`, `EggressService`, `EggressHandle`, exception hierarchy, context manager, pproxy translation helpers, and async lifecycle. Phase 29 inventoried pproxy's 114-entry Python API surface and classified compatibility tiers. Phase 40 added `PPProxyService` drop-in API with `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs, and multi-mode `start_pproxy`. See `docs/PYTHON_BINDINGS.md` and `docs/python/`.
 
 ## Limitations
 
@@ -355,14 +358,14 @@ SOCKS5. All compatibility claims must be backed by a manifest entry in
 | `compatible` | Real pproxy differential or interop evidence |
 | `intentional_non_parity` | Deliberately not replicated with rationale |
 
-> **Note:** The `Compatible` tier in the Feature Matrix now requires a matching manifest
+> **Note:** The `drop_in` tier in the Feature Matrix now requires a matching manifest
 > entry with `evidence_level = "compatible"` backed by pproxy differential tests.
 > Features with `implemented_interop` evidence (e.g., Shadowsocks) are classified as
-> `Supported` instead.
+> `compatible_with_warning` instead.
 
 ### Rules
 
-- A feature may only be marked `compatible` in this matrix if it has a matching
+- A feature may only be marked `drop_in` in this matrix if it has a matching
   manifest entry with `compatible` or `implemented_interop` evidence level.
 - `implemented_synthetic` is not sufficient for compatibility claims.
 - `intentional_non_parity` requires a rationale and user-visible diagnostic.

@@ -167,14 +167,14 @@ def capabilities() -> dict[str, Any]:
             "socks4",
             "socks4a",
             "socks5",
-            "https",
-            "ss",
+            "shadowsocks",
             "trojan",
         ],
         "supported_schedulers": [
             "round_robin",
             "least_connections",
             "first_available",
+            "random",
         ],
     }
 

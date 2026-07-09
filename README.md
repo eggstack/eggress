@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Phase 51 final parity certification complete. The parity capability manifest (139 capabilities, machine-validated) is frozen; the parity report is regenerated and consistency-checked; all workspace unit/lib tests pass; CLI binary builds and runs; release artifacts verified. Release candidate: `docs/release/`.
+> Status: Track A parity hardening in progress. Strong common HTTP/SOCKS/TCP compatibility is implemented and tested. Full pproxy parity certification remains gated on the canonical manifest audit, two-sided differential oracle, and Python drop-in status alignment. The parity capability manifest (139 capabilities, 5 tiers) is the source of truth at `docs/parity/pproxy_capability_manifest.toml`.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -579,7 +579,7 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Phase 16 Python pproxy library parity](docs/PHASE_16_PYTHON_PPROXY_LIBRARY_PARITY_COMPLETION.md)
 - [Phase 17 true pproxy parity release candidate](docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md)
 - [Phase 17 RC polish](docs/PHASE_17_RC_POLISH_COMPLETION.md)
-- [True pproxy parity release candidate](docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md)
+- [True pproxy parity release candidate](docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md) (historical, superseded by Phase 36 audit)
 - [Phase 18 pproxy oracle and evidence harness](plans/PHASE_18_PPROXY_ORACLE_AND_EVIDENCE_HARNESS.md)
 - [Phase 19 HTTP/SOCKS baseline closure](docs/PHASE_19_HTTP_SOCKS_BASELINE_CLOSURE_COMPLETION.md)
 - [Phase 25-28 hardening pass](docs/PHASE_25_28_HARDENING_COMPLETION.md)

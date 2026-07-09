@@ -166,6 +166,9 @@ def _manifest_tier_for_diagnostic(code: str) -> str:
         "system-proxy",
         "log-file",
         "verbose-mode",
+        "ssl-no-listener",
+        "trojan-auto-tls",
+        "get-url",
     }
     # Compatible with warning: works but emits a diagnostic.
     compatible_with_warning = {

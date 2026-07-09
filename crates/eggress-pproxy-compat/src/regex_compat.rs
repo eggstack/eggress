@@ -591,4 +591,62 @@ mod tests {
         assert!(s.contains("bad"));
         assert!(s.contains("syntax error"));
     }
+
+    #[test]
+    fn fancy_regex_python_conditional() {
+        // Python re supports conditionals (?(id/name)yes-pattern|no-pattern)
+        // fancy_regex also supports this construct
+        let re = CompatRegex::compile("(?(foo)yes|no)").unwrap();
+        assert_eq!(re.backend(), RegexBackend::Fancy);
+        // The conditional checks if capture group "foo" matched
+        // Without a preceding match, it takes the "no" branch
+        assert!(re.is_match("no").unwrap());
+    }
+
+    #[test]
+    fn fancy_regex_atomic_group() {
+        // Python 3.11+ supports atomic groups (?>...)
+        // fancy_regex also supports this construct
+        let re = CompatRegex::compile("(?>foo)").unwrap();
+        assert!(re.is_match("foo").unwrap());
+        // Atomic group matches "foo" at start of "foobar" (not anchored to end)
+    }
+
+    #[test]
+    fn regex_unicode_category() {
+        // Python re supports \p{Letter} Unicode categories
+        // The fast regex crate also supports this
+        let re = CompatRegex::compile("\\p{Letter}").unwrap();
+        assert!(re.is_match("a").unwrap());
+        assert!(re.is_match("Z").unwrap());
+        assert!(!re.is_match("1").unwrap());
+        assert_eq!(re.backend(), RegexBackend::Fast);
+    }
+
+    #[test]
+    fn fancy_regex_backreference_in_lookahead() {
+        // Backreference inside a lookahead — compiles and runs in fancy_regex
+        let re = CompatRegex::compile(r"(?=.*(\d)\1)").unwrap();
+        // Matches strings containing a repeated digit (e.g., "11", "22")
+        assert!(re.is_match("a11b").unwrap());
+        assert!(!re.is_match("abc").unwrap());
+    }
+
+    #[test]
+    fn fancy_regex_backreference_matches_correctly() {
+        // Verify that simple backreferences work as expected
+        let re = CompatRegex::compile(r"(\w+)\s+\1").unwrap();
+        assert!(re.is_match("the the").unwrap());
+        assert!(!re.is_match("the that").unwrap());
+        assert_eq!(re.backend(), RegexBackend::Fancy);
+    }
+
+    #[test]
+    fn fancy_regex_lookahead_lookbehind_combined() {
+        // Combined lookahead and lookbehind
+        let re = CompatRegex::compile(r"(?<=@)\w+(?=\.com)").unwrap();
+        assert!(re.is_match("user@example.com").unwrap());
+        assert!(!re.is_match("user@example.org").unwrap());
+        assert_eq!(re.backend(), RegexBackend::Fancy);
+    }
 }

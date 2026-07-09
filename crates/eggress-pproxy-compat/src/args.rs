@@ -46,6 +46,26 @@ pub struct PproxyArgs {
 }
 
 impl PproxyArgs {
+    /// Check whether any arguments were provided.
+    pub fn has_args(raw: &[String]) -> bool {
+        !raw.is_empty()
+    }
+
+    /// Create default pproxy args equivalent to running `pproxy` with no arguments.
+    ///
+    /// Real pproxy defaults to a mixed HTTP/SOCKS4/SOCKS5 listener on `:8080`
+    /// with direct routing. Since eggress doesn't support mixed-protocol
+    /// listeners, we synthesize the local arg `socks5://:8080` with no remote,
+    /// which creates a SOCKS5 listener on :8080 with direct routing.
+    pub fn default_args() -> Self {
+        Self {
+            local: vec!["socks5://:8080".to_string()],
+            remotes: vec![],
+            raw_flags: vec![],
+            verbose_level: 0,
+        }
+    }
+
     /// Parse from raw argument list (excluding argv[0]).
     pub fn parse(raw: &[String]) -> Result<Self, CompatError> {
         let mut local = Vec::new();
@@ -515,5 +535,33 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args.verbose_level, 3);
+    }
+
+    #[test]
+    fn test_has_args_true() {
+        assert!(PproxyArgs::has_args(&["-l".into(), "http://:8080".into()]));
+    }
+
+    #[test]
+    fn test_has_args_false_empty() {
+        assert!(!PproxyArgs::has_args(&[]));
+    }
+
+    #[test]
+    fn test_default_args() {
+        let args = PproxyArgs::default_args();
+        assert_eq!(args.local, vec!["socks5://:8080"]);
+        assert!(args.remotes.is_empty());
+        assert!(args.raw_flags.is_empty());
+        assert_eq!(args.verbose_level, 0);
+    }
+
+    #[test]
+    fn test_default_args_translates() {
+        let args = PproxyArgs::default_args();
+        let output = super::super::translate::translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("8080"));
+        assert!(output.toml.contains("socks5") || output.toml.contains("http"));
+        assert!(!output.has_unsupported());
     }
 }

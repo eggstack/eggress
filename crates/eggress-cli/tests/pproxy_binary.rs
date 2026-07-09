@@ -83,13 +83,19 @@ fn version_flag() {
 }
 
 #[test]
-fn no_args_exits_with_error() {
-    let output = pproxy_bin().output().expect("failed to run pproxy");
-    let stderr = String::from_utf8_lossy(&output.stderr);
+fn no_args_starts_with_default_listener() {
+    let (_, stderr) = spawn_and_collect(&mut pproxy_bin(), 2000);
     assert!(
-        !output.status.success() || stderr.contains("error"),
-        "expected error for no args, got status={:?}, stderr={stderr}",
-        output.status.code(),
+        stderr.contains("eggress-pproxy-compat"),
+        "expected version banner for default startup, got: {stderr}",
+    );
+    assert!(
+        stderr.contains("listen:"),
+        "expected listener line in default startup banner, got: {stderr}",
+    );
+    assert!(
+        stderr.contains("8080"),
+        "expected default port 8080 in banner, got: {stderr}",
     );
 }
 
@@ -194,8 +200,8 @@ fn verbose_flag_accepted() {
         2000,
     );
     assert!(
-        stderr.contains("listen:") || stderr.contains("error"),
-        "expected startup or error, got: {stderr}",
+        stderr.contains("listen:"),
+        "expected listener in banner for verbose startup, got: {stderr}",
     );
 }
 
@@ -206,8 +212,8 @@ fn verbose_double_flag_accepted() {
         2000,
     );
     assert!(
-        stderr.contains("listen:") || stderr.contains("error"),
-        "expected startup or error, got: {stderr}",
+        stderr.contains("listen:"),
+        "expected listener in banner for -vv startup, got: {stderr}",
     );
 }
 
@@ -224,8 +230,8 @@ fn verbose_triple_flag_accepted() {
         2000,
     );
     assert!(
-        stderr.contains("listen:") || stderr.contains("error"),
-        "expected startup or error, got: {stderr}",
+        stderr.contains("listen:"),
+        "expected listener in banner for -vvv startup, got: {stderr}",
     );
 }
 
@@ -233,8 +239,8 @@ fn verbose_triple_flag_accepted() {
 fn unsupported_ssh_scheme_fails() {
     let (code, stderr) = spawn_and_collect(pproxy_bin().args(["-l", "ssh://host:22"]), 2000);
     assert!(
-        stderr.contains("unsupported") || stderr.contains("error") || code != Some(0),
-        "expected unsupported/error for SSH, got: code={code:?}, stderr={stderr}",
+        stderr.contains("unsupported") || stderr.contains("not supported") || code != Some(0),
+        "expected unsupported diagnostic for SSH scheme, got: code={code:?}, stderr={stderr}",
     );
 }
 

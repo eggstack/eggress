@@ -203,6 +203,35 @@ and backreferences) and enforces `MAX_RULE_ENTRIES = 10_000`. Simple `reject`/`b
 actions are auto-translated to `[[rules]]` entries; complex actions emit diagnostics.
 See `eggress-pproxy-compat::regex_compat`.
 
+### Regex Compatibility Boundaries
+
+Eggress uses a dual-backend regex system for pproxy compatibility:
+
+| Backend | Used for | Capabilities |
+|---------|----------|-------------|
+| `regex` (fast) | Default for all patterns | Standard regex: character classes, quantifiers, groups, anchors |
+| `fancy_regex` | Fallback when fast fails | Adds: lookahead `(?=...)`, lookbehind `(?<=...)`, backreferences `\1` |
+
+**Supported constructs** (tested):
+- Lookahead: `(?=foo)foo` — matches if followed by `foo`
+- Lookbehind: `(?<=foo)bar` — matches if preceded by `foo`
+- Backreferences: `(\w+)\s+\1` — matches repeated words
+- Combined: `(?<=@)\w+(?=\.com)` — matches username in email
+- Conditionals: `(?(id)yes|no)` — Python-style conditionals
+- Atomic groups: `(?>...)` — atomic grouping (Python 3.11+)
+- Unicode categories: `\p{Letter}` — Unicode property escapes
+- Nested backreferences: `(?=.*(\d)\1)` — backreference in lookahead
+
+**Known limitations**:
+- No match-time timeout — complex patterns with catastrophic backtracking are bounded only by OS process timeout
+- Future improvement: consider isolated evaluator for hostile regex sets
+
+**Important**: The `fancy_regex` backend is broader than Rust `regex` but does NOT provide
+exact Python `re` parity. Unsupported constructs produce structured diagnostics at
+translation time, not runtime failures. Native eggress rules use the fast `regex` backend
+or structured matchers (`cidr`, `domain`, `port`) — the dual backend is used only for
+pproxy compatibility.
+
 ## 7. Authentication
 
 | Method | pproxy | Eggress | Notes |

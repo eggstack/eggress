@@ -54,6 +54,22 @@ fn print_help() {
     print!("{HELP_TEXT}");
 }
 
+/// Resolve the `eggress` binary path.
+///
+/// First tries to find a sibling `eggress` binary next to the current executable.
+/// Falls back to just `"eggress"` and lets the system PATH resolve it.
+fn resolve_eggress_binary() -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("eggress");
+            if sibling.exists() {
+                return sibling;
+            }
+        }
+    }
+    std::path::PathBuf::from("eggress")
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args_os()
         .skip(1)
@@ -70,12 +86,16 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("pproxy: error: {e}");
-            std::process::exit(2); // EXIT_CLI_PARSE_ERROR
+    let pproxy_args = if eggress_pproxy_compat::PproxyArgs::has_args(&args) {
+        match eggress_pproxy_compat::PproxyArgs::parse(&args) {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("pproxy: error: {e}");
+                std::process::exit(2); // EXIT_CLI_PARSE_ERROR
+            }
         }
+    } else {
+        eggress_pproxy_compat::PproxyArgs::default_args()
     };
 
     let output = match eggress_pproxy_compat::translate_pproxy_args(&pproxy_args) {
@@ -125,16 +145,18 @@ fn main() -> ExitCode {
     print_startup_banner(&pproxy_args, &output);
 
     if has_test {
-        let status = std::process::Command::new(
-            std::env::current_exe().unwrap_or_else(|_| "eggress".into()),
-        )
-        .args([
-            "upstream",
-            "test",
-            "-c",
-            config_path.to_str().unwrap_or_default(),
-        ])
-        .status();
+        // Resolve the eggress binary: look for a sibling 'eggress' binary
+        // next to the current executable (pproxy). This avoids the recursion
+        // problem where current_exe() resolves to the pproxy binary itself.
+        let eggress_bin = resolve_eggress_binary();
+        let status = std::process::Command::new(&eggress_bin)
+            .args([
+                "upstream",
+                "test",
+                "-c",
+                config_path.to_str().unwrap_or_default(),
+            ])
+            .status();
         match status {
             Ok(s) => std::process::exit(s.code().unwrap_or(1)),
             Err(e) => {

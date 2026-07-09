@@ -119,7 +119,10 @@ fn cli_defaults_scenarios() -> Vec<OracleScenario> {
             description: "SOCKS5 listener on default port with direct routing",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -139,7 +142,10 @@ protocols = ["socks5"]
             description: "SOCKS4 listener on default port with direct routing",
             pproxy_args: vec!["-l", "socks4://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks4"]
 "#,
@@ -159,7 +165,10 @@ protocols = ["socks4"]
             description: "HTTP CONNECT listener on default port with direct routing",
             pproxy_args: vec!["-l", "http://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["http"]
 "#,
@@ -179,7 +188,10 @@ protocols = ["http"]
             description: "HTTPS (TLS) CONNECT listener with direct routing",
             pproxy_args: vec!["-l", "https://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["https"]
 tls.cert = "tests/fixtures/cert.pem"
@@ -206,7 +218,10 @@ tls.key = "tests/fixtures/key.pem"
                 "direct",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["shadowsocks"]
 password = "testpass"
@@ -228,7 +243,10 @@ method = "aes-256-gcm"
             description: "Trojan listener with direct routing",
             pproxy_args: vec!["-l", "trojan://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["trojan"]
 password = "password"
@@ -258,7 +276,10 @@ tls.key = "tests/fixtures/key.pem"
                 "direct",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5", "http"]
 "#,
@@ -285,7 +306,10 @@ fn http_socks_tcp_scenarios() -> Vec<OracleScenario> {
             description: "HTTP CONNECT to TCP echo server",
             pproxy_args: vec!["-l", "http://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["http"]
 "#,
@@ -305,7 +329,10 @@ protocols = ["http"]
             description: "SOCKS4 CONNECT to TCP echo server",
             pproxy_args: vec!["-l", "socks4://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks4"]
 "#,
@@ -325,7 +352,10 @@ protocols = ["socks4"]
             description: "SOCKS4a CONNECT (domain name) to TCP echo server",
             pproxy_args: vec!["-l", "socks4a://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks4a"]
 "#,
@@ -345,7 +375,10 @@ protocols = ["socks4a"]
             description: "SOCKS5 CONNECT to TCP echo server",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -365,9 +398,15 @@ protocols = ["socks5"]
             description: "SOCKS5 CONNECT with username/password auth",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}#user:pass", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
 username = "user"
 password = "pass"
 "#,
@@ -387,7 +426,10 @@ password = "pass"
             description: "SOCKS5 CONNECT via domain name target",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -407,7 +449,10 @@ protocols = ["socks5"]
             description: "SOCKS5 CONNECT to refused port (negative case)",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -427,7 +472,10 @@ protocols = ["socks5"]
             description: "HTTP forward proxy GET request",
             pproxy_args: vec!["-l", "http://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["http"]
 "#,
@@ -448,7 +496,10 @@ protocols = ["http"]
             description: "HTTP forward proxy POST request",
             pproxy_args: vec!["-l", "http://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["http"]
 "#,
@@ -469,9 +520,15 @@ protocols = ["http"]
             description: "SOCKS5 with wrong credentials (negative case)",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}#user:pass", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
 username = "user"
 password = "pass"
 "#,
@@ -503,12 +560,25 @@ fn chain_scenarios() -> Vec<OracleScenario> {
                 "socks5://127.0.0.1:{UPSTREAM_PORT}",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
 [[upstream]]
-bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_group]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+any = true
+upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
             normalization: NormalizationRules {
@@ -531,12 +601,25 @@ bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
                 "socks5://127.0.0.1:{UPSTREAM_PORT}",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["http"]
 
 [[upstream]]
-bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_group]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+any = true
+upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
             normalization: NormalizationRules {
@@ -559,12 +642,25 @@ bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
                 "http://127.0.0.1:{UPSTREAM_PORT}",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
 [[upstream]]
-bind = "http://127.0.0.1:{UPSTREAM_PORT}"
+id = "upstream-0"
+uri = "http://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_group]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+any = true
+upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
             normalization: NormalizationRules {
@@ -587,14 +683,30 @@ bind = "http://127.0.0.1:{UPSTREAM_PORT}"
                 "socks5://127.0.0.1:{UPSTREAM_PORT}",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
 username = "user"
 password = "pass"
 
 [[upstream]]
-bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_group]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+any = true
+upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
             normalization: NormalizationRules {
@@ -617,14 +729,27 @@ bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
                 "socks5://127.0.0.1:{UPSTREAM_PORT}",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["shadowsocks"]
 password = "testpass"
 method = "aes-256-gcm"
 
 [[upstream]]
-bind = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_group]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+any = true
+upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
             normalization: NormalizationRules {
@@ -656,13 +781,18 @@ fn rule_scenarios() -> Vec<OracleScenario> {
                 "127.0.0.2",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
-[[rule]]
-action = "reject"
-target = "127.0.0.2"
+[[rules]]
+id = "reject-ip"
+any = true
+host_regex = "127\\.0\\.0\\.2"
+reject = "blocked"
 "#,
             expected_equivalence: EquivalenceTarget::CoarseResult,
             normalization: NormalizationRules {
@@ -687,13 +817,18 @@ target = "127.0.0.2"
                 "blocked.example.com",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
-[[rule]]
-action = "reject"
-target = "blocked.example.com"
+[[rules]]
+id = "reject-domain"
+any = true
+host_regex = "blocked\\.example\\.com"
+reject = "blocked"
 "#,
             expected_equivalence: EquivalenceTarget::CoarseResult,
             normalization: NormalizationRules {
@@ -711,7 +846,10 @@ target = "blocked.example.com"
             description: "Rule allowing all connections (default behavior)",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -738,13 +876,18 @@ protocols = ["socks5"]
                 "127.0.0.3",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
-[[rule]]
-action = "reject"
-target = "127.0.0.3"
+[[rules]]
+id = "reject-b"
+any = true
+host_regex = "127\\.0\\.0\\.3"
+reject = "blocked"
 "#,
             expected_equivalence: EquivalenceTarget::CoarseResult,
             normalization: NormalizationRules {
@@ -771,17 +914,24 @@ target = "127.0.0.3"
                 "127.0.0.5",
             ],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
-[[rule]]
-action = "reject"
-target = "127.0.0.4"
+[[rules]]
+id = "reject-c"
+any = true
+host_regex = "127\\.0\\.0\\.4"
+reject = "blocked"
 
-[[rule]]
-action = "reject"
-target = "127.0.0.5"
+[[rules]]
+id = "reject-d"
+any = true
+host_regex = "127\\.0\\.0\\.5"
+reject = "blocked"
 "#,
             expected_equivalence: EquivalenceTarget::CoarseResult,
             normalization: NormalizationRules {
@@ -806,7 +956,10 @@ fn udp_scenarios() -> Vec<OracleScenario> {
             description: "SOCKS5 UDP ASSOCIATE lifecycle",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -826,7 +979,10 @@ protocols = ["socks5"]
             description: "SOCKS5 UDP relay with echo payload",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,
@@ -846,7 +1002,10 @@ protocols = ["socks5"]
             description: "Standalone UDP relay (pproxy-compatible mode)",
             pproxy_args: vec!["-l", "udp://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 mode = "standalone_pproxy_udp"
 "#,
@@ -866,7 +1025,10 @@ mode = "standalone_pproxy_udp"
             description: "UDP echo roundtrip through SOCKS5 proxy",
             pproxy_args: vec!["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"],
             eggress_toml: r#"
-[listener]
+version = 1
+
+[[listeners]]
+name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 "#,

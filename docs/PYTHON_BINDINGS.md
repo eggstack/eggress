@@ -700,7 +700,7 @@ parsed URIs, and generated TOML.
 from eggress import check_pproxy_args
 
 report = check_pproxy_args(["-l", "socks5://127.0.0.1:0"])
-print(report.tier)       # "full", "partial", or "unsupported"
+print(report.tier)       # "drop_in", "compatible_with_warning", "native_equivalent", "intentional_non_parity", or "unsupported"
 print(report.ok)         # True if no unsupported features
 print(report.toml)       # Generated TOML (credentials redacted)
 print(report.features)   # List[FeatureInfo]
@@ -709,7 +709,7 @@ print(report.parsed_uris)  # Dict[str, UriInfo]
 
 Fields:
 
-- `tier: str` — "full", "partial", or "unsupported"
+- `tier: str` — "drop_in", "compatible_with_warning", "native_equivalent", "intentional_non_parity", or "unsupported"
 - `ok: bool` — True if no unsupported features
 - `warnings: list[Diagnostic]` — translation warnings
 - `unsupported: list[Diagnostic]` — unsupported feature diagnostics
@@ -724,7 +724,7 @@ Fields:
 Each feature from the pproxy compatibility manifest:
 
 - `feature_id: str` — feature identifier
-- `tier: str` — "compatible", "partial", or "unsupported"
+- `tier: str` — "drop_in", "compatible_with_warning", "native_equivalent", "intentional_non_parity", or "unsupported"
 - `supported: bool` — whether eggress supports this feature
 
 ### Updated start_pproxy
