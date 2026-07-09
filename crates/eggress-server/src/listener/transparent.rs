@@ -173,6 +173,7 @@ fn query_original_dst(fd: std::os::raw::c_int, level: i32, optname: i32) -> Opti
 
 /// Parses a `sockaddr_storage` into a `SocketAddr`.
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
 fn parse_sockaddr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Option<SocketAddr> {
     match storage.ss_family as i32 {
         libc::AF_INET if len as usize >= std::mem::size_of::<libc::sockaddr_in>() => {
@@ -204,17 +205,19 @@ fn parse_sockaddr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Opt
             };
             let port = u16::from_be(sa.sin6_port);
             let octets = sa.sin6_addr.s6_addr;
-            let seg = |i: usize| u16::from_be_bytes(octets[i..i + 2].try_into().ok()?);
+            let seg = |i: usize| -> Option<u16> {
+                Some(u16::from_be_bytes(octets[i..i + 2].try_into().ok()?))
+            };
             Some(SocketAddr::new(
                 IpAddr::V6(Ipv6Addr::new(
-                    seg(0),
-                    seg(2),
-                    seg(4),
-                    seg(6),
-                    seg(8),
-                    seg(10),
-                    seg(12),
-                    seg(14),
+                    seg(0)?,
+                    seg(2)?,
+                    seg(4)?,
+                    seg(6)?,
+                    seg(8)?,
+                    seg(10)?,
+                    seg(12)?,
+                    seg(14)?,
                 )),
                 port,
             ))
