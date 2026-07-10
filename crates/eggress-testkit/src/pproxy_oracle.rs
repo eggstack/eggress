@@ -82,19 +82,33 @@ impl PproxyProcess {
 
         std::thread::spawn(move || {
             let mut reader = child_stderr;
-            let mut buf = Vec::new();
-            let _ = std::io::Read::read_to_end(&mut reader, &mut buf);
-            if let Ok(mut guard) = stderr_clone.lock() {
-                *guard = buf;
+            let mut tmp = [0u8; 4096];
+            loop {
+                match std::io::Read::read(&mut reader, &mut tmp) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if let Ok(mut guard) = stderr_clone.lock() {
+                            guard.extend_from_slice(&tmp[..n]);
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
         });
 
         std::thread::spawn(move || {
             let mut reader = child_stdout;
-            let mut buf = Vec::new();
-            let _ = std::io::Read::read_to_end(&mut reader, &mut buf);
-            if let Ok(mut guard) = stdout_clone.lock() {
-                *guard = buf;
+            let mut tmp = [0u8; 4096];
+            loop {
+                match std::io::Read::read(&mut reader, &mut tmp) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if let Ok(mut guard) = stdout_clone.lock() {
+                            guard.extend_from_slice(&tmp[..n]);
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
         });
 

@@ -49,7 +49,7 @@ jobs:
       - name: Syntax check
         run: python -m compileall python/eggress
       - name: Install test dependencies
-        run: pip install pytest
+        run: pip install pytest "tomli; python_version < '3.11'"
       - name: Run tests
         run: python -m pytest python/tests -v
       - name: Wheel import smoke tests

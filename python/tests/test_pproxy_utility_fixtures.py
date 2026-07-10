@@ -8,7 +8,10 @@ each case. This serves as a shared fixture runner between Rust and Python.
 from __future__ import annotations
 
 import os
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 from pathlib import Path
 
 import pytest
