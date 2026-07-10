@@ -112,7 +112,8 @@ impl PproxyProcess {
             }
         });
 
-        let bound_addr = wait_for_output_ready(&stderr_buf, &stdout_buf, config.startup_timeout).await?;
+        let bound_addr =
+            wait_for_output_ready(&stderr_buf, &stdout_buf, config.startup_timeout).await?;
 
         let proc = Self {
             child: Some(child),
