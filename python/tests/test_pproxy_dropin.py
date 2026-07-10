@@ -347,7 +347,10 @@ class TestCompatibilityReport:
 
     def test_unsupported_args_tier(self):
         report = check_pproxy_args(["-l", "ssh://user@host:22"])
-        assert report.tier == "unsupported"
+        # SSH listener is classified as intentional_non_parity in the
+        # aggregate tier vocabulary (Phase 47 ADR), so the report is
+        # neither drop-in nor compatible_with_warning, and ok=False.
+        assert report.tier == "intentional_non_parity"
         assert report.ok is False
         assert len(report.unsupported) > 0
 

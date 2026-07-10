@@ -722,8 +722,7 @@ impl ServiceSupervisor {
                 state: admin_state_ref.clone(),
             });
 
-        let rt = tokio::runtime::Runtime::new()?;
-        let result = rt.block_on(async move {
+        let run_async = async move {
             // Start health probes inside the runtime context
             {
                 let mut guard = health_for_run.lock().unwrap_or_else(|e| e.into_inner());
@@ -823,8 +822,7 @@ impl ServiceSupervisor {
                 // Handle transparent TCP listeners
                 if let Some(ref transparent_cfg) = lcfg.transparent {
                     if transparent_cfg.enabled {
-                        let capability =
-                            check_capability(PlatformCapability::LinuxOriginalDstIpv4);
+                        let capability = check_capability(PlatformCapability::LinuxOriginalDstIpv4);
                         if capability != crate::platform::CapabilityStatus::Available {
                             state_ref.metrics.record_platform_capability_check_failure();
                             let _cap_span = tracing::info_span!(
@@ -854,9 +852,11 @@ impl ServiceSupervisor {
                                     &bind_addr.to_string(),
                                 )
                                 .await
-                                .map_err(|e| RuntimeError::ListenerBind {
-                                    addr: lcfg.bind.clone(),
-                                    source: e,
+                                .map_err(|e| {
+                                    RuntimeError::ListenerBind {
+                                        addr: lcfg.bind.clone(),
+                                        source: e,
+                                    }
                                 })?;
 
                             let local_addr = transparent_listener.local_addr().map_err(|e| {
@@ -908,12 +908,12 @@ impl ServiceSupervisor {
                         addr: lcfg.bind.clone(),
                         source: e,
                     })?;
-                let local_addr = listener.local_addr().map_err(|e| {
-                    RuntimeError::ListenerBind {
+                let local_addr = listener
+                    .local_addr()
+                    .map_err(|e| RuntimeError::ListenerBind {
                         addr: lcfg.bind.clone(),
                         source: e,
-                    }
-                })?;
+                    })?;
                 tracing::info!("listening on {local_addr} ({})", lcfg.name);
 
                 prepared.push(PreparedListener {
@@ -952,7 +952,10 @@ impl ServiceSupervisor {
             {
                 let addrs: Vec<std::net::SocketAddr> =
                     prepared.iter().map(|p| p.local_addr).collect();
-                *state_ref.listener_addrs.lock().unwrap_or_else(|e| e.into_inner()) = addrs;
+                *state_ref
+                    .listener_addrs
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = addrs;
             }
 
             let mut shadowsocks_udp_relays = Vec::new();
@@ -976,12 +979,13 @@ impl ServiceSupervisor {
             for (socket, relay_config) in shadowsocks_udp_relays {
                 let relay_cancel = cancel.clone();
                 tasks.spawn(async move {
-                    let result = eggress_udp::standalone_shadowsocks::shadowsocks_standalone_udp_relay(
-                        socket,
-                        relay_config,
-                        relay_cancel,
-                    )
-                    .await;
+                    let result =
+                        eggress_udp::standalone_shadowsocks::shadowsocks_standalone_udp_relay(
+                            socket,
+                            relay_config,
+                            relay_cancel,
+                        )
+                        .await;
                     if let Err(error) = result {
                         tracing::debug!(
                             %error,
@@ -1396,8 +1400,7 @@ impl ServiceSupervisor {
                 let tls_client_config = tls_client_config.clone();
 
                 tasks.spawn(async move {
-                    let proto_slice: Arc<[ProtocolId]> =
-                        prepared_listener.protocols.clone().into();
+                    let proto_slice: Arc<[ProtocolId]> = prepared_listener.protocols.clone().into();
 
                     loop {
                         let conn = match prepared_listener.listener.accept().await {
@@ -1415,8 +1418,7 @@ impl ServiceSupervisor {
                         let tls_client_config = tls_client_config.clone();
                         let peer = conn.peer_addr;
                         let listener_str = prepared_listener.name.clone();
-                        let conn_id =
-                            state.connection_counter.fetch_add(1, Ordering::Relaxed);
+                        let conn_id = state.connection_counter.fetch_add(1, Ordering::Relaxed);
                         let conn_protocols = proto_slice.clone();
                         let conn_auth = prepared_listener.auth.clone();
                         let conn_metrics = state.metrics.clone();
@@ -1440,7 +1442,8 @@ impl ServiceSupervisor {
                                 udp_metrics: state.udp_metrics.clone(),
                                 routing: routing.clone(),
                                 udp_tasks: state.udp_tasks.clone(),
-                            }) as Arc<dyn eggress_server::UdpService>)
+                            })
+                                as Arc<dyn eggress_server::UdpService>)
                         } else {
                             None
                         };
@@ -1448,32 +1451,43 @@ impl ServiceSupervisor {
                             let started = std::time::Instant::now();
 
                             // Apply TLS if configured for this listener
-                            let stream: eggress_core::BoxStream = if let Some(ref tls_cfg) = tls_config {
-                                let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
-                                    .with_certificate_pem(&tls_cfg.cert_pem)
-                                    .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
-                                    .and_then(|b| {
-                                        let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
-                                        b.build()
-                                    }) {
-                                        Ok(c) => c,
+                            let stream: eggress_core::BoxStream =
+                                if let Some(ref tls_cfg) = tls_config {
+                                    let server_config =
+                                        match eggress_transport_tls::TlsServerConfigBuilder::new()
+                                            .with_certificate_pem(&tls_cfg.cert_pem)
+                                            .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
+                                            .and_then(|b| {
+                                                let b = if tls_cfg.alpn.is_empty() {
+                                                    b
+                                                } else {
+                                                    b.with_alpn(tls_cfg.alpn.clone())
+                                                };
+                                                b.build()
+                                            }) {
+                                            Ok(c) => c,
+                                            Err(e) => {
+                                                tracing::error!(%peer, "TLS config error: {e}");
+                                                active.fetch_sub(1, Ordering::Relaxed);
+                                                return;
+                                            }
+                                        };
+                                    match eggress_transport_tls::tls_accept(
+                                        Box::new(conn.stream),
+                                        server_config,
+                                    )
+                                    .await
+                                    {
+                                        Ok(s) => s,
                                         Err(e) => {
-                                            tracing::error!(%peer, "TLS config error: {e}");
+                                            tracing::debug!(%peer, "TLS accept failed: {e}");
                                             active.fetch_sub(1, Ordering::Relaxed);
                                             return;
                                         }
-                                    };
-                                match eggress_transport_tls::tls_accept(Box::new(conn.stream), server_config).await {
-                                    Ok(s) => s,
-                                    Err(e) => {
-                                        tracing::debug!(%peer, "TLS accept failed: {e}");
-                                        active.fetch_sub(1, Ordering::Relaxed);
-                                        return;
                                     }
-                                }
-                            } else {
-                                Box::new(conn.stream)
-                            };
+                                } else {
+                                    Box::new(conn.stream)
+                                };
 
                             let config = eggress_server::ConnectionConfig {
                                 routing: routing as Arc<dyn RouteService>,
@@ -1489,18 +1503,18 @@ impl ServiceSupervisor {
                                 metrics: Some(conn_metrics),
                                 udp: udp_svc,
                                 tls_client_config: tls_client_config.clone(),
-                                shadowsocks: ss_config.map(
-                                    |ss| eggress_server::accept::InboundShadowsocksConfig {
+                                shadowsocks: ss_config.map(|ss| {
+                                    eggress_server::accept::InboundShadowsocksConfig {
                                         method: ss.method,
                                         password: ss.password,
-                                    },
-                                ),
+                                    }
+                                }),
                                 shadowsocks_metrics: Some(conn_ss_metrics),
-                                trojan: trojan_config.map(
-                                    |t| eggress_server::accept::InboundTrojanConfig {
+                                trojan: trojan_config.map(|t| {
+                                    eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
-                                    },
-                                ),
+                                    }
+                                }),
                             };
 
                             let report = tokio::select! {
@@ -1569,18 +1583,19 @@ impl ServiceSupervisor {
                         );
                         continue;
                     }
-                    let mut server = eggress_protocol_reverse::server::ReverseServer::new(server_config);
+                    let mut server =
+                        eggress_protocol_reverse::server::ReverseServer::new(server_config);
                     server.set_metrics(state_ref.reverse_metrics.clone());
                     let server_state = server.state_handle();
                     let server_cancel = server.cancel_token();
 
-                    state_ref.reverse_registry.register(
-                        eggress_admin::ReverseServerEntry {
+                    state_ref
+                        .reverse_registry
+                        .register(eggress_admin::ReverseServerEntry {
                             id: eggress_admin::ReverseServerId::from(rs_cfg.id.as_str()),
                             control_bind: rs_cfg.control_bind.to_string(),
                             state: server_state,
-                        },
-                    );
+                        });
 
                     let cancel_clone = cancel.clone();
                     tasks.spawn(async move {
@@ -1617,7 +1632,8 @@ impl ServiceSupervisor {
                             read_timeout_ms: rc_cfg.read_timeout_ms,
                             drain_grace_ms: rc_cfg.drain_grace_ms,
                         };
-                        let mut client = eggress_protocol_reverse::client::ReverseClient::new(client_config);
+                        let mut client =
+                            eggress_protocol_reverse::client::ReverseClient::new(client_config);
                         client.set_metrics(state_ref.reverse_metrics.clone());
 
                         let resolver = crate::reverse::RouteEngineTargetResolver::new(
@@ -1666,7 +1682,10 @@ impl ServiceSupervisor {
                                 }
                             };
                         if let Ok(addr) = server.local_addr() {
-                            *state_ref.admin_local_addr.lock().unwrap_or_else(|e| e.into_inner()) = Some(addr);
+                            *state_ref
+                                .admin_local_addr
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner()) = Some(addr);
                         }
                         let admin_state = eggress_admin::AdminState {
                             metrics: state_ref.metrics.clone(),
@@ -1812,11 +1831,7 @@ impl ServiceSupervisor {
 
             // 5. Wait for UDP relay tasks to complete
             state_ref.udp_tasks.close();
-            let _ = tokio::time::timeout(
-                shutdown_grace,
-                state_ref.udp_tasks.wait(),
-            )
-            .await;
+            let _ = tokio::time::timeout(shutdown_grace, state_ref.udp_tasks.wait()).await;
 
             // 6. Wait for listener accept loops to exit so they cannot hand
             //    new connections to the connection tracker.
@@ -1855,7 +1870,30 @@ impl ServiceSupervisor {
             admin_tasks.wait().await;
 
             Ok::<_, RuntimeError>(())
-        });
+        };
+
+        let result = if tokio::runtime::Handle::try_current().is_err() {
+            // Caller is not inside a tokio runtime; create one and block on it.
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(run_async)
+        } else {
+            // Caller is already inside a tokio runtime. Driving a long-lived
+            // supervisor body via Handle::current().block_on from a worker
+            // thread would panic or deadlock. Run on a dedicated OS thread
+            // with its own runtime.
+            std::thread::Builder::new()
+                .name("eggress-supervisor".to_string())
+                .spawn(move || -> Result<(), RuntimeError> {
+                    let rt = tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(RuntimeError::RuntimeInit)?;
+                    rt.block_on(run_async)
+                })
+                .map_err(RuntimeError::RuntimeInit)?
+                .join()
+                .map_err(|_| RuntimeError::Other("supervisor thread panicked".to_string()))?
+        };
 
         self.health = std::sync::Arc::try_unwrap(health)
             .ok()

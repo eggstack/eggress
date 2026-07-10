@@ -140,6 +140,19 @@ def translate_pproxy_uri(
     return TranslationResult(_translate_pproxy_uri(local, list(remotes)))
 
 
+# Feature IDs classified as intentional_non_parity. Mirrors the Rust
+# eggress_pproxy_compat::diagnostics mapping for the corresponding
+# unsupported-feature diagnostics (ssh-listener, ssr-listener, socks-bind).
+INTENTIONAL_NON_PARITY_FEATURE_IDS = frozenset({
+    "ssh-listener",
+    "ssh-upstream",
+    "ssr-listener",
+    "ssr-upstream",
+    "socks4-bind",
+    "socks5-bind",
+})
+
+
 def _manifest_tier_for_diagnostic(code: str) -> str:
     """Map a translator warning code to its manifest-aligned tier.
 
@@ -195,16 +208,25 @@ def _classify_aggregate_tier(
     """Pick the worst manifest-aligned tier from the diagnostics.
 
     Deterministic severity order (worst first):
-        1. any unsupported hard failure -> ``unsupported``
-        2. any intentional non-parity   -> ``intentional_non_parity``
-        3. any native-equivalent warning -> ``native_equivalent``
-        4. any compatible-with-warning  -> ``compatible_with_warning``
-        5. no diagnostics               -> ``drop_in``
+        1. any unsupported (non-intentional) hard failure -> ``unsupported``
+        2. any intentional non-parity                     -> ``intentional_non_parity``
+        3. any native-equivalent warning                  -> ``native_equivalent``
+        4. any compatible-with-warning                    -> ``compatible_with_warning``
+        5. no diagnostics                                 -> ``drop_in``
+
+    An ``unsupported`` diagnostic whose tier itself is
+    ``intentional_non_parity`` (e.g. SSH listener) does NOT escalate the
+    aggregate above ``intentional_non_parity`` — it is still parsed and
+    reported, but the overall tier reflects that it is by design rather
+    than a runtime error.
     """
-    if unsupported:
+    if any(
+        (d.tier or "") != "intentional_non_parity" for d in unsupported
+    ):
         return "unsupported"
     has_intentional = any(
-        (w.tier or "") == "intentional_non_parity" for w in warnings
+        (d.tier or "") == "intentional_non_parity"
+        for d in (*warnings, *unsupported)
     )
     if has_intentional:
         return "intentional_non_parity"
@@ -255,10 +277,16 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
 
     unsupported_diags: list[Diagnostic] = []
     for u in result.unsupported:
+        feat = getattr(u, "feature", None)
+        feat_tier = (
+            "intentional_non_parity"
+            if feat in INTENTIONAL_NON_PARITY_FEATURE_IDS
+            else "unsupported"
+        )
         unsupported_diags.append(Diagnostic(
             code="unsupported_protocol",
-            feature_id=getattr(u, "feature", None),
-            tier="unsupported",
+            feature_id=feat,
+            tier=feat_tier,
             message=getattr(u, "message", str(u)),
             suggestion=None,
         ))
@@ -287,9 +315,14 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
         u.feature for u in result.unsupported if getattr(u, "feature", None)
     }
     for feat_id in unsupported_feature_ids:
+        feat_tier = (
+            "intentional_non_parity"
+            if feat_id in INTENTIONAL_NON_PARITY_FEATURE_IDS
+            else "unsupported"
+        )
         features.append(
             FeatureInfo(
-                feature_id=feat_id, tier="unsupported", supported=False
+                feature_id=feat_id, tier=feat_tier, supported=False
             )
         )
 

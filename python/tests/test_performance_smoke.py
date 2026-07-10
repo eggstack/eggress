@@ -54,20 +54,34 @@ def test_import_cost():
 
     Cold-start import of the native module + Python wrappers should
     complete well under 500 ms on any modern machine.
+
+    Uses a subprocess to measure cold-import without polluting the
+    current process's sys.modules (which would break subsequent tests
+    that captured stale references to wrapper classes like
+    ``EggressConfig``).
     """
-    import importlib
+    import subprocess
     import sys
 
-    # Remove cached module so we measure a fresh import
-    for name in list(sys.modules):
-        if name == "eggress" or name.startswith("eggress."):
-            del sys.modules[name]
-
-    t0 = time.perf_counter()
-    import eggress  # noqa: F401
-    elapsed = time.perf_counter() - t0
-
-    assert elapsed < 0.5, f"import eggress took {elapsed:.3f}s (threshold: 0.5s)"
+    code = (
+        "import time;"
+        "t0=time.perf_counter();"
+        "import eggress;"
+        "print(int((time.perf_counter()-t0)*1000))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, (
+        f"subprocess import failed: {result.stderr!r}"
+    )
+    elapsed_ms = int(result.stdout.strip())
+    assert elapsed_ms < 500, (
+        f"import eggress took {elapsed_ms} ms (threshold: 500 ms)"
+    )
 
 
 # ---------------------------------------------------------------------------

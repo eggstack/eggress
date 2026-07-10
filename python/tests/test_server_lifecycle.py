@@ -61,12 +61,12 @@ def _socks5_connect(proxy_host, proxy_port, target_host, target_port):
     s.sendall(b"\x05\x01\x00")
     resp = s.recv(2)
     assert resp[0] == 0x05, f"SOCKS5 greeting version mismatch: {resp!r}"
-    # CONNECT request (domain name variant)
-    host_bytes = target_host.encode()
+    # CONNECT request using IPv4 literal (ATYP=0x01) so the runtime treats
+    # the target as a literal IP and bypasses DNS rebinding protection.
+    octets = [int(x) for x in target_host.split(".")]
     req = (
-        b"\x05\x01\x00\x03"
-        + bytes([len(host_bytes)])
-        + host_bytes
+        b"\x05\x01\x00\x01"
+        + bytes(octets)
         + struct.pack("!H", target_port)
     )
     s.sendall(req)

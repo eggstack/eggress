@@ -837,6 +837,7 @@ fn test_upstream_connect(py: Python<'_>, uri: &str, timeout_secs: f64) -> PyResu
                 }
             };
 
+            let mut last_error: Option<String> = None;
             for addr in socket_addrs {
                 let start = std::time::Instant::now();
                 match std::net::TcpStream::connect_timeout(&addr, std_duration) {
@@ -844,11 +845,11 @@ fn test_upstream_connect(py: Python<'_>, uri: &str, timeout_secs: f64) -> PyResu
                         return (true, Some(start.elapsed().as_micros() as u64), None);
                     }
                     Err(e) => {
-                        let _ = e;
+                        last_error = Some(format!("connect to {addr} failed: {e}"));
                     }
                 }
             }
-            (false, None, None)
+            (false, None, last_error)
         });
 
     dict.set_item("connected", connected)?;

@@ -634,6 +634,9 @@ pub fn translate_from_uris(
         upstreams.push(UpstreamToml {
             id: upstream_id.clone(),
             uri: config_uri,
+            health: health_interval.as_ref().map(|interval| HealthToml {
+                interval: interval.clone(),
+            }),
         });
     }
 
@@ -707,6 +710,9 @@ pub fn translate_from_uris(
         upstreams.push(UpstreamToml {
             id: upstream_id.clone(),
             uri: config_uri,
+            health: health_interval.as_ref().map(|interval| HealthToml {
+                interval: interval.clone(),
+            }),
         });
         udp_upstream_ids.push(upstream_id);
     }
@@ -742,6 +748,20 @@ pub fn translate_from_uris(
             id: "pproxy-default".to_string(),
             any: true,
             upstream_group: group_id,
+            direct: None,
+            r#match: None,
+            host_regex: None,
+            reject: None,
+        });
+    } else if !listeners.is_empty() {
+        // No upstream specified: emit a default direct rule so pproxy's
+        // "no -r means direct passthrough" behavior is preserved. A warning
+        // ("direct-mode") is already emitted above for each listener.
+        rules.push(RuleToml {
+            id: "pproxy-default".to_string(),
+            any: true,
+            upstream_group: String::new(),
+            direct: Some(true),
             r#match: None,
             host_regex: None,
             reject: None,
@@ -768,6 +788,7 @@ pub fn translate_from_uris(
             id: "pproxy-udp-default".to_string(),
             any: false,
             upstream_group: group_id,
+            direct: None,
             r#match: Some(MatchToml {
                 transport: "udp".to_string(),
             }),
@@ -784,6 +805,7 @@ pub fn translate_from_uris(
                 id: format!("pproxy-block-{}", idx),
                 any: false,
                 upstream_group: String::new(),
+                direct: None,
                 r#match: None,
                 host_regex: Some(pattern.clone()),
                 reject: Some("blocked".to_string()),
@@ -801,7 +823,6 @@ pub fn translate_from_uris(
         rules: &rules,
         reverse_servers: &reverse_servers,
         reverse_clients: &reverse_clients,
-        health_interval: health_interval.as_deref(),
         pac_enabled,
     });
 
@@ -975,6 +996,8 @@ struct AuthToml {
 struct UpstreamToml {
     id: String,
     uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    health: Option<HealthToml>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -991,6 +1014,8 @@ struct RuleToml {
     any: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     upstream_group: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direct: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "match")]
     r#match: Option<MatchToml>,
@@ -1019,8 +1044,6 @@ struct ConfigToml {
     reverse_servers: Vec<ReverseServerToml>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     reverse_clients: Vec<ReverseClientToml>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    health: Option<HealthToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     admin: Option<AdminToml>,
 }
@@ -1054,7 +1077,6 @@ struct HealthToml {
 
 #[derive(serde::Serialize, Clone)]
 struct PacToml {
-    enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1075,19 +1097,13 @@ struct TomlInput<'a> {
     rules: &'a [RuleToml],
     reverse_servers: &'a [ReverseServerToml],
     reverse_clients: &'a [ReverseClientToml],
-    health_interval: Option<&'a str>,
     pac_enabled: bool,
 }
 
 fn generate_toml(input: TomlInput<'_>) -> String {
-    let health = input.health_interval.map(|interval| HealthToml {
-        interval: interval.to_string(),
-    });
-
     let admin = if input.pac_enabled {
         Some(AdminToml {
             pac: PacToml {
-                enabled: true,
                 path: Some("/proxy.pac".to_string()),
                 proxy: Some("PROXY {}".to_string()),
                 direct_fallback: Some(true),
@@ -1105,7 +1121,6 @@ fn generate_toml(input: TomlInput<'_>) -> String {
         rules: input.rules.to_vec(),
         reverse_servers: input.reverse_servers.to_vec(),
         reverse_clients: input.reverse_clients.to_vec(),
-        health,
         admin,
     };
 
@@ -1124,6 +1139,9 @@ mod tests {
         assert!(output.toml.contains("socks5"));
         assert!(output.toml.contains("127.0.0.1:1080"));
         assert!(!output.has_unsupported());
+        assert!(output.toml.contains("pproxy-default"));
+        assert!(output.toml.contains("direct = true"));
+        eprintln!("{}", output.toml);
     }
 
     #[test]
@@ -2161,12 +2179,14 @@ mod tests {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://proxy:8080".into(),
             "-a".into(),
             "10".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.toml.contains("[health]"));
+        assert!(output.toml.contains("[upstreams.health]"));
         assert!(output.toml.contains("interval = \"10s\""));
     }
 
@@ -2180,7 +2200,6 @@ mod tests {
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.toml.contains("[admin.pac]"));
-        assert!(output.toml.contains("enabled = true"));
     }
 
     #[test]

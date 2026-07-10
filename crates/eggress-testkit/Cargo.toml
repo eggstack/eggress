@@ -19,6 +19,8 @@ regex.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
+eggress-config = { path = "../eggress-config" }
+eggress-runtime = { path = "../eggress-runtime" }
 
 [lints]
 workspace = true

@@ -847,6 +847,8 @@ dependencies = [
 name = "eggress-testkit"
 version = "0.1.0"
 dependencies = [
+ "eggress-config",
+ "eggress-runtime",
  "rcgen",
  "regex",
  "rustls",

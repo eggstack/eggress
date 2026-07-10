@@ -193,9 +193,11 @@ version = 1
 [[listeners]]
 name = "test"
 bind = "127.0.0.1:{PORT}"
-protocols = ["https"]
-tls.cert = "tests/fixtures/cert.pem"
-tls.key = "tests/fixtures/key.pem"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "tests/fixtures/cert.pem"
+key = "tests/fixtures/key.pem"
 "#,
             expected_equivalence: EquivalenceTarget::CoarseResult,
             normalization: NormalizationRules {
@@ -224,6 +226,8 @@ version = 1
 name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
 password = "testpass"
 method = "aes-256-gcm"
 "#,
@@ -249,9 +253,13 @@ version = 1
 name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["trojan"]
+
+[listeners.trojan]
 password = "password"
-tls.cert = "tests/fixtures/cert.pem"
-tls.key = "tests/fixtures/key.pem"
+
+[listeners.tls]
+cert = "tests/fixtures/cert.pem"
+key = "tests/fixtures/key.pem"
 "#,
             expected_equivalence: EquivalenceTarget::CoarseResult,
             normalization: NormalizationRules {
@@ -357,7 +365,7 @@ version = 1
 [[listeners]]
 name = "test"
 bind = "127.0.0.1:{PORT}"
-protocols = ["socks4a"]
+protocols = ["socks4"]
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
             normalization: NormalizationRules {
@@ -567,17 +575,16 @@ name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
-[[upstream]]
+[[upstreams]]
 id = "upstream-0"
 uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
 
-[[upstream_group]]
+[[upstream_groups]]
 id = "chain-group"
 members = ["upstream-0"]
 
 [[rules]]
 id = "route-all"
-any = true
 upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
@@ -608,17 +615,16 @@ name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["http"]
 
-[[upstream]]
+[[upstreams]]
 id = "upstream-0"
 uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
 
-[[upstream_group]]
+[[upstream_groups]]
 id = "chain-group"
 members = ["upstream-0"]
 
 [[rules]]
 id = "route-all"
-any = true
 upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
@@ -649,17 +655,16 @@ name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["socks5"]
 
-[[upstream]]
+[[upstreams]]
 id = "upstream-0"
 uri = "http://127.0.0.1:{UPSTREAM_PORT}"
 
-[[upstream_group]]
+[[upstream_groups]]
 id = "chain-group"
 members = ["upstream-0"]
 
 [[rules]]
 id = "route-all"
-any = true
 upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
@@ -695,17 +700,16 @@ type = "password"
 username = "user"
 password = "pass"
 
-[[upstream]]
+[[upstreams]]
 id = "upstream-0"
 uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
 
-[[upstream_group]]
+[[upstream_groups]]
 id = "chain-group"
 members = ["upstream-0"]
 
 [[rules]]
 id = "route-all"
-any = true
 upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
@@ -735,20 +739,21 @@ version = 1
 name = "test"
 bind = "127.0.0.1:{PORT}"
 protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
 password = "testpass"
 method = "aes-256-gcm"
 
-[[upstream]]
+[[upstreams]]
 id = "upstream-0"
 uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
 
-[[upstream_group]]
+[[upstream_groups]]
 id = "chain-group"
 members = ["upstream-0"]
 
 [[rules]]
 id = "route-all"
-any = true
 upstream_group = "chain-group"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
@@ -790,7 +795,6 @@ protocols = ["socks5"]
 
 [[rules]]
 id = "reject-ip"
-any = true
 host_regex = "127\\.0\\.0\\.2"
 reject = "blocked"
 "#,
@@ -826,7 +830,6 @@ protocols = ["socks5"]
 
 [[rules]]
 id = "reject-domain"
-any = true
 host_regex = "blocked\\.example\\.com"
 reject = "blocked"
 "#,
@@ -885,7 +888,6 @@ protocols = ["socks5"]
 
 [[rules]]
 id = "reject-b"
-any = true
 host_regex = "127\\.0\\.0\\.3"
 reject = "blocked"
 "#,
@@ -923,13 +925,11 @@ protocols = ["socks5"]
 
 [[rules]]
 id = "reject-c"
-any = true
 host_regex = "127\\.0\\.0\\.4"
 reject = "blocked"
 
 [[rules]]
 id = "reject-d"
-any = true
 host_regex = "127\\.0\\.0\\.5"
 reject = "blocked"
 "#,
@@ -1007,6 +1007,9 @@ version = 1
 [[listeners]]
 name = "test"
 bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[listeners.udp]
 mode = "standalone_pproxy_udp"
 "#,
             expected_equivalence: EquivalenceTarget::Payload,
@@ -1091,6 +1094,48 @@ mod tests {
         assert_eq!(cli.len(), 7);
         for s in &cli {
             assert_eq!(s.category, ScenarioCategory::CliDefaults);
+        }
+    }
+
+    /// Validate that every scenario's `eggress_toml` parses and validates
+    /// through the real config schema after placeholder substitution. This
+    /// catches schema regressions in oracle scenario TOML before they can
+    /// hide behind the `#[ignore]` gate.
+    ///
+    /// We deliberately stop at `validate_config`: scenarios that load TLS
+    /// certificates or open files require the runtime fixtures to exist, and
+    /// the runtime startup is exercised by the gated oracle comparison tests.
+    #[test]
+    fn scenario_eggress_toml_parses() {
+        let port_substitution = |scenario: &OracleScenario, port: u16| -> String {
+            scenario
+                .eggress_toml
+                .replace("{PORT}", &port.to_string())
+                .replace("{PORT2}", &(port + 1).to_string())
+                .replace("{ECHO_PORT}", &(port + 100).to_string())
+                .replace("{UPSTREAM_PORT}", &(port + 100).to_string())
+        };
+
+        for scenario in all_scenarios() {
+            let toml = port_substitution(&scenario, 18080);
+
+            let parsed: Result<eggress_config::model::ConfigFile, _> = toml::from_str(&toml);
+            let config = match parsed {
+                Ok(c) => c,
+                Err(e) => panic!(
+                    "scenario {} produced TOML that failed to parse: {e}\nTOML was:\n{toml}",
+                    scenario.id
+                ),
+            };
+
+            if let Err(errors) = eggress_config::validate::validate_config(&config) {
+                let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+                panic!(
+                    "scenario {} produced TOML that failed validation: {}\nTOML was:\n{toml}",
+                    scenario.id,
+                    messages.join("; ")
+                );
+            }
         }
     }
 }

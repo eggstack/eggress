@@ -79,20 +79,25 @@ def _echo_server():
 
 
 def _socks5_connect(proxy_host, proxy_port, target_host, target_port):
-    """Perform a SOCKS5 CONNECT handshake and return the connected socket."""
+    """Perform a SOCKS5 CONNECT handshake and return the connected socket.
+
+    Uses ATYP=0x01 (IPv4) when target_host is an IPv4 literal to avoid the
+    DNS rebinding protection check in the SOCKS5 direct path; otherwise uses
+    ATYP=0x03 (domain).
+    """
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(3.0)
     s.connect((proxy_host, proxy_port))
     s.sendall(b"\x05\x01\x00")
     resp = s.recv(2)
     assert resp[0] == 0x05, f"SOCKS5 greeting version mismatch: {resp!r}"
-    host_bytes = target_host.encode()
-    req = (
-        b"\x05\x01\x00\x03"
-        + bytes([len(host_bytes)])
-        + host_bytes
-        + struct.pack("!H", target_port)
-    )
+    try:
+        ip_bytes = socket.inet_aton(target_host)
+        atyp = b"\x01" + ip_bytes
+    except OSError:
+        host_bytes = target_host.encode()
+        atyp = b"\x03" + bytes([len(host_bytes)]) + host_bytes
+    req = b"\x05\x01\x00" + atyp + struct.pack("!H", target_port)
     s.sendall(req)
     resp = s.recv(32)
     assert resp[1] == 0x00, f"SOCKS5 connect failed: {resp!r}"

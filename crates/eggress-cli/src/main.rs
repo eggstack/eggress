@@ -291,38 +291,42 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
         body_str.len(),
     );
 
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let result = runtime.block_on(async {
-        let addr = if host.contains(':') {
-            format!("[{host}]:{port}")
-        } else {
-            format!("{host}:{port}")
-        };
-        let mut stream = match tokio::net::TcpStream::connect(&addr).await {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("failed to connect to admin at {addr}: {e}");
+    let result = run_async_test(move || {
+        let host = host.clone();
+        let port = port;
+        let request = request.clone();
+        Box::pin(async move {
+            let addr = if host.contains(':') {
+                format!("[{host}]:{port}")
+            } else {
+                format!("{host}:{port}")
+            };
+            let mut stream = match tokio::net::TcpStream::connect(&addr).await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("failed to connect to admin at {addr}: {e}");
+                    std::process::exit(EXIT_RUNTIME_FAILURE);
+                }
+            };
+
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            if let Err(e) = stream.write_all(request.as_bytes()).await {
+                eprintln!("failed to send request: {e}");
                 std::process::exit(EXIT_RUNTIME_FAILURE);
             }
-        };
+            let _ = stream.shutdown().await;
 
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        if let Err(e) = stream.write_all(request.as_bytes()).await {
-            eprintln!("failed to send request: {e}");
-            std::process::exit(EXIT_RUNTIME_FAILURE);
-        }
-        let _ = stream.shutdown().await;
-
-        let mut response = Vec::new();
-        loop {
-            let mut buf = [0u8; 4096];
-            match stream.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => response.extend_from_slice(&buf[..n]),
-                Err(_) => break,
+            let mut response = Vec::new();
+            loop {
+                let mut buf = [0u8; 4096];
+                match stream.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => response.extend_from_slice(&buf[..n]),
+                    Err(_) => break,
+                }
             }
-        }
-        String::from_utf8_lossy(&response).to_string()
+            String::from_utf8_lossy(&response).to_string()
+        })
     });
 
     let body_start = result.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
@@ -383,6 +387,43 @@ fn parse_admin_url(url: &str) -> (String, u16, String) {
     (host, port, path.to_string())
 }
 
+/// Run an async test future to completion.
+///
+/// If a Tokio runtime is already active on the current thread (e.g. when the
+/// CLI is invoked from inside `#[tokio::main]`), spawn the future on a
+/// dedicated OS thread with its own multi-thread runtime and join it. This
+/// avoids the "Cannot start a runtime from within a runtime" panic that
+/// `Handle::current().block_on` would trigger.
+///
+/// If no runtime is active, build a fresh single-threaded runtime and drive
+/// the future on it directly.
+fn run_async_test<F, T>(make_future: F) -> T
+where
+    F: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>> + Send + 'static,
+    T: Send + 'static,
+{
+    if tokio::runtime::Handle::try_current().is_ok() {
+        std::thread::Builder::new()
+            .name("eggress-cli-test".to_string())
+            .spawn(move || -> T {
+                let rt = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build tokio runtime for cli test");
+                rt.block_on(make_future())
+            })
+            .expect("failed to spawn cli test thread")
+            .join()
+            .expect("cli test thread panicked")
+    } else {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build tokio runtime for cli test");
+        rt.block_on(make_future())
+    }
+}
+
 fn handle_upstream_test(args: &UpstreamTest) {
     let rt = match &args.config {
         Some(path) => match eggress_config::compile::load_and_compile(path) {
@@ -424,8 +465,8 @@ fn handle_upstream_test(args: &UpstreamTest) {
     };
 
     let timeout = Duration::from_secs(args.timeout);
-    let runtime = tokio::runtime::Runtime::new().unwrap();
     let is_proxy_mode = args.mode == "proxy";
+    let target_string = target.to_string();
 
     let mut results = Vec::new();
 
@@ -436,18 +477,21 @@ fn handle_upstream_test(args: &UpstreamTest) {
         let port = first_hop.endpoint.port;
 
         let result = if is_proxy_mode {
-            let executor = build_test_chain_executor();
-            let (reachable, latency_ms, error) = runtime.block_on(test_upstream_proxy(
-                &executor,
-                &chain.hops,
-                &target,
-                timeout,
-            ));
+            let hops = chain.hops.clone();
+            let target_for_closure = target.clone();
+            let (reachable, latency_ms, error) = run_async_test(move || {
+                let target = target_for_closure.clone();
+                let hops = hops.clone();
+                Box::pin(async move {
+                    let executor = build_test_chain_executor();
+                    test_upstream_proxy(&executor, &hops, &target, timeout).await
+                })
+            });
             UpstreamTestResult {
                 id: upstream.id.clone(),
                 host: host.clone(),
                 port,
-                target: target.to_string(),
+                target: target_string.clone(),
                 mode: "proxy".to_string(),
                 reachable,
                 latency_ms,
@@ -456,12 +500,16 @@ fn handle_upstream_test(args: &UpstreamTest) {
                 failed_hop: None,
             }
         } else {
-            let result = runtime.block_on(test_upstream(host, port, timeout));
+            let host_owned = host.clone();
+            let result = run_async_test(move || {
+                let host = host_owned.clone();
+                Box::pin(async move { test_upstream(&host, port, timeout).await })
+            });
             UpstreamTestResult {
                 id: upstream.id.clone(),
                 host: host.clone(),
                 port,
-                target: target.to_string(),
+                target: target_string.clone(),
                 ..result
             }
         };
@@ -725,6 +773,8 @@ fn handle_pproxy_run(args: &PproxyRun) {
             eprintln!("warning: {u}");
         }
         eprintln!("\nSome features are unsupported. Service may not behave as expected.");
+        eprintln!("refusing to start: unsupported features would yield a non-functional proxy.");
+        std::process::exit(EXIT_CONFIG_VALIDATION);
     }
 
     for w in &output.warnings {
