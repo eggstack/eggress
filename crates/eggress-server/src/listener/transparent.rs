@@ -227,6 +227,7 @@ fn parse_sockaddr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Opt
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 
@@ -310,7 +311,7 @@ mod tests {
             let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in);
             sa.sin_family = libc::AF_INET as u16;
             sa.sin_port = 8080u16.to_be();
-            sa.sin_addr.s_addr = u32::from([127, 0, 0, 1]).to_be();
+            sa.sin_addr.s_addr = u32::from_be_bytes([127, 0, 0, 1]);
         }
         let truncated_len = 4u32; // smaller than sizeof(sockaddr_in)
         let result = parse_sockaddr(&storage, truncated_len);
@@ -326,7 +327,7 @@ mod tests {
             let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in);
             sa.sin_family = libc::AF_INET as u16;
             sa.sin_port = 8080u16.to_be();
-            sa.sin_addr.s_addr = u32::from([192, 0, 2, 7]).to_be();
+            sa.sin_addr.s_addr = u32::from_be_bytes([192, 0, 2, 7]);
         }
         let len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
         let result = parse_sockaddr(&storage, len).expect("IPv4 should parse");

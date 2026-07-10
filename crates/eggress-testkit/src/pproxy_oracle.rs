@@ -41,7 +41,7 @@ impl Default for OracleConfig {
         Self {
             python_binary: "python3".to_string(),
             pproxy_version: "2.7.9".to_string(),
-            startup_timeout: Duration::from_secs(5),
+            startup_timeout: Duration::from_secs(15),
             shutdown_timeout: Duration::from_secs(5),
             io_timeout: Duration::from_secs(3),
         }
@@ -238,8 +238,12 @@ async fn wait_for_stderr_ready(
             let guard = stderr_buf.lock().map_err(|e| {
                 PproxyOracleError::ProcessFailed(format!("stderr lock poisoned: {}", e))
             })?;
-            let _text = String::from_utf8_lossy(&guard);
-            return Err(PproxyOracleError::StartupTimeout(timeout));
+            let text = String::from_utf8_lossy(&guard);
+            return Err(PproxyOracleError::ProcessFailed(format!(
+                "startup timeout after {:?}, stderr: {}",
+                timeout,
+                text.trim()
+            )));
         }
 
         tokio::time::sleep(interval).await;
