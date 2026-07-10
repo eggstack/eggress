@@ -112,8 +112,11 @@ impl PproxyProcess {
             }
         });
 
-        let bound_addr =
-            wait_for_output_ready(&stderr_buf, &stdout_buf, config.startup_timeout).await?;
+        let bound_addr = if let Some(addr) = parse_listen_addr_from_args(args) {
+            addr
+        } else {
+            wait_for_output_ready(&stderr_buf, &stdout_buf, config.startup_timeout).await?
+        };
 
         let proc = Self {
             child: Some(child),
@@ -278,6 +281,48 @@ async fn wait_for_output_ready(
     }
 }
 
+fn parse_listen_addr_from_args(args: &[String]) -> Option<SocketAddr> {
+    let mut i = 0;
+    while i < args.len() {
+        if (args[i] == "-l" || args[i] == "--listen") && i + 1 < args.len() {
+            let uri = &args[i + 1];
+            let host_port = if let Some(at_pos) = uri.rfind('@') {
+                &uri[at_pos + 1..]
+            } else {
+                uri.as_str()
+            };
+            let stripped = host_port
+                .strip_prefix("socks5://")
+                .or_else(|| host_port.strip_prefix("http://"))
+                .or_else(|| host_port.strip_prefix("socks4://"))
+                .or_else(|| host_port.strip_prefix("socks4a://"))
+                .or_else(|| host_port.strip_prefix("ss://"))
+                .or_else(|| host_port.strip_prefix("trojan://"))
+                .or_else(|| host_port.strip_prefix("direct://"))
+                .unwrap_or(host_port);
+            if let Some(colon_pos) = stripped.rfind(':') {
+                let port_str = &stripped[colon_pos + 1..];
+                if let Ok(port) = port_str.parse::<u16>() {
+                    if port > 0 {
+                        let host_str = &stripped[..colon_pos];
+                        let host = if host_str.is_empty() || host_str == "127.0.0.1" {
+                            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                        } else if host_str == "0.0.0.0" {
+                            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+                        } else {
+                            host_str.parse().ok()?
+                        };
+                        return Some(SocketAddr::new(host, port));
+                    }
+                }
+            }
+            return None;
+        }
+        i += 1;
+    }
+    None
+}
+
 fn parse_bound_addr(text: &str) -> Option<SocketAddr> {
     for line in text.lines() {
         let line = line.trim();
@@ -389,6 +434,7 @@ mod tests {
 
         let proc = PproxyProcess::start(&config, &args).await.unwrap();
         let addr = proc.bound_addr();
+        assert_eq!(addr.port(), port, "should parse port from args");
 
         drop(proc);
 
@@ -407,9 +453,11 @@ mod tests {
         }
 
         let config = OracleConfig::default();
+        let port = crate::get_free_port().await;
+        let listen = format!("socks5://127.0.0.1:{}", port);
         let args = vec![
             "-l".to_string(),
-            "socks5://127.0.0.1:0".to_string(),
+            listen,
             "-r".to_string(),
             "direct".to_string(),
         ];

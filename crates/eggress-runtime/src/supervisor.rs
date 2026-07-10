@@ -745,6 +745,7 @@ impl ServiceSupervisor {
             }
 
             let mut prepared = Vec::new();
+            #[cfg(unix)]
             let mut unix_listener_args = Vec::new();
             let mut transparent_listener_args = Vec::new();
 
@@ -1204,6 +1205,7 @@ impl ServiceSupervisor {
             }
 
             // Spawn Unix domain socket accept loops
+            #[cfg(unix)]
             for (
                 listener_name,
                 unix_listener,
