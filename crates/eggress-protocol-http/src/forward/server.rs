@@ -207,6 +207,31 @@ async fn read_bounded_line<R: AsyncRead + Unpin>(
     Ok(line)
 }
 
+async fn read_bounded_line_into<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    line: &mut Vec<u8>,
+    max_len: usize,
+) -> Result<(), HttpError> {
+    let mut temp = [0u8; 1];
+    loop {
+        if line.len() >= max_len {
+            return Err(HttpError::MalformedResponse("line too long".into()));
+        }
+        let n = reader.read(&mut temp).await?;
+        if n == 0 {
+            if line.is_empty() {
+                return Err(HttpError::MalformedResponse("unexpected EOF".into()));
+            }
+            return Err(HttpError::MalformedResponse("incomplete line".into()));
+        }
+        line.push(temp[0]);
+        if line.len() >= 2 && &line[line.len() - 2..] == b"\r\n" {
+            break;
+        }
+    }
+    Ok(())
+}
+
 /// Parse a chunk size from a line (without trailing CRLF).
 /// Supports hex with optional extensions (after ';').
 fn parse_chunk_size(line_without_crlf: &[u8]) -> Result<u64, HttpError> {
@@ -476,10 +501,13 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
         if let Some((name, value)) = parse_header_line(line) {
             if name.eq_ignore_ascii_case("Content-Length") {
                 content_length = value.parse::<u64>().ok();
-            } else if name.eq_ignore_ascii_case("Transfer-Encoding")
-                && value.eq_ignore_ascii_case("chunked")
-            {
-                is_chunked = true;
+            } else if name.eq_ignore_ascii_case("Transfer-Encoding") {
+                for coding in value.split(',') {
+                    let coding_name = coding.trim().split(';').next().unwrap_or("").trim();
+                    if coding_name.eq_ignore_ascii_case("chunked") {
+                        is_chunked = true;
+                    }
+                }
             } else if name.eq_ignore_ascii_case("Connection") {
                 // Check for "close" token (case-insensitive)
                 connection_close = value
@@ -557,67 +585,66 @@ pub async fn forward_response(
                 let to_read = (remaining as usize).min(buf.len());
                 let n = upstream.read(&mut buf[..to_read]).await?;
                 if n == 0 {
-                    break;
+                    return Err(HttpError::MalformedResponse(
+                        "unexpected EOF in response body".into(),
+                    ));
                 }
                 client.write_all(&buf[..n]).await?;
                 bytes_forwarded += n as u64;
                 remaining -= n as u64;
             }
         }
-        (None, true) => loop {
-            let mut size_line = Vec::new();
-            let mut temp = [0u8; 1];
+        (None, true) => {
+            let mut size_line_buf = Vec::new();
             loop {
-                let n = upstream.read(&mut temp).await?;
-                if n == 0 {
-                    return Ok(ForwardResult {
-                        report: ForwardResponseReport { bytes_forwarded },
-                        upstream_alive: false,
-                        client_should_close: true,
-                    });
-                }
-                size_line.push(temp[0]);
-                if size_line.len() > 32 {
-                    return Err(HttpError::MalformedResponse(
-                        "chunk size line exceeds maximum length".into(),
-                    ));
-                }
-                if size_line.len() >= 2 && &size_line[size_line.len() - 2..] == b"\r\n" {
+                size_line_buf.clear();
+                read_bounded_line_into(upstream, &mut size_line_buf, 1024).await?;
+
+                let size_str = String::from_utf8_lossy(&size_line_buf);
+                let size_str = size_str.trim_end_matches("\r\n");
+                let size_str = size_str.split(';').next().unwrap_or("").trim();
+                let chunk_size = usize::from_str_radix(size_str, 16).map_err(|e| {
+                    HttpError::MalformedResponse(format!("invalid chunk size: {}", e))
+                })?;
+
+                client.write_all(&size_line_buf).await?;
+                bytes_forwarded += size_line_buf.len() as u64;
+
+                if chunk_size == 0 {
+                    loop {
+                        let mut trailer = Vec::new();
+                        read_bounded_line_into(upstream, &mut trailer, 8192).await?;
+                        client.write_all(&trailer).await?;
+                        bytes_forwarded += trailer.len() as u64;
+                        if trailer.len() >= 2 && &trailer[trailer.len() - 2..] == b"\r\n" {
+                            if &trailer[..2] == b"\r\n" {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
                     break;
                 }
-            }
-            let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
-            let chunk_size = usize::from_str_radix(size_str.trim(), 16)
-                .map_err(|e| HttpError::MalformedResponse(format!("invalid chunk size: {}", e)))?;
 
-            client.write_all(&size_line).await?;
-            bytes_forwarded += size_line.len() as u64;
-
-            if chunk_size == 0 {
-                let mut trail = [0u8; 2];
-                upstream.read_exact(&mut trail).await?;
-                client.write_all(&trail).await?;
-                bytes_forwarded += 2;
-                break;
-            }
-
-            let mut remaining = chunk_size + 2;
-            let mut buf = [0u8; 8192];
-            while remaining > 0 {
-                let to_read = remaining.min(buf.len());
-                let n = upstream.read(&mut buf[..to_read]).await?;
-                if n == 0 {
-                    return Ok(ForwardResult {
-                        report: ForwardResponseReport { bytes_forwarded },
-                        upstream_alive: false,
-                        client_should_close: true,
-                    });
+                let mut remaining = chunk_size + 2;
+                let mut buf = [0u8; 8192];
+                while remaining > 0 {
+                    let to_read = remaining.min(buf.len());
+                    let n = upstream.read(&mut buf[..to_read]).await?;
+                    if n == 0 {
+                        return Ok(ForwardResult {
+                            report: ForwardResponseReport { bytes_forwarded },
+                            upstream_alive: false,
+                            client_should_close: true,
+                        });
+                    }
+                    client.write_all(&buf[..n]).await?;
+                    bytes_forwarded += n as u64;
+                    remaining -= n;
                 }
-                client.write_all(&buf[..n]).await?;
-                bytes_forwarded += n as u64;
-                remaining -= n;
             }
-        },
+        }
         (None, false) => {
             let mut buf = [0u8; 8192];
             loop {
@@ -913,10 +940,27 @@ fn parse_authority_with_default(
 }
 
 /// Parse a header line into (name, value).
+///
+/// Rejects header names or values containing control characters (NUL, CR, LF)
+/// per RFC 7230 §3.2.4.
 fn parse_header_line(line: &str) -> Option<(String, String)> {
     let colon_pos = line.find(':')?;
     let name = line[..colon_pos].trim().to_string();
     let value = line[colon_pos + 1..].trim().to_string();
+
+    if name.is_empty() {
+        return None;
+    }
+    if name.bytes().any(|b| b == b'\0' || b == b'\r' || b == b'\n') {
+        return None;
+    }
+    if value
+        .bytes()
+        .any(|b| b == b'\0' || b == b'\r' || b == b'\n')
+    {
+        return None;
+    }
+
     Some((name, value))
 }
 

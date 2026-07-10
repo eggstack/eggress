@@ -292,4 +292,10 @@ pub struct ReverseClientConfig {
     pub heartbeat_interval: Option<String>,
     /// Number of parallel control connections (default 1).
     pub parallel_connections: Option<u32>,
+    /// Default target host to connect to when the control channel
+    /// does not specify one (e.g., "127.0.0.1").
+    pub default_target_host: Option<String>,
+    /// Default target port to connect to when the control channel
+    /// does not specify one (e.g., 80).
+    pub default_target_port: Option<u16>,
 }

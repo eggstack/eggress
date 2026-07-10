@@ -420,7 +420,7 @@ fn parse_credentials(
         if protocols.contains(&ProtocolSpec::Trojan) && !userinfo.is_empty() {
             return Ok(CredentialSpec {
                 username: String::new(),
-                password: userinfo.to_string(),
+                password: percent_decode(userinfo),
             });
         }
 
@@ -430,8 +430,8 @@ fn parse_credentials(
         });
     };
 
-    let username = userinfo[..colon_pos].to_string();
-    let password = userinfo[colon_pos + 1..].to_string();
+    let username = percent_decode(&userinfo[..colon_pos]);
+    let password = percent_decode(&userinfo[colon_pos + 1..]);
 
     if username.is_empty() && password.is_empty() {
         return Err(UriParseError::InvalidFormat {
@@ -458,6 +458,35 @@ fn parse_query_rule(query: Option<&str>) -> Option<String> {
     }
 
     None
+}
+
+fn percent_decode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = hex_val(bytes[i + 1]);
+            let lo = hex_val(bytes[i + 2]);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                result.push((h << 4 | l) as char);
+                i += 3;
+                continue;
+            }
+        }
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 /// Find the position of the LAST `@` that's not inside brackets.

@@ -52,7 +52,7 @@ Eggress defaults to a conservative security posture:
 
 ### 6. Metrics
 
-- **Default**: Metrics exposed at `/-/metrics` on admin server
+- **Default**: Metrics exposed at `/metrics` on admin server
 - **Risk**: High-cardinality labels could leak information
 - **Action**: Disable metrics (`metrics = false`) if not needed
 - **Action**: Keep admin on loopback to protect metrics endpoint

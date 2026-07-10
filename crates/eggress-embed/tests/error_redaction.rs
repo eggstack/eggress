@@ -104,15 +104,16 @@ protocols = ["socks5"]
 
 [listeners.auth]
 type = "password"
-password_env = "MY_SECRET_ENV_VAR"
+username = "admin"
+password = "super_secret_value"
 "#,
     )
     .unwrap();
 
     let redacted = config.to_redacted_toml().unwrap();
     assert!(
-        !redacted.contains("MY_SECRET_ENV_VAR"),
-        "redacted TOML should not contain password_env"
+        !redacted.contains("super_secret_value"),
+        "redacted TOML should not contain plaintext password"
     );
     assert!(redacted.contains("****"));
 }

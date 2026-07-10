@@ -1252,6 +1252,15 @@ fn compile_reverse_servers(
 
             let external_bind = None; // external_bind is not in the TOML model yet; could be added later
 
+            // BUG-004: Without external_bind, the reverse server cannot accept
+            // external client connections, making it useless. Reject at compile time.
+            if external_bind.is_none() {
+                return Err(ConfigError::validation(
+                    &path,
+                    "reverse server requires external_bind to accept client connections",
+                ));
+            }
+
             let auth_password = resolve_password(
                 s.auth_password.as_deref(),
                 s.auth_password_env.as_deref(),
@@ -1353,6 +1362,15 @@ fn compile_reverse_clients(
 
             let parallel_connections = c.parallel_connections.unwrap_or(1);
 
+            // BUG-005: Without default_target_host and default_target_port,
+            // the reverse client cannot connect to any target. Reject at compile time.
+            if c.default_target_host.is_none() || c.default_target_port.is_none() {
+                return Err(ConfigError::validation(
+                    &path,
+                    "reverse client requires default_target_host and default_target_port",
+                ));
+            }
+
             Ok(CompiledReverseClientConfig {
                 id: c.id.clone(),
                 server_addr,
@@ -1360,8 +1378,8 @@ fn compile_reverse_clients(
                 auth_password,
                 reconnect_initial_ms,
                 reconnect_max_ms,
-                default_target_host: None,
-                default_target_port: None,
+                default_target_host: c.default_target_host.clone(),
+                default_target_port: c.default_target_port,
                 read_timeout_ms: heartbeat_interval_ms,
                 drain_grace_ms: 5_000,
                 parallel_connections,

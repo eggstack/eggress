@@ -95,11 +95,23 @@ pub async fn server_auth_handshake(
     expected_user: Option<&str>,
     expected_pass: Option<&str>,
 ) -> Result<String, ProtocolError> {
-    // Read auth bytes (newline-delimited user:pass string)
+    // Read auth bytes (newline-delimited user:pass string).
+    // Cap at 4 KiB to prevent unbounded memory growth from malicious clients.
+    const MAX_AUTH_BYTES: u64 = 4096;
     let mut auth_buf = Vec::with_capacity(1024);
     {
-        let mut reader = tokio::io::BufReader::new(&mut *stream);
+        use tokio::io::AsyncReadExt;
+        let mut limited = (&mut *stream).take(MAX_AUTH_BYTES);
+        let mut reader = tokio::io::BufReader::new(&mut limited);
         reader.read_until(b'\n', &mut auth_buf).await?;
+    }
+    if auth_buf.is_empty() {
+        return Err(ProtocolError::ConnectionClosed);
+    }
+    if auth_buf.len() > MAX_AUTH_BYTES as usize {
+        return Err(ProtocolError::ConfigInvalid(
+            "auth payload exceeds maximum length".to_string(),
+        ));
     }
     if auth_buf.is_empty() {
         return Err(ProtocolError::ConnectionClosed);

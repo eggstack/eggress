@@ -49,8 +49,16 @@ fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
 }
 
 fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
+    let octets = ip.octets();
     // fe80::/10 is the link-local unicast prefix
-    ip.is_loopback() || (ip.octets()[0] == 0xfe && (ip.octets()[1] & 0xc0) == 0x80)
+    if ip.is_loopback() || (octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80) {
+        return true;
+    }
+    // fc00::/7 are unique-local addresses (fc00::/8 + fd00::/8)
+    if (octets[0] & 0xfe) == 0xfc {
+        return true;
+    }
+    false
 }
 
 pub fn validate_standalone_target(

@@ -131,7 +131,7 @@ Eggress does not have built-in IP allowlist/denylist on listeners. Use routing r
 # Block access to internal networks
 [[rules]]
 id = "block-rfc1918"
-reject = "private_network"
+reject = "blocked"
 
 [rules.match]
 any_of = [

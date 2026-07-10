@@ -57,6 +57,7 @@ def _redact_config_toml(toml_str: str) -> str:
         return match.group(0)
 
     result = re.sub(r'\w+://[^\s"]+', _redact_uri, toml_str)
+    result = re.sub(r"^(\w+)\s*=\s*'([^']*)'", _redact_kv, result, flags=re.MULTILINE)
     result = re.sub(r'^(\w+)\s*=\s*"([^"]*)"', _redact_kv, result, flags=re.MULTILINE)
     return result
 
@@ -636,9 +637,12 @@ class Server:
             self._handle = None
 
     async def wait_closed(self) -> None:
-        """Wait for the server to close."""
-        if self._handle is not None:
-            await self.aclose()
+        """Wait for the server to close. If the server is still running,
+        this will block until ``aclose()`` is called from elsewhere."""
+        import asyncio
+
+        while self._handle is not None:
+            await asyncio.sleep(0.05)
 
     @property
     def addresses(self) -> dict[str, str]:

@@ -338,9 +338,10 @@ impl ReverseServer {
                     match result {
                         Ok((stream, peer_addr)) => {
                             // Enforce the per-server control connection cap.
-                            if state.active_control.load(Ordering::Relaxed)
-                                >= config.max_control_connections
-                            {
+                            // Atomically increment then check to avoid TOCTOU race.
+                            let prev = state.active_control.fetch_add(1, Ordering::AcqRel);
+                            if prev >= config.max_control_connections {
+                                state.active_control.fetch_sub(1, Ordering::Relaxed);
                                 warn!(
                                     peer = %peer_addr,
                                     max = config.max_control_connections,
@@ -364,8 +365,9 @@ impl ReverseServer {
                                     config,
                                     control_tx,
                                     metrics.as_deref(),
-                                    state,
+                                    state.clone(),
                                 ).await {
+                                    state.active_control.fetch_sub(1, Ordering::Relaxed);
                                     debug!(peer = %peer_addr, error = %e, "control connection handler error");
                                 }
                             });
@@ -461,13 +463,10 @@ impl ReverseServer {
             if let Some(m) = metrics {
                 m.record_control_rejected(peer_addr, "max_listeners_per_client");
             }
-            state.active_control.fetch_sub(1, Ordering::Relaxed);
             return Err(ProtocolError::ConfigInvalid(format!(
                 "max_listeners_per_client={listener_budget} reached"
             )));
         }
-
-        state.active_control.fetch_add(1, Ordering::Relaxed);
 
         let ctrl = ControlStream {
             stream,

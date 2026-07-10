@@ -131,6 +131,18 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
                     &format!("unknown auth type: {}", auth.auth_type),
                 ));
             }
+            if auth.username.as_deref().unwrap_or("").is_empty() {
+                errors.push(ConfigError::validation(
+                    &path,
+                    "auth requires a non-empty username",
+                ));
+            }
+            if auth.password.is_none() && auth.password_env.is_none() {
+                errors.push(ConfigError::validation(
+                    &path,
+                    "auth requires at least one of password or password_env",
+                ));
+            }
         }
 
         if let Some(ref udp) = listener.udp {
@@ -868,14 +880,13 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
             let path = format!("listeners[{}].bind", i);
             if !is_loopback_bind(&listener.bind) {
                 let has_auth = listener.auth.is_some();
-                let has_tls = listener.tls.is_some();
                 let has_shadowsocks = listener.shadowsocks.is_some();
                 let has_trojan = listener.trojan.is_some();
-                if !has_auth && !has_tls && !has_shadowsocks && !has_trojan {
+                if !has_auth && !has_shadowsocks && !has_trojan {
                     warnings.push(ConfigWarning {
                         path,
                         message: format!(
-                            "listener '{}' binds to {} without authentication or TLS — \
+                            "listener '{}' binds to {} without authentication — \
                              this may expose the proxy to untrusted networks",
                             listener.name, listener.bind,
                         ),
