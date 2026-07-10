@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 try:
     from eggress._eggress import __version__ as __version__
 except ImportError:

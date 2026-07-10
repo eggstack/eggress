@@ -98,7 +98,7 @@ impl PproxyProcess {
             }
         });
 
-        let bound_addr = wait_for_stderr_ready(&stderr_buf, config.startup_timeout).await?;
+        let bound_addr = wait_for_output_ready(&stderr_buf, &stdout_buf, config.startup_timeout).await?;
 
         let proc = Self {
             child: Some(child),
@@ -216,8 +216,9 @@ fn redact_uri_credentials(text: &str) -> String {
     result
 }
 
-async fn wait_for_stderr_ready(
+async fn wait_for_output_ready(
     stderr_buf: &Arc<Mutex<Vec<u8>>>,
+    stdout_buf: &Arc<Mutex<Vec<u8>>>,
     timeout: Duration,
 ) -> Result<SocketAddr, PproxyOracleError> {
     let start = Instant::now();
@@ -233,16 +234,28 @@ async fn wait_for_stderr_ready(
                 return Ok(addr);
             }
         }
-
-        if start.elapsed() >= timeout {
-            let guard = stderr_buf.lock().map_err(|e| {
-                PproxyOracleError::ProcessFailed(format!("stderr lock poisoned: {}", e))
+        {
+            let guard = stdout_buf.lock().map_err(|e| {
+                PproxyOracleError::ProcessFailed(format!("stdout lock poisoned: {}", e))
             })?;
             let text = String::from_utf8_lossy(&guard);
+            if let Some(addr) = parse_bound_addr(&text) {
+                return Ok(addr);
+            }
+        }
+
+        if start.elapsed() >= timeout {
+            let stderr_text = stderr_buf
+                .lock()
+                .map(|g| String::from_utf8_lossy(&g).trim().to_string())
+                .unwrap_or_default();
+            let stdout_text = stdout_buf
+                .lock()
+                .map(|g| String::from_utf8_lossy(&g).trim().to_string())
+                .unwrap_or_default();
             return Err(PproxyOracleError::ProcessFailed(format!(
-                "startup timeout after {:?}, stderr: {}",
-                timeout,
-                text.trim()
+                "startup timeout after {:?}, stderr: [{}], stdout: [{}]",
+                timeout, stderr_text, stdout_text
             )));
         }
 
