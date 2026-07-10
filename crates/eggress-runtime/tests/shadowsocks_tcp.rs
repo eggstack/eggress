@@ -123,7 +123,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -218,7 +218,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -334,7 +334,7 @@ upstream_group = "tcp-upstream"
 
         let listener_addr = {
             let addrs = state.listener_addrs.lock().unwrap();
-            addrs[0]
+            addrs[0].unwrap()
         };
         let _ = listener_addr;
 
@@ -433,7 +433,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect to eggress SOCKS5 listener
@@ -504,7 +504,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect through eggress SOCKS5 with a direct route (no upstream)
@@ -604,7 +604,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect to eggress HTTP listener
@@ -755,7 +755,7 @@ enabled = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect through SOCKS5 -> Shadowsocks -> echo

@@ -906,9 +906,9 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
         for (i, server) in servers.iter().enumerate() {
             let path = format!("reverse_servers[{}].control_bind", i);
             if !is_loopback_bind(&server.control_bind) {
-                let has_auth = server.auth_username.is_some() || server.auth_password.is_some();
-                let has_env_auth = server.auth_password_env.is_some();
-                if !has_auth && !has_env_auth {
+                let has_auth = server.auth_username.is_some()
+                    && (server.auth_password.is_some() || server.auth_password_env.is_some());
+                if !has_auth {
                     warnings.push(ConfigWarning {
                         path,
                         message: format!(
@@ -1171,7 +1171,7 @@ mod tests {
             reverse_servers: Some(vec![crate::model::ReverseServerConfig {
                 id: "rs1".to_string(),
                 control_bind: "0.0.0.0:8443".to_string(),
-                auth_username: None,
+                auth_username: Some("user".to_string()),
                 auth_password: None,
                 auth_password_env: Some("MY_SECRET".to_string()),
                 max_streams: None,

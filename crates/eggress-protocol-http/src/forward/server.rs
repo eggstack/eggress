@@ -54,7 +54,12 @@ where
 {
     match kind {
         RequestBodyKind::None => Ok(BodyCopyReport::default()),
-        RequestBodyKind::ContentLength(len) => copy_content_length_body(reader, writer, len).await,
+        RequestBodyKind::ContentLength(len) => {
+            if len > limits.max_decoded_body {
+                return Err(HttpError::MalformedRequest("decoded body too large".into()));
+            }
+            copy_content_length_body(reader, writer, len).await
+        }
         RequestBodyKind::Chunked => copy_chunked_body(reader, writer, limits).await,
     }
 }
@@ -483,6 +488,13 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
             }
             headers.push((name, value));
         }
+    }
+
+    // Per RFC 7230 §3.3.3, when both Content-Length and Transfer-Encoding
+    // are present, Transfer-Encoding takes precedence. A proxy MUST ignore
+    // Content-Length if Transfer-Encoding is present.
+    if is_chunked {
+        content_length = None;
     }
 
     Ok(ForwardResponse {

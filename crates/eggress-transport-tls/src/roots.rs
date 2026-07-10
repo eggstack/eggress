@@ -1,4 +1,4 @@
-use rustls::pki_types::CertificateDer;
+use rustls::pki_types::{pem::PemObject, CertificateDer};
 use rustls::RootCertStore;
 
 use crate::error::TlsError;
@@ -12,10 +12,9 @@ pub fn load_system_roots() -> Result<RootCertStore, TlsError> {
 
 /// Load CA certificates from PEM bytes into a `RootCertStore`.
 pub fn load_pem_roots(pem: &[u8]) -> Result<RootCertStore, TlsError> {
-    let mut reader = std::io::BufReader::new(pem);
     let mut store = RootCertStore::empty();
-    for item in rustls_pemfile::certs(&mut reader) {
-        let cert = item.map_err(|e| TlsError::PemParse(e.to_string()))?;
+    for cert in CertificateDer::pem_slice_iter(pem) {
+        let cert = cert.map_err(|e| TlsError::PemParse(e.to_string()))?;
         store
             .add(cert)
             .map_err(|e| TlsError::RootStore(e.to_string()))?;
@@ -25,12 +24,9 @@ pub fn load_pem_roots(pem: &[u8]) -> Result<RootCertStore, TlsError> {
 
 /// Load CA certificates from PEM bytes as raw `CertificateDer` values.
 pub fn load_pem_certs(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, TlsError> {
-    let mut reader = std::io::BufReader::new(pem);
-    let mut certs = Vec::new();
-    for item in rustls_pemfile::certs(&mut reader) {
-        let cert = item.map_err(|e| TlsError::PemParse(e.to_string()))?;
-        certs.push(cert);
-    }
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(pem)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| TlsError::PemParse(e.to_string()))?;
     Ok(certs)
 }
 

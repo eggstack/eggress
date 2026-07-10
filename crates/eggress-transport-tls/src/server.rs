@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use rustls::pki_types::{pem::PemObject, CertificateDer, PrivatePkcs8KeyDer};
 use rustls::ServerConfig;
 
 pub use crate::error::TlsError;
@@ -72,12 +72,9 @@ impl Default for TlsServerConfigBuilder {
 
 /// Parse a PEM certificate chain, returning all certificates found.
 fn load_cert_chain_pem(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, TlsError> {
-    let mut reader = std::io::BufReader::new(pem);
-    let mut certs = Vec::new();
-    for item in rustls_pemfile::certs(&mut reader) {
-        let cert = item.map_err(|e| TlsError::PemParse(e.to_string()))?;
-        certs.push(cert);
-    }
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(pem)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| TlsError::PemParse(e.to_string()))?;
     if certs.is_empty() {
         return Err(TlsError::NoCertificatesFound);
     }
@@ -86,12 +83,11 @@ fn load_cert_chain_pem(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, TlsEr
 
 /// Parse a PEM private key (PKCS#8 format).
 fn load_private_key_pem(pem: &[u8]) -> Result<PrivatePkcs8KeyDer<'static>, TlsError> {
-    let mut reader = std::io::BufReader::new(pem);
-    if let Some(item) = rustls_pemfile::pkcs8_private_keys(&mut reader).next() {
-        let key = item.map_err(|e| TlsError::PemParse(e.to_string()))?;
-        return Ok(PrivatePkcs8KeyDer::from(key.secret_pkcs8_der().to_vec()));
+    match PrivatePkcs8KeyDer::from_pem_slice(pem) {
+        Ok(key) => Ok(key),
+        Err(rustls::pki_types::pem::Error::NoItemsFound) => Err(TlsError::NoPrivateKeyFound),
+        Err(e) => Err(TlsError::PemParse(e.to_string())),
     }
-    Err(TlsError::NoPrivateKeyFound)
 }
 
 #[cfg(test)]

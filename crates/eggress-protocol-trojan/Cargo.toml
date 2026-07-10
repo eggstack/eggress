@@ -20,7 +20,6 @@ tokio-rustls.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 rcgen = "0.13"
-rustls-pemfile = "2"
 proptest.workspace = true
 
 [lints]

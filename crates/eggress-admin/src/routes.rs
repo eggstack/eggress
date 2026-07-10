@@ -236,21 +236,12 @@ pub async fn handle_request(
             }
             let snap = state.snapshot();
             let router = &snap.router;
-            let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
-                Ok(b) => b.to_bytes(),
-                Err(_) => {
-                    return build_json_response(
-                        400,
-                        serde_json::json!({"error": "failed to read request body"}).to_string(),
-                    );
+            let body_bytes = match collect_limited(req.into_body(), MAX_ADMIN_BODY).await {
+                Ok(b) => b,
+                Err(e) => {
+                    return build_json_response(400, serde_json::json!({"error": e}).to_string());
                 }
             };
-            if body_bytes.len() > MAX_ADMIN_BODY {
-                return build_json_response(
-                    413,
-                    serde_json::json!({"error": "request body too large"}).to_string(),
-                );
-            }
             let body: serde_json::Value = match serde_json::from_slice(&body_bytes) {
                 Ok(v) => v,
                 Err(_) => {
@@ -359,12 +350,25 @@ pub async fn handle_request(
                 },
             )
         }
-        "/metrics" => build_response(
-            200,
-            state.metrics.render_prometheus(),
-            "text/plain; version=0.0.4",
-        ),
-        "/pac" => {
+        "/metrics" => {
+            if state.metrics_enabled {
+                build_response(
+                    200,
+                    state.metrics.render_prometheus(),
+                    "text/plain; version=0.0.4",
+                )
+            } else {
+                build_not_found()
+            }
+        }
+        _ if path
+            == state
+                .snapshot()
+                .pac
+                .as_ref()
+                .map(|p| p.path.as_str())
+                .unwrap_or("/pac") =>
+        {
             if let Some(pac_config) = state.snapshot().pac.as_ref() {
                 let pac = generate_pac(pac_config);
                 build_response(200, pac, "application/x-ns-proxy-autoconfig")
@@ -381,4 +385,41 @@ pub async fn handle_request(
             build_not_found()
         }
     }
+}
+
+/// Collect a request body into bytes with a streaming size limit.
+///
+/// Returns an error if the body exceeds `max_bytes` before collection
+/// completes, avoiding unbounded memory allocation.
+async fn collect_limited(
+    body: hyper::body::Incoming,
+    max_bytes: usize,
+) -> Result<bytes::Bytes, &'static str> {
+    use http_body_util::BodyExt;
+
+    let mut collected = 0usize;
+    let mut chunks = Vec::new();
+    let mut body = std::pin::pin!(body);
+
+    loop {
+        match BodyExt::frame(&mut body).await {
+            None => break,
+            Some(Ok(frame)) => {
+                if let Some(data) = frame.data_ref() {
+                    collected += data.len();
+                    if collected > max_bytes {
+                        return Err("request body too large");
+                    }
+                }
+                chunks.push(frame.into_data().unwrap_or_default());
+            }
+            Some(Err(_)) => return Err("failed to read request body"),
+        }
+    }
+
+    let mut result = bytes::BytesMut::with_capacity(collected.min(max_bytes));
+    for chunk in chunks {
+        result.extend_from_slice(&chunk);
+    }
+    Ok(result.freeze())
 }

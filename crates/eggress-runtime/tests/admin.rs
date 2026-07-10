@@ -127,6 +127,7 @@ fn test_state_with_listeners() -> AdminState {
             eggress_udp::limits::UdpLimits::default(),
         )),
         reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
+        metrics_enabled: true,
     }
 }
 

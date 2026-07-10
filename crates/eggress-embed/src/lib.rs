@@ -578,13 +578,13 @@ impl Drop for EggressHandle {
 }
 
 fn listener_addr_or_configured(
-    bound_addrs: &[SocketAddr],
+    bound_addrs: &[Option<SocketAddr>],
     idx: usize,
     configured_bind: &str,
 ) -> SocketAddr {
     bound_addrs
         .get(idx)
-        .copied()
+        .and_then(|a| *a)
         .or_else(|| configured_bind.parse().ok())
         .unwrap_or_else(default_listener_addr)
 }
@@ -799,7 +799,7 @@ mod tests {
         let bound: SocketAddr = "127.0.0.1:1234".parse().unwrap();
 
         assert_eq!(
-            listener_addr_or_configured(&[bound], 0, "127.0.0.1:5678"),
+            listener_addr_or_configured(&[Some(bound)], 0, "127.0.0.1:5678"),
             bound
         );
     }

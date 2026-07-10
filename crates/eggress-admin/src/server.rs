@@ -39,11 +39,21 @@ impl AdminServer {
                             let state = state.clone();
                             async move { Ok::<_, std::convert::Infallible>(handle_request(req, &state).await) }
                         });
-                        if let Err(e) = hyper::server::conn::http1::Builder::new()
-                            .serve_connection(TokioIo::new(stream), service)
-                            .await
+                        let conn = hyper::server::conn::http1::Builder::new()
+                            .serve_connection(TokioIo::new(stream), service);
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(30),
+                            conn,
+                        )
+                        .await
                         {
-                            tracing::debug!("admin connection error: {e}");
+                            Err(_) => {
+                                tracing::debug!("admin connection timed out");
+                            }
+                            Ok(Err(e)) => {
+                                tracing::debug!("admin connection error: {e}");
+                            }
+                            Ok(Ok(())) => {}
                         }
                     });
                 }
@@ -98,6 +108,8 @@ pub struct AdminState {
     /// Registry of reverse servers. Empty by default — populating it
     /// enables the `/-/reverse` admin route.
     pub reverse_registry: Arc<ReverseRegistry>,
+    /// Whether the `/metrics` endpoint is enabled.
+    pub metrics_enabled: bool,
 }
 
 impl AdminState {

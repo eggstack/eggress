@@ -146,7 +146,7 @@ all = [
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -236,7 +236,7 @@ all = [
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -326,7 +326,7 @@ all = [
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect via SOCKS5
@@ -444,7 +444,7 @@ enabled = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -568,7 +568,7 @@ all = [
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)

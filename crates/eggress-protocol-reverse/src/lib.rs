@@ -1,5 +1,4 @@
-use bytes::BytesMut;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub mod client;
@@ -48,8 +47,9 @@ pub async fn write_auth(
     username: &str,
     password: &str,
 ) -> Result<(), ProtocolError> {
-    let auth = format!("{}:{}", username, password);
+    let auth = format!("{}:{}\n", username, password);
     stream.write_all(auth.as_bytes()).await?;
+    stream.flush().await?;
     Ok(())
 }
 
@@ -95,14 +95,18 @@ pub async fn server_auth_handshake(
     expected_user: Option<&str>,
     expected_pass: Option<&str>,
 ) -> Result<String, ProtocolError> {
-    // Read auth bytes (raw user:pass string)
-    let mut auth_buf = BytesMut::with_capacity(1024);
-    if auth_buf.capacity() < 1024 {
-        auth_buf.reserve(1024);
+    // Read auth bytes (newline-delimited user:pass string)
+    let mut auth_buf = Vec::with_capacity(1024);
+    {
+        let mut reader = tokio::io::BufReader::new(&mut *stream);
+        reader.read_until(b'\n', &mut auth_buf).await?;
     }
-    let n = stream.read_buf(&mut auth_buf).await?;
-    if n == 0 {
+    if auth_buf.is_empty() {
         return Err(ProtocolError::ConnectionClosed);
+    }
+    // Trim trailing newline if present
+    if auth_buf.last() == Some(&b'\n') {
+        auth_buf.pop();
     }
 
     let auth_str = String::from_utf8_lossy(&auth_buf).to_string();

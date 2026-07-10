@@ -468,7 +468,7 @@ async fn start_eggress_from_toml(
         if addrs.is_empty() {
             return Err("eggress has no listener addresses".to_string());
         }
-        addrs[0]
+        addrs[0].unwrap()
     };
     Ok((listener_addr, token))
 }

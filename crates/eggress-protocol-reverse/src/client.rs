@@ -211,8 +211,9 @@ impl ReverseClient {
 
         // Authenticate
         let authenticating_start = Instant::now();
-        let stream = if let Some(ref username) = self.config.auth_username {
-            let password = self.config.auth_password.as_deref().unwrap_or("");
+        let stream = if let (Some(ref username), Some(ref password)) =
+            (&self.config.auth_username, &self.config.auth_password)
+        {
             let mut s = stream;
             client_auth_handshake(&mut s, username, password).await?;
             if let Some(ref m) = self.metrics {

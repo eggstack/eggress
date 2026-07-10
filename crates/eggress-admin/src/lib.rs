@@ -66,6 +66,7 @@ mod tests {
                 eggress_udp::limits::UdpLimits::default(),
             )),
             reverse_registry: Arc::new(ReverseRegistry::new()),
+            metrics_enabled: true,
         }
     }
 
@@ -91,6 +92,7 @@ mod tests {
                 eggress_udp::limits::UdpLimits::default(),
             )),
             reverse_registry: Arc::new(ReverseRegistry::new()),
+            metrics_enabled: true,
         }
     }
 

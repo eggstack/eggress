@@ -62,7 +62,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let concurrency = 100;
@@ -138,7 +138,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Open UDP associations up to the configured limit
@@ -214,7 +214,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Baseline FD count
@@ -347,7 +347,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Baseline FD count
@@ -497,7 +497,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Baseline FD count

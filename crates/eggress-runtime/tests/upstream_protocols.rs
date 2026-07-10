@@ -366,7 +366,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect to eggress SOCKS5 listener
@@ -458,7 +458,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect to eggress SOCKS5 listener
@@ -553,7 +553,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect to eggress SOCKS5 listener

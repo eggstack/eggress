@@ -176,7 +176,7 @@ fn get_admin_addr(state: &eggress_runtime::RuntimeState) -> String {
 
 fn get_listener_addr(state: &eggress_runtime::RuntimeState) -> std::net::SocketAddr {
     let addrs = state.listener_addrs.lock().unwrap();
-    addrs[0]
+    addrs[0].unwrap()
 }
 
 fn metric_value_with_labels(body: &str, name: &str, labels: &[(&str, &str)]) -> Option<f64> {

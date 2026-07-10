@@ -34,7 +34,7 @@ fn get_admin_addr(state: &eggress_runtime::RuntimeState) -> String {
 
 fn get_listener_addr(state: &eggress_runtime::RuntimeState) -> std::net::SocketAddr {
     let addrs = state.listener_addrs.lock().unwrap();
-    addrs[0]
+    addrs[0].unwrap()
 }
 
 async fn start_tcp_echo() -> std::net::SocketAddr {

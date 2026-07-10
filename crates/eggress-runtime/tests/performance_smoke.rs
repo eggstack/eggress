@@ -108,7 +108,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let concurrency = 50;
@@ -198,6 +198,7 @@ async fn performance_udp_relay_smoke() {
         limits: UdpLimits::default(),
         listener: "test-perf-udp".to_string(),
         generation: 1,
+        allow_private_egress: true,
     };
     let cancel = CancellationToken::new();
     let relay_cancel = cancel.clone();
@@ -274,7 +275,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Allow baseline to stabilize
@@ -369,7 +370,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Open 20 SOCKS5 sessions concurrently, each doing CONNECT + echo

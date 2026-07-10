@@ -62,13 +62,11 @@ impl UdpTargetFlow {
 }
 
 async fn resolve_target(target: &SocksAddr) -> Result<SocketAddr, UdpError> {
-    use std::net::ToSocketAddrs;
     let addr_str = format!("{}:{}", target.host_str(), target.port());
-    addr_str
-        .to_socket_addrs()
-        .map_err(|e| UdpError::Io(std::io::Error::other(e)))?
-        .next()
-        .ok_or(UdpError::UnresolvedTarget)
+    let mut addrs = tokio::net::lookup_host(&addr_str)
+        .await
+        .map_err(UdpError::Io)?;
+    addrs.next().ok_or(UdpError::UnresolvedTarget)
 }
 
 pub fn encode_response(target: &SocksAddr, payload: &[u8]) -> Vec<u8> {

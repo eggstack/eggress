@@ -125,6 +125,8 @@ pub struct CompiledListenerUdpConfig {
     pub max_targets_per_association: usize,
     pub max_datagram_size: usize,
     pub client_pin: bool,
+    pub allow_private_egress: bool,
+    pub max_associations_global: usize,
 }
 
 impl Default for CompiledListenerUdpConfig {
@@ -140,6 +142,8 @@ impl Default for CompiledListenerUdpConfig {
             max_targets_per_association: 64,
             max_datagram_size: 65535,
             client_pin: true,
+            allow_private_egress: true,
+            max_associations_global: 1024,
         }
     }
 }
@@ -702,12 +706,27 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
 
             let unix = compile_unix_listener_config(l.unix.as_ref())?;
 
+            let auth = l.auth.as_ref().map(|a| -> Result<_, ConfigError> {
+                let resolved_password = resolve_password(
+                    a.password.as_deref(),
+                    a.password_env.as_deref(),
+                    &path,
+                )?;
+                Ok(crate::model::AuthConfig {
+                    auth_type: a.auth_type.clone(),
+                    username: a.username.clone(),
+                    password: resolved_password,
+                    password_env: None,
+                })
+            })
+            .transpose()?;
+
             Ok(ListenerConfig {
                 name: l.name.clone(),
                 bind: l.bind.clone(),
                 protocols,
                 connection_limit: l.connection_limit,
-                auth: l.auth.clone(),
+                auth,
                 udp,
                 tls,
                 shadowsocks: l.shadowsocks.clone(),
@@ -862,6 +881,20 @@ fn compile_listener_udp_config(
 
     let client_pin = udp.client_pin.unwrap_or(defaults.client_pin);
 
+    let allow_private_egress = udp
+        .allow_private_egress
+        .unwrap_or(defaults.allow_private_egress);
+
+    let max_associations_global = udp
+        .max_associations_global
+        .unwrap_or(defaults.max_associations_global);
+    if max_associations_global == 0 {
+        return Err(ConfigError::validation(
+            &format!("{}.max_associations_global", udp_path),
+            "must be greater than 0",
+        ));
+    }
+
     Ok(CompiledListenerUdpConfig {
         mode,
         enabled,
@@ -873,6 +906,8 @@ fn compile_listener_udp_config(
         max_targets_per_association,
         max_datagram_size,
         client_pin,
+        allow_private_egress,
+        max_associations_global,
     })
 }
 
@@ -1222,6 +1257,13 @@ fn compile_reverse_servers(
                 s.auth_password_env.as_deref(),
                 &path,
             )?;
+
+            if s.auth_username.is_some() != auth_password.is_some() {
+                return Err(ConfigError::validation(
+                    &path,
+                    "reverse server auth requires both auth_username and auth_password",
+                ));
+            }
 
             let max_streams = s.max_streams.unwrap_or(1024);
 

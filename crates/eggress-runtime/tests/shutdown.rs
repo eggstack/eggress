@@ -355,7 +355,7 @@ direct = true
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
         assert!(!addrs.is_empty(), "should have at least one listener");
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Connect through SOCKS5 to the slow backend
@@ -443,7 +443,7 @@ enabled = true
     }
     assert!(state.readiness.load(Ordering::Relaxed));
 
-    let listener_addr = state.listener_addrs.lock().unwrap()[0];
+    let listener_addr = state.listener_addrs.lock().unwrap()[0].unwrap();
     let admin_addr = state
         .admin_local_addr
         .lock()
@@ -534,7 +534,7 @@ enabled = true
     }
     assert!(state.readiness.load(Ordering::Relaxed));
 
-    let listener_addr = state.listener_addrs.lock().unwrap()[0];
+    let listener_addr = state.listener_addrs.lock().unwrap()[0].unwrap();
     let admin_addr = state
         .admin_local_addr
         .lock()

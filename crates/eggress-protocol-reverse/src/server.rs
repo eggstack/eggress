@@ -395,7 +395,7 @@ impl ReverseServer {
         info!(peer = %peer_addr, state = ?ControlState::Connecting, "new control connection");
 
         // Authenticate if configured
-        let redacted = if config.auth_username.is_some() || config.auth_password.is_some() {
+        let redacted = if config.auth_username.is_some() && config.auth_password.is_some() {
             let authenticating_start = Instant::now();
             let result = server_auth_handshake(
                 &mut stream,

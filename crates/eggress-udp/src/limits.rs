@@ -33,6 +33,7 @@ impl UdpLimits {
     /// `max_associations_global` and `max_associations_per_listener` are not
     /// per-listener TOML fields, so they come from separate sources (or use defaults).
     pub fn from_listener_config(
+        max_associations_global: usize,
         max_associations_per_listener: usize,
         max_targets_per_association: usize,
         max_datagram_size: usize,
@@ -41,7 +42,7 @@ impl UdpLimits {
         target_idle_timeout: Duration,
     ) -> Self {
         Self {
-            max_associations_global: 1024,
+            max_associations_global,
             max_associations_per_listener,
             max_targets_per_association,
             max_datagram_size,

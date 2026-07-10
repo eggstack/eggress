@@ -72,7 +72,7 @@ Each listener defines a TCP bind address and accepted protocols.
 |-------|------|----------|-------------|
 | `name` | string | yes | Unique listener identifier |
 | `bind` | `"host:port"` | yes | Socket address to bind |
-| `protocols` | `["http", "socks4", "socks5", "shadowsocks", "h2", "ws", "wss", "raw", "tunnel"]` | yes | Accepted protocol list |
+| `protocols` | `["http", "socks4", "socks5", "shadowsocks", "trojan"]` | yes | Accepted protocol list |
 | `connection_limit` | u32 | 1024 | Max concurrent connections (semaphore) |
 | `auth` | table | none | Inbound authentication policy |
 | `udp_enabled` | bool | false | Legacy UDP flag (compatibility sugar) |
@@ -226,26 +226,6 @@ Supported ALPN values:
 
 ALPN is optional. If omitted, no protocol negotiation occurs during TLS handshake.
 
-### `[listeners.raw]`
-
-Raw fixed-target tunnel configuration. When configured, the listener accepts TCP connections and forwards them directly to the configured target without protocol negotiation.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `target` | string | yes | Fixed target address (`host:port`) |
-
-```toml
-[[listeners]]
-name = "raw-in"
-bind = "0.0.0.0:9090"
-protocols = ["raw"]
-
-[listeners.raw]
-target = "internal-server:8080"
-```
-
-Raw tunnels have no authentication or encryption. Target must be trusted. Network-level access control is the operator's responsibility.
-
 ---
 
 ## `[[upstreams]]`
@@ -262,7 +242,7 @@ Raw tunnels have no authentication or encryption. Target must be trusted. Networ
 protocol://[user:pass@]host:port[/rule][+tls]
 ```
 
-**Protocols:** `http`, `socks4`, `socks5`, `shadowsocks`, `trojan`, `h2`, `ws`, `wss`, `raw`, `tunnel`
+**Protocols:** `http`, `socks4`, `socks5`, `shadowsocks`, `trojan`
 
 **TLS suffix:** `+tls` enables TLS on the connection (e.g., `socks5+tls://proxy:1080`)
 
@@ -311,11 +291,9 @@ members = ["ss-udp"]
 
 **Trojan URI:** `trojan://password@host:port`
 
-**H2 CONNECT URI:** `h2://host:port` — HTTP/2 CONNECT tunnel. Requires TLS with ALPN `h2`. See Phase 26 (Advanced Transports).
-
-**WebSocket URI:** `ws://host:port` or `wss://host:port` — WebSocket tunnel. `wss` requires TLS. See Phase 26 (Advanced Transports).
-
-**Raw tunnel URI:** `raw://host:port` or `tunnel://host:port` — Raw fixed-target TCP tunnel. No protocol negotiation; target is fixed by config. See Phase 26 (Advanced Transports).
+> **Note:** `h2`, `ws`/`wss`, `raw`/`tunnel` protocols are implemented as protocol
+> crates only and are not integrated as inbound or upstream protocols through the
+> runtime supervisor. They are rejected by `compile_protocol()` and `parse_listener_uri`.
 
 ### `[upstreams.health]`
 
@@ -362,8 +340,8 @@ The wire format matches pproxy's raw-relay protocol:
 | `auth_username` | string | no | Authentication username for connecting clients |
 | `auth_password` | string | no | Authentication password (plaintext) |
 | `auth_password_env` | string | no | Environment variable containing the authentication password |
-| `max_streams` | integer | no | Max concurrent streams per client (default: 256) |
-| `heartbeat_interval` | duration string | no | Heartbeat interval to detect dead connections (default: `"30s"`) |
+| `max_streams` | integer | no | Max concurrent streams per client (default: 1024) |
+| `heartbeat_interval` | duration string | no | Heartbeat interval to detect dead connections (default: `"300s"`) |
 
 ```toml
 [[reverse_servers]]
@@ -372,7 +350,7 @@ control_bind = "0.0.0.0:9443"
 auth_username = "tunnel"
 auth_password_env = "RS_AUTH_PASSWORD"
 max_streams = 512
-heartbeat_interval = "15s"
+heartbeat_interval = "60s"
 ```
 
 ### Concurrency and pproxy Compatibility
@@ -433,8 +411,8 @@ above for protocol details).
 | `auth_password` | string | no | Authentication password (plaintext) |
 | `auth_password_env` | string | no | Environment variable containing the authentication password |
 | `reconnect_initial` | duration string | no | Initial reconnect backoff (default: `"1s"`) |
-| `reconnect_max` | duration string | no | Max reconnect backoff (default: `"60s"`) |
-| `heartbeat_interval` | duration string | no | Heartbeat interval to keep the control channel alive (default: `"30s"`) |
+| `reconnect_max` | duration string | no | Max reconnect backoff (default: `"30s"`) |
+| `heartbeat_interval` | duration string | no | Heartbeat interval to keep the control channel alive (default: `"60s"`) |
 
 ```toml
 [[reverse_clients]]
@@ -634,7 +612,7 @@ control_bind = "0.0.0.0:9443"
 auth_username = "tunnel"
 auth_password_env = "RS_PASSWORD"
 max_streams = 256
-heartbeat_interval = "30s"
+heartbeat_interval = "300s"
 
 [[reverse_clients]]
 id = "rc-branch"
@@ -642,8 +620,8 @@ server_addr = "hq.example.com:9443"
 auth_username = "tunnel"
 auth_password_env = "RC_PASSWORD"
 reconnect_initial = "1s"
-reconnect_max = "60s"
-heartbeat_interval = "30s"
+reconnect_max = "30s"
+heartbeat_interval = "60s"
 
 [[rules]]
 id = "block-ads"

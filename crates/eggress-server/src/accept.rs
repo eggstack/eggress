@@ -489,9 +489,16 @@ async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError
     let request = read_socks4_request(&mut reader)
         .await
         .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
-    let target = TargetAddr {
-        host: TargetHost::Ip(request.addr.ip()),
-        port: request.addr.port(),
+    let target = if let Some(ref domain) = request.domain {
+        TargetAddr {
+            host: TargetHost::Domain(domain.clone()),
+            port: request.port,
+        }
+    } else {
+        TargetAddr {
+            host: TargetHost::Ip(request.addr.ip()),
+            port: request.addr.port(),
+        }
     };
     let identity = if request.user_id.is_empty() {
         ClientIdentity::Anonymous

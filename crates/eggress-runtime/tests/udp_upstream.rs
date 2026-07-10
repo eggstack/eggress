@@ -114,7 +114,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -189,7 +189,7 @@ bind = "127.0.0.1:0"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let admin_addr = state
@@ -353,7 +353,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -462,7 +462,7 @@ all = [
     // 5. Connect to Eggress SOCKS5 and do UDP ASSOCIATE
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -572,7 +572,7 @@ all = [
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -796,7 +796,7 @@ all = [
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)

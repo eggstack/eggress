@@ -238,7 +238,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Verify in_flight and active start at zero
@@ -383,7 +383,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -469,7 +469,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Verify registry starts empty
@@ -568,7 +568,7 @@ upstream_group = "tcp-upstream"
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Open a proxied TCP connection
@@ -662,7 +662,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     // Create a UDP association

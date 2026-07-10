@@ -31,6 +31,7 @@ pub struct StandaloneUdpConfig {
     pub limits: UdpLimits,
     pub listener: String,
     pub generation: u64,
+    pub allow_private_egress: bool,
 }
 
 struct ResponseMsg {
@@ -82,7 +83,7 @@ pub async fn standalone_udp_relay(
                     }
                 };
 
-                if validate_standalone_target(&request.target, true).is_err() {
+                if validate_standalone_target(&request.target, config.allow_private_egress).is_err() {
                     config.udp_metrics.record_standalone_rejected();
                     continue;
                 }
@@ -398,7 +399,9 @@ pub async fn standalone_udp_relay(
                     },
                 }
             }
-            _ = idle_tick.tick() => {}
+            _ = idle_tick.tick() => {
+                reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
+            }
             _ = target_cleanup_tick.tick() => {
                 reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
             }
@@ -487,6 +490,7 @@ mod tests {
             limits: UdpLimits::default(),
             listener: "test-standalone".to_string(),
             generation: 1,
+            allow_private_egress: true,
         }
     }
 
@@ -500,6 +504,7 @@ mod tests {
             limits,
             listener: "test-standalone".to_string(),
             generation: 1,
+            allow_private_egress: true,
         }
     }
 

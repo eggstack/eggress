@@ -60,6 +60,7 @@ fn standalone_config(routing: Arc<dyn eggress_routing::RouteService>) -> Standal
         limits: UdpLimits::default(),
         listener: "test-standalone".to_string(),
         generation: 1,
+        allow_private_egress: true,
     }
 }
 
@@ -73,6 +74,7 @@ fn standalone_config_with_limits(
         limits,
         listener: "test-standalone".to_string(),
         generation: 1,
+        allow_private_egress: true,
     }
 }
 
@@ -86,6 +88,7 @@ fn standalone_config_with_metrics(
         limits: UdpLimits::default(),
         listener: "test-standalone".to_string(),
         generation: 1,
+        allow_private_egress: true,
     }
 }
 

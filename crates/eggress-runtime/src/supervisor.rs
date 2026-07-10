@@ -89,7 +89,11 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
                 ListenerInfo {
                     name: lcfg.name.clone(),
                     bind: lcfg.bind.clone(),
-                    local_addr: addrs.get(idx).map(|a| a.to_string()).unwrap_or_default(),
+                    local_addr: addrs
+                        .get(idx)
+                        .and_then(|a| *a)
+                        .map(|a| a.to_string())
+                        .unwrap_or_default(),
                     protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
                     udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
                     mode,
@@ -297,6 +301,7 @@ async fn prepare_shadowsocks_udp_relay(
         udp_metrics: state.udp_metrics.clone(),
         shadowsocks_metrics: Some(state.shadowsocks_metrics.clone()),
         limits: eggress_udp::limits::UdpLimits::from_listener_config(
+            udp_cfg.max_associations_global,
             udp_cfg.max_associations,
             udp_cfg.max_targets_per_association,
             udp_cfg.max_datagram_size,
@@ -308,6 +313,7 @@ async fn prepare_shadowsocks_udp_relay(
         generation: state.snapshot.load().generation,
         method,
         password: ss.password.clone(),
+        allow_private_egress: udp_cfg.allow_private_egress,
     };
 
     Ok((socket, relay_config))
@@ -402,6 +408,7 @@ impl eggress_server::UdpService for RuntimeUdpService {
                 routing: routing as Arc<dyn RouteService>,
                 udp_metrics: udp_metrics.clone(),
                 limits: eggress_udp::limits::UdpLimits::from_listener_config(
+                    udp_config.max_associations_global,
                     udp_config.max_associations,
                     udp_config.max_targets_per_association,
                     udp_config.max_datagram_size,
@@ -465,7 +472,7 @@ pub struct RuntimeState {
     pub active_connections: Arc<AtomicU64>,
     pub connection_counter: Arc<AtomicU64>,
     pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
-    pub listener_addrs: Arc<Mutex<Vec<std::net::SocketAddr>>>,
+    pub listener_addrs: Arc<Mutex<Vec<Option<std::net::SocketAddr>>>>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
     pub shadowsocks_metrics: Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
@@ -502,8 +509,12 @@ pub struct ServiceSupervisor {
 
 impl ServiceSupervisor {
     pub fn start(config_path: &str) -> Result<Self, RuntimeError> {
-        let rt_config = eggress_config::load_and_validate(config_path)
+        let (rt_config, warnings) = eggress_config::load_and_validate_with_warnings(config_path)
             .map_err(|e| RuntimeError::Config(e.to_string()))?;
+
+        for warning in &warnings {
+            tracing::warn!("config security warning: {warning}");
+        }
 
         for lcfg in &rt_config.listeners {
             if lcfg.unix.is_none() {
@@ -529,8 +540,17 @@ impl ServiceSupervisor {
         let active_connections = Arc::new(AtomicU64::new(0));
         let connection_counter = Arc::new(AtomicU64::new(1));
 
+        let udp_global_limit = rt_config
+            .listeners
+            .iter()
+            .find_map(|l| l.udp.as_ref().map(|u| u.max_associations_global))
+            .unwrap_or(1024);
+
         let udp_registry = Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
-            eggress_udp::limits::UdpLimits::default(),
+            eggress_udp::limits::UdpLimits {
+                max_associations_global: udp_global_limit,
+                ..Default::default()
+            },
         ));
 
         let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
@@ -949,10 +969,28 @@ impl ServiceSupervisor {
                 .collect();
             drop(listener_infos);
 
-            // Store listener addresses for admin snapshot
+            // Store listener addresses for admin snapshot, indexed by config order.
+            // Build a lookup map from all listener types (standard, transparent, unix).
             {
-                let addrs: Vec<std::net::SocketAddr> =
-                    prepared.iter().map(|p| p.local_addr).collect();
+                let mut addr_map: std::collections::HashMap<String, Option<std::net::SocketAddr>> =
+                    std::collections::HashMap::new();
+                for p in &prepared {
+                    addr_map.insert(p.name.clone(), Some(p.local_addr));
+                }
+                for (name, transparent_listener, _, _, _, _, _, _, _) in &transparent_listener_args
+                {
+                    let addr = transparent_listener.local_addr().ok();
+                    addr_map.insert(name.clone(), addr);
+                }
+                #[cfg(unix)]
+                for (name, _, _, _, _, _, _, _, _) in &unix_listener_args {
+                    // Unix domain sockets don't have a meaningful TCP socket address
+                    addr_map.insert(name.clone(), None);
+                }
+                let addrs: Vec<Option<std::net::SocketAddr>> = listener_configs
+                    .iter()
+                    .map(|lcfg| addr_map.get(&lcfg.name).copied().flatten())
+                    .collect();
                 *state_ref
                     .listener_addrs
                     .lock()
@@ -1668,41 +1706,59 @@ impl ServiceSupervisor {
                 }
             }
 
-            if let Some(ref admin_cfg) = admin_config {
+            // Pre-bind admin listener before marking readiness so bind failures
+            // are surfaced as startup errors rather than silent background failures.
+            let pre_bound_admin = if let Some(ref admin_cfg) = admin_config {
                 if admin_cfg.enabled {
                     let bind = admin_cfg.bind.clone();
-                    let admin_cancel = admin_cancel.clone();
-                    let state_ref = state_ref.clone();
-                    let provider: Arc<dyn AdminSnapshotProvider> = listener_infos_provider.clone();
-                    admin_tasks.spawn(async move {
-                        let server =
-                            match eggress_admin::AdminServer::new(&bind, admin_cancel).await {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    tracing::error!("failed to bind admin on {bind}: {e}");
-                                    return;
-                                }
-                            };
-                        if let Ok(addr) = server.local_addr() {
-                            *state_ref
-                                .admin_local_addr
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner()) = Some(addr);
-                        }
-                        let admin_state = eggress_admin::AdminState {
-                            metrics: state_ref.metrics.clone(),
-                            start_time: state_ref.start_time,
-                            readiness: state_ref.readiness.clone(),
-                            active_connections: Some(state_ref.active_connections.clone()),
-                            provider,
-                            udp_registry: state_ref.udp_registry.clone(),
-                            reverse_registry: state_ref.reverse_registry.clone(),
+                    let admin_cancel_token = admin_cancel.clone();
+                    let server =
+                        match eggress_admin::AdminServer::new(&bind, admin_cancel_token).await {
+                            Ok(s) => Some(s),
+                            Err(e) => {
+                                return Err(RuntimeError::ListenerBind {
+                                    addr: bind,
+                                    source: std::io::Error::new(
+                                        std::io::ErrorKind::AddrInUse,
+                                        e.to_string(),
+                                    ),
+                                });
+                            }
                         };
-                        if let Err(e) = server.run(admin_state).await {
-                            tracing::error!("admin server error: {e}");
-                        }
-                    });
+                    server
+                } else {
+                    None
                 }
+            } else {
+                None
+            };
+
+            if let Some(server) = pre_bound_admin {
+                let admin_cfg = admin_config.as_ref().unwrap();
+                let metrics_enabled = admin_cfg.metrics;
+                let state_ref = state_ref.clone();
+                let provider: Arc<dyn AdminSnapshotProvider> = listener_infos_provider.clone();
+                if let Ok(addr) = server.local_addr() {
+                    *state_ref
+                        .admin_local_addr
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = Some(addr);
+                }
+                admin_tasks.spawn(async move {
+                    let admin_state = eggress_admin::AdminState {
+                        metrics: state_ref.metrics.clone(),
+                        start_time: state_ref.start_time,
+                        readiness: state_ref.readiness.clone(),
+                        active_connections: Some(state_ref.active_connections.clone()),
+                        provider,
+                        udp_registry: state_ref.udp_registry.clone(),
+                        reverse_registry: state_ref.reverse_registry.clone(),
+                        metrics_enabled,
+                    };
+                    if let Err(e) = server.run(admin_state).await {
+                        tracing::error!("admin server error: {e}");
+                    }
+                });
             }
 
             readiness.store(true, Ordering::Release);

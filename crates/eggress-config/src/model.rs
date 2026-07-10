@@ -84,6 +84,8 @@ pub struct ListenerUdpConfig {
     pub max_targets_per_association: Option<usize>,
     pub max_datagram_size: Option<usize>,
     pub client_pin: Option<bool>,
+    pub allow_private_egress: Option<bool>,
+    pub max_associations_global: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

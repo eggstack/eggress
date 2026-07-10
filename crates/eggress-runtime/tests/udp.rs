@@ -81,7 +81,7 @@ protocols = ["socks5"]
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -138,7 +138,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -352,7 +352,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -433,7 +433,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -495,7 +495,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -557,7 +557,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -617,7 +617,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -676,7 +676,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -733,7 +733,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     for _ in 0..3 {
@@ -791,7 +791,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     for _ in 0..5 {
@@ -852,7 +852,7 @@ direct = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -916,7 +916,7 @@ enabled = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -1020,7 +1020,7 @@ enabled = true
 
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
 
     let mut stream = tokio::net::TcpStream::connect(listener_addr)
@@ -1103,6 +1103,7 @@ fn standalone_config(routing: Arc<dyn eggress_routing::RouteService>) -> Standal
         limits: UdpLimits::default(),
         listener: "test-standalone".to_string(),
         generation: 1,
+        allow_private_egress: true,
     }
 }
 
@@ -1116,6 +1117,7 @@ fn standalone_config_with_limits(
         limits,
         listener: "test-standalone".to_string(),
         generation: 1,
+        allow_private_egress: true,
     }
 }
 

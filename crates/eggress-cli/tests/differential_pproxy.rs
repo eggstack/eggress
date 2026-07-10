@@ -1787,7 +1787,7 @@ async fn start_eggress_from_toml_running(
     wait_ready(&state).await;
     let listener_addr = {
         let addrs = state.listener_addrs.lock().unwrap();
-        addrs[0]
+        addrs[0].unwrap()
     };
     (listener_addr, token, jh)
 }
@@ -4604,6 +4604,7 @@ async fn start_eggress_standalone_udp(
         limits,
         listener: "differential-test".to_string(),
         generation: 1,
+        allow_private_egress: true,
     };
 
     let jh = tokio::spawn(async move {

@@ -34,6 +34,7 @@ pub struct ShadowsocksStandaloneUdpConfig {
     pub generation: u64,
     pub method: eggress_protocol_shadowsocks::CipherMethod,
     pub password: String,
+    pub allow_private_egress: bool,
 }
 
 struct ResponseMsg {
@@ -114,7 +115,7 @@ pub async fn shadowsocks_standalone_udp_relay(
 
                 let target_socks = target_to_socks_addr(&target_addr);
 
-                if validate_standalone_target(&target_socks, true).is_err() {
+                if validate_standalone_target(&target_socks, config.allow_private_egress).is_err() {
                     config.udp_metrics.record_standalone_rejected();
                     continue;
                 }
@@ -436,7 +437,9 @@ pub async fn shadowsocks_standalone_udp_relay(
                     },
                 }
             }
-            _ = idle_tick.tick() => {}
+            _ = idle_tick.tick() => {
+                reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
+            }
             _ = target_cleanup_tick.tick() => {
                 reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
             }
@@ -527,6 +530,7 @@ mod tests {
             generation: 1,
             method: eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
             password: "test-password-123456".to_string(),
+            allow_private_egress: true,
         }
     }
 

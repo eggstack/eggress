@@ -33,7 +33,13 @@ async fn wait_ready(state: &eggress_runtime::RuntimeState) {
 }
 
 fn get_addrs(state: &eggress_runtime::RuntimeState) -> Vec<std::net::SocketAddr> {
-    state.listener_addrs.lock().unwrap().clone()
+    state
+        .listener_addrs
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|a| *a)
+        .collect()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
