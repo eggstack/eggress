@@ -36,6 +36,12 @@ pub fn is_reserved_or_private_ip(ip: &IpAddr) -> bool {
                 || is_v4_this_network(v4)
         }
         IpAddr::V6(v6) => {
+            // IPv4-mapped IPv6 addresses are another representation of an
+            // IPv4 destination. Treat them identically so `::ffff:127.0.0.1`
+            // cannot bypass the private/reserved-address guard.
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_reserved_or_private_ip(&IpAddr::V4(v4));
+            }
             v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
@@ -235,6 +241,12 @@ mod tests {
     #[test]
     fn reserved_ipv6_link_local() {
         let ip = "fe80::1".parse::<Ipv6Addr>().unwrap();
+        assert!(is_reserved_or_private_ip(&IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn reserved_ipv4_mapped_ipv6() {
+        let ip = "::ffff:127.0.0.1".parse::<Ipv6Addr>().unwrap();
         assert!(is_reserved_or_private_ip(&IpAddr::V6(ip)));
     }
 

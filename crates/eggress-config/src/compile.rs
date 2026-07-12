@@ -1086,7 +1086,7 @@ fn compile_rules(config: &ConfigFile) -> Result<Vec<eggress_routing::CompiledRul
                 "rules_file routes all rules to a single group; multiple groups are not supported with rules_file — use explicit [[rules]] instead",
             ));
         }
-        let content = std::fs::read_to_string(rules_file_path).map_err(|e| {
+        let content = crate::file::load_rules_file(rules_file_path).map_err(|e| {
             ConfigError::validation(
                 "rules_file",
                 &format!("failed to read '{}': {}", rules_file_path, e),

@@ -17,6 +17,31 @@ use crate::error::RuntimeError;
 use crate::platform::{check_capability, PlatformCapability};
 use crate::snapshot::{compile_runtime_snapshot, CompiledRuntimeSnapshot};
 
+/// Per-listener connection slot for listener implementations that cannot use
+/// the core TCP listener wrapper (transparent and Unix sockets).
+struct ListenerConnectionSlot {
+    active: Arc<AtomicU64>,
+}
+
+impl ListenerConnectionSlot {
+    fn try_acquire(active: &Arc<AtomicU64>, limit: u64) -> Option<Self> {
+        active
+            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |current| {
+                (current < limit).then_some(current + 1)
+            })
+            .ok()
+            .map(|_| Self {
+                active: active.clone(),
+            })
+    }
+}
+
+impl Drop for ListenerConnectionSlot {
+    fn drop(&mut self) {
+        self.active.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// Result of a reload attempt.
 #[derive(Debug)]
 pub enum ReloadResult {
@@ -813,6 +838,7 @@ impl ServiceSupervisor {
                                     protocols,
                                     auth,
                                     handshake_timeout,
+                                    connection_limit as u64,
                                     lcfg.tls.clone(),
                                     lcfg.shadowsocks.clone(),
                                     lcfg.trojan.clone(),
@@ -898,6 +924,7 @@ impl ServiceSupervisor {
                                 protocols,
                                 auth,
                                 handshake_timeout,
+                                connection_limit as u64,
                                 lcfg.tls.clone(),
                                 lcfg.shadowsocks.clone(),
                                 lcfg.trojan.clone(),
@@ -977,13 +1004,14 @@ impl ServiceSupervisor {
                 for p in &prepared {
                     addr_map.insert(p.name.clone(), Some(p.local_addr));
                 }
-                for (name, transparent_listener, _, _, _, _, _, _, _) in &transparent_listener_args
+                for (name, transparent_listener, _, _, _, _, _, _, _, _) in
+                    &transparent_listener_args
                 {
                     let addr = transparent_listener.local_addr().ok();
                     addr_map.insert(name.clone(), addr);
                 }
                 #[cfg(unix)]
-                for (name, _, _, _, _, _, _, _, _) in &unix_listener_args {
+                for (name, _, _, _, _, _, _, _, _, _) in &unix_listener_args {
                     // Unix domain sockets don't have a meaningful TCP socket address
                     addr_map.insert(name.clone(), None);
                 }
@@ -1041,6 +1069,7 @@ impl ServiceSupervisor {
                 protocols,
                 auth,
                 hs_timeout,
+                connection_limit,
                 tls_cfg,
                 ss_cfg,
                 trojan_cfg,
@@ -1057,6 +1086,7 @@ impl ServiceSupervisor {
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
                     let transparent_listener_inner = transparent_listener.inner();
+                    let listener_active = Arc::new(AtomicU64::new(0));
 
                     let transparent_accepted = state.transparent_accepted_total.clone();
                     let transparent_dst_failed =
@@ -1084,12 +1114,29 @@ impl ServiceSupervisor {
                             }
                         };
 
+                        let connection_slot = match ListenerConnectionSlot::try_acquire(
+                            &listener_active,
+                            connection_limit,
+                        ) {
+                            Some(slot) => slot,
+                            None => {
+                                tracing::debug!(
+                                    listener = %listener_name,
+                                    limit = connection_limit,
+                                    "dropping transparent connection: connection limit reached"
+                                );
+                                drop(stream);
+                                continue;
+                            }
+                        };
+
                         transparent_accepted.fetch_add(1, Ordering::Relaxed);
 
                         let original_dst =
                             match eggress_server::listener::transparent::get_original_destination(&stream) {
                                 Ok(addr) => addr,
                                 Err(e) => {
+                                    drop(connection_slot);
                                     transparent_dst_failed.fetch_add(1, Ordering::Relaxed);
                                     let _span = tracing::info_span!(
                                         "transparent_original_dst_failed",
@@ -1145,6 +1192,7 @@ impl ServiceSupervisor {
                         active.fetch_add(1, Ordering::Relaxed);
 
                         conn_tasks.spawn(async move {
+                            let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
 
                             let stream: eggress_core::BoxStream =
@@ -1250,6 +1298,7 @@ impl ServiceSupervisor {
                 protocols,
                 auth,
                 hs_timeout,
+                connection_limit,
                 tls_cfg,
                 ss_cfg,
                 trojan_cfg,
@@ -1268,6 +1317,7 @@ impl ServiceSupervisor {
 
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
+                    let listener_active = Arc::new(AtomicU64::new(0));
 
                     let _accept_loop_span = tracing::info_span!(
                         "unix_accept_loop",
@@ -1286,6 +1336,22 @@ impl ServiceSupervisor {
                             },
                             _ = listener_cancel.cancelled() => {
                                 break;
+                            }
+                        };
+
+                        let connection_slot = match ListenerConnectionSlot::try_acquire(
+                            &listener_active,
+                            connection_limit,
+                        ) {
+                            Some(slot) => slot,
+                            None => {
+                                tracing::debug!(
+                                    listener = %listener_name,
+                                    limit = connection_limit,
+                                    "dropping Unix connection: connection limit reached"
+                                );
+                                drop(stream);
+                                continue;
                             }
                         };
 
@@ -1325,6 +1391,7 @@ impl ServiceSupervisor {
                         active.fetch_add(1, Ordering::Relaxed);
 
                         conn_tasks.spawn(async move {
+                            let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
 
                             let stream: eggress_core::BoxStream =

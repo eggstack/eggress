@@ -121,6 +121,19 @@ pub struct TargetFlowEntry {
     pub recv_task: JoinHandle<()>,
 }
 
+impl Drop for TargetFlowEntry {
+    fn drop(&mut self) {
+        // Dropping a JoinHandle detaches the task; it does not stop it.  A
+        // detached receive task retains the UDP socket (and, for SOCKS5,
+        // the control connection) indefinitely, so every ownership path
+        // must explicitly tear the flow down.
+        self.recv_task.abort();
+        if let UdpFlowKind::Socks5Upstream(flow) = &self.flow {
+            flow.control_cancel.cancel();
+        }
+    }
+}
+
 impl TargetFlowEntry {
     pub fn touch(&mut self) {
         match &mut self.flow {
@@ -213,7 +226,16 @@ pub fn reap_idle_flows(
     }
 
     let client_timeout = limits.idle_timeout;
-    clients.retain(|_, state| now.duration_since(state.last_activity) < client_timeout);
+    clients.retain(|_, state| {
+        let keep = now.duration_since(state.last_activity) < client_timeout;
+        if !keep {
+            // `HashMap::retain` drops the value after this callback returns.
+            // Drain explicitly so the task cancellation is immediate and
+            // obvious even if the entry later gains another owner.
+            state.target_flows.clear();
+        }
+        keep
+    });
 }
 
 pub fn close_all_flows(clients: &mut HashMap<SocketAddr, ClientFlowState>, metrics: &UdpMetrics) {

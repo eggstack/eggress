@@ -1,5 +1,5 @@
 use crate::metrics::ReverseMetrics;
-use crate::{client_auth_handshake, relay_bidirectional, ControlState, ProtocolError};
+use crate::{client_auth_handshake, relay_bidirectional_with_timeout, ControlState, ProtocolError};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,9 +24,8 @@ pub struct ReverseClientConfig {
     pub default_target_host: Option<String>,
     /// Default target port.
     pub default_target_port: Option<u16>,
-    /// Read timeout on the control channel in milliseconds. 0 = no timeout.
-    /// Currently unused (pproxy model is full-session-per-connection) but
-    /// exposed for the future heartbeat / keepalive path.
+    /// Idle read timeout on the control channel in milliseconds. 0 = no
+    /// timeout.
     pub read_timeout_ms: u64,
     /// Grace period for drain on shutdown, in milliseconds.
     pub drain_grace_ms: u64,
@@ -264,7 +263,13 @@ impl ReverseClient {
                             state = ?ControlState::Ready,
                             "connected to target, relaying"
                         );
-                        relay_bidirectional(stream, target_stream).await
+                        relay_bidirectional_with_timeout(
+                            stream,
+                            target_stream,
+                            (self.config.read_timeout_ms > 0)
+                                .then(|| Duration::from_millis(self.config.read_timeout_ms)),
+                        )
+                        .await
                     }
                     Err(e) => {
                         warn!(

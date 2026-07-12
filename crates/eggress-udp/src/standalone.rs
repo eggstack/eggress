@@ -108,6 +108,16 @@ pub async fn standalone_udp_relay(
                     }
                 };
 
+                // Bound client bookkeeping as well as target flows. A client
+                // that sends only rejected/unsupported packets must not be
+                // able to grow this map without limit.
+                if !clients.contains_key(&client_addr)
+                    && clients.len() >= crate::flow::max_standalone_flows(&config.limits)
+                {
+                    config.udp_metrics.record_standalone_rejected();
+                    continue;
+                }
+
                 let total_flows = total_target_flows(&clients);
                 let state = clients.entry(client_addr).or_default();
                 state.touch();

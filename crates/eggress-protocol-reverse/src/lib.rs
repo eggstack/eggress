@@ -1,3 +1,4 @@
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -113,20 +114,22 @@ pub async fn server_auth_handshake(
             "auth payload exceeds maximum length".to_string(),
         ));
     }
-    if auth_buf.is_empty() {
-        return Err(ProtocolError::ConnectionClosed);
+    // The newline is part of the wire framing. Requiring it prevents a
+    // truncated credential payload from being accepted at EOF.
+    if auth_buf.last() != Some(&b'\n') {
+        return Err(ProtocolError::AuthFailed);
     }
-    // Trim trailing newline if present
-    if auth_buf.last() == Some(&b'\n') {
-        auth_buf.pop();
-    }
+    auth_buf.pop();
 
     let auth_str = String::from_utf8_lossy(&auth_buf).to_string();
 
     // Validate if credentials are configured
     if let (Some(exp_user), Some(exp_pass)) = (expected_user, expected_pass) {
         let (user, pass) = parse_auth_str(&auth_str);
-        if user != exp_user || pass != exp_pass {
+        use subtle::ConstantTimeEq;
+        let user_ok: bool = user.as_bytes().ct_eq(exp_user.as_bytes()).into();
+        let pass_ok: bool = pass.as_bytes().ct_eq(exp_pass.as_bytes()).into();
+        if !user_ok || !pass_ok {
             write_handshake_reject(stream).await?;
             return Err(ProtocolError::AuthFailed);
         }
@@ -166,13 +169,31 @@ pub async fn relay_bidirectional(
     stream_a: TcpStream,
     stream_b: TcpStream,
 ) -> Result<(), ProtocolError> {
+    relay_bidirectional_with_timeout(stream_a, stream_b, None).await
+}
+
+/// Relay data bidirectionally, ending the session when neither side produces
+/// data for `idle_timeout`. A `None` timeout preserves the unbounded behavior
+/// used by callers that manage liveness elsewhere.
+pub async fn relay_bidirectional_with_timeout(
+    stream_a: TcpStream,
+    stream_b: TcpStream,
+    idle_timeout: Option<Duration>,
+) -> Result<(), ProtocolError> {
     let (mut a_read, mut a_write) = tokio::io::split(stream_a);
     let (mut b_read, mut b_write) = tokio::io::split(stream_b);
 
     let a_to_b = async {
         let mut buf = [0u8; 8192];
         loop {
-            match a_read.read(&mut buf).await {
+            let read_result = match idle_timeout {
+                Some(timeout) => match tokio::time::timeout(timeout, a_read.read(&mut buf)).await {
+                    Ok(result) => result,
+                    Err(_) => break,
+                },
+                None => a_read.read(&mut buf).await,
+            };
+            match read_result {
                 Ok(0) => break,
                 Ok(n) => {
                     if b_write.write_all(&buf[..n]).await.is_err() {
@@ -187,7 +208,14 @@ pub async fn relay_bidirectional(
     let b_to_a = async {
         let mut buf = [0u8; 8192];
         loop {
-            match b_read.read(&mut buf).await {
+            let read_result = match idle_timeout {
+                Some(timeout) => match tokio::time::timeout(timeout, b_read.read(&mut buf)).await {
+                    Ok(result) => result,
+                    Err(_) => break,
+                },
+                None => b_read.read(&mut buf).await,
+            };
+            match read_result {
                 Ok(0) => break,
                 Ok(n) => {
                     if a_write.write_all(&buf[..n]).await.is_err() {

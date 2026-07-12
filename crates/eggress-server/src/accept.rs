@@ -429,7 +429,10 @@ async fn accept_socks5(
     if let InboundAuthentication::UsernamePassword { username, password } = auth {
         match read_auth_request(&mut reader, password).await {
             Ok(client_username) => {
-                if client_username != *username {
+                use subtle::ConstantTimeEq;
+                let username_ok: bool =
+                    client_username.as_bytes().ct_eq(username.as_bytes()).into();
+                if !username_ok {
                     let _ = send_auth_response(&mut writer, false).await;
                     return Err(AcceptError::AuthenticationFailed);
                 }

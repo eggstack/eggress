@@ -49,6 +49,9 @@ fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
 }
 
 fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
+    if let Some(v4) = ip.to_ipv4_mapped() {
+        return is_private_ipv4(&v4);
+    }
     let octets = ip.octets();
     // fe80::/10 is the link-local unicast prefix
     if ip.is_loopback() || (octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80) {
@@ -226,6 +229,18 @@ mod tests {
     #[test]
     fn reject_link_local_ipv4_egress() {
         let target = SocksAddr::IPv4([169, 254, 1, 1], 8080);
+        assert!(validate_standalone_target(&target, false).is_err());
+    }
+
+    #[test]
+    fn reject_mapped_loopback_ipv6_egress() {
+        let target = SocksAddr::IPv6(
+            "::ffff:127.0.0.1"
+                .parse::<std::net::Ipv6Addr>()
+                .unwrap()
+                .octets(),
+            8080,
+        );
         assert!(validate_standalone_target(&target, false).is_err());
     }
 

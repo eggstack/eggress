@@ -1,5 +1,8 @@
 use crate::metrics::ReverseMetrics;
-use crate::{redact_auth, relay_bidirectional, server_auth_handshake, ControlState, ProtocolError};
+use crate::{
+    redact_auth, relay_bidirectional_with_timeout, server_auth_handshake, ControlState,
+    ProtocolError,
+};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -293,6 +296,7 @@ impl ReverseServer {
             // been paired with an external client. Each received stream
             // is closed and the active_control counter is decremented.
             let state_clone = state.clone();
+            let metrics_clone = metrics.clone();
             tokio::spawn(async move {
                 let mut control_rx = control_rx;
                 while let Some(ctrl) = control_rx.recv().await {
@@ -302,6 +306,9 @@ impl ReverseServer {
                     );
                     drop(ctrl.stream);
                     state_clone.active_control.fetch_sub(1, Ordering::Relaxed);
+                    if let Some(m) = metrics_clone.as_deref() {
+                        m.record_control_closed();
+                    }
                 }
             });
         }
@@ -457,6 +464,9 @@ impl ReverseServer {
         };
         if control_tx.send(ctrl).is_err() {
             state.active_control.fetch_sub(1, Ordering::Relaxed);
+            if let Some(m) = metrics {
+                m.record_control_closed();
+            }
             warn!(peer = %peer_addr, "control channel closed, cannot add to pool");
         }
 
@@ -511,6 +521,9 @@ impl ReverseServer {
                                     state.pending_external.fetch_sub(1, Ordering::Relaxed);
                                     let metrics = metrics.clone();
                                     let state = state.clone();
+                                    let idle_timeout = (config.read_timeout_ms > 0).then(|| {
+                                        std::time::Duration::from_millis(config.read_timeout_ms)
+                                    });
                                     state.active_streams.fetch_add(1, Ordering::Relaxed);
                                     state.active_control.fetch_sub(1, Ordering::Relaxed);
                                     tokio::spawn(async move {
@@ -523,10 +536,12 @@ impl ReverseServer {
                                             m.record_stream_opened();
                                             m.record_state_duration(ControlState::Ready, 0);
                                         }
-                                        let relay_result = relay_bidirectional(
+                                        let relay_result = relay_bidirectional_with_timeout(
                                             external_stream,
                                             control.stream,
-                                        ).await;
+                                            idle_timeout,
+                                        )
+                                        .await;
                                         match relay_result {
                                             Ok(()) => {
                                                 debug!(peer = %peer_addr, "relay finished cleanly");
@@ -537,6 +552,7 @@ impl ReverseServer {
                                         }
                                         if let Some(m) = metrics.as_deref() {
                                             m.record_stream_closed(0);
+                                            m.record_control_closed();
                                         }
                                         state.active_streams.fetch_sub(1, Ordering::Relaxed);
                                         debug!(peer = %peer_addr, "relay finished");

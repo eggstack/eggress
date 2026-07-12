@@ -143,6 +143,18 @@ impl ReverseMetrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Record that an accepted control connection has closed.
+    pub fn record_control_closed(&self) {
+        // A connection can be closed by several error/shutdown paths. Avoid
+        // wrapping the gauge if two paths race or a future caller reports a
+        // close before an accept.
+        let _ = self.control_connections_active.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |active| active.checked_sub(1),
+        );
+    }
+
     /// Record a control connection that was rejected (non-auth reason such as
     /// `max_control_connections`).
     pub fn record_control_rejected(&self, _peer: SocketAddr, reason: &str) {
@@ -199,8 +211,9 @@ impl ReverseMetrics {
 
     /// Record an error message (truncated to 256 chars).
     pub fn record_error(&self, msg: &str) {
-        let truncated = if msg.len() > MAX_ERROR_LEN {
-            format!("{}…", &msg[..MAX_ERROR_LEN])
+        let truncated = if msg.chars().count() > MAX_ERROR_LEN {
+            let prefix: String = msg.chars().take(MAX_ERROR_LEN).collect();
+            format!("{prefix}…")
         } else {
             msg.to_string()
         };
@@ -481,6 +494,15 @@ mod tests {
         m.record_error(&long_msg);
         let err = m.last_error.lock().unwrap().clone().unwrap();
         // Truncated to 256 chars + '…' (3 bytes in UTF-8) = 259 bytes
+        assert_eq!(err.chars().count(), MAX_ERROR_LEN + 1);
+        assert!(err.ends_with('…'));
+    }
+
+    #[test]
+    fn record_error_handles_multibyte_messages() {
+        let m = ReverseMetrics::new();
+        m.record_error(&"é".repeat(MAX_ERROR_LEN + 1));
+        let err = m.last_error.lock().unwrap().clone().unwrap();
         assert_eq!(err.chars().count(), MAX_ERROR_LEN + 1);
         assert!(err.ends_with('…'));
     }

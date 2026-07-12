@@ -78,6 +78,24 @@ protocols = ["http"]
     }
 
     #[test]
+    fn zero_connection_limit_is_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+connection_limit = 0
+"#;
+        let f = write_config(config);
+        let err = load_and_validate(f.path().to_str().unwrap()).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("connection_limit must be greater than 0"));
+    }
+
+    #[test]
     fn full_config_all_sections() {
         let config = r#"
 version = 1

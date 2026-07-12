@@ -270,6 +270,13 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
             }
         }
 
+        if listener.connection_limit == Some(0) {
+            errors.push(ConfigError::validation(
+                &path,
+                "connection_limit must be greater than 0",
+            ));
+        }
+
         if let Some(ref udp) = listener.udp {
             validate_listener_udp(udp, &path, errors);
         }

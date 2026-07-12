@@ -15,6 +15,7 @@ eggress-uri.workspace = true
 eggress-transport-tls.workspace = true
 rustls.workspace = true
 sha2 = "0.10"
+subtle.workspace = true
 tokio-rustls.workspace = true
 
 [dev-dependencies]

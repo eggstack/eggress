@@ -586,6 +586,16 @@ async fn run_scenario_comparison(scenario: &OracleScenario) -> ScenarioResult {
         elapsed_ms: start.elapsed().as_millis() as u64,
         error: error_msg,
         skip_reason: None,
+        pproxy_observation: None,
+        eggress_observation: None,
+        timing_tolerance_ms: None,
+        divergence_ids: Vec::new(),
+        ci_tier: None,
+        capability_ids: scenario
+            .capability_ids
+            .iter()
+            .map(|id| (*id).to_string())
+            .collect(),
     }
 }
 
@@ -792,6 +802,12 @@ fn report_json_roundtrip() {
         elapsed_ms: 100,
         error: None,
         skip_reason: None,
+        pproxy_observation: None,
+        eggress_observation: None,
+        timing_tolerance_ms: None,
+        divergence_ids: Vec::new(),
+        ci_tier: None,
+        capability_ids: Vec::new(),
     });
     let json = report.to_json();
     let parsed: OracleReport = serde_json::from_str(&json).unwrap();
