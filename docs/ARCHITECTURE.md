@@ -504,6 +504,82 @@ Encoding produces a SOCKS5 UDP response datagram with the same structure. The co
 - Route changes apply immediately to future UDP packets.
 - The legacy `udp_enabled = true` flag is retained for backward compatibility and synthesized to default UDP config when no `[listeners.udp]` section is present.
 
+## Reverse/Backward Proxying
+
+Eggress implements a reverse (backward) proxy model for NAT traversal. A server behind NAT connects outward to an acceptor in a datacenter, exposing internal services to external clients without inbound port forwarding on the server side.
+
+### eggress-protocol-reverse
+
+Crate structure:
+- `lib.rs` — shared protocol primitives: auth handshake (`write_auth`, `read_handshake`, `client_auth_handshake`, `server_auth_handshake`), credential redaction, bidirectional relay, `ControlState` enum, and `ProtocolError` types
+- `server.rs` — `ReverseServer` (acceptor side): binds a control listener and an external listener, authenticates incoming control connections, pairs them with external clients, and relays data bidirectionally
+- `client.rs` — `ReverseClient` (server-behind-NAT side): connects to the acceptor, authenticates, resolves a target via the `TargetResolver` trait, connects to the local target, and relays data back through the control channel
+- `metrics.rs` — `ReverseMetrics` with Prometheus exposition: control connections (active/accepted/rejected), auth failures, reconnects, streams opened/closed, state durations, and error tracking
+
+### Runtime adapter
+
+`eggress-runtime/src/reverse.rs` bridges the routing engine to the reverse client. `RouteEngineTargetResolver` implements `TargetResolver` by building a synthetic `RouteRequest` (transport = `ReverseTcp`, listener = reverse listener name) and gating the target through `SharedRoutingService::decide()`. Routing decisions of `Direct` or `UpstreamGroup` map to `TargetResolution::Connect`; `Reject` maps to `TargetResolution::Reject`.
+
+### Data flow
+
+```
+External client → ReverseServer.external_listener
+    → paired with available control connection (from pool)
+    → relay_bidirectional(external_stream, control_stream)
+    → ReverseClient resolves target via RouteEngineTargetResolver
+    → ReverseClient connects to local target
+    → relay_bidirectional(control_stream, target_stream)
+```
+
+Control connection lifecycle:
+1. **Connect**: ReverseClient dials the acceptor's control listener
+2. **Auth**: Client sends `user:pass\n`, server validates and responds with 0x01 (accept) or 0x00 (reject)
+3. **Pool**: Authenticated control connection enters the server's unbounded channel
+4. **Pair**: External client arrives, server receives a control connection from the channel
+5. **Relay**: Bidirectional byte relay between external stream and control stream
+6. **Reconnect**: On session end or failure, client reconnects with exponential backoff (1s initial, 30s cap, doubling)
+
+Parallel connections: multiple `reverse_clients` entries or `parallel_connections` > 1 creates independent control channels, enabling concurrent external sessions.
+
+### Security model
+
+- **Plaintext by default** — no built-in TLS on control or external channels; wrap in an external TLS layer or deploy in a trusted network
+- **Defense-in-depth validation** — `ReverseServerConfig::validate()` rejects non-loopback external binds without both authentication and an explicit `allow_bind` allowlist
+- **Auth required for non-loopback** — non-loopback `external_bind` requires `auth_username`/`auth_password` and a non-empty `allow_bind`
+- **Loopback exempt** — loopback binds skip auth/allowlist requirements for local development
+- **allow_bind allowlist** — optional list of permitted external bind addresses; bind denied if address not in list
+- **Bounded resources** — `max_control_connections`, `max_streams_per_listener`, `max_pending_external` prevent resource exhaustion
+- **Credential redaction** — `redact_auth()` replaces passwords with `****` for logging; full credentials never appear in logs
+
+### Configuration
+
+```toml
+[[reverse_servers]]
+id = "acceptor"
+control_bind = "0.0.0.0:8443"
+external_bind = "0.0.0.0:9000"
+auth_username = "user"
+auth_password = "pass"
+
+[[reverse_clients]]
+id = "server-behind-nat"
+server_addr = "acceptor-host:8443"
+auth_username = "user"
+auth_password = "pass"
+default_target_host = "127.0.0.1"
+default_target_port = 8080
+reconnect_initial = "1s"
+reconnect_max = "30s"
+```
+
+### Key limitations
+
+- **TCP only** — no UDP reverse mode
+- **No multiplexing** — each control connection carries exactly one proxy session (matching pproxy's backward model)
+- **No built-in TLS** — control and external channels are plaintext; TLS must be added externally or via `+tls` transport
+- **No heartbeat** — control state tracking exists but active keepalive probes are not yet implemented
+- **Single session per connection** — no stream multiplexing over the control channel; parallel connections are achieved by spawning multiple independent control channels
+
 ## Design Principles
 
 1. **Separate protocol from transport** — protocols run over arbitrary streams

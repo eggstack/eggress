@@ -431,7 +431,7 @@ impl ReverseServer {
                         "control connection auth failed"
                     );
                     if let Some(m) = metrics {
-                        m.record_control_rejected(peer_addr, &e.to_string());
+                        m.record_auth_failure(peer_addr, &e.to_string());
                     }
                     return Err(e);
                 }
@@ -449,24 +449,6 @@ impl ReverseServer {
             }
             None
         };
-
-        // pproxy model: 1 control connection == 1 external listener. Enforce
-        // a configurable cap (default 1). Excess connections are rejected.
-        let listener_budget = config.max_listeners_per_client.max(1);
-        if state.active_control.load(Ordering::Relaxed) >= listener_budget {
-            warn!(
-                peer = %peer_addr,
-                active = state.active_control.load(Ordering::Relaxed),
-                max_listeners_per_client = listener_budget,
-                "rejecting control connection: max_listeners_per_client reached"
-            );
-            if let Some(m) = metrics {
-                m.record_control_rejected(peer_addr, "max_listeners_per_client");
-            }
-            return Err(ProtocolError::ConfigInvalid(format!(
-                "max_listeners_per_client={listener_budget} reached"
-            )));
-        }
 
         let ctrl = ControlStream {
             stream,

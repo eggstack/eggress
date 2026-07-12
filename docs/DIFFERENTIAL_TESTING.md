@@ -41,6 +41,8 @@ cargo install shadowsocks-rust
 | `EGRESS_REQUIRE_EXTERNAL_INTEROP` | `1` | Enable pproxy differential tests |
 | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP` | `1` | Enable Shadowsocks interop tests |
 | `EGRESS_RUN_PPROXY_DIFFERENTIAL` | `1` | Enable Phase 41 differential parity harness |
+| `EGRESS_REQUIRE_REVERSE_INTEROP` | `1` | Enable reverse proxy pproxy interop tests |
+| `EGRESS_REQUIRE_SOAK` | `1` | Enable reverse proxy soak/performance tests |
 
 ### Optional Tool Path Variables
 
@@ -143,6 +145,27 @@ cargo test -p eggress-testkit --test oracle_scenario_files
 
 # Run oracle unit tests (no pproxy needed)
 cargo test -p eggress-testkit --lib oracle
+```
+
+### Reverse Proxy Interoperability Tests
+
+Gate: `EGRESS_REQUIRE_REVERSE_INTEROP=1` (requires pproxy on PATH)
+
+```bash
+# All reverse interop tests
+EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored
+
+# Self-interop tests only (no pproxy needed)
+cargo test -p eggress-runtime --test reverse_interop reverse_eggress_self_interop_loopback
+cargo test -p eggress-runtime --test reverse_interop reverse_payload_byte_equality_eggress_loopback
+```
+
+### Reverse Proxy Soak Tests
+
+Gate: `EGRESS_REQUIRE_SOAK=1` (run with `--test-threads=1`)
+
+```bash
+EGRESS_REQUIRE_SOAK=1 cargo test -p eggress-runtime --test reverse_soak -- --ignored --test-threads=1
 ```
 
 ### Combined Run
@@ -272,6 +295,38 @@ datagram framing (RSV + FRAG + ATYP + ADDR + PORT + PAYLOAD).
 | `interop_shadowsocks_tcp_half_close` | Half-close behavior on Shadowsocks path | **PASS** |
 | `interop_shadowsocks_udp_inbound_large_packet` | UDP listener large-packet decoding | **PASS** |
 | `interop_shadowsocks_udp_via_toml_config` | UDP via full TOML-configured stack | **PASS** |
+
+### Reverse Proxy Interoperability Tests (`reverse_interop.rs`)
+
+Tests verify eggress's reverse protocol (raw-relay control channel) interoperates
+with pproxy and with itself. Two flavours: un-gated self-interop (no external
+tools) and gated pproxy interop.
+
+#### Self-Interop Tests (no gate)
+
+| Test | Description |
+|------|-------------|
+| `reverse_eggress_self_interop_loopback` | eggress server + eggress client roundtrip against loopback echo |
+| `reverse_payload_byte_equality_eggress_loopback` | Byte-for-byte payload verification (0..=255 × 4 cycles, 1024 bytes) through external → reverse_server → control → reverse_client → echo |
+| `reverse_redacts_credentials_in_logs` | Smoke test for `redact_auth` helper (no leaked passwords) |
+
+#### Gated Interop Tests (`EGRESS_REQUIRE_REVERSE_INTEROP=1`)
+
+| Test | Description |
+|------|-------------|
+| `gated_pproxy_client_to_eggress_server` | pproxy reverse client (backward mode `socks5+in://`) connects to eggress reverse server; verifies control connection established |
+| `gated_eggress_client_to_pproxy_server` | eggress reverse client connects to pproxy reverse server (`bind://` mode); verifies handshake metrics |
+
+### Reverse Proxy Soak Tests (`reverse_soak.rs`)
+
+Performance and resilience tests under sustained load. Gated behind
+`EGRESS_REQUIRE_SOAK=1` and run with `--test-threads=1`.
+
+| Test | Description |
+|------|-------------|
+| `performance_reverse_soak` | 30-second sustained echo roundtrips through reverse pair with auth; asserts at least one successful connection |
+| `performance_reverse_reconnect_churn` | 20 sequential echo roundtrips with 10ms inter-iteration delay; asserts 100% success rate |
+| `performance_reverse_auth_failure_churn` | 10 sequential wrong-password auth attempts; asserts all fail cleanly with no resource leaks |
 
 > **Phase 21 note**: Shadowsocks TCP now uses standard SIP003 AEAD framing
 > (two-AEAD-per-chunk with encrypted length block). All TCP interop tests

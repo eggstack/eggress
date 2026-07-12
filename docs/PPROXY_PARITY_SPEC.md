@@ -669,18 +669,23 @@ Eggress extends the pproxy reverse proxy model with TOML configuration:
 ```toml
 # Reverse server (acceptor side)
 [[reverse_servers]]
-bind = "0.0.0.0:8443"
-protocol = "http"              # or "socks5", "socks4"
-allow_bind = ["127.0.0.1", "::1"]
-password = "secret"            # optional
+id = "rs-public"
+control_bind = "0.0.0.0:9443"
+auth_username = "tunnel"
+auth_password_env = "RS_AUTH_PASSWORD"
+max_streams = 512
+heartbeat_interval = "60s"
 
 # Reverse client (control/initiator side)
 [[reverse_clients]]
-remote = "example.com:8443"
-password = "secret"
-tls = false                   # true for TLS-wrapped control channel
-backoff_initial_ms = 1000
-backoff_max_ms = 30000
+id = "rc-main"
+server_addr = "example.com:9443"
+auth_username = "tunnel"
+auth_password_env = "RC_AUTH_PASSWORD"
+default_target_host = "127.0.0.1"
+default_target_port = 8080
+reconnect_initial = "1s"
+reconnect_max = "30s"
 ```
 
 ### Reconnect Behavior

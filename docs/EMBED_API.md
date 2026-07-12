@@ -240,6 +240,10 @@ Use `error.category()` to get a short label for programmatic matching.
 - `ServiceSupervisor::run()` creates its own Tokio runtime internally.
 - Listener bind changes require a full restart (not reloadable).
 - No logging initialization unless explicitly configured in TOML.
+- Reverse/backward proxying is supported through the embed API via the same
+  TOML config model (`[[reverse_servers]]` and `[[reverse_clients]]` sections).
+  No special embed API changes needed — the supervisor handles reverse
+  spawning internally, just like forward proxy listeners.
 
 ## Python-binding readiness
 

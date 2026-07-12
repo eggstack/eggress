@@ -143,8 +143,17 @@ impl ReverseMetrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Record a control connection that was rejected (auth failure).
+    /// Record a control connection that was rejected (non-auth reason such as
+    /// `max_control_connections`).
     pub fn record_control_rejected(&self, _peer: SocketAddr, reason: &str) {
+        self.control_connections_rejected_total
+            .fetch_add(1, Ordering::Relaxed);
+        self.record_error(reason);
+    }
+
+    /// Record an authentication failure. Also increments the rejected counter
+    /// since an auth failure is a subset of rejections.
+    pub fn record_auth_failure(&self, _peer: SocketAddr, reason: &str) {
         self.control_connections_rejected_total
             .fetch_add(1, Ordering::Relaxed);
         self.auth_failures_total.fetch_add(1, Ordering::Relaxed);
@@ -388,11 +397,22 @@ mod tests {
     #[test]
     fn record_control_rejected() {
         let m = ReverseMetrics::new();
-        m.record_control_rejected(peer(), "bad credentials");
+        m.record_control_rejected(peer(), "max_control_connections");
         assert_eq!(
             m.control_connections_rejected_total.load(Ordering::Relaxed),
             1
         );
+        assert_eq!(m.auth_failures_total.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            m.last_error.lock().unwrap().as_deref(),
+            Some("max_control_connections")
+        );
+    }
+
+    #[test]
+    fn record_auth_failure() {
+        let m = ReverseMetrics::new();
+        m.record_auth_failure(peer(), "bad credentials");
         assert_eq!(m.auth_failures_total.load(Ordering::Relaxed), 1);
         assert_eq!(
             m.last_error.lock().unwrap().as_deref(),
@@ -474,6 +494,7 @@ mod tests {
         m.record_stream_closed(2048);
         m.record_reconnect();
         m.record_control_rejected(peer(), "timeout");
+        m.record_auth_failure(peer(), "bad password");
         m.record_heartbeat_failure();
         m.record_drain(75);
         m.record_state_duration(ControlState::Ready, 1000);
@@ -481,7 +502,7 @@ mod tests {
         let snap = m.snapshot();
         assert_eq!(snap.control_connections_active, 2);
         assert_eq!(snap.control_connections_accepted_total, 2);
-        assert_eq!(snap.control_connections_rejected_total, 1);
+        assert_eq!(snap.control_connections_rejected_total, 2);
         assert_eq!(snap.auth_failures_total, 1);
         assert_eq!(snap.heartbeat_failures_total, 1);
         assert_eq!(snap.drain_total, 1);
@@ -490,7 +511,7 @@ mod tests {
         assert_eq!(snap.streams_closed_total, 1);
         assert_eq!(snap.stream_bytes_total, 2048);
         assert_eq!(snap.state_ms(ControlState::Ready), 1000);
-        assert_eq!(snap.last_error.as_deref(), Some("timeout"));
+        assert_eq!(snap.last_error.as_deref(), Some("bad password"));
     }
 
     #[test]

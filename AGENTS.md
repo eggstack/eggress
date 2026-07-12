@@ -489,7 +489,7 @@ eggress/
 
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
 health, admin, reload, shutdown, pac_static, udp, udp_upstream, upstream_protocols,
-shadowsocks_tcp, shadowsocks_udp,
+shadowsocks_tcp, shadowsocks_udp, reverse_interop, reverse_runtime, reverse_soak,
 lifecycle_invariants, observability, security_invariants, load).
 They exercise the supervisor end to end and cover negative-path behaviors (bind
 conflict, invalid source, oversized identity, reload-time failure). UDP integration tests
@@ -600,3 +600,4 @@ The `.skills/` directory contains focused reference files for common development
 - `testing.md` — Test layers, conventions, running and writing tests, including differential tests
 - `advanced-transports.md` — H2 CONNECT, WebSocket tunnels, raw tunnels, TLS/ALPN
 - `security-dev.md` — Security testing, DNS rebinding protection, auth failure metrics, fuzz targets, soak tests
+- `reverse-proxy.md` — Reverse/backward proxy: NAT traversal, pproxy raw-relay, control channels

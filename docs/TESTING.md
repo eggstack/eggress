@@ -48,6 +48,12 @@ cargo test -p eggress-protocol-shadowsocks
 cargo test -p eggress-runtime shadowsocks_tcp
 cargo test -p eggress-runtime shadowsocks_udp
 
+# Reverse proxy tests
+cargo test -p eggress-protocol-reverse
+cargo test -p eggress-runtime reverse
+cargo test -p eggress-runtime --test reverse_soak
+EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored
+
 # Upstream protocol tests
 cargo test -p eggress-runtime upstream_protocols
 
@@ -75,6 +81,9 @@ Integration tests live in `crates/eggress-runtime/tests/` and exercise the super
 | `upstream_protocols.rs` | HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection |
 | `shadowsocks_tcp.rs` | Shadowsocks TCP relay through full stack |
 | `shadowsocks_udp.rs` | Shadowsocks UDP relay through full stack |
+| `reverse_interop.rs` | Reverse/backward proxy self-interop and credential redaction (3 un-gated tests) |
+| `reverse_runtime.rs` | Runtime reverse server/client lifecycle, supervisor spawning, metrics (13 tests) |
+| `reverse_soak.rs` | Soak tests: performance, reconnect churn, auth failure churn (3 gated tests, requires `EGRESS_REQUIRE_SOAK=1`) |
 
 Negative-path tests cover: bind conflict, invalid source, oversized identity, reload-time failure.
 
@@ -112,6 +121,8 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 ```
 
 Tests cover: HTTP CONNECT, SOCKS4, SOCKS5, multi-hop chains, authentication, and binary payload transfer.
+
+Gated reverse interop tests (`EGRESS_REQUIRE_REVERSE_INTEROP=1`) test eggress↔pproxy wire compatibility for the reverse/backward proxy protocol.
 
 ### pproxy Compatibility Harness (Phase 18)
 
