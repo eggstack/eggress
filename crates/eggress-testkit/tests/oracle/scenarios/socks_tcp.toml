@@ -1,0 +1,192 @@
+schema_version = 1
+
+[[scenarios]]
+id = "tcp.socks4_connect"
+capability_ids = ["protocol.socks4_connect"]
+description = "SOCKS4 CONNECT to TCP echo server"
+pproxy_args = ["-l", "socks4://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks4"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks4_connect"
+
+[[scenarios]]
+id = "tcp.socks4a_connect"
+capability_ids = ["protocol.socks4a_connect"]
+description = "SOCKS4a CONNECT (domain name) to TCP echo server"
+pproxy_args = ["-l", "socks4a://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks4"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks4a_connect"
+
+[[scenarios]]
+id = "tcp.socks5_connect"
+capability_ids = ["protocol.socks5_connect"]
+description = "SOCKS5 CONNECT to TCP echo server"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "tcp.socks5_auth"
+capability_ids = ["protocol.socks5_auth"]
+description = "SOCKS5 CONNECT with username/password auth"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}#user:pass", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "user"
+password = "pass"
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks5_tcp_connect_auth"
+
+[[scenarios]]
+id = "tcp.socks5_connect_domain"
+capability_ids = ["protocol.socks5_connect_domain"]
+description = "SOCKS5 CONNECT via domain name target"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "tcp.socks5_refused"
+capability_ids = ["protocol.socks5_refused"]
+description = "SOCKS5 CONNECT to refused port (negative case)"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks5_connect_refused"
+
+[[scenarios]]
+id = "tcp.socks5_auth_failure"
+capability_ids = ["protocol.socks5_auth_failure"]
+description = "SOCKS5 with wrong credentials (negative case)"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}#user:pass", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "user"
+password = "pass"
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks5_auth_failure"
+
+[[scenarios]]
+id = "tcp.socks4_refused"
+capability_ids = ["protocol.socks4_connect", "protocol.connect_refused"]
+description = "SOCKS4 CONNECT to refused port (negative case)"
+pproxy_args = ["-l", "socks4://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks4"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks4_connect"
+
+[[scenarios]]
+id = "tcp.socks5_udp_associate"
+capability_ids = ["protocol.socks5_udp_associate"]
+description = "SOCKS5 UDP ASSOCIATE lifecycle"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "none"
+comparison = "coarse_result"
+
+[[scenarios]]
+id = "tcp.socks5_no_auth"
+capability_ids = ["protocol.socks5_connect"]
+description = "SOCKS5 with no auth configured (anonymous)"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"

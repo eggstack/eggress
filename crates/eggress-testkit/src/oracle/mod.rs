@@ -10,8 +10,13 @@
 //! with pproxy==2.7.9 installed. The non-gated test suite must never
 //! require pproxy or internet access.
 
+pub mod ci;
+pub mod observations;
+pub mod probes;
 pub mod report;
 pub mod scenario;
+pub mod schema;
+pub mod supervisor;
 
 use std::time::Duration;
 

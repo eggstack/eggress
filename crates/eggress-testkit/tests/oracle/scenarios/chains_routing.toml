@@ -1,0 +1,275 @@
+schema_version = 1
+
+[[scenarios]]
+id = "chain.socks5_to_socks5"
+capability_ids = ["routing.chain_socks5_socks5"]
+description = "SOCKS5 chained through another SOCKS5 upstream"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "socks5://127.0.0.1:{UPSTREAM_PORT}"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_groups]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "chain-group"
+"""
+expected_equivalence = "payload"
+category = "chains"
+timeout_secs = 15
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "chain.http_to_socks5"
+capability_ids = ["routing.chain_http_socks5"]
+description = "HTTP CONNECT chained through SOCKS5 upstream"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "socks5://127.0.0.1:{UPSTREAM_PORT}"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+
+[[upstreams]]
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_groups]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "chain-group"
+"""
+expected_equivalence = "payload"
+category = "chains"
+timeout_secs = 15
+client_action = "http_connect"
+
+[[scenarios]]
+id = "chain.socks5_to_http"
+capability_ids = ["routing.chain_socks5_http"]
+description = "SOCKS5 chained through HTTP upstream"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "http://127.0.0.1:{UPSTREAM_PORT}"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "upstream-0"
+uri = "http://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_groups]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "chain-group"
+"""
+expected_equivalence = "payload"
+category = "chains"
+timeout_secs = 15
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "chain.socks5_auth_to_socks5"
+capability_ids = ["routing.chain_auth"]
+description = "SOCKS5 with auth chained through SOCKS5 upstream"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}#user:pass", "-r", "socks5://127.0.0.1:{UPSTREAM_PORT}"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "user"
+password = "pass"
+
+[[upstreams]]
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_groups]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "chain-group"
+"""
+expected_equivalence = "payload"
+category = "chains"
+timeout_secs = 15
+client_action = "socks5_tcp_connect_auth"
+
+[[scenarios]]
+id = "chain.ss_to_socks5"
+capability_ids = ["routing.chain_ss_socks5"]
+description = "Shadowsocks chained through SOCKS5 upstream"
+pproxy_args = ["-l", "ss://127.0.0.1:{PORT}#testuser:testpass", "-r", "socks5://127.0.0.1:{UPSTREAM_PORT}"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+password = "testpass"
+method = "aes-256-gcm"
+
+[[upstreams]]
+id = "upstream-0"
+uri = "socks5://127.0.0.1:{UPSTREAM_PORT}"
+
+[[upstream_groups]]
+id = "chain-group"
+members = ["upstream-0"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "chain-group"
+"""
+expected_equivalence = "payload"
+category = "chains"
+timeout_secs = 15
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "rules.reject_ip"
+capability_ids = ["routing.reject_ip"]
+description = "Rule rejecting connections to specific IP"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct", "-b", "127.0.0.2"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[[rules]]
+id = "reject-ip"
+host_regex = "127\\.0\\.0\\.2"
+reject = "blocked"
+"""
+expected_equivalence = "coarse_result"
+category = "rules"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "rules.reject_domain"
+capability_ids = ["routing.reject_domain"]
+description = "Rule rejecting connections to specific domain"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct", "-b", "blocked.example.com"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[[rules]]
+id = "reject-domain"
+host_regex = "blocked\\.example\\.com"
+reject = "blocked"
+"""
+expected_equivalence = "coarse_result"
+category = "rules"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "rules.allow_all"
+capability_ids = ["routing.allow_all"]
+description = "Rule allowing all connections (default behavior)"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "payload"
+category = "rules"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "rules.block_reject"
+capability_ids = ["routing.block_reject"]
+description = "Block action rejecting connections"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct", "-b", "127.0.0.3"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[[rules]]
+id = "reject-b"
+host_regex = "127\\.0\\.0\\.3"
+reject = "blocked"
+"""
+expected_equivalence = "coarse_result"
+category = "rules"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"
+
+[[scenarios]]
+id = "rules.multiple_reject"
+capability_ids = ["routing.multiple_reject"]
+description = "Multiple reject rules with different targets"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct", "-b", "127.0.0.4", "-b", "127.0.0.5"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[[rules]]
+id = "reject-c"
+host_regex = "127\\.0\\.0\\.4"
+reject = "blocked"
+
+[[rules]]
+id = "reject-d"
+host_regex = "127\\.0\\.0\\.5"
+reject = "blocked"
+"""
+expected_equivalence = "coarse_result"
+category = "rules"
+timeout_secs = 10
+client_action = "socks5_tcp_connect"

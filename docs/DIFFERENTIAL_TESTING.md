@@ -92,6 +92,59 @@ EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_tcp_socks5_connec
 EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_generate_report -- --ignored
 ```
 
+### Oracle Harness (Phase A3)
+
+The oracle harness has been expanded with:
+
+#### Declarative Scenario Schema
+- TOML-based scenario files under `crates/eggress-testkit/tests/oracle/scenarios/`
+- Schema version 1 with validation (73 total scenarios: 31 hardcoded + 42 TOML)
+- Maps to A2 composition IDs from `docs/parity/composition_matrix.toml`
+- Client actions: Socks5TcpConnect, HttpConnect, HttpForwardGet/Post, Socks4Connect, Socks4aConnect, UdpEchoRoundtrip, etc.
+
+#### Semantic Observations
+- `ProxyObservation` model captures: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status
+- `compare_observations()` produces structured comparison results
+- No byte-for-byte text equality requirements for unstable messages
+
+#### Reusable Protocol Probes
+- `probes.rs` provides: socks5_tcp_connect, socks5_tcp_connect_auth, socks5_connect_refused, socks5_auth_failure, http_connect, http_connect_refused, http_forward_get, http_forward_post, socks4_connect, socks4a_connect
+- Each returns `ProbeResult` with success, bytes_sent, bytes_received, response, error, reply_code
+
+#### Process Supervisor
+- `supervisor.rs` provides `SupervisedProcess` with:
+  - Process-group ownership (Unix: `process_group(0)`, kill group on cleanup)
+  - Bounded stdout/stderr capture (configurable max lines and line bytes)
+  - Artifact retention (stdout/stderr logs saved on drop)
+  - `ReadinessProbe` enum: TcpPort, StdoutPattern, FixedDelay, FileExists
+  - Structured `ProcessExit` with exit code, signal, lifetime
+
+#### CI Tiers
+- **FastStructural**: Schema validation, startup, port binding (gate: `EGRESS_ORACLE=1`)
+- **CoreDifferential**: HTTP, SOCKS, CLI with pinned pproxy (gate: `EGRESS_ORACLE=1`)
+- **ExtendedDifferential**: UDP, TLS, Shadowsocks, Trojan, routing (gate: `EGRESS_ORACLE_EXTENDED=1`)
+- **PlatformDifferential**: macOS/Windows/Linux-specific (gate: `EGRESS_ORACLE_PLATFORM=1`)
+- **PrivilegedExternal**: Transparent proxy, packet capture (gate: `EGRESS_ORACLE_PRIVILEGED=1`)
+
+#### Report Generation
+- JSON reports with observation data, timing tolerances, divergence tracking
+- Markdown reports grouped by category with status icons
+- Manifest consistency checks (validates capability IDs)
+- CI tier filtering
+
+#### Running Oracle Tests
+
+```bash
+# Run all oracle scenarios (requires pproxy==2.7.9)
+EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+
+# Run schema validation tests (no pproxy needed)
+cargo test -p eggress-testkit --test oracle_scenario_files
+
+# Run oracle unit tests (no pproxy needed)
+cargo test -p eggress-testkit --lib oracle
+```
+
 ### Combined Run
 
 ```bash

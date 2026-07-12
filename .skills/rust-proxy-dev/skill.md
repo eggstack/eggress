@@ -71,6 +71,7 @@ Listens on a filesystem socket path for local-only deployments.
 - Unit tests in the protocol crate
 - Integration tests in `crates/eggress-runtime/tests/`
 - Interoperability tests in `crates/eggress-cli/tests/`
+- Oracle scenario schema: TOML files under `crates/eggress-testkit/tests/oracle/scenarios/` define declarative test scenarios with `client_actions` (e.g., Socks5TcpConnect, HttpConnect), `expected_observations`, and `composition_id` mapping to A2 composition matrix entries. Schema version 1, validated by `cargo test -p eggress-testkit --test oracle_scenario_files`
 - Always run: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check`
 
 ## Exit codes and diagnostics

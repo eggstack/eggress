@@ -142,6 +142,26 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - Parity report generator (`report` module) — JSON and markdown reports from manifest + test results
 - Oracle harness (`oracle` module) — scenario registry, JSON report generation, gate functions (`EGRESS_ORACLE`)
 
+### Oracle infrastructure (Phase A3)
+
+The oracle harness under `eggress-testkit/src/oracle/` provides:
+
+- **`mod.rs`** — Module root, gate checks (`EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`, `EGRESS_ORACLE_PRIVILEGED`), timeout constants
+- **`scenario.rs`** — 31 hardcoded scenarios (backward compat, no TOML files needed)
+- **`schema.rs`** — TOML scenario schema (version 1), loader, validator. Maps scenarios to A2 composition IDs
+- **`observations.rs`** — `ProxyObservation` semantic capture model: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status. `compare_observations()` produces structured comparison results
+- **`probes.rs`** — Reusable protocol client probes: `socks5_tcp_connect`, `socks5_tcp_connect_auth`, `socks5_connect_refused`, `socks5_auth_failure`, `http_connect`, `http_connect_refused`, `http_forward_get`, `http_forward_post`, `socks4_connect`, `socks4a_connect`. Each returns `ProbeResult`
+- **`supervisor.rs`** — `SupervisedProcess` with process-group ownership (Unix), bounded stdout/stderr capture, artifact retention (logs saved on drop), `ReadinessProbe` enum (TcpPort, StdoutPattern, FixedDelay, FileExists), structured `ProcessExit`
+- **`ci.rs`** — 5-tier CI organization: FastStructural, CoreDifferential, ExtendedDifferential, PlatformDifferential, PrivilegedExternal. Each tier has its own gate env var
+- **`report.rs`** — JSON and Markdown report generation with manifest consistency checks and CI tier filtering
+
+TOML scenario files live under `crates/eggress-testkit/tests/oracle/scenarios/`. Schema validation tests run without pproxy:
+
+```bash
+cargo test -p eggress-testkit --test oracle_scenario_files
+cargo test -p eggress-testkit --lib oracle
+```
+
 ## Running tests
 ```bash
 # Full suite

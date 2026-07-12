@@ -181,6 +181,24 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 # Run scenario-driven oracle harness (gated, requires pproxy==2.7.9)
 EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
 
+# Run schema validation tests
+cargo test -p eggress-testkit --test oracle_scenario_files
+
+# Run oracle CI tier tests
+cargo test -p eggress-testkit --lib oracle::ci
+
+# Run oracle observation tests
+cargo test -p eggress-testkit --lib oracle::observations
+
+# Run oracle supervisor tests
+cargo test -p eggress-testkit --lib oracle::supervisor
+
+# Run oracle probe tests
+cargo test -p eggress-testkit --lib oracle::probes
+
+# Run oracle schema tests
+cargo test -p eggress-testkit --lib oracle::schema
+
 # Run pproxy differential tests (gated, requires pproxy==2.7.9)
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
 
@@ -399,6 +417,15 @@ eggress/
 │   │   └── pyproject.toml      # Authoritative release build config (maturin)
 │   ├── test_pproxy_dropin.py       # Phase 40: PPProxyService, CompatibilityReport, start_pproxy tests
 │   └── eggress-testkit/   # Test utilities
+│       └── src/oracle/
+│           ├── mod.rs        # Oracle gate, timeouts, module root
+│           ├── scenario.rs   # 31 hardcoded scenarios (backward compat)
+│           ├── schema.rs     # TOML scenario schema, loader, validator
+│           ├── observations.rs # Semantic observation capture model
+│           ├── probes.rs     # Reusable protocol client probes
+│           ├── supervisor.rs # Robust process supervisor with artifact retention
+│           ├── ci.rs         # CI tier organization and gating
+│           └── report.rs     # JSON/Markdown report generation
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
 ├── scripts/                # Helper scripts (test_wheel.sh)
@@ -551,6 +578,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Manifest validation**: Two manifests coexist with different schemas. The **canonical parity contract** is `docs/parity/pproxy_capability_manifest.toml` (Phase 37+, 139 capabilities, `[[capability]]` arrays, 5-tier vocabulary). Validated by Rust (`eggress-testkit::canonical_manifest::validate_canonical_manifest()`, 13 rules) and Python (`scripts/validate_pproxy_parity_manifest.py`, 14 rules). The **legacy evidence index** is `tests/compat/pproxy_manifest.toml` (Phase 18, `[[features]]` arrays, different taxonomy) — retained for Rust cross-check tests but superseded for parity claims.
 - **pproxy parity manifest (Phase 37)**: `docs/parity/pproxy_capability_manifest.toml` is the authoritative compatibility contract — 139 capabilities across 5 categories (CLI, URI, Protocol, Routing, Python) with tier classification, evidence requirements, and config/runtime/test layers. Frozen as of Phase 51 final parity certification. Validated by Rust (`eggress-testkit::canonical_manifest::validate_canonical_manifest()`, 13 rules) and Python (`scripts/validate_pproxy_parity_manifest.py`, 14 rules, strict mode). The report `docs/parity/PPROXY_PARITY_REPORT.md` is generated from the manifest (Phase 42: `--write-report`/`--check-report`). See `docs/parity/README.md` for design.
 - **Composition matrix (Phase A2)**: `docs/parity/composition_matrix.toml` extends the flat capability manifest with an explicit `protocol×role×traffic_kind` graph. 31 cells, 4 chains, 5 constraints. Validates that every supported composition is declared explicitly, preventing false parity claims. Schema at `docs/parity/composition_schema.toml`. Validated by Rust (`eggress-testkit::composition::validate_composition_matrix()`, 33 tests) and Python (`--check-matrix` flag). Config compiler integration produces warnings for unsupported listener/upstream combinations via `validate_config_composition()`. See `docs/parity/README.md` for design.
+- **Differential oracle (Phase A3)**: Expanded oracle harness with declarative TOML scenarios (73 scenarios: 31 hardcoded + 42 TOML), semantic observation model, reusable protocol probes (SOCKS4/4a, SOCKS5, HTTP CONNECT/forward), robust process supervisor with process-group ownership and artifact retention, 5-tier CI organization (fast-structural, core-differential, extended-differential, platform-differential, privileged-external), and Markdown report generation. Scenarios map to A2 composition IDs. See `docs/DIFFERENTIAL_TESTING.md` for details.
 - **Phase 42 corrective consistency pass**: `CompatibilityReport.tier` now uses the five-tier manifest vocabulary (`drop_in`, `compatible_with_warning`, `native_equivalent`, `intentional_non_parity`, `unsupported`); `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies TLS to all compatible listeners (matches pproxy, which loads the cert chain into every ssl context). See `docs/PHASE_42_PPROXY_PARITY_CORRECTIVE_CONSISTENCY_PASS_COMPLETION.md`.
 - **pproxy CLI native-equivalent closure (Phase 38)**: `--ssl`, `-b`, `--rulefile` generate TOML config (TLS listener, reject rules, rulefile-parsed rules). `-a N` generates `[health] interval = "Ns"` TOML. `--pac` generates `[admin.pac] enabled = true` TOML. `--test` translates config and runs `eggress upstream test -c <config>`, then exits. `--sys` auto-invokes `eggress system-proxy inspect` before starting the service. `--log`, `--get`, `--reuse` emit structured diagnostics. `--daemon` remains unsupported. See `plans/phase_38_pproxy_cli_native_equivalent_closure.md`, `docs/PHASE_38_PPROXY_CLI_NATIVE_EQUIVALENT_CLOSURE_COMPLETION.md`, and `docs/cli/PPROXY_CLI_INVENTORY.md`.\n- **pproxy regex and rulefile compatibility (Phase A.03)**: Dual regex backend (`fast regex` + `fancy_regex` for lookahead/lookbehind/backreferences). `--rulefile` loader validates patterns and enforces `MAX_RULE_ENTRIES = 10_000`. `-b` flag patterns validated at parse time. URI `?rules_file=` query parameter preserved through translation. New diagnostic codes: `RulefileError`, `InvalidRegexPattern`, `FancyRegexBackend`, `UriPreservedUnsupportedComponent`. See `crates/eggress-pproxy-compat/src/regex_compat.rs`.
 - **Manifest external dependency checks (Phase 24)**: Compatible entries with differential tests require `external_dependency`; implemented_interop requires dependency or divergence note explaining interop.

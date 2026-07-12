@@ -1,0 +1,133 @@
+schema_version = 1
+
+[[scenarios]]
+id = "ext.tls_echo"
+capability_ids = ["transport.tls", "protocol.tls_echo"]
+description = "TLS echo roundtrip through TLS transport"
+pproxy_args = ["-l", "https://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "tests/fixtures/cert.pem"
+key = "tests/fixtures/key.pem"
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+comparison = "coarse_result"
+
+[[scenarios]]
+id = "ext.udp_standalone"
+capability_ids = ["protocol.standalone_udp"]
+description = "Standalone UDP relay (pproxy-compatible mode)"
+pproxy_args = ["-l", "udp://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+
+[listeners.udp]
+mode = "standalone_pproxy_udp"
+"""
+expected_equivalence = "coarse_result"
+category = "udp"
+timeout_secs = 10
+client_action = "none"
+comparison = "coarse_result"
+
+[[scenarios]]
+id = "ext.udp_echo"
+capability_ids = ["protocol.socks5_udp_relay", "protocol.udp_echo_roundtrip"]
+description = "UDP echo roundtrip through SOCKS5 proxy"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "payload"
+category = "udp"
+timeout_secs = 10
+client_action = "udp_echo_roundtrip"
+
+[[scenarios]]
+id = "ext.shadowsocks_connect"
+capability_ids = ["protocol.shadowsocks_tcp", "protocol.shadowsocks_connect"]
+description = "Shadowsocks TCP connect through proxy"
+pproxy_args = ["-l", "ss://127.0.0.1:{PORT}#testuser:testpass", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+password = "testpass"
+method = "aes-256-gcm"
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "none"
+comparison = "coarse_result"
+
+[[scenarios]]
+id = "ext.trojan_connect"
+capability_ids = ["protocol.trojan_tcp", "protocol.trojan_connect"]
+description = "Trojan connect through proxy"
+pproxy_args = ["-l", "trojan://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["trojan"]
+
+[listeners.trojan]
+password = "password"
+
+[listeners.tls]
+cert = "tests/fixtures/cert.pem"
+key = "tests/fixtures/key.pem"
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "none"
+comparison = "coarse_result"
+
+[[scenarios]]
+id = "ext.reverse_proxy"
+capability_ids = ["protocol.reverse_proxy"]
+description = "Reverse proxy control channel"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+comparison = "coarse_result"
+platform = { required_os = "linux" }

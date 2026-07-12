@@ -1,0 +1,180 @@
+schema_version = 1
+
+[[scenarios]]
+id = "cli.socks5_default"
+capability_ids = ["cli.socks5_default", "uri.socks5"]
+description = "SOCKS5 listener on default port with direct routing"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.socks4_default"
+capability_ids = ["cli.socks4_default", "uri.socks4"]
+description = "SOCKS4 listener on default port with direct routing"
+pproxy_args = ["-l", "socks4://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks4"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.http_default"
+capability_ids = ["cli.http_default", "uri.http"]
+description = "HTTP CONNECT listener on default port with direct routing"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.https_default"
+capability_ids = ["cli.https_default", "uri.https"]
+description = "HTTPS (TLS) CONNECT listener with direct routing"
+pproxy_args = ["-l", "https://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "tests/fixtures/cert.pem"
+key = "tests/fixtures/key.pem"
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.ss_default"
+capability_ids = ["cli.ss_default", "uri.ss"]
+description = "Shadowsocks listener with direct routing"
+pproxy_args = ["-l", "ss://127.0.0.1:{PORT}#testuser:testpass", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["shadowsocks"]
+
+[listeners.shadowsocks]
+password = "testpass"
+method = "aes-256-gcm"
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.trojan_default"
+capability_ids = ["cli.trojan_default", "uri.trojan"]
+description = "Trojan listener with direct routing"
+pproxy_args = ["-l", "trojan://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["trojan"]
+
+[listeners.trojan]
+password = "password"
+
+[listeners.tls]
+cert = "tests/fixtures/cert.pem"
+key = "tests/fixtures/key.pem"
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.mixed_default"
+capability_ids = ["cli.mixed_default"]
+description = "Mixed SOCKS5+HTTP listener on single port"
+pproxy_args = ["-l", "socks5://127.0.0.1:{PORT}", "-l", "http://127.0.0.1:{PORT2}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5", "http"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 10
+client_action = "none"
+
+[[scenarios]]
+id = "cli.help_version"
+capability_ids = ["cli.help_version"]
+description = "CLI help and version output"
+pproxy_args = ["-h"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["socks5"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 5
+client_action = "none"
+expected_divergences = ["eggress uses different CLI flag names than pproxy"]
+
+[[scenarios]]
+id = "cli.bind_failure"
+capability_ids = ["cli.bind_failure"]
+description = "Invalid bind address causes startup failure"
+pproxy_args = ["-l", "socks5://0.0.0.0:1"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "0.0.0.0:1"
+protocols = ["socks5"]
+"""
+expected_equivalence = "coarse_result"
+category = "cli_defaults"
+timeout_secs = 5
+client_action = "none"
+expected_divergences = ["both should fail on privileged port"]

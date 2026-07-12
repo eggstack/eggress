@@ -1,0 +1,132 @@
+schema_version = 1
+
+[[scenarios]]
+id = "tcp.http_connect"
+capability_ids = ["protocol.http_connect"]
+description = "HTTP CONNECT to TCP echo server"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_connect"
+
+[[scenarios]]
+id = "tcp.http_forward_get"
+capability_ids = ["protocol.http_forward_get"]
+description = "HTTP forward proxy GET request"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_forward_get"
+normalization = { strip_log_prefixes = true, normalize_ports = true, normalize_line_endings = true }
+
+[[scenarios]]
+id = "tcp.http_forward_post"
+capability_ids = ["protocol.http_forward_post"]
+description = "HTTP forward proxy POST request"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "payload"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_forward_post"
+normalization = { strip_log_prefixes = true, normalize_ports = true, normalize_line_endings = true }
+
+[[scenarios]]
+id = "tcp.http_connect_domain"
+capability_ids = ["protocol.http_connect", "protocol.domain_resolution"]
+description = "HTTP CONNECT to domain-based target"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_connect"
+expected_divergences = ["domain resolution may differ between implementations"]
+
+[[scenarios]]
+id = "tcp.http_forward_head"
+capability_ids = ["protocol.http_forward_get"]
+description = "HTTP forward proxy HEAD request"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_forward_get"
+expected_divergences = ["HEAD request handling may vary"]
+
+[[scenarios]]
+id = "tcp.http_refused"
+capability_ids = ["protocol.http_connect", "protocol.connect_refused"]
+description = "HTTP CONNECT to refused target (negative case)"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_connect"
+
+[[scenarios]]
+id = "tcp.http_auth"
+capability_ids = ["protocol.http_connect"]
+description = "HTTP CONNECT with authentication placeholder"
+pproxy_args = ["-l", "http://127.0.0.1:{PORT}", "-r", "direct"]
+eggress_toml = """
+version = 1
+
+[[listeners]]
+name = "test"
+bind = "127.0.0.1:{PORT}"
+protocols = ["http"]
+"""
+expected_equivalence = "coarse_result"
+category = "http_socks_tcp"
+timeout_secs = 10
+client_action = "http_connect"
+expected_divergences = ["HTTP auth not yet supported in eggress"]
