@@ -10,6 +10,8 @@ docs, and test comments.
 | File | Purpose |
 |------|---------|
 | `pproxy_capability_manifest.toml` | Machine-readable manifest of all pproxy capabilities |
+| `composition_schema.toml` | Schema definition for the composition matrix |
+| `composition_matrix.toml` | Machine-readable composition graph (protocol×role×traffic_kind) |
 | `PPROXY_PARITY_REPORT.md` | Human-readable summary with tier counts and next steps |
 | `README.md` | This file — explains tiers, layers, evidence, and rules |
 
@@ -155,3 +157,83 @@ python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PP
 
 5. **No aspirational entries**: If it is not implemented, mark it
    `unsupported` with `evidence = "none"`.
+
+## Composition Matrix (Phase A2)
+
+The composition matrix (`composition_matrix.toml`) extends the flat capability
+manifest with an explicit **protocol×role×traffic_kind** graph. It prevents
+false parity claims by requiring every supported combination to be declared.
+
+### Structure
+
+```toml
+[matrix]
+schema_version = "1"
+manifest_ref = "docs/parity/pproxy_capability_manifest.toml"
+
+[[cell]]
+protocol = "socks5"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = ["protocol.socks5.connect_ipv4", ...]
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "http"
+traffic_kind = "tcp"
+tier = "drop_in"
+
+[[constraint]]
+type = "no_udp"
+applies_to = ["http", "socks4", "socks4a", "trojan"]
+```
+
+### Dimensions
+
+| Dimension | Values |
+|-----------|--------|
+| **protocol** | direct, http, https, socks4, socks4a, socks5, shadowsocks, trojan, ssh, ws, wss, raw, tunnel, h2, quic, h3, unix, redir |
+| **role** | listener, upstream, chain_hop, terminal, reverse_server, reverse_client |
+| **traffic_kind** | tcp, udp |
+| **tier** | drop_in, compatible_with_warning, native_equivalent, intentional_non_parity, unsupported |
+
+### Constraint Types
+
+| Type | Meaning |
+|------|---------|
+| `chain_max_hops` | Maximum chain length (currently 10) |
+| `no_udp` | Protocols that do not support UDP relay |
+| `no_chain` | Protocols that cannot participate in chains |
+| `requires_tls` | Protocols requiring TLS transport wrapper |
+| `protocol_crate_only` | Implemented in protocol crates but refused by config/runtime |
+
+### Validation
+
+```bash
+# Rust validator (21+ tests)
+cargo test -p eggress-testkit composition
+
+# Python validator
+python3 scripts/validate_pproxy_parity_manifest.py \
+    --check-matrix docs/parity/composition_matrix.toml \
+    docs/parity/pproxy_capability_manifest.toml
+
+# Config compiler integration (produces warnings for unsupported compositions)
+# Integrated into validate_config_composition() in eggress-config/src/validate.rs
+```
+
+### Design Principles
+
+1. **Explicit composition**: Every supported protocol×role×traffic_kind must
+   have a cell in the matrix. Implicit support is not allowed.
+
+2. **Capability cross-reference**: Drop_in cells must reference manifest
+   capability IDs via `capability_ids`.
+
+3. **Protocol-crate-only honesty**: Protocols implemented only in protocol
+   crates have `intentional_non_parity` tier with `caveat_class = "protocol_crate_only"`.
+
+4. **Separate from manifest**: The composition matrix is a separate TOML file,
+   not an extension of the capability manifest. This keeps concerns separated.

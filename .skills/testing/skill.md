@@ -198,6 +198,10 @@ python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PP
 # Verify the parity report is consistent with the manifest (Phase 42+, CI runs this)
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 
+# Composition matrix validation (Phase A2)
+cargo test -p eggress-testkit composition
+python3 scripts/validate_pproxy_parity_manifest.py --check-matrix docs/parity/composition_matrix.toml docs/parity/pproxy_capability_manifest.toml
+
 # Fuzz targets (requires cargo-fuzz)
 cargo fuzz run uri_parse
 cargo fuzz run socks5_udp_datagram

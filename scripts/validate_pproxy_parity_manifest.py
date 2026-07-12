@@ -801,6 +801,179 @@ def check_report_consistency(
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Composition matrix validation (Phase A2)
+# ---------------------------------------------------------------------------
+
+VALID_COMPOSITION_PROTOCOLS = frozenset({
+    "direct", "http", "https", "socks4", "socks4a", "socks5",
+    "shadowsocks", "trojan", "ssh", "ws", "wss", "raw", "tunnel",
+    "h2", "quic", "h3", "unix", "redir",
+})
+
+VALID_COMPOSITION_ROLES = frozenset({
+    "listener", "upstream", "chain_hop", "terminal",
+    "reverse_server", "reverse_client",
+})
+
+VALID_COMPOSITION_TRAFFIC_KINDS = frozenset({"tcp", "udp"})
+
+VALID_CONSTRAINT_TYPES = frozenset({
+    "chain_max_hops", "platform", "requires_tls",
+    "no_udp", "no_chain", "protocol_crate_only",
+})
+
+VALID_CAVEAT_CLASSES_COMPOSITION = frozenset({
+    "protocol_crate_only", "missing_protocol_command",
+    "missing_protocol_role", "missing_protocol_transport",
+    "deferred_by_adr", "intentional_non_parity",
+    "cli_process_model", "translator_scope_gap",
+})
+
+
+def validate_composition_matrix(
+    matrix_path: Path,
+    manifest_path: Path,
+    strict: bool = False,
+) -> int:
+    """Validate the composition matrix against the manifest.
+
+    Returns the number of errors.
+    """
+    if tomllib is None:
+        print("ERROR: Python 3.11+ with tomllib is required.", file=sys.stderr)
+        return 2
+
+    # Load manifest capability IDs
+    with open(manifest_path, "rb") as f:
+        manifest_data = tomllib.load(f)
+    manifest_ids = {
+        cap["id"] for cap in manifest_data.get("capability", [])
+        if isinstance(cap, dict) and "id" in cap
+    }
+
+    # Load composition matrix
+    with open(matrix_path, "rb") as f:
+        matrix_data = tomllib.load(f)
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    meta = matrix_data.get("matrix", {})
+    schema_version = meta.get("schema_version", "")
+    if schema_version != "1":
+        errors.append(f"schema version mismatch: got '{schema_version}', expected '1'")
+
+    cells = matrix_data.get("cell", [])
+    chains = matrix_data.get("chain", [])
+    constraints = matrix_data.get("constraint", [])
+
+    if not cells and not chains:
+        errors.append("empty composition matrix (no cells or chains)")
+
+    # Validate cells
+    seen_cells: set[tuple[str, str, str]] = set()
+    for idx, cell in enumerate(cells):
+        proto = cell.get("protocol", "")
+        role = cell.get("role", "")
+        traffic = cell.get("traffic_kind", "")
+        tier = cell.get("tier", "")
+        evidence = cell.get("evidence", "")
+        cap_ids = cell.get("capability_ids", [])
+        caveat_class = cell.get("caveat_class", "")
+        cell_key = (proto, role, traffic)
+
+        if proto not in VALID_COMPOSITION_PROTOCOLS:
+            errors.append(f"cell[{idx}]: unknown protocol '{proto}'")
+        if role not in VALID_COMPOSITION_ROLES:
+            errors.append(f"cell[{idx}]: unknown role '{role}'")
+        if traffic not in VALID_COMPOSITION_TRAFFIC_KINDS:
+            errors.append(f"cell[{idx}]: unknown traffic_kind '{traffic}'")
+        if tier not in VALID_TIERS:
+            errors.append(f"cell[{idx}]: unknown tier '{tier}'")
+        if evidence not in VALID_EVIDENCE:
+            errors.append(f"cell[{idx}]: unknown evidence '{evidence}'")
+        if caveat_class and caveat_class not in VALID_CAVEAT_CLASSES_COMPOSITION:
+            errors.append(f"cell[{idx}]: unknown caveat_class '{caveat_class}'")
+
+        if cell_key in seen_cells:
+            errors.append(f"cell[{idx}]: duplicate cell: protocol={proto} role={role} traffic_kind={traffic}")
+        seen_cells.add(cell_key)
+
+        if tier == "unsupported" and cap_ids:
+            errors.append(f"cell[{idx}]: unsupported cell has non-empty capability_ids: {proto}/{role}")
+
+        if caveat_class == "protocol_crate_only" and tier == "drop_in":
+            errors.append(f"cell[{idx}]: protocol-crate-only cell has tier=drop_in: {proto}/{role}")
+
+        if tier == "drop_in" and evidence in ("unit", "synthetic", "docs_only", "none"):
+            warnings.append(f"cell[{idx}]: drop_in with weak evidence: {proto}/{role} evidence={evidence}")
+
+        for cap_id in cap_ids:
+            if cap_id not in manifest_ids:
+                errors.append(f"cell[{idx}]: capability_id not found in manifest: {cap_id}")
+
+    # Validate chains
+    seen_chains: set[tuple[str, str, str]] = set()
+    for idx, chain in enumerate(chains):
+        from_proto = chain.get("from_protocol", "")
+        to_proto = chain.get("to_protocol", "")
+        traffic = chain.get("traffic_kind", "")
+        tier = chain.get("tier", "")
+        evidence = chain.get("evidence", "")
+        cap_ids = chain.get("capability_ids", [])
+        chain_key = (from_proto, to_proto, traffic)
+
+        if from_proto not in VALID_COMPOSITION_PROTOCOLS:
+            errors.append(f"chain[{idx}]: unknown from_protocol '{from_proto}'")
+        if to_proto not in VALID_COMPOSITION_PROTOCOLS:
+            errors.append(f"chain[{idx}]: unknown to_protocol '{to_proto}'")
+        if traffic not in VALID_COMPOSITION_TRAFFIC_KINDS:
+            errors.append(f"chain[{idx}]: unknown traffic_kind '{traffic}'")
+        if tier not in VALID_TIERS:
+            errors.append(f"chain[{idx}]: unknown tier '{tier}'")
+        if evidence not in VALID_EVIDENCE:
+            errors.append(f"chain[{idx}]: unknown evidence '{evidence}'")
+
+        if chain_key in seen_chains:
+            errors.append(f"chain[{idx}]: duplicate chain: from={from_proto} to={to_proto} traffic_kind={traffic}")
+        seen_chains.add(chain_key)
+
+        for cap_id in cap_ids:
+            if cap_id not in manifest_ids:
+                errors.append(f"chain[{idx}]: capability_id not found in manifest: {cap_id}")
+
+    # Validate constraints
+    for idx, constraint in enumerate(constraints):
+        ctype = constraint.get("type", "")
+        applies_to = constraint.get("applies_to", [])
+
+        if ctype not in VALID_CONSTRAINT_TYPES:
+            errors.append(f"constraint[{idx}]: unknown type '{ctype}'")
+
+        for proto in applies_to:
+            if proto not in VALID_COMPOSITION_PROTOCOLS:
+                errors.append(f"constraint[{idx}]: applies_to references unknown protocol '{proto}'")
+
+    # Report
+    all_findings = []
+    for e in errors:
+        all_findings.append(f"  [ERROR] {e}")
+    for w in warnings:
+        level = "ERROR" if strict else "WARNING"
+        all_findings.append(f"  [{level}] {w}")
+
+    if all_findings:
+        print(f"\nComposition matrix validation ({matrix_path.name}):")
+        for finding in all_findings:
+            print(finding)
+
+    effective_errors = len(errors) + (len(warnings) if strict else 0)
+    if effective_errors == 0:
+        print(f"Composition matrix is valid: {len(cells)} cells, {len(chains)} chains, {len(constraints)} constraints")
+    return effective_errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate the pproxy capability manifest.",
@@ -835,6 +1008,12 @@ def main() -> int:
         default=None,
         help="Check that the given report file is consistent with the manifest.",
     )
+    parser.add_argument(
+        "--check-matrix",
+        type=Path,
+        default=None,
+        help="Validate the composition matrix against the manifest.",
+    )
     args = parser.parse_args()
 
     # Two subcommand modes
@@ -855,6 +1034,18 @@ def main() -> int:
             print(f"ERROR: Manifest file not found: {args.manifest}", file=sys.stderr)
             return 2
         return check_report_consistency(args.manifest, args.check_report)
+
+    if args.check_matrix is not None:
+        if args.manifest is None:
+            print("ERROR: --check-matrix requires a manifest path", file=sys.stderr)
+            return 2
+        if not args.manifest.exists():
+            print(f"ERROR: Manifest file not found: {args.manifest}", file=sys.stderr)
+            return 2
+        if not args.check_matrix.exists():
+            print(f"ERROR: Composition matrix not found: {args.check_matrix}", file=sys.stderr)
+            return 2
+        return validate_composition_matrix(args.check_matrix, args.manifest, strict=args.strict)
 
     if args.manifest is None:
         parser.print_help()

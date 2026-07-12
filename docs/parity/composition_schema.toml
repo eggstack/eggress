@@ -1,0 +1,55 @@
+# Composition Schema (Phase A2)
+#
+# Defines the structure and constraints for composition_matrix.toml.
+# This file is the schema definition — it describes what fields are valid
+# and what constraints the matrix must satisfy.
+#
+# DO NOT edit composition_matrix.toml by hand. The matrix is generated
+# from code and validated against this schema.
+
+schema_version = "1"
+description = "Composition graph schema for pproxy parity matrix"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Allowed enum values
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[enums]
+protocols = [
+    "direct", "http", "https", "socks4", "socks4a", "socks5",
+    "shadowsocks", "trojan", "ssh", "ws", "wss", "raw", "tunnel",
+    "h2", "quic", "h3", "unix", "redir",
+]
+roles = [
+    "listener", "upstream", "chain_hop", "terminal",
+    "reverse_server", "reverse_client",
+]
+traffic_kinds = ["tcp", "udp"]
+platforms = ["linux", "macos", "windows", "unix_only"]
+tiers = [
+    "drop_in", "compatible_with_warning", "native_equivalent",
+    "intentional_non_parity", "unsupported",
+]
+evidence = [
+    "differential", "integration", "unit", "synthetic",
+    "docs_only", "none",
+]
+constraint_types = [
+    "chain_max_hops", "platform", "requires_tls",
+    "no_udp", "no_chain", "protocol_crate_only",
+]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Schema invariants (enforced by validator)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# 1. Every capability_id in a cell must exist in pproxy_capability_manifest.toml.
+# 2. unsupported tier cells must have zero capability_ids.
+# 3. No two cells may have the same (protocol, role, traffic_kind) tuple
+#    unless one is tcp and the other is udp.
+# 4. Chain composition cells must have chain_position >= 1.
+# 5. Protocol-crate-only cells must have tier != drop_in.
+# 6. Cells with platform constraints must have tier != drop_in or
+#    explicit platform gate.
+# 7. drop_in cells must have evidence >= integration.
+# 8. Chain cells must have chain_max >= 2.

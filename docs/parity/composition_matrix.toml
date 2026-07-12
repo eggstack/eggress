@@ -1,0 +1,445 @@
+# Composition Matrix (Phase A2)
+#
+# Machine-readable composition graph for pproxy parity.
+# Maps protocol×role×traffic_kind combinations to capability IDs and evidence.
+#
+# DO NOT edit by hand — generated from code. Use the validator to check:
+#   python3 scripts/validate_pproxy_parity_manifest.py --check-matrix \
+#       docs/parity/composition_matrix.toml
+#
+# Cross-references pproxy_capability_manifest.toml capability IDs.
+
+[matrix]
+schema_version = "1"
+manifest_ref = "docs/parity/pproxy_capability_manifest.toml"
+description = "Explicit composition graph preventing false parity claims"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TCP Listener Compositions
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "http"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.http_connect.ipv4",
+    "protocol.http_connect.ipv6",
+    "protocol.http_connect.domain",
+    "protocol.http_connect.auth_success",
+    "protocol.http_connect.auth_failure",
+    "protocol.http_connect.refused",
+    "protocol.http_connect.half_close",
+    "protocol.http_connect.fragmented",
+    "protocol.http_connect.timeout",
+    "protocol.http_forward.get",
+    "protocol.http_forward.post_content_length",
+    "protocol.http_forward.head",
+    "protocol.http_forward.chunked",
+    "protocol.http_forward.persistent",
+    "protocol.http_forward.connection_close",
+    "protocol.http_forward.auth_success",
+    "protocol.http_forward.malformed",
+    "protocol.http_forward.upstream_close",
+]
+
+[[cell]]
+protocol = "socks4"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4.connect_ipv4",
+    "protocol.socks4.user_id",
+    "protocol.socks4.refused",
+    "protocol.socks4.malformed",
+]
+
+[[cell]]
+protocol = "socks4a"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4a.connect_domain",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.connect_ipv4",
+    "protocol.socks5.connect_ipv6",
+    "protocol.socks5.connect_domain",
+    "protocol.socks5.connect_refused",
+    "protocol.socks5.auth_success",
+    "protocol.socks5.auth_failure",
+    "protocol.socks5.malformed",
+    "protocol.socks5.half_close",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "listener"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.udp_associate",
+    "protocol.socks5_udp_framing",
+]
+notes = "UDP association via SOCKS5; framing differs from pproxy in edge cases"
+
+[[cell]]
+protocol = "shadowsocks"
+role = "listener"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_tcp",
+]
+notes = "Shadowsocks TCP inbound; AEAD-only, legacy stream ciphers rejected"
+
+[[cell]]
+protocol = "shadowsocks"
+role = "listener"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_udp",
+]
+notes = "Shadowsocks UDP inbound; AEAD-only, standard SIP003 framing"
+
+[[cell]]
+protocol = "trojan"
+role = "listener"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.trojan_server",
+]
+notes = "Requires TLS; server role implemented as listener-side"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TCP Upstream Compositions
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "http"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.http_connect.ipv4",
+    "protocol.http_connect.ipv6",
+    "protocol.http_connect.domain",
+]
+
+[[cell]]
+protocol = "socks4"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4.connect_ipv4",
+]
+
+[[cell]]
+protocol = "socks4a"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4a.connect_domain",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.connect_ipv4",
+    "protocol.socks5.connect_ipv6",
+    "protocol.socks5.connect_domain",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "upstream"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.udp_associate",
+]
+
+[[cell]]
+protocol = "shadowsocks"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_tcp",
+]
+
+[[cell]]
+protocol = "shadowsocks"
+role = "upstream"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_udp",
+]
+
+[[cell]]
+protocol = "trojan"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.trojan_client",
+]
+
+[[cell]]
+protocol = "direct"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.direct_tcp",
+]
+
+[[cell]]
+protocol = "direct"
+role = "upstream"
+traffic_kind = "udp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.direct_udp",
+]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Chain Compositions (listener → upstream)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "http"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_http",
+]
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "socks5"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_socks5",
+]
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "socks5"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_socks5",
+]
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "http"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_http",
+]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Protocol-Crate-Only (implemented but refused at runtime/config)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "ws"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+caveat_class = "protocol_crate_only"
+rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
+notes = "WebSocket tunnel implemented in eggress-protocol-websocket; refused by config/runtime"
+
+[[cell]]
+protocol = "wss"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+caveat_class = "protocol_crate_only"
+rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
+notes = "WSS = WS + TLS; refused by config/runtime"
+
+[[cell]]
+protocol = "h2"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+caveat_class = "protocol_crate_only"
+rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
+notes = "HTTP/2 CONNECT implemented in eggress-protocol-http; refused by config/runtime"
+
+[[cell]]
+protocol = "raw"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+caveat_class = "protocol_crate_only"
+rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
+notes = "Raw fixed-target tunnel; refused by config/runtime"
+
+[[cell]]
+protocol = "ssh"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+rationale = "SSH upstream rejected; recommend OpenSSH dynamic forwarding (ssh -D)"
+
+[[cell]]
+protocol = "quic"
+role = "upstream"
+traffic_kind = "udp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+rationale = "QUIC/HTTP3 deferred by ADR"
+
+[[cell]]
+protocol = "h3"
+role = "upstream"
+traffic_kind = "udp"
+tier = "intentional_non_parity"
+evidence = "docs_only"
+capability_ids = []
+rationale = "HTTP/3 deferred by ADR"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Reverse Proxy Compositions
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "direct"
+role = "reverse_server"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+notes = "Reverse/backward proxy server with raw-relay control channel"
+
+[[cell]]
+protocol = "direct"
+role = "reverse_client"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+notes = "Reverse/backward proxy client (control client)"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Unsupported Compositions (explicit denials)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "http"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+[[cell]]
+protocol = "socks4"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+[[cell]]
+protocol = "socks4a"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+[[cell]]
+protocol = "trojan"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Constraints (global rules)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[constraint]]
+type = "chain_max_hops"
+value = 10
+description = "Maximum chain length supported by eggress"
+
+[[constraint]]
+type = "no_udp"
+applies_to = ["http", "socks4", "socks4a", "trojan"]
+description = "These protocols do not support UDP relay"
+
+[[constraint]]
+type = "no_chain"
+applies_to = ["unix", "redir"]
+description = "Unix socket and transparent proxy cannot participate in chains"
+
+[[constraint]]
+type = "requires_tls"
+applies_to = ["trojan", "wss", "h2"]
+description = "These protocols require TLS transport wrapper"
+
+[[constraint]]
+type = "protocol_crate_only"
+applies_to = ["ws", "wss", "h2", "raw"]
+description = "Implemented in protocol crates but refused by config/runtime supervisor"

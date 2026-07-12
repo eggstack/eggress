@@ -95,6 +95,131 @@ pub fn validate_config(config: &ConfigFile) -> Result<(), Vec<ConfigError>> {
     }
 }
 
+/// Validate configuration against the composition matrix.
+///
+/// Produces warnings (not errors) for unsupported listener→upstream
+/// protocol combinations. The composition matrix is optional — if
+/// unavailable, no warnings are emitted.
+pub fn validate_config_composition(config: &ConfigFile) -> Vec<ConfigWarning> {
+    let mut warnings = Vec::new();
+
+    // Load the composition matrix directly (no testkit dependency)
+    let matrix = match load_composition_matrix() {
+        Some(m) => m,
+        None => return warnings,
+    };
+
+    // Collect listener protocols from the `protocols` field
+    let listener_protocols: Vec<&str> = config
+        .listeners
+        .as_ref()
+        .map(|listeners| {
+            listeners
+                .iter()
+                .flat_map(|l| l.protocols.iter().map(|p| p.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Collect upstream protocols from all groups
+    if let Some(ref upstreams) = config.upstreams {
+        let upstream_chains: std::collections::HashMap<&str, eggress_uri::ProxyChainSpec> =
+            upstreams
+                .iter()
+                .filter_map(|u| {
+                    eggress_uri::parse_proxy_chain(&u.uri)
+                        .ok()
+                        .map(|chain| (u.id.as_str(), chain))
+                })
+                .collect();
+
+        for upstream in upstreams {
+            if let Some(chain) = upstream_chains.get(upstream.id.as_str()) {
+                let caps = eggress_core::capability::classify_upstream_chain(chain);
+
+                // Check TCP capability
+                if caps.is_tcp_supported() {
+                    for &proto in &listener_protocols {
+                        if !matrix_cell_supported(&matrix, proto, "listener", "tcp") {
+                            warnings.push(ConfigWarning {
+                                path: format!("upstreams[{}].uri", upstream.id),
+                                message: format!(
+                                    "listener protocol '{proto}' has no TCP composition cell; \
+                                     upstream '{}' may not work",
+                                    upstream.id
+                                ),
+                            });
+                        }
+                    }
+                }
+
+                // Check UDP capability
+                if caps.is_udp_supported() {
+                    for &proto in &listener_protocols {
+                        if !matrix_cell_supported(&matrix, proto, "listener", "udp") {
+                            warnings.push(ConfigWarning {
+                                path: format!("upstreams[{}].uri", upstream.id),
+                                message: format!(
+                                    "listener protocol '{proto}' has no UDP composition cell; \
+                                     upstream '{}' may not work with UDP relay",
+                                    upstream.id
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    warnings
+}
+
+// Minimal composition matrix types for loading from TOML
+#[derive(serde::Deserialize)]
+struct CompositionCellMinimal {
+    protocol: String,
+    role: String,
+    traffic_kind: String,
+    tier: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CompositionMatrixMinimal {
+    cell: Vec<CompositionCellMinimal>,
+}
+
+fn load_composition_matrix() -> Option<CompositionMatrixMinimal> {
+    // Look for the composition matrix relative to the workspace root
+    let candidates = [
+        "docs/parity/composition_matrix.toml",
+        "../docs/parity/composition_matrix.toml",
+        "../../docs/parity/composition_matrix.toml",
+    ];
+    for path in &candidates {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(matrix) = toml::from_str::<CompositionMatrixMinimal>(&content) {
+                return Some(matrix);
+            }
+        }
+    }
+    None
+}
+
+fn matrix_cell_supported(
+    matrix: &CompositionMatrixMinimal,
+    protocol: &str,
+    role: &str,
+    traffic_kind: &str,
+) -> bool {
+    matrix.cell.iter().any(|c| {
+        c.protocol == protocol
+            && c.role == role
+            && c.traffic_kind == traffic_kind
+            && c.tier != "unsupported"
+    })
+}
+
 fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut Vec<ConfigError>) {
     let mut names = HashSet::new();
 

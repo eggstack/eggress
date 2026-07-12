@@ -214,6 +214,12 @@ python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PP
 # Verify the parity report is consistent with the manifest (Phase 42; CI runs this)
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 
+# Run composition matrix validation (Phase A2)
+cargo test -p eggress-testkit composition
+
+# Validate composition matrix against manifest (Phase A2)
+python3 scripts/validate_pproxy_parity_manifest.py --check-matrix docs/parity/composition_matrix.toml docs/parity/pproxy_capability_manifest.toml
+
 # Run validator Rule 14 regression tests (Phase 52)
 python3.11 -m pytest tests/scripts/test_validate_pproxy_parity_manifest.py -v
 
@@ -441,6 +447,12 @@ eggress/
     │   ├── BINARY_MATRIX.md
     │   ├── BINARY_INSTALL.md
     │   └── CONTAINER.md
+    ├── parity/
+    │   ├── pproxy_capability_manifest.toml  # Canonical parity contract (139 capabilities)
+    │   ├── composition_schema.toml           # Schema for composition matrix (Phase A2)
+    │   ├── composition_matrix.toml           # Protocol×role×traffic_kind graph (Phase A2)
+    │   ├── PPROXY_PARITY_REPORT.md           # Generated parity report
+    │   └── README.md
     └── protocols/
         ├── HTTP_CONNECT.md
         ├── SOCKS4.md
@@ -538,6 +550,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Release candidate audit (Phase 17)**: Final parity matrix audit, Rust/Python release audits, security/redaction audit including Python binding surface, documentation consistency pass. Release candidate document at `docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md`. All verification commands pass; go recommendation issued. See `docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md`.
 - **Manifest validation**: Two manifests coexist with different schemas. The **canonical parity contract** is `docs/parity/pproxy_capability_manifest.toml` (Phase 37+, 139 capabilities, `[[capability]]` arrays, 5-tier vocabulary). Validated by Rust (`eggress-testkit::canonical_manifest::validate_canonical_manifest()`, 13 rules) and Python (`scripts/validate_pproxy_parity_manifest.py`, 14 rules). The **legacy evidence index** is `tests/compat/pproxy_manifest.toml` (Phase 18, `[[features]]` arrays, different taxonomy) — retained for Rust cross-check tests but superseded for parity claims.
 - **pproxy parity manifest (Phase 37)**: `docs/parity/pproxy_capability_manifest.toml` is the authoritative compatibility contract — 139 capabilities across 5 categories (CLI, URI, Protocol, Routing, Python) with tier classification, evidence requirements, and config/runtime/test layers. Frozen as of Phase 51 final parity certification. Validated by Rust (`eggress-testkit::canonical_manifest::validate_canonical_manifest()`, 13 rules) and Python (`scripts/validate_pproxy_parity_manifest.py`, 14 rules, strict mode). The report `docs/parity/PPROXY_PARITY_REPORT.md` is generated from the manifest (Phase 42: `--write-report`/`--check-report`). See `docs/parity/README.md` for design.
+- **Composition matrix (Phase A2)**: `docs/parity/composition_matrix.toml` extends the flat capability manifest with an explicit `protocol×role×traffic_kind` graph. 31 cells, 4 chains, 5 constraints. Validates that every supported composition is declared explicitly, preventing false parity claims. Schema at `docs/parity/composition_schema.toml`. Validated by Rust (`eggress-testkit::composition::validate_composition_matrix()`, 33 tests) and Python (`--check-matrix` flag). Config compiler integration produces warnings for unsupported listener/upstream combinations via `validate_config_composition()`. See `docs/parity/README.md` for design.
 - **Phase 42 corrective consistency pass**: `CompatibilityReport.tier` now uses the five-tier manifest vocabulary (`drop_in`, `compatible_with_warning`, `native_equivalent`, `intentional_non_parity`, `unsupported`); `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies TLS to all compatible listeners (matches pproxy, which loads the cert chain into every ssl context). See `docs/PHASE_42_PPROXY_PARITY_CORRECTIVE_CONSISTENCY_PASS_COMPLETION.md`.
 - **pproxy CLI native-equivalent closure (Phase 38)**: `--ssl`, `-b`, `--rulefile` generate TOML config (TLS listener, reject rules, rulefile-parsed rules). `-a N` generates `[health] interval = "Ns"` TOML. `--pac` generates `[admin.pac] enabled = true` TOML. `--test` translates config and runs `eggress upstream test -c <config>`, then exits. `--sys` auto-invokes `eggress system-proxy inspect` before starting the service. `--log`, `--get`, `--reuse` emit structured diagnostics. `--daemon` remains unsupported. See `plans/phase_38_pproxy_cli_native_equivalent_closure.md`, `docs/PHASE_38_PPROXY_CLI_NATIVE_EQUIVALENT_CLOSURE_COMPLETION.md`, and `docs/cli/PPROXY_CLI_INVENTORY.md`.\n- **pproxy regex and rulefile compatibility (Phase A.03)**: Dual regex backend (`fast regex` + `fancy_regex` for lookahead/lookbehind/backreferences). `--rulefile` loader validates patterns and enforces `MAX_RULE_ENTRIES = 10_000`. `-b` flag patterns validated at parse time. URI `?rules_file=` query parameter preserved through translation. New diagnostic codes: `RulefileError`, `InvalidRegexPattern`, `FancyRegexBackend`, `UriPreservedUnsupportedComponent`. See `crates/eggress-pproxy-compat/src/regex_compat.rs`.
 - **Manifest external dependency checks (Phase 24)**: Compatible entries with differential tests require `external_dependency`; implemented_interop requires dependency or divergence note explaining interop.
