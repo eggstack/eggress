@@ -1125,6 +1125,7 @@ mod tests {
             reverse_servers: Some(vec![crate::model::ReverseServerConfig {
                 id: "rs1".to_string(),
                 control_bind: "0.0.0.0:8443".to_string(),
+                external_bind: "0.0.0.0:9000".to_string(),
                 auth_username: None,
                 auth_password: None,
                 auth_password_env: None,
@@ -1154,6 +1155,7 @@ mod tests {
             reverse_servers: Some(vec![crate::model::ReverseServerConfig {
                 id: "rs1".to_string(),
                 control_bind: "0.0.0.0:8443".to_string(),
+                external_bind: "0.0.0.0:9000".to_string(),
                 auth_username: Some("user".to_string()),
                 auth_password: Some("pass".to_string()),
                 auth_password_env: None,
@@ -1182,6 +1184,7 @@ mod tests {
             reverse_servers: Some(vec![crate::model::ReverseServerConfig {
                 id: "rs1".to_string(),
                 control_bind: "0.0.0.0:8443".to_string(),
+                external_bind: "0.0.0.0:9000".to_string(),
                 auth_username: Some("user".to_string()),
                 auth_password: None,
                 auth_password_env: Some("MY_SECRET".to_string()),

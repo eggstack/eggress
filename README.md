@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Track A parity hardening in progress. Strong common HTTP/SOCKS/TCP compatibility is implemented and tested. Full pproxy parity certification remains gated on the canonical manifest audit, two-sided differential oracle, and Python drop-in status alignment. The parity capability manifest (139 capabilities, 5 tiers) is the source of truth at `docs/parity/pproxy_capability_manifest.toml`.
+> Status: Parity hardening complete through Phase 51. The parity capability manifest (139 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth. 84 drop-in, 19 compatible-with-warning, 14 native-equivalent, 17 intentional-non-parity, 5 unsupported.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 

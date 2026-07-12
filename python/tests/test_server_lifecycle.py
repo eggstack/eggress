@@ -345,3 +345,32 @@ def test_server_config_property_after_close():
     time.sleep(0.1)
     srv.close()
     assert isinstance(srv.config, EggressConfig)
+
+
+def test_wait_closed():
+    """wait_closed() returns once the server is shut down."""
+    async def _run():
+        srv = Server(listen=["http://127.0.0.1:0"])
+        srv.start()
+        await asyncio.sleep(0.1)
+        assert len(srv.addresses) > 0
+        # Close in background so wait_closed can observe the transition
+        async def _close_later():
+            await asyncio.sleep(0.05)
+            await srv.aclose()
+        task = asyncio.create_task(_close_later())
+        await srv.wait_closed()
+        assert srv.addresses == {}
+        await task
+
+    asyncio.run(_run())
+
+
+def test_wait_closed_already_stopped():
+    """wait_closed() returns immediately if server never started."""
+    async def _run():
+        srv = Server(listen=["http://127.0.0.1:0"])
+        await srv.wait_closed()
+        assert srv.addresses == {}
+
+    asyncio.run(_run())

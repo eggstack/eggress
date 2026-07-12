@@ -7,29 +7,29 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 91 | 65.5% |
-| `compatible_with_warning` | 9 | 6.5% |
-| `native_equivalent` | 17 | 12.2% |
+| `drop_in` | 84 | 60.4% |
+| `compatible_with_warning` | 19 | 13.7% |
+| `native_equivalent` | 14 | 10.1% |
 | `intentional_non_parity` | 17 | 12.2% |
 | `unsupported` | 5 | 3.6% |
 | **Total** | **139** | |
 
-## Drop-In Capabilities (91)
+## Drop-In Capabilities (84)
 
 These features are drop-in replacements for pproxy. All required layers are `complete` and evidence is `integration` or stronger.
 
 ### CLI (8)
 - `cli.listen`, `cli.remote`, `cli.udp_listen`, `cli.udp_remote`, `cli.block`, `cli.config`, `cli.version`, `cli.help`
-### URI Grammar (18)
-- `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_direct`, `uri.scheme_bind`, `uri.scheme_listen`, `uri.scheme_backward`, `uri.scheme_rebind`, `uri.modifier_ssl_tls`, `uri.modifier_inbound`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
-### Runtime Protocols (39)
-- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.shadowsocks_tcp`, `protocol.shadowsocks_udp`
+### URI Grammar (13)
+- `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_direct`, `uri.modifier_ssl_tls`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
+### Runtime Protocols (37)
+- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.direct_tcp`, `protocol.direct_udp`
 ### Routing (12)
 - `routing.rules`, `routing.scheduler_round_robin`, `routing.scheduler_first_available`, `routing.scheduler_random`, `routing.scheduler_least_connections`, `routing.health_checks`, `routing.pac_generation`, `routing.pac_serving`, `system_proxy.inspect`, `system_proxy.apply`, `system_proxy.rollback`, `routing.config_reload`
 ### Python (14)
 - `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`
 
-## Compatible-With-Warning (9)
+## Compatible-With-Warning (19)
 
 These features work but emit diagnostics or differ in a known way.
 
@@ -39,13 +39,23 @@ These features work but emit diagnostics or differ in a known way.
 | `cli.rulefile` | Regex validated at load time via CompatRegex. Simple reject/block rules auto-translated; complex rules emit warnings. Grammar subset only — non-reject actions and structured matchers must be configured in eggress TOML [[rules]]. Fancy regex backend activated for lookahead/lookbehind/backreference patterns. | `rulefile-partial` |
 | `cli.verbose` | Different mechanism (env var vs flag); same outcome. No config artifact is produced; the verbose flag is recognized at parse time and emits a diagnostic. | `verbose-mode` |
 | `cli.check_json_chain_info` | pproxy does not emit chain_info in check output; eggress extends with chain metadata. | `` |
+| `uri.scheme_trojan` | Full Trojan support: client upstream and inbound listener with TLS. No pproxy differential tests; unit evidence only. | `` |
+| `uri.scheme_bind` | TCP-only raw relay; no built-in TLS; plaintext auth possible; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind. | `reverse-proxy-warning` |
+| `uri.scheme_listen` | Alias for bind://; same reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal). | `` |
+| `uri.scheme_backward` | TCP-only raw relay; no built-in TLS; plaintext auth possible. | `reverse-proxy-warning` |
+| `uri.scheme_rebind` | Alias for backward://; same reverse proxy caveats (no TLS, plaintext auth). | `` |
+| `uri.modifier_inbound` | Activates reverse/backward mode; inherits reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal). | `reverse-proxy-warning` |
 | `uri.chain_separator` | Semicolon and comma are explicitly rejected with diagnostics suggesting __. | `` |
 | `uri.chain_validation` | Per-hop diagnostics carry unsupported_protocol or unsupported_transport_wrapper codes. | `` |
 | `uri.semicolon_comma_rejection` | Emits invalid_chainComposition diagnostic with migration suggestion. | `` |
 | `protocol.socks5.udp_associate` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
 | `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
+| `protocol.shadowsocks_tcp` | Wire-compatible with standard Shadowsocks sserver/sslocal. No pproxy differential tests; integration evidence only. | `` |
+| `protocol.shadowsocks_udp` | Standard AEAD format; interoperable. No pproxy differential tests; integration evidence only. | `` |
+| `protocol.trojan_client` | Trojan upstream client with rustls TLS. No pproxy differential tests. | `` |
+| `protocol.trojan_server` | Accept inbound Trojan connections over TLS with SHA224 password verification. No pproxy differential tests. | `` |
 
-## Native Equivalent (17)
+## Native Equivalent (14)
 
 These features achieve the same outcome through a different mechanism.
 
@@ -57,12 +67,9 @@ These features achieve the same outcome through a different mechanism.
 | `cli.pac` | PAC is served by the eggress admin HTTP server at /proxy.pac; --pac is parsed and translated, NOT unrecognized. |
 | `cli.sys` | pproxy --sys mutates global state at startup; eggress separates inspection from mutation. Inspect-after-translation smoke evidence; mutation behavior is intentionally opt-in. |
 | `cli.test` | Translation emits a warning; --test is recognized. Actual probe behavior is exercised by the 'eggress upstream test' subcommand, which is not part of this capability entry. |
-| `uri.scheme_trojan` | Full Trojan support: client upstream and inbound listener with TLS. |
 | `uri.scheme_redir` | Linux only; requires SO_ORIGINAL_DST. Same mechanism as pproxy. |
 | `uri.scheme_unix` | Unix only; not available on Windows. |
 | `protocol.udp_transport_validation` | Prevents generating UDP upstream configs that runtime cannot execute. pproxy silently generates non-functional configs for unsupported UDP transports. |
-| `protocol.trojan_client` | Trojan upstream client with rustls TLS. |
-| `protocol.trojan_server` | Inbound Trojan listener with TLS termination and SHA224 password verification. |
 | `routing.block_rules` | Different mechanism (rule action vs separate flag); same outcome. |
 | `routing.route_explanation` | eggress-native feature; pproxy has no equivalent. Not a parity claim. |
 | `routing.upstream_test` | Different invocation; same verification. |

@@ -391,6 +391,20 @@ def validate_manifest(manifest_path: Path, strict: bool = False, validate_only: 
                     "mention 'ADR' or 'adr'; add an ADR reference"
                 ))
 
+        # ── Rule 15: drop_in without named evidence reference ──────────
+        # Release-blocking drop-in capabilities must have named test files
+        # or integration evidence so parity claims are verifiable.
+        if tier == "drop_in":
+            tests = cap.get("tests", [])
+            evidence = cap.get("evidence", "")
+            if not tests and evidence not in ("differential", "integration"):
+                warnings.append(Diagnostic(
+                    "warning", 15, entry_id,
+                    "drop_in capability without named test references or "
+                    "integration/differential evidence; add test file names "
+                    "to 'tests' list for verifiability"
+                ))
+
     # ── Report ──────────────────────────────────────────────────────────
     total_caps = len(capabilities)
     tier_counts: dict[str, int] = {}

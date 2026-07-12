@@ -223,6 +223,12 @@ pub enum CanonicalValidationError {
     // Rule 13: Typo detection
     #[error("egress_behavior typo detected (should be \"eggress_behavior\")")]
     EgressBehaviorTypo { id: String },
+
+    // Rule 15: drop_in without named evidence reference
+    #[error(
+        "drop_in capability without named test references or integration/differential evidence"
+    )]
+    DropInWithoutEvidence { id: String },
 }
 
 /// A collection of validation errors and warnings.
@@ -534,6 +540,15 @@ pub fn validate_canonical_manifest(
         // Rule 13: Typo detection (egress_behavior instead of eggress_behavior)
         if !cap.egress_behavior.is_empty() {
             errs.warn(CanonicalValidationError::EgressBehaviorTypo { id: cap.id.clone() });
+        }
+
+        // Rule 15: drop_in without named evidence reference
+        if cap.tier == "drop_in"
+            && cap.tests.is_empty()
+            && cap.evidence != "differential"
+            && cap.evidence != "integration"
+        {
+            errs.warn(CanonicalValidationError::DropInWithoutEvidence { id: cap.id.clone() });
         }
     }
 

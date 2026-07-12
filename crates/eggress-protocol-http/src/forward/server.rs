@@ -1330,4 +1330,70 @@ mod tests {
         assert_eq!(report.wire_bytes, 0);
         assert_eq!(report.decoded_bytes, 0);
     }
+
+    #[tokio::test]
+    async fn test_copy_content_length_body_premature_eof() {
+        let input = b"hel"; // only 3 bytes but Content-Length says 11
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let result = copy_request_body(
+            &mut reader,
+            &mut writer,
+            RequestBodyKind::ContentLength(11),
+            &limits,
+        )
+        .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("unexpected EOF"),
+            "error should mention EOF: {}",
+            msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_copy_content_length_body_zero_length() {
+        let input = b"";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let report = copy_request_body(
+            &mut reader,
+            &mut writer,
+            RequestBodyKind::ContentLength(0),
+            &limits,
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.wire_bytes, 0);
+        assert_eq!(report.decoded_bytes, 0);
+    }
+
+    #[tokio::test]
+    async fn test_copy_chunked_body_decoded_limit_exceeded() {
+        // A single valid chunk of 100 bytes but max_decoded_body is 10
+        let chunk_data = "x".repeat(100);
+        let input = format!("64\r\n{}\r\n0\r\n\r\n", chunk_data);
+        let mut reader = input.as_bytes();
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits {
+            max_decoded_body: 10,
+            ..Default::default()
+        };
+
+        let result =
+            copy_request_body(&mut reader, &mut writer, RequestBodyKind::Chunked, &limits).await;
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("decoded body too large"),
+            "error should mention decoded body limit: {}",
+            msg
+        );
+    }
 }

@@ -623,6 +623,33 @@ mod tests {
     }
 
     #[test]
+    fn test_percent_decoded_at_in_password() {
+        let result = parse_proxy_chain("http://user:p%40ss@proxy:8080").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "user");
+        assert_eq!(creds.password, "p@ss");
+    }
+
+    #[test]
+    fn test_percent_decoded_colon_in_password() {
+        let result = parse_proxy_chain("http://user:pass%3Aword@proxy:8080").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "user");
+        assert_eq!(creds.password, "pass:word");
+    }
+
+    #[test]
+    fn test_percent_decoded_at_in_username() {
+        let result = parse_proxy_chain("http://user%40name:pass@proxy:8080").unwrap();
+        assert_eq!(result.hops.len(), 1);
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.username, "user@name");
+        assert_eq!(creds.password, "pass");
+    }
+
+    #[test]
     fn test_named_host() {
         let result = parse_proxy_chain("socks5://proxy.example:1080").unwrap();
         assert_eq!(result.hops.len(), 1);

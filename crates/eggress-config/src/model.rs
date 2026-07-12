@@ -255,6 +255,10 @@ pub struct ReverseServerConfig {
     pub id: String,
     /// Address to bind the control listener on (e.g., "0.0.0.0:8443").
     pub control_bind: String,
+    /// Address to bind the external listener on (for clients to connect to).
+    /// Required — the reverse server cannot accept external connections
+    /// without this address.
+    pub external_bind: String,
     /// Optional username for authentication.
     pub auth_username: Option<String>,
     /// Optional password for authentication.

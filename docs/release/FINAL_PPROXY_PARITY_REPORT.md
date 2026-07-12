@@ -1,5 +1,7 @@
 # Final pproxy Parity Report (Phase 36)
 
+> **Superseded:** This report was generated from the legacy `tests/compat/pproxy_manifest.toml` evidence index (171 features, old taxonomy). The canonical compatibility contract is now `docs/parity/pproxy_capability_manifest.toml` (139 capabilities, 5-tier vocabulary). The current auto-generated report is `docs/parity/PPROXY_PARITY_REPORT.md`.
+
 **Report status:** Generated from `tests/compat/pproxy_manifest.toml` on 2026-07-03.
 **Machine-readable source:** generated with `python3 scripts/phase36_report.py` → `target/compat/final-pproxy-parity-report.json`
 **Frozen targets:** [`PARITY_TARGET_FREEZE.md`](PARITY_TARGET_FREEZE.md)

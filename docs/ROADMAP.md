@@ -98,7 +98,7 @@ Phase 42: pproxy parity corrective consistency pass (complete)
 
 ### Phase 36: Final parity release audit — complete
 
-- [x] Frozen targets, manifest completeness audit, manifest corrections, docs consistency audit, final parity report (171 features), full workspace validation, go/no-go decision
+- [x] Frozen targets, manifest completeness audit, manifest corrections, docs consistency audit, final parity report (139 capabilities), full workspace validation, go/no-go decision
 
 ### Phase 37: Parity capability manifest and validator — complete
 

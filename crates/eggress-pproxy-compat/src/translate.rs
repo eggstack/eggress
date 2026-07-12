@@ -232,7 +232,8 @@ pub fn translate_from_uris(
             let server_id = format!("pproxy-reverse-server-{}", idx);
             reverse_servers.push(ReverseServerToml {
                 id: server_id,
-                control_bind: bind,
+                control_bind: bind.clone(),
+                external_bind: bind,
                 auth_username: local.username.clone(),
                 auth_password: local.password.clone(),
             });
@@ -1052,6 +1053,7 @@ struct ConfigToml {
 struct ReverseServerToml {
     id: String,
     control_bind: String,
+    external_bind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     auth_username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1774,6 +1776,7 @@ mod tests {
         let servers = parsed["reverse_servers"].as_array().unwrap();
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0]["control_bind"].as_str(), Some("0.0.0.0:8080"));
+        assert_eq!(servers[0]["external_bind"].as_str(), Some("0.0.0.0:8080"));
         // Should NOT appear in regular listeners
         let listeners = parsed["listeners"].as_array().unwrap();
         assert!(listeners.is_empty());
@@ -1787,6 +1790,7 @@ mod tests {
         let servers = parsed["reverse_servers"].as_array().unwrap();
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0]["control_bind"].as_str(), Some("0.0.0.0:8080"));
+        assert_eq!(servers[0]["external_bind"].as_str(), Some("0.0.0.0:8080"));
     }
 
     #[test]

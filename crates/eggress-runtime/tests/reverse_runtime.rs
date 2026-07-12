@@ -32,10 +32,13 @@ version = 1
 [[reverse_servers]]
 id = "rev-srv-1"
 control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
 
 [[reverse_clients]]
 id = "rev-cli-1"
 server_addr = "127.0.0.1:12345"
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -56,6 +59,8 @@ version = 1
 id = "rev-cli-parallel"
 server_addr = "127.0.0.1:12345"
 parallel_connections = 3
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -75,6 +80,7 @@ version = 1
 [[reverse_servers]]
 id = "rev-srv-bad"
 control_bind = "not-a-valid-address"
+external_bind = "127.0.0.1:0"
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -90,6 +96,8 @@ version = 1
 [[reverse_clients]]
 id = "rev-cli-bad"
 server_addr = "not-a-valid-address"
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -105,6 +113,7 @@ version = 1
 [[reverse_servers]]
 id = "rev-srv-auth"
 control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
 auth_username = "admin"
 auth_password = "secret123"
 
@@ -113,6 +122,8 @@ id = "rev-cli-auth"
 server_addr = "127.0.0.1:12345"
 auth_username = "admin"
 auth_password = "secret123"
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -134,6 +145,8 @@ id = "rev-cli-reconnect"
 server_addr = "127.0.0.1:12345"
 reconnect_initial = "500ms"
 reconnect_max = "10s"
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -154,6 +167,8 @@ version = 1
 id = "rev-cli-bad-reconnect"
 server_addr = "127.0.0.1:12345"
 reconnect_initial = "not-a-duration"
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -172,6 +187,7 @@ version = 1
 [[reverse_servers]]
 id = "rev-srv-test"
 control_bind = "127.0.0.1:{}"
+external_bind = "127.0.0.1:0"
 "#,
         control_port.port(),
     );
@@ -227,10 +243,13 @@ version = 1
 [[reverse_servers]]
 id = "rev-srv"
 control_bind = "127.0.0.1:{}"
+external_bind = "127.0.0.1:0"
 
 [[reverse_clients]]
 id = "rev-cli"
 server_addr = "127.0.0.1:{}"
+default_target_host = "127.0.0.1"
+default_target_port = 80
 "#,
         control_port.port(),
         control_port.port(),
@@ -293,6 +312,7 @@ version = 1
 [[reverse_servers]]
 id = "rev-srv"
 control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
 "#;
 
     let f1 = write_config(config1);
@@ -309,4 +329,137 @@ control_bind = "127.0.0.1:0"
         "reload should succeed, got: {:?}",
         result
     );
+}
+
+#[test]
+fn reverse_server_missing_external_bind_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-srv-no-external"
+control_bind = "127.0.0.1:0"
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    assert!(result.is_err(), "missing external_bind should fail");
+}
+
+#[test]
+fn reverse_server_invalid_external_bind_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-srv-bad-external"
+control_bind = "127.0.0.1:0"
+external_bind = "not-a-valid-address"
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    assert!(result.is_err(), "invalid external_bind should fail");
+}
+
+#[test]
+fn reverse_client_missing_target_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-no-target"
+server_addr = "127.0.0.1:12345"
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    assert!(
+        result.is_err(),
+        "missing default_target_host/port should fail"
+    );
+}
+
+#[test]
+fn reverse_client_partial_target_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-partial-target"
+server_addr = "127.0.0.1:12345"
+default_target_host = "127.0.0.1"
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    assert!(
+        result.is_err(),
+        "only default_target_host without port should fail"
+    );
+}
+
+#[test]
+fn reverse_server_auth_mismatch_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-srv-auth-mismatch"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+auth_username = "admin"
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    assert!(
+        result.is_err(),
+        "auth_username without password should fail"
+    );
+}
+
+#[test]
+fn reverse_client_invalid_server_addr_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-bad-addr"
+server_addr = "not-a-valid-address"
+default_target_host = "127.0.0.1"
+default_target_port = 80
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    assert!(result.is_err(), "invalid server_addr should fail");
+}
+
+#[test]
+fn reverse_server_password_env_var_not_set_fails() {
+    let config = r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-srv-missing-env"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+auth_username = "admin"
+auth_password_env = "EGGRESS_TEST_MISSING_VAR_98765"
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let result = eggress_runtime::ServiceSupervisor::start(path);
+    match result {
+        Ok(_) => panic!("auth_password_env with unset var should fail at compile time"),
+        Err(e) => {
+            let msg = format!("{}", e);
+            assert!(
+                msg.contains("environment variable") && msg.contains("not set"),
+                "error should mention env var not set: {}",
+                msg
+            );
+        }
+    }
 }

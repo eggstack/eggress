@@ -1602,7 +1602,7 @@ impl ServiceSupervisor {
                 for rs_cfg in reverse_servers {
                     let server_config = eggress_protocol_reverse::server::ReverseServerConfig {
                         control_bind: rs_cfg.control_bind,
-                        external_bind: rs_cfg.external_bind,
+                        external_bind: Some(rs_cfg.external_bind),
                         auth_username: rs_cfg.auth_username,
                         auth_password: rs_cfg.auth_password,
                         max_control_connections: rs_cfg.max_control_connections,

@@ -15,7 +15,7 @@ use crate::validate::validate_duration;
 pub struct CompiledReverseServerConfig {
     pub id: String,
     pub control_bind: std::net::SocketAddr,
-    pub external_bind: Option<std::net::SocketAddr>,
+    pub external_bind: std::net::SocketAddr,
     pub auth_username: Option<String>,
     pub auth_password: Option<String>,
     pub max_control_connections: u32,
@@ -1250,16 +1250,12 @@ fn compile_reverse_servers(
                 )
             })?;
 
-            let external_bind = None; // external_bind is not in the TOML model yet; could be added later
-
-            // BUG-004: Without external_bind, the reverse server cannot accept
-            // external client connections, making it useless. Reject at compile time.
-            if external_bind.is_none() {
-                return Err(ConfigError::validation(
-                    &path,
-                    "reverse server requires external_bind to accept client connections",
-                ));
-            }
+            let external_bind: std::net::SocketAddr = s.external_bind.parse().map_err(|_| {
+                ConfigError::validation(
+                    &format!("{}.external_bind", path),
+                    &format!("invalid socket address: {}", s.external_bind),
+                )
+            })?;
 
             let auth_password = resolve_password(
                 s.auth_password.as_deref(),
