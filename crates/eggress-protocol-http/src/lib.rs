@@ -19,7 +19,10 @@ pub use forward::{
     forward_request, forward_request_stream, forward_response, BodyCopyLimits, BodyCopyReport,
     ForwardRequest, ForwardResponse, ForwardResponseReport, ForwardResult, RequestBodyKind,
 };
-pub use h2_connect::{h2_connect_relay, handle_h2_connect, H2ConnectError};
+pub use h2_connect::{
+    h2_connect_client, h2_connect_relay, handle_h2_connect, H2ConnectError, H2StreamRead,
+    H2StreamWrite,
+};
 
 #[cfg(test)]
 mod tests {

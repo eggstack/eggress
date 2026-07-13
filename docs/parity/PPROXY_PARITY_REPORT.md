@@ -7,23 +7,23 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 93 | 66.9% |
+| `drop_in` | 95 | 68.3% |
 | `compatible_with_warning` | 16 | 11.5% |
 | `native_equivalent` | 14 | 10.1% |
-| `intentional_non_parity` | 11 | 7.9% |
+| `intentional_non_parity` | 9 | 6.5% |
 | `unsupported` | 5 | 3.6% |
 | **Total** | **139** | |
 
-## Drop-In Capabilities (93)
+## Drop-In Capabilities (95)
 
 These features are drop-in replacements for pproxy. All required layers are `complete` and evidence is `integration` or stronger.
 
 ### CLI (8)
 - `cli.listen`, `cli.remote`, `cli.udp_listen`, `cli.udp_remote`, `cli.block`, `cli.config`, `cli.version`, `cli.help`
-### URI Grammar (18)
-- `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_trojan`, `uri.scheme_direct`, `uri.scheme_raw`, `uri.scheme_tunnel`, `uri.scheme_ws`, `uri.scheme_wss`, `uri.modifier_ssl_tls`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
-### Runtime Protocols (41)
-- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.trojan_client`, `protocol.trojan_server`, `protocol.ws_runtime`, `protocol.raw_runtime`
+### URI Grammar (19)
+- `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_trojan`, `uri.scheme_direct`, `uri.scheme_raw`, `uri.scheme_tunnel`, `uri.scheme_ws`, `uri.scheme_wss`, `uri.scheme_h2`, `uri.modifier_ssl_tls`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
+### Runtime Protocols (42)
+- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.trojan_client`, `protocol.trojan_server`, `protocol.ws_runtime`, `protocol.raw_runtime`, `protocol.h2_runtime`
 ### Routing (12)
 - `routing.rules`, `routing.scheduler_round_robin`, `routing.scheduler_first_available`, `routing.scheduler_random`, `routing.scheduler_least_connections`, `routing.health_checks`, `routing.pac_generation`, `routing.pac_serving`, `system_proxy.inspect`, `system_proxy.apply`, `system_proxy.rollback`, `routing.config_reload`
 ### Python (14)
@@ -73,7 +73,7 @@ These features achieve the same outcome through a different mechanism.
 | `routing.admin_metrics` | eggress-native feature. |
 | `python.migration_aliases` | Compatibility layer; not a 1:1 API match. |
 
-## Intentional Non-Parity (11)
+## Intentional Non-Parity (9)
 
 These features are deliberately not replicated with rationale.
 
@@ -82,14 +82,12 @@ These features are deliberately not replicated with rationale.
 | `cli.reuse` | Connection pooling not implemented by design; one upstream connection per proxy session. |
 | `uri.scheme_ssr` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
 | `uri.scheme_ssh` | SSH is not a proxy protocol; adds significant dependency weight (no pure-Rust SSH library avoids C/OpenSSL complexity). Use OpenSSH dynamic forwarding (ssh -D) instead. See ADR docs/adr/ADR_ssh_upstream_parity.md. |
-| `uri.scheme_h2` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `protocol.socks4_bind` | BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.socks5_bind` | BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.ssr` | Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected. |
 | `protocol.ssh_upstream` | SSH is not a proxy protocol; maintaining a secure SSH client implementation (host-key verification, auth methods, direct-tcpip channels, keepalive) is disproportionate to the proxy use case. See ADR docs/adr/ADR_ssh_upstream_parity.md. |
 | `protocol.quic` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental. |
 | `protocol.http3` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). |
-| `protocol.h2_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 
 ## Unsupported (5)
 
@@ -102,15 +100,6 @@ These features are not implemented.
 | `protocol.udp_multihop` | UDP multi-hop requires complex per-hop relay logic that is not implemented. Single-hop UDP via direct, socks5, or ss is supported. |
 | `routing.rulefile_translation` | Use eggress TOML [[rules]]. |
 | `python.async_wrappers` | Not yet implemented as full async wrapper API. |
-
-## Protocol-Crate-Only Runtime Refusals
-
-The following capabilities have protocol crate implementations but are **refused by the runtime/config compiler** (Phase 25-28 H5/H6/H7). They cannot be promoted to `drop_in` until the config compiler and runtime supervisor accept them.
-
-| ID | Tier | Refused layers | Note | Next phase |
-|----|------|----------------|------|------------|
-| `uri.scheme_h2` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
-| `protocol.h2_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
 
 ## Missing Protocol Commands or Roles
 

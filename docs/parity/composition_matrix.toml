@@ -315,6 +315,22 @@ tier = "drop_in"
 evidence = "integration"
 capability_ids = []
 
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "h2"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "h2"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Protocol-Crate-Only (implemented but refused at runtime/config)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -345,12 +361,12 @@ notes = "WSS = WebSocket + TLS; upstream with TLS transport wrapper"
 protocol = "h2"
 role = "upstream"
 traffic_kind = "tcp"
-tier = "intentional_non_parity"
-evidence = "docs_only"
-capability_ids = []
-caveat_class = "protocol_crate_only"
-rationale = "H2 CONNECT requires complex bidirectional stream adaptation; deferred to B4. See docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
-notes = "HTTP/2 CONNECT implemented in eggress-protocol-http; not yet integrated through runtime"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.h2_runtime",
+]
+notes = "Promoted in Phase B4; H2 CONNECT upstream with TLS/ALPN, bidirectional stream adaptation, and chain integration"
 
 [[cell]]
 protocol = "raw"
@@ -474,5 +490,5 @@ description = "These protocols require TLS transport wrapper"
 
 [[constraint]]
 type = "protocol_crate_only"
-applies_to = ["h2"]
-description = "H2 CONNECT implemented in protocol crate but not yet integrated through runtime supervisor (deferred to B4)"
+applies_to = []
+description = "All protocols are now runtime-integrated (B4 promoted h2)"

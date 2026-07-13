@@ -41,6 +41,8 @@ eggress-transport-tls.workspace = true
 eggress-protocol-trojan.workspace = true
 eggress-protocol-shadowsocks.workspace = true
 eggress-protocol-websocket.workspace = true
+eggress-protocol-http.workspace = true
+h2.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 

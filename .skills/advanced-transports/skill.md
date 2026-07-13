@@ -14,10 +14,7 @@ QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`
 
 ## Tier classification (Phase 25-28 H5/H6/H7)
 
-These transports are **protocol-crate only**. They are intentionally **not**
-integrated as listener/upstream protocols through the runtime supervisor or
-config compiler. Use them by importing the protocol crate directly, or as
-URI-parseable transports for documentation/testing.
+WebSocket and Raw transports were promoted to runtime-integrated upstream protocols in Phase B3. H2 CONNECT was promoted in Phase B4. The CLI `parse_listener_uri` still rejects `h2://`, `ws://`, `wss://`, `raw://` as listener protocols (upstream-only).
 
 - The CLI `parse_listener_uri` rejects `h2://`, `ws://`, `wss://`, `raw://`,
   `tunnel://` as listener URIs.
@@ -29,6 +26,7 @@ URI-parseable transports for documentation/testing.
 - Server: `h2_connect::handle_h2_connect()` accepts H2 connections, dispatches CONNECT, bridges stream to TCP target
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request
 - Key type: `H2StreamWrite` — AsyncWrite adapter for h2::SendStream with flow control
+- `H2HopHandler` — Runtime HopHandler for H2 CONNECT upstream, creates own TCP/TLS connection with ALPN, sends CONNECT, wraps streams as bidirectional BoxStream
 - ALPN: `h2` for TLS negotiation
 
 ## WebSocket Tunnels
@@ -49,7 +47,8 @@ URI-parseable transports for documentation/testing.
 - ALPN validated at config compile time
 
 ## Testing
-- H2: `cargo test -p eggress-protocol-http h2`
+- H2 protocol: `cargo test -p eggress-protocol-http h2`
+- H2 upstream integration: `cargo test -p eggress-runtime --test upstream_protocols h2`
 - WebSocket: `cargo test -p eggress-protocol-websocket`
 - Raw: `cargo test -p eggress-protocol-raw`
 - All: `cargo test --workspace`

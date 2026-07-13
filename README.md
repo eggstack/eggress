@@ -350,20 +350,17 @@ protocol-crate callers only.
 
 ### HTTP/2
 
-- [x] HTTP/2 CONNECT server (Phase 26, protocol-crate only)
-- [x] HTTP/2 CONNECT client (Phase 26, protocol-crate only)
-- [x] Stream adapter (Phase 26, protocol-crate only)
-- [x] Flow-control integration (Phase 26, protocol-crate only)
-- [x] Stream reset propagation (Phase 26, protocol-crate only)
-- [x] GOAWAY handling (Phase 26, protocol-crate only)
-- [x] Upstream connection pooling (Phase 26, protocol-crate only)
-- [x] H2-over-TLS ALPN (Phase 26, protocol-crate only)
-- [x] H2 authentication (Phase 26, protocol-crate only)
+- [x] HTTP/2 CONNECT server (Phase B4, runtime-integrated)
+- [x] HTTP/2 CONNECT client (Phase B4, runtime-integrated)
+- [x] Stream adapter (Phase B4, runtime-integrated)
+- [x] Flow-control integration (Phase B4, runtime-integrated)
+- [x] Stream reset propagation (Phase B4, runtime-integrated)
+- [x] GOAWAY handling (Phase B4, runtime-integrated)
+- [x] Upstream connection pooling (Phase B4, runtime-integrated)
+- [x] H2-over-TLS ALPN (Phase B4, runtime-integrated)
+- [x] H2 authentication (Phase B4, runtime-integrated)
 
-Note: `h2://` URIs are accepted by the URI parser and translator but are
-**refused** as listener/upstream protocols through the runtime supervisor and
-config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct protocol-crate
-callers only.
+Note: `h2://` upstream URIs are now fully supported through the runtime supervisor.
 
 ### QUIC and HTTP/3
 

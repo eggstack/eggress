@@ -896,6 +896,7 @@ fn build_chain_executor(
         }),
         Box::new(WebSocketHopHandler),
         Box::new(RawHopHandler),
+        Box::new(H2HopHandler),
     ];
 
     // Set up TLS wrapper using system roots by default, or the override if provided
@@ -1132,6 +1133,67 @@ impl HopHandler for RawHopHandler {
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
             Ok(Box::new(tcp) as BoxStream)
+        })
+    }
+}
+
+struct H2HopHandler;
+
+impl HopHandler for H2HopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Http2
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        _stream: BoxStream,
+        target: &'a TargetAddr,
+        hop: &'a eggress_uri::ProxyHopSpec,
+    ) -> HandshakeFuture<'a> {
+        let use_tls = hop.tls;
+        let endpoint_host = hop.endpoint.host.clone();
+        let endpoint_port = hop.endpoint.port;
+        let server_name = hop
+            .server_name
+            .clone()
+            .unwrap_or_else(|| endpoint_host.clone());
+        let auth = hop
+            .credentials
+            .as_ref()
+            .map(|c| (c.username.clone(), c.password.clone()));
+        let target_clone = target.clone();
+        Box::pin(async move {
+            let tcp =
+                tokio::net::TcpStream::connect(format!("{}:{}", endpoint_host, endpoint_port))
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+            let stream: BoxStream = if use_tls {
+                let builder = eggress_transport_tls::TlsClientConfigBuilder::new()
+                    .with_system_roots()
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
+                    .with_h2_alpn();
+                let config = builder
+                    .build()
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                eggress_transport_tls::tls_connect(Box::new(tcp), config, &server_name)
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
+            } else {
+                Box::new(tcp)
+            };
+
+            let auth_ref = auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
+            let (send_stream, recv_stream, _conn_handle) =
+                eggress_protocol_http::h2_connect_client(stream, &target_clone, auth_ref)
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+            let h2_write = eggress_protocol_http::H2StreamWrite::new(send_stream);
+            let h2_read = eggress_protocol_http::H2StreamRead::new(recv_stream);
+
+            let bidirectional = tokio::io::join(h2_read, h2_write);
+            Ok(Box::new(bidirectional) as BoxStream)
         })
     }
 }

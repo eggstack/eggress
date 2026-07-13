@@ -987,3 +987,117 @@ upstream_group = "tcp-upstream"
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
+
+async fn start_h2_connect_proxy() -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let conn = match h2::server::handshake(stream).await {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+                if let Err(e) = eggress_protocol_http::handle_h2_connect(conn).await {
+                    eprintln!("h2 connect proxy error: {}", e);
+                }
+            });
+        }
+    });
+    addr
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn h2_upstream_routes_tcp_echo() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+    let h2_proxy_addr = start_h2_connect_proxy().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "h2-up"
+uri = "h2://127.0.0.1:{h2_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["h2-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        h2_port = h2_proxy_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(
+        reply[1], 0x00,
+        "SOCKS5 CONNECT should succeed via H2 upstream"
+    );
+
+    stream.write_all(b"hello-h2-upstream").await.unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"hello-h2-upstream");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
