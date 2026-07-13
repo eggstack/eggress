@@ -477,8 +477,7 @@ pub fn validate_chain_hops(chain: &PproxyChain) -> Vec<(usize, String)> {
     let mut unsupported = Vec::new();
     for (idx, hop) in chain.hops.iter().enumerate() {
         match hop.scheme.as_str() {
-            "ssh" | "ssr" | "unix" | "redir" | "direct" | "h2" | "ws" | "wss" | "raw"
-            | "tunnel" => {
+            "ssh" | "ssr" | "unix" | "redir" | "direct" => {
                 unsupported.push((idx, hop.scheme.clone()));
             }
             _ => {} // http, https, socks4, socks4a, socks5, trojan, ss, shadowsocks are supported

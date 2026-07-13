@@ -160,6 +160,12 @@ Trojan protocol implementation:
   and synthetic TLS happy-path test that exercises `trojan_connect()` directly
   and asserts the server-observed request bytes
 
+### Advanced Transport Upstream Support (Phase B3)
+
+WebSocket (`ws://`, `wss://`) and raw/tunnel (`raw://`, `tunnel://`) schemes are now
+integrated as runtime-integrated upstream protocols. The config compiler, CLI, and chain
+executor all accept these schemes. H2 CONNECT remains protocol-crate-only (deferred).
+
 ### eggress-transport-tls
 Shared TLS transport layer:
 - `TlsClientConfigBuilder` — builds `Arc<ClientConfig>` from system roots, custom CA PEM, ALPN, insecure mode, server name override

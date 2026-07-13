@@ -143,6 +143,14 @@ pub struct ShadowsocksListenerConfig {
 pub struct ListenerTrojanConfig {
     /// Trojan password (hashed with SHA224 on the wire).
     pub password: String,
+    /// Optional fallback target for auth-failed connections.
+    ///
+    /// When set, connections that present an invalid Trojan password are
+    /// transparently relayed to this target instead of being rejected.
+    /// This matches pproxy's `trojan+tunnel{target}+ssl://` behavior.
+    /// Format: `host:port` (e.g., `127.0.0.1:443`).
+    #[serde(default)]
+    pub fallback: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

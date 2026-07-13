@@ -54,7 +54,7 @@ cargo test -p eggress-runtime reverse
 cargo test -p eggress-runtime --test reverse_soak
 EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored
 
-# Upstream protocol tests
+# Upstream protocol tests (HTTP, SOCKS4, SOCKS5, WS, Raw)
 cargo test -p eggress-runtime upstream_protocols
 
 # CLI
@@ -78,7 +78,7 @@ Integration tests live in `crates/eggress-runtime/tests/` and exercise the super
 | `pac_static.rs` | PAC file and static content serving |
 | `udp.rs` | UDP association lifecycle, TCP control close, echo relay, bind conflict, topology rejection, config reload |
 | `udp_upstream.rs` | SOCKS5 upstream relay through full stack |
-| `upstream_protocols.rs` | HTTP, SOCKS4, SOCKS5, and unsupported-combo rejection |
+| `upstream_protocols.rs` | HTTP, SOCKS4, SOCKS5, WS/Raw upstream relay, and unsupported-combo rejection |
 | `shadowsocks_tcp.rs` | Shadowsocks TCP relay through full stack |
 | `shadowsocks_udp.rs` | Shadowsocks UDP relay through full stack |
 | `reverse_interop.rs` | Reverse/backward proxy self-interop and credential redaction (3 un-gated tests) |

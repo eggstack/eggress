@@ -1238,7 +1238,239 @@ default = "pproxy-http"
 }
 
 // ========================================================================
-// CLI Snapshot Comparison Tests
+// Trojan Protocol Differential Tests
+// ========================================================================
+
+/// Trojan client helper: connect to a Trojan listener, relay payload, return response.
+///
+/// Creates a TCP connection, performs TLS with the given cert, sends a Trojan
+/// handshake, writes the payload, and reads back the response.
+async fn send_through_trojan(
+    proxy_addr: std::net::SocketAddr,
+    target: &TargetAddr,
+    payload: &[u8],
+    password: &str,
+) -> Result<Vec<u8>, String> {
+    use eggress_protocol_trojan::tcp::trojan_connect;
+    use eggress_transport_tls::TlsClientConfigBuilder;
+
+    let tcp = tokio::net::TcpStream::connect(proxy_addr)
+        .await
+        .map_err(|e| format!("connect to trojan proxy failed: {e}"))?;
+    let boxed: BoxStream = Box::new(tcp);
+
+    let builder = TlsClientConfigBuilder::new().with_insecure();
+    let tls_config = builder
+        .build()
+        .map_err(|e| format!("TLS config build failed: {e}"))?;
+
+    let mut conn = trojan_connect(boxed, target, password, "localhost", Some(tls_config))
+        .await
+        .map_err(|e| format!("trojan connect failed: {e}"))?;
+
+    conn.write_all(payload)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    Ok(read_with_timeout(&mut conn, Duration::from_secs(3)).await)
+}
+
+/// Differential test: Trojan upstream through eggress vs direct pproxy Trojan.
+///
+/// Starts pproxy as a Trojan+SSL listener and eggress with a Trojan listener.
+/// Connects a Trojan client to each and compares the echoed payload.
+#[tokio::test]
+#[ignore = "requires EGRESS_RUN_PPROXY_DIFFERENTIAL=1"]
+async fn differential_trojan_upstream() {
+    require_differential_gate();
+
+    let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // Generate self-signed cert
+    let cert_params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    let key_pair = rcgen::KeyPair::generate().unwrap();
+    let cert = cert_params.self_signed(&key_pair).unwrap();
+    let cert_pem = cert.pem();
+    let key_pem = key_pair.serialize_pem();
+
+    // Write cert/key to tempfiles for pproxy and eggress
+    let cert_file = tempfile::NamedTempFile::new().unwrap();
+    let key_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(cert_file.path(), &cert_pem).unwrap();
+    std::fs::write(key_file.path(), &key_pem).unwrap();
+
+    let password = "test-trojan-password";
+
+    // Start pproxy with Trojan+SSL
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let cert_path = cert_file.path().to_str().unwrap();
+    let key_path = key_file.path().to_str().unwrap();
+    let listen = format!("trojan+ssl://127.0.0.1:{}#{}", pproxy_port, password);
+    let mut pproxy = start_pproxy_with_args(&[
+        "-l",
+        &listen,
+        "--ssl",
+        &format!("{cert_path},{key_path}"),
+        "-r",
+        "direct",
+    ])
+    .await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Start eggress with Trojan listener via TOML
+    let egress_port = eggress_testkit::get_free_port().await;
+    let toml = format!(
+        r#"version = 1
+
+[[listeners]]
+name = "trojan-in"
+bind = "127.0.0.1:{egress_port}"
+protocols = ["trojan"]
+
+[listeners.tls]
+cert = "{cert_path}"
+key = "{key_path}"
+
+[listeners.trojan]
+password = "{password}"
+
+[routing]
+default = "direct"
+"#,
+    );
+    let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
+
+    // Send payload through pproxy Trojan
+    let pproxy_result = send_through_trojan(
+        std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            pproxy_port,
+        ),
+        &target,
+        b"trojan differential test",
+        password,
+    )
+    .await;
+
+    // Send payload through eggress Trojan
+    let egress_result =
+        send_through_trojan(egress_addr, &target, b"trojan differential test", password).await;
+
+    cancel.cancel();
+    let _ = jh.await;
+    pproxy.kill();
+    echo_jh.abort();
+
+    compare_tcp_echo("pproxy", &pproxy_result, "eggress", &egress_result);
+}
+
+/// Differential test: Trojan auth failure behavior.
+///
+/// Verifies that both pproxy and eggress reject connections with wrong passwords
+/// in a compatible way (connection closed / no relay).
+#[tokio::test]
+#[ignore = "requires EGRESS_RUN_PPROXY_DIFFERENTIAL=1"]
+async fn differential_trojan_auth_failure() {
+    require_differential_gate();
+
+    let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+
+    // Generate self-signed cert
+    let cert_params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    let key_pair = rcgen::KeyPair::generate().unwrap();
+    let cert = cert_params.self_signed(&key_pair).unwrap();
+    let cert_pem = cert.pem();
+    let key_pem = key_pair.serialize_pem();
+
+    let cert_file = tempfile::NamedTempFile::new().unwrap();
+    let key_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(cert_file.path(), &cert_pem).unwrap();
+    std::fs::write(key_file.path(), &key_pem).unwrap();
+
+    let password = "correct-password";
+    let wrong_password = "wrong-password";
+
+    // Start pproxy with Trojan+SSL
+    let pproxy_port = eggress_testkit::get_free_port().await;
+    let cert_path = cert_file.path().to_str().unwrap();
+    let key_path = key_file.path().to_str().unwrap();
+    let listen = format!("trojan+ssl://127.0.0.1:{}#{}", pproxy_port, password);
+    let mut pproxy = start_pproxy_with_args(&[
+        "-l",
+        &listen,
+        "--ssl",
+        &format!("{cert_path},{key_path}"),
+        "-r",
+        "direct",
+    ])
+    .await;
+    assert!(
+        wait_for_port(pproxy_port, Duration::from_secs(5)).await,
+        "pproxy failed to start"
+    );
+
+    // Start eggress with Trojan listener
+    let egress_port = eggress_testkit::get_free_port().await;
+    let toml = format!(
+        r#"version = 1
+
+[[listeners]]
+name = "trojan-in"
+bind = "127.0.0.1:{egress_port}"
+protocols = ["trojan"]
+
+[listeners.tls]
+cert = "{cert_path}"
+key = "{key_path}"
+
+[listeners.trojan]
+password = "{password}"
+
+[routing]
+default = "direct"
+"#,
+    );
+    let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
+
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+
+    // Try wrong password through pproxy — should fail
+    let pproxy_result = send_through_trojan(
+        std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            pproxy_port,
+        ),
+        &target,
+        b"should fail",
+        wrong_password,
+    )
+    .await;
+
+    // Try wrong password through eggress — should fail
+    let egress_result =
+        send_through_trojan(egress_addr, &target, b"should fail", wrong_password).await;
+
+    cancel.cancel();
+    let _ = jh.await;
+    pproxy.kill();
+    echo_jh.abort();
+
+    // Both should fail — pproxy closes the connection (fallback or reject),
+    // eggress returns AuthFailed error. Coarse equivalence: both Err.
+    assert_coarse_failure_equivalence("pproxy", &pproxy_result, "eggress", &egress_result);
+}
+
+// ========================================================================
+// CLI Snapshot Tests
 // ========================================================================
 
 #[tokio::test]

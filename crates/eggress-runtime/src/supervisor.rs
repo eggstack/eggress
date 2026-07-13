@@ -1247,6 +1247,7 @@ impl ServiceSupervisor {
                                 trojan: trojan_config.map(
                                     |t| eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
+                                        fallback: t.fallback,
                                     },
                                 ),
                             };
@@ -1451,6 +1452,7 @@ impl ServiceSupervisor {
                                 trojan: trojan_config.map(
                                     |t| eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
+                                        fallback: t.fallback,
                                     },
                                 ),
                             };
@@ -1620,6 +1622,7 @@ impl ServiceSupervisor {
                                 trojan: trojan_config.map(|t| {
                                     eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
+                                        fallback: t.fallback,
                                     }
                                 }),
                             };

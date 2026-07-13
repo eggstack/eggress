@@ -111,6 +111,10 @@ pub struct InboundShadowsocksConfig {
 #[derive(Clone)]
 pub struct InboundTrojanConfig {
     pub password: String,
+    /// Optional fallback target for auth-failed connections.
+    /// When set, connections with invalid Trojan passwords are relayed to this
+    /// target instead of being rejected (matches pproxy's chaining behavior).
+    pub fallback: Option<String>,
 }
 
 /// A stream that returns `prefix` bytes first, then delegates to `inner`.
@@ -308,18 +312,58 @@ pub async fn accept(
     // Check if Trojan is the only protocol (TLS termination already happened upstream)
     if protocols.len() == 1 && protocols.contains(&ProtocolId::Trojan) {
         if let Some(trojan_cfg) = trojan_config {
-            let (trojan_stream, result) =
-                eggress_protocol_trojan::trojan_accept(stream, &trojan_cfg.password)
-                    .await
-                    .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+            use tokio::io::AsyncReadExt;
 
-            return Ok(AcceptedSession::Tunnel(PendingTunnel {
-                target: result.target,
-                client: trojan_stream,
-                protocol: TunnelProtocol::Trojan,
-                reply_context: ReplyContext::Trojan,
-                identity: ClientIdentity::Anonymous,
-            }));
+            // Read the 56-byte hash prefix to check password before consuming
+            // the rest of the handshake. This enables fallback routing on auth
+            // failure without consuming bytes needed by the fallback target.
+            let mut hash_prefix = [0u8; 56];
+            stream
+                .read_exact(&mut hash_prefix)
+                .await
+                .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+
+            let password_matches =
+                eggress_protocol_trojan::trojan_check_password(&hash_prefix, &trojan_cfg.password);
+
+            if password_matches {
+                // Replay the 56-byte hash so trojan_accept reads the full handshake
+                let prefixed = PrefixedStream::new(hash_prefix.to_vec(), stream);
+                let boxed: BoxStream = Box::new(prefixed);
+                let (trojan_stream, result) =
+                    eggress_protocol_trojan::trojan_accept(boxed, &trojan_cfg.password)
+                        .await
+                        .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+
+                return Ok(AcceptedSession::Tunnel(PendingTunnel {
+                    target: result.target,
+                    client: trojan_stream,
+                    protocol: TunnelProtocol::Trojan,
+                    reply_context: ReplyContext::Trojan,
+                    identity: ClientIdentity::Anonymous,
+                }));
+            }
+
+            // Password did not match — check for fallback routing
+            if let Some(ref fallback_target) = trojan_cfg.fallback {
+                let target: TargetAddr = fallback_target.parse().map_err(|e: String| {
+                    AcceptError::Protocol(format!("invalid trojan fallback address: {e}").into())
+                })?;
+                tracing::debug!("trojan auth failed, falling back to {}", fallback_target);
+                let prefixed = PrefixedStream::new(hash_prefix.to_vec(), stream);
+                let client: BoxStream = Box::new(prefixed);
+                return Ok(AcceptedSession::Tunnel(PendingTunnel {
+                    target,
+                    client,
+                    protocol: TunnelProtocol::Trojan,
+                    reply_context: ReplyContext::Trojan,
+                    identity: ClientIdentity::Anonymous,
+                }));
+            }
+
+            return Err(AcceptError::Protocol(Box::new(
+                eggress_protocol_trojan::TrojanError::AuthFailed,
+            )));
         }
         return Err(AcceptError::Protocol(
             "trojan listener requires trojan config".into(),

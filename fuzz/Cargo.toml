@@ -4,8 +4,12 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+[package.metadata]
+cargo-fuzz = true
+
 [dependencies]
 libfuzzer-sys = "0.4"
+tokio = { version = "1", features = ["rt", "io-util", "time"] }
 
 [dependencies.eggress-protocol-socks]
 path = "../crates/eggress-protocol-socks"
@@ -61,6 +65,13 @@ bench = false
 [[bin]]
 name = "trojan_request"
 path = "fuzz_targets/trojan_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trojan_accept"
+path = "fuzz_targets/trojan_accept.rs"
 test = false
 doc = false
 bench = false

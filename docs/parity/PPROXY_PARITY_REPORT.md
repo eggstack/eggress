@@ -7,29 +7,29 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 84 | 60.4% |
-| `compatible_with_warning` | 19 | 13.7% |
+| `drop_in` | 93 | 66.9% |
+| `compatible_with_warning` | 16 | 11.5% |
 | `native_equivalent` | 14 | 10.1% |
-| `intentional_non_parity` | 17 | 12.2% |
+| `intentional_non_parity` | 11 | 7.9% |
 | `unsupported` | 5 | 3.6% |
 | **Total** | **139** | |
 
-## Drop-In Capabilities (84)
+## Drop-In Capabilities (93)
 
 These features are drop-in replacements for pproxy. All required layers are `complete` and evidence is `integration` or stronger.
 
 ### CLI (8)
 - `cli.listen`, `cli.remote`, `cli.udp_listen`, `cli.udp_remote`, `cli.block`, `cli.config`, `cli.version`, `cli.help`
-### URI Grammar (13)
-- `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_direct`, `uri.modifier_ssl_tls`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
-### Runtime Protocols (37)
-- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.direct_tcp`, `protocol.direct_udp`
+### URI Grammar (18)
+- `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_trojan`, `uri.scheme_direct`, `uri.scheme_raw`, `uri.scheme_tunnel`, `uri.scheme_ws`, `uri.scheme_wss`, `uri.modifier_ssl_tls`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
+### Runtime Protocols (41)
+- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.trojan_client`, `protocol.trojan_server`, `protocol.ws_runtime`, `protocol.raw_runtime`
 ### Routing (12)
 - `routing.rules`, `routing.scheduler_round_robin`, `routing.scheduler_first_available`, `routing.scheduler_random`, `routing.scheduler_least_connections`, `routing.health_checks`, `routing.pac_generation`, `routing.pac_serving`, `system_proxy.inspect`, `system_proxy.apply`, `system_proxy.rollback`, `routing.config_reload`
 ### Python (14)
 - `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`
 
-## Compatible-With-Warning (19)
+## Compatible-With-Warning (16)
 
 These features work but emit diagnostics or differ in a known way.
 
@@ -39,7 +39,6 @@ These features work but emit diagnostics or differ in a known way.
 | `cli.rulefile` | Regex validated at load time via CompatRegex. Simple reject/block rules auto-translated; complex rules emit warnings. Grammar subset only — non-reject actions and structured matchers must be configured in eggress TOML [[rules]]. Fancy regex backend activated for lookahead/lookbehind/backreference patterns. | `rulefile-partial` |
 | `cli.verbose` | Different mechanism (env var vs flag); same outcome. No config artifact is produced; the verbose flag is recognized at parse time and emits a diagnostic. | `verbose-mode` |
 | `cli.check_json_chain_info` | pproxy does not emit chain_info in check output; eggress extends with chain metadata. | `` |
-| `uri.scheme_trojan` | Full Trojan support: client upstream and inbound listener with TLS. No pproxy differential tests; unit evidence only. | `` |
 | `uri.scheme_bind` | TCP-only raw relay; no built-in TLS; plaintext auth possible; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind. | `reverse-proxy-warning` |
 | `uri.scheme_listen` | Alias for bind://; same reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal). | `` |
 | `uri.scheme_backward` | TCP-only raw relay; no built-in TLS; plaintext auth possible. | `reverse-proxy-warning` |
@@ -52,8 +51,6 @@ These features work but emit diagnostics or differ in a known way.
 | `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
 | `protocol.shadowsocks_tcp` | Wire-compatible with standard Shadowsocks sserver/sslocal. No pproxy differential tests; integration evidence only. | `` |
 | `protocol.shadowsocks_udp` | Standard AEAD format; interoperable. No pproxy differential tests; integration evidence only. | `` |
-| `protocol.trojan_client` | Trojan upstream client with rustls TLS. No pproxy differential tests. | `` |
-| `protocol.trojan_server` | Accept inbound Trojan connections over TLS with SHA224 password verification. No pproxy differential tests. | `` |
 
 ## Native Equivalent (14)
 
@@ -76,7 +73,7 @@ These features achieve the same outcome through a different mechanism.
 | `routing.admin_metrics` | eggress-native feature. |
 | `python.migration_aliases` | Compatibility layer; not a 1:1 API match. |
 
-## Intentional Non-Parity (17)
+## Intentional Non-Parity (11)
 
 These features are deliberately not replicated with rationale.
 
@@ -85,10 +82,6 @@ These features are deliberately not replicated with rationale.
 | `cli.reuse` | Connection pooling not implemented by design; one upstream connection per proxy session. |
 | `uri.scheme_ssr` | SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic. |
 | `uri.scheme_ssh` | SSH is not a proxy protocol; adds significant dependency weight (no pure-Rust SSH library avoids C/OpenSSL complexity). Use OpenSSH dynamic forwarding (ssh -D) instead. See ADR docs/adr/ADR_ssh_upstream_parity.md. |
-| `uri.scheme_raw` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
-| `uri.scheme_tunnel` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
-| `uri.scheme_ws` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
-| `uri.scheme_wss` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `uri.scheme_h2` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `protocol.socks4_bind` | BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners |
 | `protocol.socks5_bind` | BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners |
@@ -96,8 +89,6 @@ These features are deliberately not replicated with rationale.
 | `protocol.ssh_upstream` | SSH is not a proxy protocol; maintaining a secure SSH client implementation (host-key verification, auth methods, direct-tcpip channels, keepalive) is disproportionate to the proxy use case. See ADR docs/adr/ADR_ssh_upstream_parity.md. |
 | `protocol.quic` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental. |
 | `protocol.http3` | Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). |
-| `protocol.ws_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
-| `protocol.raw_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 | `protocol.h2_runtime` | Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md. |
 
 ## Unsupported (5)
@@ -118,13 +109,7 @@ The following capabilities have protocol crate implementations but are **refused
 
 | ID | Tier | Refused layers | Note | Next phase |
 |----|------|----------------|------|------------|
-| `uri.scheme_raw` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
-| `uri.scheme_tunnel` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; alias for raw://. See ADR… |  |
-| `uri.scheme_ws` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
-| `uri.scheme_wss` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
 | `uri.scheme_h2` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
-| `protocol.ws_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
-| `protocol.raw_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
 | `protocol.h2_runtime` | `intentional_non_parity` | config, runtime | Deliberate protocol-crate-only scope; no runtime integration by design. See… |  |
 
 ## Missing Protocol Commands or Roles

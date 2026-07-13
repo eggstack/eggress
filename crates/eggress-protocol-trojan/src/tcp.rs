@@ -1,4 +1,3 @@
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use rustls::pki_types::ServerName;
@@ -11,9 +10,17 @@ use eggress_core::{BoxStream, TargetAddr, TargetHost};
 
 /// Build the Trojan request bytes for a target.
 ///
-/// Layout: `hash(56) + CRLF + CONNECT(1) + ATYP + addr + port(2) + CRLF`.
+/// Layout: `hash(56) + CRLF + CONNECT(1) + ATYP(0x03) + domain_len(1) + domain + port(2) + CRLF`.
+///
+/// All targets (including IPv4 and IPv6 addresses) are encoded as domain
+/// strings using ATYP `0x03`. This matches pproxy's client behavior and is
+/// the most widely compatible encoding — standard Trojan servers accept all
+/// ATYP values, and encoding IPs as domains avoids ATYP-related interop
+/// issues.
+///
 /// Domain targets must be 1-255 bytes; other lengths return
-/// [`TrojanError::Protocol`].
+/// [`TrojanError::Protocol`]. IP addresses are formatted as their standard
+/// string representation (e.g. `"93.184.216.34"`, `"::1"`).
 pub fn encode_trojan_request(target: &TargetAddr, password: &str) -> Result<Vec<u8>, TrojanError> {
     let mut request = Vec::new();
 
@@ -21,29 +28,26 @@ pub fn encode_trojan_request(target: &TargetAddr, password: &str) -> Result<Vec<
     request.extend_from_slice(hash.as_bytes());
     request.extend_from_slice(b"\r\n");
 
+    // CMD: CONNECT (0x01)
     request.push(0x01);
 
-    match &target.host {
-        TargetHost::Ip(IpAddr::V4(ip)) => {
-            request.push(0x01);
-            request.extend_from_slice(&ip.octets());
-        }
-        TargetHost::Ip(IpAddr::V6(ip)) => {
-            request.push(0x04);
-            request.extend_from_slice(&ip.octets());
-        }
-        TargetHost::Domain(domain) => {
-            if domain.is_empty() || domain.len() > 255 {
-                return Err(TrojanError::Protocol(format!(
-                    "invalid domain length: {} (must be 1-255)",
-                    domain.len()
-                )));
-            }
-            request.push(0x03);
-            request.push(domain.len() as u8);
-            request.extend_from_slice(domain.as_bytes());
-        }
+    // ATYP: always 0x03 (domain) — IPs are converted to their string form.
+    request.push(0x03);
+
+    let domain_str = match &target.host {
+        TargetHost::Ip(ip) => ip.to_string(),
+        TargetHost::Domain(domain) => domain.clone(),
+    };
+
+    if domain_str.is_empty() || domain_str.len() > 255 {
+        return Err(TrojanError::Protocol(format!(
+            "invalid domain length: {} (must be 1-255)",
+            domain_str.len()
+        )));
     }
+
+    request.push(domain_str.len() as u8);
+    request.extend_from_slice(domain_str.as_bytes());
 
     request.extend_from_slice(&target.port.to_be_bytes());
     request.extend_from_slice(b"\r\n");
@@ -284,8 +288,8 @@ mod tests {
         let mut expected = Vec::new();
         expected.extend_from_slice(hash.as_bytes());
         expected.extend_from_slice(b"\r\n");
-        expected.push(0x01);
-        expected.push(0x03);
+        expected.push(0x01); // CONNECT
+        expected.push(0x03); // ATYP domain
         expected.push(b"example.com".len() as u8);
         expected.extend_from_slice(b"example.com");
         expected.extend_from_slice(&443u16.to_be_bytes());
@@ -296,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_trojan_request_ipv4_layout() {
+    fn encode_trojan_request_ipv4_as_domain_layout() {
         let hash = password_hash("pass");
 
         let target = TargetAddr {
@@ -305,23 +309,25 @@ mod tests {
         };
         let request = encode_trojan_request(&target, "pass").unwrap();
 
+        // IPv4 is encoded as ATYP 0x03 (domain) with string representation
+        let ip_str = "93.184.216.34";
         let mut expected = Vec::new();
         expected.extend_from_slice(hash.as_bytes());
         expected.extend_from_slice(b"\r\n");
-        expected.push(0x01);
-        expected.push(0x01);
-        expected.extend_from_slice(&[93, 184, 216, 34]);
+        expected.push(0x01); // CONNECT
+        expected.push(0x03); // ATYP domain
+        expected.push(ip_str.len() as u8);
+        expected.extend_from_slice(ip_str.as_bytes());
         expected.extend_from_slice(&80u16.to_be_bytes());
         expected.extend_from_slice(b"\r\n");
 
         assert_eq!(request, expected);
-        assert_eq!(request.len(), 68);
+        assert_eq!(request.len(), 56 + 2 + 1 + 1 + 1 + 13 + 2 + 2);
     }
 
     #[test]
-    fn encode_trojan_request_ipv6_layout() {
+    fn encode_trojan_request_ipv6_as_domain_layout() {
         let hash = password_hash("pass");
-        let ip: std::net::Ipv6Addr = "::1".parse().unwrap();
 
         let target = TargetAddr {
             host: TargetHost::Ip("::1".parse().unwrap()),
@@ -329,17 +335,38 @@ mod tests {
         };
         let request = encode_trojan_request(&target, "pass").unwrap();
 
+        // IPv6 is encoded as ATYP 0x03 (domain) with string representation
+        let ip_str = "::1";
         let mut expected = Vec::new();
         expected.extend_from_slice(hash.as_bytes());
         expected.extend_from_slice(b"\r\n");
-        expected.push(0x01);
-        expected.push(0x04);
-        expected.extend_from_slice(&ip.octets());
+        expected.push(0x01); // CONNECT
+        expected.push(0x03); // ATYP domain
+        expected.push(ip_str.len() as u8);
+        expected.extend_from_slice(ip_str.as_bytes());
         expected.extend_from_slice(&443u16.to_be_bytes());
         expected.extend_from_slice(b"\r\n");
 
         assert_eq!(request, expected);
-        assert_eq!(request.len(), 80);
+        assert_eq!(request.len(), 56 + 2 + 1 + 1 + 1 + 3 + 2 + 2);
+    }
+
+    #[test]
+    fn encode_trojan_request_always_uses_atyp_0x03() {
+        // Verify that even IP targets produce ATYP 0x03 (domain)
+        let ipv4 = TargetAddr {
+            host: TargetHost::Ip("1.2.3.4".parse().unwrap()),
+            port: 80,
+        };
+        let req = encode_trojan_request(&ipv4, "pw").unwrap();
+        assert_eq!(req[59], 0x03, "IPv4 should use ATYP 0x03 (domain)");
+
+        let ipv6 = TargetAddr {
+            host: TargetHost::Ip("::1".parse().unwrap()),
+            port: 443,
+        };
+        let req = encode_trojan_request(&ipv6, "pw").unwrap();
+        assert_eq!(req[59], 0x03, "IPv6 should use ATYP 0x03 (domain)");
     }
 
     #[test]
@@ -411,11 +438,12 @@ mod tests {
             let received_hash = std::str::from_utf8(&buf[..56]).unwrap();
             assert_eq!(received_hash, expected_hash);
             assert_eq!(&buf[56..58], b"\r\n");
-            assert_eq!(buf[58], 0x01);
-            assert_eq!(buf[59], 0x01);
-            assert_eq!(&buf[60..64], &[127, 0, 0, 1]);
-            assert_eq!(&buf[64..66], &8080u16.to_be_bytes());
-            assert_eq!(&buf[66..68], b"\r\n");
+            assert_eq!(buf[58], 0x01); // CONNECT
+            assert_eq!(buf[59], 0x03); // ATYP domain (IP encoded as domain string)
+            assert_eq!(buf[60], b"127.0.0.1".len() as u8);
+            assert_eq!(&buf[61..70], b"127.0.0.1");
+            assert_eq!(&buf[70..72], &8080u16.to_be_bytes());
+            assert_eq!(&buf[72..74], b"\r\n");
 
             tokio::io::AsyncWriteExt::write_all(&mut reader, b"hello from trojan server")
                 .await
@@ -611,9 +639,10 @@ mod tests {
         let stream: BoxStream = Box::new(std::io::Cursor::new(request));
 
         let (mut stream, result) = trojan_accept(stream, password).await.unwrap();
+        // IPs encoded as domain (ATYP 0x03) — decoded as domain string
         assert_eq!(
             result.target.host,
-            TargetHost::Ip("93.184.216.34".parse().unwrap())
+            TargetHost::Domain("93.184.216.34".to_string())
         );
         assert_eq!(result.target.port, 80);
 
@@ -652,7 +681,8 @@ mod tests {
         let stream: BoxStream = Box::new(std::io::Cursor::new(request));
 
         let (_, result) = trojan_accept(stream, password).await.unwrap();
-        assert_eq!(result.target.host, TargetHost::Ip("::1".parse().unwrap()));
+        // IPv6 encoded as domain (ATYP 0x03) — decoded as domain string
+        assert_eq!(result.target.host, TargetHost::Domain("::1".to_string()));
         assert_eq!(result.target.port, 8080);
     }
 

@@ -1258,18 +1258,9 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
             eggress_uri::ProtocolSpec::Socks5 => eggress_core::ProtocolId::Socks5,
             eggress_uri::ProtocolSpec::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
             eggress_uri::ProtocolSpec::Trojan => eggress_core::ProtocolId::Trojan,
-            eggress_uri::ProtocolSpec::Http2
-            | eggress_uri::ProtocolSpec::WebSocket
-            | eggress_uri::ProtocolSpec::Raw => {
-                return Err(format!(
-                    "diagnostic[unsupported_transport_wrapper]: protocol '{:?}' \
-                     is not integrated through the runtime supervisor \
-                     (protocol-crate only). See \
-                     docs/PHASE_25_28_HARDENING_COMPLETION.md (H5/H6/H7).",
-                    p
-                )
-                .into());
-            }
+            eggress_uri::ProtocolSpec::Http2 => eggress_core::ProtocolId::Http2,
+            eggress_uri::ProtocolSpec::WebSocket => eggress_core::ProtocolId::WebSocket,
+            eggress_uri::ProtocolSpec::Raw => eggress_core::ProtocolId::Raw,
         };
         protocols.push(id);
     }

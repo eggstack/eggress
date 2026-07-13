@@ -2,10 +2,17 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Partially Superseded |
 | Date | Phase 46 |
 | Decision makers | Eggress maintainers |
 | Related | `docs/protocols/ADVANCED_TRANSPORTS.md`, `docs/parity/pproxy_capability_manifest.toml`, `docs/PARITY_MATRIX.md`, `docs/PHASE_25_28_HARDENING_COMPLETION.md` |
+
+## Superseded
+
+This ADR is partially superseded by Phase B3 (WebSocket and raw runtime promotion).
+- WS/WSS and Raw/Tunnel upstreams are now promoted to `drop_in` tier.
+- H2 CONNECT remains `intentional_non_parity` per the original decision.
+- See `docs/adr/ADR_b3_ws_raw_runtime_promotion.md` for the promotion ADR.
 
 ## Context
 

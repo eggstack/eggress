@@ -17,6 +17,7 @@ eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
 eggress-protocol-shadowsocks.workspace = true
 eggress-protocol-trojan.workspace = true
+eggress-protocol-websocket.workspace = true
 eggress-transport-tls.workspace = true
 eggress-udp.workspace = true
 rustls.workspace = true

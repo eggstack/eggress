@@ -894,6 +894,8 @@ fn build_chain_executor(
         Box::new(TrojanHopHandler {
             tls_config: shared_tls_config_arc,
         }),
+        Box::new(WebSocketHopHandler),
+        Box::new(RawHopHandler),
     ];
 
     // Set up TLS wrapper using system roots by default, or the override if provided
@@ -1081,6 +1083,55 @@ impl HopHandler for TrojanHopHandler {
             )
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+}
+
+struct WebSocketHopHandler;
+
+impl HopHandler for WebSocketHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::WebSocket
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        _stream: BoxStream,
+        _target: &'a TargetAddr,
+        hop: &'a eggress_uri::ProxyHopSpec,
+    ) -> HandshakeFuture<'a> {
+        let use_tls = hop.tls;
+        let scheme = if use_tls { "wss" } else { "ws" };
+        let url = format!("{}://{}:{}", scheme, hop.endpoint.host, hop.endpoint.port);
+        Box::pin(async move {
+            let client = eggress_protocol_websocket::WebSocketTunnelClient::with_default_config();
+            client
+                .connect(&url)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+}
+
+struct RawHopHandler;
+
+impl HopHandler for RawHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Raw
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        _stream: BoxStream,
+        target: &'a TargetAddr,
+        _hop: &'a eggress_uri::ProxyHopSpec,
+    ) -> HandshakeFuture<'a> {
+        let target_str = target.to_string();
+        Box::pin(async move {
+            let tcp = tokio::net::TcpStream::connect(&target_str)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+            Ok(Box::new(tcp) as BoxStream)
         })
     }
 }

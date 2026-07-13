@@ -2,6 +2,7 @@ use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Once;
 
+use futures_util::{SinkExt, StreamExt};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -750,4 +751,239 @@ upstream_group = "udp-upstream"
         result.is_err(),
         "Trojan upstream with UDP listener should be rejected at config validation"
     );
+}
+
+async fn start_ws_echo_server() -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let ws_stream = tokio_tungstenite::accept_async(stream).await;
+                let ws_stream = match ws_stream {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let (mut sink, mut source) = ws_stream.split();
+                while let Some(Ok(msg)) = source.next().await {
+                    match msg {
+                        tokio_tungstenite::tungstenite::Message::Binary(data) => {
+                            if sink
+                                .send(tokio_tungstenite::tungstenite::Message::Binary(
+                                    data.clone(),
+                                ))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        tokio_tungstenite::tungstenite::Message::Close(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+        }
+    });
+    addr
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ws_upstream_routes_tcp_echo() {
+    install_crypto();
+    let ws_addr = start_ws_echo_server().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "ws-up"
+uri = "ws://127.0.0.1:{ws_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["ws-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        ws_port = ws_addr.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let target = ws_addr;
+    let ip_octets = match target.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&target.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
+
+    stream.write_all(b"hello-ws-upstream").await.unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"hello-ws-upstream");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+async fn start_dummy_listener() -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            // Just hold the connection open; the RawHopHandler ignores it anyway
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1];
+                let mut stream = stream;
+                let _ = stream.read(&mut buf).await;
+            });
+        }
+    });
+    addr
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn raw_upstream_routes_tcp_echo() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+    let raw_endpoint = start_dummy_listener().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "raw-up"
+uri = "raw://127.0.0.1:{raw_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["raw-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        raw_port = raw_endpoint.port()
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
+
+    stream.write_all(b"hello-raw-upstream").await.unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"hello-raw-upstream");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
 }

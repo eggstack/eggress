@@ -305,6 +305,17 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
                     "trojan password must not be empty",
                 ));
             }
+            // Validate fallback address format if provided
+            if let Some(ref fallback) = trojan.fallback {
+                if fallback.parse::<eggress_core::TargetAddr>().is_err() {
+                    errors.push(ConfigError::validation(
+                        &format!("{}.trojan.fallback", path),
+                        &format!(
+                            "invalid fallback address format: '{fallback}' (expected host:port)"
+                        ),
+                    ));
+                }
+            }
         }
     }
 }
@@ -1349,6 +1360,7 @@ mod tests {
                 shadowsocks: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "secret".to_string(),
+                    fallback: None,
                 }),
                 transparent: None,
                 unix: None,
@@ -1385,6 +1397,7 @@ mod tests {
                 shadowsocks: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "secret".to_string(),
+                    fallback: None,
                 }),
                 transparent: None,
                 unix: None,
@@ -1469,6 +1482,7 @@ mod tests {
                 shadowsocks: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: String::new(),
+                    fallback: None,
                 }),
                 transparent: None,
                 unix: None,
@@ -1549,6 +1563,7 @@ mod tests {
                 shadowsocks: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "my-secret".to_string(),
+                    fallback: None,
                 }),
                 transparent: None,
                 unix: None,
@@ -1568,6 +1583,94 @@ mod tests {
         assert!(
             result.is_ok(),
             "valid trojan config should pass: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn validate_trojan_fallback_invalid_address_rejected() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "trojan-bad-fallback".to_string(),
+                bind: "127.0.0.1:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: Some(crate::model::ListenerTlsConfig {
+                    cert: "/path/cert.pem".to_string(),
+                    key: "/path/key.pem".to_string(),
+                    alpn: None,
+                }),
+                shadowsocks: None,
+                trojan: Some(crate::model::ListenerTrojanConfig {
+                    password: "secret".to_string(),
+                    fallback: Some("not-a-valid-address".to_string()),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.to_string().contains("invalid fallback address")));
+    }
+
+    #[test]
+    fn validate_trojan_fallback_valid_address_passes() {
+        let config = ConfigFile {
+            version: Some(1),
+            listeners: Some(vec![crate::model::ListenerConfig {
+                name: "trojan-good-fallback".to_string(),
+                bind: "127.0.0.1:443".to_string(),
+                protocols: vec!["trojan".to_string()],
+                connection_limit: None,
+                auth: None,
+                udp_enabled: None,
+                udp: None,
+                tls: Some(crate::model::ListenerTlsConfig {
+                    cert: "/path/cert.pem".to_string(),
+                    key: "/path/key.pem".to_string(),
+                    alpn: None,
+                }),
+                shadowsocks: None,
+                trojan: Some(crate::model::ListenerTrojanConfig {
+                    password: "secret".to_string(),
+                    fallback: Some("127.0.0.1:443".to_string()),
+                }),
+                transparent: None,
+                unix: None,
+            }]),
+            upstreams: None,
+            upstream_groups: None,
+            rules: None,
+            rules_file: None,
+            routing: None,
+            admin: None,
+            process: None,
+            timeouts: None,
+            reverse_servers: None,
+            reverse_clients: None,
+        };
+        let result = validate_config(&config);
+        assert!(
+            result.is_ok(),
+            "valid trojan config with fallback should pass: {:?}",
             result.err()
         );
     }

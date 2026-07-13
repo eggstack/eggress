@@ -137,8 +137,9 @@ Eggress parses `__`-separated multi-hop chains and translates them into TOML
 accepted as valid one-hop chains.
 
 Per-hop protocol validation detects unsupported protocols (`ssh`, `ssr`, `unix`,
-`redir`, `direct`, `h2`, `ws`, `wss`, `raw`, `tunnel`) across all hops and
-emits structured diagnostics.
+`redir`, `direct`, `h2`) across all hops and emits structured diagnostics.
+Supported upstream protocols (`ws`, `wss`, `raw`, `tunnel`) are now accepted
+through the runtime supervisor (Phase B3).
 
 ### Rejected Separators
 
@@ -584,7 +585,8 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 
 - **Implemented as compatible**: HTTP, HTTPS (HTTP+TLS), SOCKS4, SOCKS4a, SOCKS5, HTTP forward proxy (persistent sessions), Shadowsocks upstream and inbound listener (AEAD), Trojan upstream, direct upstream, standalone UDP (`-ul`/`-ur`)
 - **Implemented as supported**: Transparent TCP proxy (Linux, `redir://`), Unix domain socket listeners (Unix, `unix://`)
-- **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, WebSocket tunnels, Raw fixed-target tunnels, TLS ALPN negotiation
+- **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, TLS ALPN negotiation
+- **Implemented as runtime-integrated upstream (Phase B3)**: WebSocket tunnels (`ws://`, `wss://`), Raw fixed-target tunnels (`raw://`, `tunnel://`)
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
 - **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--reuse`, `--log`, `--sys`, multi-hop UDP

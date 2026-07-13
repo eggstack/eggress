@@ -123,12 +123,12 @@ notes = "Shadowsocks UDP inbound; AEAD-only, standard SIP003 framing"
 protocol = "trojan"
 role = "listener"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
-evidence = "integration"
+tier = "drop_in"
+evidence = "differential"
 capability_ids = [
     "protocol.trojan_server",
 ]
-notes = "Requires TLS; server role implemented as listener-side"
+notes = "Requires TLS; server role with fallback routing; differential test: differential_trojan_auth_failure"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TCP Upstream Compositions
@@ -212,11 +212,12 @@ capability_ids = [
 protocol = "trojan"
 role = "upstream"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
-evidence = "integration"
+tier = "drop_in"
+evidence = "differential"
 capability_ids = [
     "protocol.trojan_client",
 ]
+notes = "ATYP 0x03 (domain) matches pproxy; differential test: differential_trojan_upstream"
 
 [[cell]]
 protocol = "direct"
@@ -282,6 +283,38 @@ capability_ids = [
     "protocol.chain.http_to_http",
 ]
 
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "ws"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "ws"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "raw"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "raw"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Protocol-Crate-Only (implemented but refused at runtime/config)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -290,23 +323,23 @@ capability_ids = [
 protocol = "ws"
 role = "upstream"
 traffic_kind = "tcp"
-tier = "intentional_non_parity"
-evidence = "docs_only"
-capability_ids = []
-caveat_class = "protocol_crate_only"
-rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
-notes = "WebSocket tunnel implemented in eggress-protocol-websocket; refused by config/runtime"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.ws_runtime",
+]
+notes = "WebSocket tunnel upstream; binary-mode byte stream adapter"
 
 [[cell]]
 protocol = "wss"
 role = "upstream"
 traffic_kind = "tcp"
-tier = "intentional_non_parity"
-evidence = "docs_only"
-capability_ids = []
-caveat_class = "protocol_crate_only"
-rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
-notes = "WSS = WS + TLS; refused by config/runtime"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.ws_runtime",
+]
+notes = "WSS = WebSocket + TLS; upstream with TLS transport wrapper"
 
 [[cell]]
 protocol = "h2"
@@ -316,19 +349,19 @@ tier = "intentional_non_parity"
 evidence = "docs_only"
 capability_ids = []
 caveat_class = "protocol_crate_only"
-rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
-notes = "HTTP/2 CONNECT implemented in eggress-protocol-http; refused by config/runtime"
+rationale = "H2 CONNECT requires complex bidirectional stream adaptation; deferred to B4. See docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
+notes = "HTTP/2 CONNECT implemented in eggress-protocol-http; not yet integrated through runtime"
 
 [[cell]]
 protocol = "raw"
 role = "upstream"
 traffic_kind = "tcp"
-tier = "intentional_non_parity"
-evidence = "docs_only"
-capability_ids = []
-caveat_class = "protocol_crate_only"
-rationale = "Deliberate protocol-crate-only scope; no runtime integration by design. See ADR docs/adr/ADR_ws_wss_raw_h2_protocol_crate_only.md."
-notes = "Raw fixed-target tunnel; refused by config/runtime"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.raw_runtime",
+]
+notes = "Raw fixed-target TCP tunnel upstream; direct connect to target"
 
 [[cell]]
 protocol = "ssh"
@@ -441,5 +474,5 @@ description = "These protocols require TLS transport wrapper"
 
 [[constraint]]
 type = "protocol_crate_only"
-applies_to = ["ws", "wss", "h2", "raw"]
-description = "Implemented in protocol crates but refused by config/runtime supervisor"
+applies_to = ["h2"]
+description = "H2 CONNECT implemented in protocol crate but not yet integrated through runtime supervisor (deferred to B4)"

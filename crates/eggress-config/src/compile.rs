@@ -223,21 +223,9 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "socks5" => Ok(ProtocolId::Socks5),
         "shadowsocks" => Ok(ProtocolId::Shadowsocks),
         "trojan" => Ok(ProtocolId::Trojan),
-        // H2/WebSocket/Raw are recognized in the URI parser and exist as
-        // protocol crates, but they are NOT yet integrated through the
-        // supervisor. We refuse them in `[[listeners]]`/`[[upstreams]]`
-        // configs with a structured diagnostic so users get an honest
-        // failure rather than a silently broken listener. See
-        // docs/PHASE_25_28_HARDENING_COMPLETION.md (H5/H6/H7).
-        "h2" | "websocket" | "ws" | "wss" | "raw" | "tunnel" => Err(ConfigError::validation(
-            "protocols",
-            &format!(
-                "'{}' is not yet integrated through the runtime supervisor \
-                     (protocol-crate only). Use it directly via the protocol crate, \
-                     or rely on a stdio TCP listener/upstream instead.",
-                s
-            ),
-        )),
+        "h2" => Ok(ProtocolId::Http2),
+        "websocket" | "ws" | "wss" => Ok(ProtocolId::WebSocket),
+        "raw" | "tunnel" => Ok(ProtocolId::Raw),
         _ => Err(ConfigError::validation(
             "protocols",
             &format!("unknown protocol: {}", s),

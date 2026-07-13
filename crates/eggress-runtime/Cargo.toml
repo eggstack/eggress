@@ -40,6 +40,9 @@ rcgen = "0.13"
 eggress-transport-tls.workspace = true
 eggress-protocol-trojan.workspace = true
 eggress-protocol-shadowsocks.workspace = true
+eggress-protocol-websocket.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
 
 [lints]
 workspace = true
