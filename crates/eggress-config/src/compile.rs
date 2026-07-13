@@ -172,10 +172,40 @@ pub struct CompiledListenerTlsConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct CompiledH2Config {
+    pub max_concurrent_streams: u32,
+    pub pool_size: u32,
+    pub idle_timeout: std::time::Duration,
+    pub keepalive_interval: std::time::Duration,
+    pub keepalive_timeout: std::time::Duration,
+    pub stream_receive_window: u32,
+    pub connection_receive_window: u32,
+    pub max_frame_size: u32,
+    pub max_header_list_size: u32,
+}
+
+impl Default for CompiledH2Config {
+    fn default() -> Self {
+        Self {
+            max_concurrent_streams: 100,
+            pool_size: 4,
+            idle_timeout: std::time::Duration::from_secs(60),
+            keepalive_interval: std::time::Duration::from_secs(30),
+            keepalive_timeout: std::time::Duration::from_secs(10),
+            stream_receive_window: 65535,
+            connection_receive_window: 65535,
+            max_frame_size: 16384,
+            max_header_list_size: 65535,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct UpstreamConfig {
     pub id: String,
     pub chain: eggress_uri::ProxyChainSpec,
     pub health: eggress_routing::health::HealthConfig,
+    pub h2: Option<CompiledH2Config>,
 }
 
 #[derive(Debug, Clone)]
@@ -966,6 +996,99 @@ fn compile_health_config(
     })
 }
 
+fn compile_h2_config(
+    model: &crate::model::H2UpstreamConfig,
+    path_prefix: &str,
+) -> Result<CompiledH2Config, ConfigError> {
+    let mut compiled = CompiledH2Config::default();
+
+    if let Some(max) = model.max_concurrent_streams {
+        if max == 0 {
+            return Err(ConfigError::validation(
+                &format!("{}.max_concurrent_streams", path_prefix),
+                "must be greater than 0",
+            ));
+        }
+        compiled.max_concurrent_streams = max;
+    }
+
+    if let Some(pool) = model.pool_size {
+        if pool == 0 {
+            return Err(ConfigError::validation(
+                &format!("{}.pool_size", path_prefix),
+                "must be greater than 0",
+            ));
+        }
+        compiled.pool_size = pool;
+    }
+
+    if let Some(ref idle) = model.idle_timeout {
+        compiled.idle_timeout = validate_duration(idle).map_err(|e| {
+            ConfigError::validation(&format!("{}.idle_timeout", path_prefix), &e.to_string())
+        })?;
+    }
+
+    if let Some(ref interval) = model.keepalive_interval {
+        compiled.keepalive_interval = validate_duration(interval).map_err(|e| {
+            ConfigError::validation(
+                &format!("{}.keepalive_interval", path_prefix),
+                &e.to_string(),
+            )
+        })?;
+    }
+
+    if let Some(ref timeout) = model.keepalive_timeout {
+        compiled.keepalive_timeout = validate_duration(timeout).map_err(|e| {
+            ConfigError::validation(
+                &format!("{}.keepalive_timeout", path_prefix),
+                &e.to_string(),
+            )
+        })?;
+    }
+
+    if let Some(window) = model.stream_receive_window {
+        if window == 0 {
+            return Err(ConfigError::validation(
+                &format!("{}.stream_receive_window", path_prefix),
+                "must be greater than 0",
+            ));
+        }
+        compiled.stream_receive_window = window;
+    }
+
+    if let Some(window) = model.connection_receive_window {
+        if window == 0 {
+            return Err(ConfigError::validation(
+                &format!("{}.connection_receive_window", path_prefix),
+                "must be greater than 0",
+            ));
+        }
+        compiled.connection_receive_window = window;
+    }
+
+    if let Some(size) = model.max_frame_size {
+        if size == 0 {
+            return Err(ConfigError::validation(
+                &format!("{}.max_frame_size", path_prefix),
+                "must be greater than 0",
+            ));
+        }
+        compiled.max_frame_size = size;
+    }
+
+    if let Some(size) = model.max_header_list_size {
+        if size == 0 {
+            return Err(ConfigError::validation(
+                &format!("{}.max_header_list_size", path_prefix),
+                "must be greater than 0",
+            ));
+        }
+        compiled.max_header_list_size = size;
+    }
+
+    Ok(compiled)
+}
+
 fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigError> {
     let upstreams = match &config.upstreams {
         Some(u) => u,
@@ -992,10 +1115,25 @@ fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigE
                 other => other,
             })?;
 
+            let h2 = match u.h2.as_ref() {
+                Some(h2_model) => Some(
+                    compile_h2_config(h2_model, &format!("upstream {}", u.id)).map_err(
+                        |e| match e {
+                            ConfigError::Validation { path, message } => {
+                                ConfigError::validation(&path, &message)
+                            }
+                            other => other,
+                        },
+                    )?,
+                ),
+                None => None,
+            };
+
             Ok(UpstreamConfig {
                 id: u.id.clone(),
                 chain,
                 health,
+                h2,
             })
         })
         .collect()

@@ -786,6 +786,7 @@ name = "eggress-runtime"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "bytes",
  "eggress-admin",
  "eggress-config",
  "eggress-core",
@@ -804,6 +805,7 @@ dependencies = [
  "fastrand",
  "futures-util",
  "h2",
+ "http",
  "rcgen",
  "rustls",
  "serde_json",

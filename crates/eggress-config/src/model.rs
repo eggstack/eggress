@@ -172,6 +172,20 @@ pub struct AuthConfig {
     pub password_env: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct H2UpstreamConfig {
+    pub max_concurrent_streams: Option<u32>,
+    pub pool_size: Option<u32>,
+    pub idle_timeout: Option<String>,
+    pub keepalive_interval: Option<String>,
+    pub keepalive_timeout: Option<String>,
+    pub stream_receive_window: Option<u32>,
+    pub connection_receive_window: Option<u32>,
+    pub max_frame_size: Option<u32>,
+    pub max_header_list_size: Option<u32>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpstreamConfig {
@@ -179,6 +193,8 @@ pub struct UpstreamConfig {
     pub uri: String,
     #[serde(default)]
     pub health: Option<HealthConfigToml>,
+    #[serde(default)]
+    pub h2: Option<H2UpstreamConfig>,
 }
 
 #[derive(Debug, Deserialize)]

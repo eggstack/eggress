@@ -74,6 +74,17 @@ pub struct UnsupportedTransportLabels {
     pub reason: String,
 }
 
+#[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
+pub struct H2ConnectionLabels {
+    pub upstream_id: String,
+}
+
+#[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]
+pub struct H2StreamLabels {
+    pub upstream_id: String,
+    pub outcome: String,
+}
+
 pub struct MetricsRegistry {
     registry: Registry,
     connections_active: Gauge,
@@ -139,6 +150,16 @@ pub struct MetricsRegistry {
     ss_udp_decrypt_failures_total: Counter,
     ss_udp_unsupported_method_rejects_total: Counter,
     ss_udp_active_flows: Gauge,
+    h2_connections_active: Gauge,
+    h2_connections_total: Counter,
+    h2_streams_active: Gauge,
+    h2_streams_total: Family<H2StreamLabels, Counter>,
+    h2_goaway_total: Counter,
+    h2_handshake_failures_total: Counter,
+    h2_auth_failures_total: Counter,
+    h2_flow_control_stalls_total: Counter,
+    h2_pool_exhausted_total: Counter,
+    h2_bytes_relayed_total: Counter,
     transparent_accepted_bridged: Mutex<Option<Arc<AtomicU64>>>,
     transparent_dst_failed_bridged: Mutex<Option<Arc<AtomicU64>>>,
     transparent_prev_accepted: Mutex<u64>,
@@ -636,6 +657,76 @@ impl MetricsRegistry {
             ss_udp_active_flows.clone(),
         );
 
+        let h2_connections_active = Gauge::default();
+        registry.register(
+            "eggress_h2_connections_active",
+            "Currently active H2 upstream connections",
+            h2_connections_active.clone(),
+        );
+
+        let h2_connections_total = Counter::default();
+        registry.register(
+            "eggress_h2_connections_total",
+            "Total H2 upstream connections opened",
+            h2_connections_total.clone(),
+        );
+
+        let h2_streams_active = Gauge::default();
+        registry.register(
+            "eggress_h2_streams_active",
+            "Currently active H2 streams",
+            h2_streams_active.clone(),
+        );
+
+        let h2_streams_total = Family::<H2StreamLabels, Counter>::default();
+        registry.register(
+            "eggress_h2_streams_total",
+            "Total H2 streams by outcome",
+            h2_streams_total.clone(),
+        );
+
+        let h2_goaway_total = Counter::default();
+        registry.register(
+            "eggress_h2_goaway_total",
+            "Total H2 GOAWAY frames received",
+            h2_goaway_total.clone(),
+        );
+
+        let h2_handshake_failures_total = Counter::default();
+        registry.register(
+            "eggress_h2_handshake_failures_total",
+            "Total H2 handshake failures",
+            h2_handshake_failures_total.clone(),
+        );
+
+        let h2_auth_failures_total = Counter::default();
+        registry.register(
+            "eggress_h2_auth_failures_total",
+            "Total H2 upstream authentication failures",
+            h2_auth_failures_total.clone(),
+        );
+
+        let h2_flow_control_stalls_total = Counter::default();
+        registry.register(
+            "eggress_h2_flow_control_stalls_total",
+            "Total H2 flow control stalls",
+            h2_flow_control_stalls_total.clone(),
+        );
+
+        let h2_pool_exhausted_total = Counter::default();
+        registry.register(
+            "eggress_h2_pool_exhausted_total",
+            "Total H2 connection pool exhaustion events",
+            h2_pool_exhausted_total.clone(),
+        );
+
+        let h2_bytes_relayed_total = Counter::default();
+        registry.register(
+            "eggress_h2_bytes_relayed_total",
+            "Total bytes relayed over H2 connections",
+            h2_bytes_relayed_total.clone(),
+        );
+
         Self {
             registry,
             connections_active,
@@ -701,6 +792,16 @@ impl MetricsRegistry {
             ss_udp_decrypt_failures_total,
             ss_udp_unsupported_method_rejects_total,
             ss_udp_active_flows,
+            h2_connections_active,
+            h2_connections_total,
+            h2_streams_active,
+            h2_streams_total,
+            h2_goaway_total,
+            h2_handshake_failures_total,
+            h2_auth_failures_total,
+            h2_flow_control_stalls_total,
+            h2_pool_exhausted_total,
+            h2_bytes_relayed_total,
             transparent_accepted_bridged: Mutex::new(None),
             transparent_dst_failed_bridged: Mutex::new(None),
             transparent_prev_accepted: Mutex::new(0),
@@ -1376,6 +1477,80 @@ impl MetricsRegistry {
     pub fn record_platform_capability_check_failure(&self) {
         self.platform_capability_check_failures.inc();
     }
+
+    pub fn record_h2_connection_opened(&self) {
+        self.h2_connections_active.inc();
+        self.h2_connections_total.inc();
+    }
+
+    pub fn record_h2_connection_closed(&self) {
+        self.h2_connections_active.dec();
+    }
+
+    pub fn record_h2_stream_opened(&self, upstream_id: &str, outcome: &str) {
+        self.h2_streams_active.inc();
+        self.h2_streams_total
+            .get_or_create(&H2StreamLabels {
+                upstream_id: upstream_id.to_string(),
+                outcome: outcome.to_string(),
+            })
+            .inc();
+    }
+
+    pub fn record_h2_stream_closed(&self) {
+        self.h2_streams_active.dec();
+    }
+
+    pub fn record_h2_goaway(&self) {
+        self.h2_goaway_total.inc();
+    }
+
+    pub fn record_h2_handshake_failure(&self) {
+        self.h2_handshake_failures_total.inc();
+    }
+
+    pub fn record_h2_auth_failure(&self) {
+        self.h2_auth_failures_total.inc();
+    }
+
+    pub fn record_h2_flow_control_stall(&self) {
+        self.h2_flow_control_stalls_total.inc();
+    }
+
+    pub fn record_h2_pool_exhausted(&self) {
+        self.h2_pool_exhausted_total.inc();
+    }
+
+    pub fn record_h2_bytes_relayed(&self, bytes: u64) {
+        self.h2_bytes_relayed_total.inc_by(bytes);
+    }
+
+    pub fn h2_snapshot(&self) -> H2MetricsSnapshot {
+        H2MetricsSnapshot {
+            connections_active: self.h2_connections_active.get() as u64,
+            connections_total: self.h2_connections_total.get(),
+            streams_active: self.h2_streams_active.get() as u64,
+            goaway_total: self.h2_goaway_total.get(),
+            handshake_failures_total: self.h2_handshake_failures_total.get(),
+            auth_failures_total: self.h2_auth_failures_total.get(),
+            flow_control_stalls_total: self.h2_flow_control_stalls_total.get(),
+            pool_exhausted_total: self.h2_pool_exhausted_total.get(),
+            bytes_relayed_total: self.h2_bytes_relayed_total.get(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct H2MetricsSnapshot {
+    pub connections_active: u64,
+    pub connections_total: u64,
+    pub streams_active: u64,
+    pub goaway_total: u64,
+    pub handshake_failures_total: u64,
+    pub auth_failures_total: u64,
+    pub flow_control_stalls_total: u64,
+    pub pool_exhausted_total: u64,
+    pub bytes_relayed_total: u64,
 }
 
 impl Default for MetricsRegistry {
@@ -1452,6 +1627,16 @@ mod tests {
         assert!(output.contains("eggress_shadowsocks_udp_decrypt_failures_total"));
         assert!(output.contains("eggress_shadowsocks_udp_unsupported_method_rejects_total"));
         assert!(output.contains("eggress_shadowsocks_udp_active_flows"));
+        assert!(output.contains("eggress_h2_connections_active"));
+        assert!(output.contains("eggress_h2_connections_total"));
+        assert!(output.contains("eggress_h2_streams_active"));
+        assert!(output.contains("eggress_h2_streams_total"));
+        assert!(output.contains("eggress_h2_goaway_total"));
+        assert!(output.contains("eggress_h2_handshake_failures_total"));
+        assert!(output.contains("eggress_h2_auth_failures_total"));
+        assert!(output.contains("eggress_h2_flow_control_stalls_total"));
+        assert!(output.contains("eggress_h2_pool_exhausted_total"));
+        assert!(output.contains("eggress_h2_bytes_relayed_total"));
     }
 
     #[test]

@@ -46,6 +46,15 @@ pub enum DiagnosticCode {
     FancyRegexBackend,
     /// A URI contains a component that is preserved but not supported at runtime.
     UriPreservedUnsupportedComponent,
+    H2HandshakeFailure,
+    H2ConnectRejected,
+    H2StreamReset,
+    H2GoawayReceived,
+    H2PoolExhausted,
+    H2FlowControlStall,
+    H2AuthFailure,
+    H2UnsupportedCleartext,
+    H2TlsAlpnMismatch,
 }
 
 impl fmt::Display for DiagnosticCode {
@@ -70,6 +79,15 @@ impl fmt::Display for DiagnosticCode {
             Self::InvalidRegexPattern => "invalid_regex_pattern",
             Self::FancyRegexBackend => "fancy_regex_backend",
             Self::UriPreservedUnsupportedComponent => "uri_preserved_unsupported_component",
+            Self::H2HandshakeFailure => "h2_handshake_failure",
+            Self::H2ConnectRejected => "h2_connect_rejected",
+            Self::H2StreamReset => "h2_stream_reset",
+            Self::H2GoawayReceived => "h2_goaway_received",
+            Self::H2PoolExhausted => "h2_pool_exhausted",
+            Self::H2FlowControlStall => "h2_flow_control_stall",
+            Self::H2AuthFailure => "h2_auth_failure",
+            Self::H2UnsupportedCleartext => "h2_unsupported_cleartext",
+            Self::H2TlsAlpnMismatch => "h2_tls_alpn_mismatch",
         };
         f.write_str(label)
     }
@@ -301,6 +319,30 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                 suggestion: None,
             },
         }
+    }
+}
+
+pub fn h2_diagnostic(code: DiagnosticCode, message: impl Into<String>) -> StructuredDiagnostic {
+    StructuredDiagnostic {
+        code,
+        feature_id: Some("h2".to_string()),
+        tier: Some("drop_in".to_string()),
+        message: message.into(),
+        suggestion: None,
+    }
+}
+
+pub fn h2_diagnostic_with_suggestion(
+    code: DiagnosticCode,
+    message: impl Into<String>,
+    suggestion: impl Into<String>,
+) -> StructuredDiagnostic {
+    StructuredDiagnostic {
+        code,
+        feature_id: Some("h2".to_string()),
+        tier: Some("drop_in".to_string()),
+        message: message.into(),
+        suggestion: Some(suggestion.into()),
     }
 }
 
@@ -662,6 +704,15 @@ mod tests {
             DiagnosticCode::InvalidRegexPattern,
             DiagnosticCode::FancyRegexBackend,
             DiagnosticCode::UriPreservedUnsupportedComponent,
+            DiagnosticCode::H2HandshakeFailure,
+            DiagnosticCode::H2ConnectRejected,
+            DiagnosticCode::H2StreamReset,
+            DiagnosticCode::H2GoawayReceived,
+            DiagnosticCode::H2PoolExhausted,
+            DiagnosticCode::H2FlowControlStall,
+            DiagnosticCode::H2AuthFailure,
+            DiagnosticCode::H2UnsupportedCleartext,
+            DiagnosticCode::H2TlsAlpnMismatch,
         ];
         for code in &codes {
             let json = serde_json::to_string(code).unwrap();
@@ -729,6 +780,64 @@ mod tests {
         let display = warn.to_string();
         assert!(display.contains("[credential-in-toml]"));
         assert!(!display.contains("@"));
+    }
+
+    #[test]
+    fn h2_diagnostic_code_display() {
+        assert_eq!(
+            DiagnosticCode::H2HandshakeFailure.to_string(),
+            "h2_handshake_failure"
+        );
+        assert_eq!(
+            DiagnosticCode::H2ConnectRejected.to_string(),
+            "h2_connect_rejected"
+        );
+        assert_eq!(DiagnosticCode::H2StreamReset.to_string(), "h2_stream_reset");
+        assert_eq!(
+            DiagnosticCode::H2GoawayReceived.to_string(),
+            "h2_goaway_received"
+        );
+        assert_eq!(
+            DiagnosticCode::H2PoolExhausted.to_string(),
+            "h2_pool_exhausted"
+        );
+        assert_eq!(
+            DiagnosticCode::H2FlowControlStall.to_string(),
+            "h2_flow_control_stall"
+        );
+        assert_eq!(DiagnosticCode::H2AuthFailure.to_string(), "h2_auth_failure");
+        assert_eq!(
+            DiagnosticCode::H2UnsupportedCleartext.to_string(),
+            "h2_unsupported_cleartext"
+        );
+        assert_eq!(
+            DiagnosticCode::H2TlsAlpnMismatch.to_string(),
+            "h2_tls_alpn_mismatch"
+        );
+    }
+
+    #[test]
+    fn h2_diagnostic_helper() {
+        let diag = h2_diagnostic(DiagnosticCode::H2HandshakeFailure, "handshake failed");
+        assert_eq!(diag.code, DiagnosticCode::H2HandshakeFailure);
+        assert_eq!(diag.feature_id.as_deref(), Some("h2"));
+        assert_eq!(diag.tier.as_deref(), Some("drop_in"));
+        assert_eq!(diag.message, "handshake failed");
+        assert!(diag.suggestion.is_none());
+    }
+
+    #[test]
+    fn h2_diagnostic_with_suggestion_helper() {
+        let diag = h2_diagnostic_with_suggestion(
+            DiagnosticCode::H2TlsAlpnMismatch,
+            "ALPN mismatch",
+            "use h2 ALPN",
+        );
+        assert_eq!(diag.code, DiagnosticCode::H2TlsAlpnMismatch);
+        assert_eq!(diag.feature_id.as_deref(), Some("h2"));
+        assert_eq!(diag.tier.as_deref(), Some("drop_in"));
+        assert_eq!(diag.message, "ALPN mismatch");
+        assert_eq!(diag.suggestion.as_deref(), Some("use h2 ALPN"));
     }
 
     #[test]

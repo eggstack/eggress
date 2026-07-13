@@ -177,6 +177,7 @@ mod tests {
             id: "proxy1".to_string(),
             chain: ProxyChainSpec { hops: vec![] },
             health: default_health(),
+            h2: None,
         }];
         let snap = compile_runtime_snapshot(&cfg, None).unwrap();
         assert_eq!(snap.upstreams.len(), 1);
@@ -190,6 +191,7 @@ mod tests {
             id: "proxy1".to_string(),
             chain: ProxyChainSpec { hops: vec![] },
             health: default_health(),
+            h2: None,
         }];
         cfg.groups = vec![eggress_config::compile::UpstreamGroupConfig {
             id: UpstreamGroupId(Arc::from("main")),
@@ -215,6 +217,7 @@ mod tests {
             id: "proxy1".to_string(),
             chain: ProxyChainSpec { hops: vec![] },
             health: default_health(),
+            h2: None,
         }];
         let snap1 = compile_runtime_snapshot(&cfg, None).unwrap();
         let original_arc = snap1.upstreams.get("proxy1").unwrap().clone();
@@ -232,6 +235,7 @@ mod tests {
             id: "proxy1".to_string(),
             chain: ProxyChainSpec { hops: vec![] },
             health: default_health(),
+            h2: None,
         }];
         let snap1 = compile_runtime_snapshot(&cfg1, None).unwrap();
         let original_arc = snap1.upstreams.get("proxy1").unwrap().clone();
@@ -254,6 +258,7 @@ mod tests {
                 }],
             },
             health: default_health(),
+            h2: None,
         }];
         let snap2 = compile_runtime_snapshot(&cfg2, Some(&snap1)).unwrap();
         let new_arc = snap2.upstreams.get("proxy1").unwrap().clone();
@@ -268,6 +273,7 @@ mod tests {
             id: "proxy1".to_string(),
             chain: ProxyChainSpec { hops: vec![] },
             health: default_health(),
+            h2: None,
         }];
         cfg.groups = vec![eggress_config::compile::UpstreamGroupConfig {
             id: UpstreamGroupId(Arc::from("main")),
@@ -335,11 +341,13 @@ mod tests {
                 id: "p1".to_string(),
                 chain: ProxyChainSpec { hops: vec![] },
                 health: default_health(),
+                h2: None,
             },
             UpstreamConfig {
                 id: "p2".to_string(),
                 chain: ProxyChainSpec { hops: vec![] },
                 health: default_health(),
+                h2: None,
             },
         ];
         cfg.groups = vec![eggress_config::compile::UpstreamGroupConfig {
@@ -374,6 +382,7 @@ mod tests {
                 failures_to_unhealthy: 3,
                 ..default_health()
             },
+            h2: None,
         }];
         let snap1 = compile_runtime_snapshot(&cfg1, None).unwrap();
         let original_arc = snap1.upstreams.get("proxy1").unwrap().clone();
@@ -386,6 +395,7 @@ mod tests {
                 failures_to_unhealthy: 1,
                 ..default_health()
             },
+            h2: None,
         }];
         let snap2 = compile_runtime_snapshot(&cfg2, Some(&snap1)).unwrap();
         let new_arc = snap2.upstreams.get("proxy1").unwrap().clone();
@@ -409,6 +419,7 @@ mod tests {
                 timeout: Duration::from_secs(2),
                 initial_state: eggress_routing::health::HealthState::Unknown,
             },
+            h2: None,
         }];
         let snap1 = compile_runtime_snapshot(&cfg1, None).unwrap();
         let original_arc = snap1.upstreams.get("proxy1").unwrap().clone();
@@ -424,6 +435,7 @@ mod tests {
                 timeout: Duration::from_secs(2),
                 initial_state: eggress_routing::health::HealthState::Unknown,
             },
+            h2: None,
         }];
         let snap2 = compile_runtime_snapshot(&cfg2, Some(&snap1)).unwrap();
         let reused_arc = snap2.upstreams.get("proxy1").unwrap().clone();
@@ -442,11 +454,13 @@ mod tests {
                 id: "p1".to_string(),
                 chain: ProxyChainSpec { hops: vec![] },
                 health: default_health(),
+                h2: None,
             },
             UpstreamConfig {
                 id: "p2".to_string(),
                 chain: ProxyChainSpec { hops: vec![] },
                 health: default_health(),
+                h2: None,
             },
         ];
         let snap1 = compile_runtime_snapshot(&cfg1, None).unwrap();
@@ -459,6 +473,7 @@ mod tests {
                 id: "p1".to_string(),
                 chain: ProxyChainSpec { hops: vec![] },
                 health: default_health(),
+                h2: None,
             },
             UpstreamConfig {
                 id: "p2".to_string(),
@@ -477,6 +492,7 @@ mod tests {
                     }],
                 },
                 health: default_health(),
+                h2: None,
             },
         ];
         let snap2 = compile_runtime_snapshot(&cfg2, Some(&snap1)).unwrap();

@@ -2108,6 +2108,7 @@ mod tests {
                 id: "proxy1".to_string(),
                 chain: eggress_uri::ProxyChainSpec { hops: vec![] },
                 health: eggress_routing::health::HealthConfig::default(),
+                h2: None,
             }],
             groups: vec![eggress_config::compile::UpstreamGroupConfig {
                 id: UpstreamGroupId(Arc::from("main")),

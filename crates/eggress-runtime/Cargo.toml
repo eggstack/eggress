@@ -43,6 +43,8 @@ eggress-protocol-shadowsocks.workspace = true
 eggress-protocol-websocket.workspace = true
 eggress-protocol-http.workspace = true
 h2.workspace = true
+http.workspace = true
+bytes.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 

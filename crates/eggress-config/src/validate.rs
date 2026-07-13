@@ -343,6 +343,10 @@ fn validate_upstreams(upstreams: &[crate::model::UpstreamConfig], errors: &mut V
         if let Some(ref health) = upstream.health {
             validate_health_config(health, &path, errors);
         }
+
+        if let Some(ref h2) = upstream.h2 {
+            validate_h2_config(h2, &path, errors);
+        }
     }
 }
 
@@ -404,6 +408,85 @@ fn validate_health_config(
                     initial_state,
                     VALID_HEALTH_INITIAL_STATES.join(", ")
                 ),
+            ));
+        }
+    }
+}
+
+fn validate_h2_config(
+    h2: &crate::model::H2UpstreamConfig,
+    parent_path: &str,
+    errors: &mut Vec<ConfigError>,
+) {
+    if let Some(max) = h2.max_concurrent_streams {
+        if max == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.max_concurrent_streams", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(pool) = h2.pool_size {
+        if pool == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.pool_size", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(ref idle) = h2.idle_timeout {
+        if parse_duration(idle).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.idle_timeout", parent_path),
+                &format!("invalid duration: {}", idle),
+            ));
+        }
+    }
+    if let Some(ref interval) = h2.keepalive_interval {
+        if parse_duration(interval).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.keepalive_interval", parent_path),
+                &format!("invalid duration: {}", interval),
+            ));
+        }
+    }
+    if let Some(ref timeout) = h2.keepalive_timeout {
+        if parse_duration(timeout).is_err() {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.keepalive_timeout", parent_path),
+                &format!("invalid duration: {}", timeout),
+            ));
+        }
+    }
+    if let Some(window) = h2.stream_receive_window {
+        if window == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.stream_receive_window", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(window) = h2.connection_receive_window {
+        if window == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.connection_receive_window", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(size) = h2.max_frame_size {
+        if size == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.max_frame_size", parent_path),
+                "must be greater than 0",
+            ));
+        }
+    }
+    if let Some(size) = h2.max_header_list_size {
+        if size == 0 {
+            errors.push(ConfigError::validation(
+                &format!("{}.h2.max_header_list_size", parent_path),
+                "must be greater than 0",
             ));
         }
     }
