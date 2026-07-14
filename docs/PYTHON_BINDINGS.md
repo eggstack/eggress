@@ -242,6 +242,45 @@ All connection-specific exceptions inherit from `EggressError`:
 - `AuthError` — authentication failure
 - `TlsError` — TLS handshake failure
 - `LoopMismatchError` — used from wrong event loop
+- `ConnectionCancelledError` — operation was cancelled
+- `UseAfterCloseError` — operation attempted on a closed connection
+- `UdpAssociationError` — UDP association failure
+- `UnsupportedCompositionError` — unsupported protocol/transport composition
+
+### Connection statistics
+
+```python
+from eggress.connection import Connection
+
+# Get live/total connection counts (useful for leak detection)
+stats = Connection.connection_stats()
+print(stats)  # {"live": 2, "total_created": 15}
+
+# Reset counters (useful in tests)
+Connection.reset_connection_stats()
+```
+
+### Async wrapper
+
+For asyncio-native usage with loop affinity checking:
+
+```python
+import asyncio
+from eggress.async_connection import AsyncConnection
+
+async def main():
+    async with AsyncConnection("socks5://:1080") as conn:
+        print(conn.state)
+        print(conn.sockname)
+
+asyncio.run(main())
+```
+
+`AsyncConnection` wraps `Connection` and adds:
+- **Loop affinity**: created on a specific event loop; operations from a different loop raise `LoopMismatchError`
+- **`AsyncConnection.open(*uris)`**: async class method for ergonomic creation
+- **`aclose()` / `await_closed()`**: native async close/wait
+- **`async with` context manager**: automatic cleanup
 
 ## Error model
 
@@ -256,7 +295,18 @@ Exception
     ├── ReloadError        — hot-reload failed
     ├── ShutdownError      — shutdown encountered an error
     ├── UnsupportedFeatureError — requested feature not available
-    └── InternalError      — unexpected internal failure
+    ├── InternalError      — unexpected internal failure
+    ├── ConnectionError    — base for all connection errors
+    │   ├── ConnectionClosedError — operation on closed connection
+    │   ├── TimeoutError         — connection or operation timed out
+    │   ├── DnsError             — DNS resolution failure
+    │   ├── AuthError            — authentication failure
+    │   ├── TlsError             — TLS handshake failure
+    │   ├── ConnectionCancelledError — operation was cancelled
+    │   ├── UseAfterCloseError   — operation on closed connection
+    │   └── UdpAssociationError  — UDP association failure
+    ├── LoopMismatchError  — used from wrong event loop
+    └── UnsupportedCompositionError — unsupported protocol/transport composition
 ```
 
 `ConfigError` is also a subclass of `EggressError`, so catching either works:

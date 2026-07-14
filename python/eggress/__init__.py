@@ -56,7 +56,12 @@ from eggress.connection import (
     AuthError as ConnectionAuthError,
     TlsError as ConnectionTlsError,
     LoopMismatchError,
+    ConnectionCancelledError,
+    UseAfterCloseError,
+    UdpAssociationError,
+    UnsupportedCompositionError,
 )
+from eggress.async_connection import AsyncConnection
 
 
 def start_pproxy(
@@ -242,4 +247,9 @@ __all__ = [
     "ConnectionAuthError",
     "ConnectionTlsError",
     "LoopMismatchError",
+    "ConnectionCancelledError",
+    "UseAfterCloseError",
+    "UdpAssociationError",
+    "UnsupportedCompositionError",
+    "AsyncConnection",
 ]

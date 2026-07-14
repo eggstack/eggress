@@ -9,6 +9,10 @@ from eggress._eggress import (
     EggressError,
     UnsupportedFeatureError,
     PyConnection as _PyConnection,
+    ConnectionCancelledError as _ConnectionCancelledError,
+    UseAfterCloseError as _UseAfterCloseError,
+    UdpAssociationError as _UdpAssociationError,
+    UnsupportedCompositionError as _UnsupportedCompositionError,
 )
 
 
@@ -46,6 +50,22 @@ class TlsError(ConnectionError):
 
 
 class LoopMismatchError(EggressError):
+    pass
+
+
+class ConnectionCancelledError(ConnectionError):
+    pass
+
+
+class UseAfterCloseError(ConnectionError):
+    pass
+
+
+class UdpAssociationError(ConnectionError):
+    pass
+
+
+class UnsupportedCompositionError(EggressError):
     pass
 
 

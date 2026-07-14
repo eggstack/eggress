@@ -1,5 +1,8 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+static PY_CONNECTION_LIVE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static PY_CONNECTION_TOTAL_CREATED: AtomicUsize = AtomicUsize::new(0);
 
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
@@ -18,6 +21,10 @@ pyo3::create_exception!(_eggress, DnsError, EggressError);
 pyo3::create_exception!(_eggress, AuthError, EggressError);
 pyo3::create_exception!(_eggress, TlsError, EggressError);
 pyo3::create_exception!(_eggress, LoopMismatchError, EggressError);
+pyo3::create_exception!(_eggress, ConnectionCancelledError, EggressError);
+pyo3::create_exception!(_eggress, UseAfterCloseError, EggressError);
+pyo3::create_exception!(_eggress, UdpAssociationError, EggressError);
+pyo3::create_exception!(_eggress, UnsupportedCompositionError, EggressError);
 
 fn map_error(_py: Python<'_>, err: eggress_embed::EggressError) -> PyErr {
     use eggress_embed::EggressError as E;
@@ -276,6 +283,9 @@ impl PyConnection {
         let addrs = handle.bound_addresses();
         let bound = addrs.listeners.first().map(|l| l.addr.to_string());
 
+        PY_CONNECTION_TOTAL_CREATED.fetch_add(1, Ordering::Relaxed);
+        PY_CONNECTION_LIVE_COUNT.fetch_add(1, Ordering::Relaxed);
+
         Ok(Self {
             state: Arc::new(AtomicU8::new(STATE_CREATED)),
             handle: Some(handle),
@@ -351,6 +361,7 @@ impl PyConnection {
                 .map_err(|e| ConnectionError::new_err(format!("shutdown error: {e}")))?;
         }
         self.state.store(STATE_CLOSED, Ordering::Release);
+        PY_CONNECTION_LIVE_COUNT.fetch_sub(1, Ordering::Relaxed);
         Ok(())
     }
 
@@ -390,6 +401,7 @@ impl PyConnection {
             let _ = py.detach(|| handle.shutdown_blocking());
         }
         self.state.store(STATE_CLOSED, Ordering::Release);
+        PY_CONNECTION_LIVE_COUNT.fetch_sub(1, Ordering::Relaxed);
     }
 
     fn __repr__(&self) -> String {
@@ -398,6 +410,23 @@ impl PyConnection {
             self.state(),
             self.bound_addr.as_deref().unwrap_or("None")
         )
+    }
+
+    #[staticmethod]
+    fn connection_stats(py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("live", PY_CONNECTION_LIVE_COUNT.load(Ordering::Relaxed))?;
+        dict.set_item(
+            "total_created",
+            PY_CONNECTION_TOTAL_CREATED.load(Ordering::Relaxed),
+        )?;
+        Ok(dict.into())
+    }
+
+    #[staticmethod]
+    fn reset_connection_stats() {
+        PY_CONNECTION_LIVE_COUNT.store(0, Ordering::Relaxed);
+        PY_CONNECTION_TOTAL_CREATED.store(0, Ordering::Relaxed);
     }
 }
 
@@ -1350,6 +1379,22 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("AuthError", m.py().get_type::<AuthError>())?;
     m.add("TlsError", m.py().get_type::<TlsError>())?;
     m.add("LoopMismatchError", m.py().get_type::<LoopMismatchError>())?;
+    m.add(
+        "ConnectionCancelledError",
+        m.py().get_type::<ConnectionCancelledError>(),
+    )?;
+    m.add(
+        "UseAfterCloseError",
+        m.py().get_type::<UseAfterCloseError>(),
+    )?;
+    m.add(
+        "UdpAssociationError",
+        m.py().get_type::<UdpAssociationError>(),
+    )?;
+    m.add(
+        "UnsupportedCompositionError",
+        m.py().get_type::<UnsupportedCompositionError>(),
+    )?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

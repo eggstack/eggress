@@ -18,6 +18,10 @@ from eggress.connection import (
     AuthError as ConnectionAuthError,
     TlsError as ConnectionTlsError,
     LoopMismatchError,
+    ConnectionCancelledError,
+    UseAfterCloseError,
+    UdpAssociationError,
+    UnsupportedCompositionError,
 )
 
 __all__ = [
@@ -36,4 +40,8 @@ __all__ = [
     "ConnectionAuthError",
     "ConnectionTlsError",
     "LoopMismatchError",
+    "ConnectionCancelledError",
+    "UseAfterCloseError",
+    "UdpAssociationError",
+    "UnsupportedCompositionError",
 ]
