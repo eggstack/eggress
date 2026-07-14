@@ -110,7 +110,12 @@ impl tokio::io::AsyncWrite for H2StreamWrite {
                 Poll::Ready(None) => {
                     return Poll::Ready(Err(std::io::Error::other("h2 stream closed")));
                 }
-                Poll::Pending => return Poll::Pending,
+                Poll::Pending => {
+                    H2_PROTOCOL_METRICS
+                        .flow_control_stalls
+                        .fetch_add(1, Ordering::Relaxed);
+                    return Poll::Pending;
+                }
             }
         }
 
@@ -150,7 +155,11 @@ pub async fn h2_connect_relay(
         loop {
             match recv_stream.data().await {
                 Some(Ok(data)) => {
+                    let len = data.len();
                     tcp_write.write_all(&data).await?;
+                    H2_PROTOCOL_METRICS
+                        .bytes_relayed
+                        .fetch_add(len as u64, Ordering::Relaxed);
                 }
                 Some(Err(e)) => {
                     return Err(std::io::Error::other(e));
@@ -169,6 +178,9 @@ pub async fn h2_connect_relay(
                 break;
             }
             h2_write.write_all(&buf[..n]).await?;
+            H2_PROTOCOL_METRICS
+                .bytes_relayed
+                .fetch_add(n as u64, Ordering::Relaxed);
         }
         Ok::<(), std::io::Error>(())
     };
@@ -973,4 +985,8 @@ mod tests {
     // NOTE: Connection reuse is tested at the integration level in
     // upstream_protocols.rs::h2_upstream_connection_reuse which exercises the
     // full stack through the ServiceSupervisor.
+    //
+    // RST_STREAM and GOAWAY fault injection tests are at the integration level
+    // in upstream_protocols.rs::h2_upstream_rst_stream_recovery and
+    // h2_upstream_goaway_recovery.
 }
