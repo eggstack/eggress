@@ -82,11 +82,29 @@ class BaseCipher:
     def __str__(self) -> str:
         return self.name()
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BaseCipher):
+            return NotImplemented
+        return self.name() == other.name() and self.key == other.key
+
+    def __hash__(self) -> int:
+        return hash((self.name(), self.key))
+
+    def __reduce__(self):
+        return (self.__class__, (self.key,))
+
+    def __copy__(self):
+        return self.__class__(self.key)
+
+    def __deepcopy__(self, memo):
+        return self.__class__(self.key)
+
     def __del__(self) -> None:
         # Best-effort zeroing of key material
-        if hasattr(self, "_key") and isinstance(self._key, bytearray):
-            for i in range(len(self._key)):
-                self._key[i] = 0
+        if hasattr(self, "_key") and isinstance(self._key, (bytes, bytearray)):
+            if isinstance(self._key, bytearray):
+                for i in range(len(self._key)):
+                    self._key[i] = 0
 
 
 class AEADCipher(BaseCipher):
@@ -130,6 +148,16 @@ class AEADCipher(BaseCipher):
 
     def decrypt_chunk(self, chunk: bytes) -> bytes:
         return self.decrypt(chunk)
+
+    def encrypt_and_digest(self, plaintext: bytes) -> tuple[bytes, bytes]:
+        raise UnsupportedFeatureError(
+            "AEAD encryption is handled by the Rust backend"
+        )
+
+    def decrypt_and_verify(self, ciphertext: bytes, tag: bytes) -> bytes:
+        raise UnsupportedFeatureError(
+            "AEAD decryption is handled by the Rust backend"
+        )
 
     def __repr__(self) -> str:
         return (

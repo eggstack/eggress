@@ -81,6 +81,13 @@ from eggress.plugin import (
     CallbackMetrics as CallbackMetrics,
     CallbackWrapper as CallbackWrapper,
 )
+from eggress.wrapper import (
+    BaseWrapper as BaseWrapper,
+    TLS as TLS,
+    Plugin as PluginWrapper,
+    Chain as Chain,
+    normalize_chain as normalize_chain,
+)
 from eggress.connection import (
     Connection as Connection,
     ConnectionState as ConnectionState,

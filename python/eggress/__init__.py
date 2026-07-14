@@ -110,6 +110,13 @@ from eggress.plugin import (
     CallbackMetrics,
     CallbackWrapper,
 )
+from eggress.wrapper import (
+    BaseWrapper,
+    TLS,
+    Plugin as PluginWrapper,
+    Chain,
+    normalize_chain,
+)
 
 
 def start_pproxy(
@@ -345,4 +352,10 @@ __all__ = [
     "CallbackResult",
     "CallbackMetrics",
     "CallbackWrapper",
+    # Wrapper/composition objects (Phase C4)
+    "BaseWrapper",
+    "TLS",
+    "PluginWrapper",
+    "Chain",
+    "normalize_chain",
 ]

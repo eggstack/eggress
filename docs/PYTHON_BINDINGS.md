@@ -1181,3 +1181,55 @@ bridge.shutdown()
 - `PluginRejectedError` — callback rejected the operation
 - `PluginShutdownError` — bridge is shut down
 - `PluginReentrantError` — recursive callback detected
+
+## Wrapper and Composition Objects (Phase C4)
+
+The `eggress.wrapper` module provides TLS, plugin, and chain composition
+objects that wrap base protocols to add transport layers, matching pproxy's
+composition model.
+
+### Classes
+
+| Class | Purpose |
+|-------|---------|
+| `BaseWrapper` | Abstract base — delegates metadata to inner protocol |
+| `TLS(inner, certfile, keyfile, sni)` | Wraps any protocol with TLS transport |
+| `Plugin(inner, handler)` | Wraps any protocol with a plugin callback |
+| `Chain(protocols)` | Ordered list of protocols/wrappers |
+| `normalize_chain(protocols)` | Orders protocols: base → TLS → Plugin |
+
+### Usage
+
+```python
+from eggress.protocol import SS, Socks5
+from eggress.wrapper import TLS, Plugin, Chain, normalize_chain
+
+# Wrap SS with TLS
+tls_ss = TLS(SS("aes-256-gcm:password"), certfile="/path/cert.pem", sni="example.com")
+
+# Wrap with plugin
+plugin_ss = Plugin(SS("aes-256-gcm:password"), handler=my_callback)
+
+# Create a chain
+chain = Chain([SS("aes-256-gcm:password"), TLS(...)])
+
+# Normalize ordering (base first, then TLS, then Plugin)
+normalized = normalize_chain([TLS(...), SS("aes-256-gcm:password"), Plugin(...)])
+# → Chain([SS(...), TLS(...), Plugin(...)])
+
+# Flat list unwraps wrappers
+flat = chain.flat()  # → [SS(...)]
+
+# Validate against composition constraints
+errors = chain.validate()  # → [] if valid
+```
+
+### Properties
+
+All wrappers delegate these to the inner protocol:
+- `target`, `dest`, `source` — composition cell resolution
+- `_SUPPORTED_IN_EGRESS`, `_TRAFFIC_KINDS`, `_ROLE` — A2 metadata
+
+### Serialization
+
+All wrapper and chain objects support pickle, copy, and deepcopy.

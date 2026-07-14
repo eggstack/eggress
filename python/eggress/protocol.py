@@ -93,8 +93,17 @@ class BaseProtocol:
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp",)
     _ROLE: str = "both"  # "listener" | "upstream" | "both"
 
-    def __init__(self, param: str = "") -> None:
+    def __init__(
+        self,
+        param: str = "",
+        target: str | None = None,
+        dest: str | None = None,
+        source: str | None = None,
+    ) -> None:
         self.param = param
+        self.target = target
+        self.dest = dest
+        self.source = source
 
     # -- identity -----------------------------------------------------------
 
@@ -173,10 +182,13 @@ class BaseProtocol:
         return (
             type(self) is type(other)
             and self.param == getattr(other, "param", None)
+            and self.target == getattr(other, "target", None)
+            and self.dest == getattr(other, "dest", None)
+            and self.source == getattr(other, "source", None)
         )
 
     def __hash__(self) -> int:
-        return hash((type(self), self.param))
+        return hash((type(self), self.param, self.target, self.dest, self.source))
 
     def __repr__(self) -> str:
         redacted = _redact_param(self.name, self.param)
@@ -189,14 +201,25 @@ class BaseProtocol:
 
     # -- pickling / copying -------------------------------------------------
 
-    def __reduce__(self) -> tuple[type[BaseProtocol], tuple[str]]:
-        return (self.__class__, (self.param,))
+    def __reduce__(self) -> tuple[type[BaseProtocol], tuple[str], dict[str, str | None]]:
+        return (
+            self.__class__,
+            (self.param,),
+            {"target": self.target, "dest": self.dest, "source": self.source},
+        )
 
     def __copy__(self) -> BaseProtocol:
-        return self.__class__(self.param)
+        return self.__class__(
+            self.param, target=self.target, dest=self.dest, source=self.source
+        )
 
     def __deepcopy__(self, memo: dict[int, Any]) -> BaseProtocol:
-        return self.__class__(copy.deepcopy(self.param, memo))
+        return self.__class__(
+            copy.deepcopy(self.param, memo),
+            target=copy.deepcopy(self.target, memo),
+            dest=copy.deepcopy(self.dest, memo),
+            source=copy.deepcopy(self.source, memo),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -207,12 +230,17 @@ class BaseProtocol:
 class Direct(BaseProtocol):
     """Direct connection (no proxy protocol)."""
 
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        kw.setdefault("target", param or None)
+        super().__init__(param, **kw)
+
 
 class HTTP(BaseProtocol):
     """HTTP forward proxy (CONNECT tunnelling and plain HTTP)."""
 
-    def __init__(self, param: str = "") -> None:
-        super().__init__(param)
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        kw.setdefault("target", param or None)
+        super().__init__(param, **kw)
         self.httpget: dict[str, Any] = {}
 
 
@@ -223,11 +251,19 @@ class HTTPOnly(HTTP):
 class Socks4(BaseProtocol):
     """SOCKS4 / SOCKS4a proxy protocol."""
 
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        kw.setdefault("target", param or None)
+        super().__init__(param, **kw)
+
 
 class Socks5(BaseProtocol):
     """SOCKS5 proxy protocol."""
 
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp", "udp")
+
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        kw.setdefault("target", param or None)
+        super().__init__(param, **kw)
 
 
 class SSR(BaseProtocol):
@@ -261,13 +297,33 @@ class SS(SSR):
 class Trojan(BaseProtocol):
     """Trojan proxy protocol."""
 
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        if "target" not in kw:
+            target: str | None = None
+            if param:
+                _, _, host_part = param.rpartition("@")
+                target = host_part if host_part else param
+            kw["target"] = target
+        super().__init__(param, **kw)
+
 
 class WS(BaseProtocol):
     """WebSocket tunnel protocol."""
 
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        if "target" not in kw:
+            target: str | None = None
+            if param:
+                target = param.split("/", 1)[0] if "/" in param else param
+            kw["target"] = target
+        super().__init__(param, **kw)
+
 
 class H2(HTTP):
     """HTTP/2 CONNECT proxy protocol."""
+
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        super().__init__(param, **kw)
 
 
 class H3(H2):
@@ -328,8 +384,9 @@ class Pf(Transparent):
 class Tunnel(Transparent):
     """Fixed-target tunnel (data forwarded to a predetermined destination)."""
 
-    def __init__(self, param: str = "") -> None:
-        super().__init__(param)
+    def __init__(self, param: str = "", **kw: Any) -> None:
+        kw.setdefault("dest", param or None)
+        super().__init__(param, **kw)
         self.destination: str = param
 
     def query_remote(self, sock: Any) -> tuple[str, int]:
@@ -428,6 +485,7 @@ _PROTOCOL_REGISTRY: dict[str, type[BaseProtocol]] = {
     "http": HTTP,
     "httponly": HTTPOnly,
     "socks4": Socks4,
+    "socks4a": Socks4,
     "socks5": Socks5,
     "socks": Socks5,
     "ss": SS,
@@ -447,7 +505,9 @@ MAPPINGS: dict[str, type[BaseProtocol] | str] = {
     **_PROTOCOL_REGISTRY,
     "ssl": "",
     "secure": "",
+    "https": HTTP,
     "quic": "",
+    "httpget": HTTP,
     "in": "",
 }
 

@@ -326,6 +326,12 @@ python3.11 -m pytest python/tests/test_pproxy_dropin.py -v
 # Run Phase C4 protocol/cipher/plugin tests
 python3.11 -m pytest python/tests/test_protocol_cipher.py -v
 
+# Run Phase C4 plugin bridge tests
+python3.11 -m pytest python/tests/test_plugin.py -v
+
+# Run Phase C4 wrapper/composition tests
+python3.11 -m pytest python/tests/test_wrapper.py -v
+
 # Run Phase C1 API contract tests
 python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
 
