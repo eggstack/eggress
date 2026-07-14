@@ -1,11 +1,17 @@
+use std::collections::HashMap;
 use std::future::Future;
+use std::hash::{Hash, Hasher};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use h2::server::Connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::{Notify, Semaphore};
 
 use crate::error::HttpError;
 use eggress_core::TargetAddr;
@@ -18,6 +24,8 @@ pub enum H2ConnectError {
     H2(String),
     #[error("HTTP error: {0}")]
     Http(#[from] HttpError),
+    #[error("pool exhausted: no connections available and pool at capacity")]
+    PoolExhausted,
 }
 
 impl From<h2::Error> for H2ConnectError {
@@ -310,6 +318,456 @@ where
     Ok((send_stream, recv_stream, conn_handle))
 }
 
+// ===== H2 Connection Pool =====
+
+/// Pool key identifying a unique H2 upstream connection group.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct H2PoolKey {
+    pub endpoint_host: String,
+    pub endpoint_port: u16,
+    pub use_tls: bool,
+    pub server_name: Option<String>,
+    pub auth_hash: Option<u64>,
+}
+
+impl H2PoolKey {
+    pub fn new(
+        host: &str,
+        port: u16,
+        use_tls: bool,
+        server_name: Option<&str>,
+        auth: Option<(&str, &str)>,
+    ) -> Self {
+        let auth_hash = auth.map(|(u, p)| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            u.hash(&mut hasher);
+            p.hash(&mut hasher);
+            hasher.finish()
+        });
+        Self {
+            endpoint_host: host.to_string(),
+            endpoint_port: port,
+            use_tls,
+            server_name: server_name.map(|s| s.to_string()),
+            auth_hash,
+        }
+    }
+}
+
+/// Metadata for a pooled H2 connection.
+pub struct H2ConnectionEntry {
+    sender: Arc<Mutex<h2::client::SendRequest<Bytes>>>,
+    conn_handle: tokio::task::JoinHandle<Result<(), h2::Error>>,
+    #[allow(dead_code)]
+    created_at: Instant,
+    last_used: Arc<Mutex<Instant>>,
+    active_streams: Arc<AtomicU64>,
+    retired: Arc<AtomicBool>,
+    notify: Arc<Notify>,
+}
+
+impl H2ConnectionEntry {
+    fn is_available(&self, max_concurrent_streams: u32) -> bool {
+        !self.retired.load(Ordering::Acquire)
+            && self.active_streams.load(Ordering::Acquire) < max_concurrent_streams as u64
+    }
+
+    fn mark_retired(&self) {
+        self.retired.store(true, Ordering::Release);
+    }
+}
+
+impl Drop for H2ConnectionEntry {
+    fn drop(&mut self) {
+        self.conn_handle.abort();
+    }
+}
+
+/// Bounded H2 connection pool with idle timeout and GOAWAY-aware retirement.
+pub struct H2ConnectionPool {
+    entries: Mutex<Vec<Arc<H2ConnectionEntry>>>,
+    semaphore: Semaphore,
+    pool_size: u32,
+    idle_timeout: Duration,
+    max_concurrent_streams: u32,
+    #[allow(dead_code)]
+    created_at: Instant,
+    reaper_running: AtomicBool,
+}
+
+impl H2ConnectionPool {
+    pub fn new(pool_size: u32, idle_timeout: Duration, max_concurrent_streams: u32) -> Arc<Self> {
+        Arc::new(Self {
+            entries: Mutex::new(Vec::new()),
+            semaphore: Semaphore::new(pool_size as usize),
+            pool_size,
+            idle_timeout,
+            max_concurrent_streams,
+            created_at: Instant::now(),
+            reaper_running: AtomicBool::new(false),
+        })
+    }
+
+    /// Try to acquire an existing idle connection from the pool.
+    fn try_acquire_entry(&self) -> Option<Arc<H2ConnectionEntry>> {
+        let entries = self.entries.lock().unwrap();
+        let now = Instant::now();
+        for entry in entries.iter() {
+            if entry.is_available(self.max_concurrent_streams)
+                && now.duration_since(*entry.last_used.lock().unwrap()) < self.idle_timeout
+            {
+                entry.active_streams.fetch_add(1, Ordering::AcqRel);
+                *entry.last_used.lock().unwrap() = now;
+                return Some(Arc::clone(entry));
+            }
+        }
+        None
+    }
+
+    /// Create a new H2 connection and add it to the pool.
+    async fn create_entry<S>(
+        self: &Arc<Self>,
+        stream: S,
+    ) -> Result<Arc<H2ConnectionEntry>, H2ConnectError>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        let (send_request, conn) = h2::client::handshake(stream).await?;
+
+        let conn_handle = tokio::spawn(async move {
+            conn.await?;
+            Ok(())
+        });
+
+        let sender = Arc::new(Mutex::new(send_request));
+        let entry = Arc::new(H2ConnectionEntry {
+            sender: Arc::clone(&sender),
+            conn_handle,
+            created_at: Instant::now(),
+            last_used: Arc::new(Mutex::new(Instant::now())),
+            active_streams: Arc::new(AtomicU64::new(1)),
+            retired: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(Notify::new()),
+        });
+
+        self.entries.lock().unwrap().push(Arc::clone(&entry));
+        self.maybe_start_reaper();
+        Ok(entry)
+    }
+
+    fn maybe_start_reaper(self: &Arc<Self>) {
+        if self
+            .reaper_running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+        let pool = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(pool.idle_timeout / 2).await;
+                pool.reap_idle_entries();
+                if pool.entries.lock().unwrap().is_empty() {
+                    pool.reaper_running.store(false, Ordering::Release);
+                    return;
+                }
+            }
+        });
+    }
+
+    fn reap_idle_entries(&self) {
+        let now = Instant::now();
+        let mut entries = self.entries.lock().unwrap();
+        entries.retain(|entry| {
+            if entry.retired.load(Ordering::Acquire) {
+                return false;
+            }
+            let last_used = *entry.last_used.lock().unwrap();
+            if now.duration_since(last_used) >= self.idle_timeout
+                && entry.active_streams.load(Ordering::Acquire) == 0
+            {
+                entry.mark_retired();
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Release a connection back to the pool after a stream completes.
+    pub fn release(&self, entry: &Arc<H2ConnectionEntry>) {
+        entry.active_streams.fetch_sub(1, Ordering::AcqRel);
+        *entry.last_used.lock().unwrap() = Instant::now();
+        entry.notify.notify_waiters();
+    }
+
+    /// Mark a connection as retired (e.g., on GOAWAY).
+    pub fn retire(&self, entry: &Arc<H2ConnectionEntry>) {
+        entry.mark_retired();
+    }
+
+    /// Get pool statistics.
+    pub fn stats(&self) -> H2PoolStats {
+        let entries = self.entries.lock().unwrap();
+        let active = entries
+            .iter()
+            .filter(|e| !e.retired.load(Ordering::Acquire))
+            .count();
+        let total_streams: u64 = entries
+            .iter()
+            .map(|e| e.active_streams.load(Ordering::Acquire))
+            .sum();
+        H2PoolStats {
+            pool_size: self.pool_size,
+            active_connections: active as u32,
+            total_streams,
+            idle_timeout_secs: self.idle_timeout.as_secs(),
+        }
+    }
+}
+
+/// Pool statistics snapshot.
+#[derive(Debug, Clone)]
+pub struct H2PoolStats {
+    pub pool_size: u32,
+    pub active_connections: u32,
+    pub total_streams: u64,
+    pub idle_timeout_secs: u64,
+}
+
+/// Global H2 connection pool registry, keyed by (endpoint_host, endpoint_port, use_tls, server_name, auth_hash).
+pub struct H2PoolRegistry {
+    pools: std::sync::RwLock<HashMap<H2PoolKey, Arc<H2ConnectionPool>>>,
+    default_pool_size: u32,
+    default_idle_timeout: Duration,
+    default_max_concurrent_streams: u32,
+}
+
+impl H2PoolRegistry {
+    pub fn new() -> Self {
+        Self {
+            pools: std::sync::RwLock::new(HashMap::new()),
+            default_pool_size: 4,
+            default_idle_timeout: Duration::from_secs(60),
+            default_max_concurrent_streams: 100,
+        }
+    }
+
+    /// Get or create a pool for the given key.
+    pub fn get_or_create(&self, key: &H2PoolKey) -> Arc<H2ConnectionPool> {
+        {
+            let pools = self.pools.read().unwrap();
+            if let Some(pool) = pools.get(key) {
+                return Arc::clone(pool);
+            }
+        }
+        let mut pools = self.pools.write().unwrap();
+        pools
+            .entry(key.clone())
+            .or_insert_with(|| {
+                H2ConnectionPool::new(
+                    self.default_pool_size,
+                    self.default_idle_timeout,
+                    self.default_max_concurrent_streams,
+                )
+            })
+            .clone()
+    }
+
+    /// Configure default pool settings.
+    pub fn with_defaults(
+        pool_size: u32,
+        idle_timeout: Duration,
+        max_concurrent_streams: u32,
+    ) -> Self {
+        Self {
+            pools: std::sync::RwLock::new(HashMap::new()),
+            default_pool_size: pool_size,
+            default_idle_timeout: idle_timeout,
+            default_max_concurrent_streams: max_concurrent_streams,
+        }
+    }
+}
+
+impl Default for H2PoolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Global pool registry instance.
+pub static H2_POOL_REGISTRY: once_cell::sync::Lazy<H2PoolRegistry> =
+    once_cell::sync::Lazy::new(H2PoolRegistry::new);
+
+/// A guard that releases an H2 connection back to the pool when dropped.
+pub struct H2PoolGuard {
+    entry: Arc<H2ConnectionEntry>,
+    pool: Arc<H2ConnectionPool>,
+}
+
+impl Drop for H2PoolGuard {
+    fn drop(&mut self) {
+        self.pool.release(&self.entry);
+    }
+}
+
+impl H2PoolGuard {
+    /// Mark this connection as retired (e.g., on GOAWAY).
+    pub fn retire(&self) {
+        self.pool.retire(&self.entry);
+    }
+
+    /// Get the sender for creating new streams on this connection.
+    pub fn sender(&self) -> &Arc<Mutex<h2::client::SendRequest<Bytes>>> {
+        &self.entry.sender
+    }
+}
+
+/// Perform an H2 CONNECT handshake using a pooled connection.
+///
+/// Acquires a connection from the pool (or creates a new one), sends a CONNECT
+/// request, and returns the bidirectional streams with a pool guard. When the
+/// guard is dropped, the connection is released back to the pool.
+pub async fn h2_connect_client_pooled<S>(
+    stream: S,
+    target: &TargetAddr,
+    auth: Option<(&str, &str)>,
+    pool_key: &H2PoolKey,
+) -> Result<(h2::SendStream<Bytes>, h2::RecvStream, H2PoolGuard), H2ConnectError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let pool = H2_POOL_REGISTRY.get_or_create(pool_key);
+
+    // Try to acquire an existing connection from the pool
+    if let Some(result) = try_pooled_connection(&pool, target, auth).await {
+        return result;
+    }
+
+    // No available connection — create a new one (semaphore limits total)
+    let _permit = pool
+        .semaphore
+        .acquire()
+        .await
+        .map_err(|_| H2ConnectError::PoolExhausted)?;
+
+    let entry = pool.create_entry(stream).await?;
+
+    let authority = match target.port {
+        443 => target.host.to_string(),
+        port => format!("{}:{}", target.host, port),
+    };
+
+    let mut builder = http::Request::builder()
+        .method(http::Method::CONNECT)
+        .uri(&authority)
+        .header(http::header::HOST, &authority);
+
+    if let Some((user, pass)) = auth {
+        let credentials = format!("{}:{}", user, pass);
+        let encoded = h2_base64_encode(credentials.as_bytes());
+        builder = builder.header(
+            http::header::PROXY_AUTHORIZATION,
+            format!("Basic {}", encoded),
+        );
+    }
+
+    let request = builder
+        .body(())
+        .map_err(|e| H2ConnectError::H2(e.to_string()))?;
+
+    let (response_future, send_stream) = {
+        let mut sender = entry.sender.lock().unwrap();
+        sender.send_request(request, false)?
+    };
+
+    let response = response_future.await?;
+    if response.status() != http::StatusCode::OK {
+        pool.retire(&entry);
+        return Err(H2ConnectError::H2(format!(
+            "CONNECT rejected with status {}",
+            response.status()
+        )));
+    }
+
+    let recv_stream = response.into_body();
+    let guard = H2PoolGuard {
+        entry: Arc::clone(&entry),
+        pool: Arc::clone(&pool),
+    };
+    Ok((send_stream, recv_stream, guard))
+}
+
+/// Try to send a CONNECT request on an existing pooled connection.
+/// Returns `Some(result)` if a connection was found, `None` if no connection available.
+async fn try_pooled_connection(
+    pool: &Arc<H2ConnectionPool>,
+    target: &TargetAddr,
+    auth: Option<(&str, &str)>,
+) -> Option<Result<(h2::SendStream<Bytes>, h2::RecvStream, H2PoolGuard), H2ConnectError>> {
+    let entry = pool.try_acquire_entry()?;
+
+    let authority = match target.port {
+        443 => target.host.to_string(),
+        port => format!("{}:{}", target.host, port),
+    };
+
+    let mut builder = http::Request::builder()
+        .method(http::Method::CONNECT)
+        .uri(&authority)
+        .header(http::header::HOST, &authority);
+
+    if let Some((user, pass)) = auth {
+        let credentials = format!("{}:{}", user, pass);
+        let encoded = h2_base64_encode(credentials.as_bytes());
+        builder = builder.header(
+            http::header::PROXY_AUTHORIZATION,
+            format!("Basic {}", encoded),
+        );
+    }
+
+    let request = match builder.body(()) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(H2ConnectError::H2(e.to_string()))),
+    };
+
+    let result = {
+        let mut sender = entry.sender.lock().unwrap();
+        sender.send_request(request, false)
+    };
+
+    match result {
+        Ok((response_future, send_stream)) => {
+            let response = match response_future.await {
+                Ok(r) => r,
+                Err(e) => {
+                    pool.retire(&entry);
+                    return Some(Err(e.into()));
+                }
+            };
+            if response.status() != http::StatusCode::OK {
+                pool.retire(&entry);
+                return Some(Err(H2ConnectError::H2(format!(
+                    "CONNECT rejected with status {}",
+                    response.status()
+                ))));
+            }
+            let recv_stream = response.into_body();
+            let guard = H2PoolGuard {
+                entry: Arc::clone(&entry),
+                pool: Arc::clone(pool),
+            };
+            Some(Ok((send_stream, recv_stream, guard)))
+        }
+        Err(_) => {
+            // GOAWAY or connection error — retire this entry, fall through to new connection
+            pool.retire(&entry);
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,6 +804,56 @@ mod tests {
         let io_err = std::io::Error::other("test io");
         let err: H2ConnectError = io_err.into();
         assert!(matches!(err, H2ConnectError::Io(_)));
+    }
+
+    #[test]
+    fn test_h2_connect_error_pool_exhausted() {
+        let err = H2ConnectError::PoolExhausted;
+        assert!(err.to_string().contains("pool exhausted"));
+    }
+
+    #[test]
+    fn test_pool_key_equality() {
+        let k1 = H2PoolKey::new("127.0.0.1", 8080, false, None, None);
+        let k2 = H2PoolKey::new("127.0.0.1", 8080, false, None, None);
+        assert_eq!(k1, k2);
+
+        let k3 = H2PoolKey::new("127.0.0.1", 8080, true, None, None);
+        assert_ne!(k1, k3);
+
+        let k4 = H2PoolKey::new("127.0.0.1", 8080, false, Some("sni.example.com"), None);
+        assert_ne!(k1, k4);
+    }
+
+    #[test]
+    fn test_pool_key_auth_hash() {
+        let k1 = H2PoolKey::new("h", 1, false, None, Some(("u", "p")));
+        let k2 = H2PoolKey::new("h", 1, false, None, Some(("u", "p")));
+        let k3 = H2PoolKey::new("h", 1, false, None, Some(("u", "q")));
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+    }
+
+    #[test]
+    fn test_pool_stats() {
+        let pool = H2ConnectionPool::new(4, Duration::from_secs(60), 100);
+        let stats = pool.stats();
+        assert_eq!(stats.pool_size, 4);
+        assert_eq!(stats.active_connections, 0);
+        assert_eq!(stats.total_streams, 0);
+    }
+
+    #[test]
+    fn test_pool_registry_get_or_create() {
+        let registry = H2PoolRegistry::new();
+        let key = H2PoolKey::new("127.0.0.1", 8080, false, None, None);
+        let p1 = registry.get_or_create(&key);
+        let p2 = registry.get_or_create(&key);
+        assert!(Arc::ptr_eq(&p1, &p2));
+
+        let key2 = H2PoolKey::new("127.0.0.1", 9090, false, None, None);
+        let p3 = registry.get_or_create(&key2);
+        assert!(!Arc::ptr_eq(&p1, &p3));
     }
 
     #[tokio::test]
@@ -386,13 +894,7 @@ mod tests {
         server_handle.abort();
     }
 
-    // NOTE: Testing the non-CONNECT reset path through a full h2 round-trip
-    // is not feasible in a unit test. After `send_reset()`, the server loops
-    // to `accept()` waiting for the next stream, while the client needs GOAWAY
-    // to unblock the server — but GOAWAY requires `conn` to be polled, and
-    // `conn` completion requires the server to close the TCP connection first,
-    // creating a deadlock. The code path (single else branch calling
-    // `send_reset(PROTOCOL_ERROR)`) is validated by code review and by the
-    // existing h2_connect_relay tests that exercise the full handle_h2_connect
-    // lifecycle with valid CONNECT requests.
+    // NOTE: Connection reuse is tested at the integration level in
+    // upstream_protocols.rs::h2_upstream_connection_reuse which exercises the
+    // full stack through the ServiceSupervisor.
 }

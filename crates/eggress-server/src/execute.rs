@@ -1139,6 +1139,49 @@ impl HopHandler for RawHopHandler {
 
 struct H2HopHandler;
 
+/// Wrapper that holds an H2PoolGuard alongside the bidirectional stream,
+/// ensuring the pooled connection is released back to the pool only when
+/// the stream is dropped.
+struct PooledH2Stream {
+    inner:
+        tokio::io::Join<eggress_protocol_http::H2StreamRead, eggress_protocol_http::H2StreamWrite>,
+    _guard: eggress_protocol_http::H2PoolGuard,
+}
+
+impl tokio::io::AsyncRead for PooledH2Stream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl tokio::io::AsyncWrite for PooledH2Stream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
 impl HopHandler for H2HopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
         eggress_uri::ProtocolSpec::Http2
@@ -1162,6 +1205,13 @@ impl HopHandler for H2HopHandler {
             .as_ref()
             .map(|c| (c.username.clone(), c.password.clone()));
         let target_clone = target.clone();
+        let pool_key = eggress_protocol_http::H2PoolKey::new(
+            &endpoint_host,
+            endpoint_port,
+            use_tls,
+            hop.server_name.as_deref(),
+            auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())),
+        );
         Box::pin(async move {
             let tcp =
                 tokio::net::TcpStream::connect(format!("{}:{}", endpoint_host, endpoint_port))
@@ -1184,16 +1234,24 @@ impl HopHandler for H2HopHandler {
             };
 
             let auth_ref = auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
-            let (send_stream, recv_stream, _conn_handle) =
-                eggress_protocol_http::h2_connect_client(stream, &target_clone, auth_ref)
-                    .await
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+            let (send_stream, recv_stream, guard) =
+                eggress_protocol_http::h2_connect_client_pooled(
+                    stream,
+                    &target_clone,
+                    auth_ref,
+                    &pool_key,
+                )
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
             let h2_write = eggress_protocol_http::H2StreamWrite::new(send_stream);
             let h2_read = eggress_protocol_http::H2StreamRead::new(recv_stream);
 
-            let bidirectional = tokio::io::join(h2_read, h2_write);
-            Ok(Box::new(bidirectional) as BoxStream)
+            let pooled = PooledH2Stream {
+                inner: tokio::io::join(h2_read, h2_write),
+                _guard: guard,
+            };
+            Ok(Box::new(pooled) as BoxStream)
         })
     }
 }

@@ -33,19 +33,32 @@ Promote H2 CONNECT to `drop_in` tier as an upstream-only protocol, following the
 
 4. **Chain integration** — Registered in `build_chain_executor()` handlers vec alongside WebSocket and Raw handlers.
 
+### Connection Pooling (B4 completion)
+
+5. **`H2ConnectionPool`** — Bounded connection pool with idle timeout and GOAWAY-aware retirement. Keyed by `(endpoint_host, endpoint_port, use_tls, server_name, auth_hash)`. Default pool size: 4, idle timeout: 60s, max concurrent streams per connection: 100.
+
+6. **`H2PoolRegistry`** — Global static registry (`H2_POOL_REGISTRY`) mapping pool keys to pool instances. Pools are created lazily on first use.
+
+7. **`h2_connect_client_pooled<S>`** — Pooled variant that acquires a connection from the pool (or creates a new one), sends CONNECT, and returns streams with an `H2PoolGuard`. The guard releases the connection back to the pool when dropped.
+
+8. **`PooledH2Stream`** — Wrapper that holds an `H2PoolGuard` alongside the bidirectional stream, ensuring the pooled connection is released only when the stream is dropped.
+
+9. **`H2HopHandler` integration** — Builds a `H2PoolKey` from the hop spec and calls `h2_connect_client_pooled`. The pool guard is held by `PooledH2Stream` for the connection lifetime.
+
 ### Design Choices
 
 - **Ignored input stream**: Like WebSocket and Raw handlers, H2HopHandler creates its own connection. The chain executor's generic TLS wrapper doesn't support ALPN, so H2 manages TLS internally.
-- **No connection pooling**: Each CONNECT request establishes a fresh H2 connection. Pooling is deferred to a future phase.
+- **Connection pooling**: Global static pool keyed by endpoint. Bounded by semaphore (pool_size). Idle timeout reaps unused connections. GOAWAY/connection errors retire entries and create new connections.
 - **Cleartext H2**: Supported when `hop.tls = false` (e.g., for local/testing scenarios). Production use requires TLS per spec.
 - **Auth**: Basic auth via `Proxy-Authorization` header, consistent with HTTP CONNECT handler.
 
 ## Consequences
 
-- `h2://` upstream URI now launches real listener/upstream services
+- `h2://` upstream URI now launches real listener/upstream services with connection pooling
 - Composition matrix updated: H2 upstream cell changed from `intentional_non_parity` to `drop_in`
 - Capability manifest updated: `uri.scheme_h2` and `protocol.h2_runtime` promoted to `drop_in`
 - `protocol_crate_only` constraint emptied (all protocols now runtime-integrated)
-- Chain cells added: `socks5→h2`, `http→h2`
+- Chain cells added: `socks5→h2`, `http→h2`, `socks5→h2→http` (3-hop)
 - Existing H2 unit tests continue to pass
-- New integration test: `h2_upstream_routes_tcp_echo`
+- Connection pool reuses H2 connections across requests to the same endpoint
+- 20 integration tests covering: basic echo, auth success/failure, concurrent streams, chain combinations, connection loss recovery, connection reuse, flow control pressure, concurrent stream limits, config validation
