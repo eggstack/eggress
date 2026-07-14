@@ -46,6 +46,17 @@ from eggress.pproxy import (
     FeatureInfo,
     PPProxyService,
 )
+from eggress.connection import (
+    Connection,
+    ConnectionState,
+    ConnectionError as ConnectionBaseError,
+    ConnectionClosedError,
+    TimeoutError as ConnectionTimeoutError,
+    DnsError as ConnectionDnsError,
+    AuthError as ConnectionAuthError,
+    TlsError as ConnectionTlsError,
+    LoopMismatchError,
+)
 
 
 def start_pproxy(
@@ -222,4 +233,13 @@ __all__ = [
     "FeatureInfo",
     "PPProxyService",
     "PPProxyHandle",
+    "Connection",
+    "ConnectionState",
+    "ConnectionBaseError",
+    "ConnectionClosedError",
+    "ConnectionTimeoutError",
+    "ConnectionDnsError",
+    "ConnectionAuthError",
+    "ConnectionTlsError",
+    "LoopMismatchError",
 ]

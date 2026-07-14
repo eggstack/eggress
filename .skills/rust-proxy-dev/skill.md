@@ -129,6 +129,17 @@ For Python embedding, use the `eggress-python` crate and `python/eggress` packag
 - `FeatureInfo` — dataclass with feature_id, tier, supported
 - `.pyi` type stubs for all public modules
 
+#### Connection class (Phase C2)
+
+`eggress.Connection` wraps a Rust-owned proxy service. The Python class delegates to `PyConnection` (PyO3) which manages the `EggressHandle` lifecycle. Key design:
+
+- Constructor translates pproxy URIs → TOML → `EggressService::start_blocking()`
+- State machine stored as `Arc<AtomicU8>` for thread-safe transitions
+- `close()` calls `handle.shutdown_blocking()` (GIL released via `py.detach()`)
+- `__del__` does best-effort cleanup with `ResourceWarning`
+
+When adding features to Connection, follow the pattern: Rust handles networking, Python handles the coroutine contract.
+
 ### pproxy drop-in binary
 
 - `pproxy` binary target in `eggress-cli` — direct drop-in replacement for the original pproxy command

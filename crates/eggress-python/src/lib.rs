@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyModule, PyModuleMethods, PySequence};
@@ -8,6 +11,13 @@ pyo3::create_exception!(_eggress, ReloadError, EggressError);
 pyo3::create_exception!(_eggress, ShutdownError, EggressError);
 pyo3::create_exception!(_eggress, UnsupportedFeatureError, EggressError);
 pyo3::create_exception!(_eggress, InternalError, EggressError);
+pyo3::create_exception!(_eggress, ConnectionError, EggressError);
+pyo3::create_exception!(_eggress, ConnectionClosedError, EggressError);
+pyo3::create_exception!(_eggress, TimeoutError, EggressError);
+pyo3::create_exception!(_eggress, DnsError, EggressError);
+pyo3::create_exception!(_eggress, AuthError, EggressError);
+pyo3::create_exception!(_eggress, TlsError, EggressError);
+pyo3::create_exception!(_eggress, LoopMismatchError, EggressError);
 
 fn map_error(_py: Python<'_>, err: eggress_embed::EggressError) -> PyErr {
     use eggress_embed::EggressError as E;
@@ -202,6 +212,192 @@ impl PyEggressHandle {
             }
         }
         Ok(false)
+    }
+}
+
+const STATE_CREATED: u8 = 0;
+const STATE_CONNECTING: u8 = 1;
+const STATE_CONNECTED: u8 = 2;
+const STATE_CLOSING: u8 = 3;
+const STATE_CLOSED: u8 = 4;
+const STATE_FAILED: u8 = 5;
+
+#[pyclass]
+struct PyConnection {
+    state: Arc<AtomicU8>,
+    handle: Option<eggress_embed::EggressHandle>,
+    config_toml: String,
+    bound_addr: Option<String>,
+    remote_addr: Option<String>,
+    peername: Option<String>,
+    sockname: Option<String>,
+    error: Option<String>,
+}
+
+#[pymethods]
+impl PyConnection {
+    #[new]
+    #[pyo3(signature = (uris, /, *args))]
+    fn new(py: Python<'_>, uris: &Bound<'_, PySequence>, args: Vec<String>) -> PyResult<Self> {
+        let mut all_args: Vec<String> = Vec::new();
+        for i in 0..uris.len()? {
+            all_args.push(uris.get_item(i)?.extract::<String>()?);
+        }
+        all_args.extend(args);
+
+        if all_args.is_empty() {
+            return Err(ConnectionError::new_err(
+                "at least one URI argument is required",
+            ));
+        }
+
+        let parsed = eggress_pproxy_compat::PproxyArgs::parse(&all_args)
+            .map_err(|e| ConnectionError::new_err(format!("argument parse error: {e}")))?;
+
+        let output = py
+            .detach(|| eggress_pproxy_compat::translate_pproxy_args(&parsed))
+            .map_err(|e| ConnectionError::new_err(format!("translation failed: {e}")))?;
+
+        if output.has_unsupported() {
+            let features: Vec<_> = output.unsupported.iter().map(|u| u.feature).collect();
+            return Err(UnsupportedFeatureError::new_err(format!(
+                "unsupported features: {}",
+                features.join(", ")
+            )));
+        }
+
+        let config = eggress_embed::EggressConfig::from_toml_str(&output.toml)
+            .map_err(|e| ConnectionError::new_err(format!("config error: {e}")))?;
+        let service = eggress_embed::EggressService::new(config);
+        let handle = py
+            .detach(|| service.start_blocking())
+            .map_err(|e| ConnectionError::new_err(format!("startup failed: {e}")))?;
+
+        let addrs = handle.bound_addresses();
+        let bound = addrs.listeners.first().map(|l| l.addr.to_string());
+
+        Ok(Self {
+            state: Arc::new(AtomicU8::new(STATE_CREATED)),
+            handle: Some(handle),
+            config_toml: output.toml,
+            bound_addr: bound,
+            remote_addr: None,
+            peername: None,
+            sockname: None,
+            error: None,
+        })
+    }
+
+    #[getter]
+    fn state(&self) -> &str {
+        match self.state.load(Ordering::Acquire) {
+            STATE_CREATED => "created",
+            STATE_CONNECTING => "connecting",
+            STATE_CONNECTED => "connected",
+            STATE_CLOSING => "closing",
+            STATE_CLOSED => "closed",
+            STATE_FAILED => "failed",
+            _ => "unknown",
+        }
+    }
+
+    #[getter]
+    fn closed(&self) -> bool {
+        matches!(
+            self.state.load(Ordering::Acquire),
+            STATE_CLOSED | STATE_FAILED
+        )
+    }
+
+    #[getter]
+    fn config(&self) -> &str {
+        &self.config_toml
+    }
+
+    #[getter]
+    fn peername(&self) -> Option<&str> {
+        self.peername.as_deref()
+    }
+
+    #[getter]
+    fn sockname(&self) -> Option<&str> {
+        self.sockname.as_deref().or(self.bound_addr.as_deref())
+    }
+
+    #[getter]
+    fn extra_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("state", self.state())?;
+        if let Some(ref addr) = self.bound_addr {
+            dict.set_item("bound_addr", addr)?;
+        }
+        if let Some(ref addr) = self.remote_addr {
+            dict.set_item("remote_addr", addr)?;
+        }
+        if let Some(ref err) = self.error {
+            dict.set_item("error", err)?;
+        }
+        Ok(dict.into())
+    }
+
+    fn close(&mut self, py: Python<'_>) -> PyResult<()> {
+        let current = self.state.load(Ordering::Acquire);
+        if current == STATE_CLOSED || current == STATE_FAILED {
+            return Ok(());
+        }
+        self.state.store(STATE_CLOSING, Ordering::Release);
+        if let Some(handle) = self.handle.take() {
+            py.detach(|| handle.shutdown_blocking())
+                .map_err(|e| ConnectionError::new_err(format!("shutdown error: {e}")))?;
+        }
+        self.state.store(STATE_CLOSED, Ordering::Release);
+        Ok(())
+    }
+
+    fn wait_closed(&mut self, py: Python<'_>) -> PyResult<()> {
+        let current = self.state.load(Ordering::Acquire);
+        if current == STATE_CLOSED || current == STATE_FAILED {
+            return Ok(());
+        }
+        self.close(py)?;
+        Ok(())
+    }
+
+    fn __enter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    fn __exit__(
+        &mut self,
+        py: Python<'_>,
+        _exc_type: &Bound<'_, PyAny>,
+        _exc_value: &Bound<'_, PyAny>,
+        _traceback: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
+        self.close(py)?;
+        Ok(false)
+    }
+
+    fn __del__(&mut self, py: Python<'_>) {
+        let current = self.state.load(Ordering::Acquire);
+        if current == STATE_CLOSED || current == STATE_FAILED {
+            return;
+        }
+        eprintln!(
+            "Warning: Connection object was not properly closed. Calling close() in __del__."
+        );
+        if let Some(handle) = self.handle.take() {
+            let _ = py.detach(|| handle.shutdown_blocking());
+        }
+        self.state.store(STATE_CLOSED, Ordering::Release);
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Connection(state='{}', bound='{}')",
+            self.state(),
+            self.bound_addr.as_deref().unwrap_or("None")
+        )
     }
 }
 
@@ -1120,6 +1316,7 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyReverseUriSummary>()?;
     m.add_class::<PyUriInfo>()?;
     m.add_class::<PyDiagnostic>()?;
+    m.add_class::<PyConnection>()?;
     m.add_function(wrap_pyfunction!(translate_pproxy_args, m)?)?;
     m.add_function(wrap_pyfunction!(translate_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_args, m)?)?;
@@ -1143,6 +1340,16 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<UnsupportedFeatureError>(),
     )?;
     m.add("InternalError", m.py().get_type::<InternalError>())?;
+    m.add("ConnectionError", m.py().get_type::<ConnectionError>())?;
+    m.add(
+        "ConnectionClosedError",
+        m.py().get_type::<ConnectionClosedError>(),
+    )?;
+    m.add("TimeoutError", m.py().get_type::<TimeoutError>())?;
+    m.add("DnsError", m.py().get_type::<DnsError>())?;
+    m.add("AuthError", m.py().get_type::<AuthError>())?;
+    m.add("TlsError", m.py().get_type::<TlsError>())?;
+    m.add("LoopMismatchError", m.py().get_type::<LoopMismatchError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

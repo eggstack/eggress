@@ -184,6 +184,65 @@ Async handle to a running service. All methods return awaitables.
 | `await handle.shutdown()` | Graceful shutdown |
 | `async with handle:` | Async context manager |
 
+## Connection object
+
+`eggress.Connection` provides a pproxy-compatible low-level connection object backed by Rust-owned networking.
+
+### Constructor
+
+```python
+conn = Connection('socks5://:1080', 'http://proxy:8080')
+```
+
+Accepts pproxy-style URI arguments (variadic `*uris`). Translates them to eggress TOML configuration, creates an embedded service, and returns a managed connection object.
+
+### Properties
+
+- `state` — current lifecycle state string: `"created"`, `"connecting"`, `"connected"`, `"closing"`, `"closed"`, `"failed"`
+- `closed` — `True` when the connection is closed or failed
+- `config` — the TOML configuration used by this connection
+- `peername` — remote address as `(host, port)` tuple, or `None`
+- `sockname` — local bound address as `(host, port)` tuple, or `None`
+
+### Methods
+
+- `extra_info()` — returns a dict with state, bound address, remote address, and error info
+- `close()` — close the connection and shut down the underlying service (idempotent)
+- `wait_closed()` — wait for the connection to close (initiates close if needed)
+
+### Async methods
+
+- `aclose()` — async version of `close()`
+- `await_closed()` — async version of `wait_closed()`
+
+### Context manager
+
+Supports both sync and async context managers:
+
+```python
+with Connection('socks5://:1080') as conn:
+    print(conn.sockname)
+
+async with Connection('socks5://:1080') as conn:
+    print(conn.state)
+```
+
+### Resource management
+
+If a `Connection` object is garbage collected without being closed, a `ResourceWarning` is issued and best-effort cleanup is performed. Always prefer explicit `close()` or context manager usage.
+
+### Exception hierarchy
+
+All connection-specific exceptions inherit from `EggressError`:
+
+- `ConnectionError` — base for all connection errors
+- `ConnectionClosedError` — operation on a closed connection
+- `TimeoutError` — connection or operation timed out
+- `DnsError` — DNS resolution failure
+- `AuthError` — authentication failure
+- `TlsError` — TLS handshake failure
+- `LoopMismatchError` — used from wrong event loop
+
 ## Error model
 
 All exceptions inherit from `EggressError`, which inherits from Python's

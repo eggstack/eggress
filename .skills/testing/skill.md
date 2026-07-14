@@ -271,6 +271,7 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_pproxy_concurrency.py` — concurrent start/shutdown safety
 - `python/tests/test_performance_smoke.py` — Python binding overhead, GIL release
 - `python/tests/test_wheel_import_smoke.py` — wheel import verification
+- `python/tests/test_connection.py` — Connection contract and lifecycle tests (signatures, attributes, state machine, close semantics, resource ownership, context manager, GIL release)
 
 Run:
 ```bash
