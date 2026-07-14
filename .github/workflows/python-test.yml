@@ -5,12 +5,14 @@ on:
     paths:
       - 'crates/eggress-python/**'
       - 'python/**'
+      - 'tests/compat/**'
       - '.github/workflows/python-test.yml'
   push:
     branches: [main]
     paths:
       - 'crates/eggress-python/**'
       - 'python/**'
+      - 'tests/compat/**'
       - '.github/workflows/python-test.yml'
   workflow_dispatch:
 
@@ -54,3 +56,5 @@ jobs:
         run: python -m pytest python/tests -v
       - name: Wheel import smoke tests
         run: python -m pytest python/tests/test_wheel_import_smoke.py -v
+      - name: API contract validator tests
+        run: python -m pytest tests/compat/test_pproxy_api_contract.py -v
