@@ -332,7 +332,7 @@ evidence = "integration"
 capability_ids = []
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Protocol-Crate-Only (implemented but refused at runtime/config)
+# Runtime-Integrated Advanced Transports (upstream-only, promoted in B3/B4)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [[cell]]

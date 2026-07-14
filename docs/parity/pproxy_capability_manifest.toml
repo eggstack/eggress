@@ -808,7 +808,7 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "integration"
-tests = ["test_h2_connect_error_display", "h2_upstream_routes_tcp_echo"]
+tests = ["test_h2_connect_error_display", "h2_upstream_routes_tcp_echo", "h2_connect_with_auth", "h2_upstream_auth_success", "h2_upstream_auth_failure", "h2_upstream_concurrent_streams", "h2_connect_relay_to_http", "h2_chain_socks5_to_h2_to_http", "h2_chain_http_to_h2", "h2_upstream_config_validation", "h2_upstream_connection_loss", "h2_upstream_connection_reuse", "h2_upstream_flow_control_pressure", "h2_upstream_concurrent_stream_limit"]
 notes = "Promoted in Phase B4; upstream-only with TLS transport wrapper."
 caveat_class = ""
 
@@ -1999,7 +1999,7 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "integration"
-tests = ["test_h2_connect_error_display", "h2_upstream_routes_tcp_echo"]
+tests = ["test_h2_connect_error_display", "h2_upstream_routes_tcp_echo", "h2_connect_with_auth", "h2_upstream_auth_success", "h2_upstream_auth_failure", "h2_upstream_concurrent_streams", "h2_connect_relay_to_http", "h2_chain_socks5_to_h2_to_http", "h2_chain_http_to_h2", "h2_upstream_config_validation", "h2_upstream_connection_loss", "h2_upstream_connection_reuse", "h2_upstream_flow_control_pressure", "h2_upstream_concurrent_stream_limit"]
 notes = "Promoted in Phase B4; upstream-only with TLS transport wrapper."
 caveat_class = ""
 

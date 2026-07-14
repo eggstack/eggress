@@ -167,6 +167,16 @@ pub struct MetricsRegistry {
     bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
     bridged_shadowsocks_metrics:
         Mutex<Option<(Arc<ShadowsocksMetrics>, BridgedShadowsocksSnapshot)>>,
+    h2_prev_connections_opened: Mutex<u64>,
+    h2_prev_connections_closed: Mutex<u64>,
+    h2_prev_streams_opened: Mutex<u64>,
+    h2_prev_streams_closed: Mutex<u64>,
+    h2_prev_goaway: Mutex<u64>,
+    h2_prev_handshake_failures: Mutex<u64>,
+    h2_prev_auth_failures: Mutex<u64>,
+    h2_prev_flow_control_stalls: Mutex<u64>,
+    h2_prev_pool_exhausted: Mutex<u64>,
+    h2_prev_bytes_relayed: Mutex<u64>,
 }
 
 #[derive(Default)]
@@ -808,6 +818,16 @@ impl MetricsRegistry {
             transparent_prev_dst_failed: Mutex::new(0),
             bridged_udp_metrics: Mutex::new(None),
             bridged_shadowsocks_metrics: Mutex::new(None),
+            h2_prev_connections_opened: Mutex::new(0),
+            h2_prev_connections_closed: Mutex::new(0),
+            h2_prev_streams_opened: Mutex::new(0),
+            h2_prev_streams_closed: Mutex::new(0),
+            h2_prev_goaway: Mutex::new(0),
+            h2_prev_handshake_failures: Mutex::new(0),
+            h2_prev_auth_failures: Mutex::new(0),
+            h2_prev_flow_control_stalls: Mutex::new(0),
+            h2_prev_pool_exhausted: Mutex::new(0),
+            h2_prev_bytes_relayed: Mutex::new(0),
         }
     }
 
@@ -1305,6 +1325,108 @@ impl MetricsRegistry {
                 self.ss_udp_unsupported_method_rejects_total.inc_by(delta);
             }
             prev.udp_unsupported_method_rejects_total = cur;
+        }
+
+        // Sync H2 protocol metrics from global H2_PROTOCOL_METRICS atomics
+        {
+            use eggress_protocol_http::H2_PROTOCOL_METRICS;
+
+            let cur_opened = H2_PROTOCOL_METRICS
+                .connections_opened
+                .load(Ordering::Relaxed);
+            let cur_closed = H2_PROTOCOL_METRICS
+                .connections_closed
+                .load(Ordering::Relaxed);
+            let prev_opened = *self.h2_prev_connections_opened.lock().unwrap();
+            let _prev_closed = *self.h2_prev_connections_closed.lock().unwrap();
+            let delta_opened = cur_opened.saturating_sub(prev_opened);
+            if delta_opened > 0 {
+                self.h2_connections_total.inc_by(delta_opened);
+            }
+            *self.h2_prev_connections_opened.lock().unwrap() = cur_opened;
+            *self.h2_prev_connections_closed.lock().unwrap() = cur_closed;
+            // active = total opened - total closed (capped at 0)
+            let active = cur_opened.saturating_sub(cur_closed);
+            self.h2_connections_active
+                .set(active.min(i64::MAX as u64) as i64);
+
+            let cur = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
+            let prev = *self.h2_prev_streams_opened.lock().unwrap();
+            let delta = cur.saturating_sub(prev);
+            if delta > 0 {
+                self.h2_streams_total
+                    .get_or_create(&H2StreamLabels {
+                        upstream_id: "h2".to_string(),
+                        outcome: "opened".to_string(),
+                    })
+                    .inc_by(delta);
+            }
+            *self.h2_prev_streams_opened.lock().unwrap() = cur;
+
+            let cur = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
+            let prev = *self.h2_prev_streams_closed.lock().unwrap();
+            let delta = cur.saturating_sub(prev);
+            if delta > 0 {
+                self.h2_streams_total
+                    .get_or_create(&H2StreamLabels {
+                        upstream_id: "h2".to_string(),
+                        outcome: "closed".to_string(),
+                    })
+                    .inc_by(delta);
+            }
+            *self.h2_prev_streams_closed.lock().unwrap() = cur;
+
+            let total_opened = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
+            let total_closed = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
+            let active_streams = total_opened.saturating_sub(total_closed);
+            self.h2_streams_active
+                .set(active_streams.min(i64::MAX as u64) as i64);
+
+            let cur = H2_PROTOCOL_METRICS.goaway_received.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(*self.h2_prev_goaway.lock().unwrap());
+            if delta > 0 {
+                self.h2_goaway_total.inc_by(delta);
+            }
+            *self.h2_prev_goaway.lock().unwrap() = cur;
+
+            let cur = H2_PROTOCOL_METRICS
+                .handshake_failures
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(*self.h2_prev_handshake_failures.lock().unwrap());
+            if delta > 0 {
+                self.h2_handshake_failures_total.inc_by(delta);
+            }
+            *self.h2_prev_handshake_failures.lock().unwrap() = cur;
+
+            let cur = H2_PROTOCOL_METRICS.auth_failures.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(*self.h2_prev_auth_failures.lock().unwrap());
+            if delta > 0 {
+                self.h2_auth_failures_total.inc_by(delta);
+            }
+            *self.h2_prev_auth_failures.lock().unwrap() = cur;
+
+            let cur = H2_PROTOCOL_METRICS
+                .flow_control_stalls
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(*self.h2_prev_flow_control_stalls.lock().unwrap());
+            if delta > 0 {
+                self.h2_flow_control_stalls_total.inc_by(delta);
+            }
+            *self.h2_prev_flow_control_stalls.lock().unwrap() = cur;
+
+            let cur = H2_PROTOCOL_METRICS.pool_exhausted.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(*self.h2_prev_pool_exhausted.lock().unwrap());
+            if delta > 0 {
+                self.h2_pool_exhausted_total.inc_by(delta);
+            }
+            *self.h2_prev_pool_exhausted.lock().unwrap() = cur;
+
+            let cur = H2_PROTOCOL_METRICS.bytes_relayed.load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(*self.h2_prev_bytes_relayed.lock().unwrap());
+            if delta > 0 {
+                self.h2_bytes_relayed_total.inc_by(delta);
+            }
+            *self.h2_prev_bytes_relayed.lock().unwrap() = cur;
         }
 
         // Sync transparent proxy counters from bridged SupervisorState atomics
@@ -2479,5 +2601,65 @@ mod tests {
         let output = m.render_prometheus();
         assert!(output.contains("eggress_transparent_connections_accepted_total"));
         assert!(output.contains("eggress_transparent_original_dst_failed_total"));
+    }
+
+    #[test]
+    fn h2_protocol_metrics_appear_in_prometheus() {
+        use eggress_protocol_http::H2_PROTOCOL_METRICS;
+        use std::sync::atomic::Ordering;
+
+        // Record some H2 events via the global atomics
+        H2_PROTOCOL_METRICS
+            .connections_opened
+            .fetch_add(3, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .connections_closed
+            .fetch_add(1, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .streams_opened
+            .fetch_add(10, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .streams_closed
+            .fetch_add(7, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .goaway_received
+            .fetch_add(1, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .auth_failures
+            .fetch_add(2, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .pool_exhausted
+            .fetch_add(1, Ordering::Relaxed);
+
+        let m = MetricsRegistry::new();
+        let output = m.render_prometheus();
+        assert!(
+            output.contains("eggress_h2_connections_active"),
+            "missing h2_connections_active"
+        );
+        assert!(
+            output.contains("eggress_h2_connections_total"),
+            "missing h2_connections_total"
+        );
+        assert!(
+            output.contains("eggress_h2_streams_active"),
+            "missing h2_streams_active"
+        );
+        assert!(
+            output.contains("eggress_h2_streams_total"),
+            "missing h2_streams_total"
+        );
+        assert!(
+            output.contains("eggress_h2_goaway_total"),
+            "missing h2_goaway_total"
+        );
+        assert!(
+            output.contains("eggress_h2_auth_failures_total"),
+            "missing h2_auth_failures_total"
+        );
+        assert!(
+            output.contains("eggress_h2_pool_exhausted_total"),
+            "missing h2_pool_exhausted_total"
+        );
     }
 }

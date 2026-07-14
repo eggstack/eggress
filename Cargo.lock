@@ -615,6 +615,7 @@ dependencies = [
 name = "eggress-metrics"
 version = "0.1.0"
 dependencies = [
+ "eggress-protocol-http",
  "eggress-protocol-shadowsocks",
  "eggress-server",
  "eggress-udp",

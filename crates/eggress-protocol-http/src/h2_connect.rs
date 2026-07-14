@@ -16,6 +16,50 @@ use tokio::sync::{Notify, Semaphore};
 use crate::error::HttpError;
 use eggress_core::TargetAddr;
 
+// ===== H2 Protocol Metrics (atomic counters for bridging into MetricsRegistry) =====
+
+/// Atomic counters for H2 protocol-level metrics. The `MetricsRegistry`
+/// bridges these into Prometheus via `set_h2_metrics()` / `render_prometheus()`.
+pub struct H2ProtocolMetrics {
+    pub connections_opened: AtomicU64,
+    pub connections_closed: AtomicU64,
+    pub streams_opened: AtomicU64,
+    pub streams_closed: AtomicU64,
+    pub goaway_received: AtomicU64,
+    pub handshake_failures: AtomicU64,
+    pub auth_failures: AtomicU64,
+    pub flow_control_stalls: AtomicU64,
+    pub pool_exhausted: AtomicU64,
+    pub bytes_relayed: AtomicU64,
+}
+
+impl H2ProtocolMetrics {
+    pub const fn new() -> Self {
+        Self {
+            connections_opened: AtomicU64::new(0),
+            connections_closed: AtomicU64::new(0),
+            streams_opened: AtomicU64::new(0),
+            streams_closed: AtomicU64::new(0),
+            goaway_received: AtomicU64::new(0),
+            handshake_failures: AtomicU64::new(0),
+            auth_failures: AtomicU64::new(0),
+            flow_control_stalls: AtomicU64::new(0),
+            pool_exhausted: AtomicU64::new(0),
+            bytes_relayed: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Default for H2ProtocolMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Global H2 protocol metrics instance.
+pub static H2_PROTOCOL_METRICS: once_cell::sync::Lazy<Arc<H2ProtocolMetrics>> =
+    once_cell::sync::Lazy::new(|| Arc::new(H2ProtocolMetrics::new()));
+
 #[derive(Debug, thiserror::Error)]
 pub enum H2ConnectError {
     #[error("IO error: {0}")]
@@ -379,6 +423,9 @@ impl H2ConnectionEntry {
 
 impl Drop for H2ConnectionEntry {
     fn drop(&mut self) {
+        H2_PROTOCOL_METRICS
+            .connections_closed
+            .fetch_add(1, Ordering::Relaxed);
         self.conn_handle.abort();
     }
 }
@@ -451,6 +498,9 @@ impl H2ConnectionPool {
         });
 
         self.entries.lock().unwrap().push(Arc::clone(&entry));
+        H2_PROTOCOL_METRICS
+            .connections_opened
+            .fetch_add(1, Ordering::Relaxed);
         self.maybe_start_reaper();
         Ok(entry)
     }
@@ -608,6 +658,9 @@ pub struct H2PoolGuard {
 
 impl Drop for H2PoolGuard {
     fn drop(&mut self) {
+        H2_PROTOCOL_METRICS
+            .streams_closed
+            .fetch_add(1, Ordering::Relaxed);
         self.pool.release(&self.entry);
     }
 }
@@ -615,6 +668,12 @@ impl Drop for H2PoolGuard {
 impl H2PoolGuard {
     /// Mark this connection as retired (e.g., on GOAWAY).
     pub fn retire(&self) {
+        H2_PROTOCOL_METRICS
+            .goaway_received
+            .fetch_add(1, Ordering::Relaxed);
+        H2_PROTOCOL_METRICS
+            .connections_closed
+            .fetch_add(1, Ordering::Relaxed);
         self.pool.retire(&self.entry);
     }
 
@@ -646,11 +705,12 @@ where
     }
 
     // No available connection — create a new one (semaphore limits total)
-    let _permit = pool
-        .semaphore
-        .acquire()
-        .await
-        .map_err(|_| H2ConnectError::PoolExhausted)?;
+    let _permit = pool.semaphore.acquire().await.map_err(|_| {
+        H2_PROTOCOL_METRICS
+            .pool_exhausted
+            .fetch_add(1, Ordering::Relaxed);
+        H2ConnectError::PoolExhausted
+    })?;
 
     let entry = pool.create_entry(stream).await?;
 
@@ -685,6 +745,11 @@ where
     let response = response_future.await?;
     if response.status() != http::StatusCode::OK {
         pool.retire(&entry);
+        if response.status() == http::StatusCode::PROXY_AUTHENTICATION_REQUIRED {
+            H2_PROTOCOL_METRICS
+                .auth_failures
+                .fetch_add(1, Ordering::Relaxed);
+        }
         return Err(H2ConnectError::H2(format!(
             "CONNECT rejected with status {}",
             response.status()
@@ -692,6 +757,9 @@ where
     }
 
     let recv_stream = response.into_body();
+    H2_PROTOCOL_METRICS
+        .streams_opened
+        .fetch_add(1, Ordering::Relaxed);
     let guard = H2PoolGuard {
         entry: Arc::clone(&entry),
         pool: Arc::clone(&pool),
@@ -748,11 +816,19 @@ async fn try_pooled_connection(
             };
             if response.status() != http::StatusCode::OK {
                 pool.retire(&entry);
+                if response.status() == http::StatusCode::PROXY_AUTHENTICATION_REQUIRED {
+                    H2_PROTOCOL_METRICS
+                        .auth_failures
+                        .fetch_add(1, Ordering::Relaxed);
+                }
                 return Some(Err(H2ConnectError::H2(format!(
                     "CONNECT rejected with status {}",
                     response.status()
                 ))));
             }
+            H2_PROTOCOL_METRICS
+                .streams_opened
+                .fetch_add(1, Ordering::Relaxed);
             let recv_stream = response.into_body();
             let guard = H2PoolGuard {
                 entry: Arc::clone(&entry),

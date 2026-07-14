@@ -45,6 +45,16 @@ Promote H2 CONNECT to `drop_in` tier as an upstream-only protocol, following the
 
 9. **`H2HopHandler` integration** — Builds a `H2PoolKey` from the hop spec and calls `h2_connect_client_pooled`. The pool guard is held by `PooledH2Stream` for the connection lifetime.
 
+### Observability (B4 completion)
+
+10. **H2 protocol metrics** — `H2ProtocolMetrics` struct with 10 atomic counters in `eggress-protocol-http::h2_connect`, exposed via global static `H2_PROTOCOL_METRICS`. Counters: `connections_opened`, `connections_closed`, `streams_opened`, `streams_closed`, `goaway_received`, `handshake_failures`, `auth_failures`, `flow_control_stalls`, `pool_exhausted`, `bytes_relayed`.
+
+11. **Prometheus integration** — `MetricsRegistry::render_prometheus()` reads directly from `H2_PROTOCOL_METRICS` atomics using delta tracking (same pattern as transparent proxy metrics). Produces 10 `eggress_h2_*` Prometheus metrics: `connections_active` (gauge), `connections_total` (counter), `streams_active` (gauge), `streams_total` (family counter by outcome), `goaway_total`, `handshake_failures_total`, `auth_failures_total`, `flow_control_stalls_total`, `pool_exhausted_total`, `bytes_relayed_total`.
+
+12. **Metric recording points** — Connections: `create_entry()` increments `connections_opened`, `H2ConnectionEntry::drop()` increments `connections_closed`. Streams: `h2_connect_client_pooled()` and `try_pooled_connection()` increment `streams_opened` on CONNECT success, `H2PoolGuard::drop()` increments `streams_closed`. Auth: `h2_connect_client_pooled()` and `try_pooled_connection()` increment `auth_failures` on 407 response. Pool: `h2_connect_client_pooled()` increments `pool_exhausted` on semaphore failure. GOAWAY: `H2PoolGuard::retire()` increments `goaway_received`.
+
+13. **`h2_snapshot()`** — Returns `H2MetricsSnapshot` struct with all H2 metric values for programmatic access (admin API, diagnostics).
+
 ### Design Choices
 
 - **Ignored input stream**: Like WebSocket and Raw handlers, H2HopHandler creates its own connection. The chain executor's generic TLS wrapper doesn't support ALPN, so H2 manages TLS internally.
@@ -61,4 +71,6 @@ Promote H2 CONNECT to `drop_in` tier as an upstream-only protocol, following the
 - Chain cells added: `socks5→h2`, `http→h2`, `socks5→h2→http` (3-hop)
 - Existing H2 unit tests continue to pass
 - Connection pool reuses H2 connections across requests to the same endpoint
-- 20 integration tests covering: basic echo, auth success/failure, concurrent streams, chain combinations, connection loss recovery, connection reuse, flow control pressure, concurrent stream limits, config validation
+- 22 integration tests covering: basic echo, auth success/failure, concurrent streams, chain combinations, connection loss recovery, connection reuse, flow control pressure, concurrent stream limits, config validation
+- 10 H2-specific Prometheus metrics exposed via `/metrics` endpoint with delta-tracked counters
+- Python H2-specific API intentionally deferred: generic Python API already works for H2, manifest marks `python = "not_applicable"`

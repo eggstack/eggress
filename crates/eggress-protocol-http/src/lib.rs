@@ -21,8 +21,8 @@ pub use forward::{
 };
 pub use h2_connect::{
     h2_connect_client, h2_connect_client_pooled, h2_connect_relay, handle_h2_connect,
-    H2ConnectError, H2PoolGuard, H2PoolKey, H2PoolRegistry, H2PoolStats, H2StreamRead,
-    H2StreamWrite, H2_POOL_REGISTRY,
+    H2ConnectError, H2PoolGuard, H2PoolKey, H2PoolRegistry, H2PoolStats, H2ProtocolMetrics,
+    H2StreamRead, H2StreamWrite, H2_POOL_REGISTRY, H2_PROTOCOL_METRICS,
 };
 
 #[cfg(test)]
