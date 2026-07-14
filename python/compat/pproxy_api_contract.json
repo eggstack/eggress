@@ -1,0 +1,4267 @@
+{
+  "schema_version": "1.0.0",
+  "pproxy_version": "2.7.9",
+  "python_version": "3.11.9",
+  "extracted_at": "2026-07-14T16:10:53.647630+00:00",
+  "modules": {
+    "pproxy": {
+      "exports": [
+        "Connection",
+        "DIRECT",
+        "Rule",
+        "Server",
+        "proto",
+        "server"
+      ],
+      "submodules": [
+        "pproxy.proto",
+        "pproxy.server"
+      ]
+    },
+    "pproxy.proto": {
+      "exports": [
+        "BaseProtocol",
+        "Direct",
+        "Echo",
+        "H2",
+        "H3",
+        "HTTP",
+        "HTTPOnly",
+        "HTTP_LINE",
+        "MAPPINGS",
+        "Pf",
+        "Redir",
+        "SOL_IPV6",
+        "SO_ORIGINAL_DST",
+        "SS",
+        "SSH",
+        "SSR",
+        "Socks4",
+        "Socks5",
+        "Transparent",
+        "Trojan",
+        "Tunnel",
+        "WS",
+        "accept",
+        "asyncio",
+        "base64",
+        "get_protos",
+        "hashlib",
+        "hmac",
+        "io",
+        "netloc_split",
+        "os",
+        "packstr",
+        "re",
+        "socket",
+        "socks_address",
+        "socks_address_stream",
+        "sslwrap",
+        "struct",
+        "time",
+        "udp_accept",
+        "urllib"
+      ],
+      "submodules": []
+    },
+    "pproxy.cipher": {
+      "exports": [
+        "AEADCipher",
+        "AES_128_CFB8_Cipher",
+        "AES_128_CFB_Cipher",
+        "AES_128_CTR_Cipher",
+        "AES_128_GCM_Cipher",
+        "AES_128_OFB_Cipher",
+        "AES_192_CFB8_Cipher",
+        "AES_192_CFB_Cipher",
+        "AES_192_CTR_Cipher",
+        "AES_192_GCM_Cipher",
+        "AES_192_OFB_Cipher",
+        "AES_256_CFB8_Cipher",
+        "AES_256_CFB_Cipher",
+        "AES_256_CTR_Cipher",
+        "AES_256_GCM_Cipher",
+        "AES_256_OFB_Cipher",
+        "BF_CFB_Cipher",
+        "BaseCipher",
+        "CAST5_CFB_Cipher",
+        "ChaCha20_Cipher",
+        "ChaCha20_IETF_Cipher",
+        "ChaCha20_IETF_POLY1305_Cipher",
+        "DES_CFB_Cipher",
+        "MAP",
+        "PacketCipher",
+        "RC4_Cipher",
+        "RC4_MD5_Cipher",
+        "Salsa20_Cipher",
+        "get_cipher",
+        "hashlib",
+        "hmac",
+        "os"
+      ],
+      "submodules": []
+    },
+    "pproxy.server": {
+      "exports": [
+        "AuthTable",
+        "DIRECT",
+        "DUMMY",
+        "ProxyBackward",
+        "ProxyDirect",
+        "ProxyH2",
+        "ProxyH3",
+        "ProxyQUIC",
+        "ProxySSH",
+        "ProxySimple",
+        "SOCKET_TIMEOUT",
+        "UDP_LIMIT",
+        "argparse",
+        "asyncio",
+        "base64",
+        "check_server_alive",
+        "compile_rule",
+        "datagram_handler",
+        "functools",
+        "main",
+        "patch_StreamReader",
+        "patch_StreamWriter",
+        "prepare_ciphers",
+        "print_server_started",
+        "proto",
+        "proxies_by_uri",
+        "proxy_by_uri",
+        "random",
+        "re",
+        "schedule",
+        "socket",
+        "sslcontexts",
+        "stream_handler",
+        "test_url",
+        "time",
+        "urllib"
+      ],
+      "submodules": []
+    }
+  },
+  "symbols": {
+    "pproxy.Connection": {
+      "module": "pproxy",
+      "qualname": "proxies_by_uri",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(uri_jumps)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.Rule": {
+      "module": "pproxy",
+      "qualname": "compile_rule",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(filename)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.Server": {
+      "module": "pproxy",
+      "qualname": "proxies_by_uri",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(uri_jumps)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto": {
+      "module": "pproxy",
+      "qualname": "proto",
+      "docstring": null,
+      "kind": "module"
+    },
+    "pproxy.server": {
+      "module": "pproxy",
+      "qualname": "server",
+      "docstring": null,
+      "kind": "module"
+    },
+    "pproxy.proto.BaseProtocol": {
+      "module": "pproxy.proto",
+      "qualname": "BaseProtocol",
+      "docstring": null,
+      "kind": "class",
+      "bases": [],
+      "mro": [
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Direct": {
+      "module": "pproxy.proto",
+      "qualname": "Direct",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "Direct",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Echo": {
+      "module": "pproxy.proto",
+      "qualname": "Echo",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "Transparent"
+      ],
+      "mro": [
+        "Echo",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "query_remote": {
+          "signature": "(self, sock)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, sock, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.H2": {
+      "module": "pproxy.proto",
+      "qualname": "H2",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "HTTP"
+      ],
+      "mro": [
+        "H2",
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, myhost, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_accept": {
+          "signature": "(self, user, method, path, authority, ver, lines, host, pauth, reply, authtable, users, httpget=None, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.H3": {
+      "module": "pproxy.proto",
+      "qualname": "H3",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "H2"
+      ],
+      "mro": [
+        "H3",
+        "H2",
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, myhost, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_accept": {
+          "signature": "(self, user, method, path, authority, ver, lines, host, pauth, reply, authtable, users, httpget=None, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.HTTP": {
+      "module": "pproxy.proto",
+      "qualname": "HTTP",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_accept": {
+          "signature": "(self, user, method, path, authority, ver, lines, host, pauth, reply, authtable, users, httpget=None, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.HTTPOnly": {
+      "module": "pproxy.proto",
+      "qualname": "HTTPOnly",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "HTTP"
+      ],
+      "mro": [
+        "HTTPOnly",
+        "HTTP",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, myhost, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_accept": {
+          "signature": "(self, user, method, path, authority, ver, lines, host, pauth, reply, authtable, users, httpget=None, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "http_channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Pf": {
+      "module": "pproxy.proto",
+      "qualname": "Pf",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "Transparent"
+      ],
+      "mro": [
+        "Pf",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "query_remote": {
+          "signature": "(self, sock)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, sock, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Redir": {
+      "module": "pproxy.proto",
+      "qualname": "Redir",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "Transparent"
+      ],
+      "mro": [
+        "Redir",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "query_remote": {
+          "signature": "(self, sock)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, sock, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.SS": {
+      "module": "pproxy.proto",
+      "qualname": "SS",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "SSR"
+      ],
+      "mro": [
+        "SS",
+        "SSR",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, reader_cipher, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, writer_cipher_r, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, users, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "patch_ota_reader": {
+          "signature": "(self, cipher, reader)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "patch_ota_writer": {
+          "signature": "(self, cipher, writer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, users, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.SSH": {
+      "module": "pproxy.proto",
+      "qualname": "SSH",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "SSH",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, myhost, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.SSR": {
+      "module": "pproxy.proto",
+      "qualname": "SSR",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "SSR",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, users, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Socks4": {
+      "module": "pproxy.proto",
+      "qualname": "Socks4",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "Socks4",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, users, authtable, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Socks5": {
+      "module": "pproxy.proto",
+      "qualname": "Socks5",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "Socks5",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, users, authtable, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Transparent": {
+      "module": "pproxy.proto",
+      "qualname": "Transparent",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, sock, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Trojan": {
+      "module": "pproxy.proto",
+      "qualname": "Trojan",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "Trojan",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, users, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.Tunnel": {
+      "module": "pproxy.proto",
+      "qualname": "Tunnel",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "Transparent"
+      ],
+      "mro": [
+        "Tunnel",
+        "Transparent",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "query_remote": {
+          "signature": "(self, sock)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, sock, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.WS": {
+      "module": "pproxy.proto",
+      "qualname": "WS",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseProtocol"
+      ],
+      "mro": [
+        "WS",
+        "BaseProtocol"
+      ],
+      "signature": "(param)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "accept": {
+          "signature": "(self, reader, user, writer, users, authtable, sock, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "channel": {
+          "signature": "(self, reader, writer, stat_bytes, stat_conn)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connect": {
+          "signature": "(self, reader_remote, writer_remote, rauth, host_name, port, myhost, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "guess": {
+          "signature": "(self, reader, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "patch_ws_stream": {
+          "signature": "(self, reader, writer, masked=False)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "reuse": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_accept": {
+          "signature": "(self, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_connect": {
+          "signature": "(self, rauth, host_name, port, data, **kw)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_pack": {
+          "signature": "(self, host_name, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "name"
+      ]
+    },
+    "pproxy.proto.accept": {
+      "module": "pproxy.proto",
+      "qualname": "accept",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(protos, reader, **kw)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.asyncio": {
+      "module": "pproxy.proto",
+      "qualname": "asyncio",
+      "docstring": "The asyncio package, tracking PEP 3156.",
+      "kind": "module"
+    },
+    "pproxy.proto.base64": {
+      "module": "pproxy.proto",
+      "qualname": "base64",
+      "docstring": "Base16, Base32, Base64 (RFC 3548), Base85 and Ascii85 data encodings",
+      "kind": "module"
+    },
+    "pproxy.proto.get_protos": {
+      "module": "pproxy.proto",
+      "qualname": "get_protos",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(rawprotos)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.hashlib": {
+      "module": "pproxy.proto",
+      "qualname": "hashlib",
+      "docstring": "hashlib module - A common interface to many hash functions.\n\nnew(name, data=b'', **kwargs) - returns a new hash object implementing the\n                                given hash function; initializing the hash\n                                using the given binary data.\n\nNamed constructor functions are also available, these are faster\nthan using new(name):\n\nmd5(), sha1(), sha224(), sha256(), sha384(), sha512(), blake2b(), blake2s(),\nsha3_224, sha3_256, sha3_384, sha3_512, shake_128, and shake_256.\n\nMore algorithms may be available on your platform but the above are guaranteed\nto exist.  See the algorithms_guaranteed and algorithms_available attributes\nto find out what algorithm names can be passed to new().\n\nNOTE: If you want the adler32 or crc32 hash functions they are available in\nthe zlib module.\n\nChoose your hash function wisely.  Some have known collision weaknesses.\nsha384 and sha512 will be slow on 32 bit platforms.\n\nHash objects have these methods:\n - update(data): Update the hash object with the bytes in data. Repeated calls\n                 are equivalent to a single call with the concatenation of all\n                 the arguments.\n - digest():     Return the digest of the bytes passed to the update() method\n                 so far as a bytes object.\n - hexdigest():  Like digest() except the digest is returned as a string\n                 of double length, containing only hexadecimal digits.\n - copy():       Return a copy (clone) of the hash object. This can be used to\n                 efficiently compute the digests of datas that share a common\n                 initial substring.\n\nFor example, to obtain the digest of the byte string 'Nobody inspects the\nspammish repetition':\n\n    >>> import hashlib\n    >>> m = hashlib.md5()\n    >>> m.update(b\"Nobody inspects\")\n    >>> m.update(b\" the spammish repetition\")\n    >>> m.digest()\n    b'\\xbbd\\x9c\\x83\\xdd\\x1e\\xa5\\xc9\\xd9\\xde\\xc9\\xa1\\x8d\\xf0\\xff\\xe9'\n\nMore condensed:\n\n    >>> hashlib.sha224(b\"Nobody inspects the spammish repetition\").hexdigest()\n    'a4337bc45a8fc544c03f52dc550cd6e1e87021bc896588bd79e901e2'",
+      "kind": "module"
+    },
+    "pproxy.proto.hmac": {
+      "module": "pproxy.proto",
+      "qualname": "hmac",
+      "docstring": "HMAC (Keyed-Hashing for Message Authentication) module.\n\nImplements the HMAC algorithm as described by RFC 2104.",
+      "kind": "module"
+    },
+    "pproxy.proto.io": {
+      "module": "pproxy.proto",
+      "qualname": "io",
+      "docstring": "The io module provides the Python interfaces to stream handling. The\nbuiltin open function is defined in this module.\n\nAt the top of the I/O hierarchy is the abstract base class IOBase. It\ndefines the basic interface to a stream. Note, however, that there is no\nseparation between reading and writing to streams; implementations are\nallowed to raise an OSError if they do not support a given operation.\n\nExtending IOBase is RawIOBase which deals simply with the reading and\nwriting of raw bytes to a stream. FileIO subclasses RawIOBase to provide\nan interface to OS files.\n\nBufferedIOBase deals with buffering on a raw byte stream (RawIOBase). Its\nsubclasses, BufferedWriter, BufferedReader, and BufferedRWPair buffer\nstreams that are readable, writable, and both respectively.\nBufferedRandom provides a buffered interface to random access\nstreams. BytesIO is a simple stream of in-memory bytes.\n\nAnother IOBase subclass, TextIOBase, deals with the encoding and decoding\nof streams into text. TextIOWrapper, which extends it, is a buffered text\ninterface to a buffered raw stream (`BufferedIOBase`). Finally, StringIO\nis an in-memory stream for text.\n\nArgument names are not part of the specification, and only the arguments\nof open() are intended to be used as keyword arguments.\n\ndata:\n\nDEFAULT_BUFFER_SIZE\n\n   An int containing the default buffer size used by the module's buffered\n   I/O classes. open() uses the file's blksize (as obtained by os.stat) if\n   possible.",
+      "kind": "module"
+    },
+    "pproxy.proto.netloc_split": {
+      "module": "pproxy.proto",
+      "qualname": "netloc_split",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(loc, default_host=None, default_port=None)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.os": {
+      "module": "pproxy.proto",
+      "qualname": "os",
+      "docstring": "OS routines for NT or Posix depending on what system we're on.\n\nThis exports:\n  - all functions from posix or nt, e.g. unlink, stat, etc.\n  - os.path is either posixpath or ntpath\n  - os.name is either 'posix' or 'nt'\n  - os.curdir is a string representing the current directory (always '.')\n  - os.pardir is a string representing the parent directory (always '..')\n  - os.sep is the (or a most common) pathname separator ('/' or '\\\\')\n  - os.extsep is the extension separator (always '.')\n  - os.altsep is the alternate pathname separator (None or '/')\n  - os.pathsep is the component separator used in $PATH etc\n  - os.linesep is the line separator in text files ('\\r' or '\\n' or '\\r\\n')\n  - os.defpath is the default search path for executables\n  - os.devnull is the file path of the null device ('/dev/null', etc.)\n\nPrograms that import and use 'os' stand a better chance of being\nportable between different platforms.  Of course, they must then\nonly use functions that are defined by all platforms (e.g., unlink\nand opendir), and leave all pathname manipulation to os.path\n(e.g., split and join).",
+      "kind": "module"
+    },
+    "pproxy.proto.packstr": {
+      "module": "pproxy.proto",
+      "qualname": "<lambda>",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(s, n=1)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.re": {
+      "module": "pproxy.proto",
+      "qualname": "re",
+      "docstring": "Support for regular expressions (RE).\n\nThis module provides regular expression matching operations similar to\nthose found in Perl.  It supports both 8-bit and Unicode strings; both\nthe pattern and the strings being processed can contain null bytes and\ncharacters outside the US ASCII range.\n\nRegular expressions can contain both special and ordinary characters.\nMost ordinary characters, like \"A\", \"a\", or \"0\", are the simplest\nregular expressions; they simply match themselves.  You can\nconcatenate ordinary characters, so last matches the string 'last'.\n\nThe special characters are:\n    \".\"      Matches any character except a newline.\n    \"^\"      Matches the start of the string.\n    \"$\"      Matches the end of the string or just before the newline at\n             the end of the string.\n    \"*\"      Matches 0 or more (greedy) repetitions of the preceding RE.\n             Greedy means that it will match as many repetitions as possible.\n    \"+\"      Matches 1 or more (greedy) repetitions of the preceding RE.\n    \"?\"      Matches 0 or 1 (greedy) of the preceding RE.\n    *?,+?,?? Non-greedy versions of the previous three special characters.\n    {m,n}    Matches from m to n repetitions of the preceding RE.\n    {m,n}?   Non-greedy version of the above.\n    \"\\\\\"     Either escapes special characters or signals a special sequence.\n    []       Indicates a set of characters.\n             A \"^\" as the first character indicates a complementing set.\n    \"|\"      A|B, creates an RE that will match either A or B.\n    (...)    Matches the RE inside the parentheses.\n             The contents can be retrieved or matched later in the string.\n    (?aiLmsux) The letters set the corresponding flags defined below.\n    (?:...)  Non-grouping version of regular parentheses.\n    (?P<name>...) The substring matched by the group is accessible by name.\n    (?P=name)     Matches the text matched earlier by the group named name.\n    (?#...)  A comment; ignored.\n    (?=...)  Matches if ... matches next, but doesn't consume the string.\n    (?!...)  Matches if ... doesn't match next.\n    (?<=...) Matches if preceded by ... (must be fixed length).\n    (?<!...) Matches if not preceded by ... (must be fixed length).\n    (?(id/name)yes|no) Matches yes pattern if the group with id/name matched,\n                       the (optional) no pattern otherwise.\n\nThe special sequences consist of \"\\\\\" and a character from the list\nbelow.  If the ordinary character is not on the list, then the\nresulting RE will match the second character.\n    \\number  Matches the contents of the group of the same number.\n    \\A       Matches only at the start of the string.\n    \\Z       Matches only at the end of the string.\n    \\b       Matches the empty string, but only at the start or end of a word.\n    \\B       Matches the empty string, but not at the start or end of a word.\n    \\d       Matches any decimal digit; equivalent to the set [0-9] in\n             bytes patterns or string patterns with the ASCII flag.\n             In string patterns without the ASCII flag, it will match the whole\n             range of Unicode digits.\n    \\D       Matches any non-digit character; equivalent to [^\\d].\n    \\s       Matches any whitespace character; equivalent to [ \\t\\n\\r\\f\\v] in\n             bytes patterns or string patterns with the ASCII flag.\n             In string patterns without the ASCII flag, it will match the whole\n             range of Unicode whitespace characters.\n    \\S       Matches any non-whitespace character; equivalent to [^\\s].\n    \\w       Matches any alphanumeric character; equivalent to [a-zA-Z0-9_]\n             in bytes patterns or string patterns with the ASCII flag.\n             In string patterns without the ASCII flag, it will match the\n             range of Unicode alphanumeric characters (letters plus digits\n             plus underscore).\n             With LOCALE, it will match the set [0-9_] plus characters defined\n             as letters for the current locale.\n    \\W       Matches the complement of \\w.\n    \\\\       Matches a literal backslash.\n\nThis module exports the following functions:\n    match     Match a regular expression pattern to the beginning of a string.\n    fullmatch Match a regular expression pattern to all of a string.\n    search    Search a string for the presence of a pattern.\n    sub       Substitute occurrences of a pattern found in a string.\n    subn      Same as sub, but also return the number of substitutions made.\n    split     Split a string by the occurrences of a pattern.\n    findall   Find all occurrences of a pattern in a string.\n    finditer  Return an iterator yielding a Match object for each match.\n    compile   Compile a pattern into a Pattern object.\n    purge     Clear the regular expression cache.\n    escape    Backslash all non-alphanumerics in a string.\n\nEach function other than purge and escape can take an optional 'flags' argument\nconsisting of one or more of the following module constants, joined by \"|\".\nA, L, and U are mutually exclusive.\n    A  ASCII       For string patterns, make \\w, \\W, \\b, \\B, \\d, \\D\n                   match the corresponding ASCII character categories\n                   (rather than the whole Unicode categories, which is the\n                   default).\n                   For bytes patterns, this flag is the only available\n                   behaviour and needn't be specified.\n    I  IGNORECASE  Perform case-insensitive matching.\n    L  LOCALE      Make \\w, \\W, \\b, \\B, dependent on the current locale.\n    M  MULTILINE   \"^\" matches the beginning of lines (after a newline)\n                   as well as the string.\n                   \"$\" matches the end of lines (before a newline) as well\n                   as the end of the string.\n    S  DOTALL      \".\" matches any character at all, including the newline.\n    X  VERBOSE     Ignore whitespace and comments for nicer looking RE's.\n    U  UNICODE     For compatibility only. Ignored for string patterns (it\n                   is the default), and forbidden for bytes patterns.\n\nThis module also defines an exception 'error'.",
+      "kind": "module"
+    },
+    "pproxy.proto.socket": {
+      "module": "pproxy.proto",
+      "qualname": "socket",
+      "docstring": "This module provides socket operations and some related functions.\nOn Unix, it supports IP (Internet Protocol) and Unix domain sockets.\nOn other systems, it only supports IP. Functions specific for a\nsocket are available as methods of the socket object.\n\nFunctions:\n\nsocket() -- create a new socket object\nsocketpair() -- create a pair of new socket objects [*]\nfromfd() -- create a socket object from an open file descriptor [*]\nsend_fds() -- Send file descriptor to the socket.\nrecv_fds() -- Receive file descriptors from the socket.\nfromshare() -- create a socket object from data received from socket.share() [*]\ngethostname() -- return the current hostname\ngethostbyname() -- map a hostname to its IP number\ngethostbyaddr() -- map an IP number or hostname to DNS info\ngetservbyname() -- map a service name and a protocol name to a port number\ngetprotobyname() -- map a protocol name (e.g. 'tcp') to a number\nntohs(), ntohl() -- convert 16, 32 bit int from network to host byte order\nhtons(), htonl() -- convert 16, 32 bit int from host to network byte order\ninet_aton() -- convert IP addr string (123.45.67.89) to 32-bit packed format\ninet_ntoa() -- convert 32-bit packed format IP to string (123.45.67.89)\nsocket.getdefaulttimeout() -- get the default timeout value\nsocket.setdefaulttimeout() -- set the default timeout value\ncreate_connection() -- connects to an address, with an optional timeout and\n                       optional source address.\n\n [*] not available on all platforms!\n\nSpecial objects:\n\nSocketType -- type object for socket objects\nerror -- exception raised for I/O errors\nhas_ipv6 -- boolean value indicating if IPv6 is supported\n\nIntEnum constants:\n\nAF_INET, AF_UNIX -- socket domains (first argument to socket() call)\nSOCK_STREAM, SOCK_DGRAM, SOCK_RAW -- socket types (second argument)\n\nInteger constants:\n\nMany other constants may be defined; these may be used in calls to\nthe setsockopt() and getsockopt() methods.",
+      "kind": "module"
+    },
+    "pproxy.proto.socks_address": {
+      "module": "pproxy.proto",
+      "qualname": "socks_address",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(reader, n)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.socks_address_stream": {
+      "module": "pproxy.proto",
+      "qualname": "socks_address_stream",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(reader, n)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.sslwrap": {
+      "module": "pproxy.proto",
+      "qualname": "sslwrap",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(reader, writer, sslcontext, server_side=False, server_hostname=None, verbose=None)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.struct": {
+      "module": "pproxy.proto",
+      "qualname": "struct",
+      "docstring": "Functions to convert between Python values and C structs.\nPython bytes objects are used to hold the data representing the C struct\nand also as format strings (explained below) to describe the layout of data\nin the C struct.\n\nThe optional first format char indicates byte order, size and alignment:\n  @: native order, size & alignment (default)\n  =: native order, std. size & alignment\n  <: little-endian, std. size & alignment\n  >: big-endian, std. size & alignment\n  !: same as >\n\nThe remaining chars indicate types of args and must match exactly;\nthese can be preceded by a decimal repeat count:\n  x: pad byte (no data); c:char; b:signed byte; B:unsigned byte;\n  ?: _Bool (requires C99; if not available, char is used instead)\n  h:short; H:unsigned short; i:int; I:unsigned int;\n  l:long; L:unsigned long; f:float; d:double; e:half-float.\nSpecial cases (preceding decimal count indicates length):\n  s:string (array of char); p: pascal string (with count byte).\nSpecial cases (only available in native format):\n  n:ssize_t; N:size_t;\n  P:an integer type that is wide enough to hold a pointer.\nSpecial case (not in native mode unless 'long long' in platform C):\n  q:long long; Q:unsigned long long\nWhitespace between formats is ignored.\n\nThe variable struct.error is an exception raised on errors.",
+      "kind": "module"
+    },
+    "pproxy.proto.time": {
+      "module": "pproxy.proto",
+      "qualname": "time",
+      "docstring": "This module provides various functions to manipulate time values.\n\nThere are two standard representations of time.  One is the number\nof seconds since the Epoch, in UTC (a.k.a. GMT).  It may be an integer\nor a floating point number (to represent fractions of seconds).\nThe Epoch is system-defined; on Unix, it is generally January 1st, 1970.\nThe actual value can be retrieved by calling gmtime(0).\n\nThe other representation is a tuple of 9 integers giving local time.\nThe tuple items are:\n  year (including century, e.g. 1998)\n  month (1-12)\n  day (1-31)\n  hours (0-23)\n  minutes (0-59)\n  seconds (0-59)\n  weekday (0-6, Monday is 0)\n  Julian day (day in the year, 1-366)\n  DST (Daylight Savings Time) flag (-1, 0 or 1)\nIf the DST flag is 0, the time is given in the regular time zone;\nif it is 1, the time is given in the DST time zone;\nif it is -1, mktime() should guess based on the date and time.",
+      "kind": "module"
+    },
+    "pproxy.proto.udp_accept": {
+      "module": "pproxy.proto",
+      "qualname": "udp_accept",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(protos, data, **kw)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.proto.urllib": {
+      "module": "pproxy.proto",
+      "qualname": "urllib",
+      "docstring": null,
+      "kind": "module"
+    },
+    "pproxy.cipher.AEADCipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AEADCipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "AEADCipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "nonce"
+      ]
+    },
+    "pproxy.cipher.AES_128_CFB8_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_128_CFB8_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CFB8_Cipher"
+      ],
+      "mro": [
+        "AES_128_CFB8_Cipher",
+        "AES_256_CFB8_Cipher",
+        "AES_256_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_128_CFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_128_CFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CFB_Cipher"
+      ],
+      "mro": [
+        "AES_128_CFB_Cipher",
+        "AES_256_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_128_CTR_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_128_CTR_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CTR_Cipher"
+      ],
+      "mro": [
+        "AES_128_CTR_Cipher",
+        "AES_256_CTR_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_128_GCM_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_128_GCM_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_GCM_Cipher"
+      ],
+      "mro": [
+        "AES_128_GCM_Cipher",
+        "AES_256_GCM_Cipher",
+        "AEADCipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "decrypt_and_verify": {
+          "signature": "(self, buffer, tag)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt_and_digest": {
+          "signature": "(self, buffer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "nonce"
+      ]
+    },
+    "pproxy.cipher.AES_128_OFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_128_OFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_OFB_Cipher"
+      ],
+      "mro": [
+        "AES_128_OFB_Cipher",
+        "AES_256_OFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_192_CFB8_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_192_CFB8_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CFB8_Cipher"
+      ],
+      "mro": [
+        "AES_192_CFB8_Cipher",
+        "AES_256_CFB8_Cipher",
+        "AES_256_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_192_CFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_192_CFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CFB_Cipher"
+      ],
+      "mro": [
+        "AES_192_CFB_Cipher",
+        "AES_256_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_192_CTR_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_192_CTR_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CTR_Cipher"
+      ],
+      "mro": [
+        "AES_192_CTR_Cipher",
+        "AES_256_CTR_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_192_GCM_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_192_GCM_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_GCM_Cipher"
+      ],
+      "mro": [
+        "AES_192_GCM_Cipher",
+        "AES_256_GCM_Cipher",
+        "AEADCipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "decrypt_and_verify": {
+          "signature": "(self, buffer, tag)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt_and_digest": {
+          "signature": "(self, buffer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "nonce"
+      ]
+    },
+    "pproxy.cipher.AES_192_OFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_192_OFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_OFB_Cipher"
+      ],
+      "mro": [
+        "AES_192_OFB_Cipher",
+        "AES_256_OFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_256_CFB8_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_256_CFB8_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AES_256_CFB_Cipher"
+      ],
+      "mro": [
+        "AES_256_CFB8_Cipher",
+        "AES_256_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_256_CFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_256_CFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "AES_256_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_256_CTR_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_256_CTR_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "AES_256_CTR_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.AES_256_GCM_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_256_GCM_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AEADCipher"
+      ],
+      "mro": [
+        "AES_256_GCM_Cipher",
+        "AEADCipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "decrypt_and_verify": {
+          "signature": "(self, buffer, tag)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt_and_digest": {
+          "signature": "(self, buffer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "nonce"
+      ]
+    },
+    "pproxy.cipher.AES_256_OFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "AES_256_OFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "AES_256_OFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.BF_CFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "BF_CFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "BF_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.BaseCipher": {
+      "module": "pproxy.cipher",
+      "qualname": "BaseCipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [],
+      "mro": [
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.CAST5_CFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "CAST5_CFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "CAST5_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.ChaCha20_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "ChaCha20_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "ChaCha20_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.ChaCha20_IETF_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "ChaCha20_IETF_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ChaCha20_Cipher"
+      ],
+      "mro": [
+        "ChaCha20_IETF_Cipher",
+        "ChaCha20_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "ChaCha20_IETF_POLY1305_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "AEADCipher"
+      ],
+      "mro": [
+        "ChaCha20_IETF_POLY1305_Cipher",
+        "AEADCipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "decrypt_and_verify": {
+          "signature": "(self, buffer, tag)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt_and_digest": {
+          "signature": "(self, buffer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "nonce"
+      ]
+    },
+    "pproxy.cipher.DES_CFB_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "DES_CFB_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "DES_CFB_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.PacketCipher": {
+      "module": "pproxy.cipher",
+      "qualname": "PacketCipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [],
+      "mro": [
+        "PacketCipher"
+      ],
+      "signature": "(cipher, key, name)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.RC4_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "RC4_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "RC4_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.RC4_MD5_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "RC4_MD5_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "RC4_Cipher"
+      ],
+      "mro": [
+        "RC4_MD5_Cipher",
+        "RC4_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.Salsa20_Cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "Salsa20_Cipher",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "BaseCipher"
+      ],
+      "mro": [
+        "Salsa20_Cipher",
+        "BaseCipher"
+      ],
+      "signature": "(key, ota=False, setup_key=True)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "decrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "encrypt": {
+          "signature": "(self, s)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "name": {
+          "signature": "()",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "setup_iv": {
+          "signature": "(self, iv=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.cipher.get_cipher": {
+      "module": "pproxy.cipher",
+      "qualname": "get_cipher",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(cipher_key)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.cipher.hashlib": {
+      "module": "pproxy.cipher",
+      "qualname": "hashlib",
+      "docstring": "hashlib module - A common interface to many hash functions.\n\nnew(name, data=b'', **kwargs) - returns a new hash object implementing the\n                                given hash function; initializing the hash\n                                using the given binary data.\n\nNamed constructor functions are also available, these are faster\nthan using new(name):\n\nmd5(), sha1(), sha224(), sha256(), sha384(), sha512(), blake2b(), blake2s(),\nsha3_224, sha3_256, sha3_384, sha3_512, shake_128, and shake_256.\n\nMore algorithms may be available on your platform but the above are guaranteed\nto exist.  See the algorithms_guaranteed and algorithms_available attributes\nto find out what algorithm names can be passed to new().\n\nNOTE: If you want the adler32 or crc32 hash functions they are available in\nthe zlib module.\n\nChoose your hash function wisely.  Some have known collision weaknesses.\nsha384 and sha512 will be slow on 32 bit platforms.\n\nHash objects have these methods:\n - update(data): Update the hash object with the bytes in data. Repeated calls\n                 are equivalent to a single call with the concatenation of all\n                 the arguments.\n - digest():     Return the digest of the bytes passed to the update() method\n                 so far as a bytes object.\n - hexdigest():  Like digest() except the digest is returned as a string\n                 of double length, containing only hexadecimal digits.\n - copy():       Return a copy (clone) of the hash object. This can be used to\n                 efficiently compute the digests of datas that share a common\n                 initial substring.\n\nFor example, to obtain the digest of the byte string 'Nobody inspects the\nspammish repetition':\n\n    >>> import hashlib\n    >>> m = hashlib.md5()\n    >>> m.update(b\"Nobody inspects\")\n    >>> m.update(b\" the spammish repetition\")\n    >>> m.digest()\n    b'\\xbbd\\x9c\\x83\\xdd\\x1e\\xa5\\xc9\\xd9\\xde\\xc9\\xa1\\x8d\\xf0\\xff\\xe9'\n\nMore condensed:\n\n    >>> hashlib.sha224(b\"Nobody inspects the spammish repetition\").hexdigest()\n    'a4337bc45a8fc544c03f52dc550cd6e1e87021bc896588bd79e901e2'",
+      "kind": "module"
+    },
+    "pproxy.cipher.hmac": {
+      "module": "pproxy.cipher",
+      "qualname": "hmac",
+      "docstring": "HMAC (Keyed-Hashing for Message Authentication) module.\n\nImplements the HMAC algorithm as described by RFC 2104.",
+      "kind": "module"
+    },
+    "pproxy.cipher.os": {
+      "module": "pproxy.cipher",
+      "qualname": "os",
+      "docstring": "OS routines for NT or Posix depending on what system we're on.\n\nThis exports:\n  - all functions from posix or nt, e.g. unlink, stat, etc.\n  - os.path is either posixpath or ntpath\n  - os.name is either 'posix' or 'nt'\n  - os.curdir is a string representing the current directory (always '.')\n  - os.pardir is a string representing the parent directory (always '..')\n  - os.sep is the (or a most common) pathname separator ('/' or '\\\\')\n  - os.extsep is the extension separator (always '.')\n  - os.altsep is the alternate pathname separator (None or '/')\n  - os.pathsep is the component separator used in $PATH etc\n  - os.linesep is the line separator in text files ('\\r' or '\\n' or '\\r\\n')\n  - os.defpath is the default search path for executables\n  - os.devnull is the file path of the null device ('/dev/null', etc.)\n\nPrograms that import and use 'os' stand a better chance of being\nportable between different platforms.  Of course, they must then\nonly use functions that are defined by all platforms (e.g., unlink\nand opendir), and leave all pathname manipulation to os.path\n(e.g., split and join).",
+      "kind": "module"
+    },
+    "pproxy.server.AuthTable": {
+      "module": "pproxy.server",
+      "qualname": "AuthTable",
+      "docstring": null,
+      "kind": "class",
+      "bases": [],
+      "mro": [
+        "AuthTable"
+      ],
+      "signature": "(remote_ip, authtime)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "authed": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "set_authed": {
+          "signature": "(self, user)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": []
+    },
+    "pproxy.server.DUMMY": {
+      "module": "pproxy.server",
+      "qualname": "<lambda>",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(s)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.ProxyBackward": {
+      "module": "pproxy.server",
+      "qualname": "ProxyBackward",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ProxySimple"
+      ],
+      "mro": [
+        "ProxyBackward",
+        "ProxySimple",
+        "ProxyDirect"
+      ],
+      "signature": "(backward, backward_num, **kw)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "close": {
+          "signature": "(self)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_backward_client": {
+          "signature": "(self, args)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server": {
+          "signature": "(self, args, stream_handler=<function stream_handler at 0x10b5c0fe0>)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server_run": {
+          "signature": "(self, handler)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_start_server": {
+          "signature": "(self, args)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, *args)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "auth",
+        "direct",
+        "rproto"
+      ]
+    },
+    "pproxy.server.ProxyDirect": {
+      "module": "pproxy.server",
+      "qualname": "ProxyDirect",
+      "docstring": null,
+      "kind": "class",
+      "bases": [],
+      "mro": [
+        "ProxyDirect"
+      ],
+      "signature": "(lbind=None)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, host, port, local_addr, family)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "direct"
+      ]
+    },
+    "pproxy.server.ProxyH2": {
+      "module": "pproxy.server",
+      "qualname": "ProxyH2",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ProxySimple"
+      ],
+      "mro": [
+        "ProxyH2",
+        "ProxySimple",
+        "ProxyDirect"
+      ],
+      "signature": "(sslserver, sslclient, **kw)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "get_stream": {
+          "signature": "(self, conn, writer, stream_id)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "handler": {
+          "signature": "(self, reader, writer, client_side=True, stream_handler=None, **kw)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server": {
+          "signature": "(self, args, stream_handler=<function stream_handler at 0x10b5c0fe0>)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_start_server": {
+          "signature": "(self, args)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_h2_connection": {
+          "signature": "(self, local_addr, family)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, host, port, local_addr, family)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "auth",
+        "direct",
+        "rproto"
+      ]
+    },
+    "pproxy.server.ProxyH3": {
+      "module": "pproxy.server",
+      "qualname": "ProxyH3",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ProxyQUIC"
+      ],
+      "mro": [
+        "ProxyH3",
+        "ProxyQUIC",
+        "ProxySimple",
+        "ProxyDirect"
+      ],
+      "signature": "(quicserver, quicclient, **kw)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "get_protocol": {
+          "signature": "(self, server_side=False, handler=None)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "get_stream": {
+          "signature": "(self, conn, stream_id)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "patch_writer": {
+          "signature": "(self, writer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server": {
+          "signature": "(self, args, stream_handler=<function stream_handler at 0x10b5c0fe0>)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_start_server": {
+          "signature": "(self, args)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_h3_connection": {
+          "signature": "(self)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, *args)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_quic_connection": {
+          "signature": "(self)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "auth",
+        "direct",
+        "rproto"
+      ]
+    },
+    "pproxy.server.ProxyQUIC": {
+      "module": "pproxy.server",
+      "qualname": "ProxyQUIC",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ProxySimple"
+      ],
+      "mro": [
+        "ProxyQUIC",
+        "ProxySimple",
+        "ProxyDirect"
+      ],
+      "signature": "(quicserver, quicclient, **kw)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "patch_writer": {
+          "signature": "(self, writer)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server": {
+          "signature": "(self, args, stream_handler=<function stream_handler at 0x10b5c0fe0>)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_start_server": {
+          "signature": "(self, args)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, *args)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_quic_connection": {
+          "signature": "(self)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "auth",
+        "direct",
+        "rproto"
+      ]
+    },
+    "pproxy.server.ProxySSH": {
+      "module": "pproxy.server",
+      "qualname": "ProxySSH",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ProxySimple"
+      ],
+      "mro": [
+        "ProxySSH",
+        "ProxySimple",
+        "ProxyDirect"
+      ],
+      "signature": "(**kw)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "patch_stream": {
+          "signature": "(self, ssh_reader, writer, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server": {
+          "signature": "(self, args, stream_handler=<function stream_handler at 0x10b5c0fe0>, tunnel=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_start_server": {
+          "signature": "(self, args)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, host, port, local_addr, family, tunnel=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_ssh_connection": {
+          "signature": "(self, local_addr=None, family=0, tunnel=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "auth",
+        "direct",
+        "rproto"
+      ]
+    },
+    "pproxy.server.ProxySimple": {
+      "module": "pproxy.server",
+      "qualname": "ProxySimple",
+      "docstring": null,
+      "kind": "class",
+      "bases": [
+        "ProxyDirect"
+      ],
+      "mro": [
+        "ProxySimple",
+        "ProxyDirect"
+      ],
+      "signature": "(jump, protos, cipher, users, rule, bind, host_name, port, unix, lbind, sslclient, sslserver)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false,
+      "methods": {
+        "connection_change": {
+          "signature": "(self, delta)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "destination": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "logtext": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "match_rule": {
+          "signature": "(self, host, port)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "open_connection": {
+          "signature": "(self, host, port, local_addr, lbind, timeout=60)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "prepare_connection": {
+          "signature": "(self, reader_remote, writer_remote, host, port)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "start_server": {
+          "signature": "(self, args, stream_handler=<function stream_handler at 0x10b5c0fe0>)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "tcp_connect": {
+          "signature": "(self, host, port, local_addr=None, lbind=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_open_connection": {
+          "signature": "(self, host, port, data, addr, reply)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_packet_unpack": {
+          "signature": "(self, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_prepare_connection": {
+          "signature": "(self, host, port, data)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_sendto": {
+          "signature": "(self, host, port, data, answer_cb, local_addr=None)",
+          "is_coroutine": true,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "udp_start_server": {
+          "signature": "(self, args)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        },
+        "wait_open_connection": {
+          "signature": "(self, host, port, local_addr, family)",
+          "is_coroutine": false,
+          "is_generator": false,
+          "is_async_generator": false
+        }
+      },
+      "properties": [
+        "auth",
+        "direct",
+        "rproto"
+      ]
+    },
+    "pproxy.server.argparse": {
+      "module": "pproxy.server",
+      "qualname": "argparse",
+      "docstring": "Command-line parsing library\n\nThis module is an optparse-inspired command-line parsing library that:\n\n    - handles both optional and positional arguments\n    - produces highly informative usage messages\n    - supports parsers that dispatch to sub-parsers\n\nThe following is a simple usage example that sums integers from the\ncommand-line and writes the result to a file::\n\n    parser = argparse.ArgumentParser(\n        description='sum the integers at the command line')\n    parser.add_argument(\n        'integers', metavar='int', nargs='+', type=int,\n        help='an integer to be summed')\n    parser.add_argument(\n        '--log', default=sys.stdout, type=argparse.FileType('w'),\n        help='the file where the sum should be written')\n    args = parser.parse_args()\n    args.log.write('%s' % sum(args.integers))\n    args.log.close()\n\nThe module contains the following public classes:\n\n    - ArgumentParser -- The main entry point for command-line parsing. As the\n        example above shows, the add_argument() method is used to populate\n        the parser with actions for optional and positional arguments. Then\n        the parse_args() method is invoked to convert the args at the\n        command-line into an object with attributes.\n\n    - ArgumentError -- The exception raised by ArgumentParser objects when\n        there are errors with the parser's actions. Errors raised while\n        parsing the command-line are caught by ArgumentParser and emitted\n        as command-line messages.\n\n    - FileType -- A factory for defining types of files to be created. As the\n        example above shows, instances of FileType are typically passed as\n        the type= argument of add_argument() calls.\n\n    - Action -- The base class for parser actions. Typically actions are\n        selected by passing strings like 'store_true' or 'append_const' to\n        the action= argument of add_argument(). However, for greater\n        customization of ArgumentParser actions, subclasses of Action may\n        be defined and passed as the action= argument.\n\n    - HelpFormatter, RawDescriptionHelpFormatter, RawTextHelpFormatter,\n        ArgumentDefaultsHelpFormatter -- Formatter classes which\n        may be passed as the formatter_class= argument to the\n        ArgumentParser constructor. HelpFormatter is the default,\n        RawDescriptionHelpFormatter and RawTextHelpFormatter tell the parser\n        not to change the formatting for help text, and\n        ArgumentDefaultsHelpFormatter adds information about argument defaults\n        to the help.\n\nAll other classes in this module are considered implementation details.\n(Also note that HelpFormatter and RawDescriptionHelpFormatter are only\nconsidered public as object names -- the API of the formatter objects is\nstill considered an implementation detail.)",
+      "kind": "module"
+    },
+    "pproxy.server.asyncio": {
+      "module": "pproxy.server",
+      "qualname": "asyncio",
+      "docstring": "The asyncio package, tracking PEP 3156.",
+      "kind": "module"
+    },
+    "pproxy.server.base64": {
+      "module": "pproxy.server",
+      "qualname": "base64",
+      "docstring": "Base16, Base32, Base64 (RFC 3548), Base85 and Ascii85 data encodings",
+      "kind": "module"
+    },
+    "pproxy.server.check_server_alive": {
+      "module": "pproxy.server",
+      "qualname": "check_server_alive",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(interval, rserver, verbose)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.compile_rule": {
+      "module": "pproxy.server",
+      "qualname": "compile_rule",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(filename)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.datagram_handler": {
+      "module": "pproxy.server",
+      "qualname": "datagram_handler",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(writer, data, addr, protos, urserver, block, cipher, salgorithm, verbose=<function <lambda> at 0x109d6b100>, **kwargs)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.functools": {
+      "module": "pproxy.server",
+      "qualname": "functools",
+      "docstring": "functools.py - Tools for working with functions and callable objects",
+      "kind": "module"
+    },
+    "pproxy.server.main": {
+      "module": "pproxy.server",
+      "qualname": "main",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(args=None)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.patch_StreamReader": {
+      "module": "pproxy.server",
+      "qualname": "patch_StreamReader",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(c=<class 'asyncio.streams.StreamReader'>)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.patch_StreamWriter": {
+      "module": "pproxy.server",
+      "qualname": "patch_StreamWriter",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(c=<class 'asyncio.streams.StreamWriter'>)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.prepare_ciphers": {
+      "module": "pproxy.server",
+      "qualname": "prepare_ciphers",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(cipher, reader, writer, bind=None, server_side=True)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.print_server_started": {
+      "module": "pproxy.server",
+      "qualname": "print_server_started",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(option, server, print_fn)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.proto": {
+      "module": "pproxy.server",
+      "qualname": "proto",
+      "docstring": null,
+      "kind": "module"
+    },
+    "pproxy.server.proxies_by_uri": {
+      "module": "pproxy.server",
+      "qualname": "proxies_by_uri",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(uri_jumps)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.proxy_by_uri": {
+      "module": "pproxy.server",
+      "qualname": "proxy_by_uri",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(uri, jump)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.random": {
+      "module": "pproxy.server",
+      "qualname": "random",
+      "docstring": "Random variable generators.\n\n    bytes\n    -----\n           uniform bytes (values between 0 and 255)\n\n    integers\n    --------\n           uniform within range\n\n    sequences\n    ---------\n           pick random element\n           pick random sample\n           pick weighted random sample\n           generate random permutation\n\n    distributions on the real line:\n    ------------------------------\n           uniform\n           triangular\n           normal (Gaussian)\n           lognormal\n           negative exponential\n           gamma\n           beta\n           pareto\n           Weibull\n\n    distributions on the circle (angles 0 to 2pi)\n    ---------------------------------------------\n           circular uniform\n           von Mises\n\nGeneral notes on the underlying Mersenne Twister core generator:\n\n* The period is 2**19937-1.\n* It is one of the most extensively tested generators in existence.\n* The random() method is implemented in C, executes in a single Python step,\n  and is, therefore, threadsafe.",
+      "kind": "module"
+    },
+    "pproxy.server.re": {
+      "module": "pproxy.server",
+      "qualname": "re",
+      "docstring": "Support for regular expressions (RE).\n\nThis module provides regular expression matching operations similar to\nthose found in Perl.  It supports both 8-bit and Unicode strings; both\nthe pattern and the strings being processed can contain null bytes and\ncharacters outside the US ASCII range.\n\nRegular expressions can contain both special and ordinary characters.\nMost ordinary characters, like \"A\", \"a\", or \"0\", are the simplest\nregular expressions; they simply match themselves.  You can\nconcatenate ordinary characters, so last matches the string 'last'.\n\nThe special characters are:\n    \".\"      Matches any character except a newline.\n    \"^\"      Matches the start of the string.\n    \"$\"      Matches the end of the string or just before the newline at\n             the end of the string.\n    \"*\"      Matches 0 or more (greedy) repetitions of the preceding RE.\n             Greedy means that it will match as many repetitions as possible.\n    \"+\"      Matches 1 or more (greedy) repetitions of the preceding RE.\n    \"?\"      Matches 0 or 1 (greedy) of the preceding RE.\n    *?,+?,?? Non-greedy versions of the previous three special characters.\n    {m,n}    Matches from m to n repetitions of the preceding RE.\n    {m,n}?   Non-greedy version of the above.\n    \"\\\\\"     Either escapes special characters or signals a special sequence.\n    []       Indicates a set of characters.\n             A \"^\" as the first character indicates a complementing set.\n    \"|\"      A|B, creates an RE that will match either A or B.\n    (...)    Matches the RE inside the parentheses.\n             The contents can be retrieved or matched later in the string.\n    (?aiLmsux) The letters set the corresponding flags defined below.\n    (?:...)  Non-grouping version of regular parentheses.\n    (?P<name>...) The substring matched by the group is accessible by name.\n    (?P=name)     Matches the text matched earlier by the group named name.\n    (?#...)  A comment; ignored.\n    (?=...)  Matches if ... matches next, but doesn't consume the string.\n    (?!...)  Matches if ... doesn't match next.\n    (?<=...) Matches if preceded by ... (must be fixed length).\n    (?<!...) Matches if not preceded by ... (must be fixed length).\n    (?(id/name)yes|no) Matches yes pattern if the group with id/name matched,\n                       the (optional) no pattern otherwise.\n\nThe special sequences consist of \"\\\\\" and a character from the list\nbelow.  If the ordinary character is not on the list, then the\nresulting RE will match the second character.\n    \\number  Matches the contents of the group of the same number.\n    \\A       Matches only at the start of the string.\n    \\Z       Matches only at the end of the string.\n    \\b       Matches the empty string, but only at the start or end of a word.\n    \\B       Matches the empty string, but not at the start or end of a word.\n    \\d       Matches any decimal digit; equivalent to the set [0-9] in\n             bytes patterns or string patterns with the ASCII flag.\n             In string patterns without the ASCII flag, it will match the whole\n             range of Unicode digits.\n    \\D       Matches any non-digit character; equivalent to [^\\d].\n    \\s       Matches any whitespace character; equivalent to [ \\t\\n\\r\\f\\v] in\n             bytes patterns or string patterns with the ASCII flag.\n             In string patterns without the ASCII flag, it will match the whole\n             range of Unicode whitespace characters.\n    \\S       Matches any non-whitespace character; equivalent to [^\\s].\n    \\w       Matches any alphanumeric character; equivalent to [a-zA-Z0-9_]\n             in bytes patterns or string patterns with the ASCII flag.\n             In string patterns without the ASCII flag, it will match the\n             range of Unicode alphanumeric characters (letters plus digits\n             plus underscore).\n             With LOCALE, it will match the set [0-9_] plus characters defined\n             as letters for the current locale.\n    \\W       Matches the complement of \\w.\n    \\\\       Matches a literal backslash.\n\nThis module exports the following functions:\n    match     Match a regular expression pattern to the beginning of a string.\n    fullmatch Match a regular expression pattern to all of a string.\n    search    Search a string for the presence of a pattern.\n    sub       Substitute occurrences of a pattern found in a string.\n    subn      Same as sub, but also return the number of substitutions made.\n    split     Split a string by the occurrences of a pattern.\n    findall   Find all occurrences of a pattern in a string.\n    finditer  Return an iterator yielding a Match object for each match.\n    compile   Compile a pattern into a Pattern object.\n    purge     Clear the regular expression cache.\n    escape    Backslash all non-alphanumerics in a string.\n\nEach function other than purge and escape can take an optional 'flags' argument\nconsisting of one or more of the following module constants, joined by \"|\".\nA, L, and U are mutually exclusive.\n    A  ASCII       For string patterns, make \\w, \\W, \\b, \\B, \\d, \\D\n                   match the corresponding ASCII character categories\n                   (rather than the whole Unicode categories, which is the\n                   default).\n                   For bytes patterns, this flag is the only available\n                   behaviour and needn't be specified.\n    I  IGNORECASE  Perform case-insensitive matching.\n    L  LOCALE      Make \\w, \\W, \\b, \\B, dependent on the current locale.\n    M  MULTILINE   \"^\" matches the beginning of lines (after a newline)\n                   as well as the string.\n                   \"$\" matches the end of lines (before a newline) as well\n                   as the end of the string.\n    S  DOTALL      \".\" matches any character at all, including the newline.\n    X  VERBOSE     Ignore whitespace and comments for nicer looking RE's.\n    U  UNICODE     For compatibility only. Ignored for string patterns (it\n                   is the default), and forbidden for bytes patterns.\n\nThis module also defines an exception 'error'.",
+      "kind": "module"
+    },
+    "pproxy.server.schedule": {
+      "module": "pproxy.server",
+      "qualname": "schedule",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(rserver, salgorithm, host_name, port)",
+      "is_coroutine": false,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.socket": {
+      "module": "pproxy.server",
+      "qualname": "socket",
+      "docstring": "This module provides socket operations and some related functions.\nOn Unix, it supports IP (Internet Protocol) and Unix domain sockets.\nOn other systems, it only supports IP. Functions specific for a\nsocket are available as methods of the socket object.\n\nFunctions:\n\nsocket() -- create a new socket object\nsocketpair() -- create a pair of new socket objects [*]\nfromfd() -- create a socket object from an open file descriptor [*]\nsend_fds() -- Send file descriptor to the socket.\nrecv_fds() -- Receive file descriptors from the socket.\nfromshare() -- create a socket object from data received from socket.share() [*]\ngethostname() -- return the current hostname\ngethostbyname() -- map a hostname to its IP number\ngethostbyaddr() -- map an IP number or hostname to DNS info\ngetservbyname() -- map a service name and a protocol name to a port number\ngetprotobyname() -- map a protocol name (e.g. 'tcp') to a number\nntohs(), ntohl() -- convert 16, 32 bit int from network to host byte order\nhtons(), htonl() -- convert 16, 32 bit int from host to network byte order\ninet_aton() -- convert IP addr string (123.45.67.89) to 32-bit packed format\ninet_ntoa() -- convert 32-bit packed format IP to string (123.45.67.89)\nsocket.getdefaulttimeout() -- get the default timeout value\nsocket.setdefaulttimeout() -- set the default timeout value\ncreate_connection() -- connects to an address, with an optional timeout and\n                       optional source address.\n\n [*] not available on all platforms!\n\nSpecial objects:\n\nSocketType -- type object for socket objects\nerror -- exception raised for I/O errors\nhas_ipv6 -- boolean value indicating if IPv6 is supported\n\nIntEnum constants:\n\nAF_INET, AF_UNIX -- socket domains (first argument to socket() call)\nSOCK_STREAM, SOCK_DGRAM, SOCK_RAW -- socket types (second argument)\n\nInteger constants:\n\nMany other constants may be defined; these may be used in calls to\nthe setsockopt() and getsockopt() methods.",
+      "kind": "module"
+    },
+    "pproxy.server.stream_handler": {
+      "module": "pproxy.server",
+      "qualname": "stream_handler",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(reader, writer, unix, lbind, protos, rserver, cipher, sslserver, debug=0, authtime=2592000, block=None, salgorithm='fa', verbose=<function <lambda> at 0x109d6b100>, modstat=<function <lambda> at 0x10b5c2f20>, **kwargs)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.test_url": {
+      "module": "pproxy.server",
+      "qualname": "test_url",
+      "docstring": null,
+      "kind": "function",
+      "signature": "(url, rserver)",
+      "is_coroutine": true,
+      "is_generator": false,
+      "is_async_generator": false
+    },
+    "pproxy.server.time": {
+      "module": "pproxy.server",
+      "qualname": "time",
+      "docstring": "This module provides various functions to manipulate time values.\n\nThere are two standard representations of time.  One is the number\nof seconds since the Epoch, in UTC (a.k.a. GMT).  It may be an integer\nor a floating point number (to represent fractions of seconds).\nThe Epoch is system-defined; on Unix, it is generally January 1st, 1970.\nThe actual value can be retrieved by calling gmtime(0).\n\nThe other representation is a tuple of 9 integers giving local time.\nThe tuple items are:\n  year (including century, e.g. 1998)\n  month (1-12)\n  day (1-31)\n  hours (0-23)\n  minutes (0-59)\n  seconds (0-59)\n  weekday (0-6, Monday is 0)\n  Julian day (day in the year, 1-366)\n  DST (Daylight Savings Time) flag (-1, 0 or 1)\nIf the DST flag is 0, the time is given in the regular time zone;\nif it is 1, the time is given in the DST time zone;\nif it is -1, mktime() should guess based on the date and time.",
+      "kind": "module"
+    },
+    "pproxy.server.urllib": {
+      "module": "pproxy.server",
+      "qualname": "urllib",
+      "docstring": null,
+      "kind": "module"
+    }
+  },
+  "aliases": {
+    "pproxy.Connection": "pproxy.server.proxies_by_uri",
+    "pproxy.DIRECT": "pproxy.server.DIRECT",
+    "pproxy.Rule": "pproxy.server.compile_rule",
+    "pproxy.Server": "pproxy.server.proxies_by_uri",
+    "pproxy.server.compile_rule": "pproxy.Rule",
+    "pproxy.server.proxies_by_uri": "pproxy.Connection"
+  },
+  "constants": {
+    "pproxy.DIRECT": "<pproxy.server.ProxyDirect object at 0x109d77050>",
+    "pproxy.proto.HTTP_LINE": "re.compile('([^ ]+) +(.+?) +(HTTP/[^ ]+)$')",
+    "pproxy.proto.MAPPINGS": "{'direct': <class 'pproxy.proto.Direct'>, 'http': <class 'pproxy.proto.HTTP'>, 'httponly': <class 'pproxy.proto.HTTPOnly'>, 'ssh': <class 'pproxy.proto.SSH'>, 'socks5': <class 'pproxy.proto.Socks5'>, 'socks4': <class 'pproxy.proto.Socks4'>, 'socks': <class 'pproxy.proto.Socks5'>, 'ss': <class 'pproxy.proto.SS'>, 'ssr': <class 'pproxy.proto.SSR'>, 'redir': <class 'pproxy.proto.Redir'>, 'pf': <class 'pproxy.proto.Pf'>, 'tunnel': <class 'pproxy.proto.Tunnel'>, 'echo': <class 'pproxy.proto.Echo'>, 'ws': <cla...",
+    "pproxy.proto.SOL_IPV6": 41,
+    "pproxy.proto.SO_ORIGINAL_DST": 80,
+    "pproxy.cipher.MAP": "{'rc4': <class 'pproxy.cipher.RC4_Cipher'>, 'rc4-md5': <class 'pproxy.cipher.RC4_MD5_Cipher'>, 'chacha20': <class 'pproxy.cipher.ChaCha20_Cipher'>, 'chacha20-ietf': <class 'pproxy.cipher.ChaCha20_IETF_Cipher'>, 'salsa20': <class 'pproxy.cipher.Salsa20_Cipher'>, 'aes-256-cfb': <class 'pproxy.cipher.AES_256_CFB_Cipher'>, 'aes-128-cfb': <class 'pproxy.cipher.AES_128_CFB_Cipher'>, 'aes-192-cfb': <class 'pproxy.cipher.AES_192_CFB_Cipher'>, 'aes-256-cfb8': <class 'pproxy.cipher.AES_256_CFB8_Cipher'>, 'aes-192-...",
+    "pproxy.server.DIRECT": "<pproxy.server.ProxyDirect object at 0x109d77050>",
+    "pproxy.server.SOCKET_TIMEOUT": 60,
+    "pproxy.server.UDP_LIMIT": 30,
+    "pproxy.server.sslcontexts": []
+  }
+}

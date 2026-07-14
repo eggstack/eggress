@@ -368,3 +368,45 @@ The full Phase 36 release audit is gated and requires Python 3.11 (pproxy
 2.7.9 is incompatible with Python 3.14). See
 `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the gating rationale.
 - `target/compat/pproxy-parity-report.md`
+
+## Phase C1: Python API Contract Tests
+
+The pproxy API contract is a machine-readable inventory of every public symbol
+in pproxy 2.7.9, with signatures, class hierarchies, async classifications,
+and behavioral probes.
+
+### Contract files
+
+| File | Purpose |
+|------|---------|
+| `python/compat/pproxy_api_contract.json` | Generated API contract (105 symbols) |
+| `python/compat/classification.json` | Tier classification for each symbol |
+| `python/compat/behavioral_probe_results.json` | Dynamic behavior probe results |
+| `python/compat/extract_api.py` | Contract extractor script |
+| `python/compat/behavioral_probes.py` | Behavioral probe runner |
+| `python/compat/classification.py` | Classification mapper |
+| `tests/compat/test_pproxy_api_contract.py` | 56 contract validation tests |
+
+### Running
+
+```bash
+# Regenerate contract (requires pproxy==2.7.9 installed)
+python3.11 python/compat/extract_api.py
+
+# Run behavioral probes
+python3.11 python/compat/behavioral_probes.py
+
+# Run classification
+python3.11 python/compat/classification.py
+
+# Run contract validation tests
+python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
+```
+
+### Classification tiers
+
+- `exact_target`: must match directly
+- `adapted_target`: same use case via compatibility wrapper
+- `unsupported_release_blocker`: required for drop-in parity
+- `intentional_non_parity`: with explicit rationale
+- `internal_observed`: publicly reachable but not stable API

@@ -314,6 +314,18 @@ EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3.11 -m pytest python/tests/test_ppro
 # Run Phase 40 pproxy drop-in API tests
 python3.11 -m pytest python/tests/test_pproxy_dropin.py -v
 
+# Run Phase C1 API contract tests
+python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
+
+# Regenerate the pproxy API contract
+python3.11 python/compat/extract_api.py
+
+# Run behavioral probes
+python3.11 python/compat/behavioral_probes.py
+
+# Run classification report
+python3.11 python/compat/classification.py
+
 # Build and test Python wheel
 maturin build --release --out dist
 python3.11 -m venv .venv-wheel-test
@@ -418,7 +430,15 @@ eggress/
 │   ├── eggress-embed/      # Stable Rust embed API: config, service, handle, errors
 │   ├── eggress-python/     # Python bindings via PyO3 (wraps eggress-embed)
 │   │   └── pyproject.toml      # Authoritative release build config (maturin)
+│   ├── compat/
+│   │   ├── extract_api.py              # Phase C1: pproxy API contract extractor
+│   │   ├── behavioral_probes.py        # Phase C1: dynamic behavior probes
+│   │   ├── classification.py           # Phase C1: tier classification mapper
+│   │   ├── pproxy_api_contract.json    # Phase C1: generated API contract
+│   │   ├── classification.json         # Phase C1: classification results
+│   │   └── behavioral_probe_results.json # Phase C1: probe results
 │   ├── test_pproxy_dropin.py       # Phase 40: PPProxyService, CompatibilityReport, start_pproxy tests
+│   ├── test_pproxy_api_contract.py     # Phase C1: contract validation tests
 │   └── eggress-testkit/   # Test utilities
 │       └── src/oracle/
 │           ├── mod.rs        # Oracle gate, timeouts, module root
@@ -592,6 +612,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Phase 25-28 hardening pass**: Verified implementation matches documentation. H1 added SAFETY comments and `read_unaligned` to transparent listener; H3 corrected Linux/macOS platform capability semantics (macOS PF now honestly reports `KernelUnsupported`); H4 hardened Unix listener (`unlink_existing=true` refuses non-socket paths); H5/H6/H7 refused H2/WS/Raw as listener protocols (upstream-only; Phase B4 promoted H2 to runtime-integrated); H8 added QUIC/H3 structured-rejection tests; H9 wired reverse proxy through supervisor with `reverse_runtime.rs` (10 tests); H10 added payload-level reverse differential test; H11 added `ReverseServerConfig::validate()` for non-loopback safety; H13 added URI corpus integrity validator; H14/H15 audited and corrected docs (README, PARITY_MATRIX.md, METRICS.md). See `docs/PHASE_25_28_HARDENING_COMPLETION.md` for the full record.
 - **Phase 50 security gate**: DNS rebinding protection (reserved IP rejection after DNS resolution in `DirectConnector`); standalone UDP validation wired to `validate_standalone_target()`; auth failure metrics (`eggress_auth_failures_total`); 8 fuzz targets (uri_parse, socks5_handshake, socks5_udp_datagram, http_connect_response, trojan_request, route_match, shadowsocks_frame, toml_config); soak tests (slowloris, auth failure burst, UDP association churn). Security docs: `SECURITY.md`, `docs/security/SECURE_CONFIGURATION.md`, `docs/security/PPROXY_COMPAT_SECURITY_DIFFERENCES.md`. See `docs/SECURITY_REVIEW.md` for the full threat model and residual risks.
 - **System proxy**: `eggress-system-proxy` provides read-only system proxy inspection, platform capability detection, and explicit dry-run apply. CLI subcommand `eggress system-proxy inspect` reads current settings. No hidden global mutation; apply requires explicit `--apply` flag. Supports macOS (`networksetup`), Windows (registry), Linux (`gsettings`), and environment variables. `CommandRunner` trait enables testable command execution. See `docs/system_proxy/`.
+- **Python API contract freeze (Phase C1)**: Machine-readable pproxy 2.7.9 API contract at `python/compat/pproxy_api_contract.json` (105 symbols, 10 constants, 6 aliases). Extracted via `python/compat/extract_api.py`. Behavioral probes at `python/compat/behavioral_probes.py` (46 probes). Classification at `python/compat/classification.json` (3 adapted, 1 intentional non-parity, 87 internal). Contract validator at `tests/compat/test_pproxy_api_contract.py` (56 tests). Namespace strategy ADR at `docs/python/PPROXY_NAMESPACE_STRATEGY.md`. No `import pproxy` shim; compat bundled in main `eggress` package.
 
 ## Skills
 

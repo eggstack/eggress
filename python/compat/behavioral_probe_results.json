@@ -1,0 +1,818 @@
+{
+  "total": 46,
+  "passed": 46,
+  "failed": 0,
+  "results": [
+    {
+      "probe": "connection_attributes",
+      "is_callable": true,
+      "type": "function",
+      "module": "pproxy.server",
+      "qualname": "proxies_by_uri",
+      "pass": true
+    },
+    {
+      "probe": "server_attributes",
+      "is_callable": true,
+      "type": "function",
+      "qualname": "proxies_by_uri",
+      "pass": true
+    },
+    {
+      "probe": "rule_attributes",
+      "is_callable": true,
+      "type": "function",
+      "qualname": "compile_rule",
+      "pass": true
+    },
+    {
+      "probe": "direct_singleton_type",
+      "type": "ProxyDirect",
+      "mro": [
+        "ProxyDirect",
+        "object"
+      ],
+      "module": "pproxy.server",
+      "pass": true
+    },
+    {
+      "probe": "direct_properties",
+      "direct_prop": "bool",
+      "direct_value": true,
+      "has_connection_change": true,
+      "has_destination": true,
+      "has_logtext": true,
+      "has_match_rule": true,
+      "has_open_connection": true,
+      "has_tcp_connect": true,
+      "has_wait_open_connection": true,
+      "pass": true
+    },
+    {
+      "probe": "socket_timeout_value",
+      "SOCKET_TIMEOUT": 60,
+      "type": "int",
+      "pass": true
+    },
+    {
+      "probe": "udp_limit_value",
+      "UDP_LIMIT": 30,
+      "type": "int",
+      "pass": true
+    },
+    {
+      "probe": "sslcontexts_default",
+      "sslcontexts": [],
+      "type": "list",
+      "len": 0,
+      "pass": true
+    },
+    {
+      "probe": "connection_no_args",
+      "exception_type": "TypeError",
+      "error": "proxies_by_uri() missing 1 required positional argument: 'uri_jumps'",
+      "pass": true
+    },
+    {
+      "probe": "connection_invalid_type",
+      "exception_type": "AttributeError",
+      "error": "'int' object has no attribute 'split'",
+      "pass": true
+    },
+    {
+      "probe": "rule_no_args",
+      "exception_type": "TypeError",
+      "error": "compile_rule() missing 1 required positional argument: 'filename'",
+      "pass": true
+    },
+    {
+      "probe": "baseprotocol_no_args",
+      "exception_type": "TypeError",
+      "error": "BaseProtocol.__init__() missing 1 required positional argument: 'param'",
+      "pass": true
+    },
+    {
+      "probe": "basecipher_no_args",
+      "exception_type": "TypeError",
+      "error": "BaseCipher.__init__() missing 1 required positional argument: 'key'",
+      "pass": true
+    },
+    {
+      "probe": "auth_table_no_args",
+      "exception_type": "TypeError",
+      "error": "AuthTable.__init__() missing 2 required positional arguments: 'remote_ip' and 'authtime'",
+      "pass": true
+    },
+    {
+      "probe": "connection_server_same_object",
+      "same": true,
+      "connection_is_server": true,
+      "pass": true
+    },
+    {
+      "probe": "direct_is_proxydirect_instance",
+      "is_proxydirect": true,
+      "direct_server_same": true,
+      "pass": true
+    },
+    {
+      "probe": "proto_module_accessible",
+      "pproxy_proto_is_pproxy_proto": true,
+      "has_direct": true,
+      "has_socks5": true,
+      "has_http": true,
+      "has_ss": true,
+      "has_trojan": true,
+      "pass": true
+    },
+    {
+      "probe": "server_module_accessible",
+      "has_ProxyDirect": true,
+      "has_ProxySimple": true,
+      "has_ProxyBackward": true,
+      "has_ProxyH2": true,
+      "has_ProxyH3": true,
+      "has_ProxyQUIC": true,
+      "has_ProxySSH": true,
+      "has_AuthTable": true,
+      "has_stream_handler": true,
+      "has_main": true,
+      "pass": true
+    },
+    {
+      "probe": "direct_repr",
+      "repr": "<pproxy.server.ProxyDirect object at 0x108e15550>",
+      "str": "<pproxy.server.ProxyDirect object at 0x108e15550>",
+      "repr_type": "str",
+      "pass": true
+    },
+    {
+      "probe": "baseprotocol_repr",
+      "repr": "<pproxy.proto.BaseProtocol object at 0x10c79d110>",
+      "str": "<pproxy.proto.BaseProtocol object at 0x10c79d110>",
+      "pass": true
+    },
+    {
+      "probe": "direct_class_repr",
+      "repr": "<class 'pproxy.proto.Direct'>",
+      "str": "<class 'pproxy.proto.Direct'>",
+      "pass": true
+    },
+    {
+      "probe": "direct_bool",
+      "bool_d": true,
+      "is_not_none": true,
+      "is_not_false": true,
+      "pass": true
+    },
+    {
+      "probe": "direct_identity",
+      "same_object": true,
+      "eq": true,
+      "ne": false,
+      "pass": true
+    },
+    {
+      "probe": "different_proxydirect_not_equal",
+      "same_object": false,
+      "eq": false,
+      "ne": true,
+      "pass": true
+    },
+    {
+      "probe": "mappings_keys",
+      "type": "dict",
+      "keys": [
+        "direct",
+        "echo",
+        "h2",
+        "h3",
+        "http",
+        "httponly",
+        "in",
+        "pf",
+        "quic",
+        "redir",
+        "secure",
+        "socks",
+        "socks4",
+        "socks5",
+        "ss",
+        "ssh",
+        "ssl",
+        "ssr",
+        "trojan",
+        "tunnel",
+        "ws"
+      ],
+      "count": 21,
+      "pass": true
+    },
+    {
+      "probe": "mappings_class_values",
+      "value_types": {
+        "direct": "type",
+        "http": "type",
+        "httponly": "type",
+        "ssh": "type",
+        "socks5": "type",
+        "socks4": "type",
+        "socks": "type",
+        "ss": "type",
+        "ssr": "type",
+        "redir": "type",
+        "pf": "type",
+        "tunnel": "type",
+        "echo": "type",
+        "ws": "type",
+        "trojan": "type",
+        "h2": "type",
+        "h3": "type",
+        "ssl": "str",
+        "secure": "str",
+        "quic": "str",
+        "in": "str"
+      },
+      "class_keys": [
+        "direct",
+        "echo",
+        "h2",
+        "h3",
+        "http",
+        "httponly",
+        "pf",
+        "redir",
+        "socks",
+        "socks4",
+        "socks5",
+        "ss",
+        "ssh",
+        "ssr",
+        "trojan",
+        "tunnel",
+        "ws"
+      ],
+      "string_keys": [
+        "in",
+        "quic",
+        "secure",
+        "ssl"
+      ],
+      "all_classes_or_strings": true,
+      "pass": true
+    },
+    {
+      "probe": "cipher_map_keys",
+      "type": "dict",
+      "keys": [
+        "aes-128-cfb",
+        "aes-128-cfb8",
+        "aes-128-ctr",
+        "aes-128-gcm",
+        "aes-128-ofb",
+        "aes-192-cfb",
+        "aes-192-cfb8",
+        "aes-192-ctr",
+        "aes-192-gcm",
+        "aes-192-ofb",
+        "aes-256-cfb",
+        "aes-256-cfb8",
+        "aes-256-ctr",
+        "aes-256-gcm",
+        "aes-256-ofb",
+        "bf-cfb",
+        "cast5-cfb",
+        "chacha20",
+        "chacha20-ietf",
+        "chacha20-ietf-poly1305",
+        "des-cfb",
+        "rc4",
+        "rc4-md5",
+        "salsa20"
+      ],
+      "count": 24,
+      "pass": true
+    },
+    {
+      "probe": "cipher_map_class_values",
+      "all_classes": true,
+      "value_names": {
+        "rc4": "RC4_Cipher",
+        "rc4-md5": "RC4_MD5_Cipher",
+        "chacha20": "ChaCha20_Cipher",
+        "chacha20-ietf": "ChaCha20_IETF_Cipher",
+        "salsa20": "Salsa20_Cipher",
+        "aes-256-cfb": "AES_256_CFB_Cipher",
+        "aes-128-cfb": "AES_128_CFB_Cipher",
+        "aes-192-cfb": "AES_192_CFB_Cipher",
+        "aes-256-cfb8": "AES_256_CFB8_Cipher",
+        "aes-192-cfb8": "AES_192_CFB8_Cipher",
+        "aes-128-cfb8": "AES_128_CFB8_Cipher",
+        "aes-256-ofb": "AES_256_OFB_Cipher",
+        "aes-192-ofb": "AES_192_OFB_Cipher",
+        "aes-128-ofb": "AES_128_OFB_Cipher",
+        "aes-256-ctr": "AES_256_CTR_Cipher",
+        "aes-192-ctr": "AES_192_CTR_Cipher",
+        "aes-128-ctr": "AES_128_CTR_Cipher",
+        "aes-256-gcm": "AES_256_GCM_Cipher",
+        "aes-192-gcm": "AES_192_GCM_Cipher",
+        "aes-128-gcm": "AES_128_GCM_Cipher",
+        "chacha20-ietf-poly1305": "ChaCha20_IETF_POLY1305_Cipher",
+        "bf-cfb": "BF_CFB_Cipher",
+        "cast5-cfb": "CAST5_CFB_Cipher",
+        "des-cfb": "DES_CFB_Cipher"
+      },
+      "pass": true
+    },
+    {
+      "probe": "get_cipher_returns_instance",
+      "return_type": "tuple",
+      "return_len": 2,
+      "first_element": null,
+      "second_element": "function",
+      "second_callable": true,
+      "pass": true
+    },
+    {
+      "probe": "protocol_class_mro",
+      "mro_map": {
+        "Direct": [
+          "Direct",
+          "BaseProtocol",
+          "object"
+        ],
+        "HTTP": [
+          "HTTP",
+          "BaseProtocol",
+          "object"
+        ],
+        "HTTPOnly": [
+          "HTTPOnly",
+          "HTTP",
+          "BaseProtocol",
+          "object"
+        ],
+        "H2": [
+          "H2",
+          "HTTP",
+          "BaseProtocol",
+          "object"
+        ],
+        "H3": [
+          "H3",
+          "H2",
+          "HTTP",
+          "BaseProtocol",
+          "object"
+        ],
+        "Socks4": [
+          "Socks4",
+          "BaseProtocol",
+          "object"
+        ],
+        "Socks5": [
+          "Socks5",
+          "BaseProtocol",
+          "object"
+        ],
+        "SS": [
+          "SS",
+          "SSR",
+          "BaseProtocol",
+          "object"
+        ],
+        "SSR": [
+          "SSR",
+          "BaseProtocol",
+          "object"
+        ],
+        "SSH": [
+          "SSH",
+          "BaseProtocol",
+          "object"
+        ],
+        "Trojan": [
+          "Trojan",
+          "BaseProtocol",
+          "object"
+        ],
+        "WS": [
+          "WS",
+          "BaseProtocol",
+          "object"
+        ],
+        "Transparent": [
+          "Transparent",
+          "BaseProtocol",
+          "object"
+        ],
+        "Echo": [
+          "Echo",
+          "Transparent",
+          "BaseProtocol",
+          "object"
+        ],
+        "Redir": [
+          "Redir",
+          "Transparent",
+          "BaseProtocol",
+          "object"
+        ],
+        "Pf": [
+          "Pf",
+          "Transparent",
+          "BaseProtocol",
+          "object"
+        ],
+        "Tunnel": [
+          "Tunnel",
+          "Transparent",
+          "BaseProtocol",
+          "object"
+        ]
+      },
+      "pass": true
+    },
+    {
+      "probe": "http_line_value",
+      "type": "Pattern",
+      "pattern": "([^ ]+) +(.+?) +(HTTP/[^ ]+)$",
+      "is_compiled_regex": true,
+      "pass": true
+    },
+    {
+      "probe": "sol_ipv6_value",
+      "SOL_IPV6": 41,
+      "type": "int",
+      "is_int": true,
+      "pass": true
+    },
+    {
+      "probe": "so_original_dst_value",
+      "SO_ORIGINAL_DST": 80,
+      "type": "int",
+      "is_int": true,
+      "pass": true
+    },
+    {
+      "probe": "direct_constant_value",
+      "DIRECT_type": "ProxyDirect",
+      "DIRECT_module": "pproxy.server",
+      "DIRECT_mro": [
+        "ProxyDirect",
+        "object"
+      ],
+      "pass": true
+    },
+    {
+      "probe": "cipher_instance_behavior",
+      "return_type": "tuple",
+      "return_len": 2,
+      "first_element_type": "NoneType",
+      "second_element_type": "function",
+      "second_callable": true,
+      "has_encrypt": true,
+      "has_decrypt": true,
+      "has_setup": true,
+      "has_setup_iv": true,
+      "has_name": true,
+      "setup_works": false,
+      "crypto_unavailable": true,
+      "pass": true
+    },
+    {
+      "probe": "aead_cipher_nonce",
+      "type": "AES_256_GCM_Cipher",
+      "has_nonce": true,
+      "has_encrypt_and_digest": true,
+      "has_decrypt_and_verify": true,
+      "nonce_accessible": false,
+      "pass": true
+    },
+    {
+      "probe": "auth_table_behavior",
+      "type": "AuthTable",
+      "has_authed": true,
+      "has_set_authed": true,
+      "initially_not_authed": true,
+      "after_set_authed": "testuser",
+      "pass": true
+    },
+    {
+      "probe": "dummy_function",
+      "type": "function",
+      "is_callable": true,
+      "returns_input": true,
+      "pass": true
+    },
+    {
+      "probe": "packstr_behavior",
+      "type": "function",
+      "is_callable": true,
+      "result_type": "bytes",
+      "result": "b'\\x05hello'",
+      "default_n1": true,
+      "result_n2": "b'\\x00\\x05hello'",
+      "n2_len": 7,
+      "pass": true
+    },
+    {
+      "probe": "socks_address_exists",
+      "has_socks_address": true,
+      "has_socks_address_stream": true,
+      "has_get_protos": true,
+      "has_netloc_split": true,
+      "has_sslwrap": true,
+      "has_udp_accept": true,
+      "has_accept": true,
+      "pass": true
+    },
+    {
+      "probe": "cipher_baseclass_hierarchy",
+      "AEADCipher_bases": [
+        "BaseCipher"
+      ],
+      "BaseCipher_bases": [
+        "object"
+      ],
+      "PacketCipher_bases": [
+        "object"
+      ],
+      "aes256gcm_bases": [
+        "AEADCipher"
+      ],
+      "rc4_bases": [
+        "BaseCipher"
+      ],
+      "pass": true
+    },
+    {
+      "probe": "proxies_by_uri_signature",
+      "params": [
+        "uri_jumps"
+      ],
+      "Connection_params": [
+        "uri_jumps"
+      ],
+      "Server_params": [
+        "uri_jumps"
+      ],
+      "same_sig": true,
+      "pass": true
+    },
+    {
+      "probe": "mappings_lookup_specific",
+      "lookups": {
+        "direct": {
+          "found": true,
+          "class_name": "Direct",
+          "matches_expected": true
+        },
+        "http": {
+          "found": true,
+          "class_name": "HTTP",
+          "matches_expected": true
+        },
+        "socks5": {
+          "found": true,
+          "class_name": "Socks5",
+          "matches_expected": true
+        },
+        "socks4": {
+          "found": true,
+          "class_name": "Socks4",
+          "matches_expected": true
+        },
+        "ss": {
+          "found": true,
+          "class_name": "SS",
+          "matches_expected": true
+        },
+        "ssr": {
+          "found": true,
+          "class_name": "SSR",
+          "matches_expected": true
+        },
+        "trojan": {
+          "found": true,
+          "class_name": "Trojan",
+          "matches_expected": true
+        },
+        "ssh": {
+          "found": true,
+          "class_name": "SSH",
+          "matches_expected": true
+        },
+        "ws": {
+          "found": true,
+          "class_name": "WS",
+          "matches_expected": true
+        },
+        "h2": {
+          "found": true,
+          "class_name": "H2",
+          "matches_expected": true
+        },
+        "h3": {
+          "found": true,
+          "class_name": "H3",
+          "matches_expected": true
+        }
+      },
+      "socks_alias": true,
+      "pass": true
+    },
+    {
+      "probe": "cipher_map_lookup_specific",
+      "lookups": {
+        "rc4": {
+          "found": true,
+          "class_name": "RC4_Cipher"
+        },
+        "rc4-md5": {
+          "found": true,
+          "class_name": "RC4_MD5_Cipher"
+        },
+        "chacha20": {
+          "found": true,
+          "class_name": "ChaCha20_Cipher"
+        },
+        "chacha20-ietf": {
+          "found": true,
+          "class_name": "ChaCha20_IETF_Cipher"
+        },
+        "salsa20": {
+          "found": true,
+          "class_name": "Salsa20_Cipher"
+        },
+        "aes-256-cfb": {
+          "found": true,
+          "class_name": "AES_256_CFB_Cipher"
+        },
+        "aes-128-cfb": {
+          "found": true,
+          "class_name": "AES_128_CFB_Cipher"
+        },
+        "aes-192-cfb": {
+          "found": true,
+          "class_name": "AES_192_CFB_Cipher"
+        },
+        "aes-256-cfb8": {
+          "found": true,
+          "class_name": "AES_256_CFB8_Cipher"
+        },
+        "aes-128-cfb8": {
+          "found": true,
+          "class_name": "AES_128_CFB8_Cipher"
+        },
+        "aes-192-cfb8": {
+          "found": true,
+          "class_name": "AES_192_CFB8_Cipher"
+        },
+        "aes-256-gcm": {
+          "found": true,
+          "class_name": "AES_256_GCM_Cipher"
+        },
+        "aes-128-gcm": {
+          "found": true,
+          "class_name": "AES_128_GCM_Cipher"
+        },
+        "aes-192-gcm": {
+          "found": true,
+          "class_name": "AES_192_GCM_Cipher"
+        },
+        "aes-256-ctr": {
+          "found": true,
+          "class_name": "AES_256_CTR_Cipher"
+        },
+        "aes-128-ctr": {
+          "found": true,
+          "class_name": "AES_128_CTR_Cipher"
+        },
+        "aes-192-ctr": {
+          "found": true,
+          "class_name": "AES_192_CTR_Cipher"
+        },
+        "aes-256-ofb": {
+          "found": true,
+          "class_name": "AES_256_OFB_Cipher"
+        },
+        "aes-128-ofb": {
+          "found": true,
+          "class_name": "AES_128_OFB_Cipher"
+        },
+        "aes-192-ofb": {
+          "found": true,
+          "class_name": "AES_192_OFB_Cipher"
+        },
+        "bf-cfb": {
+          "found": true,
+          "class_name": "BF_CFB_Cipher"
+        },
+        "cast5-cfb": {
+          "found": true,
+          "class_name": "CAST5_CFB_Cipher"
+        },
+        "des-cfb": {
+          "found": true,
+          "class_name": "DES_CFB_Cipher"
+        },
+        "chacha20-ietf-poly1305": {
+          "found": true,
+          "class_name": "ChaCha20_IETF_POLY1305_Cipher"
+        }
+      },
+      "pass": true
+    },
+    {
+      "probe": "direct_method_signatures",
+      "methods": {
+        "connection_change": [
+          "self",
+          "delta"
+        ],
+        "destination": [
+          "self",
+          "host",
+          "port"
+        ],
+        "logtext": [
+          "self",
+          "host",
+          "port"
+        ],
+        "match_rule": [
+          "self",
+          "host",
+          "port"
+        ],
+        "open_connection": [
+          "self",
+          "host",
+          "port",
+          "local_addr",
+          "lbind",
+          "timeout"
+        ],
+        "prepare_connection": [
+          "self",
+          "reader_remote",
+          "writer_remote",
+          "host",
+          "port"
+        ],
+        "tcp_connect": [
+          "self",
+          "host",
+          "port",
+          "local_addr",
+          "lbind"
+        ],
+        "udp_open_connection": [
+          "self",
+          "host",
+          "port",
+          "data",
+          "addr",
+          "reply"
+        ],
+        "udp_packet_unpack": [
+          "self",
+          "data"
+        ],
+        "udp_prepare_connection": [
+          "self",
+          "host",
+          "port",
+          "data"
+        ],
+        "udp_sendto": [
+          "self",
+          "host",
+          "port",
+          "data",
+          "answer_cb",
+          "local_addr"
+        ],
+        "wait_open_connection": [
+          "self",
+          "host",
+          "port",
+          "local_addr",
+          "family"
+        ]
+      },
+      "pass": true
+    },
+    {
+      "probe": "compile_rule_signature",
+      "params": [
+        "filename"
+      ],
+      "Rule_params": [
+        "filename"
+      ],
+      "pass": true
+    }
+  ]
+}

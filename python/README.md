@@ -95,6 +95,39 @@ with PPProxyService.from_toml(toml_str) as handle:
     print(handle.bound_addresses)
 ```
 
+## API Contract (Phase C1)
+
+A machine-readable contract of the pproxy 2.7.9 public API is maintained at
+`python/compat/pproxy_api_contract.json`. It inventories 105 symbols across
+4 modules with full signatures, class hierarchies, and async classifications.
+
+### Classification summary
+
+| Tier | Count | Examples |
+|------|-------|---------|
+| adapted_target | 3 | Connection, Server, Rule → PPProxyService |
+| intentional_non_parity | 1 | DIRECT sentinel |
+| internal_observed | 87 | Protocol classes, cipher classes, server internals |
+
+### Validation
+
+```bash
+# Regenerate the contract
+python3.11 python/compat/extract_api.py
+
+# Run 56 contract validation tests
+python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
+
+# Run 46 behavioral probes
+python3.11 python/compat/behavioral_probes.py
+```
+
+### Namespace strategy
+
+Eggress does **not** install a top-level `pproxy` module. The pproxy
+compatibility layer is provided through `eggress.pproxy` and `eggress.start_pproxy()`.
+See `docs/python/PPROXY_NAMESPACE_STRATEGY.md` for the full decision record.
+
 ## Migrating from pproxy
 
 ```python

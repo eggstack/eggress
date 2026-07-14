@@ -1,0 +1,840 @@
+{
+  "schema_version": "1.0.0",
+  "pproxy_version": "2.7.9",
+  "generated_by": "python/compat/classification.py",
+  "classifications": [
+    {
+      "pproxy_symbol": "pproxy.Connection",
+      "tier": "adapted_target",
+      "eggress_location": "eggress.pproxy.PPProxyService.from_args",
+      "rationale": "Factory function for creating proxy connections; adapted to service builder pattern with translate_pproxy_args underneath",
+      "release_blocker": false,
+      "notes": "pproxy.Connection is an alias for proxies_by_uri; eggress uses PPProxyService.from_args with pproxy-style CLI arg translation"
+    },
+    {
+      "pproxy_symbol": "pproxy.DIRECT",
+      "tier": "intentional_non_parity",
+      "eggress_location": "NOT_IMPLEMENTED",
+      "rationale": "Global sentinel for direct connection; eggress uses direct:// URI scheme instead of a module-level constant",
+      "release_blocker": false,
+      "notes": "pproxy.DIRECT is a ProxyDirect sentinel object; eggress encodes 'direct' via URI scheme, not a global constant"
+    },
+    {
+      "pproxy_symbol": "pproxy.Rule",
+      "tier": "adapted_target",
+      "eggress_location": "eggress.pproxy.check_pproxy_args (via --rulefile and -b flags)",
+      "rationale": "Rule compilation from file; adapted to --rulefile flag translation and -b block regex rules in TOML config",
+      "release_blocker": false,
+      "notes": "pproxy.Rule is compile_rule(filename); eggress translates rulefile lines to reject rules via PproxyRuleFile::load()"
+    },
+    {
+      "pproxy_symbol": "pproxy.Server",
+      "tier": "adapted_target",
+      "eggress_location": "eggress.pproxy.Server / eggress.pproxy.PPProxyService",
+      "rationale": "Server factory function; adapted to Server and PPProxyService classes with full lifecycle management",
+      "release_blocker": false,
+      "notes": "pproxy.Server is proxies_by_uri(uri_jumps); eggress.Server accepts listen/remote URI lists; PPProxyService adds from_args/from_uri/from_toml/from_file factories"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Protocol implementation module; not intended as stable public API \u2014 used internally by pproxy server",
+      "release_blocker": false,
+      "notes": "Contains BaseProtocol and subclasses (HTTP, SOCKS4/5, SS, Trojan, etc.) \u2014 these are pproxy internals"
+    },
+    {
+      "pproxy_symbol": "pproxy.server",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "Server implementation module; not intended as stable public API \u2014 contains main(), stream_handler, proxy classes",
+      "release_blocker": false,
+      "notes": "Contains ProxyDirect, ProxySimple, ProxyBackward, main(), stream_handler, etc. \u2014 pproxy implementation details"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.BaseProtocol",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Base protocol class for all proxy protocols; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Direct",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Direct connection protocol (no proxy); pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Echo",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Echo protocol (testing/debugging); pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.H2",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "HTTP/2 CONNECT protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.H3",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "HTTP/3 protocol (QUIC-based); pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.HTTP",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "HTTP CONNECT/forward proxy protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.HTTPOnly",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "HTTP-only proxy (no CONNECT upgrade); pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Pf",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "macOS PF transparent proxy; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Redir",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Linux transparent proxy (SO_ORIGINAL_DST); pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.SS",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Shadowsocks protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.SSH",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "SSH transport protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.SSR",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "ShadowsocksR protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Socks4",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "SOCKS4 proxy protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Socks5",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "SOCKS5 proxy protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Transparent",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Base transparent proxy protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Trojan",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Trojan proxy protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.Tunnel",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "Raw tunnel protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.WS",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals, implemented in Rust)",
+      "rationale": "WebSocket tunnel protocol; pproxy protocol implementation class not intended as stable public API",
+      "release_blocker": false,
+      "notes": "Protocol detection and handling implemented in eggress Rust core; no Python class equivalent needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.accept",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Async protocol detection/accept dispatcher; internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.get_protos",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Parse raw protocol definitions into protocol objects; internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.udp_accept",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "UDP datagram accept dispatcher; internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.socks_address",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Read SOCKS address from stream (sync); internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.socks_address_stream",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Read SOCKS address from stream (async); internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.sslwrap",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "SSL wrap reader/writer pair; internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.netloc_split",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Split network location into host/port; internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.packstr",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol internals)",
+      "rationale": "Pack string with length prefix; internal protocol utility function",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations; no equivalent needed in eggress Python API"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.HTTP_LINE",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol constants)",
+      "rationale": "Compiled regex for HTTP request line parsing; internal protocol constant",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.MAPPINGS",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol constants)",
+      "rationale": "Dict mapping scheme names to protocol classes; internal protocol constant",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.SOL_IPV6",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol constants)",
+      "rationale": "Socket option constant for IPv6; internal protocol constant",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations"
+    },
+    {
+      "pproxy_symbol": "pproxy.proto.SO_ORIGINAL_DST",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy protocol constants)",
+      "rationale": "Socket option constant for transparent proxy; internal protocol constant",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy protocol implementations"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.BaseCipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AEADCipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.PacketCipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.RC4_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.RC4_MD5_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.ChaCha20_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.ChaCha20_IETF_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.Salsa20_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_256_CFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_256_CFB8_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_256_CTR_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_256_GCM_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_256_OFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_192_CFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_192_CFB8_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_192_CTR_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_192_GCM_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_192_OFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_128_CFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_128_CFB8_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_128_CTR_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_128_GCM_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.AES_128_OFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.BF_CFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.CAST5_CFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.DES_CFB_Cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (Shadowsocks cipher implemented in Rust)",
+      "rationale": "Cipher implementation class; pproxy internal \u2014 Shadowsocks AEAD ciphers implemented in eggress Rust core",
+      "release_blocker": false,
+      "notes": "Cipher selection handled by URI scheme and config; no Python cipher classes needed"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.get_cipher",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (cipher factory internal to pproxy)",
+      "rationale": "Cipher factory function; pproxy internal \u2014 cipher resolution handled by URI parser in Rust",
+      "release_blocker": false,
+      "notes": "Maps cipher name strings to cipher classes; eggress handles this in the Rust URI parser"
+    },
+    {
+      "pproxy_symbol": "pproxy.cipher.MAP",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (cipher registry internal to pproxy)",
+      "rationale": "Cipher registry constant; pproxy internal \u2014 cipher support declared in URI grammar",
+      "release_blocker": false,
+      "notes": "Dict mapping cipher names to cipher classes; eggress maps these in Rust config compiler"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.AuthTable",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "Authentication state table; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxyDirect",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "Direct upstream connection handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxySimple",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "Simple proxy upstream handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxyBackward",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "Reverse/backward proxy handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxyH2",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "HTTP/2 proxy handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxyH3",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "HTTP/3 proxy handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxyQUIC",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "QUIC transport handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.ProxySSH",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server internals)",
+      "rationale": "SSH transport handler; pproxy server implementation class",
+      "release_blocker": false,
+      "notes": "Used internally by pproxy server; upstream handling implemented in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.main",
+      "tier": "internal_observed",
+      "eggress_location": "eggress.pproxy.PPProxyService.from_args",
+      "rationale": "CLI entry point (parses args and starts server); pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.proxies_by_uri",
+      "tier": "internal_observed",
+      "eggress_location": "eggress.pproxy.PPProxyService.from_args",
+      "rationale": "Factory: create proxy objects from URI list; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.proxy_by_uri",
+      "tier": "internal_observed",
+      "eggress_location": "eggress.pproxy.PPProxyService.from_uri",
+      "rationale": "Factory: create single proxy object from URI; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.compile_rule",
+      "tier": "internal_observed",
+      "eggress_location": "eggress.pproxy.check_pproxy_args (--rulefile)",
+      "rationale": "Compile routing rules from file; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.check_server_alive",
+      "tier": "internal_observed",
+      "eggress_location": "eggress routing health checks (Rust)",
+      "rationale": "Periodic health check probe; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.stream_handler",
+      "tier": "internal_observed",
+      "eggress_location": "eggress server connection handler (Rust)",
+      "rationale": "TCP stream connection handler; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.datagram_handler",
+      "tier": "internal_observed",
+      "eggress_location": "eggress UDP association handler (Rust)",
+      "rationale": "UDP datagram handler; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.prepare_ciphers",
+      "tier": "internal_observed",
+      "eggress_location": "eggress Shadowsocks cipher setup (Rust)",
+      "rationale": "Set up cipher for SS connection; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.schedule",
+      "tier": "internal_observed",
+      "eggress_location": "eggress routing schedulers (Rust)",
+      "rationale": "Load-balancing scheduler; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.test_url",
+      "tier": "internal_observed",
+      "eggress_location": "eggress.upstream test (Rust)",
+      "rationale": "Test upstream connectivity; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.print_server_started",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (eggress uses tracing)",
+      "rationale": "Print server startup info; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.patch_StreamReader",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (not needed in eggress)",
+      "rationale": "Monkey-patch asyncio StreamReader; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.patch_StreamWriter",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (not needed in eggress)",
+      "rationale": "Monkey-patch asyncio StreamWriter; pproxy server implementation function",
+      "release_blocker": false,
+      "notes": "Server internals; equivalent functionality in eggress Rust core"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.DIRECT",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server constants)",
+      "rationale": "Direct upstream sentinel constant; pproxy internal constant",
+      "release_blocker": false,
+      "notes": "Internal constants; eggress uses its own timeout/config values"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.DUMMY",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server constants)",
+      "rationale": "Dummy/discard function; pproxy internal constant",
+      "release_blocker": false,
+      "notes": "Internal constants; eggress uses its own timeout/config values"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.SOCKET_TIMEOUT",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server constants)",
+      "rationale": "Default socket timeout (60s); pproxy internal constant",
+      "release_blocker": false,
+      "notes": "Internal constants; eggress uses its own timeout/config values"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.UDP_LIMIT",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server constants)",
+      "rationale": "UDP packet size limit (30); pproxy internal constant",
+      "release_blocker": false,
+      "notes": "Internal constants; eggress uses its own timeout/config values"
+    },
+    {
+      "pproxy_symbol": "pproxy.server.sslcontexts",
+      "tier": "internal_observed",
+      "eggress_location": "N/A (pproxy server constants)",
+      "rationale": "SSL context cache list; pproxy internal constant",
+      "release_blocker": false,
+      "notes": "Internal constants; eggress uses its own timeout/config values"
+    }
+  ],
+  "eggress_reverse_mapping": [
+    {
+      "eggress_symbol": "eggress.pproxy.Server",
+      "pproxy_concept": "pproxy.Server / pproxy.Connection",
+      "relationship": "adapted",
+      "notes": "Context-managed server wrapper; accepts listen/remote URI lists; adds sync/async lifecycle"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.PPProxyService",
+      "pproxy_concept": "pproxy.Server / pproxy.Connection",
+      "relationship": "adapted",
+      "notes": "Service builder with from_args/from_uri/from_toml/from_file factories; translates pproxy CLI args to TOML config"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.translate_pproxy_args",
+      "pproxy_concept": "pproxy.server.main (arg parsing phase)",
+      "relationship": "adapted",
+      "notes": "Extracts pproxy CLI arg translation as a callable; returns TranslationResult with TOML + diagnostics"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.translate_pproxy_uri",
+      "pproxy_concept": "pproxy.server.proxy_by_uri (URI parsing phase)",
+      "relationship": "adapted",
+      "notes": "Translates pproxy URI strings to eggress TOML config"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.check_pproxy_args",
+      "pproxy_concept": "pproxy.server.main (with parity assessment)",
+      "relationship": "adapted",
+      "notes": "Returns CompatibilityReport with tier classification, diagnostics, and parsed URIs"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.check_pproxy_uri",
+      "pproxy_concept": "pproxy.server.proxy_by_uri (parse-only)",
+      "relationship": "adapted",
+      "notes": "Parses a pproxy URI and returns UriInfo without creating a server"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.redact_pproxy_uri",
+      "pproxy_concept": "N/A (eggress extension)",
+      "relationship": "eggress_native",
+      "notes": "Redacts credentials from pproxy URI for safe display; no pproxy equivalent"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.diagnostics_for_uri",
+      "pproxy_concept": "N/A (eggress extension)",
+      "relationship": "eggress_native",
+      "notes": "Returns structured diagnostics for a pproxy URI translation"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.supported_features",
+      "pproxy_concept": "N/A (eggress extension)",
+      "relationship": "eggress_native",
+      "notes": "Lists pproxy protocol features supported by eggress"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.compatibility_version",
+      "pproxy_concept": "N/A (eggress extension)",
+      "relationship": "eggress_native",
+      "notes": "Returns target pproxy version string (currently '2.7.9')"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.CompatibilityReport",
+      "pproxy_concept": "N/A (eggress extension)",
+      "relationship": "eggress_native",
+      "notes": "Structured parity assessment with tier, diagnostics, features, TOML output"
+    },
+    {
+      "eggress_symbol": "eggress.pproxy.describe_reverse_pproxy_uri",
+      "pproxy_concept": "pproxy backward:// / bind:// URI parsing",
+      "relationship": "adapted",
+      "notes": "Inspects pproxy reverse URIs and describes eggress translation"
+    },
+    {
+      "eggress_symbol": "eggress.start_pproxy",
+      "pproxy_concept": "pproxy.server.main()",
+      "relationship": "adapted",
+      "notes": "Top-level entry point; supports args/local/remote/config/config_path input modes"
+    },
+    {
+      "eggress_symbol": "eggress.EggressConfig",
+      "pproxy_concept": "N/A (eggress-native config model)",
+      "relationship": "eggress_native",
+      "notes": "TOML-based configuration; different schema from pproxy URI-based config"
+    },
+    {
+      "eggress_symbol": "eggress.EggressService",
+      "pproxy_concept": "pproxy.Server (lifecycle management)",
+      "relationship": "adapted",
+      "notes": "Service lifecycle management with start/close/run; context manager support"
+    },
+    {
+      "eggress_symbol": "eggress.EggressHandle",
+      "pproxy_concept": "N/A (eggress extension)",
+      "relationship": "eggress_native",
+      "notes": "Handle to running service with bound_addresses, status, metrics_text, reload_toml, shutdown"
+    }
+  ],
+  "summary": {
+    "adapted_target": 3,
+    "exact_target": 0,
+    "intentional_non_parity": 1,
+    "internal_observed": 87,
+    "unsupported_release_blocker": 0
+  }
+}
