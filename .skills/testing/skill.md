@@ -203,6 +203,7 @@ python -m pytest python/tests/test_pproxy_compat.py -v
 python -m pytest python/tests/test_pproxy_redaction.py -v
 python -m pytest python/tests/test_pproxy_concurrency.py -v
 python -m pytest python/tests/test_performance_smoke.py -v
+python -m pytest python/tests/test_protocol_cipher.py -v
 python -m pytest python/tests -v  # all Python tests
 
 # pproxy oracle tests (Phase 18, requires pproxy==2.7.9)
@@ -274,6 +275,7 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_connection.py` — Connection contract and lifecycle tests (signatures, attributes, state machine, close semantics, resource ownership, context manager, GIL release)
 - `python/tests/test_connection_behavioral.py` — Connection behavioral tests (SOCKS5 proxy echo, multiple protocols, failure scenarios, concurrent lifecycle, resource cleanup, GIL release)
 - `python/tests/test_server_lifecycle.py` — Server lifecycle tests (Phase C3: 84 tests covering construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence, TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, pproxy examples)
+- `python/tests/test_protocol_cipher.py` — Phase C4 protocol objects, cipher objects, and plugin bridge tests
 
 Run:
 ```bash

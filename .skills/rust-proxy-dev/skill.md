@@ -140,6 +140,10 @@ For Python embedding, use the `eggress-python` crate and `python/eggress` packag
 
 When adding features to Connection, follow the pattern: Rust handles networking, Python handles the coroutine contract.
 
+#### Protocol/cipher/plugin objects (Phase C4)
+
+`eggress.protocol` provides pproxy-compatible protocol objects (`Socks5`, `HTTP`, `SS`, etc.) with `MAPPINGS` dict and `get_protos()` parser. `eggress.cipher` provides AEAD cipher objects (`AES_256_GCM_Cipher`, etc.) that delegate to Rust. `eggress.plugin` provides a bounded callback bridge (`PluginBridge`) between Rust async tasks and Python callbacks. Tests: `python/tests/test_protocol_cipher.py`.
+
 ### pproxy drop-in binary
 
 - `pproxy` binary target in `eggress-cli` — direct drop-in replacement for the original pproxy command

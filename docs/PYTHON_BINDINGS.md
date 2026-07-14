@@ -998,3 +998,186 @@ Parameters:
 The `CompatibilityReport.toml` output has credentials automatically
 redacted. Password values are replaced with `"****"` and URI credentials
 are replaced with `****@host:port`.
+
+## Protocol Objects (Phase C4)
+
+The `eggress.protocol` module provides pproxy-compatible protocol objects for
+composition resolution and configuration.  These objects carry typed metadata
+matching pproxy 2.7.9's `pproxy.proto` interface without reimplementing the
+wire protocol.
+
+### Supported protocols
+
+| Class | Scheme | Rust backend | Status |
+|-------|--------|-------------|--------|
+| `Direct` | `direct` | `eggress-core` | Supported |
+| `HTTP` | `http` | `eggress-protocol-http` | Supported |
+| `HTTPOnly` | `httponly` | `eggress-protocol-http` | Supported |
+| `Socks4` | `socks4` | `eggress-protocol-socks` | Supported |
+| `Socks5` | `socks5` | `eggress-protocol-socks` | Supported |
+| `SS` | `ss` | `eggress-protocol-shadowsocks` | AEAD only |
+| `Trojan` | `trojan` | `eggress-protocol-trojan` | Supported |
+| `WS` | `ws` | `eggress-protocol-websocket` | Supported |
+| `H2` | `h2` | `eggress-protocol-http` | Supported |
+| `Transparent` | — | `eggress-server` | Linux/macOS |
+| `Redir` | `redir` | `eggress-server` | Linux only |
+| `Pf` | `pf` | `eggress-server` | macOS only |
+| `Tunnel` | `tunnel` | `eggress-protocol-raw` | Supported |
+| `Echo` | `echo` | `eggress-server` | Testing |
+
+### Unsupported protocols
+
+| Class | Reason |
+|-------|--------|
+| `SSR` | Legacy Shadowsocks — rejected with clear diagnostics |
+| `H3` | HTTP/3/QUIC — deferred by ADR |
+| `SSH` | Intentional non-parity — use OpenSSH `-D` |
+
+### Usage
+
+```python
+from eggress.protocol import MAPPINGS, get_protos, Socks5, SS, Direct
+
+# Look up protocol by scheme
+proto_cls = MAPPINGS["socks5"]  # Socks5
+
+# Parse protocol list from URI
+error, protos = get_protos(["http+ss"])
+# error is None, protos = [HTTP(), SS()]
+
+# Direct instantiation
+p = Socks5()
+print(p.name)  # 'socks5'
+print(p.reuse)  # False
+```
+
+### MAPPINGS dict
+
+`MAPPINGS` maps 21 scheme strings to protocol classes (or empty strings for
+TLS/QUIC/in markers):
+
+```python
+MAPPINGS = {
+    "direct": Direct, "http": HTTP, "httponly": HTTPOnly,
+    "socks": Socks5, "socks4": Socks4, "socks5": Socks5,
+    "ss": SS, "ssr": SSR, "trojan": Trojan, "ws": WS,
+    "h2": H2, "h3": H3, "ssh": SSH,
+    "redir": Redir, "pf": Pf, "tunnel": Tunnel, "echo": Echo,
+    "ssl": "", "secure": "", "quic": "", "in": "",
+}
+```
+
+### Security
+
+- Protocol parameters containing secrets (e.g. Shadowsocks passwords) are
+  redacted in `repr()` and `str()`.
+- Objects are picklable for config serialization.
+- Equality and hashing are based on `(type, param)`.
+
+## Cipher Objects (Phase C4)
+
+The `eggress.cipher` module provides pproxy-compatible cipher objects matching
+pproxy 2.7.9's `pproxy.cipher` interface.
+
+### Supported ciphers
+
+| Class | Name | Key length | Status |
+|-------|------|-----------|--------|
+| `AES_256_GCM_Cipher` | `aes-256-gcm` | 32 | AEAD — delegates to Rust |
+| `AES_192_GCM_Cipher` | `aes-192-gcm` | 24 | AEAD — delegates to Rust |
+| `AES_128_GCM_Cipher` | `aes-128-gcm` | 16 | AEAD — delegates to Rust |
+| `ChaCha20_IETF_POLY1305_Cipher` | `chacha20-ietf-poly1305` | 32 | AEAD — delegates to Rust |
+
+### Legacy ciphers (unsupported)
+
+All stream ciphers (`rc4`, `rc4-md5`, `chacha20`, `chacha20-ietf`, `salsa20`),
+block CFB/CFB8/OFB/CTR variants (`aes-*-cfb`, `aes-*-cfb8`, `aes-*-ofb`,
+`aes-*-ctr`, `bf-cfb`, `cast5-cfb`, `des-cfb`) are recognized in `MAP` but
+raise `UnsupportedFeatureError` on encrypt/decrypt.  Legacy ciphers are handled
+by Track F (not Phase C4).
+
+### Usage
+
+```python
+from eggress.cipher import MAP, get_cipher, AES_256_GCM_Cipher
+
+# Look up cipher class by name
+cipher_cls = MAP["aes-256-gcm"]  # AES_256_GCM_Cipher
+
+# Create cipher from pproxy-style string
+error, apply_fn = get_cipher("aes-256-gcm:mypassword")
+# error is None, apply_fn is callable
+
+# Manual instantiation
+cipher = AES_256_GCM_Cipher(b"32-byte-key-here-for-testing")
+print(cipher.name())  # 'aes-256-gcm'
+```
+
+### Key derivation
+
+pproxy uses OpenSSL's `EVP_BytesToKey` (MD5-based) for stream cipher key
+derivation.  AEAD ciphers use the raw key directly (HKDF is done at the
+protocol level in Rust).
+
+### Security
+
+- Key material is never exposed in `repr()`, `str()`, logs, or exceptions.
+- `get_cipher()` accepts the `!ota` marker for One-Time Authentication.
+- `PacketCipher` wraps ciphers for UDP datagram use.
+
+## Plugin Bridge (Phase C4)
+
+The `eggress.plugin` module provides a bounded, cancellation-safe bridge between
+Rust async tasks and Python callbacks for pproxy-compatible plugin extension points.
+
+### Architecture
+
+```
+Rust task → PluginBridge.submit_async() → asyncio.Semaphore (backpressure)
+         → CallbackWrapper.execute() → Python callback (GIL acquired)
+         → CallbackResult → Rust task
+```
+
+Key properties:
+- **Bounded concurrency**: `max_queue` controls maximum concurrent callbacks
+- **Timeout enforcement**: per-callback and per-call timeouts
+- **Cancellation propagation**: `asyncio.CancelledError` flows through
+- **Reentrancy detection**: prevents recursive callback submission
+- **GIL safety**: GIL acquired only during callback execution
+- **Backpressure**: new submissions suspend when at capacity
+
+### Usage
+
+```python
+from eggress.plugin import PluginRegistry, PluginBridge
+
+registry = PluginRegistry()
+registry.register("on_connect", my_handler)
+
+bridge = PluginBridge(registry=registry, max_queue=64)
+
+# Async usage
+result = await bridge.submit_async("on_connect", peer_addr="1.2.3.4:80")
+
+# Sync usage (creates event loop internally)
+result = bridge.submit("on_connect", peer_addr="1.2.3.4:80")
+
+bridge.shutdown()
+```
+
+### Built-in hooks
+
+| Hook | When called |
+|------|------------|
+| `on_protocol_detect` | During protocol detection |
+| `on_cipher_select` | During cipher selection |
+| `on_connect` | Connection established |
+| `on_data` | Data transfer (costly — no queue by default) |
+
+### Error types
+
+- `PluginError` — base error
+- `PluginTimeoutError` — callback exceeded timeout
+- `PluginRejectedError` — callback rejected the operation
+- `PluginShutdownError` — bridge is shut down
+- `PluginReentrantError` — recursive callback detected
