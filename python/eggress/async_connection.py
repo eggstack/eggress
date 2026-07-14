@@ -4,11 +4,23 @@ import asyncio
 import warnings
 from typing import Any, Optional
 
-from eggress.connection import Connection, ConnectionState, LoopMismatchError
+from eggress._asyncio import AsyncBridge, CloseWaiter, LoopAffinityError
+from eggress.connection import Connection, ConnectionState
 
 
 class AsyncConnection:
     """Async wrapper around Connection with loop affinity.
+
+    Lifecycle invariants (Phase C5):
+
+    - Created inside a running event loop; binds on first use.
+    - Cross-loop use raises :class:`LoopAffinityError` before any native
+      work begins.
+    - Cancellation propagates to the executor future (best-effort).
+    - ``aclose()`` / ``await_closed()`` are idempotent and race-safe.
+    - Multiple ``await_closed()`` callers all unblock simultaneously.
+    - ``__del__`` never blocks; issues a ``ResourceWarning`` and best-
+      effort closes the underlying connection.
 
     Usage::
 
@@ -25,7 +37,7 @@ class AsyncConnection:
             pass
     """
 
-    __slots__ = ("_conn", "_loop", "_closed")
+    __slots__ = ("_conn", "_loop", "_bridge", "_waiter", "_closed")
 
     def __init__(self, *uris: str, **kwargs: Any) -> None:
         try:
@@ -36,6 +48,8 @@ class AsyncConnection:
                 "Use Connection for synchronous usage."
             )
         self._conn = Connection(*uris, **kwargs)
+        self._bridge = AsyncBridge(label="AsyncConnection")
+        self._waiter = CloseWaiter()
         self._closed = False
 
     @classmethod
@@ -50,7 +64,7 @@ class AsyncConnection:
         except RuntimeError:
             return  # No running loop, skip check (sync context)
         if current_loop is not self._loop:
-            raise LoopMismatchError(
+            raise LoopAffinityError(
                 f"AsyncConnection was created on loop {self._loop!r} "
                 f"but called from loop {current_loop!r}"
             )
@@ -84,21 +98,24 @@ class AsyncConnection:
         return self._conn.extra_info()
 
     async def aclose(self) -> None:
-        """Async close."""
+        """Async close. Idempotent and race-safe."""
         self._check_loop()
         if self._closed:
             return
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._conn.close)
+
+        async def _cleanup() -> None:
+            await self._bridge.run(self._conn.close)
+
+        await self._waiter.close(_cleanup)
         self._closed = True
+        self._bridge.close()
 
     async def await_closed(self) -> None:
-        """Async wait for close."""
+        """Async wait for close. Idempotent and multi-waiter safe."""
         self._check_loop()
-        if self._closed:
+        if self._closed and self._waiter.is_closed:
             return
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._conn.wait_closed)
+        await self._waiter.wait_closed()
         self._closed = True
 
     async def __aenter__(self) -> AsyncConnection:
@@ -114,18 +131,22 @@ class AsyncConnection:
         return False
 
     def __del__(self) -> None:
-        if not self._closed and hasattr(self, "_conn") and not self._conn.closed:
-            warnings.warn(
-                "AsyncConnection was not properly closed. "
-                "Use 'async with' or call await aclose().",
-                ResourceWarning,
-                stacklevel=2,
-            )
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-            self._closed = True
+        if getattr(self, "_closed", True):
+            return
+        if not hasattr(self, "_conn") or self._conn.closed:
+            return
+        warnings.warn(
+            "AsyncConnection was not properly closed. "
+            "Use 'async with' or call await aclose().",
+            ResourceWarning,
+            stacklevel=2,
+        )
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self._closed = True
+        self._bridge.close()
 
     def __repr__(self) -> str:
         state = "closed" if self._closed else self.state

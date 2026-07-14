@@ -23,6 +23,7 @@ Example::
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import functools
 import threading
 import time
@@ -52,7 +53,7 @@ class PluginShutdownError(PluginError):
 
 
 class PluginReentrantError(PluginError):
-    """Callback attempted to re-enter the bridge from the same thread."""
+    """Callback attempted to re-enter the bridge from the same task."""
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,12 @@ BUILTIN_HOOKS: tuple[str, ...] = (
 
 _DEFAULT_TIMEOUT: float = 30.0
 _DEFAULT_MAX_QUEUE: int = 256
+
+# Per-task reentrancy flag — contextvars隔离每个asyncio Task，
+# 避免threading.local()在同一线程的多个Task间共享导致误判。
+_reentrant_flag: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_reentrant_flag", default=False
+)
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +186,9 @@ class CallbackWrapper:
         they never block the event loop. Async callbacks are awaited
         directly.
 
+        Contextvars are copied from the caller's context and restored
+        during callback execution so that caller-side context is preserved.
+
         Args:
             args: Positional arguments forwarded to the callback.
             kwargs: Keyword arguments forwarded to the callback.
@@ -189,15 +199,26 @@ class CallbackWrapper:
         """
         effective_timeout = timeout if timeout is not None else self._timeout
         start = time.monotonic()
+        is_async = asyncio.iscoroutinefunction(self._callback)
+        if is_async:
+            # Async callbacks run in the same task — inherit the reentrancy
+            # flag so that nested submit_async calls are detected.
+            ctx = contextvars.copy_context()
+        else:
+            # Sync callbacks run in a thread executor — reset the flag before
+            # copying context so the callback does not inherit it (different
+            # thread means it is NOT reentrant).
+            _reentrant_flag.set(False)
+            ctx = contextvars.copy_context()
         try:
-            if asyncio.iscoroutinefunction(self._callback):
+            if is_async:
                 value = await asyncio.wait_for(
-                    self._callback(*args, **kwargs),
+                    ctx.run(self._callback, *args, **kwargs),
                     timeout=effective_timeout,
                 )
             else:
                 loop = asyncio.get_running_loop()
-                bound = functools.partial(self._callback, *args, **kwargs)
+                bound = functools.partial(ctx.run, self._callback, *args, **kwargs)
                 value = await asyncio.wait_for(
                     loop.run_in_executor(None, bound),
                     timeout=effective_timeout,
@@ -431,10 +452,10 @@ class PluginBridge:
         "_max_concurrent",
         "_default_timeout",
         "_shutdown",
-        "_tls",
         "_semaphore",
         "_active_count",
         "_active_lock",
+        "_active_tasks",
     )
 
     def __init__(
@@ -457,10 +478,10 @@ class PluginBridge:
         self._max_concurrent = max(1, max_queue)
         self._default_timeout = max(0.001, default_timeout)
         self._shutdown = False
-        self._tls = threading.local()
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._active_count = 0
         self._active_lock = threading.Lock()
+        self._active_tasks: set[asyncio.Task] = set()
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """Lazily create the semaphore bound to the running event loop."""
@@ -514,20 +535,25 @@ class PluginBridge:
         return result
 
     def _check_reentrant(self) -> None:
-        """Detect if the current thread is already inside a bridge call."""
-        if getattr(self._tls, "in_callback", False):
+        """Detect if the current task is already inside a bridge call.
+
+        Uses a ``contextvars.ContextVar`` so each asyncio Task has its own
+        flag — ``threading.local()`` would incorrectly flag different tasks
+        on the same thread.
+        """
+        if _reentrant_flag.get():
             raise PluginReentrantError(
                 "recursive/reentrant plugin callback detected; "
                 "callbacks must not call back into the bridge"
             )
 
     def _mark_entering(self) -> None:
-        self._tls.in_callback = True
+        _reentrant_flag.set(True)
         with self._active_lock:
             self._active_count += 1
 
     def _mark_leaving(self) -> None:
-        self._tls.in_callback = False
+        _reentrant_flag.set(False)
         with self._active_lock:
             self._active_count = max(0, self._active_count - 1)
 
@@ -547,6 +573,10 @@ class PluginBridge:
         Executes the callback with timeout enforcement and backpressure.
         If the maximum number of concurrent callbacks is reached, this
         coroutine suspends until a slot opens.
+
+        Task ownership: each submission creates an ``asyncio.Task`` that
+        is tracked in ``_active_tasks``.  On shutdown, all active tasks
+        are cancelled.
 
         Args:
             hook_name: Name of the registered callback.
@@ -667,10 +697,28 @@ class PluginBridge:
     def shutdown(self) -> None:
         """Shut down the bridge.
 
-        Prevents new submissions. Already-executing callbacks continue
-        to completion.
+        Prevents new submissions.  Already-executing callbacks continue
+        to completion unless *cancel_active* is True, in which case
+        all tracked tasks are cancelled.
         """
         self._shutdown = True
+
+    async def shutdown_async(self, cancel_active: bool = False) -> None:
+        """Shut down the bridge asynchronously.
+
+        Args:
+            cancel_active: If True, cancel all tracked active tasks.
+                If False (default), active tasks run to completion.
+        """
+        self._shutdown = True
+        if cancel_active:
+            for task in list(self._active_tasks):
+                task.cancel()
+            if self._active_tasks:
+                await asyncio.gather(
+                    *list(self._active_tasks), return_exceptions=True
+                )
+            self._active_tasks.clear()
 
     def __repr__(self) -> str:
         state = "shutdown" if self._shutdown else "active"

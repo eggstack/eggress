@@ -62,6 +62,14 @@ from eggress.connection import (
     UnsupportedCompositionError,
 )
 from eggress.async_connection import AsyncConnection
+from eggress._asyncio import AsyncBridge, CloseWaiter, LoopAffinityError
+from eggress._compat import (
+    PY_VERSION,
+    PY_MAJOR,
+    PY_MINOR,
+    HAS_TASKGROUP,
+    HAS_EXCEPTIONGROUP,
+)
 from eggress.protocol import (
     BaseProtocol,
     Direct,
@@ -307,6 +315,15 @@ __all__ = [
     "UdpAssociationError",
     "UnsupportedCompositionError",
     "AsyncConnection",
+    # Phase C5 async bridge
+    "AsyncBridge",
+    "CloseWaiter",
+    "LoopAffinityError",
+    "PY_VERSION",
+    "PY_MAJOR",
+    "PY_MINOR",
+    "HAS_TASKGROUP",
+    "HAS_EXCEPTIONGROUP",
     # Protocol objects (Phase C4)
     "BaseProtocol",
     "Direct",

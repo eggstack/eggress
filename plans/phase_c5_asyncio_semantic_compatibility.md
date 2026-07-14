@@ -1,5 +1,8 @@
 # Phase C5 — Asyncio semantic compatibility
 
+> **Status: COMPLETED** — 67 tests passing across all 10 workstreams.
+> All existing tests (1234 total) continue to pass.
+
 ## Objective
 
 Close the remaining event-loop, awaitable, cancellation, task ownership, shutdown, and interpreter-lifecycle differences between Eggress’s Python compatibility layer and pinned pproxy. This phase is the integration and hardening gate for C2–C4: the API is not truly drop-in if equivalent methods exist but behave differently under cancellation, loop reuse, concurrent shutdown, or task failure.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from eggress._asyncio import AsyncBridge, CloseWaiter
 from eggress._eggress import (
     PyTranslationResult,
     UnsupportedFeatureError,
@@ -522,7 +523,7 @@ class Server:
         server.run()  # blocks until SIGINT/SIGTERM
     """
 
-    __slots__ = ("_service", "_config", "_handle", "_last_error")
+    __slots__ = ("_service", "_config", "_handle", "_last_error", "_bridge", "_waiter")
 
     def __init__(
         self,
@@ -570,6 +571,8 @@ class Server:
         self._config = eggress_config
         self._handle = None
         self._last_error: Optional[Exception] = None
+        self._bridge: Optional[AsyncBridge] = None
+        self._waiter: Optional[CloseWaiter] = None
 
     def start(self):
         """Start the server. Returns self for chaining."""
@@ -634,34 +637,63 @@ class Server:
         """Start the server asynchronously. Returns self for chaining."""
         if self._handle is not None:
             raise AlreadyStartedError("server is already running")
-        import asyncio
+
+        self._bridge = AsyncBridge(label="Server")
+        self._waiter = CloseWaiter()
 
         try:
-            self._handle = await asyncio.to_thread(self._service.start)
+            self._handle = await self._bridge.run(self._service.start)
         except Exception as e:
             self._last_error = e
+            self._bridge.close()
+            self._bridge = None
+            self._waiter = None
             raise
         return self
 
     async def aclose(self) -> None:
-        """Stop the server asynchronously. Idempotent."""
-        if self._handle is not None:
-            import asyncio
+        """Stop the server asynchronously. Idempotent and race-safe."""
+        if self._handle is None:
+            return
+        if self._waiter is not None and self._waiter.is_closed:
+            return
 
+        handle = self._handle
+        self._handle = None
+
+        if self._waiter is not None:
+            async def _do_close() -> None:
+                try:
+                    await self._bridge.run(handle.shutdown)
+                except Exception as e:
+                    self._last_error = e
+
+            await self._waiter.close(_do_close)
+        else:
             try:
-                await asyncio.to_thread(self._handle.shutdown)
+                import asyncio
+                await asyncio.to_thread(handle.shutdown)
             except Exception as e:
                 self._last_error = e
-            finally:
-                self._handle = None
+
+        if self._bridge is not None:
+            self._bridge.close()
 
     async def wait_closed(self) -> None:
-        """Wait for the server to close. If the server is still running,
-        this will block until ``aclose()`` is called from elsewhere."""
-        import asyncio
+        """Wait for the server to close.
 
-        while self._handle is not None:
-            await asyncio.sleep(0.05)
+        If the server is still running, blocks until ``aclose()`` is called
+        from elsewhere.  Multiple concurrent callers all unblock when the
+        close completes.
+        """
+        if self._waiter is not None and self._waiter.is_closed:
+            return
+        if self._waiter is not None:
+            await self._waiter.wait_closed()
+        else:
+            import asyncio
+            while self._handle is not None:
+                await asyncio.sleep(0.05)
 
     def reload(self, toml: str) -> dict:
         """Hot-reload configuration from a TOML string.

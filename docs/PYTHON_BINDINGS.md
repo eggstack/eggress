@@ -277,10 +277,36 @@ asyncio.run(main())
 ```
 
 `AsyncConnection` wraps `Connection` and adds:
-- **Loop affinity**: created on a specific event loop; operations from a different loop raise `LoopMismatchError`
+- **Loop affinity**: created on a specific event loop; operations from a different loop raise `LoopAffinityError`
 - **`AsyncConnection.open(*uris)`**: async class method for ergonomic creation
-- **`aclose()` / `await_closed()`**: native async close/wait
-- **`async with` context manager**: automatic cleanup
+- **`aclose()` / `await_closed()`**: native async close/wait — idempotent and race-safe
+- **`async with` context manager**: automatic cleanup with no resource warnings
+- **Cancellation propagation**: cancelling `aclose()` does not corrupt state
+- **Multi-waiter close**: multiple concurrent `await_closed()` callers all unblock
+
+### Async bridge (Phase C5)
+
+The `eggress._asyncio` module provides the core async primitives used by
+`AsyncConnection`, `AsyncEggressHandle`, and `Server`:
+
+- **`AsyncBridge`**: Enforces loop affinity (first-use binding), propagates
+  cancellation to executor futures, converts internal failures to stable
+  exceptions, preserves `contextvars` across the bridge. Idempotent `close()`.
+- **`CloseWaiter`**: Coordinates concurrent `close()` and `wait_closed()`
+  callers. `close()` runs an optional cleanup callback, then signals all
+  waiters. Idempotent, race-safe, handles cleanup exceptions.
+- **`LoopAffinityError`**: Raised when an async operation crosses loop boundaries.
+
+### Python version compatibility (Phase C5)
+
+The `eggress._compat` module centralizes version-specific logic:
+
+- **`PY_VERSION`**, **`PY_MAJOR`**, **`PY_MINOR`**: runtime version tuple
+- **`HAS_TASKGROUP`**: `True` on Python 3.11+ (TaskGroup/ExceptionGroup built-in)
+- **`HAS_EXCEPTIONGROUP`**: same as `HAS_TASKGROUP`
+- **`CANCELLED_ERROR_BASE`**: `BaseException` on 3.9+, `Exception` on older
+- **`get_running_loop()`**: returns the running loop or `None`
+- **`cancelled_error_is_base(exc)`**: normalised CancelledError check
 
 ## Error model
 
@@ -809,6 +835,21 @@ The `Server` class is tested by 84 tests in `python/tests/test_server_lifecycle.
 - **Exception mapping** (4 tests): bind conflict, TLS missing cert, invalid TOML, invalid reload TOML
 - **Advanced lifecycle** (8 tests): partial bind rollback, GIL release, FD leak detection, pproxy examples (socks, multi-listener, auth, chain), close with active session, reload with upstream change, sessions with active connection, status listeners, metrics content
 
+### Phase C5 asyncio semantic compatibility (67 tests)
+
+The `test_asyncio_semantic.py` suite covers all 10 workstreams:
+
+- **Loop-affinity** (7 tests): construction outside loop, first-use binding, cross-loop error, sequential loops, concurrent thread loops
+- **Native awaitable bridge** (8 tests): return values, args/kwargs, contextvars, executor dispatch, exception conversion, cancellation, close idempotency, post-close error, `__del__` warning
+- **Cancellation semantics** (3 tests): cancel during bridge run, cancel aclose, cancel astart
+- **Close/shutdown ordering** (11 tests): `CloseWaiter` mark_closed/failed, idempotent close, cleanup callbacks, cleanup exceptions, multi-waiter, `AsyncConnection` close/await_closed, `Server` close/aclose/wait_closed
+- **Callback/context** (6 tests): contextvars preservation, exception capture, timeout, reentrancy detection, bounded concurrency, async shutdown
+- **Exception/task reporting** (3 tests): CancelledError mapping, exception chaining, asyncio debug mode
+- **Interpreter/GC safety** (9 tests): `__del__` warnings, no-warn after close, context managers, repeated `asyncio.run()` cycles
+- **Version compatibility** (5 tests): `_compat` module exports, `get_running_loop`, `cancelled_error_is_base`, `HAS_TASKGROUP`, init exports
+- **Stress/race** (6 tests): concurrent waiters, rapid cycles, bridge stress, plugin stress, server stress, cancel-during-close
+- **Documentation contract** (7 tests): API surface verification for all new types
+
 ## pproxy oracle testing (Phase 29)
 
 The Python bindings include an oracle test harness that verifies eggress
@@ -1125,7 +1166,7 @@ protocol level in Rust).
 - `get_cipher()` accepts the `!ota` marker for One-Time Authentication.
 - `PacketCipher` wraps ciphers for UDP datagram use.
 
-## Plugin Bridge (Phase C4)
+## Plugin Bridge (Phase C4, C5)
 
 The `eggress.plugin` module provides a bounded, cancellation-safe bridge between
 Rust async tasks and Python callbacks for pproxy-compatible plugin extension points.
@@ -1142,9 +1183,11 @@ Key properties:
 - **Bounded concurrency**: `max_queue` controls maximum concurrent callbacks
 - **Timeout enforcement**: per-callback and per-call timeouts
 - **Cancellation propagation**: `asyncio.CancelledError` flows through
-- **Reentrancy detection**: prevents recursive callback submission
+- **Reentrancy detection**: prevents recursive callback submission; uses `contextvars.ContextVar` for per-task isolation (Phase C5), so different asyncio tasks on the same thread are not falsely flagged
+- **Contextvars preservation**: caller-side context is copied and restored during callback execution (Phase C5)
 - **GIL safety**: GIL acquired only during callback execution
 - **Backpressure**: new submissions suspend when at capacity
+- **Async shutdown**: `shutdown_async(cancel_active=True)` cancels tracked tasks (Phase C5)
 
 ### Usage
 

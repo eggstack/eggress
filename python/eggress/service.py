@@ -4,6 +4,7 @@ import asyncio
 from os import PathLike
 from typing import Any, Optional, Sequence, Union
 
+from eggress._asyncio import AsyncBridge, CloseWaiter
 from eggress._eggress import (
     PyEggressService,
     PyEggressHandle,
@@ -78,7 +79,8 @@ class EggressService:
         The blocking start() runs in a thread executor to avoid blocking
         the asyncio event loop.
         """
-        handle = await asyncio.to_thread(self._inner.start)
+        bridge = AsyncBridge(label="EggressService")
+        handle = await bridge.run(self._inner.start)
         return AsyncEggressHandle(handle)
 
 
@@ -130,34 +132,49 @@ class EggressHandle:
 class AsyncEggressHandle:
     """Async handle to a running eggress service.
 
-    All blocking operations are delegated to a thread executor to avoid
-    blocking the asyncio event loop. Supports the async context manager protocol.
+    All blocking operations are delegated to a thread executor via the
+    :class:`AsyncBridge` to avoid blocking the asyncio event loop.  The
+    bridge enforces loop affinity (first-use binding) and cancellation
+    propagation.
+
+    Supports the async context manager protocol.  ``close()`` and
+    ``wait_closed()`` are idempotent and safe to call from multiple
+    concurrent tasks.
     """
 
-    __slots__ = ("_inner",)
+    __slots__ = ("_inner", "_bridge", "_waiter")
 
     def __init__(self, _inner: PyEggressHandle) -> None:
         object.__setattr__(self, "_inner", _inner)
+        object.__setattr__(self, "_bridge", AsyncBridge(label="AsyncEggressHandle"))
+        object.__setattr__(self, "_waiter", CloseWaiter())
 
     async def bound_addresses(self) -> dict[str, str]:
         """Addresses the service is listening on."""
-        return await asyncio.to_thread(self._inner.bound_addresses)
+        return await self._bridge.run(self._inner.bound_addresses)
 
     async def status(self) -> dict[str, Any]:
         """Current service status."""
-        return await asyncio.to_thread(self._inner.status)
+        return await self._bridge.run(self._inner.status)
 
     async def metrics_text(self) -> str:
         """Prometheus metrics text."""
-        return await asyncio.to_thread(self._inner.metrics_text)
+        return await self._bridge.run(self._inner.metrics_text)
 
     async def reload_toml(self, toml: str) -> dict[str, Any]:
         """Reload configuration from a TOML string."""
-        return await asyncio.to_thread(self._inner.reload_toml, toml)
+        return await self._bridge.run(self._inner.reload_toml, toml)
 
     async def shutdown(self) -> None:
-        """Initiate graceful shutdown."""
-        await asyncio.to_thread(self._inner.shutdown)
+        """Initiate graceful shutdown. Idempotent."""
+        if self._waiter.is_closed:
+            return
+
+        async def _do_shutdown() -> None:
+            await self._bridge.run(self._inner.shutdown)
+
+        await self._waiter.close(_do_shutdown)
+        self._bridge.close()
 
     async def __aenter__(self) -> AsyncEggressHandle:
         return self
