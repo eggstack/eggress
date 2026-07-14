@@ -674,21 +674,58 @@ from eggress.pproxy import compatibility_version
 print(compatibility_version())  # "2.7.9"
 ```
 
-## Server status helpers (Phase 31)
+## Server (Phase C3)
 
-The `Server` class exposes convenience properties for querying runtime state:
+`Server` is a pproxy-compatible server wrapper that manages the full
+lifecycle: construction, start, observe, reload, and close. It translates
+pproxy-style listen/remote URIs to eggress configuration and delegates to
+the underlying Rust supervisor.
 
 ```python
 from eggress import Server
 
-server = Server(listen="socks5://127.0.0.1:1080", remote="http://proxy:8080")
-server.start()
+# Sync usage
+with Server(listen=["socks5://127.0.0.1:1080"], remote=["http://proxy:8080"]) as srv:
+    print(srv.addresses)     # {"socks5": "127.0.0.1:1080"}
+    print(srv.is_ready)      # True
+    print(srv.sessions)      # 0 (active connections)
+    print(srv.status())      # {"readiness": True, "active_connections": 0, ...}
 
-print(server.is_ready)       # True when service is ready
-print(server.listener_info)  # [{name, bind, protocols, ...}, ...]
-print(server.metrics_text)   # Prometheus metrics text
-print(server.config)         # EggressConfig used to start the server
+# Async usage
+async with Server(config=my_config) as srv:
+    print(srv.addresses)
+
+# Blocking (main thread only)
+server = Server(listen=["socks5://:1080"], remote=["http://proxy:8080"])
+server.run()  # blocks until SIGINT/SIGTERM
 ```
+
+### Constructor
+
+```python
+Server(
+    listen=None,       # list[str] — pproxy listener URIs
+    remote=None,       # list[str] — pproxy upstream URIs
+    *,                 # keyword-only
+    config=None,       # EggressConfig — pre-built config (mutually exclusive with listen/remote)
+    allow_partial=False,  # bool — start even with unsupported features
+)
+```
+
+### Lifecycle methods
+
+| Method | Returns | Description |
+|---|---|---|
+| `start()` | `self` | Start the server; returns self for chaining |
+| `stop()` | `None` | Stop the server (alias for `close()`) |
+| `close()` | `None` | Stop the server; idempotent |
+| `run()` | `None` | Start and block until SIGINT/SIGTERM (main thread only) |
+| `astart()` | `self` | Async start via `asyncio.to_thread` |
+| `aclose()` | `None` | Async stop via `asyncio.to_thread` |
+| `wait_closed()` | `None` | Async wait until server is closed |
+| `reload(toml)` | `dict` | Hot-reload routing/upstreams/health from TOML |
+
+### Properties
 
 | Property | Type | Description |
 |---|---|---|
@@ -697,6 +734,62 @@ print(server.config)         # EggressConfig used to start the server
 | `listener_info` | `list[dict]` | Listener details from the running service; empty when stopped |
 | `metrics_text` | `str` | Prometheus metrics text; empty when stopped |
 | `config` | `EggressConfig` | The configuration used to construct/start the server |
+| `sessions` | `int` | Number of active connections; 0 when stopped |
+| `last_error` | `Exception \| None` | Most recent error from start/reload/shutdown |
+
+### Observability
+
+```python
+srv = Server(listen=["socks5://127.0.0.1:0"])
+srv.start()
+
+# Structured status
+status = srv.status()
+print(status["readiness"])           # True
+print(status["active_connections"])  # 0
+print(status["listeners"])           # [{name, bind, protocols, ...}, ...]
+
+# Active session count
+print(srv.sessions)  # 0
+
+# Error tracking
+print(srv.last_error)  # None (no errors yet)
+```
+
+### Hot reload
+
+Only routing, upstreams, groups, and health settings are hot-reloadable.
+Listener topology changes require a restart.
+
+```python
+srv.reload(new_toml_config)
+```
+
+### Resource management
+
+`Server` supports sync and async context managers, and issues a
+`ResourceWarning` if garbage-collected without being properly closed.
+
+```python
+# Recommended: use context manager
+with Server(listen=["socks5://127.0.0.1:0"]) as srv:
+    ...
+
+# Or explicit close
+srv = Server(listen=["socks5://127.0.0.1:0"])
+srv.start()
+try:
+    ...
+finally:
+    srv.close()
+```
+
+### Thread safety
+
+- Construction: safe from any thread
+- `start()`/`close()`: safe from any thread
+- `run()`: must be called from the main thread
+- `astart()`/`aclose()`: must be called from an asyncio event loop thread
 
 ## pproxy oracle testing (Phase 29)
 

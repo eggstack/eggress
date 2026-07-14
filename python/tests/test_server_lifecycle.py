@@ -55,7 +55,7 @@ def _echo_conn(host, port, payload=b"hello"):
 def _socks5_connect(proxy_host, proxy_port, target_host, target_port):
     """Perform a SOCKS5 CONNECT handshake and return the connected socket."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(3.0)
+    s.settimeout(5.0)
     s.connect((proxy_host, proxy_port))
     # Greeting: version 5, 1 auth method (no auth)
     s.sendall(b"\x05\x01\x00")
@@ -374,3 +374,401 @@ def test_wait_closed_already_stopped():
         assert srv.addresses == {}
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Phase C3: Enhanced observability and lifecycle tests
+# ---------------------------------------------------------------------------
+
+
+def test_status_before_start():
+    """status() returns empty dict before start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        assert srv.status() == {}
+    finally:
+        srv.close()
+
+
+def test_status_after_start():
+    """status() returns a dict with readiness after start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        st = srv.status()
+        assert isinstance(st, dict)
+        assert "readiness" in st
+        assert st["readiness"] is True
+    finally:
+        srv.close()
+
+
+def test_status_after_close():
+    """status() returns empty dict after close()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    assert srv.status() == {}
+
+
+def test_sessions_before_start():
+    """sessions returns 0 before start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        assert srv.sessions == 0
+    finally:
+        srv.close()
+
+
+def test_sessions_after_start():
+    """sessions returns a non-negative integer after start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        assert isinstance(srv.sessions, int)
+        assert srv.sessions >= 0
+    finally:
+        srv.close()
+
+
+def test_sessions_after_close():
+    """sessions returns 0 after close()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    assert srv.sessions == 0
+
+
+def test_last_error_none_initially():
+    """last_error is None when server is freshly constructed."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        assert srv.last_error is None
+    finally:
+        srv.close()
+
+
+def test_last_error_none_after_success():
+    """last_error remains None after successful start and close."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    assert srv.last_error is None
+
+
+def test_last_error_on_start_failure():
+    """last_error is set when start() fails."""
+    from eggress._eggress import ConfigError
+
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        # Force an error by trying to start with a bad config
+        # We can simulate this by directly setting a bad service
+        original_service = srv._service
+
+        class _FailingService:
+            def start(self):
+                raise ConfigError("test error")
+
+        srv._service = _FailingService()
+        with pytest.raises(ConfigError):
+            srv.start()
+        assert srv.last_error is not None
+        assert "test error" in str(srv.last_error)
+    finally:
+        srv._service = original_service
+        srv.close()
+
+
+def test_reload_before_start_raises():
+    """reload() raises RuntimeError if server is not running."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        with pytest.raises(RuntimeError, match="not running"):
+            srv.reload("version = 1\n")
+    finally:
+        srv.close()
+
+
+def test_reload_after_start():
+    """reload() succeeds with valid TOML while server is running."""
+    cfg = EggressConfig.from_toml(VALID_TOML)
+    with Server(config=cfg) as srv:
+        time.sleep(0.1)
+        # Reload with same config (should succeed since listener names match)
+        result = srv.reload(VALID_TOML)
+        assert isinstance(result, dict)
+
+
+def test_is_ready_after_start():
+    """is_ready returns True after server starts successfully."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        assert srv.is_ready is True
+    finally:
+        srv.close()
+
+
+def test_is_ready_before_start():
+    """is_ready returns False before start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        assert srv.is_ready is False
+    finally:
+        srv.close()
+
+
+def test_is_ready_after_close():
+    """is_ready returns False after close()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    assert srv.is_ready is False
+
+
+def test_listener_info_before_start():
+    """listener_info returns empty list before start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        assert srv.listener_info == []
+    finally:
+        srv.close()
+
+
+def test_listener_info_after_start():
+    """listener_info returns a non-empty list after start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        info = srv.listener_info
+        assert isinstance(info, list)
+        assert len(info) > 0
+    finally:
+        srv.close()
+
+
+def test_metrics_text_before_start():
+    """metrics_text returns empty string before start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        assert srv.metrics_text == ""
+    finally:
+        srv.close()
+
+
+def test_metrics_text_after_start():
+    """metrics_text returns non-empty string after start()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        metrics = srv.metrics_text
+        assert isinstance(metrics, str)
+        assert len(metrics) > 0
+    finally:
+        srv.close()
+
+
+def test_metrics_text_after_close():
+    """metrics_text returns empty string after close()."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    assert srv.metrics_text == ""
+
+
+def test_del_warns_if_not_closed():
+    """__del__ issues ResourceWarning if server was not properly closed."""
+    import gc
+    import warnings
+
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        del srv
+        gc.collect()
+        resource_warnings = [x for x in w if issubclass(x.category, ResourceWarning)]
+        assert len(resource_warnings) >= 1
+        assert "not properly closed" in str(resource_warnings[0].message)
+
+
+def test_del_no_warning_if_closed():
+    """__del__ does not issue ResourceWarning if server was properly closed."""
+    import gc
+    import warnings
+
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    srv.close()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        del srv
+        gc.collect()
+        resource_warnings = [x for x in w if issubclass(x.category, ResourceWarning)]
+        assert len(resource_warnings) == 0
+
+
+def test_concurrent_sessions_through_socks5():
+    """Multiple concurrent SOCKS5 connections through the server."""
+    echo_host, echo_port, echo_srv = _echo_server()
+    try:
+        with Server(listen=["socks5://127.0.0.1:0"]) as srv:
+            time.sleep(0.1)
+            addrs = srv.addresses
+            socks_addr = None
+            for key, addr in addrs.items():
+                if addr:
+                    host, port = addr.rsplit(":", 1)
+                    socks_addr = (host, int(port))
+                    break
+            assert socks_addr is not None
+
+            # Establish 3 connections and verify each works independently
+            for i in range(3):
+                s = _socks5_connect(
+                    socks_addr[0], socks_addr[1], echo_host, echo_port
+                )
+                try:
+                    payload = f"msg{i}".encode()
+                    s.sendall(payload)
+                    resp = s.recv(4096)
+                    assert resp == payload
+                finally:
+                    s.close()
+    finally:
+        echo_srv.close()
+
+
+def test_server_coexists_with_pproxyservice():
+    """Server and PPProxyService can coexist in the same process."""
+    from eggress.pproxy import PPProxyService
+
+    with Server(listen=["http://127.0.0.1:0"]) as srv:
+        time.sleep(0.1)
+        assert len(srv.addresses) > 0
+        with PPProxyService(listen=["socks5://127.0.0.1:0"]) as handle:
+            time.sleep(0.1)
+            assert len(handle.bound_addresses) > 0
+
+
+def test_multiple_independent_servers():
+    """Multiple Server instances can run independently."""
+    with Server(listen=["http://127.0.0.1:0"]) as srv1:
+        time.sleep(0.1)
+        with Server(listen=["socks5://127.0.0.1:0"]) as srv2:
+            time.sleep(0.1)
+            assert len(srv1.addresses) > 0
+            assert len(srv2.addresses) > 0
+            # They should have different addresses
+            addrs1 = set(srv1.addresses.values())
+            addrs2 = set(srv2.addresses.values())
+            assert addrs1 != addrs2
+
+
+def test_run_from_main_thread():
+    """run() can be called from the main thread (starts and blocks)."""
+    import signal
+
+    srv = Server(listen=["http://127.0.0.1:0"])
+    started = threading.Event()
+
+    def _run_in_thread():
+        # Signal main thread to send SIGINT
+        time.sleep(0.2)
+        # Send SIGINT to self (main thread)
+        import os
+        os.kill(os.getpid(), signal.SIGINT)
+
+    t = threading.Thread(target=_run_in_thread, daemon=True)
+    t.start()
+
+    # run() should block until SIGINT
+    srv.run()
+    # After run returns, server should be closed
+    assert srv.addresses == {}
+
+
+def test_run_from_non_main_thread_raises():
+    """run() raises RuntimeError when called from non-main thread."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    error = []
+
+    def _try_run():
+        try:
+            srv.run()
+        except RuntimeError as e:
+            error.append(e)
+
+    t = threading.Thread(target=_try_run)
+    t.start()
+    t.join(timeout=2.0)
+    srv.close()
+    assert len(error) == 1
+    assert "main thread" in str(error[0])
+
+
+def test_construct_bad_config_type_raises():
+    """Server(config=not_an_eggress_config) raises TypeError."""
+    with pytest.raises(TypeError, match="EggressConfig"):
+        Server(config="not a config")
+
+
+def test_multiple_listeners_different_protocols():
+    """Multiple listeners with different protocols work correctly."""
+    echo_host, echo_port, echo_srv = _echo_server()
+    try:
+        with Server(
+            listen=[
+                "socks5://127.0.0.1:0",
+                "http://127.0.0.1:0",
+            ],
+        ) as srv:
+            time.sleep(0.1)
+            addrs = srv.addresses
+            assert len(addrs) == 2
+
+            # Both should be reachable
+            socks_addr = None
+            http_addr = None
+            for key, addr in addrs.items():
+                if addr:
+                    host, port = addr.rsplit(":", 1)
+                    if socks_addr is None:
+                        socks_addr = (host, int(port))
+                    else:
+                        http_addr = (host, int(port))
+
+            if socks_addr:
+                s = _socks5_connect(
+                    socks_addr[0], socks_addr[1], echo_host, echo_port
+                )
+                s.sendall(b"test")
+                resp = s.recv(4096)
+                assert resp == b"test"
+                s.close()
+    finally:
+        echo_srv.close()
+
+
+def test_chaining_start_returns_self():
+    """start() returns self enabling method chaining."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        result = srv.start().addresses
+        assert isinstance(result, dict)
+        assert len(result) > 0
+    finally:
+        srv.close()

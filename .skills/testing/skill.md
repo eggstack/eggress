@@ -273,6 +273,7 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_wheel_import_smoke.py` — wheel import verification
 - `python/tests/test_connection.py` — Connection contract and lifecycle tests (signatures, attributes, state machine, close semantics, resource ownership, context manager, GIL release)
 - `python/tests/test_connection_behavioral.py` — Connection behavioral tests (SOCKS5 proxy echo, multiple protocols, failure scenarios, concurrent lifecycle, resource cleanup, GIL release)
+- `python/tests/test_server_lifecycle.py` — Server lifecycle tests (Phase C3: construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence)
 
 Run:
 ```bash

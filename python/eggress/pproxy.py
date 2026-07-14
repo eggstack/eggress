@@ -522,6 +522,8 @@ class Server:
         server.run()  # blocks until SIGINT/SIGTERM
     """
 
+    __slots__ = ("_service", "_config", "_handle", "_last_error")
+
     def __init__(
         self,
         listen: Optional[list[str]] = None,
@@ -567,19 +569,28 @@ class Server:
         self._service = EggressService(eggress_config)
         self._config = eggress_config
         self._handle = None
+        self._last_error: Optional[Exception] = None
 
     def start(self):
         """Start the server. Returns self for chaining."""
         if self._handle is not None:
             raise AlreadyStartedError("server is already running")
-        self._handle = self._service.start()
+        try:
+            self._handle = self._service.start()
+        except Exception as e:
+            self._last_error = e
+            raise
         return self
 
     def close(self) -> None:
         """Stop the server. Idempotent."""
         if self._handle is not None:
-            self._handle.shutdown()
-            self._handle = None
+            try:
+                self._handle.shutdown()
+            except Exception as e:
+                self._last_error = e
+            finally:
+                self._handle = None
 
     def stop(self) -> None:
         """Stop the server. Alias for close()."""
@@ -625,7 +636,11 @@ class Server:
             raise AlreadyStartedError("server is already running")
         import asyncio
 
-        self._handle = await asyncio.to_thread(self._service.start)
+        try:
+            self._handle = await asyncio.to_thread(self._service.start)
+        except Exception as e:
+            self._last_error = e
+            raise
         return self
 
     async def aclose(self) -> None:
@@ -633,8 +648,12 @@ class Server:
         if self._handle is not None:
             import asyncio
 
-            await asyncio.to_thread(self._handle.shutdown)
-            self._handle = None
+            try:
+                await asyncio.to_thread(self._handle.shutdown)
+            except Exception as e:
+                self._last_error = e
+            finally:
+                self._handle = None
 
     async def wait_closed(self) -> None:
         """Wait for the server to close. If the server is still running,
@@ -643,6 +662,26 @@ class Server:
 
         while self._handle is not None:
             await asyncio.sleep(0.05)
+
+    def reload(self, toml: str) -> dict:
+        """Hot-reload configuration from a TOML string.
+
+        Only routing, upstreams, groups, and health settings are
+        hot-reloadable. Listener topology changes require a restart.
+
+        Args:
+            toml: New eggress TOML configuration string.
+
+        Returns:
+            Dict with reload outcome (e.g. ``{"applied": true}``).
+
+        Raises:
+            RuntimeError: If the server is not running.
+            ReloadError: If the TOML is invalid.
+        """
+        if self._handle is None:
+            raise RuntimeError("server is not running")
+        return self._handle.reload_toml(toml)
 
     @property
     def addresses(self) -> dict[str, str]:
@@ -681,6 +720,29 @@ class Server:
             return ""
         return self._handle.metrics_text()
 
+    @property
+    def sessions(self) -> int:
+        """Number of active connections. 0 if not started."""
+        if self._handle is None:
+            return 0
+        return self._handle.status().get("active_connections", 0)
+
+    @property
+    def last_error(self) -> Optional[Exception]:
+        """Most recent error from start/reload/shutdown. ``None`` if no error."""
+        return self._last_error
+
+    def status(self) -> dict:
+        """Structured status dict from the running service.
+
+        Returns a dict with keys: ``readiness``, ``active_connections``,
+        ``listeners``, ``uptime``, ``generation``, etc. Empty dict if not
+        started.
+        """
+        if self._handle is None:
+            return {}
+        return self._handle.status()
+
     def __enter__(self):
         self.start()
         return self
@@ -696,6 +758,18 @@ class Server:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         await self.aclose()
         return False
+
+    def __del__(self) -> None:
+        if getattr(self, "_handle", None) is not None:
+            import warnings
+
+            warnings.warn(
+                "Server was not properly closed. Use 'with' statement "
+                "or call close().",
+                ResourceWarning,
+                stacklevel=2,
+            )
+            self.close()
 
     def __repr__(self) -> str:
         state = "running" if self._handle is not None else "stopped"

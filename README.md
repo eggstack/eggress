@@ -30,6 +30,7 @@ The `eggress-pproxy-compat` crate provides:
 - Standalone UDP mode (`-ul`/`-ur` flags) properly classified as compatible in manifest
 - Python bindings for translation helpers (`translate_pproxy_args`, `translate_pproxy_uri`)
 - Python pproxy drop-in API (`PPProxyService`, `CompatibilityReport`, `start_pproxy` multi-mode) — Phase 40
+- Python `Server` class: pproxy-compatible server wrapper with full lifecycle, observability (`status()`, `sessions`, `last_error`), hot-reload, and resource management — Phase C3
 - `.pyi` type stubs for all public modules
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
 - Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 139 capabilities across 5 categories with tier classification and machine-readable validation
