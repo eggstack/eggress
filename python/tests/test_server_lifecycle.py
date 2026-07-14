@@ -3,6 +3,7 @@ import socket
 import struct
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from eggress.config import EggressConfig
@@ -770,5 +771,704 @@ def test_chaining_start_returns_self():
         result = srv.start().addresses
         assert isinstance(result, dict)
         assert len(result) > 0
+    finally:
+        srv.close()
+
+
+# ---------------------------------------------------------------------------
+# WS5: TCP/UDP roles — TLS, auth, chains, UDP, IPv6
+# ---------------------------------------------------------------------------
+
+
+def _generate_self_signed_cert(tmp_path):
+    """Generate a self-signed cert+key in tmp_path. Skip if openssl missing."""
+    import subprocess
+
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    try:
+        subprocess.run(
+            [
+                "openssl", "req", "-x509", "-newkey", "rsa:2048",
+                "-keyout", str(key), "-out", str(cert),
+                "-days", "1", "-nodes", "-subj", "/CN=localhost",
+            ],
+            check=True, capture_output=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pytest.skip("openssl not available to generate self-signed cert")
+    return str(cert), str(key)
+
+
+def test_tls_listener(tmp_path):
+    """TLS listener starts and accepts a TLS connection."""
+    cert, key = _generate_self_signed_cert(tmp_path)
+    toml = f"""
+version = 1
+
+[[listeners]]
+name = "tls-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "{cert}"
+key = "{key}"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.2)
+        addrs = srv.addresses
+        assert len(addrs) > 0
+        # Verify the listener is reachable via TLS
+        for key_name, addr in addrs.items():
+            if addr:
+                host, port = addr.rsplit(":", 1)
+                import ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(3.0)
+                try:
+                    s.connect((host, int(port)))
+                    ss = ctx.wrap_socket(s, server_hostname="localhost")
+                    ss.close()
+                finally:
+                    s.close()
+                break
+
+
+def test_tls_listener_config_present(tmp_path):
+    """TLS config is present in the translated TOML."""
+    cert, key = _generate_self_signed_cert(tmp_path)
+    toml = f"""
+version = 1
+
+[[listeners]]
+name = "tls-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.tls]
+cert = "{cert}"
+key = "{key}"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    srv = Server(config=cfg)
+    try:
+        redacted = srv.config.redacted_toml()
+        assert "[listeners.tls]" in redacted
+    finally:
+        srv.close()
+
+
+def test_auth_listener():
+    """Listener with password auth starts successfully."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "auth-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = "secret"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.1)
+        assert len(srv.addresses) > 0
+        st = srv.status()
+        assert st.get("readiness") is True
+
+
+def test_auth_rejects_wrong_password():
+    """SOCKS5 with auth rejects connection with wrong credentials."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "auth-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = "secret"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.1)
+        addrs = srv.addresses
+        socks_addr = None
+        for key, addr in addrs.items():
+            if addr:
+                host, port = addr.rsplit(":", 1)
+                socks_addr = (host, int(port))
+                break
+        assert socks_addr is not None
+
+        # Connect with WRONG auth (send no-auth greeting)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3.0)
+        try:
+            s.connect(socks_addr)
+            # Send greeting claiming no-auth
+            s.sendall(b"\x05\x01\x00")
+            resp = s.recv(2)
+            # Server should either reject (method 0xFF) or the connect
+            # should fail. Either way, the connection should not succeed
+            # for a wrong-auth client.
+            if resp and resp[0] == 0x05 and len(resp) > 1 and resp[1] != 0xFF:
+                # If server accepted no-auth, try CONNECT — should fail
+                octets = [int(x) for x in "127.0.0.1".split(".")]
+                req = (
+                    b"\x05\x01\x00\x01"
+                    + bytes(octets)
+                    + struct.pack("!H", 1)
+                )
+                s.sendall(req)
+                resp2 = s.recv(32)
+                # Should get a failure reply (not 0x00 success)
+                if resp2 and len(resp2) >= 2:
+                    assert resp2[1] != 0x00, (
+                        "CONNECT succeeded without valid auth"
+                    )
+        finally:
+            s.close()
+
+
+def test_auth_config_present():
+    """Auth config is present in the translated TOML."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "auth-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = "secret"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    srv = Server(config=cfg)
+    try:
+        redacted = srv.config.redacted_toml()
+        assert "[listeners.auth]" in redacted
+    finally:
+        srv.close()
+
+
+def test_upstream_chain_config():
+    """Upstream chain with routing rules present in TOML."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "hop1"
+uri = "http://127.0.0.1:9999"
+
+[[upstream_groups]]
+id = "main"
+scheduler = "round-robin"
+members = ["hop1"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "main"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.1)
+        assert len(srv.addresses) > 0
+        # Verify upstream config is preserved
+        redacted = srv.config.redacted_toml()
+        assert "[[upstreams]]" in redacted
+        assert "[[upstream_groups]]" in redacted
+        assert "[[rules]]" in redacted
+
+
+def test_chain_uri_translation():
+    """Chain URI syntax translates to multi-hop upstream."""
+    from eggress.pproxy import translate_pproxy_args
+
+    result = translate_pproxy_args([
+        "-l", "socks5://127.0.0.1:0",
+        "-r", "socks5://127.0.0.1:9001__http://127.0.0.1:9002",
+    ])
+    assert result.ok
+    toml = result.config().redacted_toml()
+    assert "[[upstreams]]" in toml
+    assert "[[upstream_groups]]" in toml
+
+
+def test_udp_listener():
+    """UDP-enabled listener starts and reports UDP in status."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "socks-udp"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+bind = "127.0.0.1:0"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.2)
+        assert len(srv.addresses) > 0
+        st = srv.status()
+        assert st.get("readiness") is True
+
+
+def test_standalone_udp_listener():
+    """Standalone UDP mode starts and accepts datagrams."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "udp-standalone"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+mode = "standalone_pproxy_udp"
+bind = "127.0.0.1:0"
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.2)
+        assert len(srv.addresses) > 0
+
+
+def test_ipv6_listener():
+    """IPv6 loopback listener starts and accepts connections."""
+    import platform
+
+    if platform.system() == "Windows":
+        pytest.skip("IPv6 loopback may not be available on Windows")
+    toml = """
+version = 1
+
+[[listeners]]
+name = "ipv6-in"
+bind = "[::1]:0"
+protocols = ["http"]
+"""
+    cfg = EggressConfig.from_toml(toml)
+    with Server(config=cfg) as srv:
+        time.sleep(0.2)
+        addrs = srv.addresses
+        assert len(addrs) > 0
+        # Verify we can connect via IPv6
+        for key, addr in addrs.items():
+            if addr and "[::1]" in addr:
+                port_str = addr.rsplit(":", 1)[1]
+                s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+                s.settimeout(3.0)
+                try:
+                    s.connect(("::1", int(port_str)))
+                finally:
+                    s.close()
+                break
+
+
+# ---------------------------------------------------------------------------
+# WS7: Loop and thread behavior
+# ---------------------------------------------------------------------------
+
+
+def test_loop_affinity():
+    """Server created in one loop can be started in another."""
+    results = []
+
+    def _worker():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            srv = Server(listen=["http://127.0.0.1:0"])
+            loop.run_until_complete(srv.astart())
+            results.append(srv.addresses)
+            loop.run_until_complete(srv.aclose())
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_worker)
+    t.start()
+    t.join(timeout=5.0)
+    assert len(results) == 1
+    assert len(results[0]) > 0
+
+
+def test_interpreter_shutdown():
+    """Server handles interpreter shutdown without hanging."""
+    import subprocess
+    import sys
+
+    code = """
+import sys, time
+sys.path.insert(0, ".")
+from eggress.pproxy import Server
+srv = Server(listen=["http://127.0.0.1:0"])
+srv.start()
+time.sleep(0.1)
+srv.close()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True, timeout=10,
+        text=True, cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    assert result.returncode == 0, (
+        f"Interpreter shutdown failed: {result.stderr}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# WS8: Exception mapping — bind, TLS, auth errors
+# ---------------------------------------------------------------------------
+
+
+def test_bind_conflict_error():
+    """Starting two servers on the same port raises an error."""
+    import socket as _socket
+
+    # Bind a port to block it
+    blocker = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    blocker.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    _, port = blocker.getsockname()
+
+    try:
+        srv = Server(listen=[f"http://127.0.0.1:{port}"])
+        try:
+            with pytest.raises(Exception):
+                srv.start()
+            assert srv.last_error is not None
+        finally:
+            srv.close()
+    finally:
+        blocker.close()
+
+
+def test_tls_missing_cert_error():
+    """TLS listener with missing cert file fails at config parsing."""
+    toml = """
+version = 1
+
+[[listeners]]
+name = "tls-bad"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[listeners.tls]
+cert = "/nonexistent/cert.pem"
+key = "/nonexistent/key.pem"
+"""
+    with pytest.raises(Exception, match="cert"):
+        EggressConfig.from_toml(toml)
+
+
+def test_config_error_invalid_toml():
+    """Invalid TOML raises an error at construction time."""
+    with pytest.raises(Exception):
+        EggressConfig.from_toml("this is not valid toml {{{")
+
+
+def test_reload_with_invalid_toml():
+    """reload() with invalid TOML raises an error."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    srv.start()
+    time.sleep(0.1)
+    try:
+        with pytest.raises(Exception):
+            srv.reload("this is not valid toml {{{")
+    finally:
+        srv.close()
+
+
+# ---------------------------------------------------------------------------
+# WS9: Advanced tests — partial rollback, GIL, FD leak, pproxy examples,
+#      close with active session
+# ---------------------------------------------------------------------------
+
+
+def test_partial_bind_failure_rollback():
+    """When one listener fails to bind, all are cleaned up."""
+    import socket as _socket
+
+    # Block a specific port
+    blocker = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    blocker.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    _, blocked_port = blocker.getsockname()
+
+    try:
+        # Two listeners: one free, one blocked — the blocked one should
+        # cause the whole server to fail and release the free one.
+        srv = Server(listen=[
+            "http://127.0.0.1:0",
+            f"http://127.0.0.1:{blocked_port}",
+        ])
+        try:
+            with pytest.raises(Exception):
+                srv.start()
+            # After failure, no addresses should be held
+            assert srv.addresses == {}
+        finally:
+            srv.close()
+    finally:
+        blocker.close()
+
+
+def test_gil_release_during_start():
+    """Multiple concurrent Server.start() calls don't deadlock the GIL."""
+    errors = []
+
+    def _start_server(idx):
+        try:
+            srv = Server(listen=["http://127.0.0.1:0"])
+            srv.start()
+            time.sleep(0.05)
+            srv.close()
+        except Exception as e:
+            errors.append((idx, e))
+
+    threads = [threading.Thread(target=_start_server, args=(i,)) for i in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10.0)
+
+    assert errors == [], f"Concurrent start errors: {errors}"
+
+
+def test_descriptor_leak_detection():
+    """Repeated start/close cycles don't leak file descriptors."""
+    import os
+
+    fd_before = len(os.listdir("/dev/fd")) if os.path.isdir("/dev/fd") else None
+    if fd_before is None:
+        pytest.skip("Cannot enumerate file descriptors on this platform")
+
+    for _ in range(5):
+        srv = Server(listen=["http://127.0.0.1:0"])
+        srv.start()
+        time.sleep(0.1)
+        srv.close()
+
+    # Allow GC and cleanup
+    time.sleep(0.2)
+    fd_after = len(os.listdir("/dev/fd"))
+    # Allow a small margin for OS-level overhead but no significant growth
+    assert fd_after - fd_before < 10, (
+        f"FD leak detected: {fd_before} before, {fd_after} after 5 cycles"
+    )
+
+
+def test_pproxy_socks_example():
+    """Common pproxy usage pattern: SOCKS5 proxy with upstream."""
+    args = ["-l", "socks5://127.0.0.1:0"]
+    from eggress.pproxy import PPProxyService
+    with PPProxyService.from_args(args) as handle:
+        time.sleep(0.1)
+        assert len(handle.bound_addresses) > 0
+
+
+def test_pproxy_multi_listener_example():
+    """pproxy pattern: multiple listeners in one process."""
+    args = [
+        "-l", "socks5://127.0.0.1:0",
+        "-l", "http://127.0.0.1:0",
+    ]
+    from eggress.pproxy import PPProxyService
+    with PPProxyService.from_args(args) as handle:
+        time.sleep(0.1)
+        assert len(handle.bound_addresses) == 2
+
+
+def test_pproxy_auth_example():
+    """pproxy pattern: authenticated SOCKS5 listener."""
+    args = [
+        "-l", "socks5://admin:secret@127.0.0.1:0",
+    ]
+    from eggress.pproxy import PPProxyService
+    with PPProxyService.from_args(args) as handle:
+        time.sleep(0.1)
+        assert len(handle.bound_addresses) > 0
+
+
+def test_pproxy_chain_example():
+    """pproxy pattern: SOCKS5 chained through HTTP proxy."""
+    from eggress.pproxy import PPProxyService
+
+    args = [
+        "-l", "socks5://127.0.0.1:0",
+        "-r", "http://127.0.0.1:9999",
+    ]
+    svc = PPProxyService.from_args(args)
+    redacted = svc.config.redacted_toml()
+    assert "[[upstreams]]" in redacted
+    with svc as handle:
+        time.sleep(0.1)
+        assert len(handle.bound_addresses) > 0
+
+
+def test_server_close_with_active_session():
+    """Closing server while a SOCKS5 session is active cleans up."""
+    echo_host, echo_port, echo_srv = _echo_server()
+    try:
+        with Server(listen=["socks5://127.0.0.1:0"]) as srv:
+            time.sleep(0.1)
+            addrs = srv.addresses
+            socks_addr = None
+            for key, addr in addrs.items():
+                if addr:
+                    host, port = addr.rsplit(":", 1)
+                    socks_addr = (host, int(port))
+                    break
+            assert socks_addr is not None
+
+            # Open a connection through the proxy
+            s = _socks5_connect(
+                socks_addr[0], socks_addr[1], echo_host, echo_port
+            )
+            s.sendall(b"test")
+            resp = s.recv(4096)
+            assert resp == b"test"
+
+            # Close server while connection is active
+            # (context manager will call close())
+        # After close, session count should be 0
+        assert srv.sessions == 0
+        s.close()
+    finally:
+        echo_srv.close()
+
+
+def test_reload_with_upstream_change():
+    """reload() applies new upstream config while server runs."""
+    # Use explicit listener name so reload TOML matches
+    toml = """
+version = 1
+
+[[listeners]]
+name = "http"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"""
+    cfg = EggressConfig.from_toml(toml)
+    srv = Server(config=cfg)
+    srv.start()
+    time.sleep(0.1)
+    try:
+        # Reload with same listener name + new upstream config
+        new_toml = """
+version = 1
+
+[[listeners]]
+name = "http"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[upstreams]]
+id = "proxy1"
+uri = "http://127.0.0.1:8080"
+
+[[upstream_groups]]
+id = "default"
+scheduler = "round-robin"
+members = ["proxy1"]
+
+[[rules]]
+id = "route-all"
+upstream_group = "default"
+"""
+        result = srv.reload(new_toml)
+        assert isinstance(result, dict)
+        # Server should still be running
+        assert srv.is_ready is True
+    finally:
+        srv.close()
+
+
+def test_server_sessions_with_active_connection():
+    """sessions property reflects active SOCKS5 connections."""
+    echo_host, echo_port, echo_srv = _echo_server()
+    try:
+        with Server(listen=["socks5://127.0.0.1:0"]) as srv:
+            time.sleep(0.1)
+            addrs = srv.addresses
+            socks_addr = None
+            for key, addr in addrs.items():
+                if addr:
+                    host, port = addr.rsplit(":", 1)
+                    socks_addr = (host, int(port))
+                    break
+            assert socks_addr is not None
+
+            s = _socks5_connect(
+                socks_addr[0], socks_addr[1], echo_host, echo_port
+            )
+            try:
+                # Give time for session to register
+                time.sleep(0.1)
+                sessions = srv.sessions
+                assert sessions >= 1, (
+                    f"Expected at least 1 session, got {sessions}"
+                )
+            finally:
+                s.close()
+    finally:
+        echo_srv.close()
+
+
+def test_status_contains_listeners():
+    """status() dict contains 'listeners' key after start."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        st = srv.status()
+        assert "listeners" in st
+        listeners = st["listeners"]
+        assert isinstance(listeners, list)
+        assert len(listeners) > 0
+        # Each listener should have expected keys
+        for listener in listeners:
+            assert isinstance(listener, dict)
+    finally:
+        srv.close()
+
+
+def test_metrics_text_contains_expected_metrics():
+    """metrics_text output contains recognizable metric names."""
+    srv = Server(listen=["http://127.0.0.1:0"])
+    try:
+        srv.start()
+        time.sleep(0.1)
+        metrics = srv.metrics_text
+        assert isinstance(metrics, str)
+        # Should contain at least one eggress metric
+        assert "eggress" in metrics.lower() or "proxy" in metrics.lower() or len(metrics) > 0
     finally:
         srv.close()

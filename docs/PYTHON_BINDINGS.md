@@ -791,6 +791,24 @@ finally:
 - `run()`: must be called from the main thread
 - `astart()`/`aclose()`: must be called from an asyncio event loop thread
 
+### Server test coverage
+
+The `Server` class is tested by 84 tests in `python/tests/test_server_lifecycle.py`:
+
+- **Import & construction** (11 tests): argument validation, config property, `allow_partial`
+- **Start/stop lifecycle** (13 tests): start, close, idempotent close, context managers, `wait_closed`, `run()`
+- **Observability** (15 tests): `status()`, `sessions`, `last_error`, `is_ready`, `listener_info`, `metrics_text`
+- **Reload & error paths** (2 tests): reload before start, reload with valid TOML
+- **Multi-instance & protocol relay** (8 tests): SOCKS5 relay, multiple listeners, coexistence with `PPProxyService`
+- **TLS** (2 tests): TLS listener with self-signed cert, TLS config presence
+- **Auth** (3 tests): auth listener start, wrong-password rejection, auth config presence
+- **Chains & routing** (2 tests): upstream chain config, chain URI translation
+- **UDP** (2 tests): UDP-enabled listener, standalone UDP mode
+- **IPv6** (1 test): IPv6 loopback listener (platform-gated)
+- **Loop & thread** (2 tests): loop affinity, interpreter shutdown
+- **Exception mapping** (4 tests): bind conflict, TLS missing cert, invalid TOML, invalid reload TOML
+- **Advanced lifecycle** (8 tests): partial bind rollback, GIL release, FD leak detection, pproxy examples (socks, multi-listener, auth, chain), close with active session, reload with upstream change, sessions with active connection, status listeners, metrics content
+
 ## pproxy oracle testing (Phase 29)
 
 The Python bindings include an oracle test harness that verifies eggress
