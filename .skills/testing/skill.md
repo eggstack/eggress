@@ -276,7 +276,7 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_connection_behavioral.py` — Connection behavioral tests (SOCKS5 proxy echo, multiple protocols, failure scenarios, concurrent lifecycle, resource cleanup, GIL release)
 - `python/tests/test_server_lifecycle.py` — Server lifecycle tests (Phase C3: 84 tests covering construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence, TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, pproxy examples)
 - `python/tests/test_protocol_cipher.py` — Phase C4 protocol objects, cipher objects, and plugin bridge tests
-- `python/tests/test_asyncio_semantic.py` — Phase C5 asyncio semantic compatibility (67 tests: loop affinity, bridge lifecycle, cancellation, close ordering, contextvars, interpreter safety, version compat, stress/race, API contracts)
+- `python/tests/test_asyncio_semantic.py` — Phase C5 asyncio semantic compatibility (107 tests: loop affinity including cross-loop detection, bridge lifecycle, cancellation (cancel_wait_closed, cancel during aclose, concurrent bridge.cancel, plugin callback cancellation), close ordering, contextvars, exception chaining, asyncio debug mode with real async operations, interpreter safety (repeated asyncio.run cycles, GC, context managers), version compat, stress/race (AsyncConnection, Server, CloseWaiter, PluginBridge), representative pproxy async patterns, manifest/doc agreement)
 
 Run:
 ```bash

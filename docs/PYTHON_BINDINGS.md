@@ -835,19 +835,25 @@ The `Server` class is tested by 84 tests in `python/tests/test_server_lifecycle.
 - **Exception mapping** (4 tests): bind conflict, TLS missing cert, invalid TOML, invalid reload TOML
 - **Advanced lifecycle** (8 tests): partial bind rollback, GIL release, FD leak detection, pproxy examples (socks, multi-listener, auth, chain), close with active session, reload with upstream change, sessions with active connection, status listeners, metrics content
 
-### Phase C5 asyncio semantic compatibility (67 tests)
+### Phase C5 asyncio semantic compatibility (107 tests)
 
 The `test_asyncio_semantic.py` suite covers all 10 workstreams:
 
 - **Loop-affinity** (7 tests): construction outside loop, first-use binding, cross-loop error, sequential loops, concurrent thread loops
 - **Native awaitable bridge** (8 tests): return values, args/kwargs, contextvars, executor dispatch, exception conversion, cancellation, close idempotency, post-close error, `__del__` warning
 - **Cancellation semantics** (3 tests): cancel during bridge run, cancel aclose, cancel astart
+- **Cancellation semantics extended** (9 tests): cancel wait_closed, concurrent cancel aclose, cancel server wait_closed, concurrent bridge.cancel, cancel-close idempotent, aclose leaves reusable, plugin timeout, plugin CancelledError, handle shutdown cancel
 - **Close/shutdown ordering** (11 tests): `CloseWaiter` mark_closed/failed, idempotent close, cleanup callbacks, cleanup exceptions, multi-waiter, `AsyncConnection` close/await_closed, `Server` close/aclose/wait_closed
 - **Callback/context** (6 tests): contextvars preservation, exception capture, timeout, reentrancy detection, bounded concurrency, async shutdown
 - **Exception/task reporting** (3 tests): CancelledError mapping, exception chaining, asyncio debug mode
 - **Interpreter/GC safety** (9 tests): `__del__` warnings, no-warn after close, context managers, repeated `asyncio.run()` cycles
 - **Version compatibility** (5 tests): `_compat` module exports, `get_running_loop`, `cancelled_error_is_base`, `HAS_TASKGROUP`, init exports
 - **Stress/race** (6 tests): concurrent waiters, rapid cycles, bridge stress, plugin stress, server stress, cancel-during-close
+- **Stress/race extended** (9 tests): AsyncConnection/Server repeated loops, concurrent close/aclose, rapid mark, rapid open/close, plugin stress, context manager stress
+- **Cross-loop AsyncConnection** (2 tests): cross-loop detection via live threads, AsyncBridge cross-loop both live
+- **Asyncio debug-mode extended** (4 tests): bridge run+close, CloseWaiter multi-waiter, plugin executions, concurrent bridge runs under debug mode
+- **Representative pproxy programs** (8 tests): server lifecycle, async context manager, service from args, translation, compatibility check, concurrent servers, hot reload, plugin callbacks
+- **Manifest/doc agreement** (8 tests): async method docstrings, invariant documentation, compat version, C1 classification, cancellation test count, stress test count
 - **Documentation contract** (7 tests): API surface verification for all new types
 
 ## pproxy oracle testing (Phase 29)

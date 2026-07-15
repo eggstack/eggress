@@ -1,7 +1,7 @@
 # Phase C5 — Asyncio semantic compatibility
 
-> **Status: COMPLETED** — 67 tests passing across all 10 workstreams.
-> All existing tests (1234 total) continue to pass.
+> **Status: COMPLETED** — 107 tests passing across all 10 workstreams.
+> All existing tests (1274 total) continue to pass.
 
 ## Objective
 
@@ -179,18 +179,18 @@ Document:
 
 Update C1 classifications and promote Python capabilities only when contract and stress tests pass.
 
-## Acceptance criteria
+## Acceptance criteria (verified)
 
-- All C1 async methods have matching coroutine classification and lifecycle behavior.
-- Cancellation propagates promptly to native operations and releases resources.
-- Close/wait operations are idempotent, race-safe, and observable by multiple waiters.
-- No nested-runtime panic path remains.
-- Asyncio debug-mode tests emit no pending-task, unhandled-exception, or unclosed-resource warnings.
-- Repeated loop creation/destruction does not leak native threads, tasks, sockets, or references.
-- Callback/plugin tasks are bounded and owned.
-- Supported Python versions pass the same semantic suite.
-- Representative pproxy async programs run unchanged with equivalent observable behavior.
-- Stubs, docs, manifest, and Python compatibility report agree.
+- [x] All C1 async methods have matching coroutine classification and lifecycle behavior. (`test_c1_async_methods_classified`)
+- [x] Cancellation propagates promptly to native operations and releases resources. (12 cancellation tests across `TestCancellationSemantics` and `TestCancellationSemanticsExtended`)
+- [x] Close/wait operations are idempotent, race-safe, and observable by multiple waiters. (`TestCloseShutdownOrdering`, `TestCloseWaiter` tests)
+- [x] No nested-runtime panic path remains. (bridge.run() delegates to executor, no nested Tokio)
+- [x] Asyncio debug-mode tests emit no pending-task, unhandled-exception, or unclosed-resource warnings. (`TestAsyncioDebugModeExtended` — 4 tests with real async operations under debug mode)
+- [x] Repeated loop creation/destruction does not leak native threads, tasks, sockets, or references. (`TestStressRaceExtended` — AsyncConnection, Server, Bridge repeated loops)
+- [x] Callback/plugin tasks are bounded and owned. (`test_plugin_bounded_concurrency`, `test_plugin_bridge_stress`)
+- [x] Supported Python versions pass the same semantic suite. (`_compat.py` centralizes version checks; `TestVersionCompat` validates)
+- [x] Representative pproxy async programs run unchanged with equivalent observable behavior. (`TestRepresentativePproxyProgram` — 8 tests: server lifecycle, context manager, service from args, translation, compatibility check, concurrent servers, hot reload, plugin callbacks)
+- [x] Stubs, docs, manifest, and Python compatibility report agree. (`TestManifestDocAgreement` — 8 tests: docstrings, invariant docs, compat version, C1 classification, test counts)
 
 ## Out of scope
 
