@@ -250,6 +250,37 @@ impl WebSocketTunnelClient {
 
         Ok(WebSocketStreamAdapter::new(ws_stream, self.max_message_size).into_boxed())
     }
+
+    pub async fn connect_over_stream<S>(
+        &self,
+        url: &str,
+        stream: S,
+    ) -> Result<BoxStream, WebSocketError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let (ws_stream, _) = tokio_tungstenite::client_async(url, stream)
+            .await
+            .map_err(|e| WebSocketError::Connect(e.to_string()))?;
+
+        Ok(WebSocketStreamAdapter::new(ws_stream, self.max_message_size).into_boxed())
+    }
+
+    pub async fn connect_over_stream_with_config<S>(
+        &self,
+        url: &str,
+        stream: S,
+        config: tokio_tungstenite::tungstenite::protocol::WebSocketConfig,
+    ) -> Result<BoxStream, WebSocketError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let (ws_stream, _) = tokio_tungstenite::client_async_with_config(url, stream, Some(config))
+            .await
+            .map_err(|e| WebSocketError::Connect(e.to_string()))?;
+
+        Ok(WebSocketStreamAdapter::new(ws_stream, self.max_message_size).into_boxed())
+    }
 }
 
 #[cfg(test)]
@@ -573,6 +604,36 @@ mod tests {
         let mut reply = [0u8; 5];
         bs.read_exact(&mut reply).await.unwrap();
         assert_eq!(&reply, b"reply");
+
+        server_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_connect_over_stream() {
+        let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = server_listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = server_listener.accept().await.unwrap();
+            let server = WebSocketTunnelServer::with_default_config();
+            let mut bs = server.accept_upgrade(stream).await.unwrap();
+            let mut buf = [0u8; 12];
+            bs.read_exact(&mut buf).await.unwrap();
+            bs.write_all(b"over-stream!").await.unwrap();
+            bs.shutdown().await.unwrap();
+        });
+
+        let tcp_stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
+
+        let client = WebSocketTunnelClient::with_default_config();
+        let mut bs = client
+            .connect_over_stream(&format!("ws://{}", server_addr), tcp_stream)
+            .await
+            .unwrap();
+        bs.write_all(b"hello stream").await.unwrap();
+        let mut reply = [0u8; 12];
+        bs.read_exact(&mut reply).await.unwrap();
+        assert_eq!(&reply, b"over-stream!");
 
         server_handle.await.unwrap();
     }

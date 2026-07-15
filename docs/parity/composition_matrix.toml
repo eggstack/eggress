@@ -287,23 +287,23 @@ capability_ids = [
 from_protocol = "socks5"
 to_protocol = "ws"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
+tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.chain.socks5_to_ws",
 ]
-notes = "WS upstream opens independent connection; does not consume prior-hop stream"
+notes = "WS upstream performs WebSocket handshake over the prior-hop stream"
 
 [[chain]]
 from_protocol = "http"
 to_protocol = "ws"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
+tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.chain.http_to_ws",
 ]
-notes = "WS upstream opens independent connection; does not consume prior-hop stream"
+notes = "WS upstream performs WebSocket handshake over the prior-hop stream"
 
 [[chain]]
 from_protocol = "socks5"
@@ -314,7 +314,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.chain.socks5_to_raw",
 ]
-notes = "Raw upstream opens independent connection; does not consume prior-hop stream"
+notes = "Raw is a passthrough that correctly forwards the prior-hop stream"
 
 [[chain]]
 from_protocol = "http"
@@ -325,7 +325,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.chain.http_to_raw",
 ]
-notes = "Raw upstream opens independent connection; does not consume prior-hop stream"
+notes = "Raw is a passthrough that correctly forwards the prior-hop stream"
 
 [[chain]]
 from_protocol = "socks5"
@@ -336,7 +336,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.chain.socks5_to_h2",
 ]
-notes = "H2 upstream opens independent connection; does not consume prior-hop stream"
+notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)"
 
 [[chain]]
 from_protocol = "http"
@@ -347,7 +347,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.chain.http_to_h2",
 ]
-notes = "H2 upstream opens independent connection; does not consume prior-hop stream"
+notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Runtime-Integrated Advanced Transports (upstream-only, promoted in B3/B4)
@@ -514,4 +514,4 @@ description = "All protocols are now runtime-integrated (B4 promoted h2)"
 [[constraint]]
 type = "upstream_only_no_listener"
 applies_to = ["ws", "wss", "h2", "raw"]
-description = "Advanced transports are upstream-only; they open independent connections and cannot act as listeners or intermediate chain hops"
+description = "Advanced transports are upstream-only; they cannot act as listeners or intermediate chain hops"

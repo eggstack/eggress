@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Parity hardening complete through Phase 51 with corrective verification pass. The parity capability manifest (145 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth. 95 drop-in, 22 compatible-with-warning, 14 native-equivalent, 9 intentional-non-parity, 5 unsupported. Advanced transport chains (WS/Raw/H2) reclassified as `compatible_with_warning` with role-specific notes documenting upstream-only terminal behavior.
+> Status: Parity hardening complete through Phase 51 with corrective verification pass and Track B/C hard closure. The parity capability manifest (145 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth. 97 drop-in, 20 compatible-with-warning, 14 native-equivalent, 9 intentional-non-parity, 5 unsupported. Stream-native transport composition: WS/Raw/H2 intermediate-hop chains upgraded from `compatible_with_warning` to `drop_in`.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -135,6 +135,7 @@ Legend:
 - [x] TCP listener
 - [x] Unix-domain listener
 - [x] Direct TCP connector
+- [x] Native OutboundConnector (`eggress-embed::outbound`) — `from_toml()`, `from_pproxy_uri()`, `connect_tcp()`, `connect_tcp_timeout()`
 - [x] Replayable protocol sniff buffer
 - [x] Mixed inbound protocol autodetection
 - [x] Half-close-aware bidirectional relay
@@ -273,7 +274,7 @@ Legend:
 - [x] Shadowsocks TCP server (inbound listener with standard SIP003 AEAD; single-hop upstream)
 - [x] Shadowsocks UDP client (standard AEAD format: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [x] Shadowsocks UDP server (inbound Shadowsocks UDP association listener)
-- [x] AEAD cipher support (individual encrypt/decrypt operations)
+- [x] AEAD cipher support (encrypt/decrypt, encrypt_and_digest/decrypt_and_verify via `cryptography` library)
 - [x] Modern default cipher suite
 - [x] Legacy stream cipher diagnostics (rejected with clear error)
 - [x] OTA intentionally excluded (intentional non-parity)
@@ -318,11 +319,7 @@ SSR URIs (`ssr://`) are recognized and rejected with clear diagnostics. SSR is a
 - [x] Close and half-close mapping (Phase 26, protocol-crate only)
 - [x] Fixed-target WebSocket tunnel (Phase 26, protocol-crate only)
 - [x] WebSocket in proxy chains (Phase 26, protocol-crate only)
-
-Note: `ws://`/`wss://` URIs are accepted by the URI parser and translator but are
-**refused** as listener/upstream protocols through the runtime supervisor and
-config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct protocol-crate
-callers only.
+- [x] Stream-native composition — WS handshake over prior-hop stream via `connect_over_stream()` (Track B)
 
 ### Raw forwarding
 
@@ -330,11 +327,7 @@ callers only.
 - [ ] Fixed-target UDP forwarding
 - [x] Raw tunnel client (Phase 26, protocol-crate only)
 - [x] Raw tunnel server (Phase 26, protocol-crate only)
-
-Note: `raw://`/`tunnel://` URIs are accepted by the URI parser and translator
-but are **refused** as listener/upstream protocols through the runtime
-supervisor and config compiler (Phase 25-28 hardening H5/H6/H7). Use as direct
-protocol-crate callers only.
+- [x] Stream-native composition — raw passthrough over prior-hop stream (Track B)
 
 ### SSH
 
@@ -361,6 +354,7 @@ protocol-crate callers only.
 - [x] Upstream connection pooling (Phase B4, runtime-integrated)
 - [x] H2-over-TLS ALPN (Phase B4, runtime-integrated)
 - [x] H2 authentication (Phase B4, runtime-integrated)
+- [x] Stream-native composition — H2 handshake over prior-hop stream (Track B)
 
 Note: `h2://` upstream URIs are now fully supported through the runtime supervisor.
 

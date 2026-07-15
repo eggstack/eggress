@@ -11,6 +11,7 @@ publish = false
 eggress-config = { workspace = true }
 eggress-core = { workspace = true }
 eggress-metrics = { workspace = true }
+eggress-pproxy-compat = { workspace = true }
 eggress-runtime = { workspace = true }
 eggress-server = { workspace = true }
 tokio = { workspace = true }

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 pub use accept::AcceptedSession;
 pub use error::SessionOpenError;
-pub use execute::{FailureCategory, SessionReport};
+pub use execute::{build_chain_executor, FailureCategory, SessionReport};
 
 use eggress_routing::RouteService;
 

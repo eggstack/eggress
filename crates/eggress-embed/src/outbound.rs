@@ -1,70 +1,200 @@
-//! One-shot outbound connection through a proxy chain.
+//! Native outbound connector for proxy chains.
 //!
-//! This module provides [`connect_outbound`], which opens a single TCP
-//! connection through a configured proxy chain without starting a listener
-//! service. This is the building block for pproxy-compatible `Connection`
-//! objects that act as outbound connection factories.
-//!
-//! # Limitations
-//!
-//! The current implementation compiles the config and validates the chain,
-//! but the actual connection is performed through a minimal local listener
-//! (HTTP CONNECT tunnel) because `ChainExecutor::execute()` returns an
-//! async `BoxStream` that cannot be easily bridged to a synchronous
-//! `std::net::TcpStream` with a raw file descriptor.
-//!
-//! Future work: Add a native Rust API that returns a raw fd from the
-//! chain executor by extracting the TcpStream before protocol wrapping,
-//! or by using a more sophisticated fd-passing mechanism.
+//! This module provides [`OutboundConnector`], which compiles a TOML config
+//! and executes the chain engine directly to open TCP connections through a
+//! configured proxy chain without starting a listener service.
+
+use std::sync::Arc;
+use std::time::Duration;
 
 use crate::EggressError;
 
-/// Validate that a config TOML has at least one upstream with a non-empty chain.
+/// Metadata about an established outbound connection.
+#[derive(Debug, Clone)]
+pub struct OutboundInfo {
+    /// The local address of the underlying TCP connection (if available).
+    pub local_addr: Option<std::net::SocketAddr>,
+    /// The remote address of the first hop.
+    pub peer_addr: Option<std::net::SocketAddr>,
+    /// The chain hops that were traversed.
+    pub hop_count: usize,
+}
+
+/// A native outbound connector that executes the chain engine directly.
 ///
-/// Returns the compiled chain hops count on success, or an error describing
-/// what's missing. This is used by the Python facade to validate configuration
-/// before starting a listener-based connection.
-pub fn validate_outbound_config(config_toml: &str) -> Result<usize, EggressError> {
-    let config: eggress_config::model::ConfigFile =
-        toml::from_str(config_toml).map_err(|e| EggressError::Config(e.to_string()))?;
+/// This compiles routing/upstream state from a TOML config and provides
+/// methods to open TCP connections through the configured proxy chain
+/// without starting a listener service.
+pub struct OutboundConnector {
+    runtime_config: Arc<eggress_config::compile::RuntimeConfig>,
+    chain_executor: eggress_core::chain::ChainExecutor,
+}
 
-    if let Some(version) = config.version {
-        if version != 1 {
-            return Err(EggressError::Config(format!(
-                "unsupported config version: {version}"
-            )));
+impl OutboundConnector {
+    /// Create a connector from a TOML config string.
+    pub fn from_toml(config_toml: &str) -> Result<Self, EggressError> {
+        let config: eggress_config::model::ConfigFile =
+            toml::from_str(config_toml).map_err(|e| EggressError::Config(e.to_string()))?;
+
+        if let Some(version) = config.version {
+            if version != 1 {
+                return Err(EggressError::Config(format!(
+                    "unsupported config version: {version}"
+                )));
+            }
         }
+
+        eggress_config::validate::validate_config(&config).map_err(|errors| {
+            let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+            EggressError::Config(messages.join("; "))
+        })?;
+
+        let runtime_config = eggress_config::compile::compile_config(&config)
+            .map_err(|e| EggressError::Config(e.to_string()))?;
+
+        if runtime_config.upstreams.is_empty() {
+            return Err(EggressError::Config("no upstreams configured".to_string()));
+        }
+
+        let upstream = &runtime_config.upstreams[0];
+        if upstream.chain.hops.is_empty() {
+            return Err(EggressError::Config("upstream chain is empty".to_string()));
+        }
+
+        let chain_executor = eggress_server::build_chain_executor(None, None);
+
+        Ok(Self {
+            runtime_config: Arc::new(runtime_config),
+            chain_executor,
+        })
     }
 
-    eggress_config::validate::validate_config(&config).map_err(|errors| {
-        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-        EggressError::Config(messages.join("; "))
-    })?;
-
-    let runtime_config = eggress_config::compile::compile_config(&config)
-        .map_err(|e| EggressError::Config(e.to_string()))?;
-
-    if runtime_config.upstreams.is_empty() {
-        return Err(EggressError::Config(
-            "no upstreams configured; cannot make outbound connections".to_string(),
-        ));
+    /// Create a connector from a pproxy-style URI (e.g., "socks5://127.0.0.1:1080").
+    pub fn from_pproxy_uri(uri: &str) -> Result<Self, EggressError> {
+        let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
+            .map_err(|e| EggressError::Config(e.to_string()))?;
+        let chain = eggress_pproxy_compat::uri::PproxyChain {
+            raw: uri.to_string(),
+            hops: vec![parsed],
+        };
+        let output = eggress_pproxy_compat::translate_from_uris(&[], &[chain], &[])
+            .map_err(|e| EggressError::Config(e.to_string()))?;
+        Self::from_toml(&output.toml)
     }
 
-    let upstream = &runtime_config.upstreams[0];
-    let chain = &upstream.chain;
+    /// Connect to a target host:port through the configured proxy chain.
+    ///
+    /// Returns the connected stream and connection metadata.
+    pub async fn connect_tcp(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<(eggress_core::BoxStream, OutboundInfo), EggressError> {
+        let target = eggress_core::TargetAddr {
+            host: if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+                eggress_core::TargetHost::Ip(ip)
+            } else {
+                eggress_core::TargetHost::Domain(host.to_string())
+            },
+            port,
+        };
 
-    if chain.hops.is_empty() {
-        return Err(EggressError::Config(
-            "upstream chain is empty; cannot make outbound connections".to_string(),
-        ));
+        let upstream = &self.runtime_config.upstreams[0];
+        let chain = &upstream.chain;
+
+        let stream = self
+            .chain_executor
+            .execute(&chain.hops, &target)
+            .await
+            .map_err(|e| EggressError::Runtime(e.to_string()))?;
+
+        let info = OutboundInfo {
+            local_addr: None,
+            peer_addr: None,
+            hop_count: chain.hops.len(),
+        };
+
+        Ok((stream, info))
     }
 
-    Ok(chain.hops.len())
+    /// Connect with a timeout.
+    pub async fn connect_tcp_timeout(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<(eggress_core::BoxStream, OutboundInfo), EggressError> {
+        tokio::time::timeout(timeout, self.connect_tcp(host, port))
+            .await
+            .map_err(|_| EggressError::Runtime("connection timed out".to_string()))?
+    }
+
+    /// Get the number of upstreams configured.
+    pub fn upstream_count(&self) -> usize {
+        self.runtime_config.upstreams.len()
+    }
+
+    /// Validate that the config is usable for outbound connections.
+    ///
+    /// Returns the number of hops in the first upstream's chain.
+    pub fn validate_outbound_config(config_toml: &str) -> Result<usize, EggressError> {
+        let config: eggress_config::model::ConfigFile =
+            toml::from_str(config_toml).map_err(|e| EggressError::Config(e.to_string()))?;
+
+        if let Some(version) = config.version {
+            if version != 1 {
+                return Err(EggressError::Config(format!(
+                    "unsupported config version: {version}"
+                )));
+            }
+        }
+
+        eggress_config::validate::validate_config(&config).map_err(|errors| {
+            let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+            EggressError::Config(messages.join("; "))
+        })?;
+
+        let runtime_config = eggress_config::compile::compile_config(&config)
+            .map_err(|e| EggressError::Config(e.to_string()))?;
+
+        if runtime_config.upstreams.is_empty() {
+            return Err(EggressError::Config(
+                "no upstreams configured; cannot make outbound connections".to_string(),
+            ));
+        }
+
+        let upstream = &runtime_config.upstreams[0];
+        let chain = &upstream.chain;
+
+        if chain.hops.is_empty() {
+            return Err(EggressError::Config(
+                "upstream chain is empty; cannot make outbound connections".to_string(),
+            ));
+        }
+
+        Ok(chain.hops.len())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_outbound_connector_from_toml() {
+        let config = r#"
+            version = 1
+            [[listeners]]
+            name = "test"
+            bind = "127.0.0.1:0"
+            protocols = ["socks5"]
+            [[upstreams]]
+            id = "direct"
+            uri = "socks5://127.0.0.1:1080"
+        "#;
+        let connector = OutboundConnector::from_toml(config).unwrap();
+        assert_eq!(connector.upstream_count(), 1);
+    }
 
     #[test]
     fn test_validate_no_upstreams() {
@@ -75,7 +205,7 @@ mod tests {
             bind = "127.0.0.1:0"
             protocols = ["socks5"]
         "#;
-        let result = validate_outbound_config(config);
+        let result = OutboundConnector::validate_outbound_config(config);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("no upstreams"));
     }
@@ -92,8 +222,13 @@ mod tests {
             id = "up"
             uri = "socks5://127.0.0.1:1080"
         "#;
-        // This should succeed since the chain has one hop from the URI
-        let result = validate_outbound_config(config);
+        let result = OutboundConnector::validate_outbound_config(config);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_from_pproxy_uri() {
+        let connector = OutboundConnector::from_pproxy_uri("socks5://127.0.0.1:1080").unwrap();
+        assert_eq!(connector.upstream_count(), 1);
     }
 }

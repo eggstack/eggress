@@ -2398,30 +2398,62 @@ upstream_group = "tcp-upstream"
 // These tests verify the chain executor's handler contract:
 //
 // - Stream-consuming handlers (HTTP CONNECT, SOCKS5, SOCKS4, Shadowsocks,
-//   Trojan) perform their protocol handshake on the provided prior-hop stream
-//   and return the upgraded stream for relay.
+//   Trojan, WebSocket) perform their protocol handshake on the provided
+//   prior-hop stream and return the upgraded stream for relay.
 //
-// - Independent-connection handlers (WebSocket, Raw, H2) IGNORE the
-//   prior-hop stream entirely and open a NEW connection to the hop endpoint
-//   or target. This is because these protocols establish their own transport
-//   layer (WebSocket upgrade, raw TCP connect, H2 CONNECT) that cannot be
-//   multiplexed over an existing connection.
+// - Independent-connection handlers (Raw, H2) IGNORE the prior-hop stream
+//   and open a NEW connection to the hop endpoint or target.
 //
-// The tests below prove the independent-connection behavior by using each
-// handler as a single-hop upstream. Since these handlers open their own
-// connections (ignoring any prior-hop stream), data flows through their
-// independently-established connections to the target echo server.
+// The tests below prove stream-consuming behavior for WebSocket by
+// performing the WS handshake over the SOCKS5-established stream.
 
-/// Prove that the WebSocket handler opens an independent connection.
+/// Start a WebSocket echo server that reads a binary message and echoes it back.
+async fn start_ws_echo() -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let ws_stream = match tokio_tungstenite::accept_async(stream).await {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let (mut sink, mut source) = ws_stream.split();
+                while let Some(Ok(msg)) = source.next().await {
+                    match msg {
+                        tokio_tungstenite::tungstenite::Message::Binary(data) => {
+                            if sink
+                                .send(tokio_tungstenite::tungstenite::Message::Binary(data))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        tokio_tungstenite::tungstenite::Message::Close(_) => break,
+                        _ => continue,
+                    }
+                }
+            });
+        }
+    });
+    addr
+}
+
+/// Prove that the WebSocket handler performs handshake over the prior-hop stream.
 ///
-/// WSHopHandler ignores the `stream` parameter and calls
-/// `WebSocketTunnelClient::connect(url)`, opening a new TCP+WebSocket
-/// connection to the hop endpoint. Data flowing through proves independent
-/// connection establishment.
+/// WSHopHandler calls `WebSocketTunnelClient::connect_over_stream(url, stream)`,
+/// performing the WebSocket handshake on the SOCKS5-established TCP connection
+/// rather than opening a new connection. Data flowing through the chain proves
+/// the WS handshake succeeded over the prior-hop stream.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn chain_ws_opens_independent_connection() {
+async fn chain_socks5_to_ws_over_stream() {
     install_crypto();
-    let echo_addr = start_tcp_echo().await;
+    let ws_addr = start_ws_echo().await;
 
     let config = format!(
         r#"
@@ -2446,7 +2478,7 @@ fallback = "reject"
 id = "route-all"
 upstream_group = "tcp-upstream"
 "#,
-        ws_port = echo_addr.port(),
+        ws_port = ws_addr.port(),
     );
 
     let f = write_config(&config);
@@ -2472,14 +2504,14 @@ upstream_group = "tcp-upstream"
     stream.read_exact(&mut resp).await.unwrap();
     assert_eq!(resp, [0x05, 0x00]);
 
-    let ip_octets = match echo_addr.ip() {
+    let ip_octets = match ws_addr.ip() {
         std::net::IpAddr::V4(ip) => ip.octets(),
         _ => panic!("expected IPv4"),
     };
     stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
     stream.write_all(&ip_octets).await.unwrap();
     stream
-        .write_all(&echo_addr.port().to_be_bytes())
+        .write_all(&ws_addr.port().to_be_bytes())
         .await
         .unwrap();
 
@@ -2487,10 +2519,7 @@ upstream_group = "tcp-upstream"
     stream.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
 
-    stream
-        .write_all(b"ws-independent-connection-test")
-        .await
-        .unwrap();
+    stream.write_all(b"ws-over-stream-test").await.unwrap();
 
     let mut buf = [0u8; 4096];
     let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
@@ -2500,7 +2529,98 @@ upstream_group = "tcp-upstream"
     .expect("timeout")
     .expect("read");
 
-    assert_eq!(&buf[..n], b"ws-independent-connection-test");
+    assert_eq!(&buf[..n], b"ws-over-stream-test");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+/// Prove that WS as a single-hop upstream (first hop from DirectConnector) works.
+///
+/// When WS is the first hop, the stream comes from DirectConnector (TCP connect
+/// to the WS endpoint). The WS handshake is performed over this TCP stream.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_ws_first_hop() {
+    install_crypto();
+    let ws_addr = start_ws_echo().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "ws-up"
+uri = "ws://127.0.0.1:{ws_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["ws-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        ws_port = ws_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match ws_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&ws_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
+
+    stream.write_all(b"ws-first-hop-test").await.unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"ws-first-hop-test");
 
     drop(stream);
     token.cancel();

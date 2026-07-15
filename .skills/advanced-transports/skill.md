@@ -22,20 +22,21 @@ WebSocket and Raw transports were promoted to runtime-integrated upstream protoc
   these as listener/upstream protocols with a structured validation error.
 - Tests: `cargo test -p eggress-config` covers the refuse paths.
 
-## Chain composition behavior (corrective verification)
+## Chain composition behavior (stream-native, Track B hard closure)
 
-WS, WSS, Raw, and H2 upstream handlers **open independent connections** to the endpoint rather than consuming the prior-hop stream supplied by the chain executor. This means:
+WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supplied by the chain executor instead of opening independent connections. This means:
 
-- They are **terminal** protocols in chains — they can appear as the last upstream hop but cannot wrap a prior-hop stream.
-- Chain entries (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are classified as `compatible_with_warning` in the composition matrix, not `drop_in`.
-- Each chain entry has a dedicated capability ID (e.g., `protocol.chain.socks5_to_ws`) documenting this behavior.
-- The `upstream_only_no_listener` constraint type documents that these protocols cannot act as listeners or intermediate chain hops.
+- All intermediate-hop chains (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are classified as `drop_in` in the composition matrix.
+- `RawHopHandler` passes through the stream directly (raw passthrough).
+- `WebSocketHopHandler` performs the WebSocket handshake over the prior-hop stream via `connect_over_stream()`.
+- `H2HopHandler` performs the H2 CONNECT handshake over the prior-hop stream; TLS ALPN is handled by the chain executor.
+- These protocols cannot act as listeners (upstream-only), enforced by the `upstream_only_no_listener` constraint type.
 
 ## H2 CONNECT
 - Server: `h2_connect::handle_h2_connect()` accepts H2 connections, dispatches CONNECT, bridges stream to TCP target
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request
 - Key type: `H2StreamWrite` — AsyncWrite adapter for h2::SendStream with flow control
-- `H2HopHandler` — Runtime HopHandler for H2 CONNECT upstream, creates own TCP/TLS connection with ALPN, sends CONNECT, wraps streams as bidirectional BoxStream
+- `H2HopHandler` — Runtime HopHandler for H2 CONNECT upstream, performs H2 handshake over the prior-hop stream (stream-native); TLS ALPN handled by chain executor
 - ALPN: `h2` for TLS negotiation
 
 ## WebSocket Tunnels

@@ -9,6 +9,24 @@ try:
 except ImportError:
     UnsupportedFeatureError = RuntimeError  # type: ignore[misc,assignment]
 
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
+
+    _HAS_CRYPTOGRAPHY = True
+except BaseException:
+    _HAS_CRYPTOGRAPHY = False
+
+
+def _increment_nonce(nonce: bytes) -> bytes:
+    """Increment a nonce by 1 (little-endian in first 8 bytes, matching Rust backend)."""
+    buf = bytearray(nonce)
+    for i in range(min(8, len(buf))):
+        val = buf[i] + 1
+        buf[i] = val & 0xFF
+        if val < 256:
+            return bytes(buf)
+    raise ValueError("nonce increment overflow")
+
 
 def _evp_bytes_to_key(password: str | bytes, key_len: int, iv_len: int) -> Tuple[bytes, bytes]:
     """Derive key and IV from password using OpenSSL's EVP_BytesToKey with MD5."""
@@ -117,9 +135,9 @@ class BaseCipher:
 class AEADCipher(BaseCipher):
     """Base class for AEAD ciphers with authenticated encryption.
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. All encryption and decryption is handled by the
-    Rust backend via protocol-level AEAD.
+    Provides encrypt/decrypt using Python's ``cryptography`` library when
+    available.  Falls back to ``UnsupportedFeatureError`` if the library
+    is not installed.
     """
 
     NONCE_LENGTH: int = 12
@@ -134,26 +152,53 @@ class AEADCipher(BaseCipher):
     ) -> None:
         super().__init__(key, ota, setup_key)
         self._nonce = os.urandom(self.NONCE_LENGTH)
+        self._current_nonce = self._nonce
 
     @property
     def nonce(self) -> bytes:
-        return self._nonce
+        return self._current_nonce
 
     def setup_nonce(self, nonce: Optional[bytes] = None) -> None:
         if nonce is not None:
-            self._nonce = nonce
+            self._current_nonce = nonce
         else:
-            self._nonce = os.urandom(self.NONCE_LENGTH)
+            self._current_nonce = os.urandom(self.NONCE_LENGTH)
+        self._nonce = self._current_nonce
+
+    def _make_cipher(self) -> Any:
+        """Create the underlying AEAD cipher primitive.  Override in subclasses."""
+        raise NotImplementedError
 
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"encrypt: use protocol-level AEAD via Rust for {self.name()}"
-        )
+        """Encrypt *s* using the current nonce.
+
+        Returns ``nonce ‖ ciphertext`` where *ciphertext* includes the
+        authentication tag (standard AEAD layout).  The nonce is
+        incremented after each call.
+        """
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"encrypt: install the 'cryptography' package for {self.name()}"
+            )
+        cipher = self._make_cipher()
+        nonce = self._current_nonce
+        ct = cipher.encrypt(nonce, s, None)
+        self._current_nonce = _increment_nonce(nonce)
+        self._nonce = self._current_nonce
+        return nonce + ct
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"decrypt: use protocol-level AEAD via Rust for {self.name()}"
-        )
+        """Decrypt *s* (``nonce ‖ ciphertext``) using the embedded nonce."""
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"decrypt: install the 'cryptography' package for {self.name()}"
+            )
+        if len(s) < self.NONCE_LENGTH:
+            raise ValueError("ciphertext too short")
+        cipher = self._make_cipher()
+        nonce = s[: self.NONCE_LENGTH]
+        ct = s[self.NONCE_LENGTH :]
+        return cipher.decrypt(nonce, ct, None)
 
     def encrypt_chunk(self, chunk: bytes) -> bytes:
         return self.encrypt(chunk)
@@ -162,14 +207,34 @@ class AEADCipher(BaseCipher):
         return self.decrypt(chunk)
 
     def encrypt_and_digest(self, plaintext: bytes) -> tuple[bytes, bytes]:
-        raise UnsupportedFeatureError(
-            "AEAD encryption is handled by the Rust backend"
-        )
+        """Encrypt and return ``(ciphertext, tag)`` as separate values.
+
+        This matches the pproxy API.  Internally the tag is appended to
+        the ciphertext by the AEAD primitive and split for the return.
+        """
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"encrypt_and_digest: install the 'cryptography' package for {self.name()}"
+            )
+        cipher = self._make_cipher()
+        nonce = self._current_nonce
+        ct = cipher.encrypt(nonce, plaintext, None)
+        self._current_nonce = _increment_nonce(nonce)
+        self._nonce = self._current_nonce
+        tag = ct[-self.TAG_LENGTH :]
+        raw_ct = ct[: -self.TAG_LENGTH]
+        return raw_ct, tag
 
     def decrypt_and_verify(self, ciphertext: bytes, tag: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            "AEAD decryption is handled by the Rust backend"
-        )
+        """Verify *tag* and decrypt *ciphertext* (pproxy API)."""
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"decrypt_and_verify: install the 'cryptography' package for {self.name()}"
+            )
+        cipher = self._make_cipher()
+        nonce = self._current_nonce
+        ct_with_tag = ciphertext + tag
+        return cipher.decrypt(nonce, ct_with_tag, None)
 
     def __repr__(self) -> str:
         return (
@@ -226,6 +291,9 @@ class AES_256_GCM_Cipher(AEADCipher):
     TAG_LENGTH = 16
     PACKET_LIMIT = 0x3FFF
 
+    def _make_cipher(self) -> Any:
+        return AESGCM(self._key)
+
 
 class AES_192_GCM_Cipher(AEADCipher):
     KEY_LENGTH = 24
@@ -233,6 +301,9 @@ class AES_192_GCM_Cipher(AEADCipher):
     NONCE_LENGTH = 12
     TAG_LENGTH = 16
     PACKET_LIMIT = 0x3FFF
+
+    def _make_cipher(self) -> Any:
+        return AESGCM(self._key)
 
 
 class AES_128_GCM_Cipher(AEADCipher):
@@ -242,6 +313,9 @@ class AES_128_GCM_Cipher(AEADCipher):
     TAG_LENGTH = 16
     PACKET_LIMIT = 0x3FFF
 
+    def _make_cipher(self) -> Any:
+        return AESGCM(self._key)
+
 
 class ChaCha20_IETF_POLY1305_Cipher(AEADCipher):
     KEY_LENGTH = 32
@@ -249,6 +323,9 @@ class ChaCha20_IETF_POLY1305_Cipher(AEADCipher):
     NONCE_LENGTH = 12
     TAG_LENGTH = 16
     PACKET_LIMIT = 0x3FFF
+
+    def _make_cipher(self) -> Any:
+        return ChaCha20Poly1305(self._key)
 
 
 class RC4_Cipher(BaseCipher):

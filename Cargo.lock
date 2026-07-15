@@ -600,6 +600,7 @@ dependencies = [
  "eggress-config",
  "eggress-core",
  "eggress-metrics",
+ "eggress-pproxy-compat",
  "eggress-runtime",
  "eggress-server",
  "tempfile",

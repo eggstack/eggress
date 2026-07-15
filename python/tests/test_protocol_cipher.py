@@ -25,6 +25,7 @@ from eggress.cipher import (
     _ApplyCipher,
     _evp_bytes_to_key,
     get_cipher,
+    _HAS_CRYPTOGRAPHY,
 )
 from eggress.cipher import UnsupportedFeatureError as CipherUnsupportedError
 from eggress.protocol import (
@@ -424,20 +425,100 @@ class TestCipherRedaction:
 
 
 # ---------------------------------------------------------------------------
-# Cipher: encrypt/decrypt (AEAD raises)
+# Cipher: encrypt/decrypt (AEAD operations)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _HAS_CRYPTOGRAPHY, reason="cryptography package not available")
 class TestCipherEncryptDecryptAEAD:
-    def test_aes_256_gcm_encrypt_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt(b"data")
+    def test_aes_256_gcm_encrypt_decrypt_roundtrip(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"hello world"
+        ciphertext = c.encrypt(plaintext)
+        assert ciphertext != plaintext
+        # Nonce is prepended
+        assert len(ciphertext) == 12 + len(plaintext) + 16  # nonce + ct + tag
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        decrypted = c2.decrypt(ciphertext)
+        assert decrypted == plaintext
 
-    def test_aes_256_gcm_decrypt_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+    def test_aes_256_gcm_wrong_key_fails(self) -> None:
+        c1 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ciphertext = c1.encrypt(b"secret")
+        c2 = AES_256_GCM_Cipher(b"1" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt(ciphertext)
+
+    def test_aes_256_gcm_tampered_ciphertext_fails(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ciphertext = bytearray(c.encrypt(b"secret"))
+        ciphertext[-1] ^= 0xFF  # tamper with last byte (tag)
+        with pytest.raises(Exception):
+            c.decrypt(bytes(ciphertext))
+
+    def test_aes_256_gcm_empty_plaintext(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ciphertext = c.encrypt(b"")
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        decrypted = c2.decrypt(ciphertext)
+        assert decrypted == b""
+
+    def test_aes_256_gcm_nonce_increments(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        c.encrypt(b"first")
+        assert c.nonce[0] == 1
+        c.encrypt(b"second")
+        assert c.nonce[0] == 2
+
+    def test_aes_256_gcm_setup_nonce_random(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce()
+        assert len(c.nonce) == 12
+        assert c.nonce != b"\x00" * 12  # statistically certain
+
+    def test_aes_192_gcm_encrypt_decrypt_roundtrip(self) -> None:
+        c = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"test data 192"
+        ciphertext = c.encrypt(plaintext)
+        c2 = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_aes_128_gcm_encrypt_decrypt_roundtrip(self) -> None:
+        c = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"test data 128"
+        ciphertext = c.encrypt(plaintext)
+        c2 = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_chacha20_poly1305_encrypt_decrypt_roundtrip(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"test data chacha"
+        ciphertext = c.encrypt(plaintext)
+        c2 = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_chacha20_poly1305_wrong_key_fails(self) -> None:
+        c1 = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ciphertext = c1.encrypt(b"secret")
+        c2 = ChaCha20_IETF_POLY1305_Cipher(b"1" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt(ciphertext)
 
 
 # ---------------------------------------------------------------------------
@@ -952,36 +1033,62 @@ class TestCipherKnownAnswer:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _HAS_CRYPTOGRAPHY, reason="cryptography package not available")
 class TestCipherAeadEncryptDecrypt:
-    def test_aes_256_gcm_encrypt_and_digest_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_and_digest(b"plaintext")
+    def test_aes_256_gcm_encrypt_and_digest_roundtrip(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct, tag = c.encrypt_and_digest(b"plaintext")
+        assert isinstance(ct, bytes)
+        assert isinstance(tag, bytes)
+        assert len(tag) == 16
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        pt = c2.decrypt_and_verify(ct, tag)
+        assert pt == b"plaintext"
 
-    def test_aes_256_gcm_decrypt_and_verify_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt_and_verify(b"ciphertext", b"tag")
+    def test_aes_256_gcm_encrypt_and_digest_wrong_key_fails(self) -> None:
+        c1 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ct, tag = c1.encrypt_and_digest(b"secret")
+        c2 = AES_256_GCM_Cipher(b"1" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt_and_verify(ct, tag)
 
-    def test_chacha_encrypt_and_digest_raises(self) -> None:
-        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_and_digest(b"plaintext")
+    def test_chacha_encrypt_and_digest_roundtrip(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct, tag = c.encrypt_and_digest(b"plaintext")
+        c2 = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_and_verify(ct, tag) == b"plaintext"
 
-    def test_chacha_decrypt_and_verify_raises(self) -> None:
-        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt_and_verify(b"ciphertext", b"tag")
+    def test_chacha_decrypt_and_verify_wrong_key_fails(self) -> None:
+        c1 = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ct, tag = c1.encrypt_and_digest(b"secret")
+        c2 = ChaCha20_IETF_POLY1305_Cipher(b"1" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt_and_verify(ct, tag)
 
-    def test_aes_128_gcm_encrypt_and_digest_raises(self) -> None:
-        c = AES_128_GCM_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_and_digest(b"plaintext")
+    def test_aes_128_gcm_encrypt_and_digest_roundtrip(self) -> None:
+        c = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct, tag = c.encrypt_and_digest(b"plaintext")
+        c2 = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_and_verify(ct, tag) == b"plaintext"
 
-    def test_aes_128_gcm_decrypt_and_verify_raises(self) -> None:
-        c = AES_128_GCM_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt_and_verify(b"ciphertext", b"tag")
+    def test_aes_128_gcm_decrypt_and_verify_wrong_key_fails(self) -> None:
+        c1 = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ct, tag = c1.encrypt_and_digest(b"secret")
+        c2 = AES_128_GCM_Cipher(b"1" * 16, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt_and_verify(ct, tag)
 
 
 # ---------------------------------------------------------------------------
@@ -1120,44 +1227,55 @@ class TestModuleReload:
 
 
 # ---------------------------------------------------------------------------
-# Workstream 7: Behavioral audit — encrypt_chunk / decrypt_chunk stubs
+# Workstream 7: Behavioral audit — encrypt_chunk / decrypt_chunk
 # ---------------------------------------------------------------------------
 
 
-class TestCipherEncryptChunkStub:
-    """encrypt_chunk / decrypt_chunk delegate to encrypt / decrypt, which raise."""
+@pytest.mark.skipif(not _HAS_CRYPTOGRAPHY, reason="cryptography package not available")
+class TestCipherEncryptChunk:
+    """encrypt_chunk / decrypt_chunk delegate to encrypt / decrypt."""
 
-    def test_aes_256_gcm_encrypt_chunk_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_chunk(b"chunk")
+    def test_aes_256_gcm_encrypt_chunk_roundtrip(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        chunk = b"chunk data"
+        ct = c.encrypt_chunk(chunk)
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_chunk(ct) == chunk
 
-    def test_aes_256_gcm_decrypt_chunk_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt_chunk(b"chunk")
+    def test_aes_256_gcm_decrypt_chunk_wrong_key_fails(self) -> None:
+        c1 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ct = c1.encrypt_chunk(b"chunk")
+        c2 = AES_256_GCM_Cipher(b"1" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt_chunk(ct)
 
-    def test_chacha_encrypt_chunk_raises(self) -> None:
-        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_chunk(b"chunk")
+    def test_chacha_encrypt_chunk_roundtrip(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct = c.encrypt_chunk(b"chunk")
+        c2 = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_chunk(ct) == b"chunk"
 
-    def test_chacha_decrypt_chunk_raises(self) -> None:
-        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt_chunk(b"chunk")
+    def test_aes_128_gcm_encrypt_chunk_roundtrip(self) -> None:
+        c = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct = c.encrypt_chunk(b"chunk")
+        c2 = AES_128_GCM_Cipher(b"0" * 16, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_chunk(ct) == b"chunk"
 
-    def test_aes_128_gcm_encrypt_chunk_raises(self) -> None:
-        c = AES_128_GCM_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_chunk(b"chunk")
-
-    def test_aes_192_gcm_encrypt_chunk_raises(self) -> None:
-        from eggress.cipher import AES_192_GCM_Cipher
-
-        c = AES_192_GCM_Cipher(b"0" * 24)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_chunk(b"chunk")
+    def test_aes_192_gcm_encrypt_chunk_roundtrip(self) -> None:
+        c = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct = c.encrypt_chunk(b"chunk")
+        c2 = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_chunk(ct) == b"chunk"
 
 
 # ---------------------------------------------------------------------------
@@ -1323,44 +1441,61 @@ class TestApplyCipherIdentity:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _HAS_CRYPTOGRAPHY, reason="cryptography package not available")
 class TestCipherAeadEncryptDecryptComprehensive:
-    """encrypt_and_digest / decrypt_and_verify raise for all AEAD cipher types."""
+    """encrypt_and_digest / decrypt_and_verify work for all AEAD cipher types."""
 
-    def test_aes_192_gcm_encrypt_and_digest_raises(self) -> None:
+    def test_aes_192_gcm_encrypt_and_digest_roundtrip(self) -> None:
         from eggress.cipher import AES_192_GCM_Cipher
 
-        c = AES_192_GCM_Cipher(b"0" * 24)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt_and_digest(b"plaintext")
+        c = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        ct, tag = c.encrypt_and_digest(b"plaintext")
+        c2 = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt_and_verify(ct, tag) == b"plaintext"
 
-    def test_aes_192_gcm_decrypt_and_verify_raises(self) -> None:
+    def test_aes_192_gcm_decrypt_and_verify_wrong_key_fails(self) -> None:
         from eggress.cipher import AES_192_GCM_Cipher
 
-        c = AES_192_GCM_Cipher(b"0" * 24)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt_and_verify(b"ciphertext", b"tag")
+        c1 = AES_192_GCM_Cipher(b"0" * 24, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ct, tag = c1.encrypt_and_digest(b"secret")
+        c2 = AES_192_GCM_Cipher(b"1" * 24, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        with pytest.raises(Exception):
+            c2.decrypt_and_verify(ct, tag)
 
-    def test_all_aead_ciphers_encrypt_raises(self) -> None:
-        """Every cipher in MAP that subclasses AEADCipher raises on encrypt."""
+    def test_all_aead_ciphers_encrypt_decrypt_roundtrip(self) -> None:
+        """Every AEAD cipher in MAP round-trips correctly."""
         from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
 
         for name, cls in CIPHER_MAP.items():
             if issubclass(cls, AEADCipher):
                 key = b"0" * cls.KEY_LENGTH
-                c = cls(key)
-                with pytest.raises(CipherUnsupportedError):
-                    c.encrypt(b"data")
+                c = cls(key, setup_key=False)
+                c.setup_nonce(b"\x00" * 12)
+                plaintext = b"test data for " + name.encode()
+                ciphertext = c.encrypt(plaintext)
+                c2 = cls(key, setup_key=False)
+                c2.setup_nonce(b"\x00" * 12)
+                assert c2.decrypt(ciphertext) == plaintext, f"roundtrip failed for {name}"
 
-    def test_all_aead_ciphers_decrypt_raises(self) -> None:
-        """Every cipher in MAP that subclasses AEADCipher raises on decrypt."""
+    def test_all_aead_ciphers_wrong_key_fails(self) -> None:
+        """Every AEAD cipher rejects decryption with the wrong key."""
         from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
 
         for name, cls in CIPHER_MAP.items():
             if issubclass(cls, AEADCipher):
-                key = b"0" * cls.KEY_LENGTH
-                c = cls(key)
-                with pytest.raises(CipherUnsupportedError):
-                    c.decrypt(b"data")
+                key1 = b"0" * cls.KEY_LENGTH
+                key2 = b"1" * cls.KEY_LENGTH
+                c1 = cls(key1, setup_key=False)
+                c1.setup_nonce(b"\x00" * 12)
+                ciphertext = c1.encrypt(b"secret")
+                c2 = cls(key2, setup_key=False)
+                c2.setup_nonce(b"\x00" * 12)
+                with pytest.raises(Exception, name=f"wrong key should fail for {name}"):
+                    c2.decrypt(ciphertext)
 
     def test_all_legacy_ciphers_encrypt_raises(self) -> None:
         """Every cipher in MAP that is NOT AEADCipher raises on encrypt."""
@@ -1416,3 +1551,167 @@ class TestProtocolConstructorErrors:
     def test_ssh_not_instantiable_via_get_protos(self) -> None:
         with pytest.raises(UnsupportedFeatureError, match="SSH"):
             get_protos(["ssh"])
+
+
+# ---------------------------------------------------------------------------
+# Workstream 5: AEAD cipher encrypt/decrypt implementation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _HAS_CRYPTOGRAPHY, reason="cryptography package not available")
+class TestCipherAeadImplementation:
+    """Comprehensive tests for implemented AEAD cipher operations."""
+
+    def test_aes_256_gcm_get_cipher_roundtrip(self) -> None:
+        err, fn = get_cipher("aes-256-gcm:password123")
+        assert err is None
+        c = fn.cipher
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"hello world"
+        ciphertext = c.encrypt(plaintext)
+        c2 = fn.cipher
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_chacha20_get_cipher_roundtrip(self) -> None:
+        err, fn = get_cipher("chacha20-ietf-poly1305:password123")
+        assert err is None
+        c = fn.cipher
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"test data"
+        ciphertext = c.encrypt(plaintext)
+        c2 = fn.cipher
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_aes_256_gcm_large_data(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"x" * 10000
+        ciphertext = c.encrypt(plaintext)
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_aes_256_gcm_sequential_encryption(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        # Encrypt multiple messages with nonce increment
+        ct1 = c.encrypt(b"msg1")
+        ct2 = c.encrypt(b"msg2")
+        ct3 = c.encrypt(b"msg3")
+        # Nonces should have been incremented
+        assert c.nonce[0] == 3
+        # Decrypt with matching nonces
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ct1) == b"msg1"
+        c2.setup_nonce(b"\x01" * 1 + b"\x00" * 11)
+        assert c2.decrypt(ct2) == b"msg2"
+        c2.setup_nonce(b"\x02" * 1 + b"\x00" * 11)
+        assert c2.decrypt(ct3) == b"msg3"
+
+    def test_chacha20_poly1305_large_data(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        plaintext = b"y" * 10000
+        ciphertext = c.encrypt(plaintext)
+        c2 = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ciphertext) == plaintext
+
+    def test_ciphertext_not_equal_to_plaintext(self) -> None:
+        for name in ("aes-256-gcm", "aes-192-gcm", "aes-128-gcm", "chacha20-ietf-poly1305"):
+            cls = MAP[name]
+            key = b"0" * cls.KEY_LENGTH
+            c = cls(key, setup_key=False)
+            c.setup_nonce(b"\x00" * 12)
+            pt = b"identical plaintext"
+            ct = c.encrypt(pt)
+            assert ct != pt
+
+    def test_different_nonces_produce_different_ciphertext(self) -> None:
+        c1 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c1.setup_nonce(b"\x00" * 12)
+        ct1 = c1.encrypt(b"same data")
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2.setup_nonce(b"\x01" * 12)
+        ct2 = c2.encrypt(b"same data")
+        assert ct1 != ct2
+
+    def test_setup_iv_sets_nonce(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        iv = b"\xAB" * 12
+        c.setup_iv(iv)
+        assert c.iv == iv
+        assert c.nonce == iv
+
+    def test_copy_preserves_key_not_nonce(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c.setup_nonce(b"\x00" * 12)
+        c.encrypt(b"test")  # advance nonce
+        c2 = copy.copy(c)
+        assert c2.key == c.key
+        assert c2.nonce == c.nonce
+
+    def test_get_cipher_returns_working_cipher(self) -> None:
+        err, fn = get_cipher("aes-256-gcm:testpassword")
+        assert err is None
+        c = fn.cipher
+        c.setup_nonce(b"\x00" * 12)
+        pt = b"roundtrip via get_cipher"
+        ct = c.encrypt(pt)
+        c2 = AES_256_GCM_Cipher(fn.key, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ct) == pt
+
+    def test_get_cipher_chacha_returns_working_cipher(self) -> None:
+        err, fn = get_cipher("chacha20-ietf-poly1305:testpassword")
+        assert err is None
+        c = fn.cipher
+        c.setup_nonce(b"\x00" * 12)
+        pt = b"chacha roundtrip"
+        ct = c.encrypt(pt)
+        c2 = ChaCha20_IETF_POLY1305_Cipher(fn.key, setup_key=False)
+        c2.setup_nonce(b"\x00" * 12)
+        assert c2.decrypt(ct) == pt
+
+
+# ---------------------------------------------------------------------------
+# Workstream 5: Fallback when cryptography is not available
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(_HAS_CRYPTOGRAPHY, reason="cryptography package IS available")
+class TestCipherAeadFallback:
+    """When cryptography is unavailable, AEAD methods raise UnsupportedFeatureError."""
+
+    def test_aes_256_gcm_encrypt_raises_without_cryptography(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        with pytest.raises(CipherUnsupportedError, match="cryptography"):
+            c.encrypt(b"data")
+
+    def test_aes_256_gcm_decrypt_raises_without_cryptography(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        with pytest.raises(CipherUnsupportedError, match="cryptography"):
+            c.decrypt(b"data")
+
+    def test_chacha_encrypt_raises_without_cryptography(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        with pytest.raises(CipherUnsupportedError, match="cryptography"):
+            c.encrypt(b"data")
+
+    def test_chacha_decrypt_raises_without_cryptography(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32, setup_key=False)
+        with pytest.raises(CipherUnsupportedError, match="cryptography"):
+            c.decrypt(b"data")
+
+    def test_encrypt_and_digest_raises_without_cryptography(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        with pytest.raises(CipherUnsupportedError, match="cryptography"):
+            c.encrypt_and_digest(b"data")
+
+    def test_decrypt_and_verify_raises_without_cryptography(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        with pytest.raises(CipherUnsupportedError, match="cryptography"):
+            c.decrypt_and_verify(b"data", b"tag")

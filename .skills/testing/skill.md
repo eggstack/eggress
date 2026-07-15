@@ -19,7 +19,7 @@ In `crates/eggress-runtime/tests/`:
 - `pac_static.rs` — PAC generation, static content, reload freshness
 - `udp.rs` — association lifecycle, echo, bind conflict
 - `udp_upstream.rs` — SOCKS5 upstream relay, shutdown, metrics
-- `upstream_protocols.rs` — HTTP CONNECT, SOCKS4, SOCKS5, and
+- `upstream_protocols.rs` — HTTP CONNECT, SOCKS4, SOCKS5, stream-native WS/Raw/H2 chain tests, and
   unsupported-combo (HTTP/SOCKS4/Shadowsocks/Trojan + UDP) rejection
 - `lifecycle_invariants.rs` — runtime lifecycle invariants
 - `observability.rs` — metrics, admin, observability correctness

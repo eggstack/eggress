@@ -47,7 +47,7 @@ The chain executor in `eggress-core/src/chain.rs` folds over hops with protocol-
 - Add URI scheme handling in `eggress-uri/`
 
 ### 5. Advanced transport considerations
-For H2, WebSocket, or raw tunnel transports, see `.skills/advanced-transports/skill.md` for specialized guidance. These transports use stream adapters rather than protocol-specific wire formats.
+For H2, WebSocket, or raw tunnel transports, see `.skills/advanced-transports/skill.md` for specialized guidance. All intermediate-hop handlers (WS, Raw, H2) are stream-consuming — they perform handshake over the prior-hop stream provided by the chain executor. Chain entries (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are classified as `drop_in`.
 
 ## Listener types
 

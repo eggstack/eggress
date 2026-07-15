@@ -160,11 +160,13 @@ Trojan protocol implementation:
   and synthetic TLS happy-path test that exercises `trojan_connect()` directly
   and asserts the server-observed request bytes
 
-### Advanced Transport Upstream Support (Phase B3)
+### Advanced Transport Upstream Support (Phase B3) — Stream-Native Composition
 
-WebSocket (`ws://`, `wss://`) and raw/tunnel (`raw://`, `tunnel://`) schemes are now
-integrated as runtime-integrated upstream protocols. The config compiler, CLI, and chain
-executor all accept these schemes. H2 CONNECT remains protocol-crate-only (deferred).
+WebSocket (`ws://`, `wss://`) and raw/tunnel (`raw://`, `tunnel://`) schemes are
+integrated as runtime-integrated upstream protocols. H2 CONNECT (`h2://`) is also
+runtime-integrated. All three intermediate-hop handlers now consume the prior-hop
+stream instead of opening independent connections, enabling true stream-native
+composition across all chain types.
 
 ### eggress-transport-tls
 Shared TLS transport layer:
@@ -197,6 +199,14 @@ Rust embed API for in-process embedding:
 - `handle.reload_toml_str()` — hot-reload routing/upstreams
 - `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown (idempotent)
 - Thread ownership: async path uses Tokio blocking-pool thread + dedicated OS thread; blocking path uses outer startup thread + inner run thread
+
+### Native OutboundConnector
+
+`eggress-embed::outbound` provides `OutboundConnector` for native Rust outbound connections without temporary local listeners:
+- `OutboundConnector::from_toml(toml)` — create from TOML config
+- `OutboundConnector::from_pproxy_uri(uri)` — create from pproxy URI
+- `connector.connect_tcp(target)` — connect to TCP target
+- `connector.connect_tcp_timeout(target, timeout)` — connect with explicit timeout
 
 ### eggress-python
 Python bindings via PyO3 wrapping `eggress-embed`:
@@ -276,23 +286,20 @@ Configured via `+tls` URI suffix (e.g., `socks5+tls://proxy:1080`) or `tls = tru
 
 ### Chain handler stream usage
 
-Each `HopHandler` implementation receives a `BoxStream` from the prior hop (or from the `DirectConnector` for the first hop). Handlers fall into two categories:
+Each `HopHandler` implementation receives a `BoxStream` from the prior hop (or from the `DirectConnector` for the first hop). All handlers are **stream-consuming** — they perform a protocol handshake on the provided stream and return the upgraded stream:
 
-**Stream-consuming handlers** — perform a protocol handshake on the provided stream and return the upgraded stream:
 - `HttpHopHandler` — writes `CONNECT` request to the stream, reads 200 response, returns the stream
 - `Socks5HopHandler` — performs SOCKS5 greeting + CONNECT on the stream, returns the upgraded stream
 - `Socks4HopHandler` — performs SOCKS4 CONNECT on the stream, returns the upgraded stream
 - `ShadowsocksHopHandler` — encrypts the stream with AEAD, returns the encrypted stream
 - `TrojanHopHandler` — performs TLS handshake + Trojan request on the stream, returns the encrypted stream
+- `RawHopHandler` — passes through the prior-hop stream directly (raw passthrough, no protocol overhead)
+- `WebSocketHopHandler` — performs WebSocket handshake over the prior-hop stream via `connect_over_stream()`
+- `H2HopHandler` — performs H2 CONNECT handshake over the prior-hop stream; TLS ALPN is handled by the chain executor
 
-**Independent-connection handlers** — ignore the prior-hop stream and open a new connection:
-- `WebSocketHopHandler` — calls `WebSocketTunnelClient::connect(url)`, opening a fresh TCP+WebSocket connection to the hop endpoint (parameter is `_stream`)
-- `RawHopHandler` — calls `TcpStream::connect(&target_str)`, connecting directly to the final destination (parameter is `_stream`)
-- `H2HopHandler` — calls `TcpStream::connect(...)` to the H2 proxy, performs H2 handshake + CONNECT, returns the multiplexed stream (parameter is `_stream`)
+All intermediate-hop chains (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are now classified as `drop_in` in the parity manifest.
 
-This means advanced transport handlers (WS, Raw, H2) cannot be chained after a stream-consuming handler in a meaningful way — they bypass the prior-hop connection entirely. This is by design: these protocols establish their own transport layers that cannot be multiplexed over existing connections.
-
-Test coverage: `crates/eggress-runtime/tests/upstream_protocols.rs` includes tests that verify independent connection establishment (`chain_ws_opens_independent_connection`, `chain_raw_opens_independent_connection`, `chain_h2_opens_independent_connection`) and stream consumption (`chain_http_connect_consumes_prior_hop_stream`).
+Test coverage: `crates/eggress-runtime/tests/upstream_protocols.rs` includes tests that verify stream consumption for all handler types (`chain_http_connect_consumes_prior_hop_stream`, `chain_ws_consumes_prior_hop_stream`, `chain_raw_consumes_prior_hop_stream`, `chain_h2_consumes_prior_hop_stream`).
 
 ## UDP Data Flow
 

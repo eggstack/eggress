@@ -87,10 +87,13 @@ pub trait HopHandler: Send + Sync {
 /// A function that wraps a `BoxStream` in TLS for upstream connections.
 ///
 /// Returns the TLS-wrapped stream, or an error if the handshake fails.
+/// The optional `alpn` parameter sets Application-Layer Protocol Negotiation
+/// protocols (e.g. `["h2", "http/1.1"]` for H2 connections).
 pub type TlsWrapper = Box<
     dyn Fn(
             BoxStream,
             String,
+            Option<Vec<Vec<u8>>>,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -211,14 +214,19 @@ impl ChainExecutor {
                         .server_name
                         .clone()
                         .unwrap_or_else(|| hop.endpoint.host.clone());
-                    current_stream =
-                        tls_wrapper(current_stream, server_name)
-                            .await
-                            .map_err(|e| ChainError::HandshakeFailed {
-                                hop_index: i,
-                                protocol: "tls".to_string(),
-                                source: e,
-                            })?;
+                    // Set H2 ALPN if this hop uses the HTTP/2 protocol
+                    let alpn = if hop.protocols.contains(&ProtocolSpec::Http2) {
+                        Some(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+                    } else {
+                        None
+                    };
+                    current_stream = tls_wrapper(current_stream, server_name, alpn)
+                        .await
+                        .map_err(|e| ChainError::HandshakeFailed {
+                            hop_index: i,
+                            protocol: "tls".to_string(),
+                            source: e,
+                        })?;
                 }
             }
 
@@ -1321,7 +1329,7 @@ mod tests {
         let tls_called = Arc::new(AtomicBool::new(false));
         let tls_called_clone = tls_called.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name, _alpn| {
             let called = tls_called_clone.clone();
             Box::pin(async move {
                 called.store(true, Ordering::Relaxed);
@@ -1366,7 +1374,7 @@ mod tests {
         let tls_called = Arc::new(AtomicBool::new(false));
         let tls_called_clone = tls_called.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name, _alpn| {
             let called = tls_called_clone.clone();
             Box::pin(async move {
                 called.store(true, Ordering::Relaxed);
@@ -1409,7 +1417,7 @@ mod tests {
         let captured_name = Arc::new(Mutex::new(None::<String>));
         let captured_name_clone = captured_name.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name, _alpn| {
             let captured = captured_name_clone.clone();
             Box::pin(async move {
                 *captured.lock().unwrap() = Some(server_name);
@@ -1451,7 +1459,7 @@ mod tests {
         let captured_name = Arc::new(Mutex::new(None::<String>));
         let captured_name_clone = captured_name.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name, _alpn| {
             let captured = captured_name_clone.clone();
             Box::pin(async move {
                 *captured.lock().unwrap() = Some(server_name);
@@ -1491,7 +1499,7 @@ mod tests {
         let (handler, _) = MockHandler::new(ProtocolSpec::Http);
         let executor = ChainExecutor::new(vec![Box::new(handler)]);
 
-        let tls_wrapper: TlsWrapper = Box::new(|_stream, _server_name| {
+        let tls_wrapper: TlsWrapper = Box::new(|_stream, _server_name, _alpn| {
             Box::pin(async move {
                 Err(Box::<dyn std::error::Error + Send + Sync>::from(
                     "TLS handshake failed: certificate rejected",

@@ -863,7 +863,7 @@ async fn execute_udp_associate(
     }
 }
 
-fn build_chain_executor(
+pub fn build_chain_executor(
     tls_override: Option<&std::sync::Arc<rustls::ClientConfig>>,
     shadowsocks_metrics: Option<std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
 ) -> ChainExecutor {
@@ -901,29 +901,30 @@ fn build_chain_executor(
 
     // Set up TLS wrapper using system roots by default, or the override if provided
     let tls_wrapper_override = tls_override.cloned();
-    let tls_wrapper: eggress_core::chain::TlsWrapper = Box::new(move |stream, server_name| {
-        let config_override = tls_wrapper_override.clone();
-        Box::pin(async move {
-            let config = match config_override {
-                Some(c) => c,
-                None => {
-                    let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-                    builder
-                        .with_system_roots()
-                        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
-                            Box::new(e) as _
-                        })?
-                        .build()
-                        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
-                            Box::new(e) as _
-                        })?
-                }
-            };
-            eggress_transport_tls::tls_connect(stream, config, &server_name)
-                .await
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })
-        })
-    });
+    let tls_wrapper: eggress_core::chain::TlsWrapper =
+        Box::new(move |stream, server_name, alpn| {
+            let config_override = tls_wrapper_override.clone();
+            Box::pin(async move {
+                let config = match config_override {
+                    Some(c) => c,
+                    None => {
+                        let mut builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+                        builder = builder.with_system_roots().map_err(
+                            |e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ },
+                        )?;
+                        if let Some(ref protocols) = alpn {
+                            builder = builder.with_alpn(protocols.clone());
+                        }
+                        builder.build().map_err(
+                            |e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ },
+                        )?
+                    }
+                };
+                eggress_transport_tls::tls_connect(stream, config, &server_name)
+                    .await
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ })
+            })
+        });
 
     ChainExecutor::new(handlers)
         .with_tls_wrapper(tls_wrapper)
@@ -1097,7 +1098,7 @@ impl HopHandler for WebSocketHopHandler {
 
     fn handshake<'a>(
         &'a self,
-        _stream: BoxStream,
+        stream: BoxStream,
         _target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
@@ -1107,7 +1108,7 @@ impl HopHandler for WebSocketHopHandler {
         Box::pin(async move {
             let client = eggress_protocol_websocket::WebSocketTunnelClient::with_default_config();
             client
-                .connect(&url)
+                .connect_over_stream(&url, stream)
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })
@@ -1123,17 +1124,11 @@ impl HopHandler for RawHopHandler {
 
     fn handshake<'a>(
         &'a self,
-        _stream: BoxStream,
-        target: &'a TargetAddr,
+        stream: BoxStream,
+        _target: &'a TargetAddr,
         _hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
-        let target_str = target.to_string();
-        Box::pin(async move {
-            let tcp = tokio::net::TcpStream::connect(&target_str)
-                .await
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-            Ok(Box::new(tcp) as BoxStream)
-        })
+        Box::pin(async move { Ok(stream) })
     }
 }
 
@@ -1189,17 +1184,12 @@ impl HopHandler for H2HopHandler {
 
     fn handshake<'a>(
         &'a self,
-        _stream: BoxStream,
+        stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
     ) -> HandshakeFuture<'a> {
-        let use_tls = hop.tls;
         let endpoint_host = hop.endpoint.host.clone();
         let endpoint_port = hop.endpoint.port;
-        let server_name = hop
-            .server_name
-            .clone()
-            .unwrap_or_else(|| endpoint_host.clone());
         let auth = hop
             .credentials
             .as_ref()
@@ -1208,30 +1198,12 @@ impl HopHandler for H2HopHandler {
         let pool_key = eggress_protocol_http::H2PoolKey::new(
             &endpoint_host,
             endpoint_port,
-            use_tls,
+            hop.tls,
             hop.server_name.as_deref(),
             auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())),
         );
         Box::pin(async move {
-            let tcp =
-                tokio::net::TcpStream::connect(format!("{}:{}", endpoint_host, endpoint_port))
-                    .await
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-
-            let stream: BoxStream = if use_tls {
-                let builder = eggress_transport_tls::TlsClientConfigBuilder::new()
-                    .with_system_roots()
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
-                    .with_h2_alpn();
-                let config = builder
-                    .build()
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-                eggress_transport_tls::tls_connect(Box::new(tcp), config, &server_name)
-                    .await
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
-            } else {
-                Box::new(tcp)
-            };
+            let stream: BoxStream = stream;
 
             let auth_ref = auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
             let (send_stream, recv_stream, guard) =
