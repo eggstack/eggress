@@ -104,6 +104,7 @@ from eggress.connection import (
     UnsupportedCompositionError as UnsupportedCompositionError,
 )
 from eggress.async_connection import AsyncConnection as AsyncConnection
+from eggress.pproxy_connection import ProxyConnection as ProxyConnection
 from eggress._asyncio import (
     AsyncBridge as AsyncBridge,
     CloseWaiter as CloseWaiter,

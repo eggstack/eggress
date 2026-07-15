@@ -494,6 +494,55 @@ class TestPluginBridge:
         assert result == "ok"
 
     @pytest.mark.asyncio
+    async def test_backpressure_blocks_when_saturated(self) -> None:
+        """With max_concurrent=2, the 3rd concurrent submission must block
+        until one of the first two completes."""
+        reg = PluginRegistry()
+        start = asyncio.Event()
+        proceed = asyncio.Event()
+
+        async def blocking_cb() -> str:
+            start.set()
+            await proceed.wait()
+            return "done"
+
+        reg.register("h", blocking_cb)
+        bridge = PluginBridge(registry=reg, max_queue=2)
+
+        # Launch 2 tasks that will hold the semaphore
+        t1 = asyncio.create_task(bridge.submit_async("h"))
+        t2 = asyncio.create_task(bridge.submit_async("h"))
+        await start.wait()
+
+        # 3rd task should be pending (backpressure)
+        t3_done = asyncio.Event()
+
+        async def third_task() -> str:
+            result = await bridge.submit_async("h")
+            t3_done.set()
+            return result
+
+        t3 = asyncio.create_task(third_task())
+        await asyncio.sleep(0.05)
+        assert not t3_done.is_set(), "3rd task should be blocked by backpressure"
+
+        # Release one slot — 3rd task should now proceed
+        proceed.set()
+        await t1
+        await t2
+        result3 = await t3
+        assert result3 == "done"
+
+    @pytest.mark.asyncio
+    async def test_max_queue_enforced(self) -> None:
+        """max_queue parameter is respected and minimum is 1."""
+        bridge = PluginBridge(max_queue=0)
+        assert bridge.max_queue == 1  # clamped to minimum
+
+        bridge2 = PluginBridge(max_queue=5)
+        assert bridge2.max_queue == 5
+
+    @pytest.mark.asyncio
     async def test_reentrant_submission(self) -> None:
         """A callback submitting another callback via the same bridge
         from the same thread should be detected as reentrant."""

@@ -507,6 +507,114 @@ class TestSymbolPresence:
         )
 
 
+class TestProvenance:
+    """Every classified symbol has a provenance field with a valid value."""
+
+    VALID_PROVENANCE = frozenset({
+        "documented",
+        "example-used",
+        "return-type-reachable",
+        "plugin-reachable",
+        "registry-reachable",
+        "private-name-only",
+    })
+
+    def test_every_entry_has_provenance(self, classified_symbols: dict[str, dict]):
+        """Every classification entry must include a provenance field."""
+        missing = [
+            sym for sym, entry in classified_symbols.items()
+            if "provenance" not in entry
+        ]
+        assert not missing, (
+            f"Classification entries missing provenance field: {missing}"
+        )
+
+    def test_provenance_values_are_valid(self, classified_symbols: dict[str, dict]):
+        """Provenance values must be one of the known set."""
+        invalid = [
+            (sym, entry["provenance"])
+            for sym, entry in classified_symbols.items()
+            if entry.get("provenance") not in self.VALID_PROVENANCE
+        ]
+        assert not invalid, (
+            f"Invalid provenance values: {invalid}"
+        )
+
+    def test_documented_symbols_are_adapted_or_non_parity(
+        self, classified_symbols: dict[str, dict]
+    ):
+        """Symbols with 'documented' provenance should be adapted_target,
+        exact_target, or intentional_non_parity — not internal_observed."""
+        mismatches = [
+            sym for sym, entry in classified_symbols.items()
+            if entry.get("provenance") == "documented"
+            and entry["tier"] == "internal_observed"
+        ]
+        assert not mismatches, (
+            f"Documented symbols classified as internal_observed: {mismatches}. "
+            f"If these are genuinely internal, change provenance to "
+            f"private-name-only or registry-reachable."
+        )
+
+    def test_registry_reachable_symbols_are_not_documented(
+        self, classified_symbols: dict[str, dict]
+    ):
+        """Symbols with 'registry-reachable' provenance should be
+        internal_observed (reachable via registries but not public API)."""
+        mismatches = [
+            sym for sym, entry in classified_symbols.items()
+            if entry.get("provenance") == "registry-reachable"
+            and entry["tier"] in ("adapted_target", "exact_target", "intentional_non_parity")
+        ]
+        assert not mismatches, (
+            f"Registry-reachable symbols with unexpected tier: {mismatches}"
+        )
+
+    def test_provenance_counts_snapshot(self, classified_symbols: dict[str, dict]):
+        """Assert provenance counts match expected values.
+
+        If this test fails, a symbol was reclassified or its provenance
+        changed. Update the expected counts and document the change.
+        """
+        prov_counts: dict[str, int] = {}
+        for entry in classified_symbols.values():
+            prov = entry.get("provenance", "MISSING")
+            prov_counts[prov] = prov_counts.get(prov, 0) + 1
+
+        expected = {
+            "documented": 4,
+            "private-name-only": 40,
+            "registry-reachable": 47,
+        }
+        assert prov_counts == expected, (
+            f"Provenance counts changed: {prov_counts} (expected {expected}). "
+            f"Update the snapshot and document the change."
+        )
+
+    def test_no_mass_reclassification_without_rationale(
+        self, classified_symbols: dict[str, dict]
+    ):
+        """Prevent silent mass reclassification to internal_observed.
+
+        If more than 50 internal_observed symbols share the same
+        provenance, flag it for review — it may indicate a blanket
+        classification without per-symbol rationale.
+        """
+        from collections import Counter
+        io_prov = Counter()
+        for entry in classified_symbols.values():
+            if entry["tier"] == "internal_observed":
+                io_prov[entry.get("provenance", "MISSING")] += 1
+
+        for prov, count in io_prov.items():
+            assert count <= 50, (
+                f"Too many internal_observed symbols with provenance "
+                f"'{prov}' ({count}). This suggests mass classification "
+                f"without per-symbol rationale. Review and assign "
+                f"correct provenance values."
+            )
+
+
 class TestImportPaths:
     """eggress imports resolve correctly."""
 

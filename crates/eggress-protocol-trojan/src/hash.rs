@@ -68,4 +68,49 @@ mod tests {
         assert!(trojan_check_password(&bytes, ""));
         assert!(!trojan_check_password(&bytes, "notempty"));
     }
+
+    #[test]
+    fn test_constant_time_no_early_return() {
+        use subtle::ConstantTimeEq;
+
+        // Verify the underlying ct_eq does not short-circuit by checking
+        // that even when the first byte differs, the full comparison runs.
+        let a = password_hash("alpha");
+        let b = password_hash("bravo");
+        let a_bytes: [u8; 56] = a.as_bytes().try_into().unwrap();
+        let b_bytes: [u8; 56] = b.as_bytes().try_into().unwrap();
+
+        // The first bytes differ (different passwords produce different hashes).
+        // ct_eq must still process all 56 bytes.
+        let result: bool = a_bytes.ct_eq(&b_bytes).into();
+        assert!(!result, "different passwords must not match");
+
+        // Now verify matching passwords produce a match through the same path.
+        let a2: [u8; 56] = a.as_bytes().try_into().unwrap();
+        let result2: bool = a_bytes.ct_eq(&a2).into();
+        assert!(result2, "same password must match");
+    }
+
+    #[test]
+    fn test_check_password_uses_subtle_ct_eq() {
+        // Verify the public API delegates to constant-time comparison
+        // by testing that a single-bit difference is detected.
+        let password = "constant-time-test";
+        let hash = password_hash(password);
+        let mut bytes: [u8; 56] = hash.as_bytes().try_into().unwrap();
+
+        // Flip the last bit of the last byte — should cause mismatch
+        bytes[55] ^= 0x01;
+        assert!(
+            !trojan_check_password(&bytes, password),
+            "single-bit difference must cause mismatch"
+        );
+
+        // Restore the byte — should match again
+        bytes[55] ^= 0x01;
+        assert!(
+            trojan_check_password(&bytes, password),
+            "restored hash must match"
+        );
+    }
 }

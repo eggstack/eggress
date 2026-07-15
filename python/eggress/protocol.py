@@ -208,7 +208,12 @@ class BaseProtocol:
 
 
 class Direct(BaseProtocol):
-    """Direct connection (no proxy protocol)."""
+    """Direct connection (no proxy protocol).
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     def __init__(self, param: str = "", **kw: Any) -> None:
         kw.setdefault("target", param or None)
@@ -216,7 +221,12 @@ class Direct(BaseProtocol):
 
 
 class HTTP(BaseProtocol):
-    """HTTP forward proxy (CONNECT tunnelling and plain HTTP)."""
+    """HTTP forward proxy (CONNECT tunnelling and plain HTTP).
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     def __init__(self, param: str = "", **kw: Any) -> None:
         kw.setdefault("target", param or None)
@@ -225,11 +235,21 @@ class HTTP(BaseProtocol):
 
 
 class HTTPOnly(HTTP):
-    """HTTP-only forward proxy (no CONNECT tunnelling)."""
+    """HTTP-only forward proxy (no CONNECT tunnelling).
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
 
 class Socks4(BaseProtocol):
-    """SOCKS4 / SOCKS4a proxy protocol."""
+    """SOCKS4 / SOCKS4a proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     def __init__(self, param: str = "", **kw: Any) -> None:
         kw.setdefault("target", param or None)
@@ -237,7 +257,12 @@ class Socks4(BaseProtocol):
 
 
 class Socks5(BaseProtocol):
-    """SOCKS5 proxy protocol."""
+    """SOCKS5 proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp", "udp")
 
@@ -247,7 +272,12 @@ class Socks5(BaseProtocol):
 
 
 class SSR(BaseProtocol):
-    """ShadowsocksR (legacy) -- intentionally unsupported by eggress."""
+    """ShadowsocksR (legacy) -- intentionally unsupported by eggress.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. ShadowsocksR is rejected with
+    UnsupportedFeatureError on construction.
+    """
 
     _SUPPORTED_IN_EGRESS: bool = False
 
@@ -260,7 +290,13 @@ class SSR(BaseProtocol):
 
 
 class SS(SSR):
-    """Shadowsocks AEAD proxy protocol."""
+    """Shadowsocks AEAD proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling. All encryption and decryption
+    is handled by the Rust backend.
+    """
 
     _SUPPORTED_IN_EGRESS: bool = True
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp", "udp")
@@ -275,7 +311,12 @@ class SS(SSR):
 
 
 class Trojan(BaseProtocol):
-    """Trojan proxy protocol."""
+    """Trojan proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     def __init__(self, param: str = "", **kw: Any) -> None:
         if "target" not in kw:
@@ -288,7 +329,12 @@ class Trojan(BaseProtocol):
 
 
 class WS(BaseProtocol):
-    """WebSocket tunnel protocol."""
+    """WebSocket tunnel protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     def __init__(self, param: str = "", **kw: Any) -> None:
         if "target" not in kw:
@@ -300,14 +346,24 @@ class WS(BaseProtocol):
 
 
 class H2(HTTP):
-    """HTTP/2 CONNECT proxy protocol."""
+    """HTTP/2 CONNECT proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 
     def __init__(self, param: str = "", **kw: Any) -> None:
         super().__init__(param, **kw)
 
 
 class H3(H2):
-    """HTTP/3 proxy protocol -- intentionally unsupported by eggress."""
+    """HTTP/3 proxy protocol -- intentionally unsupported by eggress.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. HTTP/3 is rejected with UnsupportedFeatureError
+    on construction.
+    """
 
     _SUPPORTED_IN_EGRESS: bool = False
 
@@ -319,7 +375,12 @@ class H3(H2):
 
 
 class SSH(BaseProtocol):
-    """SSH proxy protocol -- intentionally unsupported by eggress."""
+    """SSH proxy protocol -- intentionally unsupported by eggress.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. SSH is rejected with UnsupportedFeatureError
+    on construction.
+    """
 
     _SUPPORTED_IN_EGRESS: bool = False
 

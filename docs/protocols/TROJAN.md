@@ -129,7 +129,79 @@ Test count: 29 tests across `eggress-protocol-trojan`
 - Config validation: Trojan requires TLS + password section
 
 End-to-end interoperability tests against a real third-party Trojan server are
-not yet included.
+provided via a gated integration test (`interoperability_trojan.rs`).
+
+## Verification Evidence
+
+### Unit Tests
+
+- `eggress-protocol-trojan` crate: 29+ tests across `hash::tests` and `tcp::tests`
+  covering password hashing, wire format encoding/decoding, ATYP variants (IPv4,
+  domain, IPv6), domain length validation (1-255 bytes), CRLF verification,
+  error classification, and malformed-frame rejection.
+- `eggress-runtime/tests/trojan.rs`: 4 runtime integration tests covering
+  correct-password relay, wrong-password rejection, fallback-on-auth-failure,
+  and auth failure metrics.
+
+### Integration Tests (Runtime)
+
+- **`trojan_correct_password`**: Full TLS→Trojan handshake→relay→echo round-trip
+  through the runtime supervisor.
+- **`trojan_auth_rejected`**: Wrong password with no fallback — connection is
+  closed without relay.
+- **`trojan_fallback_on_auth_failure`**: Wrong password with fallback configured —
+  connection is relayed to the fallback target (data is echoed back).
+- **`trojan_auth_failure_metrics`**: Wrong password increments the
+  `eggress_auth_failures_total` Prometheus counter.
+
+### Chain Support
+
+- **`socks5_to_trojan_chain`** (`crates/eggress-runtime/tests/multihop_tcp.rs:661`):
+  SOCKS5 inbound listener → Trojan upstream → TCP echo target. Verifies
+  bidirectional data relay through a two-hop chain.
+
+### Differential / Oracle
+
+- Trojan URI parsing is covered by the oracle scenario harness (TOML scenarios).
+- Trojan upstream config validation is tested in lifecycle invariant and
+  upstream protocol tests.
+
+### Constant-Time Authentication
+
+Password verification uses `subtle::ConstantTimeEq` for comparison of the
+56-character SHA224 hash. This prevents timing side-channel attacks that could
+leak hash bytes through response-time variation. The `trojan_check_password()`
+function in `hash.rs` delegates to `ct_eq()` from the `subtle` crate, which
+is specifically designed for constant-time operations independent of input
+values.
+
+Tests verify:
+- Correct passwords match through the constant-time path
+- Single-bit differences are detected
+- The comparison does not short-circuit on differing first bytes
+
+### Fallback Mechanism
+
+When a Trojan listener is configured with `fallback = "<target>"`, connections
+that fail authentication (wrong password) are transparently relayed to the
+fallback target instead of being closed. This provides censorship resistance
+by making Trojan servers indistinguishable from normal TLS services under
+active probing. Tested in `trojan_fallback_on_auth_failure`.
+
+### Independent Interop Status
+
+A gated integration test (`crates/eggress-cli/tests/interoperability_trojan.rs`)
+exercises eggress as a Trojan upstream against a third-party `trojan-go` server.
+Tests cover bidirectional TCP relay, large payloads, and wrong-password
+rejection. The test is gated behind `EGRESS_REQUIRE_TROJAN_INTEROP=1` and
+requires `trojan-go` on PATH. The inbound listener path is also tested
+with a raw TLS client sending a Trojan handshake.
+
+### TCP-Only Status
+
+Trojan is TCP-only — no UDP support. This matches the original Trojan protocol
+specification and pproxy's Trojan implementation. UDP via Trojan is explicitly
+rejected at config validation time.
 
 ## Limitations
 

@@ -21,7 +21,12 @@ def _evp_bytes_to_key(password: str | bytes, key_len: int, iv_len: int) -> Tuple
 
 
 class BaseCipher:
-    """Base class for all ciphers in the pproxy-compatible hierarchy."""
+    """Base class for all ciphers in the pproxy-compatible hierarchy.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. All encryption and decryption is handled by the
+    Rust backend via protocol-level AEAD.
+    """
 
     KEY_LENGTH: int = 0
     IV_LENGTH: int = 0
@@ -110,7 +115,12 @@ class BaseCipher:
 
 
 class AEADCipher(BaseCipher):
-    """Base class for AEAD ciphers with authenticated encryption."""
+    """Base class for AEAD ciphers with authenticated encryption.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. All encryption and decryption is handled by the
+    Rust backend via protocol-level AEAD.
+    """
 
     NONCE_LENGTH: int = 12
     TAG_LENGTH: int = 16
@@ -169,7 +179,12 @@ class AEADCipher(BaseCipher):
 
 
 class PacketCipher:
-    """Wraps a cipher for UDP datagram use, adding nonce/tag framing."""
+    """Wraps a cipher for UDP datagram use, adding nonce/tag framing.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. All encryption and decryption is handled by the
+    Rust backend via protocol-level AEAD.
+    """
 
     def __init__(self, cipher: BaseCipher, key: bytes | str, name: str) -> None:
         if isinstance(key, str):
@@ -237,6 +252,12 @@ class ChaCha20_IETF_POLY1305_Cipher(AEADCipher):
 
 
 class RC4_Cipher(BaseCipher):
+    """RC4 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. RC4 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 0
 
@@ -254,6 +275,12 @@ class RC4_Cipher(BaseCipher):
 
 
 class RC4_MD5_Cipher(BaseCipher):
+    """RC4-MD5 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. RC4-MD5 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
@@ -271,6 +298,12 @@ class RC4_MD5_Cipher(BaseCipher):
 
 
 class ChaCha20_Cipher(BaseCipher):
+    """ChaCha20 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. ChaCha20 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 8
 
@@ -288,6 +321,12 @@ class ChaCha20_Cipher(BaseCipher):
 
 
 class ChaCha20_IETF_Cipher(BaseCipher):
+    """ChaCha20-IETF stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. ChaCha20-IETF is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 12
 
@@ -305,6 +344,12 @@ class ChaCha20_IETF_Cipher(BaseCipher):
 
 
 class Salsa20_Cipher(BaseCipher):
+    """Salsa20 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. Salsa20 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 8
 
@@ -322,6 +367,12 @@ class Salsa20_Cipher(BaseCipher):
 
 
 class AES_256_CFB_Cipher(BaseCipher):
+    """AES-256-CFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-256-CFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
@@ -339,6 +390,12 @@ class AES_256_CFB_Cipher(BaseCipher):
 
 
 class AES_192_CFB_Cipher(BaseCipher):
+    """AES-192-CFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-192-CFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
@@ -356,6 +413,12 @@ class AES_192_CFB_Cipher(BaseCipher):
 
 
 class AES_128_CFB_Cipher(BaseCipher):
+    """AES-128-CFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-128-CFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
@@ -373,6 +436,12 @@ class AES_128_CFB_Cipher(BaseCipher):
 
 
 class AES_256_CFB8_Cipher(BaseCipher):
+    """AES-256-CFB8 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-256-CFB8 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
@@ -390,6 +459,12 @@ class AES_256_CFB8_Cipher(BaseCipher):
 
 
 class AES_192_CFB8_Cipher(BaseCipher):
+    """AES-192-CFB8 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-192-CFB8 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
@@ -407,6 +482,12 @@ class AES_192_CFB8_Cipher(BaseCipher):
 
 
 class AES_128_CFB8_Cipher(BaseCipher):
+    """AES-128-CFB8 stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-128-CFB8 is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
@@ -424,6 +505,12 @@ class AES_128_CFB8_Cipher(BaseCipher):
 
 
 class AES_256_OFB_Cipher(BaseCipher):
+    """AES-256-OFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-256-OFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
@@ -441,6 +528,12 @@ class AES_256_OFB_Cipher(BaseCipher):
 
 
 class AES_192_OFB_Cipher(BaseCipher):
+    """AES-192-OFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-192-OFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
@@ -458,6 +551,12 @@ class AES_192_OFB_Cipher(BaseCipher):
 
 
 class AES_128_OFB_Cipher(BaseCipher):
+    """AES-128-OFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-128-OFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
@@ -475,6 +574,12 @@ class AES_128_OFB_Cipher(BaseCipher):
 
 
 class AES_256_CTR_Cipher(BaseCipher):
+    """AES-256-CTR stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-256-CTR is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
@@ -492,6 +597,12 @@ class AES_256_CTR_Cipher(BaseCipher):
 
 
 class AES_192_CTR_Cipher(BaseCipher):
+    """AES-192-CTR stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-192-CTR is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
@@ -509,6 +620,12 @@ class AES_192_CTR_Cipher(BaseCipher):
 
 
 class AES_128_CTR_Cipher(BaseCipher):
+    """AES-128-CTR stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. AES-128-CTR is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
@@ -526,6 +643,12 @@ class AES_128_CTR_Cipher(BaseCipher):
 
 
 class BF_CFB_Cipher(BaseCipher):
+    """Blowfish-CFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. Blowfish-CFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 8
 
@@ -543,6 +666,12 @@ class BF_CFB_Cipher(BaseCipher):
 
 
 class CAST5_CFB_Cipher(BaseCipher):
+    """CAST5-CFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. CAST5-CFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 16
     IV_LENGTH = 8
 
@@ -560,6 +689,12 @@ class CAST5_CFB_Cipher(BaseCipher):
 
 
 class DES_CFB_Cipher(BaseCipher):
+    """DES-CFB stream cipher -- intentionally unsupported.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. DES-CFB is rejected with UnsupportedFeatureError.
+    """
+
     KEY_LENGTH = 8
     IV_LENGTH = 8
 

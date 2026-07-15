@@ -14,6 +14,21 @@
 > informative for historical context but should not be cited as the current
 > contract.
 
+## Corrective Verification Pass (Workstream 10) Acceptance Criteria
+
+The following acceptance criteria from the corrective verification pass have
+been met:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Construction-only object labeling | **Met** | `protocol.py` and `cipher.py` classes annotated with construction-only docstrings; `.pyi` stubs updated |
+| Migration examples | **Met** | Section 12.5 added with 6 concrete before/after examples (TCP forwarder, SOCKS5 server, chain, auth, load balancing, translation workflow) |
+| Acceptance criteria marking | **Met** | This section added to both `TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md` and `PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md` |
+| Python import strategy note | **Met** | Note added to `PYTHON_BINDINGS.md` explaining deferred `import pproxy` compatibility |
+
+**Remaining items:** None identified for this workstream. All four criteria
+are addressed.
+
 ## 1. Release Candidate Summary
 
 Eggress is a Rust-native, embeddable, multi-protocol proxy framework targeting practical and behavioral parity with Python `pproxy`. This document defines the release candidate boundary: what is supported, what is compatible with pproxy, what is experimental, and what is intentionally not supported.

@@ -962,6 +962,75 @@ mod tests {
         assert!(!Arc::ptr_eq(&p1, &p3));
     }
 
+    #[test]
+    fn test_pool_key_isolates_different_auth_credentials() {
+        let k_user_a = H2PoolKey::new(
+            "proxy.example.com",
+            443,
+            true,
+            None,
+            Some(("alice", "secret")),
+        );
+        let k_user_b = H2PoolKey::new(
+            "proxy.example.com",
+            443,
+            true,
+            None,
+            Some(("bob", "secret")),
+        );
+        let k_no_auth = H2PoolKey::new("proxy.example.com", 443, true, None, None);
+
+        assert_ne!(
+            k_user_a, k_user_b,
+            "different users must produce different pool keys"
+        );
+        assert_ne!(
+            k_user_a, k_no_auth,
+            "auth vs no-auth must produce different pool keys"
+        );
+        assert_ne!(k_user_b, k_no_auth);
+
+        let registry = H2PoolRegistry::new();
+        let p1 = registry.get_or_create(&k_user_a);
+        let p2 = registry.get_or_create(&k_user_b);
+        let p3 = registry.get_or_create(&k_no_auth);
+        assert!(!Arc::ptr_eq(&p1, &p2));
+        assert!(!Arc::ptr_eq(&p1, &p3));
+        assert!(!Arc::ptr_eq(&p2, &p3));
+    }
+
+    #[test]
+    fn test_pool_key_isolates_tls_vs_plaintext() {
+        let k_tls = H2PoolKey::new(
+            "proxy.example.com",
+            443,
+            true,
+            Some("proxy.example.com"),
+            None,
+        );
+        let k_plain = H2PoolKey::new(
+            "proxy.example.com",
+            443,
+            false,
+            Some("proxy.example.com"),
+            None,
+        );
+        assert_ne!(
+            k_tls, k_plain,
+            "TLS vs plaintext must produce different pool keys"
+        );
+    }
+
+    #[test]
+    fn test_pool_key_isolates_server_name() {
+        let k_sni_a = H2PoolKey::new("1.2.3.4", 443, true, Some("a.example.com"), None);
+        let k_sni_b = H2PoolKey::new("1.2.3.4", 443, true, Some("b.example.com"), None);
+        assert_ne!(
+            k_sni_a, k_sni_b,
+            "different SNI must produce different pool keys"
+        );
+    }
+
     #[tokio::test]
     async fn test_handle_h2_connect_accepts() {
         let server_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

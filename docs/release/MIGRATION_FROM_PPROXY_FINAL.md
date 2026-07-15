@@ -555,6 +555,289 @@ eggress pproxy check --json -- -l socks5://:1080 -r http://proxy:8080
 eggress --config config.toml
 ```
 
+## 12.5. Concrete Migration Code Examples
+
+This section provides complete before/after examples for common migration
+scenarios.
+
+### Example A: Simple pproxy TCP forwarder
+
+**pproxy (command-line):**
+
+```bash
+pproxy -l socks5://127.0.0.1:1080 -r direct
+```
+
+**eggress equivalent (pproxy-compatible CLI):**
+
+```bash
+eggress pproxy run -- -l socks5://127.0.0.1:1080 -r direct
+```
+
+**eggress equivalent (native TOML):**
+
+```toml
+version = 1
+
+[[listeners]]
+name = "proxy"
+bind = "127.0.0.1:1080"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "direct"
+uri = "direct://"
+
+[[upstream_groups]]
+id = "default"
+members = ["direct"]
+scheduler = "first-available"
+
+[[rules]]
+id = "default"
+any = true
+upstream_group = "default"
+
+[routing]
+default = "direct"
+```
+
+```bash
+eggress --config config.toml
+```
+
+**eggress equivalent (Python):**
+
+```python
+from eggress import start_pproxy
+
+with start_pproxy(["-l", "socks5://127.0.0.1:1080", "-r", "direct"]) as handle:
+    print("Listening on", handle.bound_addresses)
+```
+
+### Example B: pproxy SOCKS5 server with upstream
+
+**pproxy (command-line):**
+
+```bash
+pproxy -l socks5://:1080 -r http://upstream:8080
+```
+
+**eggress equivalent (pproxy-compatible CLI):**
+
+```bash
+eggress pproxy run -- -l socks5://:1080 -r http://upstream:8080
+```
+
+**eggress equivalent (native TOML):**
+
+```toml
+version = 1
+
+[[listeners]]
+name = "socks5"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "http-upstream"
+uri = "http://upstream:8080"
+
+[[upstream_groups]]
+id = "default"
+members = ["http-upstream"]
+scheduler = "first-available"
+
+[[rules]]
+id = "default"
+any = true
+upstream_group = "default"
+
+[routing]
+default = "direct"
+```
+
+```bash
+eggress --config config.toml
+```
+
+**eggress equivalent (Python):**
+
+```python
+from eggress import start_pproxy
+
+with start_pproxy(["-l", "socks5://:1080", "-r", "http://upstream:8080"]) as handle:
+    print("Listening on", handle.bound_addresses)
+```
+
+### Example C: pproxy chain configuration (SOCKS5 -> HTTP -> SOCKS5)
+
+**pproxy (command-line, using `__` separator):**
+
+```bash
+pproxy -l http://:8080 -r socks5://hop1:1080__http://hop2:8080
+```
+
+**eggress equivalent (pproxy-compatible CLI):**
+
+```bash
+eggress pproxy run -- -l http://:8080 -r socks5://hop1:1080__http://hop2:8080
+```
+
+**eggress equivalent (native TOML):**
+
+```toml
+version = 1
+
+[[listeners]]
+name = "http-listener"
+bind = "0.0.0.0:8080"
+protocols = ["http"]
+
+[[upstreams]]
+id = "hop1"
+uri = "socks5://hop1:1080"
+
+[[upstreams]]
+id = "hop2"
+uri = "http://hop2:8080"
+
+[[upstream_groups]]
+id = "chain-group"
+members = ["hop1", "hop2"]
+scheduler = "first-available"
+
+[[rules]]
+id = "default"
+any = true
+upstream_group = "chain-group"
+
+[routing]
+default = "direct"
+```
+
+```bash
+eggress --config config.toml
+```
+
+**eggress equivalent (Python, using translation helpers):**
+
+```python
+from eggress import start_pproxy
+
+# The __ separator is preserved in pproxy argument translation
+with start_pproxy([
+    "-l", "http://:8080",
+    "-r", "socks5://hop1:1080__http://hop2:8080",
+]) as handle:
+    print("Listening on", handle.bound_addresses)
+```
+
+### Example D: Authenticated pproxy SOCKS5 server
+
+**pproxy (command-line):**
+
+```bash
+pproxy -l socks5://admin:secret@:1080 -r direct
+```
+
+**eggress equivalent (pproxy-compatible CLI):**
+
+```bash
+eggress pproxy run -- -l socks5://admin:secret@:1080 -r direct
+```
+
+**eggress equivalent (native TOML):**
+
+```toml
+version = 1
+
+[[listeners]]
+name = "auth-socks5"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+
+[listeners.auth]
+username = "admin"
+password = "secret"
+
+[[upstreams]]
+id = "direct"
+uri = "direct://"
+
+[[upstream_groups]]
+id = "default"
+members = ["direct"]
+scheduler = "first-available"
+
+[[rules]]
+id = "default"
+any = true
+upstream_group = "default"
+
+[routing]
+default = "direct"
+```
+
+### Example E: pproxy with round-robin load balancing
+
+**pproxy (command-line):**
+
+```bash
+pproxy -l socks5://:1080 -r http://a:8080 -r socks5://b:1080 -s rr
+```
+
+**eggress equivalent (pproxy-compatible CLI):**
+
+```bash
+eggress pproxy run -- -l socks5://:1080 -r http://a:8080 -r socks5://b:1080 -s rr
+```
+
+**eggress equivalent (native TOML):**
+
+```toml
+version = 1
+
+[[listeners]]
+name = "proxy"
+bind = "0.0.0.0:1080"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "upstream-a"
+uri = "http://a:8080"
+
+[[upstreams]]
+id = "upstream-b"
+uri = "socks5://b:1080"
+
+[[upstream_groups]]
+id = "balanced"
+members = ["upstream-a", "upstream-b"]
+scheduler = "round-robin"
+
+[[rules]]
+id = "default"
+any = true
+upstream_group = "balanced"
+
+[routing]
+default = "direct"
+```
+
+### Example F: Translate pproxy args and save to TOML
+
+```bash
+# Step 1: Translate pproxy args to TOML
+eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080 > config.toml
+
+# Step 2: Verify compatibility
+eggress pproxy check --json -- -l socks5://:1080 -r http://proxy:8080
+
+# Step 3: Run from TOML config
+eggress --config config.toml
+```
+
 ## 13. How to Verify Parity
 
 ### Differential tests (requires pproxy 2.7.9 + Python 3.11)

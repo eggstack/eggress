@@ -41,20 +41,93 @@ class BaseProtocol:
     def __deepcopy__(self, memo: dict[int, Any]) -> BaseProtocol: ...
     def __reduce__(self) -> tuple[type[BaseProtocol], tuple[str], dict[str, str | None]]: ...
 
-class Direct(BaseProtocol): ...
+class Direct(BaseProtocol):
+    """Direct connection (no proxy protocol).
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 class HTTP(BaseProtocol):
+    """HTTP forward proxy (CONNECT tunnelling and plain HTTP).
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
     httpget: dict[str, Any]
-class HTTPOnly(HTTP): ...
-class Socks4(BaseProtocol): ...
-class Socks5(BaseProtocol): ...
+class HTTPOnly(HTTP):
+    """HTTP-only forward proxy (no CONNECT tunnelling).
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
+class Socks4(BaseProtocol):
+    """SOCKS4 / SOCKS4a proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
+class Socks5(BaseProtocol):
+    """SOCKS5 proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
 class SS(SSR):
+    """Shadowsocks AEAD proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling. All encryption and decryption
+    is handled by the Rust backend.
+    """
     cipher: str | None
-class SSR(BaseProtocol): ...
-class Trojan(BaseProtocol): ...
-class WS(BaseProtocol): ...
-class H2(HTTP): ...
-class H3(H2): ...
-class SSH(BaseProtocol): ...
+class SSR(BaseProtocol):
+    """ShadowsocksR (legacy) -- intentionally unsupported by eggress.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. ShadowsocksR is rejected with
+    UnsupportedFeatureError on construction.
+    """
+class Trojan(BaseProtocol):
+    """Trojan proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
+class WS(BaseProtocol):
+    """WebSocket tunnel protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
+class H2(HTTP):
+    """HTTP/2 CONNECT proxy protocol.
+
+    Note: This class is construction-only. It carries typed metadata for
+    composition resolution (A2 composition cells) without implementing
+    functional wire-level protocol handling.
+    """
+class H3(H2):
+    """HTTP/3 proxy protocol -- intentionally unsupported by eggress.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. HTTP/3 is rejected with UnsupportedFeatureError
+    on construction.
+    """
+class SSH(BaseProtocol):
+    """SSH proxy protocol -- intentionally unsupported by eggress.
+
+    Note: This class is construction-only. It does not implement functional
+    encrypt/decrypt methods. SSH is rejected with UnsupportedFeatureError
+    on construction.
+    """
 class Transparent(BaseProtocol): ...
 class Redir(Transparent): ...
 class Pf(Transparent): ...

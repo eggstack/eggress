@@ -290,6 +290,26 @@ mod tests {
         assert!(validate_credentials("a]b[c").is_ok());
     }
 
+    #[test]
+    fn test_http_connect_limits_defaults() {
+        let limits = HttpConnectLimits::default();
+        assert_eq!(limits.max_status_line, 1024);
+        assert_eq!(limits.max_headers_bytes, 32_768);
+        assert_eq!(limits.max_header_count, 100);
+    }
+
+    #[test]
+    fn test_parse_status_code_empty_response() {
+        let limits = HttpConnectLimits::default();
+        assert!(parse_status_code("", &limits).is_err());
+    }
+
+    #[test]
+    fn test_parse_status_code_whitespace_only() {
+        let limits = HttpConnectLimits::default();
+        assert!(parse_status_code("   ", &limits).is_err());
+    }
+
     // ===== Synthetic server integration tests =====
 
     #[tokio::test]

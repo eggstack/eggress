@@ -916,6 +916,22 @@ section above. For CLI-based translation, you can still use:
 python -m eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
 
+### `import pproxy` compatibility
+
+Direct `import pproxy` compatibility is planned but not yet available. A
+top-level `pproxy` shim module (deferring to `eggress.pproxy`) was considered
+but deferred to avoid namespace conflicts with the upstream `pproxy` package
+on PyPI. See `docs/adr/ADR_python_import_and_distribution_strategy.md` for
+the full rationale.
+
+**Recommended approach:** use the `eggress.pproxy` subpackage for
+pproxy-compatible helpers:
+
+```python
+from eggress.pproxy import compatibility_version
+from eggress import translate_pproxy_args, check_pproxy_args, start_pproxy
+```
+
 ## Phase 40: pproxy drop-in API
 
 ### PPProxyService

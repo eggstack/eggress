@@ -47,6 +47,7 @@
 //! ```
 
 mod error;
+pub mod outbound;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;

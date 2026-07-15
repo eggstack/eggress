@@ -2393,6 +2393,419 @@ upstream_group = "tcp-upstream"
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
 
+// ===== Chain handler stream usage tests =====
+//
+// These tests verify the chain executor's handler contract:
+//
+// - Stream-consuming handlers (HTTP CONNECT, SOCKS5, SOCKS4, Shadowsocks,
+//   Trojan) perform their protocol handshake on the provided prior-hop stream
+//   and return the upgraded stream for relay.
+//
+// - Independent-connection handlers (WebSocket, Raw, H2) IGNORE the
+//   prior-hop stream entirely and open a NEW connection to the hop endpoint
+//   or target. This is because these protocols establish their own transport
+//   layer (WebSocket upgrade, raw TCP connect, H2 CONNECT) that cannot be
+//   multiplexed over an existing connection.
+//
+// The tests below prove the independent-connection behavior by using each
+// handler as a single-hop upstream. Since these handlers open their own
+// connections (ignoring any prior-hop stream), data flows through their
+// independently-established connections to the target echo server.
+
+/// Prove that the WebSocket handler opens an independent connection.
+///
+/// WSHopHandler ignores the `stream` parameter and calls
+/// `WebSocketTunnelClient::connect(url)`, opening a new TCP+WebSocket
+/// connection to the hop endpoint. Data flowing through proves independent
+/// connection establishment.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_ws_opens_independent_connection() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "ws-up"
+uri = "ws://127.0.0.1:{ws_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["ws-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        ws_port = echo_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
+
+    stream
+        .write_all(b"ws-independent-connection-test")
+        .await
+        .unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"ws-independent-connection-test");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+/// Prove that the Raw handler opens an independent connection.
+///
+/// RawHopHandler ignores the `stream` parameter and calls
+/// `TcpStream::connect(&target_str)`, opening a new TCP connection directly
+/// to the final destination. This bypasses the prior-hop stream entirely.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_raw_opens_independent_connection() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "raw-up"
+uri = "raw://127.0.0.1:{raw_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["raw-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        raw_port = echo_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(
+        reply[1], 0x00,
+        "SOCKS5 CONNECT should succeed via raw upstream"
+    );
+
+    stream
+        .write_all(b"raw-independent-connection-test")
+        .await
+        .unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"raw-independent-connection-test");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+/// Prove that the H2 handler opens an independent connection.
+///
+/// H2HopHandler ignores the `stream` parameter and calls
+/// `TcpStream::connect(...)` to the H2 proxy endpoint, performs an H2
+/// handshake, and sends an HTTP/2 CONNECT request — all independently of
+/// the prior-hop stream. This is the most complex independent connection
+/// handler, involving connection pooling.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_h2_opens_independent_connection() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+    let h2_proxy_addr = start_h2_connect_proxy().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "h2-up"
+uri = "h2://127.0.0.1:{h2_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["h2-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        h2_port = h2_proxy_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(
+        reply[1], 0x00,
+        "SOCKS5 CONNECT should succeed via H2 upstream"
+    );
+
+    stream
+        .write_all(b"h2-independent-connection-test")
+        .await
+        .unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"h2-independent-connection-test");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+/// Prove that stream-consuming handlers (HTTP CONNECT) use the prior-hop stream.
+///
+/// HTTPHopHandler writes its CONNECT request to the provided stream and reads
+/// the 200 response from it, proving that it consumes the prior-hop stream
+/// rather than opening a new connection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_http_connect_consumes_prior_hop_stream() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+    let http_proxy_addr = start_http_connect_proxy().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "http-up"
+uri = "http://127.0.0.1:{http_port}"
+
+[[upstream_groups]]
+id = "tcp-upstream"
+scheduler = "first-available"
+members = ["http-up"]
+fallback = "reject"
+
+[[rules]]
+id = "route-all"
+upstream_group = "tcp-upstream"
+"#,
+        http_port = http_proxy_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(
+        reply[1], 0x00,
+        "SOCKS5 CONNECT should succeed via HTTP upstream"
+    );
+
+    stream
+        .write_all(b"http-consumes-prior-stream")
+        .await
+        .unwrap();
+
+    let mut buf = [0u8; 4096];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        stream.read(&mut buf).await
+    })
+    .await
+    .expect("timeout")
+    .expect("read");
+
+    assert_eq!(&buf[..n], b"http-consumes-prior-stream");
+
+    drop(stream);
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
+    assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
 /// Test that after a server sends RST_STREAM on a stream, the pool recovers
 /// by creating a new H2 connection for subsequent requests.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

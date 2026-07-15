@@ -6,6 +6,21 @@ Phase 17 is a release-candidate audit phase. It does not add broad new functiona
 
 ## Status: Complete
 
+## Corrective Verification Pass (Workstream 10) Acceptance Criteria
+
+The following acceptance criteria from the corrective verification pass have
+been met:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Construction-only object labeling | **Met** | `protocol.py` and `cipher.py` classes annotated with construction-only docstrings; `.pyi` stubs updated |
+| Migration examples | **Met** | Section 12.5 added to `MIGRATION_FROM_PPROXY_FINAL.md` with 6 concrete before/after examples |
+| Acceptance criteria marking | **Met** | This note added to both `TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md` and this file |
+| Python import strategy note | **Met** | Note added to `PYTHON_BINDINGS.md` explaining deferred `import pproxy` compatibility |
+
+**Remaining items:** None identified for this workstream. All four criteria
+are addressed.
+
 ## Commits
 
 All changes in this phase are documentation corrections and audit artifacts. No functional code changes.

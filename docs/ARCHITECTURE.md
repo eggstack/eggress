@@ -274,6 +274,26 @@ ChainExecutor::execute()
 
 Configured via `+tls` URI suffix (e.g., `socks5+tls://proxy:1080`) or `tls = true` on the hop spec.
 
+### Chain handler stream usage
+
+Each `HopHandler` implementation receives a `BoxStream` from the prior hop (or from the `DirectConnector` for the first hop). Handlers fall into two categories:
+
+**Stream-consuming handlers** — perform a protocol handshake on the provided stream and return the upgraded stream:
+- `HttpHopHandler` — writes `CONNECT` request to the stream, reads 200 response, returns the stream
+- `Socks5HopHandler` — performs SOCKS5 greeting + CONNECT on the stream, returns the upgraded stream
+- `Socks4HopHandler` — performs SOCKS4 CONNECT on the stream, returns the upgraded stream
+- `ShadowsocksHopHandler` — encrypts the stream with AEAD, returns the encrypted stream
+- `TrojanHopHandler` — performs TLS handshake + Trojan request on the stream, returns the encrypted stream
+
+**Independent-connection handlers** — ignore the prior-hop stream and open a new connection:
+- `WebSocketHopHandler` — calls `WebSocketTunnelClient::connect(url)`, opening a fresh TCP+WebSocket connection to the hop endpoint (parameter is `_stream`)
+- `RawHopHandler` — calls `TcpStream::connect(&target_str)`, connecting directly to the final destination (parameter is `_stream`)
+- `H2HopHandler` — calls `TcpStream::connect(...)` to the H2 proxy, performs H2 handshake + CONNECT, returns the multiplexed stream (parameter is `_stream`)
+
+This means advanced transport handlers (WS, Raw, H2) cannot be chained after a stream-consuming handler in a meaningful way — they bypass the prior-hop connection entirely. This is by design: these protocols establish their own transport layers that cannot be multiplexed over existing connections.
+
+Test coverage: `crates/eggress-runtime/tests/upstream_protocols.rs` includes tests that verify independent connection establishment (`chain_ws_opens_independent_connection`, `chain_raw_opens_independent_connection`, `chain_h2_opens_independent_connection`) and stream consumption (`chain_http_connect_consumes_prior_hop_stream`).
+
 ## UDP Data Flow
 
 ```

@@ -1117,3 +1117,302 @@ class TestModuleReload:
         assert hasattr(wrapper_mod, "Chain")
         assert hasattr(wrapper_mod, "normalize_chain")
         assert hasattr(wrapper_mod, "BaseWrapper")
+
+
+# ---------------------------------------------------------------------------
+# Workstream 7: Behavioral audit — encrypt_chunk / decrypt_chunk stubs
+# ---------------------------------------------------------------------------
+
+
+class TestCipherEncryptChunkStub:
+    """encrypt_chunk / decrypt_chunk delegate to encrypt / decrypt, which raise."""
+
+    def test_aes_256_gcm_encrypt_chunk_raises(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.encrypt_chunk(b"chunk")
+
+    def test_aes_256_gcm_decrypt_chunk_raises(self) -> None:
+        c = AES_256_GCM_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt_chunk(b"chunk")
+
+    def test_chacha_encrypt_chunk_raises(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.encrypt_chunk(b"chunk")
+
+    def test_chacha_decrypt_chunk_raises(self) -> None:
+        c = ChaCha20_IETF_POLY1305_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt_chunk(b"chunk")
+
+    def test_aes_128_gcm_encrypt_chunk_raises(self) -> None:
+        c = AES_128_GCM_Cipher(b"0" * 16)
+        with pytest.raises(CipherUnsupportedError):
+            c.encrypt_chunk(b"chunk")
+
+    def test_aes_192_gcm_encrypt_chunk_raises(self) -> None:
+        from eggress.cipher import AES_192_GCM_Cipher
+
+        c = AES_192_GCM_Cipher(b"0" * 24)
+        with pytest.raises(CipherUnsupportedError):
+            c.encrypt_chunk(b"chunk")
+
+
+# ---------------------------------------------------------------------------
+# Workstream 7: Behavioral audit — legacy cipher decrypt stubs
+# ---------------------------------------------------------------------------
+
+
+class TestCipherLegacyDecryptStub:
+    """All legacy stream ciphers raise UnsupportedFeatureError on decrypt."""
+
+    def test_rc4_decrypt_raises(self) -> None:
+        c = RC4_Cipher(b"0" * 16)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_rc4_md5_decrypt_raises(self) -> None:
+        from eggress.cipher import RC4_MD5_Cipher
+
+        c = RC4_MD5_Cipher(b"0" * 16)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_chacha20_decrypt_raises(self) -> None:
+        from eggress.cipher import ChaCha20_Cipher
+
+        c = ChaCha20_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_chacha20_ietf_decrypt_raises(self) -> None:
+        from eggress.cipher import ChaCha20_IETF_Cipher
+
+        c = ChaCha20_IETF_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_salsa20_decrypt_raises(self) -> None:
+        from eggress.cipher import Salsa20_Cipher
+
+        c = Salsa20_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_aes_256_cfb_decrypt_raises(self) -> None:
+        c = AES_256_CFB_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_aes_192_cfb_decrypt_raises(self) -> None:
+        from eggress.cipher import AES_192_CFB_Cipher
+
+        c = AES_192_CFB_Cipher(b"0" * 24)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_aes_128_cfb_decrypt_raises(self) -> None:
+        from eggress.cipher import AES_128_CFB_Cipher
+
+        c = AES_128_CFB_Cipher(b"0" * 16)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_aes_256_cfb8_decrypt_raises(self) -> None:
+        from eggress.cipher import AES_256_CFB8_Cipher
+
+        c = AES_256_CFB8_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_aes_256_ofb_decrypt_raises(self) -> None:
+        from eggress.cipher import AES_256_OFB_Cipher
+
+        c = AES_256_OFB_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_aes_256_ctr_decrypt_raises(self) -> None:
+        from eggress.cipher import AES_256_CTR_Cipher
+
+        c = AES_256_CTR_Cipher(b"0" * 32)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_bf_cfb_decrypt_raises(self) -> None:
+        from eggress.cipher import BF_CFB_Cipher
+
+        c = BF_CFB_Cipher(b"0" * 16)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_cast5_cfb_decrypt_raises(self) -> None:
+        from eggress.cipher import CAST5_CFB_Cipher
+
+        c = CAST5_CFB_Cipher(b"0" * 16)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+    def test_des_cfb_decrypt_raises(self) -> None:
+        from eggress.cipher import DES_CFB_Cipher
+
+        c = DES_CFB_Cipher(b"0" * 8)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+
+# ---------------------------------------------------------------------------
+# Workstream 7: Behavioral audit — BaseCipher encrypt/decrypt stubs
+# ---------------------------------------------------------------------------
+
+
+class TestBaseCipherEncryptDecryptStub:
+    """BaseCipher.encrypt and BaseCipher.decrypt raise UnsupportedFeatureError."""
+
+    def test_base_cipher_encrypt_raises(self) -> None:
+        c = BaseCipher(b"key", setup_key=False)
+        with pytest.raises(CipherUnsupportedError):
+            c.encrypt(b"data")
+
+    def test_base_cipher_decrypt_raises(self) -> None:
+        c = BaseCipher(b"key", setup_key=False)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt(b"data")
+
+
+# ---------------------------------------------------------------------------
+# Workstream 7: Behavioral audit — _ApplyCipher identity function
+# ---------------------------------------------------------------------------
+
+
+class TestApplyCipherIdentity:
+    """_ApplyCipher.__call__ is a no-op identity function, not encryption."""
+
+    def test_apply_cipher_call_returns_data_as_is(self) -> None:
+        err, fn = get_cipher("aes-256-gcm:password")
+        assert err is None
+        data = b"hello world"
+        assert fn(data) is data
+
+    def test_apply_cipher_call_returns_same_bytes(self) -> None:
+        err, fn = get_cipher("aes-256-gcm:password")
+        assert err is None
+        data = b"\x00\x01\x02\x03"
+        result = fn(data)
+        assert result == data
+        assert len(result) == len(data)
+
+    def test_apply_cipher_rc4_call_returns_data_as_is(self) -> None:
+        err, fn = get_cipher("rc4:password")
+        assert err is None
+        data = b"test data"
+        assert fn(data) is data
+
+    def test_apply_cipher_chacha_call_returns_data_as_is(self) -> None:
+        err, fn = get_cipher("chacha20-ietf-poly1305:password")
+        assert err is None
+        data = b"test data"
+        assert fn(data) is data
+
+
+# ---------------------------------------------------------------------------
+# Workstream 7: Behavioral audit — AEAD encrypt_and_digest / decrypt_and_verify
+# (additional cipher types beyond existing tests)
+# ---------------------------------------------------------------------------
+
+
+class TestCipherAeadEncryptDecryptComprehensive:
+    """encrypt_and_digest / decrypt_and_verify raise for all AEAD cipher types."""
+
+    def test_aes_192_gcm_encrypt_and_digest_raises(self) -> None:
+        from eggress.cipher import AES_192_GCM_Cipher
+
+        c = AES_192_GCM_Cipher(b"0" * 24)
+        with pytest.raises(CipherUnsupportedError):
+            c.encrypt_and_digest(b"plaintext")
+
+    def test_aes_192_gcm_decrypt_and_verify_raises(self) -> None:
+        from eggress.cipher import AES_192_GCM_Cipher
+
+        c = AES_192_GCM_Cipher(b"0" * 24)
+        with pytest.raises(CipherUnsupportedError):
+            c.decrypt_and_verify(b"ciphertext", b"tag")
+
+    def test_all_aead_ciphers_encrypt_raises(self) -> None:
+        """Every cipher in MAP that subclasses AEADCipher raises on encrypt."""
+        from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
+
+        for name, cls in CIPHER_MAP.items():
+            if issubclass(cls, AEADCipher):
+                key = b"0" * cls.KEY_LENGTH
+                c = cls(key)
+                with pytest.raises(CipherUnsupportedError):
+                    c.encrypt(b"data")
+
+    def test_all_aead_ciphers_decrypt_raises(self) -> None:
+        """Every cipher in MAP that subclasses AEADCipher raises on decrypt."""
+        from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
+
+        for name, cls in CIPHER_MAP.items():
+            if issubclass(cls, AEADCipher):
+                key = b"0" * cls.KEY_LENGTH
+                c = cls(key)
+                with pytest.raises(CipherUnsupportedError):
+                    c.decrypt(b"data")
+
+    def test_all_legacy_ciphers_encrypt_raises(self) -> None:
+        """Every cipher in MAP that is NOT AEADCipher raises on encrypt."""
+        from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
+
+        for name, cls in CIPHER_MAP.items():
+            if not issubclass(cls, AEADCipher):
+                key = b"0" * cls.KEY_LENGTH
+                c = cls(key)
+                with pytest.raises(CipherUnsupportedError):
+                    c.encrypt(b"data")
+
+    def test_all_legacy_ciphers_decrypt_raises(self) -> None:
+        """Every cipher in MAP that is NOT AEADCipher raises on decrypt."""
+        from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
+
+        for name, cls in CIPHER_MAP.items():
+            if not issubclass(cls, AEADCipher):
+                key = b"0" * cls.KEY_LENGTH
+                c = cls(key)
+                with pytest.raises(CipherUnsupportedError):
+                    c.decrypt(b"data")
+
+
+# ---------------------------------------------------------------------------
+# Workstream 7: Behavioral audit — protocol constructor error behavior
+# ---------------------------------------------------------------------------
+
+
+class TestProtocolConstructorErrors:
+    """Unsupported protocol constructors raise UnsupportedFeatureError."""
+
+    def test_ssr_init_raises_with_message(self) -> None:
+        with pytest.raises(UnsupportedFeatureError, match="ShadowsocksR"):
+            SSR()
+
+    def test_h3_init_raises_with_message(self) -> None:
+        with pytest.raises(UnsupportedFeatureError, match="HTTP/3"):
+            H3()
+
+    def test_ssh_init_raises_with_message(self) -> None:
+        with pytest.raises(UnsupportedFeatureError, match="SSH"):
+            SSH()
+
+    def test_ssr_not_instantiable_via_get_protos(self) -> None:
+        with pytest.raises(UnsupportedFeatureError, match="ShadowsocksR"):
+            get_protos(["ssr"])
+
+    def test_h3_not_instantiable_via_get_protos(self) -> None:
+        with pytest.raises(UnsupportedFeatureError, match="HTTP/3"):
+            get_protos(["h3"])
+
+    def test_ssh_not_instantiable_via_get_protos(self) -> None:
+        with pytest.raises(UnsupportedFeatureError, match="SSH"):
+            get_protos(["ssh"])

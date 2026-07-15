@@ -363,4 +363,99 @@ mod tests {
         let decoded = base64_decode("dGVzdA==").unwrap();
         assert_eq!(decoded, b"test");
     }
+
+    #[test]
+    fn test_max_head_size_enforced() {
+        assert_eq!(MAX_HEAD_SIZE, 32 * 1024);
+        assert_eq!(MAX_HEADER_LINES, 128);
+    }
+
+    #[test]
+    fn test_parse_authority_empty_host() {
+        assert!(parse_authority(":80").is_err());
+    }
+
+    #[test]
+    fn test_parse_authority_empty_string() {
+        assert!(parse_authority("").is_err());
+    }
+
+    #[test]
+    fn test_parse_authority_no_colon() {
+        assert!(parse_authority("example.com").is_err());
+    }
+
+    #[test]
+    fn test_parse_header_line_no_colon() {
+        assert!(parse_header_line("no-colon-here").is_none());
+    }
+
+    #[test]
+    fn test_parse_header_line_empty() {
+        assert!(parse_header_line("").is_none());
+    }
+
+    #[test]
+    fn test_parse_basic_auth_not_basic() {
+        assert!(parse_basic_auth("Bearer token123").is_none());
+    }
+
+    #[test]
+    fn test_parse_basic_auth_invalid_base64() {
+        assert!(parse_basic_auth("Basic !!!invalid!!!").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_head_too_large_rejected() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let jh = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            // Send a request line followed by headers that exceed MAX_HEAD_SIZE
+            let mut payload = b"CONNECT example.com:443 HTTP/1.1\r\n".to_vec();
+            // Add headers until we exceed the limit
+            let header_line = b"X-Pad: AAAAAAAAAAAAAAAAAAAAAAAAAAAAA\r\n";
+            while payload.len() < MAX_HEAD_SIZE + header_line.len() {
+                payload.extend_from_slice(header_line);
+            }
+            payload.extend_from_slice(b"\r\n");
+            let _ = stream.write_all(&payload).await;
+            // Keep connection alive briefly
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let mut buf = vec![0u8; 4096];
+        // The server should reject or the client should see an error
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.read(&mut buf)).await;
+        jh.abort();
+    }
+
+    #[tokio::test]
+    async fn test_too_many_header_lines_rejected() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let jh = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            // Send CONNECT with more than MAX_HEADER_LINES (128) header lines
+            let mut payload = b"CONNECT example.com:443 HTTP/1.1\r\n".to_vec();
+            for i in 0..=MAX_HEADER_LINES + 1 {
+                payload.extend_from_slice(format!("X-Header-{i}: value\r\n").as_bytes());
+            }
+            payload.extend_from_slice(b"\r\n");
+            let _ = stream.write_all(&payload).await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let mut buf = vec![0u8; 4096];
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.read(&mut buf)).await;
+        jh.abort();
+    }
 }

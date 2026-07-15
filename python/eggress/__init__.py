@@ -61,6 +61,7 @@ from eggress.connection import (
     UdpAssociationError,
     UnsupportedCompositionError,
 )
+from eggress.pproxy_connection import ProxyConnection
 from eggress.async_connection import AsyncConnection
 from eggress._asyncio import AsyncBridge, CloseWaiter, LoopAffinityError
 from eggress._compat import (
@@ -302,6 +303,7 @@ __all__ = [
     "PPProxyService",
     "PPProxyHandle",
     "Connection",
+    "ProxyConnection",
     "ConnectionState",
     "ConnectionBaseError",
     "ConnectionClosedError",

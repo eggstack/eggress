@@ -70,6 +70,29 @@ class UnsupportedCompositionError(EggressError):
 
 
 class Connection:
+    """eggress managed proxy connection (listener + relay).
+
+    .. warning::
+
+        This class starts a **full managed proxy service** (listener + relay),
+        which is fundamentally different from pproxy's ``Connection`` factory.
+        pproxy's ``Connection`` returns protocol handler objects for outbound
+        connections; this class starts an inbound listener.
+
+        For pproxy-compatible outbound connections, use
+        :class:`~eggress.pproxy_connection.ProxyConnection` instead.
+
+    Accepts pproxy-style URI strings and starts a managed proxy service
+    that listens on the specified address and relays traffic through the
+    configured proxy chain.
+
+    Example::
+
+        # This starts a SOCKS5 listener on an ephemeral port
+        with Connection("socks5://127.0.0.1:0") as conn:
+            print(conn.sockname)  # ('127.0.0.1', <port>)
+    """
+
     __slots__ = ("_inner", "_state", "_closed")
 
     def __init__(self, *uris: str, **kwargs: Any) -> None:
