@@ -239,7 +239,7 @@ pub async fn handle_request(
             let body_bytes = match collect_limited(req.into_body(), MAX_ADMIN_BODY).await {
                 Ok(b) => b,
                 Err(e) => {
-                    return build_json_response(400, serde_json::json!({"error": e}).to_string());
+                    return build_json_response(413, serde_json::json!({"error": e}).to_string());
                 }
             };
             let body: serde_json::Value = match serde_json::from_slice(&body_bytes) {

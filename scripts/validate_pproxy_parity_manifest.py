@@ -821,6 +821,7 @@ VALID_COMPOSITION_TRAFFIC_KINDS = frozenset({"tcp", "udp"})
 VALID_CONSTRAINT_TYPES = frozenset({
     "chain_max_hops", "platform", "requires_tls",
     "no_udp", "no_chain", "protocol_crate_only",
+    "upstream_only_no_listener",
 })
 
 VALID_CAVEAT_CLASSES_COMPOSITION = frozenset({

@@ -7,12 +7,12 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 95 | 68.3% |
-| `compatible_with_warning` | 16 | 11.5% |
-| `native_equivalent` | 14 | 10.1% |
-| `intentional_non_parity` | 9 | 6.5% |
-| `unsupported` | 5 | 3.6% |
-| **Total** | **139** | |
+| `drop_in` | 95 | 65.5% |
+| `compatible_with_warning` | 22 | 15.2% |
+| `native_equivalent` | 14 | 9.7% |
+| `intentional_non_parity` | 9 | 6.2% |
+| `unsupported` | 5 | 3.4% |
+| **Total** | **145** | |
 
 ## Drop-In Capabilities (95)
 
@@ -29,7 +29,7 @@ These features are drop-in replacements for pproxy. All required layers are `com
 ### Python (14)
 - `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`
 
-## Compatible-With-Warning (16)
+## Compatible-With-Warning (22)
 
 These features work but emit diagnostics or differ in a known way.
 
@@ -48,6 +48,12 @@ These features work but emit diagnostics or differ in a known way.
 | `uri.chain_validation` | Per-hop diagnostics carry unsupported_protocol or unsupported_transport_wrapper codes. | `` |
 | `uri.semicolon_comma_rejection` | Emits invalid_chainComposition diagnostic with migration suggestion. | `` |
 | `protocol.socks5.udp_associate` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
+| `protocol.chain.socks5_to_ws` | WS upstream is terminal; opens fresh connection, does not wrap prior-hop stream. | `` |
+| `protocol.chain.http_to_ws` | WS upstream is terminal; opens fresh connection, does not wrap prior-hop stream. | `` |
+| `protocol.chain.socks5_to_raw` | Raw upstream is terminal; opens fresh connection, does not wrap prior-hop stream. | `` |
+| `protocol.chain.http_to_raw` | Raw upstream is terminal; opens fresh connection, does not wrap prior-hop stream. | `` |
+| `protocol.chain.socks5_to_h2` | H2 upstream is terminal; opens fresh connection, does not wrap prior-hop stream. | `` |
+| `protocol.chain.http_to_h2` | H2 upstream is terminal; opens fresh connection, does not wrap prior-hop stream. | `` |
 | `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
 | `protocol.shadowsocks_tcp` | Wire-compatible with standard Shadowsocks sserver/sslocal. No pproxy differential tests; integration evidence only. | `` |
 | `protocol.shadowsocks_udp` | Standard AEAD format; interoperable. No pproxy differential tests; integration evidence only. | `` |

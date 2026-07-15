@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Parity hardening complete through Phase 51. The parity capability manifest (139 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth. 84 drop-in, 19 compatible-with-warning, 14 native-equivalent, 17 intentional-non-parity, 5 unsupported.
+> Status: Parity hardening complete through Phase 51 with corrective verification pass. The parity capability manifest (145 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth. 95 drop-in, 22 compatible-with-warning, 14 native-equivalent, 9 intentional-non-parity, 5 unsupported. Advanced transport chains (WS/Raw/H2) reclassified as `compatible_with_warning` with role-specific notes documenting upstream-only terminal behavior.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -34,7 +34,7 @@ The `eggress-pproxy-compat` crate provides:
 - **Phase C4 protocol/cipher/plugin objects**: `eggress.protocol`, `eggress.cipher`, `eggress.plugin`, and `eggress.wrapper` modules provide pproxy-compatible protocol objects, cipher objects with AEAD support, a bounded plugin callback bridge, and TLS/plugin/chain composition objects.
 - `.pyi` type stubs for all public modules
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
-- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 139 capabilities across 5 categories with tier classification and machine-readable validation
+- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 145 capabilities across 5 categories with tier classification and machine-readable validation
 - Reusable differential parity harness (`eggress-testkit::differential`) — 27 scenarios against pproxy 2.7.9 — Phase 41
 - Phase 42 corrective consistency pass: `CompatibilityReport` uses the five-tier manifest vocabulary; `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies to all listeners (matches pproxy); parity report can be regenerated (`--write-report`) and consistency-checked (`--check-report`) from the manifest
 
@@ -486,7 +486,7 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - [x] `--json` flag for machine-readable pproxy check output (Phase 28)
 - [x] CLI flag inventory: full parity documentation of translate/check/run subcommands (Phase 28)
 - [x] Compatibility manifest tracking all parity features with evidence levels (`tests/compat/pproxy_manifest.toml`)
-- [x] Authoritative parity capability manifest — 139 capabilities, 5 categories, machine-validated (Phase 37, updated Phase 51)
+- [x] Authoritative parity capability manifest — 145 capabilities, 5 categories, machine-validated (Phase 37, updated Phase 51+corrective pass)
 - [x] pproxy CLI native-equivalent closure — `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` generate TOML (Phase 38)
 - [x] URI grammar chain semantics — `__` separator, modifiers, default port inference (Phase 39)
 - [x] Python pproxy drop-in API — `PPProxyService`, `CompatibilityReport`, `.pyi` stubs (Phase 40)

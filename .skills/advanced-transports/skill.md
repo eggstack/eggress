@@ -22,6 +22,15 @@ WebSocket and Raw transports were promoted to runtime-integrated upstream protoc
   these as listener/upstream protocols with a structured validation error.
 - Tests: `cargo test -p eggress-config` covers the refuse paths.
 
+## Chain composition behavior (corrective verification)
+
+WS, WSS, Raw, and H2 upstream handlers **open independent connections** to the endpoint rather than consuming the prior-hop stream supplied by the chain executor. This means:
+
+- They are **terminal** protocols in chains — they can appear as the last upstream hop but cannot wrap a prior-hop stream.
+- Chain entries (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are classified as `compatible_with_warning` in the composition matrix, not `drop_in`.
+- Each chain entry has a dedicated capability ID (e.g., `protocol.chain.socks5_to_ws`) documenting this behavior.
+- The `upstream_only_no_listener` constraint type documents that these protocols cannot act as listeners or intermediate chain hops.
+
 ## H2 CONNECT
 - Server: `h2_connect::handle_h2_connect()` accepts H2 connections, dispatches CONNECT, bridges stream to TCP target
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request

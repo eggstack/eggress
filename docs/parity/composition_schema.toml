@@ -37,6 +37,7 @@ evidence = [
 constraint_types = [
     "chain_max_hops", "platform", "requires_tls",
     "no_udp", "no_chain", "protocol_crate_only",
+    "upstream_only_no_listener",
 ]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

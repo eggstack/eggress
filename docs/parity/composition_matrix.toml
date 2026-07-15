@@ -287,49 +287,67 @@ capability_ids = [
 from_protocol = "socks5"
 to_protocol = "ws"
 traffic_kind = "tcp"
-tier = "drop_in"
+tier = "compatible_with_warning"
 evidence = "integration"
-capability_ids = []
+capability_ids = [
+    "protocol.chain.socks5_to_ws",
+]
+notes = "WS upstream opens independent connection; does not consume prior-hop stream"
 
 [[chain]]
 from_protocol = "http"
 to_protocol = "ws"
 traffic_kind = "tcp"
-tier = "drop_in"
+tier = "compatible_with_warning"
 evidence = "integration"
-capability_ids = []
+capability_ids = [
+    "protocol.chain.http_to_ws",
+]
+notes = "WS upstream opens independent connection; does not consume prior-hop stream"
 
 [[chain]]
 from_protocol = "socks5"
 to_protocol = "raw"
 traffic_kind = "tcp"
-tier = "drop_in"
+tier = "compatible_with_warning"
 evidence = "integration"
-capability_ids = []
+capability_ids = [
+    "protocol.chain.socks5_to_raw",
+]
+notes = "Raw upstream opens independent connection; does not consume prior-hop stream"
 
 [[chain]]
 from_protocol = "http"
 to_protocol = "raw"
 traffic_kind = "tcp"
-tier = "drop_in"
+tier = "compatible_with_warning"
 evidence = "integration"
-capability_ids = []
+capability_ids = [
+    "protocol.chain.http_to_raw",
+]
+notes = "Raw upstream opens independent connection; does not consume prior-hop stream"
 
 [[chain]]
 from_protocol = "socks5"
 to_protocol = "h2"
 traffic_kind = "tcp"
-tier = "drop_in"
+tier = "compatible_with_warning"
 evidence = "integration"
-capability_ids = []
+capability_ids = [
+    "protocol.chain.socks5_to_h2",
+]
+notes = "H2 upstream opens independent connection; does not consume prior-hop stream"
 
 [[chain]]
 from_protocol = "http"
 to_protocol = "h2"
 traffic_kind = "tcp"
-tier = "drop_in"
+tier = "compatible_with_warning"
 evidence = "integration"
-capability_ids = []
+capability_ids = [
+    "protocol.chain.http_to_h2",
+]
+notes = "H2 upstream opens independent connection; does not consume prior-hop stream"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Runtime-Integrated Advanced Transports (upstream-only, promoted in B3/B4)
@@ -344,7 +362,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.ws_runtime",
 ]
-notes = "WebSocket tunnel upstream; binary-mode byte stream adapter"
+notes = "WebSocket tunnel upstream only; binary-mode byte stream adapter. No listener role."
 
 [[cell]]
 protocol = "wss"
@@ -355,7 +373,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.ws_runtime",
 ]
-notes = "WSS = WebSocket + TLS; upstream with TLS transport wrapper"
+notes = "WSS = WebSocket + TLS; upstream only with TLS transport wrapper. No listener role."
 
 [[cell]]
 protocol = "h2"
@@ -366,7 +384,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.h2_runtime",
 ]
-notes = "Promoted in Phase B4; H2 CONNECT upstream with TLS/ALPN, bidirectional stream adaptation, and chain integration"
+notes = "Promoted in Phase B4; H2 CONNECT upstream only with TLS/ALPN. No listener role."
 
 [[cell]]
 protocol = "raw"
@@ -377,7 +395,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.raw_runtime",
 ]
-notes = "Raw fixed-target TCP tunnel upstream; direct connect to target"
+notes = "Raw fixed-target TCP tunnel upstream only; direct connect to target. No listener role."
 
 [[cell]]
 protocol = "ssh"
@@ -492,3 +510,8 @@ description = "These protocols require TLS transport wrapper"
 type = "protocol_crate_only"
 applies_to = []
 description = "All protocols are now runtime-integrated (B4 promoted h2)"
+
+[[constraint]]
+type = "upstream_only_no_listener"
+applies_to = ["ws", "wss", "h2", "raw"]
+description = "Advanced transports are upstream-only; they open independent connections and cannot act as listeners or intermediate chain hops"

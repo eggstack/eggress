@@ -81,6 +81,7 @@ pub const ALLOWED_CONSTRAINT_TYPES: &[&str] = &[
     "no_udp",
     "no_chain",
     "protocol_crate_only",
+    "upstream_only_no_listener",
 ];
 
 /// Allowed caveat class values.
