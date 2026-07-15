@@ -2397,15 +2397,14 @@ upstream_group = "tcp-upstream"
 //
 // These tests verify the chain executor's handler contract:
 //
-// - Stream-consuming handlers (HTTP CONNECT, SOCKS5, SOCKS4, Shadowsocks,
-//   Trojan, WebSocket) perform their protocol handshake on the provided
-//   prior-hop stream and return the upgraded stream for relay.
+// - All handlers (HTTP CONNECT, SOCKS5, SOCKS4, Shadowsocks, Trojan,
+//   WebSocket, Raw, H2) perform their protocol handshake on the provided
+//   prior-hop stream and return the upgraded stream for relay. No handler
+//   opens an independent TCP connection when operating as an intermediate
+//   hop — the prior-hop stream is consumed and passed through.
 //
-// - Independent-connection handlers (Raw, H2) IGNORE the prior-hop stream
-//   and open a NEW connection to the hop endpoint or target.
-//
-// The tests below prove stream-consuming behavior for WebSocket by
-// performing the WS handshake over the SOCKS5-established stream.
+// The tests below prove stream-consuming behavior for WebSocket and H2 by
+// performing protocol handshakes over the SOCKS5-established stream.
 
 /// Start a WebSocket echo server that reads a binary message and echoes it back.
 async fn start_ws_echo() -> std::net::SocketAddr {
@@ -2726,15 +2725,14 @@ upstream_group = "tcp-upstream"
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
 
-/// Prove that the H2 handler opens an independent connection.
+/// Prove that the H2 handler consumes the prior-hop stream.
 ///
-/// H2HopHandler ignores the `stream` parameter and calls
-/// `TcpStream::connect(...)` to the H2 proxy endpoint, performs an H2
-/// handshake, and sends an HTTP/2 CONNECT request — all independently of
-/// the prior-hop stream. This is the most complex independent connection
-/// handler, involving connection pooling.
+/// H2HopHandler receives the `stream` parameter and passes it to
+/// `h2_connect_client_pooled()`, which performs the H2 handshake over the
+/// provided stream. The H2 CONNECT request is sent over the same stream,
+/// proving no independent TCP connection is opened for intermediate hops.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn chain_h2_opens_independent_connection() {
+async fn chain_h2_consumes_prior_stream() {
     install_crypto();
     let echo_addr = start_tcp_echo().await;
     let h2_proxy_addr = start_h2_connect_proxy().await;
@@ -3062,4 +3060,368 @@ upstream_group = "tcp-upstream"
     token.cancel();
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), jh).await;
     assert!(result.is_ok(), "shutdown should complete within timeout");
+}
+
+// ===== Additional chain composition tests =====
+
+/// Start an HTTP CONNECT proxy that forwards to the target.
+async fn start_http_connect_proxy() -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 4096];
+                let mut pos = 0;
+                loop {
+                    let n = stream.read(&mut buf[pos..]).await.unwrap_or(0);
+                    if n == 0 {
+                        return;
+                    }
+                    pos += n;
+                    if buf[..pos].windows(2).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let request = String::from_utf8_lossy(&buf[..pos]);
+                let first_line = request.lines().next().unwrap_or("");
+                let parts: Vec<&str> = first_line.split_whitespace().collect();
+                if parts.len() < 2 {
+                    let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await;
+                    return;
+                }
+                let target_addr = parts[1];
+                let target = match tokio::net::TcpStream::connect(target_addr).await {
+                    Ok(t) => t,
+                    Err(_) => {
+                        let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+                        return;
+                    }
+                };
+                let _ = stream
+                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    .await;
+                let (mut cr, mut cw) = stream.into_split();
+                let (mut tr, mut tw) = target.into_split();
+                let c2t = tokio::spawn(async move {
+                    let _ = tokio::io::copy(&mut cr, &mut tw).await;
+                });
+                let t2c = tokio::spawn(async move {
+                    let _ = tokio::io::copy(&mut tr, &mut cw).await;
+                });
+                let _ = tokio::join!(c2t, t2c);
+            });
+        }
+    });
+    addr
+}
+
+/// Prove that the HTTP→WS chain performs both handshakes over the same stream.
+///
+/// HTTP CONNECT first establishes a tunnel to the WS endpoint, then the
+/// WebSocket handler performs the WS upgrade over the same stream.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_http_to_ws_over_stream() {
+    let echo_addr = start_ws_echo().await;
+    let http_proxy_addr = start_http_connect_proxy().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "chain"
+uri = "socks5://127.0.0.1:1080"
+
+[[upstreams.chain.hops]]
+protocols = ["http"]
+endpoint = {{ host = "127.0.0.1", port = {http_proxy_port} }}
+
+[[upstreams.chain.hops]]
+protocols = ["websocket"]
+endpoint = {{ host = "127.0.0.1", port = {ws_port} }}
+"#,
+        http_proxy_port = http_proxy_addr.port(),
+        ws_port = echo_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let state = eggress_runtime::ServiceSupervisor::start_from_file(f.path())
+        .await
+        .expect("start");
+    wait_ready(&state).await;
+
+    let socks_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    // Connect through SOCKS5
+    let mut stream = tokio::net::TcpStream::connect(socks_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    // SOCKS5 CONNECT to the WS endpoint
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
+
+    // Perform WebSocket handshake over the SOCKS5→HTTP→WS chain
+    let url = format!("ws://127.0.0.1:{}", echo_addr.port());
+    let ws_stream = tokio_tungstenite::client_async(url, stream)
+        .await
+        .expect("ws handshake");
+    let (mut sink, mut source) = ws_stream.split();
+
+    // Send a binary message through the WS→HTTP→SOCKS5 chain
+    let test_data = b"hello-via-http-ws-chain";
+    sink.send(tokio_tungstenite::tungstenite::Message::Binary(
+        test_data.to_vec(),
+    ))
+    .await
+    .expect("send");
+
+    // Receive the echo
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(5), source.next())
+        .await
+        .expect("timeout waiting for echo")
+        .expect("stream ended")
+        .expect("ws error");
+    match msg {
+        tokio_tungstenite::tungstenite::Message::Binary(data) => {
+            assert_eq!(&data, test_data);
+        }
+        other => panic!("expected Binary, got {:?}", other),
+    }
+
+    state.cancel_token.cancel();
+}
+
+/// Prove that raw intermediate-hop handler passes through the stream.
+///
+/// SOCKS5 establishes a connection to the raw endpoint, then the raw
+/// handler simply returns the stream unchanged (passthrough).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chain_socks5_to_raw_passthrough() {
+    let echo_addr = start_tcp_echo().await;
+    let socks_addr = start_socks5_tcp_proxy().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "chain"
+uri = "socks5://127.0.0.1:1080"
+
+[[upstreams.chain.hops]]
+protocols = ["raw"]
+endpoint = {{ host = "127.0.0.1", port = {raw_port} }}
+"#,
+        raw_port = socks_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let state = eggress_runtime::ServiceSupervisor::start_from_file(f.path())
+        .await
+        .expect("start");
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    // Connect through SOCKS5
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    // SOCKS5 CONNECT to the raw endpoint (which is a SOCKS5 proxy itself)
+    let ip_octets = match socks_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream.write_all(&ip_octets).await.unwrap();
+    stream
+        .write_all(&socks_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
+
+    // Now send data through the raw passthrough — the inner SOCKS5 proxy
+    // should relay to the echo server.
+    let payload = b"hello-via-raw-passthrough";
+    stream.write_all(payload).await.unwrap();
+
+    let mut buf = [0u8; 256];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        stream.read(&mut buf).await.unwrap_or(0)
+    })
+    .await
+    .expect("timeout");
+    assert_eq!(&buf[..n], payload);
+
+    state.cancel_token.cancel();
+}
+
+/// Prove that H2 pool isolates connections by hop_index.
+///
+/// Two chains with the same endpoint but different hop indices should not
+/// share pooled H2 connections.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn h2_pool_isolation_by_hop_index() {
+    install_crypto();
+    let echo_addr = start_tcp_echo().await;
+    let h2_proxy_addr = start_h2_connect_proxy().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[upstreams]]
+id = "chain-a"
+uri = "socks5://127.0.0.1:1080"
+
+[[upstreams.chain-a.hops]]
+protocols = ["h2"]
+endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
+
+[[upstreams]]
+id = "chain-b"
+uri = "socks5://127.0.0.1:1080"
+
+[[upstreams.chain-b.hops]]
+protocols = ["raw"]
+endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
+
+[[upstreams.chain-b.hops]]
+protocols = ["h2"]
+endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
+"#,
+        h2_port = h2_proxy_addr.port(),
+    );
+
+    let f = write_config(&config);
+    let state = eggress_runtime::ServiceSupervisor::start_from_file(f.path())
+        .await
+        .expect("start");
+    wait_ready(&state).await;
+
+    let listener_addr = {
+        let addrs = state.listener_addrs.lock().unwrap();
+        addrs[0].unwrap()
+    };
+
+    // Connect through chain A (direct H2)
+    let mut stream_a = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream_a.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream_a.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    let ip_octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        _ => panic!("expected IPv4"),
+    };
+    stream_a.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream_a.write_all(&ip_octets).await.unwrap();
+    stream_a
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream_a.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00);
+
+    // Send data through chain A
+    let payload_a = b"chain-a-data";
+    stream_a.write_all(payload_a).await.unwrap();
+    let mut buf = [0u8; 256];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        stream_a.read(&mut buf).await.unwrap_or(0)
+    })
+    .await
+    .expect("timeout chain-a");
+    assert_eq!(&buf[..n], payload_a);
+    drop(stream_a);
+
+    // Connect through chain B (raw → H2, hop_index=1)
+    let mut stream_b = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    stream_b.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream_b.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
+
+    stream_b.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+    stream_b.write_all(&ip_octets).await.unwrap();
+    stream_b
+        .write_all(&echo_addr.port().to_be_bytes())
+        .await
+        .unwrap();
+
+    let mut reply = [0u8; 10];
+    stream_b.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00);
+
+    // Send data through chain B
+    let payload_b = b"chain-b-data";
+    stream_b.write_all(payload_b).await.unwrap();
+    let mut buf = [0u8; 256];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        stream_b.read(&mut buf).await.unwrap_or(0)
+    })
+    .await
+    .expect("timeout chain-b");
+    assert_eq!(&buf[..n], payload_b);
+
+    drop(stream_b);
+    state.cancel_token.cancel();
 }

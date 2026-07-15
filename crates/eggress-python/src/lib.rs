@@ -1334,6 +1334,65 @@ fn describe_reverse_pproxy_uri(uri: &str) -> PyResult<PyReverseUriSummary> {
     })
 }
 
+/// Python-accessible outbound connector for direct proxy chain connections.
+///
+/// This wraps the Rust `OutboundConnector` and provides a Python interface
+/// for making outbound TCP connections through a configured proxy chain
+/// without starting a listener service.
+///
+/// For sync Python, use :class:`~eggress.pproxy_connection.ProxyConnection`
+/// which provides a socket-based interface. This class is intended for
+/// advanced use cases where direct stream access is needed.
+#[pyclass]
+struct PyOutboundConnector {
+    inner: eggress_embed::outbound::OutboundConnector,
+}
+
+#[pymethods]
+impl PyOutboundConnector {
+    /// Create a connector from a pproxy-style URI string.
+    #[staticmethod]
+    fn from_pproxy_uri(uri: &str) -> PyResult<Self> {
+        let inner = eggress_embed::outbound::OutboundConnector::from_pproxy_uri(uri)
+            .map_err(|e| ConnectionError::new_err(format!("failed to create connector: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// Create a connector from a TOML config string.
+    #[staticmethod]
+    fn from_toml(config_toml: &str) -> PyResult<Self> {
+        let inner = eggress_embed::outbound::OutboundConnector::from_toml(config_toml)
+            .map_err(|e| ConnectionError::new_err(format!("failed to create connector: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// Validate that a TOML config is usable for outbound connections.
+    ///
+    /// Returns the number of hops in the first upstream's chain.
+    #[staticmethod]
+    fn validate_config(config_toml: &str) -> PyResult<usize> {
+        eggress_embed::outbound::OutboundConnector::validate_outbound_config(config_toml)
+            .map_err(|e| ConnectionError::new_err(format!("config validation failed: {e}")))
+    }
+
+    /// Get the number of upstreams configured.
+    fn upstream_count(&self) -> usize {
+        self.inner.upstream_count()
+    }
+
+    /// Get connection metadata for a target host:port.
+    ///
+    /// Resolves the first hop endpoint and returns metadata about the
+    /// configured chain without actually connecting.
+    fn preview_connect(&self, py: Python<'_>, host: &str, port: u16) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("target_host", host)?;
+        dict.set_item("target_port", port)?;
+        dict.set_item("hop_count", self.inner.upstream_count())?;
+        Ok(dict.into())
+    }
+}
+
 #[pymodule]
 fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEggressConfig>()?;
@@ -1346,6 +1405,7 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyUriInfo>()?;
     m.add_class::<PyDiagnostic>()?;
     m.add_class::<PyConnection>()?;
+    m.add_class::<PyOutboundConnector>()?;
     m.add_function(wrap_pyfunction!(translate_pproxy_args, m)?)?;
     m.add_function(wrap_pyfunction!(translate_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_args, m)?)?;

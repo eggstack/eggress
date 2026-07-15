@@ -76,11 +76,16 @@ pub trait HopHandler: Send + Sync {
     /// 1. Perform the protocol-specific handshake (e.g., HTTP CONNECT, SOCKS5 greeting)
     /// 2. Request connection to the specified target
     /// 3. Return the upgraded stream on success
+    ///
+    /// `hop_index` is the 0-based position of this hop in the chain. Handlers
+    /// that use connection pooling (e.g., H2) must include this value in pool
+    /// keys to prevent cross-chain connection reuse.
     fn handshake<'a>(
         &'a self,
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a ProxyHopSpec,
+        hop_index: usize,
     ) -> HandshakeFuture<'a>;
 }
 
@@ -242,7 +247,7 @@ impl ChainExecutor {
             let handler = find_handler(&self.handlers, &hop.protocols)?;
 
             current_stream = handler
-                .handshake(current_stream, &next_target, hop)
+                .handshake(current_stream, &next_target, hop, i)
                 .await
                 .map_err(|e| ChainError::HandshakeFailed {
                     hop_index: i,
@@ -357,6 +362,7 @@ mod tests {
             stream: BoxStream,
             target: &'a TargetAddr,
             _hop: &'a ProxyHopSpec,
+            _hop_index: usize,
         ) -> HandshakeFuture<'a> {
             Box::pin(async move {
                 *self.captured_target.lock().unwrap() = Some(target.clone());
@@ -381,6 +387,7 @@ mod tests {
             _stream: BoxStream,
             _target: &'a TargetAddr,
             _hop: &'a ProxyHopSpec,
+            _hop_index: usize,
         ) -> HandshakeFuture<'a> {
             let msg = self.error_message.clone();
             Box::pin(async move { Err(msg.into()) })
@@ -837,6 +844,7 @@ mod tests {
                 stream: BoxStream,
                 _target: &'a TargetAddr,
                 hop: &'a ProxyHopSpec,
+                _hop_index: usize,
             ) -> HandshakeFuture<'a> {
                 Box::pin(async move {
                     if let Some(creds) = hop.credentials.as_ref() {
@@ -1109,6 +1117,7 @@ mod tests {
                 stream: BoxStream,
                 target: &'a TargetAddr,
                 _hop: &'a ProxyHopSpec,
+                _hop_index: usize,
             ) -> HandshakeFuture<'a> {
                 let targets = self.targets.clone();
                 let target_clone = target.clone();
@@ -1187,6 +1196,7 @@ mod tests {
                 stream: BoxStream,
                 target: &'a TargetAddr,
                 _hop: &'a ProxyHopSpec,
+                _hop_index: usize,
             ) -> HandshakeFuture<'a> {
                 let targets = self.targets.clone();
                 let target_clone = target.clone();

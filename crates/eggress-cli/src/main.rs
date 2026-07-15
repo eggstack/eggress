@@ -907,6 +907,7 @@ fn build_test_chain_executor() -> ChainExecutor {
             stream: BoxStream,
             target: &'a TargetAddr,
             hop: &'a eggress_uri::ProxyHopSpec,
+            _hop_index: usize,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -939,6 +940,7 @@ fn build_test_chain_executor() -> ChainExecutor {
             stream: BoxStream,
             target: &'a TargetAddr,
             hop: &'a eggress_uri::ProxyHopSpec,
+            _hop_index: usize,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -972,6 +974,7 @@ fn build_test_chain_executor() -> ChainExecutor {
             stream: BoxStream,
             target: &'a TargetAddr,
             hop: &'a eggress_uri::ProxyHopSpec,
+            _hop_index: usize,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<

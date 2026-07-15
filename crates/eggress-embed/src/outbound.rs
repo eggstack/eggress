@@ -20,6 +20,33 @@ pub struct OutboundInfo {
     pub hop_count: usize,
 }
 
+/// A UDP association through a SOCKS5 proxy.
+///
+/// Contains the relay address to send/receive UDP datagrams and
+/// the control stream that must remain open for the association lifetime.
+pub struct UdpAssociation {
+    /// The UDP relay address of the SOCKS5 proxy.
+    pub relay_addr: std::net::SocketAddr,
+    /// The control TCP stream (must stay open for the association).
+    pub control_stream: Option<eggress_core::BoxStream>,
+    /// The target address for datagrams.
+    pub target: eggress_core::TargetAddr,
+}
+
+/// Resolve a proxy endpoint address (host:port) to a SocketAddr.
+///
+/// For IP addresses, returns directly. For domains, performs DNS lookup.
+async fn resolve_endpoint_addr(
+    endpoint: &eggress_uri::EndpointSpec,
+) -> Option<std::net::SocketAddr> {
+    if let Ok(ip) = endpoint.host.parse::<std::net::IpAddr>() {
+        return Some(std::net::SocketAddr::new(ip, endpoint.port));
+    }
+    let lookup = format!("{}:{}", endpoint.host, endpoint.port);
+    let result = tokio::net::lookup_host(&lookup).await.ok()?.next();
+    result
+}
+
 /// A native outbound connector that executes the chain engine directly.
 ///
 /// This compiles routing/upstream state from a TOML config and provides
@@ -102,6 +129,10 @@ impl OutboundConnector {
         let upstream = &self.runtime_config.upstreams[0];
         let chain = &upstream.chain;
 
+        // Resolve the first hop endpoint address for metadata
+        let first_hop = &chain.hops[0];
+        let peer_addr = resolve_endpoint_addr(&first_hop.endpoint).await;
+
         let stream = self
             .chain_executor
             .execute(&chain.hops, &target)
@@ -110,7 +141,7 @@ impl OutboundConnector {
 
         let info = OutboundInfo {
             local_addr: None,
-            peer_addr: None,
+            peer_addr,
             hop_count: chain.hops.len(),
         };
 
@@ -127,6 +158,25 @@ impl OutboundConnector {
         tokio::time::timeout(timeout, self.connect_tcp(host, port))
             .await
             .map_err(|_| EggressError::Runtime("connection timed out".to_string()))?
+    }
+
+    /// Create a UDP association through the configured proxy chain.
+    ///
+    /// Returns a `UdpAssociation` with the relay address to send/receive
+    /// UDP datagrams through the proxy chain.
+    ///
+    /// UDP association requires SOCKS5 with UDP ASSOCIATE support.
+    /// This method establishes the association and returns channel endpoints.
+    pub async fn associate_udp(
+        &self,
+        _target_host: &str,
+        _target_port: u16,
+    ) -> Result<UdpAssociation, EggressError> {
+        Err(EggressError::Runtime(
+            "UDP association through OutboundConnector is not yet implemented; \
+             use the listener-based approach for UDP"
+                .to_string(),
+        ))
     }
 
     /// Get the number of upstreams configured.

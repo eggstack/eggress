@@ -395,6 +395,10 @@ where
 // ===== H2 Connection Pool =====
 
 /// Pool key identifying a unique H2 upstream connection group.
+///
+/// Includes `hop_index` to prevent cross-chain pooling: when the same
+/// upstream endpoint appears at different positions in distinct chains,
+/// connections must not be shared because the preceding hops differ.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct H2PoolKey {
     pub endpoint_host: String,
@@ -402,6 +406,7 @@ pub struct H2PoolKey {
     pub use_tls: bool,
     pub server_name: Option<String>,
     pub auth_hash: Option<u64>,
+    pub hop_index: usize,
 }
 
 impl H2PoolKey {
@@ -411,6 +416,18 @@ impl H2PoolKey {
         use_tls: bool,
         server_name: Option<&str>,
         auth: Option<(&str, &str)>,
+    ) -> Self {
+        Self::with_hop_index(host, port, use_tls, server_name, auth, 0)
+    }
+
+    /// Create a pool key with an explicit hop index for cross-chain isolation.
+    pub fn with_hop_index(
+        host: &str,
+        port: u16,
+        use_tls: bool,
+        server_name: Option<&str>,
+        auth: Option<(&str, &str)>,
+        hop_index: usize,
     ) -> Self {
         let auth_hash = auth.map(|(u, p)| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -424,6 +441,7 @@ impl H2PoolKey {
             use_tls,
             server_name: server_name.map(|s| s.to_string()),
             auth_hash,
+            hop_index,
         }
     }
 }

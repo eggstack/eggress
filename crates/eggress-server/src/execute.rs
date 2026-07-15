@@ -943,6 +943,7 @@ impl HopHandler for HttpHopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let auth = hop
             .credentials
@@ -968,6 +969,7 @@ impl HopHandler for Socks5HopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let socks_addr = target_to_socks_addr(target);
         let auth = hop
@@ -994,6 +996,7 @@ impl HopHandler for Socks4HopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let user_id = hop.credentials.as_ref().map(|c| c.username.as_str());
         Box::pin(async move {
@@ -1018,6 +1021,7 @@ impl HopHandler for ShadowsocksHopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let metrics = self.metrics.clone();
         Box::pin(async move {
@@ -1062,6 +1066,7 @@ impl HopHandler for TrojanHopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let tls_config = self.tls_config.clone();
         let password = hop.credentials.as_ref().map(|c| c.password.clone());
@@ -1101,6 +1106,7 @@ impl HopHandler for WebSocketHopHandler {
         stream: BoxStream,
         _target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let use_tls = hop.tls;
         let scheme = if use_tls { "wss" } else { "ws" };
@@ -1127,6 +1133,7 @@ impl HopHandler for RawHopHandler {
         stream: BoxStream,
         _target: &'a TargetAddr,
         _hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         Box::pin(async move { Ok(stream) })
     }
@@ -1187,6 +1194,7 @@ impl HopHandler for H2HopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a eggress_uri::ProxyHopSpec,
+        hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let endpoint_host = hop.endpoint.host.clone();
         let endpoint_port = hop.endpoint.port;
@@ -1195,12 +1203,13 @@ impl HopHandler for H2HopHandler {
             .as_ref()
             .map(|c| (c.username.clone(), c.password.clone()));
         let target_clone = target.clone();
-        let pool_key = eggress_protocol_http::H2PoolKey::new(
+        let pool_key = eggress_protocol_http::H2PoolKey::with_hop_index(
             &endpoint_host,
             endpoint_port,
             hop.tls,
             hop.server_name.as_deref(),
             auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str())),
+            hop_index,
         );
         Box::pin(async move {
             let stream: BoxStream = stream;

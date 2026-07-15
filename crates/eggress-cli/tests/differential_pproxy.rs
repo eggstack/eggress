@@ -51,6 +51,7 @@ impl HopHandler for HttpHopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let auth = hop
             .credentials
@@ -76,6 +77,7 @@ impl HopHandler for Socks5HopHandler {
         stream: BoxStream,
         target: &'a TargetAddr,
         hop: &'a ProxyHopSpec,
+        _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let socks_addr = target_to_socks_addr(target);
         let auth = hop
