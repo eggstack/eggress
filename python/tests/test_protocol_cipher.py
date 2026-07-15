@@ -831,31 +831,34 @@ class TestCipherEquality:
 
 
 class TestCipherPickle:
-    def test_aes_256_gcm_pickle_roundtrip(self) -> None:
+    def test_aes_256_gcm_pickle_raises(self) -> None:
         key = b"0" * 32
         c = AES_256_GCM_Cipher(key, setup_key=False)
-        restored = pickle.loads(pickle.dumps(c))
-        assert restored == c
-        assert restored.key == c.key
+        with pytest.raises(TypeError, match="key material"):
+            pickle.dumps(c)
 
-    def test_chacha_pickle_roundtrip(self) -> None:
+    def test_chacha_pickle_raises(self) -> None:
         key = b"0" * 32
         c = ChaCha20_IETF_POLY1305_Cipher(key, setup_key=False)
-        restored = pickle.loads(pickle.dumps(c))
-        assert restored == c
+        with pytest.raises(TypeError, match="key material"):
+            pickle.dumps(c)
 
-    def test_rc4_pickle_roundtrip(self) -> None:
+    def test_rc4_pickle_raises(self) -> None:
         key = b"0" * 16
         c = RC4_Cipher(key, setup_key=False)
-        restored = pickle.loads(pickle.dumps(c))
-        assert restored == c
-        assert restored.key == c.key
+        with pytest.raises(TypeError, match="key material"):
+            pickle.dumps(c)
 
-    def test_aes_128_gcm_pickle_roundtrip(self) -> None:
+    def test_aes_128_gcm_pickle_raises(self) -> None:
         key = b"0" * 16
         c = AES_128_GCM_Cipher(key, setup_key=False)
-        restored = pickle.loads(pickle.dumps(c))
-        assert restored == c
+        with pytest.raises(TypeError, match="key material"):
+            pickle.dumps(c)
+
+    def test_base_cipher_pickle_raises(self) -> None:
+        c = BaseCipher(b"mykey", setup_key=False)
+        with pytest.raises(TypeError, match="key material"):
+            pickle.dumps(c)
 
 
 # ---------------------------------------------------------------------------

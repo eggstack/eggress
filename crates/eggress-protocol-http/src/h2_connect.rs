@@ -14,7 +14,8 @@ use tokio::net::TcpStream;
 use tokio::sync::{Notify, Semaphore};
 
 use crate::error::HttpError;
-use eggress_core::TargetAddr;
+use eggress_core::connector::is_dns_rebinding_risk;
+use eggress_core::{TargetAddr, TargetHost};
 
 // ===== H2 Protocol Metrics (atomic counters for bridging into MetricsRegistry) =====
 
@@ -70,6 +71,8 @@ pub enum H2ConnectError {
     Http(#[from] HttpError),
     #[error("pool exhausted: no connections available and pool at capacity")]
     PoolExhausted,
+    #[error("DNS rebinding detected: target resolved to reserved/private address {0}")]
+    DnsRebinding(std::net::IpAddr),
 }
 
 impl From<h2::Error> for H2ConnectError {
@@ -147,7 +150,22 @@ pub async fn h2_connect_relay(
     send_stream: h2::SendStream<Bytes>,
     target: TargetAddr,
 ) -> Result<(), H2ConnectError> {
-    let tcp = TcpStream::connect(target.to_string()).await?;
+    let tcp = match &target.host {
+        TargetHost::Ip(_) => TcpStream::connect(target.to_string()).await?,
+        TargetHost::Domain(domain) => {
+            let lookup = format!("{}:{}", domain, target.port);
+            let mut addrs = tokio::net::lookup_host(&lookup)
+                .await
+                .map_err(|e| H2ConnectError::H2(format!("DNS resolution failed: {e}")))?;
+            let resolved = addrs.next().ok_or_else(|| {
+                H2ConnectError::H2("DNS resolution failed: no addresses found".to_string())
+            })?;
+            if is_dns_rebinding_risk(&resolved.ip()) {
+                return Err(H2ConnectError::DnsRebinding(resolved.ip()));
+            }
+            TcpStream::connect(resolved).await?
+        }
+    };
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
     let mut h2_write = H2StreamWrite::new(send_stream);
 

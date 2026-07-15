@@ -483,6 +483,29 @@ class TestSymbolPresence:
             f"Unclassified contract symbols: {unclassified}"
         )
 
+    def test_classification_tier_counts_snapshot(
+        self, classified_symbols: dict[str, dict]
+    ):
+        """Assert tier counts match expected values to prevent silent mass reclassification.
+
+        If this test fails, a symbol was added or reclassified. Update the
+        expected counts below and document the change in the commit message.
+        """
+        tier_counts: dict[str, int] = {}
+        for entry in classified_symbols.values():
+            tier = entry["tier"]
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+
+        expected = {
+            "adapted_target": 3,
+            "intentional_non_parity": 1,
+            "internal_observed": 87,
+        }
+        assert tier_counts == expected, (
+            f"Tier counts changed: {tier_counts} (expected {expected}). "
+            f"Update the snapshot and document the reclassification."
+        )
+
 
 class TestImportPaths:
     """eggress imports resolve correctly."""

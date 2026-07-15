@@ -10,7 +10,7 @@ stamp of readiness for the parity release candidate.
 
 ## Scope
 
-All **139 capabilities** across 5 categories:
+All **145 capabilities** across 5 categories:
 
 | Category | Count |
 |---|---|
@@ -19,18 +19,18 @@ All **139 capabilities** across 5 categories:
 | Protocol | 44 |
 | Routing | 10 |
 | Python | 12 |
-| **Total** | **109** |
+| **Total** | **145** |
 
 ## Tier Breakdown
 
 | Tier | Count | Description |
 |---|---|---|
-| `drop_in` | 63 | Behavioral parity with pproxy 2.7.9; evidence is integration or stronger (differential where available) |
-| `compatible_with_warning` | 9 | Compatible but with documented caveats |
-| `native_equivalent` | 15 | eggress-native functionality with no pproxy equivalent |
-| `intentional_non_parity` | 17 | Deliberate divergence with documented rationale |
+| `drop_in` | 95 | Behavioral parity with pproxy 2.7.9; evidence is integration or stronger (differential where available) |
+| `compatible_with_warning` | 22 | Compatible but with documented caveats |
+| `native_equivalent` | 14 | eggress-native functionality with no pproxy equivalent |
+| `intentional_non_parity` | 9 | Deliberate divergence with documented rationale |
 | `unsupported` | 5 | Not implemented by design |
-| **Total** | **109** | |
+| **Total** | **145** | |
 
 ## Evidence Breakdown (drop_in)
 
@@ -39,7 +39,7 @@ All **139 capabilities** across 5 categories:
 | `differential` | 6 |
 | `integration` | 42 |
 | `unit` | 15 |
-| **Total drop_in** | **63** |
+| **Total drop_in** | **95** |
 
 Differential evidence is present where byte-exact payload equivalence with
 pproxy 2.7.9 is verifiable. Integration and unit evidence cover remaining
@@ -87,13 +87,13 @@ the single source of truth for all compatibility claims.
 | Frozen manifest SHA | `7acef1aaccddf28d2190eae5b5d3ea40844facba` |
 | Certification date | 2026-07-07 |
 | Certifying phase | 51 |
-| Total capabilities | 109 |
+| Total capabilities | 145 |
 | Strict validation | PASS |
 
 ## Conclusion
 
 The parity capability manifest is **complete, validated, and frozen**.
-All 139 capabilities are classified, evidence-backed where required,
+All 145 capabilities are classified, evidence-backed where required,
 and consistent with the codebase. The release candidate is **ready**.
 
 No release-blocking runtime defects are known after this corrective

@@ -22,7 +22,7 @@ and verified with `--check-report`.
 
 This matrix uses the canonical manifest tier vocabulary. See
 [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
-for the authoritative 139-capability manifest with per-layer evidence tracking.
+for the authoritative 145-capability manifest with per-layer evidence tracking.
 
 | Tier | Meaning |
 |------|---------|
@@ -186,9 +186,9 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **drop_in** | All three AEAD methods supported; standard TCP framing |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **intentional_non_parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
 | ShadowsocksR (SSR) | Supported in some forks | Rejected | **intentional_non_parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
-| HTTP/2 CONNECT | Supported | Protocol-crate only | **intentional_non_parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
-| WebSocket tunnels | Supported | Protocol-crate only | **intentional_non_parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
-| Raw fixed-target tunnels | Supported | Protocol-crate only | **intentional_non_parity** | Protocol-crate exists; deliberately not wired through runtime/config/CLI (Phase 46 ADR). |
+| HTTP/2 CONNECT | Supported | Runtime-integrated upstream (upstream only) | **drop_in** | Runtime-integrated; upstream chain position only, no listener support. |
+| WebSocket tunnels | Supported | Runtime-integrated upstream (upstream only) | **drop_in** | Runtime-integrated; upstream chain position only, no listener support. |
+| Raw fixed-target tunnels | Supported | Runtime-integrated upstream (upstream only) | **drop_in** | Runtime-integrated; upstream chain position only, no listener support. |
 | TLS ALPN negotiation | Supported | Supported | **compatible_with_warning** | Phase 26, synthetic |
 | QUIC transport | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
 | HTTP/3 | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |

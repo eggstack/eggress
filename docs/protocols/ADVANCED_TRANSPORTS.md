@@ -128,7 +128,27 @@ transport wrappers and protocol handlers in sequence.
 - Chain composition: transport wrapper + application protocol in multi-hop chains
 - pproxy compatibility: `ws://`, `wss://`, `h2://`, `raw://`, `tunnel://` URI parsing
 
-## 8. Limitations
+## 8. Runtime Integration (Phase B3/B4)
+
+As of Phases B3 and B4, WebSocket (`ws://`/`wss://`), Raw/Tunnel
+(`raw://`/`tunnel://`), and H2 (`h2://`) transports are
+**runtime-integrated upstream protocols**. They are wired through the
+config compiler, CLI, chain executor, and service supervisor.
+
+Key constraints:
+- **Upstream-only**: These transports are supported as upstream (terminal)
+  chain positions. There is no listener-side support — eggress does not
+  accept inbound connections via these transports.
+- **Chain position**: They occupy the last hop in a chain. An upstream URI
+  like `ws://target:80` or `h2://target:443` connects to the target using
+  the corresponding transport.
+- **Config**: `[[upstreams]]` entries with `ws://`, `wss://`, `raw://`,
+  `tunnel://`, or `h2://` URIs are compiled into the runtime.
+
+See `docs/adr/ADR_b3_ws_raw_runtime_promotion.md` and
+`docs/adr/ADR_b4_h2_runtime_promotion.md` for the design rationale.
+
+## 9. Limitations
 
 - No HTTP/3 or QUIC transport (deferred — see ADR)
 - No WebSocket subprotocol negotiation beyond binary framing

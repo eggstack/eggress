@@ -104,6 +104,16 @@ from eggress.connection import (
     UnsupportedCompositionError as UnsupportedCompositionError,
 )
 from eggress.async_connection import AsyncConnection as AsyncConnection
+from eggress._asyncio import (
+    AsyncBridge as AsyncBridge,
+    CloseWaiter as CloseWaiter,
+    LoopAffinityError as LoopAffinityError,
+    PY_VERSION as PY_VERSION,
+    PY_MAJOR as PY_MAJOR,
+    PY_MINOR as PY_MINOR,
+    HAS_TASKGROUP as HAS_TASKGROUP,
+    HAS_EXCEPTIONGROUP as HAS_EXCEPTIONGROUP,
+)
 from eggress._eggress import (
     EggressError as EggressError,
     ConfigError as ConfigError,

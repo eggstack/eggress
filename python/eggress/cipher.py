@@ -91,7 +91,9 @@ class BaseCipher:
         return hash((self.name(), self.key))
 
     def __reduce__(self):
-        return (self.__class__, (self.key,))
+        raise TypeError(
+            "Cannot pickle cipher objects: key material would be exposed"
+        )
 
     def __copy__(self):
         return self.__class__(self.key)

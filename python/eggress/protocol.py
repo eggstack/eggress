@@ -148,26 +148,6 @@ class BaseProtocol:
     ) -> None:
         raise NotImplementedError(f"{self.name} does not support client mode")
 
-    async def channel(
-        self, reader: Any, writer: Any, stat_bytes: Any, stat_conn: Any
-    ) -> None:
-        try:
-            stat_conn(1)
-            while not reader.at_eof() and not writer.is_closing():
-                data = await reader.read(65536)
-                if not data:
-                    break
-                if stat_bytes is None:
-                    continue
-                stat_bytes(len(data))
-                writer.write(data)
-                await writer.drain()
-        except Exception:
-            pass
-        finally:
-            stat_conn(-1)
-            writer.close()
-
     # -- protocol detection stubs (used by module-level accept/udp_accept) ---
 
     async def guess(self, reader: Any, **kw: Any) -> Any:

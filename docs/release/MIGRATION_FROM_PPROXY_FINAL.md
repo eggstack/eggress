@@ -45,9 +45,12 @@ changes beyond the binary name:
 **Flags that map directly:** `-l`, `-r`, `-ul`, `-ur`, `-s` (scheduler),
 positional URIs.
 
-**Flags that are unsupported** (see [section 6](#6-unsupported--intentional-non-parity-features)):
-`--daemon`, `--ssl`, `-b`, `--rulefile`, `--reuse`, `--log`, `--sys`,
-`--pac`, `--get`, `--test`, `--alive`.
+**Flags that are unsupported or have special handling** (see [section 6](#6-unsupported--intentional-non-parity-features)):
+`--daemon`, `--reuse`, `--alive`. Other flags map to TOML config:
+`--ssl` (native-equivalent), `-b` (drop_in), `--rulefile`
+(compatible_with_warning), `--log` (native-equivalent), `--sys`
+(native-equivalent), `--pac` (native-equivalent), `--get`
+(unsupported), `--test` (native-equivalent).
 
 ## 3. TOML Translation
 
@@ -268,12 +271,12 @@ These pproxy features are deliberately not replicated in eggress:
 | Feature | Rationale | eggress alternative |
 |---|---|---|
 | `--daemon` mode | Design choice | Use systemd or process manager |
-| `--ssl` TLS listeners | Design choice | Configure `[listeners.tls]` in TOML |
-| `-b` block regex rules | Design choice | Use `[[rules]]` with `host_regex` + `reject` |
-| `--rulefile` | Design choice | Use `[[rules]]` with structured matchers |
+| `--ssl` TLS listeners | Native-equivalent | Generates TLS listener TOML config via `eggress pproxy run --ssl` |
+| `-b` block regex rules | Drop-in | Generates `[[rules]] reject` entries via `eggress pproxy run -b` |
+| `--rulefile` | Compatible with warning | Translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
 | `--reuse` (connection pooling) | Design choice | One upstream connection per session |
-| `--log` file | Design choice | Use `RUST_LOG` + shell redirection |
-| `--sys` (system proxy mutation) | Safety | `eggress system-proxy inspect` (read-only); apply requires `--apply` flag |
+| `--log` file | Native-equivalent | Emits structured diagnostic |
+| `--sys` (system proxy mutation) | Native-equivalent | Auto-invokes `eggress system-proxy inspect` before starting |
 | `--alive` check interval | Design choice | Configure `[upstreams.health]` in TOML |
 | SOCKS4/SOCKS5 BIND | Deferred | Returns `REP_COMMAND_NOT_SUPPORTED` (0x07) |
 | Multi-hop UDP chains | Architecture | Single-hop only |
@@ -331,8 +334,8 @@ with start_pproxy(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle
 | Context managers | Not available | Sync and async context managers |
 | Hot reload | Not available | `handle.reload_toml(new_config)` |
 | Metrics | Not available | `handle.metrics_text()` (Prometheus format) |
-| Protocol classes | `pproxy.proto.Http`, etc. | Not exposed (config-driven, tier D) |
-| Cipher classes | `pproxy.cipher.AEAD`, etc. | Not exposed (uses ring/chacha20poly1305) |
+| Protocol classes | `pproxy.proto.Http`, etc. | Available as metadata objects via `eggress.protocol` (Phase C4) |
+| Cipher classes | `pproxy.cipher.AEAD`, etc. | Available as metadata objects via `eggress.cipher` (Phase C4) |
 
 ### URI inspection
 

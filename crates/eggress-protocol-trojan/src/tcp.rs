@@ -746,4 +746,321 @@ mod tests {
             other => panic!("expected Protocol error, got {:?}", other.err()),
         }
     }
+
+    // ── SNI mismatch test ──
+
+    #[tokio::test]
+    async fn trojan_connect_sni_mismatch_fails_tls() {
+        eggress_transport_tls::install_default_crypto_provider();
+        let cert_params =
+            rcgen::CertificateParams::new(vec!["localhost".to_string()]).expect("valid params");
+        let cert_key = rcgen::KeyPair::generate().expect("key gen");
+        let cert = cert_params
+            .self_signed(&cert_key)
+            .expect("self-signed cert");
+
+        let cert_der = cert.der().clone();
+        let key_der = rustls::pki_types::PrivatePkcs8KeyDer::from(cert_key.serialize_der());
+
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der.clone()], key_der.into())
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            // Server expects TLS — if SNI mismatch, client should fail before we accept
+            let result = acceptor.accept(stream).await;
+            // Server may or may not get a connection depending on whether the
+            // client aborts the TLS handshake. Either outcome is acceptable.
+            drop(result);
+        });
+
+        let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add(cert_der).unwrap();
+        let tls_config = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth(),
+        );
+
+        let connector = TlsConnector::from(tls_config);
+        // Connect with a wrong server name — should fail TLS verification
+        let wrong_domain = ServerName::try_from("wrong-name.example.com".to_string()).unwrap();
+        let result = connector.connect(wrong_domain, tcp_stream).await;
+
+        assert!(result.is_err(), "TLS connection with wrong SNI should fail");
+
+        server_jh.await.unwrap();
+    }
+
+    // ── Custom CA test ──
+
+    #[tokio::test]
+    async fn trojan_connect_custom_ca_trust() {
+        eggress_transport_tls::install_default_crypto_provider();
+
+        // Generate a self-signed CA certificate
+        let mut ca_params =
+            rcgen::CertificateParams::new(vec!["MyCA".to_string()]).expect("valid CA params");
+        ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let ca_key = rcgen::KeyPair::generate().expect("CA key gen");
+        let ca_cert = ca_params.self_signed(&ca_key).expect("CA cert");
+        let ca_der = ca_cert.der().clone();
+
+        // Generate a server certificate signed by the CA
+        let server_params =
+            rcgen::CertificateParams::new(vec!["localhost".to_string()]).expect("valid params");
+        let server_key = rcgen::KeyPair::generate().expect("server key gen");
+        let server_cert = server_params
+            .signed_by(&server_key, &ca_cert, &ca_key)
+            .expect("server cert signed by CA");
+        let server_cert_der = server_cert.der().clone();
+        let server_key_der =
+            rustls::pki_types::PrivatePkcs8KeyDer::from(server_key.serialize_der());
+
+        // Server config uses the CA-signed certificate
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![server_cert_der], server_key_der.into())
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let expected_password = "ca-test-password";
+
+        let server_jh = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let tls_stream = acceptor.accept(stream).await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let mut reader = tls_stream;
+            let n = reader.read(&mut buf).await.unwrap();
+            buf.truncate(n);
+
+            assert!(buf.len() > 60);
+            let received_hash = std::str::from_utf8(&buf[..56]).unwrap();
+            assert_eq!(received_hash, password_hash(expected_password));
+        });
+
+        let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+        // Client trusts only our custom CA
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.add(ca_der).unwrap();
+        let tls_config = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth(),
+        );
+
+        let target = TargetAddr {
+            host: TargetHost::Ip("127.0.0.1".parse().unwrap()),
+            port: 80,
+        };
+
+        let result = trojan_connect(
+            Box::new(tcp_stream) as BoxStream,
+            &target,
+            expected_password,
+            "localhost",
+            Some(tls_config),
+        )
+        .await;
+        assert!(result.is_ok(), "connection with custom CA should succeed");
+
+        server_jh.await.unwrap();
+    }
+
+    // ── Oversized/malformed frame tests ──
+
+    #[tokio::test]
+    async fn trojan_accept_truncated_hash_returns_io_error() {
+        let password = "pass";
+        // Send only 30 bytes of hash (expected 56) + no CRLF
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(&hash.as_bytes()[..30]);
+        // No CRLF, no CMD, no ATYP — just a short hash prefix
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        assert!(
+            matches!(result, Err(TrojanError::Io(_))),
+            "truncated hash should produce IO error (unexpected EOF), got {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_oversized_atyp_0x01_payload() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(hash.as_bytes());
+        handshake.extend_from_slice(b"\r\n");
+        handshake.push(0x01); // CONNECT
+        handshake.push(0x01); // ATYP IPv4
+
+        // Send 8 bytes for IPv4 addr (4 IP + 2 port = 6, extra 2 bytes)
+        handshake.extend_from_slice(&[127, 0, 0, 1, 0, 80, 0xFF, 0xFF]);
+        handshake.extend_from_slice(b"\r\n");
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        // Should succeed — IPv4 ATYP reads exactly 6 bytes (4+2), the
+        // trailing CRLF is then read. The extra 0xFF bytes cause the CRLF
+        // check to fail.
+        match result {
+            Err(TrojanError::Protocol(msg)) => {
+                assert!(
+                    msg.contains("missing trailing CRLF") || msg.contains("unsupported"),
+                    "unexpected protocol error: {}",
+                    msg
+                );
+            }
+            Ok(_) => {
+                // If it succeeds, the target is parsed from the first 6 bytes
+                // and the trailing CRLF happens to match. Either way, no panic.
+            }
+            other => panic!("unexpected result: {:?}", other.err()),
+        }
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_non_utf8_domain_in_atyp_0x03() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(hash.as_bytes());
+        handshake.extend_from_slice(b"\r\n");
+        handshake.push(0x01); // CONNECT
+        handshake.push(0x03); // ATYP domain
+
+        // Domain with invalid UTF-8 bytes
+        let invalid_domain = vec![0xC0, 0xAF, 0xE0, 0x80]; // invalid UTF-8 sequence
+        handshake.push(invalid_domain.len() as u8);
+        handshake.extend_from_slice(&invalid_domain);
+        handshake.extend_from_slice(&443u16.to_be_bytes());
+        handshake.extend_from_slice(b"\r\n");
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        match result {
+            Err(TrojanError::Protocol(msg)) => {
+                assert!(
+                    msg.contains("UTF-8") || msg.contains("invalid domain"),
+                    "expected UTF-8 or domain error, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "expected Protocol error for non-UTF8 domain, got {:?}",
+                other.err()
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_missing_crlf_after_hash() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(hash.as_bytes());
+        // Missing CRLF after hash — just go straight to CMD
+        handshake.push(0x01); // CONNECT
+        handshake.push(0x03); // ATYP domain
+        handshake.push(4);
+        handshake.extend_from_slice(b"test");
+        handshake.extend_from_slice(&80u16.to_be_bytes());
+        handshake.extend_from_slice(b"\r\n");
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        match result {
+            Err(TrojanError::Protocol(msg)) => {
+                assert!(
+                    msg.contains("missing CRLF after hash") || msg.contains("CRLF"),
+                    "expected CRLF error, got: {}",
+                    msg
+                );
+            }
+            // If the hash comparison happens before CRLF check, we might get
+            // AuthFailed instead because the hash bytes include the CMD byte
+            Err(TrojanError::AuthFailed) => {
+                // Acceptable — the hash was compared without the CRLF and didn't match
+            }
+            other => panic!("expected error for missing CRLF, got {:?}", other.err()),
+        }
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_empty_stream_returns_io_error() {
+        let stream: BoxStream = Box::new(std::io::Cursor::new(Vec::new()));
+        let result = trojan_accept(stream, "pass").await;
+        assert!(
+            matches!(result, Err(TrojanError::Io(_))),
+            "empty stream should produce IO error, got {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_oversized_atyp_0x03_domain() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(hash.as_bytes());
+        handshake.extend_from_slice(b"\r\n");
+        handshake.push(0x01); // CONNECT
+        handshake.push(0x03); // ATYP domain
+                              // Domain length byte claims 200 bytes but we only send 5
+        handshake.push(200);
+        handshake.extend_from_slice(b"short");
+        handshake.extend_from_slice(&80u16.to_be_bytes());
+        handshake.extend_from_slice(b"\r\n");
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        assert!(
+            matches!(result, Err(TrojanError::Io(_))),
+            "domain length mismatch should produce IO error (unexpected EOF), got {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_atyp_0x03_empty_domain() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(hash.as_bytes());
+        handshake.extend_from_slice(b"\r\n");
+        handshake.push(0x01); // CONNECT
+        handshake.push(0x03); // ATYP domain
+        handshake.push(0); // domain_len = 0
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        match result {
+            Err(TrojanError::Protocol(msg)) => {
+                assert!(
+                    msg.contains("empty domain"),
+                    "expected empty domain error, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "expected Protocol error for empty domain, got {:?}",
+                other.err()
+            ),
+        }
+    }
 }

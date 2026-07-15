@@ -361,9 +361,7 @@ pub async fn accept(
                 }));
             }
 
-            return Err(AcceptError::Protocol(Box::new(
-                eggress_protocol_trojan::TrojanError::AuthFailed,
-            )));
+            return Err(AcceptError::AuthenticationFailed);
         }
         return Err(AcceptError::Protocol(
             "trojan listener requires trojan config".into(),

@@ -1,19 +1,30 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use eggress_core::TargetAddr;
+use eggress_core::connector::is_dns_rebinding_risk;
+use eggress_core::{TargetAddr, TargetHost};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 
 use crate::error::RawTunnelError;
+
+/// Default maximum concurrent connections for the raw tunnel listener.
+const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 
 pub struct RawTunnelListener {
     listener: TcpListener,
     target: TargetAddr,
+    semaphore: Arc<Semaphore>,
 }
 
 impl RawTunnelListener {
     pub async fn bind(bind_addr: &str, target: TargetAddr) -> Result<Self, RawTunnelError> {
         let listener = TcpListener::bind(bind_addr).await?;
-        Ok(Self { listener, target })
+        Ok(Self {
+            listener,
+            target,
+            semaphore: Arc::new(Semaphore::new(DEFAULT_MAX_CONNECTIONS)),
+        })
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
@@ -23,8 +34,17 @@ impl RawTunnelListener {
     pub async fn run(&self) -> Result<(), RawTunnelError> {
         loop {
             let (stream, peer) = self.listener.accept().await?;
+            let permit = match self.semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    tracing::warn!("raw tunnel connection limit reached, rejecting {}", peer);
+                    drop(stream);
+                    continue;
+                }
+            };
             let target = self.target.clone();
             tokio::spawn(async move {
+                let _permit = permit;
                 if let Err(e) = handle_raw_connection(stream, target).await {
                     tracing::warn!("raw tunnel error from {}: {}", peer, e);
                 }
@@ -37,10 +57,31 @@ async fn handle_raw_connection(
     mut client: TcpStream,
     target: TargetAddr,
 ) -> Result<(), RawTunnelError> {
-    let target_str = format!("{}:{}", target.host, target.port);
-    let mut upstream = TcpStream::connect(&target_str)
-        .await
-        .map_err(|e| RawTunnelError::TargetConnect(e.to_string()))?;
+    let mut upstream = match &target.host {
+        TargetHost::Ip(_) => {
+            let target_str = format!("{}:{}", target.host, target.port);
+            TcpStream::connect(&target_str)
+                .await
+                .map_err(|e| RawTunnelError::TargetConnect(e.to_string()))?
+        }
+        TargetHost::Domain(domain) => {
+            let lookup = format!("{}:{}", domain, target.port);
+            let mut addrs = tokio::net::lookup_host(&lookup).await.map_err(|e| {
+                RawTunnelError::TargetConnect(format!("DNS resolution failed: {e}"))
+            })?;
+            let resolved = addrs.next().ok_or_else(|| {
+                RawTunnelError::TargetConnect(
+                    "DNS resolution failed: no addresses found".to_string(),
+                )
+            })?;
+            if is_dns_rebinding_risk(&resolved.ip()) {
+                return Err(RawTunnelError::DnsRebinding(resolved.ip()));
+            }
+            TcpStream::connect(resolved)
+                .await
+                .map_err(|e| RawTunnelError::TargetConnect(e.to_string()))?
+        }
+    };
 
     let (bytes_copied, _) = tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
     tracing::trace!("raw tunnel relayed {} bytes", bytes_copied);
