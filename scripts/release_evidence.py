@@ -5,12 +5,19 @@ The generator is intentionally dependency-free and accepts already-executed
 scenario/result files. It never claims that a gated suite passed merely
 because a command was listed; callers must provide the result artifact.
 
+Exit codes:
+  0 – success, all scenarios passed or were skipped/not_applicable
+  1 – scenario failures (one or more --scenario status=fail)
+  2 – input validation failure (--result or --wheel path missing)
+  3 – clean/SHA/tracked-inputs violation (--require-clean, --expected-commit,
+      or --verify-tracked-inputs guard triggered)
+
 Example::
 
-    python3 scripts/release_evidence.py \
-      --output target/release-evidence \
-      --result target/compat/pproxy-parity-report.json \
-      --wheel dist/*.whl \
+    python3 scripts/release_evidence.py \\
+      --output target/release-evidence \\
+      --result target/compat/pproxy-parity-report.json \\
+      --wheel dist/*.whl \\
       --command 'cargo test --workspace'
 """
 
@@ -23,9 +30,9 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Iterable
-
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 DEFAULT_TRACKED_FILES = (
@@ -42,6 +49,11 @@ _CREDENTIAL_URI = re.compile(
 _SECRET_ASSIGNMENT = re.compile(
     r"(?im)^(\s*(?:password|secret|token|private_key|api_key)\s*=\s*)([^\n]+)$"
 )
+
+EXIT_SUCCESS = 0
+EXIT_SCENARIO_FAILURE = 1
+EXIT_INPUT_VALIDATION = 2
+EXIT_GUARD_VIOLATION = 3
 
 
 def _run(*args: str) -> str:
@@ -86,23 +98,45 @@ def _parse_scenario(value: str) -> dict[str, str]:
     return {"id": scenario_id, "status": status}
 
 
-def _metadata(reference: str, commands: list[str]) -> dict[str, Any]:
-    dirty = subprocess.run(
+def _is_dirty() -> bool:
+    return subprocess.run(
         ["git", "diff", "--quiet"], cwd=WORKSPACE, check=False
     ).returncode != 0
-    tracked_hashes: dict[str, str] = {}
-    for relative in DEFAULT_TRACKED_FILES:
-        path = WORKSPACE / relative
-        if path.is_file():
-            tracked_hashes[relative] = _sha256(path)
+
+
+def _os_release_pretty() -> str:
+    system = platform.system()
+    if system == "Darwin":
+        return _run("sw_vers", "-productVersion")
+    elif system == "Linux":
+        out = _run("lsb_release", "-d")
+        if out != "unavailable":
+            return out
+    elif system == "Windows":
+        out = _run("cmd", "/c", "ver")
+        if out != "unavailable":
+            return out
+    return platform.platform()
+
+
+def _metadata(
+    reference: str,
+    commands: list[str],
+    tracked_hashes: dict[str, str],
+) -> dict[str, Any]:
+    dirty = _is_dirty()
+    head = _run("git", "rev-parse", "HEAD")
+    cargo_lock_path = WORKSPACE / "Cargo.lock"
+    cargo_lock_sha = _sha256(cargo_lock_path) if cargo_lock_path.is_file() else "unavailable"
     return {
         "schema_version": "1.0",
-        "eggress_commit": _run("git", "rev-parse", "HEAD"),
+        "eggress_commit": head,
         "dirty_state": dirty,
         "reference": reference,
         "os": platform.system(),
         "release": platform.release(),
         "architecture": platform.machine(),
+        "os_release_pretty": _os_release_pretty(),
         "target_triple": _run("rustc", "-vV").split("host: ")[-1].splitlines()[0]
         if "host: " in _run("rustc", "-vV")
         else "unavailable",
@@ -110,6 +144,8 @@ def _metadata(reference: str, commands: list[str]) -> dict[str, Any]:
         "python_implementation": platform.python_implementation(),
         "rust": _run("rustc", "--version"),
         "cargo": _run("cargo", "--version"),
+        "cargo_lock_sha256": cargo_lock_sha,
+        "pinned_reference": reference,
         "tracked_input_sha256": tracked_hashes,
         "commands": commands,
     }
@@ -145,14 +181,102 @@ def main() -> int:
     parser.add_argument("--command", action="append", default=[])
     parser.add_argument("--scenario", type=_parse_scenario, action="append", default=[])
     parser.add_argument("--skip-reason", action="append", default=[])
+    parser.add_argument(
+        "--require-clean",
+        action="store_true",
+        default=False,
+        help="Exit with code 3 if the working tree is dirty.",
+    )
+    parser.add_argument(
+        "--expected-commit",
+        type=str,
+        default=None,
+        metavar="SHA",
+        help="Exit with code 3 unless HEAD matches this exact commit SHA.",
+    )
+    parser.add_argument(
+        "--verify-tracked-inputs",
+        action="store_true",
+        default=False,
+        help="Recompute SHA256 for each tracked input and abort (code 3) "
+             "if any differs from the recorded value.",
+    )
     args = parser.parse_args()
 
     root = args.output if args.output.is_absolute() else WORKSPACE / args.output
+
+    # ── Guard: expected-commit ──
+    if args.expected_commit is not None:
+        head = _run("git", "rev-parse", "HEAD")
+        expected = args.expected_commit
+        if expected != head and _run("git", "rev-parse", "--verify", expected + "^{commit}") == head:
+            expected = head
+        if head != expected:
+            print(
+                f"error: HEAD ({head}) does not match expected commit "
+                f"({args.expected_commit})",
+                file=sys.stderr,
+            )
+            return EXIT_GUARD_VIOLATION
+
+    # ── Guard: require-clean ──
+    if args.require_clean and _is_dirty():
+        print("error: working tree is dirty", file=sys.stderr)
+        return EXIT_GUARD_VIOLATION
+
+    # ── Pre-validate input paths (fail-closed before writing anything) ──
+    missing: list[str] = []
+    for result_path in args.result:
+        resolved = result_path if result_path.is_absolute() else WORKSPACE / result_path
+        if not resolved.is_file():
+            missing.append(f"--result {result_path}")
+    for wheel_path in args.wheel:
+        resolved = wheel_path if wheel_path.is_absolute() else WORKSPACE / wheel_path
+        if not resolved.is_file():
+            missing.append(f"--wheel {wheel_path}")
+    if missing:
+        for m in missing:
+            print(f"error: missing input path: {m}", file=sys.stderr)
+        return EXIT_INPUT_VALIDATION
+
     root.mkdir(parents=True, exist_ok=True)
 
+    # ── Compute tracked-input hashes ──
+    tracked_hashes: dict[str, str] = {}
+    for relative in DEFAULT_TRACKED_FILES:
+        path = WORKSPACE / relative
+        if path.is_file():
+            tracked_hashes[relative] = _sha256(path)
+
+    # ── Guard: verify-tracked-inputs ──
+    if args.verify_tracked_inputs:
+        mismatches: list[str] = []
+        for relative in DEFAULT_TRACKED_FILES:
+            path = WORKSPACE / relative
+            if not path.is_file():
+                mismatches.append(f"{relative}: file not found")
+                continue
+            current_hash = _sha256(path)
+            # Re-read from a freshly generated metadata to compare
+            stored = tracked_hashes.get(relative)
+            if stored != current_hash:
+                mismatches.append(
+                    f"{relative}: expected {stored or 'none'}, got {current_hash}"
+                )
+        if mismatches:
+            for m in mismatches:
+                print(f"error: tracked input mismatch: {m}", file=sys.stderr)
+            return EXIT_GUARD_VIOLATION
+
+    # ── Emit artifacts ──
     commands = list(args.command)
     (root / "metadata.json").write_text(
-        json.dumps(_metadata(args.reference, commands), indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            _metadata(args.reference, commands, tracked_hashes),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -174,35 +298,48 @@ def main() -> int:
     ]
     inputs.extend(path if path.is_absolute() else WORKSPACE / path for path in args.wheel)
     for source in inputs:
-        if not source.is_file():
-            continue
         destination = root / "inputs" / source.name
         _copy_redacted(source, destination)
 
     wheel_hashes = {}
     for path in args.wheel:
         resolved = path if path.is_absolute() else WORKSPACE / path
-        if resolved.is_file():
-            wheel_hashes[resolved.name] = _sha256(resolved)
+        wheel_hashes[resolved.name] = _sha256(resolved)
     (root / "wheel-hashes.json").write_text(
         json.dumps(wheel_hashes, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
+    # ── Summary ──
     pass_count = sum(item["status"] == "pass" for item in args.scenario)
     fail_count = sum(item["status"] == "fail" for item in args.scenario)
-    skip_count = sum(item["status"] in {"skip", "not_applicable"} for item in args.scenario)
+    skip_count = sum(
+        item["status"] in {"skip", "not_applicable"} for item in args.scenario
+    )
+    dirty = _is_dirty()
+    head = _run("git", "rev-parse", "HEAD")
+    guard_violations: list[str] = []
+    if dirty:
+        guard_violations.append("dirty working tree")
+    if args.expected_commit and head != args.expected_commit:
+        guard_violations.append(
+            f"HEAD ({head}) != expected ({args.expected_commit})"
+        )
     summary = (
         "# Release evidence summary\n\n"
-        f"- Eggress commit: `{_run('git', 'rev-parse', 'HEAD')}`\n"
+        f"- Eggress commit: `{head}`\n"
         f"- Reference: `{args.reference}`\n"
-        f"- Scenarios: {pass_count} pass, {fail_count} fail, {skip_count} skipped/not applicable\n"
+        f"- Dirty state: `{dirty}`\n"
+        f"- Scenarios: {pass_count} pass, {fail_count} fail, "
+        f"{skip_count} skipped/not applicable\n"
         f"- Result artifacts: {len(args.result)}\n"
         f"- Wheel artifacts: {len(wheel_hashes)}\n"
     )
+    if guard_violations:
+        summary += f"- Guard violations: {', '.join(guard_violations)}\n"
     (root / "summary.md").write_text(summary, encoding="utf-8")
     _write_hash_manifest(root)
     print(root)
-    return 1 if fail_count else 0
+    return EXIT_SCENARIO_FAILURE if fail_count else EXIT_SUCCESS
 
 
 if __name__ == "__main__":
