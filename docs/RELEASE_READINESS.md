@@ -29,6 +29,15 @@ a temporary local listener. Validate both installed wheels in a clean
 environment and generate the redacted, commit-bound evidence bundle with
 `scripts/release_evidence.py` before tagging.
 
+The Track B/C verification pass (2026-07-16) additionally:
+
+- Hardened `scripts/release_evidence.py` to fail closed on dirty worktrees, missing inputs, SHA mismatches, and tracked-input drift via `--require-clean`, `--expected-commit`, and `--verify-tracked-inputs`.
+- Added AEAD known-answer tests using NIST SP 800-38D (AES-256-GCM, AES-128-GCM) and a documented skip for ChaCha20-Poly1305 (RFC 8439 AAD not exposed by the Python API).
+- Added 40 native outbound stream lifecycle and resource tests proving that `OutboundConnector.connect_tcp()` does not start a temporary local listener, handles cancellation cleanly, and passes loop-affinity / GIL-release / repeated-cycle stress.
+- Added 12 in-tree fuzz-smoke tests across `eggress-{protocol-http,protocol-trojan,protocol-websocket,protocol-shadowsocks,config}` plus reverse-handshake coverage in the existing reverse test suite.
+- Fixed two cipher regressions: `AEADCipher.setup_iv` now keeps the nonce in sync with the IV; `AEADCipher.__copy__` no longer resets the nonce by re-running `__init__`.
+- Aligned the compatibility wheel's Python version classifiers with the canonical wheel (`3.9`, `3.10`, `3.11`, `3.12`, `3.13`, plus `3 :: Only`).
+
 ## Security Review Status
 
 - [SECURITY_REVIEW.md](SECURITY_REVIEW.md) exists and covers all reviewed surfaces.
@@ -122,6 +131,7 @@ environment and generate the redacted, commit-bound evidence bundle with
 | macOS arm64 | `macos-arm64` | Supported | Apple Silicon |
 | macOS x86_64 | `macos-x86_64` | Supported | Intel Macs |
 | Windows x86_64 | `win-amd64` | Supported | MSVC toolchain |
+| Python 3.9–3.13 | n/a | Supported | Required by both wheels; `cryptography>=42,<47` for cipher support |
 | musllinux x86_64 | `musllinux` | Not built | May be added later |
 | musllinux aarch64 | `musllinux` | Not built | May be added later |
 | Windows arm64 | `win-arm64` | Not built | May be added later |
@@ -141,3 +151,8 @@ Unsupported platforms will receive a clear error at install time if no compatibl
 - [ ] [CI_STATUS.md](CI_STATUS.md) reflects current CI state
 - [ ] Known limitations documented and acceptable for target deployment
 - [ ] Changelog updated (if applicable)
+- [ ] `scripts/release_evidence.py --require-clean --expected-commit HEAD --verify-tracked-inputs --output target/release-evidence --reference pproxy==2.7.9` passes
+- [ ] `python3.11 -m pytest python/tests/test_outbound_stream_verification.py -v` passes
+- [ ] `arch -arm64 python3.11 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v` passes
+- [ ] `cargo check --manifest-path fuzz/Cargo.toml --bins` passes
+- [ ] Both wheels' Python classifiers align (3.9–3.13)

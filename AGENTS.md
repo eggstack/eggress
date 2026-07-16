@@ -297,6 +297,10 @@ python3.11 -m venv /tmp/eggress-pproxy-compat-test
 # Generate redacted release evidence and SHA256SUMS
 python3 scripts/release_evidence.py --output target/release-evidence --reference pproxy==2.7.9
 
+# Hardened evidence generation (Track B/C verification)
+python3 scripts/release_evidence.py --help
+python3 scripts/release_evidence.py --require-clean --expected-commit HEAD --verify-tracked-inputs --output target/release-evidence --reference pproxy==2.7.9 --scenario smoke=pass
+
 # Alternative: build the native extension in place (faster for local dev)
 python3.11 -m pip install maturin pytest
 python3.11 -m maturin develop -m crates/eggress-python/Cargo.toml
@@ -343,6 +347,11 @@ python3.11 -m pytest python/tests/test_wrapper.py -v
 
 # Run Phase C5 asyncio semantic compatibility tests
 python3.11 -m pytest python/tests/test_asyncio_semantic.py -v
+
+# Run Track B/C verification tests
+arch -arm64 python3.11 -m pytest python/tests/test_outbound_stream_verification.py -v
+arch -arm64 python3.11 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v
+arch -arm64 python3.11 -m pytest python/tests -q --timeout=60
 
 # Run Phase C1 API contract tests
 python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
@@ -393,6 +402,17 @@ cargo fuzz run socks5_handshake -- -runs=1000
 cargo fuzz run http_connect_response -- -runs=1000
 cargo fuzz run trojan_request -- -runs=1000
 cargo fuzz run route_match -- -runs=1000
+
+# Verify all fuzz targets compile
+cargo check --manifest-path fuzz/Cargo.toml --bins
+cargo test --manifest-path fuzz/Cargo.toml --no-run
+
+# Run all in-tree fuzz smoke tests (HTTP, Trojan, WS, Shadowsocks, TOML config)
+cargo test -p eggress-protocol-http --test fuzz_smoke
+cargo test -p eggress-protocol-trojan --test fuzz_smoke
+cargo test -p eggress-protocol-websocket --test fuzz_smoke
+cargo test -p eggress-protocol-shadowsocks --test fuzz_smoke
+cargo test -p eggress-config --test fuzz_smoke
 
 # Run the CLI
 cargo run --bin eggress -- --help
@@ -519,6 +539,8 @@ eggress/
     ├── release/
     │   ├── PARITY_TARGET_FREEZE.md
     │   ├── FINAL_PPROXY_PARITY_REPORT.md
+    │   ├── FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md
+    │   ├── TRACK_BC_RELEASE_CANDIDATE_VERIFICATION_COMPLETION.md  # New in Track B/C verification pass
     │   ├── RELEASE_NOTES_PARITY_RC.md
     │   ├── PLATFORM_SUPPORT_MATRIX.md
     │   ├── MIGRATION_FROM_PPROXY_FINAL.md
@@ -647,6 +669,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **pproxy check --json**: Machine-readable compatibility check output with tier, features, and diagnostics.
 - **Phase 25-28 hardening pass**: Verified implementation matches documentation. H1 added SAFETY comments and `read_unaligned` to transparent listener; H3 corrected Linux/macOS platform capability semantics (macOS PF now honestly reports `KernelUnsupported`); H4 hardened Unix listener (`unlink_existing=true` refuses non-socket paths); H5/H6/H7 refused H2/WS/Raw as listener protocols (upstream-only; Phase B4 promoted H2 to runtime-integrated); H8 added QUIC/H3 structured-rejection tests; H9 wired reverse proxy through supervisor with `reverse_runtime.rs` (10 tests); H10 added payload-level reverse differential test; H11 added `ReverseServerConfig::validate()` for non-loopback safety; H13 added URI corpus integrity validator; H14/H15 audited and corrected docs (README, PARITY_MATRIX.md, METRICS.md). See `docs/PHASE_25_28_HARDENING_COMPLETION.md` for the full record.
 - **Phase 50 security gate**: DNS rebinding protection (reserved IP rejection after DNS resolution in `DirectConnector`); standalone UDP validation wired to `validate_standalone_target()`; auth failure metrics (`eggress_auth_failures_total`); 8 fuzz targets (uri_parse, socks5_handshake, socks5_udp_datagram, http_connect_response, trojan_request, route_match, shadowsocks_frame, toml_config); soak tests (slowloris, auth failure burst, UDP association churn). Security docs: `SECURITY.md`, `docs/security/SECURE_CONFIGURATION.md`, `docs/security/PPROXY_COMPAT_SECURITY_DIFFERENCES.md`. See `docs/SECURITY_REVIEW.md` for the full threat model and residual risks.
+- **Track B/C release-candidate verification (2026-07-16)**: `scripts/release_evidence.py` hardened to fail closed on dirty worktrees (`--require-clean`), SHA mismatches (`--expected-commit`), and tracked-input drift (`--verify-tracked-inputs`); AEAD known-answer tests using NIST SP 800-38D and RFC 8439; 40 native outbound stream lifecycle/resource tests proving no temporary local listener; 12 in-tree fuzz smoke tests across 5 protocol crates; two cipher regressions fixed (`AEADCipher.setup_iv` nonce sync and `AEADCipher.__copy__` shallow copy); compat wheel Python classifiers aligned with canonical (3.9–3.13). See `docs/TRACK_BC_RELEASE_CANDIDATE_VERIFICATION_COMPLETION.md`.
 - **Stream-native transport composition (Track B hard closure)**: WS/Raw/H2 intermediate-hop handlers now consume the prior-hop stream instead of opening independent connections. Chain entries reclassified from `compatible_with_warning` to `drop_in`. H2 pool key includes `hop_index` to prevent cross-chain connection reuse. New chain tests: HTTP→WS, raw intermediate-hop passthrough, H2 pool isolation by hop_index. See `plans/track_bc_hard_closure_and_external_certification.md`.
 - **Native OutboundConnector**: `OutboundConnector` in `eggress-embed::outbound` provides `from_toml()`, `from_pproxy_uri()`, `connect_tcp()`, and `connect_tcp_timeout()` for native Rust outbound connections without temporary local listeners. Python bindings expose `PyOutboundConnector.connect_tcp()` and `PyOutboundStream`; `eggress.OutboundConnector` and `ProxyConnection` provide sync/async stream wrappers with explicit close semantics. UDP remains listener-based until a native datagram association is implemented. `HopHandler::handshake()` now accepts `hop_index: usize` for cross-chain pool isolation.
 - **Cipher behavioral closure**: AEAD cipher objects (`AES_256_GCM_Cipher`, `AES_192_GCM_Cipher`, `AES_128_GCM_Cipher`, `ChaCha20_IETF_POLY1305_Cipher`) now implement `encrypt()`, `decrypt()`, `encrypt_and_digest()`, `decrypt_and_verify()` using the `cryptography` library when available.
@@ -666,3 +689,5 @@ The `.skills/` directory contains focused reference files for common development
 - `advanced-transports.md` — H2 CONNECT, WebSocket tunnels, raw tunnels, TLS/ALPN
 - `security-dev.md` — Security testing, DNS rebinding protection, auth failure metrics, fuzz targets, soak tests
 - `reverse-proxy.md` — Reverse/backward proxy: NAT traversal, pproxy raw-relay, control channels
+- `.skills/testing/SKILL.md` — Adding fuzz smoke tests, running Track B/C verification suites, AEAD KAT test patterns
+- `.skills/security-dev/SKILL.md` — AEAD KAT test vectors, cipher regression fix patterns

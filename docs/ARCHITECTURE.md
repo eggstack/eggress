@@ -651,3 +651,17 @@ reconnect_max = "30s"
 21. **DNS rebinding protection** (Phase 50) — `DirectConnector` rejects DNS resolutions pointing to private/reserved IP ranges (loopback, link-local, RFC 1918, unique-local IPv6) to prevent DNS rebinding attacks. Applied to domain resolution only, not to explicit IP targets.
 22. **Auth failure observability** (Phase 50) — all inbound authentication failures (SOCKS5 username/password, HTTP Proxy-Authorization, reverse proxy auth) increment `eggress_auth_failures_total` counter.
 23. **Standalone UDP security** (Phase 50) — standalone UDP relay validates targets against private/reserved IP ranges via `validate_standalone_target()`, preventing DNS rebinding-style attacks over UDP.
+
+### Track B/C release-candidate status
+
+The Track B/C verification pass (2026-07-16) re-confirmed the release-candidate status with:
+
+- 34 targeted Rust test suites passing (~1,663 tests, 0 failures)
+- Full Python source-tree suite passing (1,400 tests, 20 skipped, 0 failures)
+- 40 new native outbound stream lifecycle tests passing
+- AEAD KAT tests passing for AES-256-GCM, AES-128-GCM (NIST SP 800-38D)
+- 12 in-tree fuzz smoke tests across 5 crates passing
+- Two cipher defects fixed with regression coverage
+- Manifest/composition/report consistency validated
+
+This is a **certified modern pproxy compatibility subset**, not strict full parity. See `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the decision record.

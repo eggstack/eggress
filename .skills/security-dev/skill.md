@@ -106,3 +106,12 @@ cargo audit
 - `docs/security/REDACTION_POLICY.md` — credential redaction policy
 - `docs/SECURITY_REVIEW.md` — security review and residual risks
 - `docs/SECURITY_REVIEW.md` — Phase 50 security gate details
+
+## Track B/C cipher regressions
+
+The Track B/C verification pass surfaced and fixed two cipher defects. Both are now covered by regression tests in `python/tests/test_protocol_cipher.py`:
+
+- `AEADCipher.setup_iv` previously set `self._iv` but did not update `self._current_nonce`, so `encrypt()` after `setup_iv()` would use a stale random nonce. Fix: added an `AEADCipher.setup_iv` override that delegates to `setup_nonce`.
+- `BaseCipher.__copy__` re-ran `__init__`, which re-initialized the AEAD nonce. Fix: added `AEADCipher.__copy__` that does a proper shallow `__dict__` copy via `__new__`.
+
+For new AEAD cipher work, also add a known-answer vector test against NIST SP 800-38D or RFC 8439 to `TestAEADKnownAnswerVectors`.

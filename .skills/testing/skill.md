@@ -43,12 +43,36 @@ Fuzz harnesses live in `fuzz/fuzz_targets/` (standalone workspace, libfuzzer-sys
 - `socks5_handshake.rs` — SOCKS5 method negotiation + CONNECT / UDP_ASSOCIATE request parsers
 - `http_connect_response.rs` — HTTP CONNECT status line, authority, header, basic-auth parsers
 - `trojan_request.rs` — Trojan password hash + request encoder
+- `trojan_accept.rs` — Trojan server-side accept parser (Track B/C)
+- `shadowsocks_frame.rs` — Shadowsocks address decoder (Track B/C)
+- `toml_config.rs` — TOML config parse + compile (Track B/C)
+- `websocket_handshake.rs` — WebSocket error + tunnel construction (Track B/C)
+- `h2_connect_authority.rs` — H2 CONNECT authority + header + basic-auth parsers (Track B/C)
 - `route_match.rs` — Route matcher evaluation with constructed routers and requests
 
 Run with `cargo fuzz run <target>`. Smoke tests in per-crate `tests/` exercise seed inputs
 without requiring `cargo-fuzz`:
 - `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — seed corpus for SOCKS UDP codec and handshake parsers
 - `crates/eggress-uri/tests/fuzz_smoke.rs` — seed corpus for URI parser
+- `crates/eggress-protocol-http/tests/fuzz_smoke.rs` — HTTP CONNECT parsers (Track B/C)
+- `crates/eggress-protocol-trojan/tests/fuzz_smoke.rs` — Trojan request/accept (Track B/C)
+- `crates/eggress-protocol-websocket/tests/fuzz_smoke.rs` — WebSocket handshake (Track B/C)
+- `crates/eggress-protocol-shadowsocks/tests/fuzz_smoke.rs` — Shadowsocks address frame (Track B/C)
+- `crates/eggress-config/tests/fuzz_smoke.rs` — TOML config (Track B/C)
+
+### In-tree fuzz smoke tests (Track B/C verification)
+
+The Track B/C verification pass added fuzz smoke coverage for HTTP, Trojan, WebSocket, Shadowsocks, and TOML config parsers. Each runs a fixed corpus of deterministic inputs in < 1 second and asserts no panic, exception, or unbounded allocation:
+
+- `crates/eggress-protocol-http/tests/fuzz_smoke.rs` — HTTP CONNECT response, authority, header, basic-auth, credential validation
+- `crates/eggress-protocol-trojan/tests/fuzz_smoke.rs` — Trojan request encoding, password hash, server accept parser
+- `crates/eggress-protocol-websocket/tests/fuzz_smoke.rs` — Error display, message-too-large, tunnel construction
+- `crates/eggress-protocol-shadowsocks/tests/fuzz_smoke.rs` — Address decoder (IPv4, IPv6, domain, truncated)
+- `crates/eggress-config/tests/fuzz_smoke.rs` — TOML parse + compile with valid/invalid/edge inputs
+- `crates/eggress-uri/tests/fuzz_smoke.rs` — URI parser (pre-existing)
+- `crates/eggress-protocol-socks/tests/fuzz_smoke.rs` — SOCKS UDP codec and handshake (pre-existing)
+
+The reverse handshake (`eggress-protocol-reverse`) has no dedicated fuzz target; coverage comes from the reverse runtime tests in `crates/eggress-runtime/tests/reverse_runtime.rs`.
 
 Fuzz targets can also be smoke-compiled without `cargo-fuzz`:
 ```bash

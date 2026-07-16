@@ -1,6 +1,6 @@
-# Parity Release Go / No-Go Checklist (Phase 36)
+# Parity Release Go / No-Go Checklist (Phase 36 + Track B/C verification)
 
-**Decision status:** **GO (release-candidate)** as of 2026-07-03.
+**Decision status:** **GO (release-candidate)** as of 2026-07-16 (Track B/C verification re-confirmed).
 
 This checklist records the explicit decision to tag the parity release
 candidate based on the evidence in:
@@ -12,6 +12,8 @@ candidate based on the evidence in:
 - `docs/performance/BASELINE.md`
 - `docs/performance/BASELINE_2026_07_03.md`
 - Machine-readable parity report: generated with `python3 scripts/phase36_report.py` → `target/compat/final-pproxy-parity-report.json` (not committed; see `FINAL_PPROXY_PARITY_REPORT.md` for the rendered report).
+- [`FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md`](FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md) — Track B/C modern pproxy subset certification
+- Track B/C verification completion doc: `docs/TRACK_BC_RELEASE_CANDIDATE_VERIFICATION_COMPLETION.md`
 
 ## Required checks
 
@@ -36,6 +38,32 @@ candidate based on the evidence in:
 | `cargo audit` | ✅ Pass | Local |
 | Python package builds and tests pass | ✅ Pass | `maturin develop`, `python -m pytest python/tests -q` |
 | Python wheel smoke | ✅ Pass | `scripts/test_wheel.sh` |
+
+## Track B/C verification record
+
+The Track B/C pass added the following release-critical checks. All pass locally; gated suites retain their environment prerequisites.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Hardened evidence script (dirty-tree + SHA + tracked-input guards) | ✅ Pass | `scripts/release_evidence.py --require-clean --expected-commit HEAD --verify-tracked-inputs` |
+| Targeted Rust test suites (34 suites, ~1,663 tests) | ✅ Pass | `cargo test -p <crate>` per workstream 2 record |
+| Full Python source-tree suite | ✅ Pass | `arch -arm64 python3.11 -m pytest python/tests -q` — 1,400 passed, 20 skipped, 0 failed |
+| Native outbound stream lifecycle + resource tests | ✅ Pass | `python/tests/test_outbound_stream_verification.py` — 40 passed, 11 documented infra skips |
+| AEAD known-answer vectors (NIST SP 800-38D, RFC 8439) | ✅ Pass | `python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors` |
+| All 11 fuzz targets compile | ✅ Pass | `cargo check --manifest-path fuzz/Cargo.toml --bins` |
+| In-tree fuzz smoke tests across 5 crates | ✅ Pass | `eggress-{protocol-http,protocol-trojan,protocol-websocket,protocol-shadowsocks,config}/tests/fuzz_smoke.rs` |
+| Manifest + composition + report consistency | ✅ Pass | `validate_pproxy_parity_manifest.py --strict` + `--check-report` + `--check-matrix` |
+| Two cipher regressions fixed with coverage | ✅ Pass | `AEADCipher.setup_iv` sync + `AEADCipher.__copy__` shallow copy |
+
+### Defects corrected by Track B/C verification
+
+| Defect | Fix | Regression test |
+|---|---|---|
+| `BaseCipher.setup_iv` set `_iv` but not `_current_nonce` (AEAD nonce desync) | Added `AEADCipher.setup_iv` override that delegates to `setup_nonce` | `test_setup_iv_sets_nonce` |
+| `BaseCipher.__copy__` re-ran `__init__`, resetting the AEAD nonce | Added `AEADCipher.__copy__` that does a proper shallow dict copy | `test_copy_preserves_key_not_nonce` |
+| `release_evidence.py` silently skipped dirty trees, missing inputs, and SHA mismatches | Added `--require-clean`, `--expected-commit`, `--verify-tracked-inputs`, input path validation, distinct exit codes | `--help` documents flags; verification script runs all paths |
+| Compat wheel lacked Python 3.9–3.13 classifiers | Added matching classifiers to `python-pproxy-compat/pyproject.toml` | TOML parses cleanly; pip install --dry-run succeeds |
+| Subprocess-based tests (`test_import_cost`, `test_interpreter_shutdown`) failed on arch mismatch | Tests now skip cleanly when subprocess binary arch ≠ parent | Full suite re-runs without failures |
 
 ## Gated differential / interop checks
 
@@ -141,3 +169,9 @@ The release is **GO** as a release candidate, with the following caveats:
 - Differential test evidence is recorded from CI (Python 3.11 environment).
   Local re-verification on Python 3.14 hosts is documented as an environmental
   constraint, not a parity regression.
+- Track B/C verification re-confirmed the Phase 36 GO on 2026-07-16. The
+  hardened `release_evidence.py` script and the new AEAD KAT, outbound stream,
+  and fuzz smoke test suites are now part of the release-gate evidence. Two
+  cipher defects surfaced and were fixed with regression coverage. The
+  compatibility wheel is now metadata-aligned with the canonical wheel for
+  supported Python versions.

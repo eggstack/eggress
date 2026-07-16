@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Track B/C release closure is implemented and locally verified. The parity capability manifest (148 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth: 103 `drop_in`, 16 `compatible_with_warning`, 15 `native_equivalent`, 9 `intentional_non_parity`, and 5 `unsupported`. Python outbound connections are native streams; the optional `eggress-pproxy-compat` distribution provides a clean top-level `import pproxy` namespace for the certified subset.
+> Status: Track B/C release-candidate verification is complete and locally verified. The canonical contract is the 148-capability manifest at `docs/parity/pproxy_capability_manifest.toml` (103 `drop_in`, 16 `compatible_with_warning`, 15 `native_equivalent`, 9 `intentional_non_parity`, 5 `unsupported`). This is a **certified modern pproxy compatibility subset** — not strict full pproxy parity. See `docs/release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md` for the certification record, `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the go/no-go decision, and `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy. Python outbound connections use native streams; the optional `eggress-pproxy-compat` distribution provides `import pproxy` only when explicitly installed.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -40,6 +40,17 @@ distribution provide:
 - Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 148 capabilities across 5 categories with tier classification and machine-readable validation
 - Reusable differential parity harness (`eggress-testkit::differential`) — 27 scenarios against pproxy 2.7.9 — Phase 41
 - Phase 42 corrective consistency pass: `CompatibilityReport` uses the five-tier manifest vocabulary; `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies to all listeners (matches pproxy); parity report can be regenerated (`--write-report`) and consistency-checked (`--check-report`) from the manifest
+
+### Release-candidate verification evidence
+
+The Track B/C verification pass produced:
+
+- `docs/release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md` — the certification record for the modern pproxy subset claim
+- `scripts/release_evidence.py` — hardened evidence generator with `--require-clean`, `--expected-commit`, `--verify-tracked-inputs`, and distinct exit codes for guard violations
+- `python/tests/test_outbound_stream_verification.py` — 40 lifecycle/resource tests for native `OutboundConnector`/`OutboundStream`/`AsyncOutboundStream`/`ProxyConnection`
+- `python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors` — RFC 8439 / NIST SP 800-38D known-answer vectors for the 3 supported AEAD ciphers
+- 12 in-tree fuzz-smoke tests across 5 crates (`http`, `trojan`, `websocket`, `shadowsocks`, `config`)
+- Two cipher bug fixes: `AEADCipher.setup_iv` now keeps `nonce` in sync with `iv`; `AEADCipher.__copy__` now does a proper shallow copy
 
 ### Phase 28: CLI compatibility enhancements
 
@@ -81,13 +92,13 @@ pproxy --version
 
 ```bash
 pip install eggress
+# For AEAD cipher support (required by eggress-pproxy-compat):
+pip install "eggress[cipher-api]"
 # Optional certified subset for unchanged `import pproxy` programs:
 pip install eggress-pproxy-compat
 ```
 
-The canonical `eggress` wheel intentionally does not install or alias the
-top-level `pproxy` namespace. Install the optional compatibility wheel only
-when that import path is required.
+Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 
 ### Container image
 
