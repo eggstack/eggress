@@ -63,6 +63,7 @@ from eggress.connection import (
 )
 from eggress.pproxy_connection import ProxyConnection
 from eggress.async_connection import AsyncConnection
+from eggress.outbound import OutboundConnector
 from eggress._asyncio import AsyncBridge, CloseWaiter, LoopAffinityError
 from eggress._compat import (
     PY_VERSION,
@@ -317,6 +318,7 @@ __all__ = [
     "UdpAssociationError",
     "UnsupportedCompositionError",
     "AsyncConnection",
+    "OutboundConnector",
     # Phase C5 async bridge
     "AsyncBridge",
     "CloseWaiter",

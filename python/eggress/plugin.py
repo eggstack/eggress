@@ -8,6 +8,17 @@ cancellation propagation, reentrancy detection, and backpressure. GIL is
 acquired only during callback execution and result conversion — no Rust
 mutex is held while calling Python.
 
+.. note::
+
+   **Structural compatibility only.**  The PluginBridge and PluginRegistry
+   provide the callback infrastructure that pproxy-compatible code expects,
+   but these callbacks are **not wired into the Rust connection/stream
+   lifecycle**.  Plugin callbacks are not invoked during actual proxy
+   operation.  This module exists so that code importing ``pproxy.plugin``
+   constructs PluginRegistry/PluginBridge objects without error — the
+   objects are functional (they accept and execute callbacks) but have no
+   effect on the proxy data path.
+
 Example::
 
     from eggress.plugin import PluginRegistry, PluginBridge

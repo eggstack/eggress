@@ -7,14 +7,14 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 97 | 66.9% |
-| `compatible_with_warning` | 20 | 13.8% |
+| `drop_in` | 101 | 69.7% |
+| `compatible_with_warning` | 16 | 11.0% |
 | `native_equivalent` | 14 | 9.7% |
 | `intentional_non_parity` | 9 | 6.2% |
 | `unsupported` | 5 | 3.4% |
 | **Total** | **145** | |
 
-## Drop-In Capabilities (97)
+## Drop-In Capabilities (101)
 
 These features are drop-in replacements for pproxy. All required layers are `complete` and evidence is `integration` or stronger.
 
@@ -22,14 +22,14 @@ These features are drop-in replacements for pproxy. All required layers are `com
 - `cli.listen`, `cli.remote`, `cli.udp_listen`, `cli.udp_remote`, `cli.block`, `cli.config`, `cli.version`, `cli.help`
 ### URI Grammar (19)
 - `uri.scheme_http`, `uri.scheme_https`, `uri.scheme_socks4`, `uri.scheme_socks4a`, `uri.scheme_socks5`, `uri.scheme_ss`, `uri.scheme_shadowsocks`, `uri.scheme_trojan`, `uri.scheme_direct`, `uri.scheme_raw`, `uri.scheme_tunnel`, `uri.scheme_ws`, `uri.scheme_wss`, `uri.scheme_h2`, `uri.modifier_ssl_tls`, `uri.credentials`, `uri.ipv4_ipv6_domain`, `uri.default_ports`, `uri.query_fragments`
-### Runtime Protocols (44)
-- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.chain.socks5_to_ws`, `protocol.chain.http_to_ws`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.trojan_client`, `protocol.trojan_server`, `protocol.ws_runtime`, `protocol.raw_runtime`, `protocol.h2_runtime`
+### Runtime Protocols (48)
+- `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.chain.socks5_to_ws`, `protocol.chain.http_to_ws`, `protocol.chain.socks5_to_raw`, `protocol.chain.http_to_raw`, `protocol.chain.socks5_to_h2`, `protocol.chain.http_to_h2`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.trojan_client`, `protocol.trojan_server`, `protocol.ws_runtime`, `protocol.raw_runtime`, `protocol.h2_runtime`
 ### Routing (12)
 - `routing.rules`, `routing.scheduler_round_robin`, `routing.scheduler_first_available`, `routing.scheduler_random`, `routing.scheduler_least_connections`, `routing.health_checks`, `routing.pac_generation`, `routing.pac_serving`, `system_proxy.inspect`, `system_proxy.apply`, `system_proxy.rollback`, `routing.config_reload`
 ### Python (14)
 - `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`
 
-## Compatible-With-Warning (20)
+## Compatible-With-Warning (16)
 
 These features work but emit diagnostics or differ in a known way.
 
@@ -48,10 +48,6 @@ These features work but emit diagnostics or differ in a known way.
 | `uri.chain_validation` | Per-hop diagnostics carry unsupported_protocol or unsupported_transport_wrapper codes. | `` |
 | `uri.semicolon_comma_rejection` | Emits invalid_chainComposition diagnostic with migration suggestion. | `` |
 | `protocol.socks5.udp_associate` | Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE. | `socks5_udp_framing_divergence` |
-| `protocol.chain.socks5_to_raw` | Raw is a passthrough that correctly forwards the prior-hop stream. | `` |
-| `protocol.chain.http_to_raw` | Raw is a passthrough that correctly forwards the prior-hop stream. | `` |
-| `protocol.chain.socks5_to_h2` | H2 upstream performs handshake over the prior-hop stream (stream wrapping). | `` |
-| `protocol.chain.http_to_h2` | H2 upstream performs handshake over the prior-hop stream (stream wrapping). | `` |
 | `protocol.socks5_udp_framing` | pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained. | `socks5_udp_framing_divergence` |
 | `protocol.shadowsocks_tcp` | Wire-compatible with standard Shadowsocks sserver/sslocal. No pproxy differential tests; integration evidence only. | `` |
 | `protocol.shadowsocks_udp` | Standard AEAD format; interoperable. No pproxy differential tests; integration evidence only. | `` |

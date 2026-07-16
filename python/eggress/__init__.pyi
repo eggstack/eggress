@@ -105,6 +105,7 @@ from eggress.connection import (
 )
 from eggress.async_connection import AsyncConnection as AsyncConnection
 from eggress.pproxy_connection import ProxyConnection as ProxyConnection
+from eggress.outbound import OutboundConnector as OutboundConnector
 from eggress._asyncio import (
     AsyncBridge as AsyncBridge,
     CloseWaiter as CloseWaiter,

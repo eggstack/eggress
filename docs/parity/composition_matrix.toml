@@ -309,7 +309,7 @@ notes = "WS upstream performs WebSocket handshake over the prior-hop stream"
 from_protocol = "socks5"
 to_protocol = "raw"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
+tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.chain.socks5_to_raw",
@@ -320,7 +320,7 @@ notes = "Raw is a passthrough that correctly forwards the prior-hop stream"
 from_protocol = "http"
 to_protocol = "raw"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
+tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.chain.http_to_raw",
@@ -331,7 +331,7 @@ notes = "Raw is a passthrough that correctly forwards the prior-hop stream"
 from_protocol = "socks5"
 to_protocol = "h2"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
+tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.chain.socks5_to_h2",
@@ -342,7 +342,7 @@ notes = "H2 upstream performs handshake over the prior-hop stream (stream wrappi
 from_protocol = "http"
 to_protocol = "h2"
 traffic_kind = "tcp"
-tier = "compatible_with_warning"
+tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.chain.http_to_h2",

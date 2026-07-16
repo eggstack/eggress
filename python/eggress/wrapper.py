@@ -2,6 +2,19 @@
 
 Reproduces pproxy's TLS, plugin, and chain composition model.
 These wrap base protocol objects to add transport layers.
+
+.. note::
+
+   **Structural compatibility only.**  Wrapper objects (``TLS``, ``Plugin``,
+   ``Chain``) provide the composition API that pproxy-compatible code
+   expects, but they are **construction-time composition helpers only** —
+   they do not affect the Rust runtime data path.  ``TLS(inner, ...)``
+   produces a metadata object describing the intended TLS wrapping; the
+   actual TLS transport is handled by eggress's chain executor when the
+   config is compiled.  ``Chain([...])`` validates that the protocol
+   sequence is supported per the composition matrix but does not itself
+   execute the chain.  This module exists so that code importing
+   ``pproxy.wrapper`` constructs wrapper objects without error.
 """
 
 from __future__ import annotations
