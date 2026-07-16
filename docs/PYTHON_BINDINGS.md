@@ -916,16 +916,45 @@ section above. For CLI-based translation, you can still use:
 python -m eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
 
-### `import pproxy` compatibility
+### Native outbound streams and `import pproxy`
 
-Direct `import pproxy` compatibility is planned but not yet available. A
-top-level `pproxy` shim module (deferring to `eggress.pproxy`) was considered
-but deferred to avoid namespace conflicts with the upstream `pproxy` package
-on PyPI. See `docs/adr/ADR_python_import_and_distribution_strategy.md` for
-the full rationale.
+`OutboundConnector` opens a TCP stream through the configured upstream chain
+without starting a local listener. The blocking methods release the GIL while
+Rust performs DNS, handshakes, and relay setup:
 
-**Recommended approach:** use the `eggress.pproxy` subpackage for
-pproxy-compatible helpers:
+```python
+from eggress import OutboundConnector
+
+connector = OutboundConnector.from_pproxy_uri("direct://127.0.0.1:0")
+stream = connector.connect_tcp("example.com", 443, timeout=10)
+stream.sendall(b"GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n")
+response = stream.recv(4096)
+stream.close()
+```
+
+`OutboundStream` supports `read`, `recv`, `readexactly`, `write`, `sendall`,
+`drain`, `write_eof`, `close`, `wait_closed`, `peername`, `sockname`, and
+`get_extra_info`. `OutboundConnector.aconnect_tcp()` returns
+`AsyncOutboundStream`. `ProxyConnection.tcp_connect()` and `atcp_connect()`
+use this native path and never create a temporary local listener. UDP remains
+listener-based.
+
+The canonical `eggress` wheel intentionally installs only the `eggress`
+namespace and never aliases `pproxy` through `sys.modules`. For the certified
+drop-in subset, install the separate distribution in a clean environment:
+
+```bash
+pip install eggress-pproxy-compat
+```
+
+That distribution installs `import pproxy`, pins the matching `eggress` wheel,
+and declares `cryptography` for the supported AEAD cipher API. It is an
+explicit compatibility distribution, not a claim of strict full pproxy API or
+behavioral parity. Do not install it alongside the unrelated upstream `pproxy`
+distribution; pip has no portable `Conflicts-Dist` mechanism.
+
+**Bundled helper approach:** use the `eggress.pproxy` subpackage for
+translation and service helpers:
 
 ```python
 from eggress.pproxy import compatibility_version

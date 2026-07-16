@@ -87,6 +87,13 @@ Runs Python tests on push to `main` and pull requests affecting Python code.
 |-----|--------|----------------|
 | Test (matrix) | ubuntu-latest, macos-latest × Python 3.9/3.12/3.13 | `maturin develop` + `pytest python/tests` |
 
+### python-compat.yml
+
+Runs clean canonical/compatibility wheel smoke tests on Linux, macOS, and
+Windows. It verifies that the canonical wheel stays namespace-clean and that
+the separate `eggress-pproxy-compat` wheel supplies the top-level `pproxy`
+imports and native outbound stream tests.
+
 ### python-wheels.yml
 
 Builds platform wheels on version tags (`v*`).

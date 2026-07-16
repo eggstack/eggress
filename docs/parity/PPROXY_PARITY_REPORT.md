@@ -7,14 +7,14 @@
 
 | Tier | Count | Percentage |
 |------|-------|------------|
-| `drop_in` | 101 | 69.7% |
-| `compatible_with_warning` | 16 | 11.0% |
-| `native_equivalent` | 14 | 9.7% |
-| `intentional_non_parity` | 9 | 6.2% |
+| `drop_in` | 103 | 69.6% |
+| `compatible_with_warning` | 16 | 10.8% |
+| `native_equivalent` | 15 | 10.1% |
+| `intentional_non_parity` | 9 | 6.1% |
 | `unsupported` | 5 | 3.4% |
-| **Total** | **145** | |
+| **Total** | **148** | |
 
-## Drop-In Capabilities (101)
+## Drop-In Capabilities (103)
 
 These features are drop-in replacements for pproxy. All required layers are `complete` and evidence is `integration` or stronger.
 
@@ -26,8 +26,8 @@ These features are drop-in replacements for pproxy. All required layers are `com
 - `protocol.http_connect.ipv4`, `protocol.http_connect.ipv6`, `protocol.http_connect.domain`, `protocol.http_connect.auth_success`, `protocol.http_connect.auth_failure`, `protocol.http_connect.refused`, `protocol.http_connect.half_close`, `protocol.http_connect.fragmented`, `protocol.http_connect.timeout`, `protocol.http_forward.get`, `protocol.http_forward.post_content_length`, `protocol.http_forward.head`, `protocol.http_forward.chunked`, `protocol.http_forward.persistent`, `protocol.http_forward.connection_close`, `protocol.http_forward.auth_success`, `protocol.http_forward.malformed`, `protocol.http_forward.upstream_close`, `protocol.socks4.connect_ipv4`, `protocol.socks4.user_id`, `protocol.socks4.refused`, `protocol.socks4.malformed`, `protocol.socks4a.connect_domain`, `protocol.socks5.connect_ipv4`, `protocol.socks5.connect_ipv6`, `protocol.socks5.connect_domain`, `protocol.socks5.connect_refused`, `protocol.socks5.auth_success`, `protocol.socks5.auth_failure`, `protocol.socks5.malformed`, `protocol.socks5.half_close`, `protocol.chain.socks5_to_http`, `protocol.chain.socks5_to_socks5`, `protocol.chain.http_to_socks5`, `protocol.chain.http_to_http`, `protocol.chain.socks5_to_ws`, `protocol.chain.http_to_ws`, `protocol.chain.socks5_to_raw`, `protocol.chain.http_to_raw`, `protocol.chain.socks5_to_h2`, `protocol.chain.http_to_h2`, `protocol.direct_tcp`, `protocol.direct_udp`, `protocol.trojan_client`, `protocol.trojan_server`, `protocol.ws_runtime`, `protocol.raw_runtime`, `protocol.h2_runtime`
 ### Routing (12)
 - `routing.rules`, `routing.scheduler_round_robin`, `routing.scheduler_first_available`, `routing.scheduler_random`, `routing.scheduler_least_connections`, `routing.health_checks`, `routing.pac_generation`, `routing.pac_serving`, `system_proxy.inspect`, `system_proxy.apply`, `system_proxy.rollback`, `routing.config_reload`
-### Python (14)
-- `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`
+### Python (16)
+- `python.importable_package`, `python.translate_pproxy_args`, `python.translate_pproxy_uri`, `python.check_pproxy_args`, `python.start_pproxy`, `python.service_class`, `python.context_manager`, `python.status_metrics_reload`, `python.shutdown`, `python.unsupported_feature_exceptions`, `python.pp_proxy_service`, `python.compatibility_report`, `python.start_pproxy_enhanced`, `python.type_stubs`, `python.native_outbound_stream`, `python.cipher_dependency_policy`
 
 ## Compatible-With-Warning (16)
 
@@ -52,7 +52,7 @@ These features work but emit diagnostics or differ in a known way.
 | `protocol.shadowsocks_tcp` | Wire-compatible with standard Shadowsocks sserver/sslocal. No pproxy differential tests; integration evidence only. | `` |
 | `protocol.shadowsocks_udp` | Standard AEAD format; interoperable. No pproxy differential tests; integration evidence only. | `` |
 
-## Native Equivalent (14)
+## Native Equivalent (15)
 
 These features achieve the same outcome through a different mechanism.
 
@@ -72,6 +72,7 @@ These features achieve the same outcome through a different mechanism.
 | `routing.upstream_test` | Different invocation; same verification. |
 | `routing.admin_metrics` | eggress-native feature. |
 | `python.migration_aliases` | Compatibility layer; not a 1:1 API match. |
+| `python.eggress_importable` | Canonical import path; it never injects or aliases sys.modules['pproxy']. |
 
 ## Intentional Non-Parity (9)
 

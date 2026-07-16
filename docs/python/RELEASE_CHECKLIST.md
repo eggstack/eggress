@@ -28,6 +28,26 @@ All non-gated tests must pass.
 Builds a wheel, installs it in a clean venv, runs pytest, and verifies the
 native module loads.
 
+### Certified top-level `pproxy` subset
+
+Build and test the separate compatibility distribution with a matching
+canonical wheel. The canonical wheel alone must not provide `import pproxy`.
+
+```bash
+python3 -m pip wheel --no-deps --wheel-dir /tmp/eggress-pproxy-compat-wheel ./python-pproxy-compat
+python3 -m venv /tmp/eggress-pproxy-compat-test
+/tmp/eggress-pproxy-compat-test/bin/pip install dist/eggress-*.whl /tmp/eggress-pproxy-compat-wheel/eggress_pproxy_compat-*.whl
+/tmp/eggress-pproxy-compat-test/bin/python -c "import eggress, pproxy; from pproxy import Connection, Server"
+/tmp/eggress-pproxy-compat-test/bin/python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
+```
+
+Generate redacted evidence after the candidate commit is fixed:
+
+```bash
+python3 scripts/release_evidence.py --output target/release-evidence \
+  --reference pproxy=2.7.9 --reference python=3.11
+```
+
 ## 4. Source distribution smoke test
 
 ```bash

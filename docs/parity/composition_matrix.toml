@@ -227,6 +227,7 @@ tier = "drop_in"
 evidence = "integration"
 capability_ids = [
     "protocol.direct_tcp",
+    "python.native_outbound_stream",
 ]
 
 [[cell]]

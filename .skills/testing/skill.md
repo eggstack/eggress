@@ -272,16 +272,36 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_pproxy_concurrency.py` — concurrent start/shutdown safety
 - `python/tests/test_performance_smoke.py` — Python binding overhead, GIL release
 - `python/tests/test_wheel_import_smoke.py` — wheel import verification
+- `python/tests/test_proxy_connection.py` — native sync/async outbound stream behavior and no temporary listener regression
 - `python/tests/test_connection.py` — Connection contract and lifecycle tests (signatures, attributes, state machine, close semantics, resource ownership, context manager, GIL release)
 - `python/tests/test_connection_behavioral.py` — Connection behavioral tests (SOCKS5 proxy echo, multiple protocols, failure scenarios, concurrent lifecycle, resource cleanup, GIL release)
 - `python/tests/test_server_lifecycle.py` — Server lifecycle tests (Phase C3: 84 tests covering construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence, TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, pproxy examples)
 - `python/tests/test_protocol_cipher.py` — Phase C4 protocol objects, cipher objects, and plugin bridge tests
 - `python/tests/test_asyncio_semantic.py` — Phase C5 asyncio semantic compatibility (107 tests: loop affinity including cross-loop detection, bridge lifecycle, cancellation (cancel_wait_closed, cancel during aclose, concurrent bridge.cancel, plugin callback cancellation), close ordering, contextvars, exception chaining, asyncio debug mode with real async operations, interpreter safety (repeated asyncio.run cycles, GC, context managers), version compat, stress/race (AsyncConnection, Server, CloseWaiter, PluginBridge), representative pproxy async patterns, manifest/doc agreement)
 
+The development dependency set includes `pytest-asyncio`; install it before
+running the async plugin and asyncio-semantic tests.
+
 Run:
 ```bash
 python -m pytest python/tests -v
 ```
+
+For installed-wheel verification, use `--import-mode=importlib` and a clean
+environment so source-tree imports cannot mask missing native extension or
+packaging errors:
+
+```bash
+python -m pytest --import-mode=importlib python/tests -q
+python -m pip wheel --no-deps --wheel-dir /tmp/eggress-pproxy-compat-wheel ./python-pproxy-compat
+python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
+```
+
+The separate compatibility wheel must also be smoke-tested in an isolated
+environment with `import eggress` and `import pproxy`; do not report an
+upstream pproxy differential suite as passing when its dependency is absent.
+Use `python3 scripts/release_evidence.py` to retain redacted metadata,
+scenario results, wheel hashes, and `SHA256SUMS`.
 
 ## pproxy compatibility harness (Phase 18)
 

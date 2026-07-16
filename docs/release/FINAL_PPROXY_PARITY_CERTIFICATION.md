@@ -1,5 +1,11 @@
 # Final pproxy Parity Certification (Phase 51)
 
+> Historical snapshot. This Phase 51 certification is superseded by
+> [`FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md`](FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md),
+> which records the Track B/C native-stream, compatibility-wheel, cipher-policy,
+> and evidence-closure work. Its 145-capability totals must not be used for a
+> current release claim.
+
 **Date:** 2026-07-07
 **Certification status:** **CERTIFIED**
 **Manifest frozen:** SHA `7acef1aaccddf28d2190eae5b5d3ea40844facba`

@@ -208,6 +208,19 @@ Rust embed API for in-process embedding:
 - `connector.connect_tcp(target)` — connect to TCP target
 - `connector.connect_tcp_timeout(target, timeout)` — connect with explicit timeout
 
+The Python binding exposes the same connector through `PyOutboundConnector` and
+returns a `PyOutboundStream`. The pure-Python `OutboundStream` and
+`AsyncOutboundStream` wrappers provide read/write/half-close/close operations,
+release the GIL around native blocking work, and do not bind a temporary local
+listener. `ProxyConnection` delegates to this path. UDP remains listener-based;
+`associate_udp()` is intentionally not advertised as a completed Python API.
+
+The canonical `eggress` wheel owns only the `eggress` namespace. The separate
+`eggress-pproxy-compat` distribution installs the top-level `pproxy` package for
+the certified subset, pins the matching `eggress` version, and declares the
+`cryptography` dependency used by the supported AEAD cipher objects. It does
+not use `sys.modules` aliasing or import-time namespace mutation.
+
 ### eggress-python
 Python bindings via PyO3 wrapping `eggress-embed`:
 - `EggressConfig`, `EggressService`, `EggressHandle` — direct Rust wrappers

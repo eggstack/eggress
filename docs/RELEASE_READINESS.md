@@ -18,6 +18,17 @@ cargo deny check
 
 All five commands must pass cleanly before tagging a release.
 
+### Track B/C Python closure
+
+The current Python compatibility claim is a certified subset, not strict full
+pproxy parity. The canonical `eggress` wheel remains namespace-clean; the
+separate `eggress-pproxy-compat` wheel provides the opt-in top-level `pproxy`
+package and depends on the matching engine plus the declared `cryptography`
+range. Python outbound TCP uses the native Rust connector and does not create
+a temporary local listener. Validate both installed wheels in a clean
+environment and generate the redacted, commit-bound evidence bundle with
+`scripts/release_evidence.py` before tagging.
+
 ## Security Review Status
 
 - [SECURITY_REVIEW.md](SECURITY_REVIEW.md) exists and covers all reviewed surfaces.
@@ -55,6 +66,14 @@ All five commands must pass cleanly before tagging a release.
 | Prometheus metrics | Production-ready |
 | SOCKS5 UDP upstream relay (one-hop) | Production-ready |
 | HTTP upstream (forwarding) | Production-ready |
+
+### Current certification artifacts
+
+| Artifact | Status |
+|----------|--------|
+| Track B/C certification report | [`release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md`](release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md) |
+| Machine-validated parity report | [`parity/PPROXY_PARITY_REPORT.md`](parity/PPROXY_PARITY_REPORT.md) |
+| Release evidence generator | [`../scripts/release_evidence.py`](../scripts/release_evidence.py) |
 
 ### Experimental / Limited
 

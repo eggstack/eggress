@@ -95,3 +95,17 @@ crypto operations. This is acceptable because:
 1. It ships prebuilt objects for common targets (no build-time compilation)
 2. It has no external build dependencies
 3. It is widely deployed and audited
+
+## Python cipher dependency policy
+
+Python AEAD compatibility is deterministic by installation profile:
+
+- `eggress` keeps `cryptography` optional and reports cipher operations as
+  unavailable when the extra is not installed.
+- `eggress[cipher-api]` declares the tested `cryptography>=42,<47` range.
+- `eggress-pproxy-compat` depends on `eggress==0.1.0` and that same cipher
+  range, so a top-level `pproxy.cipher` import never relies on an undeclared
+  optional package.
+
+Legacy stream ciphers remain explicit unsupported stubs. Installing the extra
+does not promote RC4, CFB, OFB, CTR, SSR, or other legacy methods.

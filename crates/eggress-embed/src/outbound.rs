@@ -53,8 +53,9 @@ async fn resolve_endpoint_addr(
 /// methods to open TCP connections through the configured proxy chain
 /// without starting a listener service.
 pub struct OutboundConnector {
-    runtime_config: Arc<eggress_config::compile::RuntimeConfig>,
+    runtime_config: Option<Arc<eggress_config::compile::RuntimeConfig>>,
     chain_executor: eggress_core::chain::ChainExecutor,
+    direct: bool,
 }
 
 impl OutboundConnector {
@@ -91,8 +92,9 @@ impl OutboundConnector {
         let chain_executor = eggress_server::build_chain_executor(None, None);
 
         Ok(Self {
-            runtime_config: Arc::new(runtime_config),
+            runtime_config: Some(Arc::new(runtime_config)),
             chain_executor,
+            direct: false,
         })
     }
 
@@ -100,6 +102,13 @@ impl OutboundConnector {
     pub fn from_pproxy_uri(uri: &str) -> Result<Self, EggressError> {
         let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
             .map_err(|e| EggressError::Config(e.to_string()))?;
+        if parsed.scheme == "direct" {
+            return Ok(Self {
+                runtime_config: None,
+                chain_executor: eggress_server::build_chain_executor(None, None),
+                direct: true,
+            });
+        }
         let chain = eggress_pproxy_compat::uri::PproxyChain {
             raw: uri.to_string(),
             hops: vec![parsed],
@@ -126,7 +135,27 @@ impl OutboundConnector {
             port,
         };
 
-        let upstream = &self.runtime_config.upstreams[0];
+        if self.direct {
+            let stream = eggress_core::connector::Connector::connect(
+                &eggress_core::connector::DirectConnector,
+                &target,
+            )
+            .await
+            .map_err(|e| EggressError::Runtime(e.to_string()))?;
+            return Ok((
+                stream,
+                OutboundInfo {
+                    local_addr: None,
+                    peer_addr: None,
+                    hop_count: 0,
+                },
+            ));
+        }
+
+        let runtime_config = self.runtime_config.as_ref().ok_or_else(|| {
+            EggressError::Runtime("outbound runtime configuration is unavailable".to_string())
+        })?;
+        let upstream = &runtime_config.upstreams[0];
         let chain = &upstream.chain;
 
         // Resolve the first hop endpoint address for metadata
@@ -181,7 +210,9 @@ impl OutboundConnector {
 
     /// Get the number of upstreams configured.
     pub fn upstream_count(&self) -> usize {
-        self.runtime_config.upstreams.len()
+        self.runtime_config
+            .as_ref()
+            .map_or(0, |config| config.upstreams.len())
     }
 
     /// Validate that the config is usable for outbound connections.

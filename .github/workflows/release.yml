@@ -201,10 +201,27 @@ jobs:
           name: sdist
           path: crates/eggress-python/dist/*.tar.gz
 
+  build-pproxy-compat:
+    name: Top-level pproxy compatibility wheel
+    needs: ci-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build compatibility wheel
+        run: python -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
+      - name: Upload compatibility wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: pproxy-compat-wheel
+          path: dist/eggress_pproxy_compat-*.whl
+
   # ── Checksums and SBOM ─────────────────────────────────────────────
   checksums:
     name: Checksums & SBOM
-    needs: [build-binaries, build-wheels, build-sdist]
+    needs: [build-binaries, build-wheels, build-sdist, build-pproxy-compat]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -226,6 +243,12 @@ jobs:
         with:
           path: artifacts
           name: sdist
+          merge-multiple: true
+      - name: Download compatibility wheel
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          name: pproxy-compat-wheel
           merge-multiple: true
 
       - name: Generate SHA256SUMS
@@ -331,7 +354,7 @@ jobs:
   # ── GitHub Release ─────────────────────────────────────────────────
   create-release:
     name: GitHub Release
-    needs: [build-binaries, build-wheels, build-sdist, checksums]
+    needs: [build-binaries, build-wheels, build-sdist, build-pproxy-compat, checksums]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -356,6 +379,12 @@ jobs:
         with:
           path: release-artifacts
           name: sdist
+          merge-multiple: true
+      - name: Download compatibility wheel
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          name: pproxy-compat-wheel
           merge-multiple: true
       - name: Download checksums and SBOM
         uses: actions/download-artifact@v4
@@ -384,6 +413,7 @@ jobs:
 
             **Binary:** See [BINARY_INSTALL.md](docs/release/BINARY_INSTALL.md)
             **Python:** `pip install eggress==${{ github.ref_name }}`
+            **pproxy subset:** `pip install eggress-pproxy-compat==${{ github.ref_name }}` in a clean environment
             **Container:** `docker pull ghcr.io/${{ github.repository_owner }}/eggress:${{ github.ref_name }}`
 
             ### Verification

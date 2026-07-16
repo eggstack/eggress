@@ -44,6 +44,11 @@ Or use the helper script:
 ./scripts/test_wheel.sh
 ```
 
+The optional certified pproxy subset is a separate pure-Python distribution.
+Build it from `./python-pproxy-compat` and install it alongside the matching
+`eggress` wheel. This is the supported way to provide `import pproxy`; the
+canonical `eggress` wheel intentionally does not alias that namespace.
+
 ### Verify wheel contents
 
 ```bash
@@ -103,6 +108,10 @@ rm -rf .venv-testpypi
 cd crates/eggress-python
 maturin build --release --out ../../dist
 maturin sdist --out ../../dist
+
+# Build the separate top-level pproxy compatibility wheel from the repository root
+cd ../..
+python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
 ```
 
 ### 3. Run wheel tests

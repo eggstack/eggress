@@ -98,11 +98,11 @@ Phase 42: pproxy parity corrective consistency pass (complete)
 
 ### Phase 36: Final parity release audit — complete
 
-- [x] Frozen targets, manifest completeness audit, manifest corrections, docs consistency audit, final parity report (145 capabilities), full workspace validation, go/no-go decision
+- [x] Frozen targets, manifest completeness audit, manifest corrections, docs consistency audit, final parity report (historical Phase 51 snapshot)
 
 ### Phase 37: Parity capability manifest and validator — complete
 
-- [x] `docs/parity/pproxy_capability_manifest.toml` — 145 capabilities, 5 categories, 7 layers (updated Phase 51+corrective pass)
+- [x] `docs/parity/pproxy_capability_manifest.toml` — 148 capabilities, 5 categories, 7 layers (updated by Track B/C closure)
 - [x] `docs/parity/README.md` — tiers, layers, evidence, 13 validation rules
 - [x] `docs/parity/PPROXY_PARITY_REPORT.md` — auto-generated from the manifest
 - [x] `scripts/validate_pproxy_parity_manifest.py` — Python validator, 13 rules, strict mode

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; amended by Track B/C release closure |
 | Date | Phase 32 |
 | Decision makers | Eggress maintainers |
 | Related | `python/eggress/`, `crates/eggress-python/pyproject.toml`, `docs/PYTHON_BINDINGS.md` |
@@ -169,3 +169,23 @@ compatibility shims at import time.
 - `crates/eggress-python/pyproject.toml` — Package metadata
 - `docs/PYTHON_BINDINGS.md` — Python bindings documentation
 - `docs/PPROXY_PARITY_SPEC.md` — pproxy compatibility specification
+
+## Amendment: Track B/C release closure (2026-07-16)
+
+The original decision remains authoritative for the canonical `eggress` wheel:
+it owns the `eggress` namespace and never mutates `sys.modules` or shadows an
+installed upstream package. The release-closure plan adds an explicit,
+separately built distribution for users who intentionally want the top-level
+compatibility import:
+
+- `python-pproxy-compat/` publishes as `eggress-pproxy-compat`.
+- It installs `pproxy` only when explicitly installed, pins the matching
+  `eggress` release, and declares `cryptography` for the supported AEAD API.
+- It is validated in a clean environment and is documented as compatibility
+  for the certified subset, not strict full pproxy parity.
+
+This amendment supersedes the “no separate package” alternative as a release
+packaging decision while preserving the namespace-safety decision for the
+canonical wheel. Pip does not provide a portable package-conflict mechanism;
+the compatibility package therefore must not be installed alongside upstream
+`pproxy`.

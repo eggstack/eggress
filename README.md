@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Parity hardening complete through Phase 51 with corrective verification pass and Track B/C hard closure. The parity capability manifest (145 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth. 97 drop-in, 20 compatible-with-warning, 14 native-equivalent, 9 intentional-non-parity, 5 unsupported. Stream-native transport composition: WS/Raw/H2 intermediate-hop chains upgraded from `compatible_with_warning` to `drop_in`.
+> Status: Track B/C release closure is implemented and locally verified. The parity capability manifest (148 capabilities, 5 tiers) at `docs/parity/pproxy_capability_manifest.toml` is the canonical source of truth: 103 `drop_in`, 16 `compatible_with_warning`, 15 `native_equivalent`, 9 `intentional_non_parity`, and 5 `unsupported`. Python outbound connections are native streams; the optional `eggress-pproxy-compat` distribution provides a clean top-level `import pproxy` namespace for the certified subset.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -21,7 +21,8 @@ eggress will preserve the compact URI-driven workflow of `pproxy` while using ex
 
 ## pproxy compatibility
 
-The `eggress-pproxy-compat` crate provides:
+The `eggress-pproxy-compat` crate and the separate Python compatibility
+distribution provide:
 
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
 - CLI flag translation with structured warnings for unsupported features
@@ -32,9 +33,11 @@ The `eggress-pproxy-compat` crate provides:
 - Python pproxy drop-in API (`PPProxyService`, `CompatibilityReport`, `start_pproxy` multi-mode) — Phase 40
 - Python `Server` class: pproxy-compatible server wrapper with full lifecycle, observability (`status()`, `sessions`, `last_error`), hot-reload, and resource management — Phase C3
 - **Phase C4 protocol/cipher/plugin objects**: `eggress.protocol`, `eggress.cipher`, `eggress.plugin`, and `eggress.wrapper` modules provide pproxy-compatible protocol objects, cipher objects with AEAD support, a bounded plugin callback bridge, and TLS/plugin/chain composition objects.
+- **Track B/C native outbound API**: `OutboundConnector.connect_tcp()` is exposed to Python as a GIL-releasing native stream with sync and asyncio wrappers. `ProxyConnection` uses this path directly and does not start a temporary local listener.
+- **Track B/C compatibility distribution**: install `eggress-pproxy-compat` separately to use `import pproxy`; it depends on the matching `eggress` wheel and `cryptography` cipher extra. The canonical `eggress` wheel never aliases `pproxy` through `sys.modules`.
 - `.pyi` type stubs for all public modules
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
-- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 145 capabilities across 5 categories with tier classification and machine-readable validation
+- Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 148 capabilities across 5 categories with tier classification and machine-readable validation
 - Reusable differential parity harness (`eggress-testkit::differential`) — 27 scenarios against pproxy 2.7.9 — Phase 41
 - Phase 42 corrective consistency pass: `CompatibilityReport` uses the five-tier manifest vocabulary; `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies to all listeners (matches pproxy); parity report can be regenerated (`--write-report`) and consistency-checked (`--check-report`) from the manifest
 
@@ -78,7 +81,13 @@ pproxy --version
 
 ```bash
 pip install eggress
+# Optional certified subset for unchanged `import pproxy` programs:
+pip install eggress-pproxy-compat
 ```
+
+The canonical `eggress` wheel intentionally does not install or alias the
+top-level `pproxy` namespace. Install the optional compatibility wheel only
+when that import path is required.
 
 ### Container image
 
@@ -135,7 +144,7 @@ Legend:
 - [x] TCP listener
 - [x] Unix-domain listener
 - [x] Direct TCP connector
-- [x] Native OutboundConnector (`eggress-embed::outbound`) — `from_toml()`, `from_pproxy_uri()`, `connect_tcp()`, `connect_tcp_timeout()`
+- [x] Native OutboundConnector (`eggress-embed::outbound`) — `from_toml()`, `from_pproxy_uri()`, `connect_tcp()`, `connect_tcp_timeout()`; Python sync/async native stream wrappers
 - [x] Replayable protocol sniff buffer
 - [x] Mixed inbound protocol autodetection
 - [x] Half-close-aware bidirectional relay
@@ -475,12 +484,13 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - [x] Python pproxy compat tests (45 passing)
 - [x] Python security/redaction tests
 - [x] Python concurrency tests
-- [x] Python packaging, import strategy, and distribution compatibility (Phase 32)
+- [x] Python packaging and canonical import strategy (Phase 32)
+- [x] Separate `eggress-pproxy-compat` wheel with clean-environment `import pproxy` smoke coverage (Track B/C)
 - [x] Structured diagnostics and exit codes (Phase 28) — `docs/cli/EXIT_CODES.md`, `docs/cli/PPROXY_CLI_INVENTORY.md`
 - [x] `--json` flag for machine-readable pproxy check output (Phase 28)
 - [x] CLI flag inventory: full parity documentation of translate/check/run subcommands (Phase 28)
 - [x] Compatibility manifest tracking all parity features with evidence levels (`tests/compat/pproxy_manifest.toml`)
-- [x] Authoritative parity capability manifest — 145 capabilities, 5 categories, machine-validated (Phase 37, updated Phase 51+corrective pass)
+- [x] Authoritative parity capability manifest — 148 capabilities, 5 categories, machine-validated (Track B/C closure)
 - [x] pproxy CLI native-equivalent closure — `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys` generate TOML (Phase 38)
 - [x] URI grammar chain semantics — `__` separator, modifiers, default port inference (Phase 39)
 - [x] Python pproxy drop-in API — `PPProxyService`, `CompatibilityReport`, `.pyi` stubs (Phase 40)

@@ -1,5 +1,9 @@
 # Release Notes: Phase 51 — Final Parity Certification
 
+> Historical release notes. Track B/C closure supersedes the 145-capability
+> snapshot; see `FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md` and the
+> generated `docs/parity/PPROXY_PARITY_REPORT.md` for current claims.
+
 **Date:** 2026-07-07
 **Phase:** 51 (Final pproxy Parity Certification)
 **Status:** Certified

@@ -880,31 +880,10 @@ upstream_group = "tcp-upstream"
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
 
-async fn start_dummy_listener() -> std::net::SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => break,
-            };
-            // Just hold the connection open; the RawHopHandler ignores it anyway
-            tokio::spawn(async move {
-                let mut buf = [0u8; 1];
-                let mut stream = stream;
-                let _ = stream.read(&mut buf).await;
-            });
-        }
-    });
-    addr
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn raw_upstream_routes_tcp_echo() {
     install_crypto();
     let echo_addr = start_tcp_echo().await;
-    let raw_endpoint = start_dummy_listener().await;
 
     let config = format!(
         r#"
@@ -917,7 +896,7 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "raw-up"
-uri = "raw://127.0.0.1:{raw_port}"
+uri = "raw://127.0.0.1:{echo_port}"
 
 [[upstream_groups]]
 id = "tcp-upstream"
@@ -929,7 +908,7 @@ fallback = "reject"
 id = "route-all"
 upstream_group = "tcp-upstream"
 "#,
-        raw_port = raw_endpoint.port()
+        echo_port = echo_addr.port()
     );
 
     let f = write_config(&config);
@@ -3084,15 +3063,7 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "chain"
-uri = "socks5://127.0.0.1:1080"
-
-[[upstreams.chain.hops]]
-protocols = ["http"]
-endpoint = {{ host = "127.0.0.1", port = {http_proxy_port} }}
-
-[[upstreams.chain.hops]]
-protocols = ["websocket"]
-endpoint = {{ host = "127.0.0.1", port = {ws_port} }}
+uri = "http://127.0.0.1:{http_proxy_port}__ws://127.0.0.1:{ws_port}"
 "#,
         http_proxy_port = http_proxy_addr.port(),
         ws_port = echo_addr.port(),
@@ -3188,13 +3159,9 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "chain"
-uri = "socks5://127.0.0.1:1080"
-
-[[upstreams.chain.hops]]
-protocols = ["raw"]
-endpoint = {{ host = "127.0.0.1", port = {raw_port} }}
+uri = "raw://127.0.0.1:{proxy_port}__socks5://127.0.0.1:{proxy_port}"
 "#,
-        raw_port = socks_addr.port(),
+        proxy_port = socks_addr.port(),
     );
 
     let f = write_config(&config);
@@ -3272,23 +3239,11 @@ protocols = ["socks5"]
 
 [[upstreams]]
 id = "chain-a"
-uri = "socks5://127.0.0.1:1080"
-
-[[upstreams.chain-a.hops]]
-protocols = ["h2"]
-endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
+uri = "h2://127.0.0.1:{h2_port}"
 
 [[upstreams]]
 id = "chain-b"
-uri = "socks5://127.0.0.1:1080"
-
-[[upstreams.chain-b.hops]]
-protocols = ["raw"]
-endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
-
-[[upstreams.chain-b.hops]]
-protocols = ["h2"]
-endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
+uri = "raw://127.0.0.1:{h2_port}__h2://127.0.0.1:{h2_port}"
 "#,
         h2_port = h2_proxy_addr.port(),
     );

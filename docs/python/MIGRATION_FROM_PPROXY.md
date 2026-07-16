@@ -1,5 +1,18 @@
 # Migrating from pproxy
 
+## Preserving the top-level import
+
+Applications that intentionally use the certified subset of the pproxy module
+can install the explicit compatibility distribution in a clean environment:
+
+```bash
+pip install eggress-pproxy-compat
+```
+
+This provides `import pproxy` without making the canonical `eggress` wheel
+shadow or alias the upstream namespace. It is not strict full pproxy parity;
+the canonical manifest documents warning and unsupported features.
+
 ## Quick migration with `start_pproxy()`
 
 The fastest way to migrate is to replace `pproxy.main()` with
@@ -82,6 +95,24 @@ with start_pproxy(["-l", "socks5://:1080", "-r", "http://proxy:8080"]) as handle
 | `-l` / `-r` CLI flags | Supported | Supported |
 | `-ul` / `-ur` (standalone UDP) | Supported | Supported |
 | Reverse proxy | Supported | Supported |
+
+## Native outbound client connections
+
+For code that previously used `Connection` as a client-side socket, eggress
+returns a native stream instead of exposing a temporary localhost listener:
+
+```python
+from eggress import ProxyConnection
+
+with ProxyConnection("direct://127.0.0.1:0") as connection:
+    stream = connection.tcp_connect("example.com", 443, timeout=10)
+    stream.sendall(b"GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n")
+    data = stream.recv(4096)
+    stream.close()
+```
+
+Use `await connection.atcp_connect(...)` for the asyncio wrapper. The native
+path has no listener bind to discover or clean up; UDP remains listener-based.
 
 ## What differs
 

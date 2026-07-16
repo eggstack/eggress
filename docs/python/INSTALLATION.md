@@ -10,6 +10,17 @@ The package is published on PyPI as `eggress`.
 pip install eggress
 ```
 
+For the separate top-level compatibility namespace:
+
+```bash
+pip install eggress-pproxy-compat
+```
+
+The compatibility distribution depends on the matching `eggress` release and
+installs `import pproxy` for the certified subset. Use a clean virtual
+environment; it is not intended to coexist with the unrelated upstream
+`pproxy` distribution.
+
 ## Install from a wheel file
 
 ```bash
@@ -67,6 +78,16 @@ The pproxy compatibility layer exposes:
 
 See [MIGRATION_FROM_PPROXY.md](MIGRATION_FROM_PPROXY.md) for migration
 guidance.
+
+## Native outbound client streams
+
+`eggress.OutboundConnector` and `eggress.ProxyConnection` provide native TCP
+streams without a temporary local listener. Install the optional cipher support
+when using the AEAD API directly:
+
+```bash
+pip install "eggress[cipher-api]"
+```
 
 ## See also
 

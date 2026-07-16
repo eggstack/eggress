@@ -7,6 +7,7 @@ outbound TCP connections through a proxy chain.
 from __future__ import annotations
 
 import gc
+import asyncio
 import socket
 import threading
 import warnings
@@ -20,8 +21,7 @@ pytest.importorskip("eggress._eggress")
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SOCKS5_URI = "socks5://127.0.0.1:0"
-_HTTP_URI = "http://127.0.0.1:0"
+_DIRECT_URI = "direct://127.0.0.1:0"
 
 
 def _start_echo_server() -> tuple[socket.socket, threading.Thread]:
@@ -78,7 +78,7 @@ class TestProxyConnectionContract:
     def test_constructor_accepts_uris(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         try:
             assert not conn.closed
         finally:
@@ -87,7 +87,7 @@ class TestProxyConnectionContract:
     def test_repr(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         try:
             r = repr(conn)
             assert "ProxyConnection" in r
@@ -98,7 +98,7 @@ class TestProxyConnectionContract:
     def test_repr_after_close(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         conn.close()
         r = repr(conn)
         assert "closed" in r
@@ -106,7 +106,7 @@ class TestProxyConnectionContract:
     def test_bool_when_open(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         try:
             assert bool(conn)
         finally:
@@ -115,7 +115,7 @@ class TestProxyConnectionContract:
     def test_bool_when_closed(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         conn.close()
         assert not bool(conn)
 
@@ -131,7 +131,7 @@ class TestProxyConnectionLifecycle:
     def test_close_is_idempotent(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         conn.close()
         conn.close()  # should not raise
         assert conn.closed
@@ -139,25 +139,26 @@ class TestProxyConnectionLifecycle:
     def test_context_manager_closes(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        with ProxyConnection(_SOCKS5_URI) as conn:
+        with ProxyConnection(_DIRECT_URI) as conn:
             assert not conn.closed
         assert conn.closed
 
-    def test_tcp_connect_returns_socket(self):
+    def test_tcp_connect_returns_native_stream_without_listener(self):
         from eggress.pproxy_connection import ProxyConnection
 
         echo_addr, echo_thread = _start_echo_server()
         try:
-            conn = ProxyConnection(_SOCKS5_URI)
+            conn = ProxyConnection(_DIRECT_URI)
             try:
-                sock = conn.tcp_connect(echo_addr[0], echo_addr[1], timeout=5.0)
+                stream = conn.tcp_connect(echo_addr[0], echo_addr[1], timeout=5.0)
                 try:
-                    assert isinstance(sock, socket.socket)
-                    sock.sendall(b"hello")
-                    data = sock.recv(1024)
+                    assert not isinstance(stream, socket.socket)
+                    assert conn.addresses == {}
+                    stream.sendall(b"hello")
+                    data = stream.recv(1024)
                     assert data == b"hello"
                 finally:
-                    sock.close()
+                    stream.close()
             finally:
                 conn.close()
         finally:
@@ -166,7 +167,7 @@ class TestProxyConnectionLifecycle:
     def test_tcp_connect_after_close_raises(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         conn.close()
         with pytest.raises(RuntimeError, match="closed"):
             conn.tcp_connect("127.0.0.1", 80)
@@ -174,7 +175,7 @@ class TestProxyConnectionLifecycle:
     def test_del_warns_on_unclosed(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             del conn
@@ -185,8 +186,8 @@ class TestProxyConnectionLifecycle:
     def test_multiple_connections_independent(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn1 = ProxyConnection(_SOCKS5_URI)
-        conn2 = ProxyConnection(_SOCKS5_URI)
+        conn1 = ProxyConnection(_DIRECT_URI)
+        conn2 = ProxyConnection(_DIRECT_URI)
         try:
             assert not conn1.closed
             assert not conn2.closed
@@ -200,20 +201,20 @@ class TestProxyConnectionLifecycle:
         """Verify the same ProxyConnection can make multiple connections."""
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         try:
             echo1_addr, echo1_thread = _start_echo_server()
             echo2_addr, echo2_thread = _start_echo_server()
             try:
-                sock1 = conn.tcp_connect(echo1_addr[0], echo1_addr[1], timeout=5.0)
-                sock1.sendall(b"first")
-                assert sock1.recv(1024) == b"first"
-                sock1.close()
+                stream1 = conn.tcp_connect(echo1_addr[0], echo1_addr[1], timeout=5.0)
+                stream1.sendall(b"first")
+                assert stream1.recv(1024) == b"first"
+                stream1.close()
 
-                sock2 = conn.tcp_connect(echo2_addr[0], echo2_addr[1], timeout=5.0)
-                sock2.sendall(b"second")
-                assert sock2.recv(1024) == b"second"
-                sock2.close()
+                stream2 = conn.tcp_connect(echo2_addr[0], echo2_addr[1], timeout=5.0)
+                stream2.sendall(b"second")
+                assert stream2.recv(1024) == b"second"
+                stream2.close()
             finally:
                 echo1_thread.join(timeout=5)
                 echo2_thread.join(timeout=5)
@@ -223,7 +224,7 @@ class TestProxyConnectionLifecycle:
     def test_addresses_empty_before_start(self):
         from eggress.pproxy_connection import ProxyConnection
 
-        conn = ProxyConnection(_SOCKS5_URI)
+        conn = ProxyConnection(_DIRECT_URI)
         try:
             # Addresses should be populated after first tcp_connect
             # but may be empty before any connection is made
@@ -231,3 +232,30 @@ class TestProxyConnectionLifecycle:
             assert isinstance(addrs, dict)
         finally:
             conn.close()
+
+    def test_async_native_stream_does_not_create_listener(self):
+        from eggress.pproxy_connection import ProxyConnection
+
+        echo_addr, echo_thread = _start_echo_server()
+
+        async def exercise() -> None:
+            conn = ProxyConnection(_DIRECT_URI)
+            try:
+                stream = await conn.atcp_connect(
+                    echo_addr[0], echo_addr[1], timeout=5.0
+                )
+                try:
+                    stream.write(b"async")
+                    await stream.drain()
+                    assert await stream.read(1024) == b"async"
+                finally:
+                    stream.close()
+                    await stream.wait_closed()
+                assert conn.addresses == {}
+            finally:
+                conn.close()
+
+        try:
+            asyncio.run(exercise())
+        finally:
+            echo_thread.join(timeout=5)

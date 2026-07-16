@@ -7,7 +7,7 @@ or document supported-but-unverified functionality.
 For the canonical per-feature evidence table with test commands, see
 [COMPATIBILITY_EVIDENCE.md](COMPATIBILITY_EVIDENCE.md).
 
-For the machine-validated pproxy capability manifest (145 capabilities, 5
+For the machine-validated pproxy capability manifest (148 capabilities, 5
 tiers: `drop_in`, `compatible_with_warning`, `native_equivalent`,
 `intentional_non_parity`, `unsupported`), see
 [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
@@ -22,7 +22,7 @@ and verified with `--check-report`.
 
 This matrix uses the canonical manifest tier vocabulary. See
 [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
-for the authoritative 145-capability manifest with per-layer evidence tracking.
+for the authoritative 148-capability manifest with per-layer evidence tracking.
 
 | Tier | Meaning |
 |------|---------|

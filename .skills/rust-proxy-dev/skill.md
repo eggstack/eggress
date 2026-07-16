@@ -240,8 +240,17 @@ To test the wheel in a clean environment:
 
 ### Import strategy and distribution
 
-The canonical PyPI package is `eggress`. The import path is `eggress` (not `pproxy`).
-`eggress.pproxy` provides compatibility helpers. No top-level `pproxy` shim is included.
+The canonical PyPI package is `eggress`. The import path is `eggress`, and the
+canonical wheel never aliases the top-level `pproxy` namespace. `eggress.pproxy`
+provides bundled translation/service helpers. The separate
+`python-pproxy-compat/` project publishes `eggress-pproxy-compat` for the
+certified subset and installs `import pproxy` only when explicitly requested.
+
+`OutboundConnector` is exposed through `eggress.OutboundConnector` and returns
+native `OutboundStream`/`AsyncOutboundStream` wrappers. `ProxyConnection` uses
+that path directly; do not implement client connections by starting a
+temporary local listener. The `eggress[cipher-api]` extra and compatibility
+wheel dependency keep the supported AEAD API deterministic.
 
 Key metadata:
 - `py.typed` PEP 561 marker included
@@ -253,6 +262,10 @@ Key metadata:
 ```bash
 python -m pytest python/tests/test_wheel_import_smoke.py -v
 ```
+
+For the compatibility wheel, build it separately and import-test it in a clean
+environment with both the matching `eggress` wheel and the compat wheel
+installed. Never validate it by mutating `sys.modules` in the test process.
 
 See `docs/adr/ADR_python_import_and_distribution_strategy.md` for the ADR.
 See `docs/python/PACKAGING.md` and `docs/python/INSTALLATION.md` for packaging and installation details.
