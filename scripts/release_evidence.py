@@ -320,10 +320,14 @@ def main() -> int:
     guard_violations: list[str] = []
     if dirty:
         guard_violations.append("dirty working tree")
-    if args.expected_commit and head != args.expected_commit:
-        guard_violations.append(
-            f"HEAD ({head}) != expected ({args.expected_commit})"
-        )
+    if args.expected_commit:
+        expected = args.expected_commit
+        if expected != head and _run("git", "rev-parse", "--verify", expected + "^{commit}") == head:
+            expected = head
+        if head != expected:
+            guard_violations.append(
+                f"HEAD ({head}) != expected ({args.expected_commit})"
+            )
     summary = (
         "# Release evidence summary\n\n"
         f"- Eggress commit: `{head}`\n"
