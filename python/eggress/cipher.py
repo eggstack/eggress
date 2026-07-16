@@ -165,6 +165,18 @@ class AEADCipher(BaseCipher):
             self._current_nonce = os.urandom(self.NONCE_LENGTH)
         self._nonce = self._current_nonce
 
+    def setup_iv(self, iv: Optional[bytes] = None) -> None:
+        if iv is None:
+            iv = os.urandom(self.NONCE_LENGTH)
+        super().setup_iv(iv)
+        self.setup_nonce(iv)
+
+    def __copy__(self) -> "AEADCipher":
+        cls = self.__class__
+        new = cls.__new__(cls)
+        new.__dict__.update(self.__dict__)
+        return new
+
     def _make_cipher(self) -> Any:
         """Create the underlying AEAD cipher primitive.  Override in subclasses."""
         raise NotImplementedError
