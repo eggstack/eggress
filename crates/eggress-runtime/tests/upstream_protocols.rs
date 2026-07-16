@@ -3064,62 +3064,6 @@ upstream_group = "tcp-upstream"
 
 // ===== Additional chain composition tests =====
 
-/// Start an HTTP CONNECT proxy that forwards to the target.
-async fn start_http_connect_proxy() -> std::net::SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        loop {
-            let (mut stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => break,
-            };
-            tokio::spawn(async move {
-                let mut buf = vec![0u8; 4096];
-                let mut pos = 0;
-                loop {
-                    let n = stream.read(&mut buf[pos..]).await.unwrap_or(0);
-                    if n == 0 {
-                        return;
-                    }
-                    pos += n;
-                    if buf[..pos].windows(2).any(|w| w == b"\r\n\r\n") {
-                        break;
-                    }
-                }
-                let request = String::from_utf8_lossy(&buf[..pos]);
-                let first_line = request.lines().next().unwrap_or("");
-                let parts: Vec<&str> = first_line.split_whitespace().collect();
-                if parts.len() < 2 {
-                    let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await;
-                    return;
-                }
-                let target_addr = parts[1];
-                let target = match tokio::net::TcpStream::connect(target_addr).await {
-                    Ok(t) => t,
-                    Err(_) => {
-                        let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
-                        return;
-                    }
-                };
-                let _ = stream
-                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                    .await;
-                let (mut cr, mut cw) = stream.into_split();
-                let (mut tr, mut tw) = target.into_split();
-                let c2t = tokio::spawn(async move {
-                    let _ = tokio::io::copy(&mut cr, &mut tw).await;
-                });
-                let t2c = tokio::spawn(async move {
-                    let _ = tokio::io::copy(&mut tr, &mut cw).await;
-                });
-                let _ = tokio::join!(c2t, t2c);
-            });
-        }
-    });
-    addr
-}
-
 /// Prove that the HTTP→WS chain performs both handshakes over the same stream.
 ///
 /// HTTP CONNECT first establishes a tunnel to the WS endpoint, then the
@@ -3155,9 +3099,11 @@ endpoint = {{ host = "127.0.0.1", port = {ws_port} }}
     );
 
     let f = write_config(&config);
-    let state = eggress_runtime::ServiceSupervisor::start_from_file(f.path())
-        .await
-        .expect("start");
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
     wait_ready(&state).await;
 
     let socks_addr = {
@@ -3192,7 +3138,7 @@ endpoint = {{ host = "127.0.0.1", port = {ws_port} }}
 
     // Perform WebSocket handshake over the SOCKS5→HTTP→WS chain
     let url = format!("ws://127.0.0.1:{}", echo_addr.port());
-    let ws_stream = tokio_tungstenite::client_async(url, stream)
+    let (ws_stream, _response) = tokio_tungstenite::client_async(url, stream)
         .await
         .expect("ws handshake");
     let (mut sink, mut source) = ws_stream.split();
@@ -3200,7 +3146,7 @@ endpoint = {{ host = "127.0.0.1", port = {ws_port} }}
     // Send a binary message through the WS→HTTP→SOCKS5 chain
     let test_data = b"hello-via-http-ws-chain";
     sink.send(tokio_tungstenite::tungstenite::Message::Binary(
-        test_data.to_vec(),
+        test_data.as_slice().into(),
     ))
     .await
     .expect("send");
@@ -3213,12 +3159,13 @@ endpoint = {{ host = "127.0.0.1", port = {ws_port} }}
         .expect("ws error");
     match msg {
         tokio_tungstenite::tungstenite::Message::Binary(data) => {
-            assert_eq!(&data, test_data);
+            assert_eq!(data.as_ref(), test_data);
         }
         other => panic!("expected Binary, got {:?}", other),
     }
 
-    state.cancel_token.cancel();
+    token.cancel();
+    let _ = jh.await;
 }
 
 /// Prove that raw intermediate-hop handler passes through the stream.
@@ -3251,9 +3198,11 @@ endpoint = {{ host = "127.0.0.1", port = {raw_port} }}
     );
 
     let f = write_config(&config);
-    let state = eggress_runtime::ServiceSupervisor::start_from_file(f.path())
-        .await
-        .expect("start");
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
     wait_ready(&state).await;
 
     let listener_addr = {
@@ -3270,15 +3219,15 @@ endpoint = {{ host = "127.0.0.1", port = {raw_port} }}
     stream.read_exact(&mut resp).await.unwrap();
     assert_eq!(resp, [0x05, 0x00]);
 
-    // SOCKS5 CONNECT to the raw endpoint (which is a SOCKS5 proxy itself)
-    let ip_octets = match socks_addr.ip() {
+    // SOCKS5 CONNECT to the echo server (via raw → SOCKS5 proxy → echo)
+    let ip_octets = match echo_addr.ip() {
         std::net::IpAddr::V4(ip) => ip.octets(),
         _ => panic!("expected IPv4"),
     };
     stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
     stream.write_all(&ip_octets).await.unwrap();
     stream
-        .write_all(&socks_addr.port().to_be_bytes())
+        .write_all(&echo_addr.port().to_be_bytes())
         .await
         .unwrap();
 
@@ -3286,8 +3235,7 @@ endpoint = {{ host = "127.0.0.1", port = {raw_port} }}
     stream.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply[1], 0x00, "SOCKS5 CONNECT should succeed");
 
-    // Now send data through the raw passthrough — the inner SOCKS5 proxy
-    // should relay to the echo server.
+    // Now send data through the raw passthrough
     let payload = b"hello-via-raw-passthrough";
     stream.write_all(payload).await.unwrap();
 
@@ -3299,7 +3247,8 @@ endpoint = {{ host = "127.0.0.1", port = {raw_port} }}
     .expect("timeout");
     assert_eq!(&buf[..n], payload);
 
-    state.cancel_token.cancel();
+    token.cancel();
+    let _ = jh.await;
 }
 
 /// Prove that H2 pool isolates connections by hop_index.
@@ -3345,9 +3294,11 @@ endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
     );
 
     let f = write_config(&config);
-    let state = eggress_runtime::ServiceSupervisor::start_from_file(f.path())
-        .await
-        .expect("start");
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
     wait_ready(&state).await;
 
     let listener_addr = {
@@ -3423,5 +3374,6 @@ endpoint = {{ host = "127.0.0.1", port = {h2_port} }}
     assert_eq!(&buf[..n], payload_b);
 
     drop(stream_b);
-    state.cancel_token.cancel();
+    token.cancel();
+    let _ = jh.await;
 }
