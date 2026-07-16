@@ -75,6 +75,8 @@ def test_import_cost():
         text=True,
         timeout=10,
     )
+    if result.returncode != 0 and "incompatible architecture" in result.stderr:
+        pytest.skip("native extension architecture mismatch in subprocess")
     assert result.returncode == 0, (
         f"subprocess import failed: {result.stderr!r}"
     )

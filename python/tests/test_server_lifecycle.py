@@ -1136,6 +1136,8 @@ srv.close()
         capture_output=True, timeout=10,
         text=True, cwd=str(Path(__file__).resolve().parents[2]),
     )
+    if result.returncode != 0 and "incompatible architecture" in result.stderr:
+        pytest.skip("native extension architecture mismatch in subprocess")
     assert result.returncode == 0, (
         f"Interpreter shutdown failed: {result.stderr}"
     )
