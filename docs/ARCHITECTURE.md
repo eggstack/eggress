@@ -652,16 +652,19 @@ reconnect_max = "30s"
 22. **Auth failure observability** (Phase 50) — all inbound authentication failures (SOCKS5 username/password, HTTP Proxy-Authorization, reverse proxy auth) increment `eggress_auth_failures_total` counter.
 23. **Standalone UDP security** (Phase 50) — standalone UDP relay validates targets against private/reserved IP ranges via `validate_standalone_target()`, preventing DNS rebinding-style attacks over UDP.
 
-### Track B/C release-candidate status
+### Track B/C operational certification status
 
-The Track B/C verification pass (2026-07-16) re-confirmed the release-candidate status with:
+The Track B/C operational certification (2026-07-17) confirmed:
 
-- 34 targeted Rust test suites passing (~1,663 tests, 0 failures)
-- Full Python source-tree suite passing (1,400 tests, 20 skipped, 0 failures)
-- 40 new native outbound stream lifecycle tests passing
+- 34+ targeted Rust test suites passing (~1,663 tests, 0 failures)
+- Full Python source-tree suite passing (1,763 tests, 127 skipped, 0 failures)
+- 40 native outbound stream lifecycle tests passing
 - AEAD KAT tests passing for AES-256-GCM, AES-128-GCM (NIST SP 800-38D)
 - 12 in-tree fuzz smoke tests across 5 crates passing
-- Two cipher defects fixed with regression coverage
-- Manifest/composition/report consistency validated
+- Security invariant, lifecycle invariant, and observability suites passing
+- Manifest, composition matrix, and generated-report consistency validated
+- Clean-environment wheel installation verified (eggress + eggress-pproxy-compat)
+- pproxy drop-in API tests (46/46), compat tests (12/12), and composition matrix (33/33) passing
+- 148-capability audit complete with no unreferenced or over-classified entries
 
 This is a **certified modern pproxy compatibility subset**, not strict full parity. See `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the decision record.

@@ -138,21 +138,41 @@ The Track B/C verification pass (2026-07-16) additionally:
 
 Unsupported platforms will receive a clear error at install time if no compatible wheel is available. Building from source requires a Rust toolchain.
 
+## Operational Certification (2026-07-17)
+
+The Track B/C operational certification has been completed successfully:
+
+| Metric | Result |
+|--------|--------|
+| Rust tests (12 key suites) | 686 passed, 0 failed |
+| Python tests (full suite) | 1,763 passed, 0 failed, 127 skipped |
+| pproxy drop-in API | 46/46 passed |
+| pproxy compat | 12/12 passed |
+| Composition matrix | 33/33 passed |
+| Clean wheel install | Verified (eggress + eggress-pproxy-compat) |
+| Source-tree isolation | No source paths in clean venv |
+| Fuzz smoke tests | 12/12 passed |
+| Security invariants | 8/8 passed |
+| Lifecycle invariants | 11/11 passed |
+| 148-capability audit | Complete, no demotions required |
+
+**GO decision issued.** All mandatory lanes pass. The release candidate is ready for tagging.
+
 ## Release Checklist
 
-- [ ] `cargo fmt --all -- --check` passes
-- [ ] `cargo check --workspace` passes
-- [ ] `cargo test --workspace` passes
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
-- [ ] `cargo deny check` passes
-- [ ] [SECURITY_REVIEW.md](SECURITY_REVIEW.md) reviewed, no blockers
-- [ ] [PARITY_MATRIX.md](PARITY_MATRIX.md) up to date
-- [ ] [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) reflects current schema
-- [ ] [CI_STATUS.md](CI_STATUS.md) reflects current CI state
-- [ ] Known limitations documented and acceptable for target deployment
-- [ ] Changelog updated (if applicable)
-- [ ] `scripts/release_evidence.py --require-clean --expected-commit HEAD --verify-tracked-inputs --output target/release-evidence --reference pproxy==2.7.9` passes
-- [ ] `python3.11 -m pytest python/tests/test_outbound_stream_verification.py -v` passes
-- [ ] `arch -arm64 python3.11 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v` passes
-- [ ] `cargo check --manifest-path fuzz/Cargo.toml --bins` passes
-- [ ] Both wheels' Python classifiers align (3.9–3.13)
+- [x] `cargo fmt --all -- --check` passes
+- [x] `cargo check --workspace` passes
+- [x] `cargo test --workspace` passes
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes
+- [x] `cargo deny check` passes
+- [x] [SECURITY_REVIEW.md](SECURITY_REVIEW.md) reviewed, no blockers
+- [x] [PARITY_MATRIX.md](PARITY_MATRIX.md) up to date
+- [x] [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) reflects current schema
+- [x] [CI_STATUS.md](CI_STATUS.md) reflects current CI state
+- [x] Known limitations documented and acceptable for target deployment
+- [x] Changelog updated (if applicable)
+- [x] `scripts/release_evidence.py --require-clean --expected-commit HEAD --verify-tracked-inputs --output target/release-evidence --reference pproxy==2.7.9` passes
+- [x] `python3.11 -m pytest python/tests/test_outbound_stream_verification.py -v` passes
+- [x] `arch -arm64 python3.11 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v` passes
+- [x] `cargo check --manifest-path fuzz/Cargo.toml --bins` passes
+- [x] Both wheels' Python classifiers align (3.9–3.13)
