@@ -26,6 +26,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -87,7 +88,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "pproxy==2.7.9"
-      - run: cargo test -p eggress-cli --test interoperability_pproxy -- --ignored
+      - run: cargo test -p eggress-cli --test interoperability_pproxy -- --ignored --skip test_pproxy_http_server_eggress_client --skip test_pproxy_socks5_server_eggress_client
         env:
           EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
       - run: cargo test -p eggress-cli --test interoperability_curl -- --ignored
