@@ -132,14 +132,24 @@ async fn test_original_destination_recovery_mock() {
         .await
         .unwrap();
     let result = eggress_server::listener::transparent::get_original_destination(&stream);
-    assert!(
-        matches!(
-            result,
-            Err(eggress_server::listener::transparent::TransparentError::NoOriginalDestination)
+    // On kernels with SO_ORIGINAL_DST support, the call may succeed and return
+    // the listener's address even without iptables redirect. Accept both
+    // NoOriginalDestination and Ok(addr) as valid outcomes.
+    match result {
+        Err(eggress_server::listener::transparent::TransparentError::NoOriginalDestination) => {}
+        Ok(addr) => {
+            // Kernel returned original destination — valid on some configurations
+            assert_eq!(
+                addr,
+                listener.local_addr().unwrap(),
+                "returned address should match listener"
+            );
+        }
+        other => panic!(
+            "expected NoOriginalDestination or Ok(listener_addr), got: {:?}",
+            other
         ),
-        "expected NoOriginalDestination without iptables redirect, got: {:?}",
-        result
-    );
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

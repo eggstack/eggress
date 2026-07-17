@@ -296,6 +296,7 @@ fn chrono_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::command_runner::MockCommandRunner;
     use std::collections::HashMap;
 
