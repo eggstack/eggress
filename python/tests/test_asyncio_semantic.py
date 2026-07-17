@@ -270,7 +270,7 @@ class TestNativeAwaitableBridge:
 
                 def _slow():
                     event.set()
-                    time.sleep(30)
+                    time.sleep(2)
                     return "should not reach"
 
                 task = asyncio.create_task(bridge.run(_slow))
@@ -349,7 +349,7 @@ class TestCancellationSemantics:
 
                 def _blocker():
                     event.set()
-                    time.sleep(60)
+                    time.sleep(2)
 
                 task = asyncio.create_task(bridge.run(_blocker))
                 await asyncio.get_event_loop().run_in_executor(None, event.wait)
@@ -1368,7 +1368,7 @@ class TestCancellationSemanticsExtended:
 
                 def _blocker():
                     event.set()
-                    time.sleep(60)
+                    time.sleep(2)
                     return "unreachable"
 
                 # Launch 3 tasks
