@@ -270,11 +270,22 @@ mod tests {
             .await
             .unwrap();
         let result = get_original_destination(&stream);
-        assert!(
-            matches!(result, Err(TransparentError::NoOriginalDestination)),
-            "expected NoOriginalDestination without iptables redirect, got: {:?}",
-            result
-        );
+        // Some kernels return the original destination via SO_ORIGINAL_DST even
+        // without iptables redirect. Accept both outcomes.
+        match result {
+            Err(TransparentError::NoOriginalDestination) => {}
+            Ok(addr) => {
+                assert_eq!(
+                    addr,
+                    listener.local_addr().unwrap(),
+                    "returned address should match listener"
+                );
+            }
+            other => panic!(
+                "expected NoOriginalDestination or Ok(listener_addr), got: {:?}",
+                other
+            ),
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -327,7 +338,7 @@ mod tests {
             let sa = &mut *(&mut storage as *mut _ as *mut libc::sockaddr_in);
             sa.sin_family = libc::AF_INET as u16;
             sa.sin_port = 8080u16.to_be();
-            sa.sin_addr.s_addr = u32::from_be_bytes([192, 0, 2, 7]);
+            sa.sin_addr.s_addr = u32::from_ne_bytes([192, 0, 2, 7]);
         }
         let len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
         let result = parse_sockaddr(&storage, len).expect("IPv4 should parse");
