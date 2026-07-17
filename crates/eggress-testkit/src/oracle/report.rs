@@ -415,7 +415,10 @@ fn truncate(s: &str, max_len: usize) -> String {
 }
 
 fn detect_pproxy_version() -> Option<String> {
-    let python = crate::differential::find_python_binary();
+    let python = match std::panic::catch_unwind(crate::differential::find_python_binary) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
     Command::new(&python)
         .args([
             "-c",

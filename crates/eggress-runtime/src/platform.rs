@@ -386,6 +386,7 @@ mod tests {
         );
 
         // UnixDomainSockets has no override, falls through to real check
+        #[allow(unused_variables)]
         let real_status = check_capability_with_overrides(
             PlatformCapability::UnixDomainSockets,
             Some(&overrides),
