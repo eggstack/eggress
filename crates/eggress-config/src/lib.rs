@@ -1847,8 +1847,8 @@ protocols = ["http"]
 cert = "{}"
 key = "{}"
 "#,
-            cert_file.path().display(),
-            key_file.path().display()
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
         );
         let f = write_config(&config);
         let path = f.path().to_str().unwrap();
@@ -1906,8 +1906,8 @@ protocols = ["http"]
 cert = "{}"
 key = "{}"
 "#,
-            cert_file.path().display(),
-            key_file.path().display()
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
         );
         let f = write_config(&config);
         let path = f.path().to_str().unwrap();
