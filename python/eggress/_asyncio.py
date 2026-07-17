@@ -210,11 +210,22 @@ class CloseWaiter:
     def __init__(self) -> None:
         self._closed = False
         self._closing = False
-        self._event = asyncio.Event()
+        self._event: Optional[asyncio.Event] = None
         self._result: Any = None
         self._exception: Optional[BaseException] = None
         self._lock = threading.Lock()
         self._cleanup_task: Optional[asyncio.Task] = None
+
+    def _get_event(self) -> asyncio.Event:
+        """Return the internal event, creating it lazily.
+
+        ``asyncio.Event()`` requires a running loop on Python < 3.10.
+        Lazy creation avoids ``RuntimeError`` when the waiter is
+        instantiated outside an async context.
+        """
+        if self._event is None:
+            self._event = asyncio.Event()
+        return self._event
 
     @property
     def is_closed(self) -> bool:
@@ -236,14 +247,15 @@ class CloseWaiter:
             self._closed = True
             self._closing = False
         # Signal the event from the correct thread if possible.
+        event = self._get_event()
         try:
             loop = get_running_loop()
             if loop is not None and loop.is_running():
-                loop.call_soon_threadsafe(self._event.set)
+                loop.call_soon_threadsafe(event.set)
             else:
-                self._event.set()
+                event.set()
         except RuntimeError:
-            self._event.set()
+            event.set()
 
     def mark_failed(self, exc: BaseException) -> None:
         """Mark the close operation as failed with an exception.
@@ -256,14 +268,15 @@ class CloseWaiter:
             self._exception = exc
             self._closed = True
             self._closing = False
+        event = self._get_event()
         try:
             loop = get_running_loop()
             if loop is not None and loop.is_running():
-                loop.call_soon_threadsafe(self._event.set)
+                loop.call_soon_threadsafe(event.set)
             else:
-                self._event.set()
+                event.set()
         except RuntimeError:
-            self._event.set()
+            event.set()
 
     async def close(self, cleanup: Optional[Callable[[], Any]] = None) -> None:
         """Initiate close and wait for cleanup to finish.
@@ -275,7 +288,7 @@ class CloseWaiter:
         with self._lock:
             if self._closing:
                 # Another close() is in progress — just wait.
-                return self._event.wait()
+                return self._get_event().wait()
             self._closing = True
 
         if cleanup is not None:
@@ -295,7 +308,7 @@ class CloseWaiter:
         Returns the result passed to ``mark_closed()``, or re-raises the
         exception passed to ``mark_failed()``.
         """
-        await self._event.wait()
+        await self._get_event().wait()
         if self._exception is not None:
             raise self._exception
         return self._result

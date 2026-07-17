@@ -96,7 +96,7 @@ async fn handle_client_datagram(
 
     let selected = match config.routing.route(&route_request) {
         Ok(selected) => selected,
-        Err(RouteError::Rejected { rule: _, .. }) => {
+        Err(RouteError::Rejected { .. }) => {
             config.udp_metrics.record_dropped();
             return Ok(());
         }

@@ -736,6 +736,7 @@ impl ServiceSupervisor {
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
+        #[allow(unused_variables)]
         let config_path = self.config_path.clone();
         let routing = self.state.routing.clone();
         let listener_cancel = self.listener_cancel.clone();
@@ -743,6 +744,7 @@ impl ServiceSupervisor {
         let health_cancel = self.health_cancel.clone();
         let admin_cancel = self.admin_cancel.clone();
         let cancel = self.cancel.clone();
+        #[allow(unused_variables)]
         let metrics = self.state.metrics.clone();
         let readiness = self.state.readiness.clone();
         let admin_state_ref = self.state.clone();
@@ -752,6 +754,7 @@ impl ServiceSupervisor {
         let connection_tasks = self.connection_tasks.clone();
         let admin_tasks = self.admin_tasks.clone();
         let health = std::sync::Arc::new(std::sync::Mutex::new(self.health.take()));
+        #[allow(unused_variables)]
         let health_clone = health.clone();
         let health_for_run = health.clone();
         let snapshot = self.state.snapshot.clone();
@@ -816,6 +819,7 @@ impl ServiceSupervisor {
                 let connection_limit = lcfg.connection_limit.unwrap_or(1024) as usize;
 
                 // Handle Unix domain socket listeners separately
+                #[allow(unused_variables)]
                 if let Some(ref unix_cfg) = lcfg.unix {
                     #[cfg(unix)]
                     {
