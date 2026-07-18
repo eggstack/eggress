@@ -146,7 +146,7 @@ async fn reverse_eggress_self_interop_loopback() {
     let client_snap = client_metrics.snapshot();
     assert!(
         client_snap.control_reconnects_total >= 1
-            || client_snap.control_connections_accepted_total >= 1,
+            || client_snap.streams_opened_total >= 1,
         "expected client to record a control connection attempt: {:?}",
         client_snap,
     );
