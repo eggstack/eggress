@@ -14,11 +14,6 @@ fn write_config(content: &str) -> NamedTempFile {
     f
 }
 
-#[cfg(unix)]
-fn toml_path(path: &std::path::Path) -> String {
-    path.display().to_string().replace('\\', "/")
-}
-
 fn unix_socket_path(name: &str) -> PathBuf {
     let dir = std::env::temp_dir();
     let id: u64 = fastrand::u64(..);
