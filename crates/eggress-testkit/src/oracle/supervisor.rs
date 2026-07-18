@@ -300,6 +300,7 @@ mod tests {
         assert!(exit.exit_code.is_none() || exit.exit_code != Some(0));
     }
 
+    #[cfg(unix)]
     #[test]
     fn bounded_capture_limits_output() {
         let config = SupervisorConfig {

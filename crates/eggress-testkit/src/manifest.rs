@@ -1226,7 +1226,7 @@ mod tests {
                             .unwrap_or(false);
                     }
                     // Bare token: accept if stem or full path or body matches.
-                    let path_str = path.to_string_lossy();
+                    let path_str = path.to_string_lossy().replace('\\', "/");
                     let path_stem = path
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
