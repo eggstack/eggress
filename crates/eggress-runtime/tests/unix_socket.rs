@@ -14,6 +14,11 @@ fn write_config(content: &str) -> NamedTempFile {
     f
 }
 
+#[cfg(unix)]
+fn toml_path(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 fn unix_socket_path(name: &str) -> PathBuf {
     let dir = std::env::temp_dir();
     let id: u64 = fastrand::u64(..);
@@ -127,6 +132,7 @@ async fn test_unix_listener_no_unlink_existing_fails_on_stale() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_unix_listener_via_config() {
     let path = unix_socket_path("config");
