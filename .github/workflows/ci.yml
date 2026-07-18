@@ -93,4 +93,4 @@ jobs:
           EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
       - run: cargo test -p eggress-cli --test interoperability_curl -- --ignored
         env:
-          EGRESS_REQUIRE_EXTERNAL_INTEROP: "1"
+          EGRESS_REQUIRE_CURL_INTEROP: "1"
