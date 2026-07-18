@@ -7,6 +7,10 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+fn toml_path(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 struct ShutdownGuard {
     token: tokio_util::sync::CancellationToken,
 }
@@ -206,8 +210,8 @@ async fn trojan_auth_rejected() {
     std::fs::write(key_file.path(), &key_pem).unwrap();
 
     let config = trojan_config(
-        &cert_file.path().display().to_string(),
-        &key_file.path().display().to_string(),
+        &toml_path(cert_file.path()),
+        &toml_path(key_file.path()),
         password,
         "",
     );
@@ -274,8 +278,8 @@ async fn trojan_fallback_on_auth_failure() {
     std::fs::write(key_file.path(), &key_pem).unwrap();
 
     let config = trojan_config(
-        &cert_file.path().display().to_string(),
-        &key_file.path().display().to_string(),
+        &toml_path(cert_file.path()),
+        &toml_path(key_file.path()),
         password,
         &format!("fallback = \"{}\"", fallback_echo),
     );
@@ -377,8 +381,8 @@ password = "{password}"
 bind = "127.0.0.1:0"
 enabled = true
 "#,
-        cert = cert_file.path().display(),
-        key = key_file.path().display(),
+        cert = toml_path(cert_file.path()),
+        key = toml_path(key_file.path()),
     );
 
     let f = write_config(&config);
@@ -455,8 +459,8 @@ async fn trojan_correct_password() {
     std::fs::write(key_file.path(), &key_pem).unwrap();
 
     let config = trojan_config(
-        &cert_file.path().display().to_string(),
-        &key_file.path().display().to_string(),
+        &toml_path(cert_file.path()),
+        &toml_path(key_file.path()),
         password,
         "",
     );
