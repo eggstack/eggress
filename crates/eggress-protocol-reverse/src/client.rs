@@ -256,8 +256,11 @@ impl ReverseClient {
         let session_result: Result<(), ProtocolError> = match resolution {
             TargetResolution::Connect { host, port } => {
                 let target_addr = format!("{}:{}", host, port);
-                match TcpStream::connect(&target_addr).await {
-                    Ok(target_stream) => {
+                let connect_timeout = Duration::from_secs(5);
+                let connect_result =
+                    tokio::time::timeout(connect_timeout, TcpStream::connect(&target_addr)).await;
+                match connect_result {
+                    Ok(Ok(target_stream)) => {
                         info!(
                             target = %target_addr,
                             state = ?ControlState::Ready,
@@ -271,11 +274,25 @@ impl ReverseClient {
                         )
                         .await
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         warn!(
                             target = %target_addr,
                             error = %e,
                             "failed to connect to target"
+                        );
+                        if let Some(ref m) = self.metrics {
+                            m.record_error(&format!("target connect failed: {e}"));
+                        }
+                        Err(ProtocolError::Io(e))
+                    }
+                    Err(_elapsed) => {
+                        let e = std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("target connect timed out: {target_addr}"),
+                        );
+                        warn!(
+                            target = %target_addr,
+                            "target connect timed out"
                         );
                         if let Some(ref m) = self.metrics {
                             m.record_error(&format!("target connect failed: {e}"));
