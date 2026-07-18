@@ -1945,8 +1945,14 @@ impl ServiceSupervisor {
 
             #[cfg(not(unix))]
             {
-                tokio::signal::ctrl_c().await.ok();
-                tracing::info!("shutdown signal received");
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        tracing::info!("shutdown requested via cancel token");
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        tracing::info!("shutdown signal received");
+                    }
+                }
             }
 
             // 1. Set readiness false (admin /-/ready will report 503 during drain)
