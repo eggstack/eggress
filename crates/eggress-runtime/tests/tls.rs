@@ -4,6 +4,10 @@ use std::time::Duration;
 
 use tempfile::NamedTempFile;
 
+fn toml_path(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 fn write_config(content: &str) -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
     f.write_all(content.as_bytes()).unwrap();
@@ -65,8 +69,8 @@ protocols = ["http"]
 cert = "{}"
 key = "{}"
 "#,
-        cert_file.path().display(),
-        key_file.path().display()
+        toml_path(cert_file.path()),
+        toml_path(key_file.path())
     );
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
@@ -142,8 +146,8 @@ protocols = ["http"]
 cert = "{}"
 key = "{}"
 "#,
-        cert_file.path().display(),
-        key_file.path().display()
+        toml_path(cert_file.path()),
+        toml_path(key_file.path())
     );
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
@@ -209,8 +213,8 @@ protocols = ["http"]
 cert = "{}"
 key = "{}"
 "#,
-        cert_file.path().display(),
-        key_file.path().display()
+        toml_path(cert_file.path()),
+        toml_path(key_file.path())
     );
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
@@ -290,8 +294,8 @@ protocols = ["http"]
 cert = "{}"
 key = "{}"
 "#,
-        cert_file.path().display(),
-        key_file.path().display()
+        toml_path(cert_file.path()),
+        toml_path(key_file.path())
     );
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
