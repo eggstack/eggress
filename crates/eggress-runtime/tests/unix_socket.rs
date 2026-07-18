@@ -2,11 +2,15 @@
 //!
 //! These tests verify Unix domain socket listener support.
 
+#[cfg(unix)]
 use std::io::Write;
+#[cfg(unix)]
 use std::path::PathBuf;
 
+#[cfg(unix)]
 use tempfile::NamedTempFile;
 
+#[cfg(unix)]
 fn write_config(content: &str) -> NamedTempFile {
     let mut f = NamedTempFile::new().unwrap();
     f.write_all(content.as_bytes()).unwrap();
@@ -14,6 +18,7 @@ fn write_config(content: &str) -> NamedTempFile {
     f
 }
 
+#[cfg(unix)]
 fn unix_socket_path(name: &str) -> PathBuf {
     let dir = std::env::temp_dir();
     let id: u64 = fastrand::u64(..);
