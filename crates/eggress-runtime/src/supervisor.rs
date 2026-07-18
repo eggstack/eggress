@@ -1745,6 +1745,7 @@ impl ServiceSupervisor {
                             default_target_port: rc_cfg.default_target_port,
                             read_timeout_ms: rc_cfg.read_timeout_ms,
                             drain_grace_ms: rc_cfg.drain_grace_ms,
+                            ..Default::default()
                         };
                         let mut client =
                             eggress_protocol_reverse::client::ReverseClient::new(client_config);

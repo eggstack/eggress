@@ -797,6 +797,7 @@ async fn test_client_target_connect_failure_records_error() {
         server_addr: control_addr,
         reconnect_initial_ms: 25,
         reconnect_max_ms: 50,
+        target_connect_timeout_ms: 500,
         ..Default::default()
     };
     let mut client = ReverseClient::new(client_config);

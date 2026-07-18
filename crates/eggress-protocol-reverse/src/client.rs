@@ -29,6 +29,8 @@ pub struct ReverseClientConfig {
     pub read_timeout_ms: u64,
     /// Grace period for drain on shutdown, in milliseconds.
     pub drain_grace_ms: u64,
+    /// Timeout for target connect attempts in milliseconds. 0 = no timeout.
+    pub target_connect_timeout_ms: u64,
 }
 
 impl Default for ReverseClientConfig {
@@ -43,6 +45,7 @@ impl Default for ReverseClientConfig {
             default_target_port: None,
             read_timeout_ms: 60_000,
             drain_grace_ms: 5_000,
+            target_connect_timeout_ms: 10_000,
         }
     }
 }
@@ -256,7 +259,11 @@ impl ReverseClient {
         let session_result: Result<(), ProtocolError> = match resolution {
             TargetResolution::Connect { host, port } => {
                 let target_addr = format!("{}:{}", host, port);
-                let connect_timeout = Duration::from_secs(5);
+                let connect_timeout = if self.config.target_connect_timeout_ms > 0 {
+                    Duration::from_millis(self.config.target_connect_timeout_ms)
+                } else {
+                    Duration::from_secs(30)
+                };
                 let connect_result =
                     tokio::time::timeout(connect_timeout, TcpStream::connect(&target_addr)).await;
                 match connect_result {
