@@ -185,6 +185,7 @@ enabled = true
     jh.await.ok();
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn reload_preserves_service_running() {
     let config = r#"
@@ -317,6 +318,7 @@ enabled = true
     jh.await.ok();
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn reload_preserves_health_state() {
     let config = r#"
@@ -495,6 +497,7 @@ enabled = true
     jh.await.ok();
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn reload_changes_health_config_and_manager_uses_new_values() {
     let config_threshold_1 = r#"

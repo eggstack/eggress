@@ -293,6 +293,7 @@ body = "here"
     jh.await.ok();
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn pac_reload_serves_new_content() {
     let config1 = r#"
@@ -382,6 +383,7 @@ proxy = "PROXY 127.0.0.1:9999"
     jh.await.ok();
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn static_content_reload_serves_new_body() {
     let config1 = r#"

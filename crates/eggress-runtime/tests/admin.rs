@@ -236,6 +236,7 @@ async fn metrics_endpoint_returns_prometheus() {
     assert!(body.contains("eggress_connections_active"));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn admin_routes_reflect_reload() {
     use std::io::Write as _;
@@ -339,6 +340,7 @@ enabled = true
     jh.await.ok();
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn admin_route_explain_reflects_reload() {
     use std::io::Write as _;
