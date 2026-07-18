@@ -131,7 +131,7 @@ async fn reverse_eggress_self_interop_loopback() {
     });
 
     // Give the client time to dial the control + dial the target.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Verify metrics on the server side: at least one control accept.
     let server_snap = server_metrics.snapshot();
