@@ -795,8 +795,8 @@ async fn test_client_target_connect_failure_records_error() {
 
     let client_config = ReverseClientConfig {
         server_addr: control_addr,
-        reconnect_initial_ms: 50,
-        reconnect_max_ms: 100,
+        reconnect_initial_ms: 25,
+        reconnect_max_ms: 50,
         ..Default::default()
     };
     let mut client = ReverseClient::new(client_config);
@@ -809,8 +809,9 @@ async fn test_client_target_connect_failure_records_error() {
         let _ = client.run().await;
     });
 
-    // Let the client attempt connect to bad target, fail, reconnect
-    sleep(Duration::from_millis(300)).await;
+    // Let the client attempt connect to bad target, fail, reconnect.
+    // Use a generous timeout for slow CI runners (e.g. Windows).
+    sleep(Duration::from_secs(2)).await;
     let snap = metrics.snapshot();
     assert!(
         snap.control_reconnects_total >= 1,
@@ -863,8 +864,8 @@ async fn test_client_route_rejection_records_error() {
 
     let client_config = ReverseClientConfig {
         server_addr: control_addr,
-        reconnect_initial_ms: 50,
-        reconnect_max_ms: 100,
+        reconnect_initial_ms: 25,
+        reconnect_max_ms: 50,
         ..Default::default()
     };
     let mut client = ReverseClient::new(client_config);
@@ -877,7 +878,7 @@ async fn test_client_route_rejection_records_error() {
         let _ = client.run().await;
     });
 
-    sleep(Duration::from_millis(300)).await;
+    sleep(Duration::from_secs(2)).await;
     let snap = metrics.snapshot();
     let err_msg = snap.last_error.clone().unwrap_or_default();
     assert!(
