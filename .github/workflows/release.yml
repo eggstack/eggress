@@ -162,12 +162,8 @@ jobs:
         run: pip install "maturin>=1.0,<2.0"
 
       - name: Build wheel
-        run: |
-          if [[ "${{ matrix.target }}" == "aarch64" && "${{ runner.os }}" == "Linux" ]]; then
-            maturin build --release --target ${{ matrix.rust_target }} -i python3 --out dist
-          else
-            maturin build --release --target ${{ matrix.rust_target }} --out dist
-          fi
+        shell: bash
+        run: maturin build --release --target ${{ matrix.rust_target }} -i python --out dist
         working-directory: crates/eggress-python
 
       - name: Smoke test wheel
