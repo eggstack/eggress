@@ -89,8 +89,10 @@ The CI matrix builds wheels for the following target triples:
 
 - `cp39-manylinux_x86_64`, `cp310-manylinux_x86_64`, `cp311-manylinux_x86_64`,
   `cp312-manylinux_x86_64`, `cp313-manylinux_x86_64`, `cp314-manylinux_x86_64`
-- `cp39-manylinux_aarch64`, `cp310-manylinux_aarch64`, `cp311-manylinux_aarch64`,
-  `cp312-manylinux_aarch64`, `cp313-manylinux_aarch64`, `cp314-manylinux_aarch64`
+- ~~`cp39-manylinux_aarch64`, `cp310-manylinux_aarch64`, `cp311-manylinux_aarch64`,
+  `cp312-manylinux_aarch64`, `cp313-manylinux_aarch64`, `cp314-manylinux_aarch64`~~
+  **Not built** — Linux aarch64 wheels require cross-compilation via Docker/manylinux
+  and are not included in the CI matrix.
 - `cp39-macosx_x86_64`, …, `cp314-macosx_x86_64`
 - `cp39-macosx_arm64`, …, `cp314-macosx_arm64`
 - `cp39-win_amd64`, …, `cp314-win_amd64`

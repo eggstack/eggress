@@ -1,6 +1,6 @@
 # Eggress v0.1.0 Parity Release Candidate
 
-Release notes for the pproxy parity release candidate.
+Release notes for the modern pproxy compatibility subset release candidate.
 
 ## 1. Release Summary
 
@@ -12,7 +12,7 @@ Release notes for the pproxy parity release candidate.
 | pproxy target | `2.7.9` (frozen) |
 | Rust MSRV | `1.75` |
 | Python support | 3.9 -- 3.13 (3.14 built but pproxy differential tests require 3.11) |
-| Platforms | Linux x86_64/aarch64, macOS arm64/x86_64, Windows x86_64 |
+| Platforms | Linux x86_64, macOS arm64/x86_64, Windows x86_64 |
 | Frozen targets | [PARITY_TARGET_FREEZE.md](PARITY_TARGET_FREEZE.md) |
 | Platform matrix | [PLATFORM_SUPPORT_MATRIX.md](PLATFORM_SUPPORT_MATRIX.md) |
 
@@ -390,7 +390,9 @@ cargo test -p eggress-routing --test properties
 | `eggress` crate | Published to crates.io (TBD) |
 
 Wheel targets: `cp39`--`cp314` for `manylinux_x86_64`,
-`manylinux_aarch64`, `macosx_x86_64`, `macosx_arm64`, `win_amd64`.
+`macosx_x86_64`, `macosx_arm64`, `win_amd64`. Linux aarch64 (`manylinux_aarch64`)
+wheels are **not built** — cross-compilation requires Docker/manylinux and is not
+included in CI.
 
 Source distribution builds with `maturin sdist`.
 

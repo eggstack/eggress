@@ -127,7 +127,7 @@ The Track B/C verification pass (2026-07-16) additionally:
 | Platform | Wheel Target | Status | Notes |
 |----------|-------------|--------|-------|
 | Linux x86_64 | `manylinux` | Supported | Primary CI target |
-| Linux aarch64 | `manylinux` | Supported | Cross-compiled or native CI |
+| Linux aarch64 | `manylinux` | Not built | Cross-compilation requires Docker/manylinux; not included in CI |
 | macOS arm64 | `macos-arm64` | Supported | Apple Silicon |
 | macOS x86_64 | `macos-x86_64` | Supported | Intel Macs |
 | Windows x86_64 | `win-amd64` | Supported | MSVC toolchain |

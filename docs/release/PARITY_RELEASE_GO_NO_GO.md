@@ -2,6 +2,10 @@
 
 **Decision status:** **GO (release-candidate)** as of 2026-07-16 (Track B/C verification re-confirmed).
 
+> **Historical note:** This checklist documents the Phase 36/Track B/C GO/NO-GO
+> decision. The rc.1 tag was subsequently created and the decision was superseded
+> by that release. This document is retained for audit trail purposes.
+
 This checklist records the explicit decision to tag the parity release
 candidate based on the evidence in:
 
