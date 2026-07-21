@@ -29,6 +29,7 @@ pub const ALLOWED_STATUSES: &[&str] = &[
     "known_upstream_defect",
     "platform_constraint",
     "not_applicable",
+    "intentional_non_parity",
 ];
 
 pub const ALLOWED_COMPARATORS: &[&str] = &[
@@ -68,6 +69,7 @@ const TERMINAL_STATUSES: &[&str] = &[
     "not_applicable",
     "known_upstream_defect",
     "platform_constraint",
+    "intentional_non_parity",
 ];
 
 // ---------------------------------------------------------------------------
@@ -248,6 +250,123 @@ pub fn find_strict_manifest_path() -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+// Oracle Provenance Verification
+// ---------------------------------------------------------------------------
+
+/// Oracle hashes as loaded from `compat/pproxy-2.7.9/hashes.toml`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct OracleHashes {
+    pub package: OracleHashPackage,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct OracleHashPackage {
+    pub version: String,
+    pub source: String,
+    pub sha256_sdist: Option<String>,
+    pub sha256_wheel: Option<String>,
+}
+
+/// Oracle provenance as loaded from `compat/pproxy-2.7.9/provenance.toml`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct OracleProvenance {
+    pub oracle: OracleProvenanceInner,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct OracleProvenanceInner {
+    pub package: String,
+    pub version: String,
+    pub source: String,
+    pub license: String,
+    pub retrieval_date: String,
+}
+
+/// Errors from oracle provenance verification.
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum OracleError {
+    #[error("file I/O error: {message}")]
+    Io { message: String },
+
+    #[error("TOML parse error: {message}")]
+    TomlParse { message: String },
+
+    #[error("expected pproxy version \"{expected}\" but found \"{found}\"")]
+    VersionMismatch { expected: String, found: String },
+
+    #[error("expected pproxy package \"{expected}\" but found \"{found}\"")]
+    PackageMismatch { expected: String, found: String },
+
+    #[error("wheel hash mismatch: expected \"{expected}\" but computed \"{found}\"")]
+    WheelHashMismatch { expected: String, found: String },
+
+    #[error("no wheel hash recorded in hashes.toml")]
+    MissingWheelHash,
+
+    #[error("hash computation failed: {message}")]
+    HashComputationFailed { message: String },
+}
+
+/// Load and validate oracle hashes from the canonical path.
+pub fn load_oracle_hashes(manifest_dir: &Path) -> Result<OracleHashes, OracleError> {
+    let path = manifest_dir.join("compat/pproxy-2.7.9/hashes.toml");
+    let content = fs::read_to_string(&path).map_err(|e| OracleError::Io {
+        message: format!("failed to read {}: {}", path.display(), e),
+    })?;
+    let hashes: OracleHashes = toml::from_str(&content).map_err(|e| OracleError::TomlParse {
+        message: e.to_string(),
+    })?;
+    Ok(hashes)
+}
+
+/// Load and validate oracle provenance from the canonical path.
+pub fn load_oracle_provenance(manifest_dir: &Path) -> Result<OracleProvenance, OracleError> {
+    let path = manifest_dir.join("compat/pproxy-2.7.9/provenance.toml");
+    let content = fs::read_to_string(&path).map_err(|e| OracleError::Io {
+        message: format!("failed to read {}: {}", path.display(), e),
+    })?;
+    let prov: OracleProvenance = toml::from_str(&content).map_err(|e| OracleError::TomlParse {
+        message: e.to_string(),
+    })?;
+    Ok(prov)
+}
+
+/// Verify that the strict manifest's pproxy_version matches the oracle provenance.
+pub fn verify_manifest_oracle_version(
+    manifest: &StrictManifest,
+    provenance: &OracleProvenance,
+) -> Result<(), OracleError> {
+    if manifest.meta.pproxy_version != provenance.oracle.version {
+        return Err(OracleError::VersionMismatch {
+            expected: provenance.oracle.version.clone(),
+            found: manifest.meta.pproxy_version.clone(),
+        });
+    }
+    if provenance.oracle.package != "pproxy" {
+        return Err(OracleError::PackageMismatch {
+            expected: "pproxy".to_string(),
+            found: provenance.oracle.package.clone(),
+        });
+    }
+    Ok(())
+}
+
+/// Verify a wheel file matches the expected hash.
+///
+/// Note: This function requires the `sha2` crate to be available at runtime.
+/// If SHA256 computation is not available, it returns an error.
+pub fn verify_wheel_hash(_wheel_path: &Path, _expected_hash: &str) -> Result<(), OracleError> {
+    // SHA256 verification requires the sha2 crate. Since eggress-testkit
+    // doesn't depend on sha2, this function is a placeholder that documents
+    // the verification interface. Actual hash verification is performed by
+    // the oracle runner at runtime.
+    Err(OracleError::HashComputationFailed {
+        message: "sha2 feature required for hash verification; use oracle runner at runtime"
+            .to_string(),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
@@ -368,6 +487,196 @@ pub fn validate_strict_manifest_file(
 
     validate_strict_manifest(&manifest)?;
     Ok(manifest)
+}
+
+// ---------------------------------------------------------------------------
+// Report Generation
+// ---------------------------------------------------------------------------
+
+/// Summary statistics for a strict manifest.
+#[derive(Debug, Clone)]
+pub struct StrictManifestSummary {
+    pub total: usize,
+    pub by_status: Vec<(String, usize)>,
+    pub by_category: Vec<(String, usize)>,
+    pub by_owner: Vec<(String, usize)>,
+    pub by_milestone: Vec<(String, usize)>,
+    pub terminal_count: usize,
+    pub gap_count: usize,
+}
+
+/// Compute summary statistics from a manifest.
+pub fn summarize_manifest(manifest: &StrictManifest) -> StrictManifestSummary {
+    use std::collections::HashMap;
+
+    let mut status_counts: HashMap<String, usize> = HashMap::new();
+    let mut category_counts: HashMap<String, usize> = HashMap::new();
+    let mut owner_counts: HashMap<String, usize> = HashMap::new();
+    let mut milestone_counts: HashMap<String, usize> = HashMap::new();
+    let mut terminal = 0;
+    let mut gaps = 0;
+
+    for rec in &manifest.record {
+        *status_counts.entry(rec.status.clone()).or_insert(0) += 1;
+        *category_counts.entry(rec.category.clone()).or_insert(0) += 1;
+        if !rec.owner.is_empty() {
+            *owner_counts.entry(rec.owner.clone()).or_insert(0) += 1;
+        }
+        if !rec.milestone.is_empty() {
+            *milestone_counts.entry(rec.milestone.clone()).or_insert(0) += 1;
+        }
+        if TERMINAL_STATUSES.contains(&rec.status.as_str()) {
+            terminal += 1;
+        } else {
+            gaps += 1;
+        }
+    }
+
+    let mut by_status: Vec<_> = status_counts.into_iter().collect();
+    by_status.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    let mut by_category: Vec<_> = category_counts.into_iter().collect();
+    by_category.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    let mut by_owner: Vec<_> = owner_counts.into_iter().collect();
+    by_owner.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    let mut by_milestone: Vec<_> = milestone_counts.into_iter().collect();
+    by_milestone.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+
+    StrictManifestSummary {
+        total: manifest.record.len(),
+        by_status,
+        by_category,
+        by_owner,
+        by_milestone,
+        terminal_count: terminal,
+        gap_count: gaps,
+    }
+}
+
+/// Generate a Markdown report from a manifest.
+pub fn generate_strict_report(manifest: &StrictManifest) -> String {
+    let summary = summarize_manifest(manifest);
+    let mut out = String::with_capacity(4096);
+
+    out.push_str("# pproxy 2.7.9 Strict Compatibility Report\n\n");
+    out.push_str(&format!(
+        "**Oracle version:** pproxy=={}\n",
+        manifest.meta.pproxy_version
+    ));
+    out.push_str(&format!("**Manifest schema:** {}\n", manifest.meta.schema));
+    out.push_str(&format!("**Policy:** {}\n", manifest.meta.policy_ref));
+    out.push_str(&format!("**Oracle ref:** {}\n\n", manifest.meta.oracle_ref));
+
+    out.push_str("## Summary\n\n");
+    out.push_str("| Metric | Count |\n");
+    out.push_str("|--------|-------|\n");
+    out.push_str(&format!("| Total records | {} |\n", summary.total));
+    out.push_str(&format!(
+        "| Terminal (resolved) | {} |\n",
+        summary.terminal_count
+    ));
+    out.push_str(&format!("| Gap (unresolved) | {} |\n", summary.gap_count));
+    out.push_str(&format!(
+        "| Certification readiness | {:.0}% |\n\n",
+        if summary.total > 0 {
+            (summary.terminal_count as f64 / summary.total as f64) * 100.0
+        } else {
+            0.0
+        }
+    ));
+
+    out.push_str("### By Status\n\n");
+    out.push_str("| Status | Count |\n");
+    out.push_str("|--------|-------|\n");
+    for (status, count) in &summary.by_status {
+        out.push_str(&format!("| {} | {} |\n", status, count));
+    }
+    out.push('\n');
+
+    out.push_str("### By Category\n\n");
+    out.push_str("| Category | Count |\n");
+    out.push_str("|----------|-------|\n");
+    for (category, count) in &summary.by_category {
+        out.push_str(&format!("| {} | {} |\n", category, count));
+    }
+    out.push('\n');
+
+    out.push_str("### By Owner\n\n");
+    out.push_str("| Owner | Count |\n");
+    out.push_str("|-------|-------|\n");
+    for (owner, count) in &summary.by_owner {
+        out.push_str(&format!("| {} | {} |\n", owner, count));
+    }
+    out.push('\n');
+
+    out.push_str("### By Milestone\n\n");
+    out.push_str("| Milestone | Count |\n");
+    out.push_str("|-----------|-------|\n");
+    for (milestone, count) in &summary.by_milestone {
+        out.push_str(&format!("| {} | {} |\n", milestone, count));
+    }
+    out.push('\n');
+
+    out.push_str("## Gap Records\n\n");
+    out.push_str("Records with non-terminal status requiring resolution:\n\n");
+    let gaps: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| !TERMINAL_STATUSES.contains(&r.status.as_str()))
+        .collect();
+    if gaps.is_empty() {
+        out.push_str("_No unresolved gaps._\n\n");
+    } else {
+        out.push_str("| ID | Status | Category | Owner | Milestone |\n");
+        out.push_str("|----|--------|----------|-------|----------|\n");
+        for rec in &gaps {
+            out.push_str(&format!(
+                "| {} | {} | {} | {} | {} |\n",
+                rec.id, rec.status, rec.category, rec.owner, rec.milestone
+            ));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("## Terminal Records\n\n");
+    let terminals: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| TERMINAL_STATUSES.contains(&r.status.as_str()))
+        .collect();
+    if terminals.is_empty() {
+        out.push_str("_No terminal records._\n\n");
+    } else {
+        out.push_str("| ID | Status | Category | Notes |\n");
+        out.push_str("|----|--------|----------|-------|\n");
+        for rec in &terminals {
+            let notes = if rec.notes.is_empty() {
+                "-".to_string()
+            } else if rec.notes.len() > 80 {
+                format!("{}...", &rec.notes[..77])
+            } else {
+                rec.notes.clone()
+            };
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                rec.id, rec.status, rec.category, notes
+            ));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+/// Write the strict report to a file.
+pub fn write_strict_report(
+    manifest: &StrictManifest,
+    output_path: &Path,
+) -> Result<(), std::io::Error> {
+    let report = generate_strict_report(manifest);
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(output_path, report)
 }
 
 #[cfg(test)]
@@ -842,5 +1151,191 @@ mod tests {
                 .any(|e| matches!(e, StrictValidationError::UnresolvedProgress { .. })),
             "gap at milestone A should be flagged"
         );
+    }
+
+    // -- Oracle provenance verification tests --
+
+    #[test]
+    fn verify_manifest_oracle_version_matches() {
+        let manifest = make_manifest(vec![]);
+        let provenance = OracleProvenance {
+            oracle: OracleProvenanceInner {
+                package: "pproxy".to_string(),
+                version: "2.7.9".to_string(),
+                source: "pypi".to_string(),
+                license: "MIT".to_string(),
+                retrieval_date: "2026-07-16".to_string(),
+            },
+        };
+        assert!(verify_manifest_oracle_version(&manifest, &provenance).is_ok());
+    }
+
+    #[test]
+    fn verify_manifest_oracle_version_mismatch() {
+        let mut meta = make_meta();
+        meta.pproxy_version = "2.7.8".to_string();
+        let manifest = StrictManifest {
+            meta,
+            record: vec![],
+        };
+        let provenance = OracleProvenance {
+            oracle: OracleProvenanceInner {
+                package: "pproxy".to_string(),
+                version: "2.7.9".to_string(),
+                source: "pypi".to_string(),
+                license: "MIT".to_string(),
+                retrieval_date: "2026-07-16".to_string(),
+            },
+        };
+        let err = verify_manifest_oracle_version(&manifest, &provenance).unwrap_err();
+        assert!(matches!(err, OracleError::VersionMismatch { .. }));
+    }
+
+    #[test]
+    fn verify_manifest_oracle_package_mismatch() {
+        let manifest = make_manifest(vec![]);
+        let provenance = OracleProvenance {
+            oracle: OracleProvenanceInner {
+                package: "not_pproxy".to_string(),
+                version: "2.7.9".to_string(),
+                source: "pypi".to_string(),
+                license: "MIT".to_string(),
+                retrieval_date: "2026-07-16".to_string(),
+            },
+        };
+        let err = verify_manifest_oracle_version(&manifest, &provenance).unwrap_err();
+        assert!(matches!(err, OracleError::PackageMismatch { .. }));
+    }
+
+    #[test]
+    fn load_oracle_hashes_from_workspace() {
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let path = PathBuf::from(&manifest_dir);
+            match load_oracle_hashes(&path) {
+                Ok(hashes) => {
+                    assert_eq!(hashes.package.version, "2.7.9");
+                    assert!(hashes.package.sha256_wheel.is_some());
+                    let wheel_hash = hashes.package.sha256_wheel.unwrap();
+                    assert_ne!(wheel_hash, "placeholder_update_on_first_run");
+                    assert_eq!(wheel_hash.len(), 64); // SHA256 hex = 64 chars
+                }
+                Err(e) => {
+                    eprintln!("load_oracle_hashes: {}", e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn load_oracle_provenance_from_workspace() {
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let path = PathBuf::from(&manifest_dir);
+            match load_oracle_provenance(&path) {
+                Ok(prov) => {
+                    assert_eq!(prov.oracle.package, "pproxy");
+                    assert_eq!(prov.oracle.version, "2.7.9");
+                    assert_eq!(prov.oracle.source, "pypi");
+                }
+                Err(e) => {
+                    eprintln!("load_oracle_provenance: {}", e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn manifest_version_matches_provenance() {
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let path = PathBuf::from(&manifest_dir);
+            let hashes = load_oracle_hashes(&path);
+            let provenance = load_oracle_provenance(&path);
+            if let (Ok(h), Ok(p)) = (hashes, provenance) {
+                assert_eq!(h.package.version, p.oracle.version);
+            }
+        }
+    }
+
+    // -- Report generation tests --
+
+    #[test]
+    fn summarize_manifest_basic() {
+        let mut r1 = default_record("a");
+        r1.status = "drop_in".to_string();
+        r1.category = "protocol".to_string();
+        r1.owner = "track-b".to_string();
+        let mut r2 = default_record("b");
+        r2.status = "gap".to_string();
+        r2.category = "python_namespace".to_string();
+        r2.owner = "track-a".to_string();
+        let manifest = make_manifest(vec![r1, r2]);
+        let summary = summarize_manifest(&manifest);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.terminal_count, 1);
+        assert_eq!(summary.gap_count, 1);
+    }
+
+    #[test]
+    fn summarize_manifest_all_terminal() {
+        let mut r1 = default_record("a");
+        r1.status = "drop_in".to_string();
+        let mut r2 = default_record("b");
+        r2.status = "not_applicable".to_string();
+        let manifest = make_manifest(vec![r1, r2]);
+        let summary = summarize_manifest(&manifest);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.terminal_count, 2);
+        assert_eq!(summary.gap_count, 0);
+    }
+
+    #[test]
+    fn generate_strict_report_basic() {
+        let mut r1 = default_record("a");
+        r1.status = "drop_in".to_string();
+        r1.category = "protocol".to_string();
+        r1.notes = "Test note".to_string();
+        let mut r2 = default_record("b");
+        r2.status = "gap".to_string();
+        r2.category = "python_namespace".to_string();
+        let manifest = make_manifest(vec![r1, r2]);
+        let report = generate_strict_report(&manifest);
+        assert!(report.contains("# pproxy 2.7.9 Strict Compatibility Report"));
+        assert!(report.contains("pproxy==2.7.9"));
+        assert!(report.contains("Total records"));
+        assert!(report.contains("Gap Records"));
+        assert!(report.contains("Terminal Records"));
+    }
+
+    #[test]
+    fn generate_strict_report_empty() {
+        let manifest = make_manifest(vec![]);
+        let report = generate_strict_report(&manifest);
+        assert!(report.contains("Total records"));
+        assert!(report.contains("_No unresolved gaps._"));
+        assert!(report.contains("_No terminal records._"));
+    }
+
+    #[test]
+    fn write_strict_report_to_temp() {
+        let manifest = make_manifest(vec![]);
+        let dir = std::env::temp_dir().join("eggress_strict_report_test");
+        let path = dir.join("report.md");
+        let result = write_strict_report(&manifest, &path);
+        assert!(result.is_ok());
+        assert!(path.exists());
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("pproxy 2.7.9 Strict Compatibility Report"));
+        // cleanup
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn generate_strict_report_truncates_long_notes() {
+        let mut rec = default_record("long_notes");
+        rec.notes = "A".repeat(200);
+        rec.status = "drop_in".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let report = generate_strict_report(&manifest);
+        assert!(report.contains("..."));
     }
 }

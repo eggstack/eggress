@@ -1,0 +1,37 @@
+{
+  "binary": "pproxy",
+  "version": "2.7.9",
+  "source": "pypi",
+  "extracted": "2026-07-20",
+  "help_text": "Proxy server that can tunnel among remote servers by regex rules. Supported protocols: http,socks4,socks5,shadowsocks,shadowsocksr,redirect,pf,tunnel",
+  "flags": [
+    {"name": "-h", "long": "--help", "kind": "flag", "default": null, "description": "show this help message and exit"},
+    {"name": "-l", "long": null, "kind": "option", "metavar": "LISTEN", "default": "http+socks4+socks5://:8080/", "repeatable": false, "description": "tcp server uri"},
+    {"name": "-r", "long": null, "kind": "option", "metavar": "RSERVER", "default": "direct", "repeatable": true, "description": "tcp remote server uri"},
+    {"name": "-ul", "long": null, "kind": "option", "metavar": "ULISTEN", "default": null, "repeatable": false, "description": "udp server setting uri"},
+    {"name": "-ur", "long": null, "kind": "option", "metavar": "URSERVER", "default": "direct", "repeatable": true, "description": "udp remote server uri"},
+    {"name": "-b", "long": null, "kind": "option", "metavar": "BLOCK", "default": null, "repeatable": true, "description": "block regex rules"},
+    {"name": "-a", "long": null, "kind": "option", "metavar": "ALIVED", "default": null, "repeatable": false, "description": "interval to check remote alive"},
+    {"name": "-s", "long": null, "kind": "option", "metavar": "{fa,rr,rc,lc}", "default": "fa", "repeatable": false, "description": "scheduling algorithm"},
+    {"name": "-d", "long": null, "kind": "flag", "default": false, "repeatable": false, "description": "turn on debug to see tracebacks"},
+    {"name": "-v", "long": null, "kind": "flag", "default": false, "repeatable": false, "description": "print verbose output"},
+    {"name": "--ssl", "long": "--ssl", "kind": "option", "metavar": "SSLFILE", "default": null, "repeatable": false, "description": "certfile[,keyfile] if server listen in ssl mode"},
+    {"name": "--pac", "long": "--pac", "kind": "option", "metavar": "PAC", "default": null, "repeatable": false, "description": "http PAC path"},
+    {"name": "--get", "long": "--get", "kind": "option", "metavar": "GETS", "default": null, "repeatable": false, "description": "http custom {path,file}"},
+    {"name": "--auth", "long": "--auth", "kind": "option", "metavar": "AUTHTIME", "default": "2592000", "repeatable": false, "description": "re-auth time interval for same ip"},
+    {"name": "--sys", "long": "--sys", "kind": "flag", "default": false, "repeatable": false, "description": "change system proxy setting (mac, windows)"},
+    {"name": "--reuse", "long": "--reuse", "kind": "flag", "default": false, "repeatable": false, "description": "set SO_REUSEPORT (Linux only)"},
+    {"name": "--daemon", "long": "--daemon", "kind": "flag", "default": false, "repeatable": false, "description": "run as a daemon (Linux only)"},
+    {"name": "--test", "long": "--test", "kind": "option", "metavar": "TEST", "default": null, "repeatable": false, "description": "test this url for all remote proxies and exit"},
+    {"name": "--version", "long": "--version", "kind": "flag", "default": false, "repeatable": false, "description": "show program's version number and exit"}
+  ],
+  "positional_args": [],
+  "exit_codes": {
+    "0": "normal exit",
+    "non-zero": "error or --help/--version"
+  },
+  "output_streams": {
+    "stdout": "verbose output when -v, server started message, --test results",
+    "stderr": "error messages, tracebacks when -d"
+  }
+}

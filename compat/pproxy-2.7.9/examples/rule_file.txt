@@ -1,0 +1,40 @@
+# Upstream pproxy Example: Rule File Format
+#
+# This fixture represents the canonical pproxy rule file format from the
+# upstream repository (pproxy==2.7.9). It is used as a test input for the
+# paired oracle/candidate differential testing harness.
+#
+# Provenance: Derived from pproxy compile_rule() function and upstream docs
+# License: MIT (pproxy)
+# Tested with: pproxy==2.7.9 on Python 3.11
+#
+# Rule file format:
+#   Each line is a regex pattern matched against the destination address.
+#   Lines starting with # are comments.
+#   The first matching rule determines the routing action.
+#
+# Usage:
+#   pproxy -l http://:8080/ --rulefile rules.txt
+#   Or in Python:
+#   Server(['http://:8080/'], rule='rules.txt')
+
+# Rule 1: Block access to specific domains
+# ^.*\.blocked\.com$
+# ^.*\.malware\.net$
+
+# Rule 2: Route through specific upstream
+# ^.*\.internal\.corp$
+#   -> socks5://internal-proxy:1080/
+
+# Rule 3: Direct connection for local addresses
+# ^(127\.0\.0\.1|localhost|::1)$
+#   -> direct://
+
+# Rule 4: Block by IP range
+# ^10\.0\.0\..*$
+# ^172\.16\..*$
+# ^192\.168\..*$
+
+# Rule 5: Allow all (default)
+# .*
+#   -> http://default-proxy:8080/

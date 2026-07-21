@@ -140,3 +140,104 @@ planning and development tracking.
 - `docs/parity/pproxy_2_7_9_strict_manifest.toml` — strict capability manifest
 - `docs/parity/pproxy_capability_manifest.toml` — canonical capability manifest
 - `plans/MILESTONE_A_HONEST_CONTRACT.md` — implementation plan
+
+## CI Tiers for Strict Manifest Validation
+
+The strict manifest is enforced through a tiered CI system. Each tier
+builds on the previous one. No tier may skip a lower tier.
+
+### Tier 0 — Static Validation (every change)
+
+- TOML schema validation (unique IDs, valid enums, valid owners/milestones)
+- Manifest-to-provenance version consistency check
+- Oracle hash format validation (SHA256 hex, 64 characters)
+- No `drop_in` record without `oracle_probe` or `evidence_refs`/`test_refs`
+- No unresolved progress state at current milestone
+
+Commands:
+```bash
+cargo test -p eggress-testkit --lib strict_manifest
+cargo test -p eggress-testkit --lib strict_comparators
+cargo test -p eggress-testkit --lib strict_observations
+```
+
+### Tier 1 — Candidate-Fast (every change)
+
+- Candidate-only unit/integration tests
+- Observation schema serialization round-trips
+- Comparator correctness tests
+- Simulated oracle fixtures
+
+Commands:
+```bash
+cargo test -p eggress-testkit
+cargo test -p eggress-pproxy-compat
+```
+
+### Tier 2 — Oracle Differential (compatibility changes, scheduled)
+
+- Clean oracle environment bootstrap (pproxy==2.7.9, pinned hash)
+- Paired API and CLI probes against oracle
+- Unchanged upstream examples against oracle
+- Common HTTP/SOCKS5/direct scenarios
+
+Requires: `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`
+
+Commands:
+```bash
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored
+```
+
+### Tier 3 — External Protocol Differential (scheduled, pre-release)
+
+- pproxy client → eggress server
+- eggress client → pproxy server
+- Wire transcript comparison
+- Optional dependency profiles (pysocks, cryptography)
+
+Requires: `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` + pproxy server process
+
+### Tier 4 — Platform and Privileged (disposable environments)
+
+- Transparent proxying (Linux SO_ORIGINAL_DST, macOS PF)
+- System proxy mutation
+- Daemon behavior
+- Platform-specific sockets and signals
+
+Requires: `EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1`
+
+### Tier 5 — Release Certification (clean tagged commit)
+
+- All tiers pass with no skips
+- Retained signed/hashed evidence bundles
+- Report generation (`PPROXY_2_7_9_STRICT_REPORT.md`)
+- No unresolved gap records at current milestone
+- Evidence includes: oracle version, wheel hash, Python version, OS, arch
+
+Commands:
+```bash
+# Full release audit
+cargo test --workspace
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
+EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored --test-threads=1
+
+# Generate report
+# (from Rust test or Python script)
+```
+
+### Enforcement Rules
+
+1. **Tier 0 is mandatory** — any change that modifies the strict manifest
+   must pass Tier 0 validation before merge.
+2. **Tier 1 runs on every CI build** — candidate-only tests must pass.
+3. **Tier 2 runs on `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`** — differential
+   tests require the oracle environment.
+4. **Tier 3 runs scheduled and before release** — external protocol
+   interop requires both oracle and candidate environments.
+5. **Tier 5 produces release artifacts** — certification cannot be
+   generated from a dirty tree.
+6. **Gated test absence is reported as incomplete**, not passing.
+7. **Evidence bundles** include: oracle version, wheel hash, Python
+   version, OS, architecture, timestamp, and diff summary.

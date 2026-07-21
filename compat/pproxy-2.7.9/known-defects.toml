@@ -9,28 +9,106 @@
 #
 # See docs/parity/PPROXY_COMPATIBILITY_POLICY.md Rule 6 for requirements.
 
-# No known defects at this time.
-# 
-# To add a defect:
-# 1. Reproduce the failure with pproxy 2.7.9 only
-# 2. Verify eggress handles the case correctly or matches the defect
-# 3. Add a record below with all required fields
-# 4. Add a regression test
-#
-# Example record:
-#
-# [[defect]]
-# id = "UPSTREAM-001"
-# title = "pproxy crashes on malformed SOCKS5 auth"
-# affected_scenarios = ["socks5.malformed_auth"]
-# reproducible_oracle_only = """
-#   pproxy 2.7.9 crashes with AssertionError when receiving
-#   malformed SOCKS5 authentication packet.
-# """
-# platforms = ["linux", "macos", "windows"]
-# python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
-# upstream_source = "pproxy/server.py:123"
-# expected_candidate_policy = "reject_with_diagnostic"
-# approval_rationale = "Security: candidate rejects malformed input safely"
-# review_date = "2026-08-01"
-# regression_test = "test_upstream_defect_001"
+[[defect]]
+id = "UPSTREAM-001"
+title = "pproxy sends SOCKS5/HTTP CONNECT success reply before upstream route is established"
+affected_scenarios = ["socks5.connect.reply_order", "http.connect.reply_order"]
+reproducible_oracle_only = """
+  pproxy sends SOCKS5 success reply (REP=0x00) and HTTP CONNECT 200
+  response before the outbound route is established. If the upstream
+  connection subsequently fails, the client receives an ambiguous
+  connection close with no error reply.
+"""
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+upstream_source = "pproxy/server.py stream_handler"
+expected_candidate_policy = "correct_behavior"
+approval_rationale = "eggress sends reply only after route is established, providing correct error semantics"
+review_date = "2026-08-01"
+regression_test = "crates/eggress-cli/tests/reply_order.rs"
+
+[[defect]]
+id = "UPSTREAM-002"
+title = "pproxy server mode does not forward data correctly for HTTP/SOCKS5 upstream"
+affected_scenarios = ["server.http_forward", "server.socks5_forward"]
+reproducible_oracle_only = """
+  pproxy in server mode (acting as an upstream proxy) fails to forward
+  data correctly for both HTTP CONNECT and SOCKS5 protocols. The
+  pproxy-as-server tests fail when the client sends data through the
+  proxy tunnel.
+"""
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+upstream_source = "pproxy/server.py stream_handler"
+expected_candidate_policy = "correct_behavior"
+approval_rationale = "eggress server mode correctly forwards data; pproxy server mode is non-functional"
+review_date = "2026-08-01"
+regression_test = "crates/eggress-cli/tests/interoperability_shadowsocks.rs"
+
+[[defect]]
+id = "UPSTREAM-003"
+title = "pproxy UDP relay broken on macOS due to SelectorDatagramTransport"
+affected_scenarios = ["udp.socks5_associate.mac", "udp.standalone.mac"]
+reproducible_oracle_only = """
+  pproxy's UDP relay uses asyncio SelectorDatagramTransport which
+  fails on macOS. Both SOCKS5 UDP ASSOCIATE and standalone UDP modes
+  produce transport errors on macOS.
+"""
+platforms = ["macos"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+upstream_source = "pproxy/server.py datagram_handler"
+expected_candidate_policy = "correct_behavior"
+approval_rationale = "eggress UDP works correctly on macOS; pproxy has platform-specific asyncio bug"
+review_date = "2026-08-01"
+regression_test = "crates/eggress-cli/tests/pproxy_differential.rs"
+
+[[defect]]
+id = "UPSTREAM-004"
+title = "pproxy 2.7.9 incompatible with Python 3.14 (asyncio.get_event_loop removed)"
+affected_scenarios = ["runtime.python314"]
+reproducible_oracle_only = """
+  pproxy 2.7.9 uses asyncio.get_event_loop() which raises DeprecationWarning
+  and fails on Python 3.14 where the deprecated API is removed.
+  pproxy cannot run under Python 3.14 at all.
+"""
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.14"]
+upstream_source = "pproxy/server.py main"
+expected_candidate_policy = "correct_behavior"
+approval_rationale = "eggress Python bindings work with Python 3.9-3.13; Python 3.14 support is a candidate improvement"
+review_date = "2026-08-01"
+regression_test = "N/A (environment limitation)"
+
+[[defect]]
+id = "UPSTREAM-005"
+title = "pproxy accepts legacy Shadowsocks stream ciphers (insecure, no AEAD)"
+affected_scenarios = ["cipher.aes_128_cfb", "cipher.rc4_md5", "cipher.chacha20"]
+reproducible_oracle_only = """
+  pproxy accepts and uses legacy Shadowsocks stream ciphers
+  (aes-128-cfb, aes-128-ctr, rc4-md5, chacha20-ietf) which lack
+  AEAD authentication and are cryptographically insecure.
+"""
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+upstream_source = "pproxy/cipher.py MAP"
+expected_candidate_policy = "reject_with_diagnostic"
+approval_rationale = "eggress intentionally rejects insecure legacy ciphers; security improvement over pproxy"
+review_date = "2026-08-01"
+regression_test = "crates/eggress-protocol-shadowsocks/src/tests.rs"
+
+[[defect]]
+id = "UPSTREAM-006"
+title = "pproxy --sys flag mutates system proxy without explicit consent"
+affected_scenarios = ["cli.sys_flag"]
+reproducible_oracle_only = """
+  pproxy's --sys flag automatically mutates system proxy settings at
+  startup without explicit operator consent. On macOS it calls
+  networksetup -setwebproxystate and on Windows it modifies the registry.
+"""
+platforms = ["macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+upstream_source = "pproxy/sysproxy.py setup"
+expected_candidate_policy = "correct_behavior"
+approval_rationale = "eggress separates inspection from mutation; --sys is read-only by default, apply requires explicit --apply"
+review_date = "2026-08-01"
+regression_test = "crates/eggress-system-proxy/src/tests.rs"

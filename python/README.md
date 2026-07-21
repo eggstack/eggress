@@ -64,7 +64,8 @@ best-effort fallback, not the lifecycle API.
 
 ## pproxy Compatibility
 
-Eggress provides drop-in compatibility with pproxy for common use cases:
+Eggress provides a pproxy compatibility subset validated against pproxy==2.7.9
+(111 capabilities classified as `drop_in` per the strict compatibility manifest):
 
 - **URI Translation**: `translate_pproxy_args()` converts pproxy CLI arguments to eggress TOML
 - **Same Protocols**: HTTP, SOCKS4/4a, SOCKS5, Shadowsocks (AEAD), Trojan

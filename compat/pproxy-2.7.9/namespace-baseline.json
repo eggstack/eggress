@@ -1,0 +1,156 @@
+{
+  "package": "pproxy",
+  "version": "2.7.9",
+  "source": "pypi",
+  "extracted": "2026-07-20",
+  "python_versions_tested": ["3.11"],
+  "modules": {
+    "pproxy": {
+      "public_symbols": [
+        {"name": "Connection", "kind": "function", "signature": "(uri_jumps)"},
+        {"name": "DIRECT", "kind": "ProxyDirect"},
+        {"name": "Rule", "kind": "function", "signature": "(filename)"},
+        {"name": "Server", "kind": "function", "signature": "(uri_jumps)"}
+      ],
+      "submodules": ["proto", "server", "cipher", "cipherpy", "plugin", "verbose", "sysproxy"]
+    },
+    "pproxy.proto": {
+      "public_symbols": [
+        {"name": "BaseProtocol", "kind": "type", "signature": "(param)"},
+        {"name": "Direct", "kind": "type", "signature": "(param)"},
+        {"name": "Echo", "kind": "type", "signature": "(param)"},
+        {"name": "H2", "kind": "type", "signature": "(param)"},
+        {"name": "H3", "kind": "type", "signature": "(param)"},
+        {"name": "HTTP", "kind": "type", "signature": "(param)"},
+        {"name": "HTTPOnly", "kind": "type", "signature": "(param)"},
+        {"name": "MAPPINGS", "kind": "dict"},
+        {"name": "Pf", "kind": "type", "signature": "(param)"},
+        {"name": "Redir", "kind": "type", "signature": "(param)"},
+        {"name": "SO_ORIGINAL_DST", "kind": "int"},
+        {"name": "SS", "kind": "type", "signature": "(param)"},
+        {"name": "SSH", "kind": "type", "signature": "(param)"},
+        {"name": "SSR", "kind": "type", "signature": "(param)"},
+        {"name": "Socks4", "kind": "type", "signature": "(param)"},
+        {"name": "Socks5", "kind": "type", "signature": "(param)"},
+        {"name": "Transparent", "kind": "type", "signature": "(param)"},
+        {"name": "Trojan", "kind": "type", "signature": "(param)"},
+        {"name": "Tunnel", "kind": "type", "signature": "(param)"},
+        {"name": "WS", "kind": "type", "signature": "(param)"},
+        {"name": "accept", "kind": "function", "signature": "(protos, reader, **kw)"},
+        {"name": "get_protos", "kind": "function", "signature": "(rawprotos)"},
+        {"name": "netloc_split", "kind": "function", "signature": "(loc, default_host=None, default_port=None)"},
+        {"name": "packstr", "kind": "function", "signature": "(s, n=1)"},
+        {"name": "socks_address", "kind": "function", "signature": "(reader, n)"},
+        {"name": "socks_address_stream", "kind": "function", "signature": "(reader, n)"},
+        {"name": "sslwrap", "kind": "function", "signature": "(reader, writer, sslcontext, server_side=False, server_hostname=None, verbose=None)"},
+        {"name": "udp_accept", "kind": "function", "signature": "(protos, data, **kw)"}
+      ]
+    },
+    "pproxy.server": {
+      "public_symbols": [
+        {"name": "AuthTable", "kind": "type", "signature": "(remote_ip, authtime)"},
+        {"name": "DIRECT", "kind": "ProxyDirect"},
+        {"name": "ProxyBackward", "kind": "type", "signature": "(backward, backward_num, **kw)"},
+        {"name": "ProxyDirect", "kind": "type", "signature": "(lbind=None)"},
+        {"name": "ProxyH2", "kind": "type", "signature": "(sslserver, sslclient, **kw)"},
+        {"name": "ProxyH3", "kind": "type", "signature": "(quicserver, quicclient, **kw)"},
+        {"name": "ProxyQUIC", "kind": "type", "signature": "(quicserver, quicclient, **kw)"},
+        {"name": "ProxySSH", "kind": "type", "signature": "(**kw)"},
+        {"name": "ProxySimple", "kind": "type", "signature": "(jump, protos, cipher, users, rule, bind, host_name, port, unix, lbind, sslclient, sslserver)"},
+        {"name": "SOCKET_TIMEOUT", "kind": "int"},
+        {"name": "UDP_LIMIT", "kind": "int"},
+        {"name": "check_server_alive", "kind": "function", "signature": "(interval, rserver, verbose)"},
+        {"name": "compile_rule", "kind": "function", "signature": "(filename)"},
+        {"name": "datagram_handler", "kind": "function", "signature": "(writer, data, addr, protos, urserver, block, cipher, salgorithm, verbose=<lambda>, **kwargs)"},
+        {"name": "main", "kind": "function", "signature": "(args=None)"},
+        {"name": "prepare_ciphers", "kind": "function", "signature": "(cipher, reader, writer, bind=None, server_side=True)"},
+        {"name": "print_server_started", "kind": "function", "signature": "(option, server, print_fn)"},
+        {"name": "proxies_by_uri", "kind": "function", "signature": "(uri_jumps)"},
+        {"name": "proxy_by_uri", "kind": "function", "signature": "(uri, jump)"},
+        {"name": "schedule", "kind": "function", "signature": "(rserver, salgorithm, host_name, port)"},
+        {"name": "stream_handler", "kind": "function", "signature": "(reader, writer, unix, lbind, protos, rserver, cipher, sslserver, debug=0, authtime=2592000, block=None, salgorithm='fa', verbose=<lambda>, modstat=<lambda>, **kwargs)"},
+        {"name": "test_url", "kind": "function", "signature": "(url, rserver)"}
+      ]
+    },
+    "pproxy.cipher": {
+      "public_symbols": [
+        {"name": "AEADCipher", "kind": "type", "signature": "(key, ota=False, setup_key=True)"},
+        {"name": "AES_128_CFB8_Cipher", "kind": "type"},
+        {"name": "AES_128_CFB_Cipher", "kind": "type"},
+        {"name": "AES_128_CTR_Cipher", "kind": "type"},
+        {"name": "AES_128_GCM_Cipher", "kind": "type"},
+        {"name": "AES_128_OFB_Cipher", "kind": "type"},
+        {"name": "AES_192_CFB8_Cipher", "kind": "type"},
+        {"name": "AES_192_CFB_Cipher", "kind": "type"},
+        {"name": "AES_192_CTR_Cipher", "kind": "type"},
+        {"name": "AES_192_GCM_Cipher", "kind": "type"},
+        {"name": "AES_192_OFB_Cipher", "kind": "type"},
+        {"name": "AES_256_CFB8_Cipher", "kind": "type"},
+        {"name": "AES_256_CFB_Cipher", "kind": "type"},
+        {"name": "AES_256_CTR_Cipher", "kind": "type"},
+        {"name": "AES_256_GCM_Cipher", "kind": "type"},
+        {"name": "AES_256_OFB_Cipher", "kind": "type"},
+        {"name": "BF_CFB_Cipher", "kind": "type"},
+        {"name": "BaseCipher", "kind": "type"},
+        {"name": "CAST5_CFB_Cipher", "kind": "type"},
+        {"name": "ChaCha20_Cipher", "kind": "type"},
+        {"name": "ChaCha20_IETF_Cipher", "kind": "type"},
+        {"name": "ChaCha20_IETF_POLY1305_Cipher", "kind": "type"},
+        {"name": "DES_CFB_Cipher", "kind": "type"},
+        {"name": "MAP", "kind": "dict"},
+        {"name": "PacketCipher", "kind": "type", "signature": "(cipher, key, name)"},
+        {"name": "RC4_Cipher", "kind": "type"},
+        {"name": "RC4_MD5_Cipher", "kind": "type"},
+        {"name": "Salsa20_Cipher", "kind": "type"},
+        {"name": "get_cipher", "kind": "function", "signature": "(cipher_key)"}
+      ]
+    },
+    "pproxy.cipherpy": {
+      "public_symbols": [
+        {"name": "AEADCipher", "kind": "type"},
+        {"name": "AES_128_GCM_Cipher", "kind": "type"},
+        {"name": "AES_192_GCM_Cipher", "kind": "type"},
+        {"name": "AES_256_GCM_Cipher", "kind": "type"},
+        {"name": "ChaCha20_IETF_POLY1305_Cipher", "kind": "type"},
+        {"name": "ChaCha20_IETF_POLY1305_Cipher", "kind": "type"},
+        {"name": "MAP", "kind": "dict"},
+        {"name": "RAW", "kind": "type"},
+        {"name": "get_cipher", "kind": "function", "signature": "(cipher_key)"}
+      ],
+      "note": "Pure-python fallback cipher implementations"
+    },
+    "pproxy.plugin": {
+      "public_symbols": [
+        {"name": "BasePlugin", "kind": "type"},
+        {"name": "Http_Simple_Plugin", "kind": "type"},
+        {"name": "Origin_Plugin", "kind": "type"},
+        {"name": "PLUGIN", "kind": "dict"},
+        {"name": "Plain_Plugin", "kind": "type"},
+        {"name": "TIMESTAMP_TOLERANCE", "kind": "int"},
+        {"name": "Tls1__2_Ticket_Auth_Plugin", "kind": "type"},
+        {"name": "Verify_Deflate_Plugin", "kind": "type"},
+        {"name": "Verify_Simple_Plugin", "kind": "type"},
+        {"name": "get_plugin", "kind": "function", "signature": "(plugin_name)"},
+        {"name": "packstr", "kind": "function", "signature": "(s, n=2)"},
+        {"name": "toint", "kind": "function", "signature": "(s, o='big')"}
+      ]
+    },
+    "pproxy.verbose": {
+      "public_symbols": [
+        {"name": "all_stat", "kind": "function", "signature": "(stats)"},
+        {"name": "all_stat_other", "kind": "function", "signature": "(stats)"},
+        {"name": "b2s", "kind": "function", "signature": "(i)"},
+        {"name": "realtime_stat", "kind": "function", "signature": "(stats)"},
+        {"name": "setup", "kind": "function", "signature": "(loop, args)"}
+      ]
+    },
+    "pproxy.sysproxy": {
+      "public_symbols": [
+        {"name": "MacSetting", "kind": "type", "signature": "(args)"},
+        {"name": "WindowsSetting", "kind": "type", "signature": "(args)"},
+        {"name": "setup", "kind": "function", "signature": "(args)"}
+      ],
+      "platforms": ["macos", "windows"]
+    }
+  }
+}
