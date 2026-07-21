@@ -13,6 +13,25 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Sequence, Tuple
 
+# Reverse mapping from protocol class to pproxy scheme name.
+# Used by start_server to build listen URIs from stored protocol classes.
+_SCHEME_BY_CLASS: dict[type, str] = {}
+
+# Canonical scheme names preferred when a class maps to multiple schemes.
+_PREFERRED_SCHEMES = {"socks5", "socks4", "http", "ss", "trojan", "h2", "h3"}
+
+
+def _proto_to_scheme(proto_cls: Any) -> str:
+    """Convert a protocol class to its pproxy scheme name."""
+    if not _SCHEME_BY_CLASS:
+        from eggress.protocol import _PROTOCOL_REGISTRY
+        for scheme, cls in _PROTOCOL_REGISTRY.items():
+            if cls not in _SCHEME_BY_CLASS:
+                _SCHEME_BY_CLASS[cls] = scheme
+            elif scheme in _PREFERRED_SCHEMES:
+                _SCHEME_BY_CLASS[cls] = scheme
+    return _SCHEME_BY_CLASS.get(proto_cls, "http")
+
 
 # ---------------------------------------------------------------------------
 # AuthTable
@@ -364,6 +383,80 @@ class ProxySimple(ProxyDirect):
     ) -> Any:
         return None
 
+    # -- start_server -------------------------------------------------------
+
+    async def start_server(
+        self,
+        args: Any = None,
+        stream_handler: Callable[..., Any] | None = None,
+    ) -> Any:
+        """Start a server for this proxy configuration.
+
+        Delegates to :class:`eggress.pproxy.Server` for the actual server
+        lifecycle.  Returns a handle with ``close()`` / ``wait_closed()``
+        methods.
+
+        Args:
+            args: Reserved for pproxy API compatibility (ignored).
+            stream_handler: Reserved for pproxy API compatibility (ignored).
+
+        Returns:
+            A running :class:`eggress.pproxy.Server` instance.
+        """
+        from eggress.pproxy import Server as EggressServer
+
+        listen_uri = self._build_listen_uri()
+        listen_args = [listen_uri] if listen_uri else []
+
+        remote_uri = self._build_remote_uri()
+        remote_args = [remote_uri] if remote_uri else None
+
+        server = EggressServer(
+            listen=listen_args or None,
+            remote=remote_args,
+            allow_partial=True,
+        )
+        await server.astart()
+        return server
+
+    def _build_listen_uri(self) -> str:
+        """Build a pproxy-style listen URI from this proxy's config."""
+        proto_name = _proto_to_scheme(self._protos[0]) if self._protos else "http"
+        bind = self._bind or "127.0.0.1:0"
+        return f"{proto_name}://{bind}"
+
+    def _build_remote_uri(self) -> str | None:
+        """Build a pproxy-style remote URI from the jump chain.
+
+        Returns ``None`` when no explicit upstream is configured (direct
+        mode).  ``proxy_by_uri`` stores the original URI as ``_jump`` even
+        when there is no chain, so we must distinguish a self-referential
+        jump (no upstream) from an actual nested chain.
+
+        For ``__``-separated chains (e.g. ``socks5://...__http://...``),
+        returns only the upstream portion (after the first ``__``).
+        """
+        if self._jump is None:
+            return None
+        if isinstance(self._jump, str):
+            # Handle __-separated chains: return the upstream portion only.
+            if "__" in self._jump:
+                parts = self._jump.split("__", 1)
+                upstream = parts[1].strip()
+                return upstream if upstream else None
+            # If _jump matches the listen URI, there is no upstream chain.
+            listen_uri = self._build_listen_uri()
+            if self._jump == listen_uri:
+                return None
+            return self._jump
+        # Nested proxy object — use its stored jump or str representation
+        if hasattr(self._jump, "_jump") and self._jump._jump is not None:
+            inner = self._jump._jump
+            if isinstance(inner, str):
+                return inner
+            return str(inner) if inner else None
+        return str(self._jump) if self._jump else None
+
     def __repr__(self) -> str:
         return (
             f"<{type(self).__name__} jump={self._jump!r} "
@@ -401,11 +494,14 @@ class ProxyBackward(ProxySimple):
 
     async def start_server(
         self,
-        args: Any,
+        args: Any = None,
         stream_handler: Callable[..., Any] | None = None,
-    ) -> None:
-        """Start the backward server.  Requires runtime integration."""
-        raise NotImplementedError("start_server requires runtime integration")
+    ) -> Any:
+        """Start the backward server.
+
+        Delegates to the base :meth:`ProxySimple.start_server`.
+        """
+        return await super().start_server(args, stream_handler)
 
     async def start_server_run(self, handler: Any) -> None:
         """Run the backward server handler.  Requires runtime integration."""
@@ -458,10 +554,14 @@ class ProxyH2(ProxySimple):
 
     async def start_server(
         self,
-        args: Any,
+        args: Any = None,
         stream_handler: Callable[..., Any] | None = None,
-    ) -> None:
-        raise NotImplementedError("start_server requires runtime integration")
+    ) -> Any:
+        """Start the H2 server.
+
+        Delegates to the base :meth:`ProxySimple.start_server`.
+        """
+        return await super().start_server(args, stream_handler)
 
     async def udp_start_server(self, args: Any) -> None:
         raise NotImplementedError("udp_start_server requires runtime integration")
@@ -509,7 +609,7 @@ class ProxySSH(ProxySimple):
 
     async def start_server(
         self,
-        args: Any,
+        args: Any = None,
         stream_handler: Callable[..., Any] | None = None,
         tunnel: Any = None,
     ) -> None:
@@ -570,7 +670,7 @@ class ProxyQUIC(ProxySimple):
 
     async def start_server(
         self,
-        args: Any,
+        args: Any = None,
         stream_handler: Callable[..., Any] | None = None,
     ) -> None:
         raise NotImplementedError("QUIC is not supported by eggress")
