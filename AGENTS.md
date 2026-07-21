@@ -84,8 +84,8 @@ cargo test -p eggress-runtime --lib platform
 # Run sockaddr parser tests (transparent unsafe boundary)
 cargo test -p eggress-server --lib transparent
 
-# Run advanced transport integration tests
-cargo test -p eggress-runtime advanced_transport
+# Run advanced transport integration tests (gated)
+EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1 cargo test -p eggress-cli --test advanced_transport_interop -- --ignored
 
 # Run transparent proxy tests
 cargo test -p eggress-runtime transparent
@@ -266,9 +266,6 @@ cargo test -p eggress-runtime scheduler_runtime
 
 # Run multi-hop TCP chain tests
 cargo test -p eggress-runtime multihop_tcp
-
-# Run failure semantics tests
-cargo test -p eggress-runtime failure_semantics
 
 # Run retry/fallback tests
 cargo test -p eggress-runtime retry_fallback
@@ -566,7 +563,8 @@ eggress/
 Integration tests live in `crates/eggress-runtime/tests/` (startup, routing,
 health, admin, reload, shutdown, pac_static, udp, udp_upstream, upstream_protocols,
 shadowsocks_tcp, shadowsocks_udp, reverse_interop, reverse_runtime, reverse_soak,
-lifecycle_invariants, observability, security_invariants, load).
+lifecycle_invariants, observability, security_invariants, load, multihop_tcp,
+performance_smoke, scheduler_runtime, tls, transparent, trojan, unix_socket).
 They exercise the supervisor end to end and cover negative-path behaviors (bind
 conflict, invalid source, oversized identity, reload-time failure). UDP integration tests
 cover association lifecycle, TCP control close, echo relay, bind conflict,
@@ -649,7 +647,6 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **SSH upstream parity**: SSH is classified as intentional non-parity (Phase 47 ADR). SSH URIs are recognized at parse time for clean diagnostics but rejected with an actionable recommendation to use OpenSSH dynamic forwarding (`ssh -D`). See `docs/adr/ADR_ssh_upstream_parity.md`.
 - **Corrective parity audit**: Completed for workstreams 6 (repair capability classifier) and 9 (completion-doc truth pass). Shadowsocks TCP framing standardized to SIP003 AEAD in Phase 21. Completion docs updated with corrective notices and gated-test status.
 - **Embed API**: `eggress-embed` provides `EggressConfig`, `EggressService`, and `EggressHandle` for in-process embedding. Thread ownership: async path uses a Tokio blocking-pool thread + dedicated OS thread (`eggress-embed-rt`); blocking path uses an outer startup thread + inner run thread (`eggress-embed-run`). Handle owns state/token and cleans up on drop (5-second timeout on async path). `shutdown()` and `shutdown_blocking()` are idempotent. See `docs/EMBED_API.md`.
-- **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. Version sourced from native module's `CARGO_PKG_VERSION`. Lifecycle: always prefer explicit `shutdown()` or context manager; object destruction is best-effort fallback. Phase 31 added Python utility APIs: `check_pproxy_uri()`, `redact_pproxy_uri()`, `diagnostics_for_uri()`, `supported_features()`, `UriInfo` dataclass, `Diagnostic` dataclass, and `Server` status helpers (`is_ready`, `listener_info`, `metrics_text`). URI corpus fixture tests parametrized from `tests/compat/fixtures/pproxy_uri_corpus.toml` (65 cases). Phase 32 hardening: GIL-release fixes for `parse_toml_config`, `route_explain`, `test_upstream_connect`; tier language normalization (Eggress-native); evidence reclassification; `__all__` completeness fix; `py.typed` presence test. Phase C3 `Server` class: pproxy-compatible server wrapper with full lifecycle, observability (`status()`, `sessions`, `last_error`), hot-reload, resource management (`__del__` warning), thread safety, and 84 lifecycle tests covering TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, and pproxy example patterns. See `docs/PYTHON_BINDINGS.md` and `docs/PHASE_29_32_PYTHON_HARDENING_COMPLETION.md`.
 - **Python bindings**: `eggress-python` wraps `eggress-embed` via PyO3. GIL is released on all blocking Rust calls via `py.detach()`. Python package lives in `python/eggress/` with maturin build. Version sourced from native module's `CARGO_PKG_VERSION`. Lifecycle: always prefer explicit `shutdown()` or context manager; object destruction is best-effort fallback. Phase 31 added Python utility APIs: `check_pproxy_uri()`, `redact_pproxy_uri()`, `diagnostics_for_uri()`, `supported_features()`, `UriInfo` dataclass, `Diagnostic` dataclass, and `Server` status helpers (`is_ready`, `listener_info`, `metrics_text`). URI corpus fixture tests parametrized from `tests/compat/fixtures/pproxy_uri_corpus.toml` (65 cases). Phase 32 hardening: GIL-release fixes for `parse_toml_config`, `route_explain`, `test_upstream_connect`; tier language normalization (Eggress-native); evidence reclassification; `__all__` completeness fix; `py.typed` presence test. Phase C3 `Server` class: pproxy-compatible server wrapper with full lifecycle, observability (`status()`, `sessions`, `last_error`), hot-reload, resource management (`__del__` warning), thread safety, and 84 lifecycle tests covering TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, and pproxy example patterns. Track B/C adds `PyOutboundConnector.connect_tcp()` and `PyOutboundStream`, with sync and asyncio wrappers that use the native Rust connector without a temporary listener. See `docs/PYTHON_BINDINGS.md` and `docs/PHASE_29_32_PYTHON_HARDENING_COMPLETION.md`.
 - **Python Connection object (Phase C2)**: `eggress.Connection` provides a pproxy-compatible low-level connection object backed by Rust-owned networking. Accepts pproxy-style URI arguments, translates to eggress TOML config, creates an embedded service, and manages the connection lifecycle. State machine: Created → Connecting → Connected → Closing → Closed → Failed. Supports sync/async context managers, `__del__` cleanup with `ResourceWarning`, and idempotent `close()`/`wait_closed()`. Exception hierarchy maps Rust errors to `ConnectionError`, `ConnectionClosedError`, `TimeoutError`, `DnsError`, `AuthError`, `TlsError`, `LoopMismatchError`, `ConnectionCancelledError`, `UseAfterCloseError`, `UdpAssociationError`, `UnsupportedCompositionError`. Connection leak detection via `Connection.connection_stats()` / `Connection.reset_connection_stats()`. `AsyncConnection` provides asyncio-native wrapper with loop affinity. See `python/eggress/connection.py` and `python/eggress/async_connection.py`.
 - **Python protocol/cipher/plugin objects (Phase C4)**: `eggress.protocol` provides pproxy-compatible protocol objects with `MAPPINGS` dict, `get_protos()` parser, and classes (`Socks5`, `HTTP`, `SS`, `Trojan`, etc.) carrying typed metadata. `eggress.cipher` provides AEAD cipher objects (`AES_256_GCM_Cipher`, `AES_192_GCM_Cipher`, `AES_128_GCM_Cipher`, `ChaCha20_IETF_POLY1305_Cipher`) with `encrypt()`, `decrypt()`, `encrypt_and_digest()`, `decrypt_and_verify()` behavioral methods using the `cryptography` library; raises `UnsupportedFeatureError` otherwise. `MAP` dict and `get_cipher()` factory. `eggress.plugin` provides a bounded, cancellation-safe plugin callback bridge (`PluginBridge`) between Rust async tasks and Python callbacks with backpressure, timeout enforcement, and reentrancy detection. See `python/eggress/protocol.py`, `python/eggress/cipher.py`, and `python/eggress/plugin.py`.
