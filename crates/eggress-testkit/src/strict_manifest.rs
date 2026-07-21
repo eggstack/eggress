@@ -55,6 +55,18 @@ pub const ALLOWED_OWNERS: &[&str] = &["track-a", "track-b", "track-c"];
 
 pub const ALLOWED_MILESTONES: &[&str] = &["A", "B", "C", "D", "E", "F"];
 
+pub const ALLOWED_EVIDENCE_LEVELS: &[&str] = &[
+    "paired_oracle",
+    "bidirectional_interop",
+    "oracle_only_baseline",
+    "candidate_only",
+    "structural_only",
+    "none",
+];
+
+pub const ALLOWED_IMPLEMENTATION_STATES: &[&str] =
+    &["functional", "structural", "partial", "absent"];
+
 /// Milestone order for "current milestone" checking.
 const MILESTONE_ORDER: &[&str] = &["A", "B", "C", "D", "E", "F"];
 
@@ -122,6 +134,10 @@ pub struct StrictRecord {
     pub evidence_refs: Vec<String>,
     #[serde(default)]
     pub notes: String,
+    #[serde(default)]
+    pub evidence_level: String,
+    #[serde(default)]
+    pub implementation_state: String,
 }
 
 /// The complete strict manifest structure.
@@ -187,6 +203,38 @@ pub enum StrictValidationError {
         milestone: String,
         current: String,
     },
+
+    // Rule 7: drop_in requires paired_oracle or bidirectional_interop evidence
+    #[error(
+        "drop_in record \"{id}\" has evidence_level \"{evidence_level}\" \
+         (must be paired_oracle or bidirectional_interop)"
+    )]
+    DropInRequiresStrongEvidence { id: String, evidence_level: String },
+
+    // Rule 8: structural-only comparator + drop_in requires non-structural evidence
+    #[error(
+        "drop_in record \"{id}\" with comparator \"{comparator}\" has \
+         evidence_level \"{evidence_level}\" (must not be structural_only or none)"
+    )]
+    StructuralComparatorDropInRequiresEvidence {
+        id: String,
+        comparator: String,
+        evidence_level: String,
+    },
+
+    // Rule 9: structural_only evidence cannot coexist with drop_in
+    #[error(
+        "record \"{id}\" has evidence_level \"structural_only\" but status \"drop_in\" \
+         (structural_only evidence is incompatible with drop_in)"
+    )]
+    StructuralOnlyIncompatibleWithDropIn { id: String },
+
+    // New enum validation errors
+    #[error("unknown evidence_level \"{value}\" (valid: {allowed:?})")]
+    UnknownEvidenceLevel { value: String, allowed: Vec<String> },
+
+    #[error("unknown implementation_state \"{value}\" (valid: {allowed:?})")]
+    UnknownImplementationState { value: String, allowed: Vec<String> },
 }
 
 /// A collection of validation errors.
@@ -433,6 +481,32 @@ pub fn validate_strict_manifest(manifest: &StrictManifest) -> Result<(), StrictV
             });
         }
 
+        // Rule 1: Valid evidence_level
+        if !rec.evidence_level.is_empty()
+            && !ALLOWED_EVIDENCE_LEVELS.contains(&rec.evidence_level.as_str())
+        {
+            errs.push(StrictValidationError::UnknownEvidenceLevel {
+                value: rec.evidence_level.clone(),
+                allowed: ALLOWED_EVIDENCE_LEVELS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            });
+        }
+
+        // Rule 1: Valid implementation_state
+        if !rec.implementation_state.is_empty()
+            && !ALLOWED_IMPLEMENTATION_STATES.contains(&rec.implementation_state.as_str())
+        {
+            errs.push(StrictValidationError::UnknownImplementationState {
+                value: rec.implementation_state.clone(),
+                allowed: ALLOWED_IMPLEMENTATION_STATES
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            });
+        }
+
         // Rule 4: drop_in requires evidence_refs or test_refs
         if rec.status == "drop_in" && rec.evidence_refs.is_empty() && rec.test_refs.is_empty() {
             errs.push(StrictValidationError::DropInWithoutEvidence { id: rec.id.clone() });
@@ -455,6 +529,39 @@ pub fn validate_strict_manifest(manifest: &StrictManifest) -> Result<(), StrictV
                     });
                 }
             }
+        }
+
+        // Rule 7: drop_in requires paired_oracle or bidirectional_interop evidence
+        if rec.status == "drop_in"
+            && !rec.evidence_level.is_empty()
+            && rec.evidence_level != "paired_oracle"
+            && rec.evidence_level != "bidirectional_interop"
+        {
+            errs.push(StrictValidationError::DropInRequiresStrongEvidence {
+                id: rec.id.clone(),
+                evidence_level: rec.evidence_level.clone(),
+            });
+        }
+
+        // Rule 8: module_existence/constant_value + drop_in requires non-structural evidence
+        if rec.status == "drop_in"
+            && (rec.comparator == "module_existence" || rec.comparator == "constant_value")
+            && (rec.evidence_level == "structural_only" || rec.evidence_level == "none")
+        {
+            errs.push(
+                StrictValidationError::StructuralComparatorDropInRequiresEvidence {
+                    id: rec.id.clone(),
+                    comparator: rec.comparator.clone(),
+                    evidence_level: rec.evidence_level.clone(),
+                },
+            );
+        }
+
+        // Rule 9: structural_only evidence cannot coexist with drop_in
+        if rec.evidence_level == "structural_only" && rec.status == "drop_in" {
+            errs.push(
+                StrictValidationError::StructuralOnlyIncompatibleWithDropIn { id: rec.id.clone() },
+            );
         }
     }
 
@@ -720,6 +827,8 @@ mod tests {
             test_refs: vec!["test_ref".to_string()],
             evidence_refs: vec!["evidence_ref".to_string()],
             notes: String::new(),
+            evidence_level: "paired_oracle".to_string(),
+            implementation_state: "functional".to_string(),
         }
     }
 
@@ -1337,5 +1446,181 @@ mod tests {
         let manifest = make_manifest(vec![rec]);
         let report = generate_strict_report(&manifest);
         assert!(report.contains("..."));
+    }
+
+    // -- Evidence level / implementation_state regression tests (AC1) --
+
+    #[test]
+    fn module_existence_drop_in_structural_only_rejected() {
+        let mut rec = default_record("me_drop_struct");
+        rec.comparator = "module_existence".to_string();
+        rec.status = "drop_in".to_string();
+        rec.evidence_level = "structural_only".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::StructuralComparatorDropInRequiresEvidence { id, .. }
+                    if id == "me_drop_struct"
+            )),
+            "expected StructuralComparatorDropInRequiresEvidence for module_existence + drop_in + structural_only"
+        );
+    }
+
+    #[test]
+    fn structural_only_with_drop_in_rejected() {
+        let mut rec = default_record("struct_drop");
+        rec.comparator = "protocol_wire".to_string();
+        rec.status = "drop_in".to_string();
+        rec.evidence_level = "structural_only".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::StructuralOnlyIncompatibleWithDropIn { id, .. }
+                    if id == "struct_drop"
+            )),
+            "expected StructuralOnlyIncompatibleWithDropIn for structural_only + drop_in"
+        );
+    }
+
+    #[test]
+    fn drop_in_with_candidate_only_rejected() {
+        let mut rec = default_record("drop_candidate");
+        rec.comparator = "protocol_wire".to_string();
+        rec.status = "drop_in".to_string();
+        rec.evidence_level = "candidate_only".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::DropInRequiresStrongEvidence { id, .. }
+                    if id == "drop_candidate"
+            )),
+            "expected DropInRequiresStrongEvidence for drop_in + candidate_only"
+        );
+    }
+
+    #[test]
+    fn drop_in_with_paired_oracle_passes() {
+        let mut rec = default_record("drop_paired");
+        rec.status = "drop_in".to_string();
+        rec.evidence_level = "paired_oracle".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn drop_in_with_bidirectional_interop_passes() {
+        let mut rec = default_record("drop_bidi");
+        rec.status = "drop_in".to_string();
+        rec.evidence_level = "bidirectional_interop".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn all_allowed_evidence_levels_are_valid() {
+        for ev in ALLOWED_EVIDENCE_LEVELS {
+            let mut rec = default_record(&format!("ev_{ev}"));
+            rec.evidence_level = ev.to_string();
+            rec.status = "gap".to_string();
+            rec.milestone = "F".to_string();
+            let manifest = make_manifest(vec![rec]);
+            let errs = validate_strict_manifest(&manifest);
+            if let Err(ref e) = errs {
+                assert!(
+                    !e.errors
+                        .iter()
+                        .any(|e| matches!(e, StrictValidationError::UnknownEvidenceLevel { .. })),
+                    "evidence_level \"{ev}\" should be valid"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_allowed_implementation_states_are_valid() {
+        for ist in ALLOWED_IMPLEMENTATION_STATES {
+            let mut rec = default_record(&format!("ist_{ist}"));
+            rec.implementation_state = ist.to_string();
+            rec.status = "gap".to_string();
+            rec.milestone = "F".to_string();
+            let manifest = make_manifest(vec![rec]);
+            let errs = validate_strict_manifest(&manifest);
+            if let Err(ref e) = errs {
+                assert!(
+                    !e.errors.iter().any(|e| matches!(
+                        e,
+                        StrictValidationError::UnknownImplementationState { .. }
+                    )),
+                    "implementation_state \"{ist}\" should be valid"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_evidence_level_fails() {
+        let mut rec = default_record("bad_ev");
+        rec.evidence_level = "bogus".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::UnknownEvidenceLevel { value, .. } if value == "bogus"
+            )),
+            "expected UnknownEvidenceLevel"
+        );
+    }
+
+    #[test]
+    fn unknown_implementation_state_fails() {
+        let mut rec = default_record("bad_ist");
+        rec.implementation_state = "bogus".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::UnknownImplementationState { value, .. } if value == "bogus"
+            )),
+            "expected UnknownImplementationState"
+        );
+    }
+
+    #[test]
+    fn constant_value_drop_in_structural_only_rejected() {
+        let mut rec = default_record("cv_drop_struct");
+        rec.comparator = "constant_value".to_string();
+        rec.status = "drop_in".to_string();
+        rec.evidence_level = "structural_only".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::StructuralComparatorDropInRequiresEvidence { id, .. }
+                    if id == "cv_drop_struct"
+            )),
+            "expected StructuralComparatorDropInRequiresEvidence for constant_value + drop_in + structural_only"
+        );
+    }
+
+    #[test]
+    fn gap_with_structural_only_passes() {
+        let mut rec = default_record("gap_struct");
+        rec.status = "gap".to_string();
+        rec.milestone = "F".to_string();
+        rec.evidence_level = "structural_only".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
     }
 }

@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "strict-report"
+path = "src/bin/strict_report.rs"
+
 [dependencies]
 tokio.workspace = true
 tempfile.workspace = true
