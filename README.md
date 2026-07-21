@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> Status: Track B/C operational certification is complete and locally verified. The canonical contract is the 148-capability manifest at `docs/parity/pproxy_capability_manifest.toml` (103 `drop_in`, 16 `compatible_with_warning`, 15 `native_equivalent`, 9 `intentional_non_parity`, 5 `unsupported`). This is a **certified modern pproxy compatibility subset** — not strict full pproxy parity. See `docs/release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md` for the certification record, `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the go/no-go decision, and `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy. Python outbound connections use native streams; the optional `eggress-pproxy-compat` distribution provides `import pproxy` only when explicitly installed.
+> **Status:** The canonical contract is the 148-capability manifest at `docs/parity/pproxy_capability_manifest.toml`. The Rust-native CLI and runtime are production-ready. The Python source-compatibility surface (`eggress-pproxy-compat`) is **experimental and under active corrective review** — Milestones A–C have been reopened via the corrective pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) to replace structural/namespace evidence with paired oracle-backed behavioral evidence. The strict report (`docs/parity/PPROXY_2_7_9_STRICT_REPORT.md`) is stale and will be regenerated as part of the corrective pass. **Strict full drop-in parity with pproxy is not yet achieved.** See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 
 eggress will preserve the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -35,7 +35,7 @@ distribution provide:
 - **Phase C4 protocol/cipher/plugin objects**: `eggress.protocol`, `eggress.cipher`, `eggress.plugin`, and `eggress.wrapper` modules provide pproxy-compatible protocol objects, cipher objects with AEAD support, a bounded plugin callback bridge, and TLS/plugin/chain composition objects.
 - **Track B/C native outbound API**: `OutboundConnector.connect_tcp()` is exposed to Python as a GIL-releasing native stream with sync and asyncio wrappers. `ProxyConnection` uses this path directly and does not start a temporary local listener.
 - **Track B/C compatibility distribution**: install `eggress-pproxy-compat` separately to use `import pproxy`; it depends on the matching `eggress` wheel and `cryptography` cipher extra. The canonical `eggress` wheel never aliases `pproxy` through `sys.modules`.
-- **Milestone B: Python source-compatibility preview**: The compatibility distribution now exposes the complete public pproxy namespace required by the strict manifest. `pproxy.Connection`, `pproxy.Server`, `pproxy.Rule`, and `pproxy.DIRECT` reproduce the pinned oracle's public contracts. `ProxyDirect`/`ProxySimple`/`ProxyBackward`/`ProxyH2`/`ProxyH3`/`ProxyQUIC` proxy classes are fully implemented. `tcp_connect()` is a coroutine returning asyncio-compatible `(reader, writer)` pairs. The asyncio adapter (`CompatibleStreamReader`/`CompatibleStreamWriter`) bridges Rust-owned I/O into the standard asyncio stream interface. Strict manifest gaps reduced from 83 to 2 (CLI `--get` flag, config reload routing — both deferred to later milestones).
+- **Milestone B: Python source-compatibility preview**: The compatibility distribution exposes the public pproxy namespace required by the strict manifest. `pproxy.Connection`, `pproxy.Server`, `pproxy.Rule`, and `pproxy.DIRECT` reproduce the oracle's public aliases. `ProxyDirect`/`ProxySimple`/`ProxyBackward`/`ProxyH2`/`ProxyH3`/`ProxyQUIC` proxy classes exist with typed metadata. `tcp_connect()` is a coroutine returning asyncio-compatible `(reader, writer)` pairs via the asyncio adapter. **Corrective pass note:** The initial implementation pass claimed gaps reduced from 83 to 2, but the strict report on disk still shows 83 gaps. Multiple `drop_in` records use only `module_existence` as evidence. Milestones A–C are reopened for corrective behavioral evidence. See `plans/MILESTONES_A_C_CORRECTIVE_PASS.md`.
 - `.pyi` type stubs for all public modules
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
 - Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 148 capabilities across 5 categories with tier classification and machine-readable validation
@@ -61,7 +61,7 @@ The Track B/C verification pass produced:
 - Full CLI flag inventory documenting parity with pproxy (`docs/cli/PPROXY_CLI_INVENTORY.md`)
 - SSR and SSH URIs rejected with structured diagnostics (intentional non-parity; SSH documented in ADR at `docs/adr/ADR_ssh_upstream_parity.md`)
 
-### Honest Contract (Milestone A)
+### Honest Contract (Milestone A) — Under Corrective Review
 
 Eggress maintains a **frozen, behavior-oriented compatibility contract** against exactly `pproxy==2.7.9`. This contract is defined in:
 
@@ -72,7 +72,7 @@ Eggress maintains a **frozen, behavior-oriented compatibility contract** against
 
 The strict contract reserves `drop_in` for capabilities validated by paired oracle/candidate differential testing. Candidate-only tests, import stubs, and native-equivalent APIs do not prove compatibility. See the compatibility policy for governing rules.
 
-This is **not** a claim that eggress is a complete drop-in replacement for pproxy. It is a precise, auditable statement of what has been verified and what remains to be implemented.
+**Corrective pass note:** The initial implementation pass produced the infrastructure above but did not satisfy all acceptance gates. Multiple `drop_in` records use only `module_existence` as evidence (namespace presence, not behavioral validation). The strict report is stale. Milestones A–C are reopened via the corrective pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`). This is **not** a claim that eggress is a complete drop-in replacement for pproxy.
 
 ## Installation
 
@@ -497,6 +497,10 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - [x] Binary install documentation (Phase 49)
 
 ### pproxy compatibility
+
+> **Corrective pass in progress:** Milestones A–C are reopened. The Python source-compatibility
+> surface is experimental. Strict full drop-in parity is not yet achieved. See
+> `plans/MILESTONES_A_C_CORRECTIVE_PASS.md` for the corrective plan and current status.
 
 - [x] URI-mode command translation (`pproxy translate`)
 - [x] CLI flag translation with warnings (`pproxy check`)

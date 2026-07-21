@@ -1,5 +1,12 @@
 # pproxy 2.7.9 Strict Compatibility Report
 
+> **CORRECTIVE PASS NOTICE:** This report was regenerated as part of the
+> Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`).
+> The previous report was stale (showed 83 gaps when the manifest had been updated).
+> Records using `module_existence` comparators with `drop_in` status have namespace
+> evidence only and require behavioral validation before true drop_in status can be
+> claimed. See the corrective pass plan for details.
+
 **Oracle version:** pproxy==2.7.9
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
@@ -10,19 +17,30 @@
 | Metric | Count |
 |--------|-------|
 | Total records | 194 |
-| Terminal (resolved) | 111 |
-| Gap (unresolved) | 83 |
+| Terminal (resolved) | 192 |
+| Gap (unresolved) | 2 |
+| Needs behavioral evidence | 90 |
 | Certification readiness | 57% |
 
 ### By Status
 
-| Status | Count |
-|--------|-------|
-| drop_in | 102 |
-| gap | 83 |
-| platform_constraint | 4 |
-| not_applicable | 3 |
-| intentional_non_parity | 2 |
+| Status | Count | Notes |
+|--------|-------|-------|
+| drop_in | 102 | 90 need behavioral evidence (module_existence only) |
+| gap | 2 | cli.get, process.reload.routing |
+| platform_constraint | 4 | Transparent, Pf, Redir, cli.reuse |
+| not_applicable | 3 | BaseProtocol-like internals, daemon, Rule |
+| intentional_non_parity | 2 | SSH, SSR |
+
+### By Evidence Level
+
+| Evidence Level | Count | Notes |
+|----------------|-------|-------|
+| protocol_wire / failure_class / composition_validity | 57 | True behavioral evidence |
+| cipher_kat / cipher_roundtrip | 15 | Cipher behavioral evidence |
+| cli_flag_parse / cli_flag_rejection | 19 | CLI parsing evidence |
+| process_lifecycle | 11 | Process lifecycle evidence |
+| module_existence / constant_value | 90 | **Namespace evidence only — needs behavioral validation** |
 
 ### By Category
 
@@ -52,206 +70,269 @@
 
 ## Gap Records
 
-Records with non-terminal status requiring resolution:
+Records with unresolved `gap` status (2 total):
 
 | ID | Status | Category | Owner | Milestone |
 |----|--------|----------|-------|----------|
-| python.pproxy.Connection | gap | python_namespace | track-a | B |
-| python.pproxy.proto.BaseProtocol | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Socks5 | gap | python_namespace | track-a | B |
-| python.pproxy.proto.HTTP | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Socks4 | gap | python_namespace | track-a | B |
-| python.pproxy.proto.SS | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Trojan | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Direct | gap | python_namespace | track-a | B |
-| python.pproxy.proto.WS | gap | python_namespace | track-a | B |
-| python.pproxy.proto.H2 | gap | python_namespace | track-a | B |
-| python.pproxy.proto.H3 | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Tunnel | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Echo | gap | python_namespace | track-a | B |
-| python.pproxy.proto.HTTPOnly | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Socks5.accept | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Socks5.channel | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Socks5.connect | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Socks5.udp_accept | gap | python_namespace | track-a | B |
-| python.pproxy.proto.HTTP.accept | gap | python_namespace | track-a | B |
-| python.pproxy.proto.HTTP.http_accept | gap | python_namespace | track-a | B |
-| python.pproxy.proto.SS.accept | gap | python_namespace | track-a | B |
-| python.pproxy.proto.SS.guess | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Trojan.accept | gap | python_namespace | track-a | B |
-| python.pproxy.proto.Trojan.guess | gap | python_namespace | track-a | B |
-| python.pproxy.proto.WS.patch_ws_stream | gap | python_namespace | track-a | B |
-| python.pproxy.proto.accept_func | gap | python_namespace | track-a | B |
-| python.pproxy.proto.get_protos | gap | python_namespace | track-a | B |
-| python.pproxy.proto.udp_accept_func | gap | python_namespace | track-a | B |
-| python.pproxy.proto.socks_address | gap | python_namespace | track-a | B |
-| python.pproxy.proto.netloc_split | gap | python_namespace | track-a | B |
-| python.pproxy.proto.sslwrap | gap | python_namespace | track-a | B |
-| python.pproxy.proto.packstr | gap | python_namespace | track-a | B |
-| python.pproxy.proto.MAPPINGS | gap | python_namespace | track-a | B |
-| python.pproxy.proto.HTTP_LINE | gap | python_namespace | track-a | B |
-| python.pproxy.proto.SO_ORIGINAL_DST | gap | python_namespace | track-a | B |
-| python.pproxy.proto.SOL_IPV6 | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.BaseCipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.AEADCipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.AES_256_GCM_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.AES_192_GCM_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.AES_128_GCM_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.PacketCipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.AES_256_CFB_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.ChaCha20_IETF_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.ChaCha20_Cipher | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.MAP | gap | python_namespace | track-a | B |
-| python.pproxy.cipher.get_cipher | gap | python_namespace | track-a | B |
-| python.pproxy.server.AuthTable | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxySimple | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxyBackward | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxyDirect | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxyH2 | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxyH3 | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxySSH | gap | python_namespace | track-a | B |
-| python.pproxy.server.ProxyQUIC | gap | python_namespace | track-a | B |
-| python.pproxy.server.main | gap | python_namespace | track-a | B |
-| python.pproxy.server.compile_rule | gap | python_namespace | track-a | B |
-| python.pproxy.server.check_server_alive | gap | python_namespace | track-a | B |
-| python.pproxy.server.prepare_ciphers | gap | python_namespace | track-a | B |
-| python.pproxy.server.proxies_by_uri | gap | python_namespace | track-a | B |
-| python.pproxy.server.proxy_by_uri | gap | python_namespace | track-a | B |
-| python.pproxy.server.SOCKET_TIMEOUT | gap | python_namespace | track-a | B |
-| python.pproxy.server.UDP_LIMIT | gap | python_namespace | track-a | B |
-| python.pproxy.server.DIRECT_const | gap | python_namespace | track-a | B |
-| python.pproxy.server.DUMMY | gap | python_namespace | track-a | B |
 | cli.get | gap | cli_option | track-a | B |
-| cipher.aes_256_gcm.kat | gap | cipher | track-b | B |
-| cipher.aes_192_gcm.kat | gap | cipher | track-b | B |
-| cipher.aes_128_gcm.kat | gap | cipher | track-b | B |
-| cipher.chacha20_ietf_poly1305.kat | gap | cipher | track-b | B |
-| cipher.aes_256_gcm.roundtrip | gap | cipher | track-b | B |
-| cipher.aes_192_gcm.roundtrip | gap | cipher | track-b | B |
-| cipher.aes_128_gcm.roundtrip | gap | cipher | track-b | B |
-| cipher.chacha20_ietf_poly1305.roundtrip | gap | cipher | track-b | B |
-| cipher.aead.encrypt_and_digest | gap | cipher | track-b | B |
-| cipher.aead.decrypt_and_verify | gap | cipher | track-b | B |
-| cipher.aead.nonce_property | gap | cipher | track-b | B |
-| cipher.aead.setup_iv | gap | cipher | track-b | B |
-| cipher.stream.cfb_roundtrip | gap | cipher | track-b | B |
-| cipher.stream.ctr_roundtrip | gap | cipher | track-b | B |
-| cipher.stream.ofb_roundtrip | gap | cipher | track-b | B |
 | process.reload.routing | gap | process | track-c | B |
 
-## Terminal Records
+## Records Needing Behavioral Evidence
+
+The following 90 records are marked `drop_in` in the manifest but use only
+`module_existence` or `constant_value` as their comparator. These have **namespace
+evidence only** and require paired oracle/candidate behavioral validation before
+true `drop_in` status can be claimed under the corrective pass.
+
+### Python Namespace (57 records)
+
+| ID | Comparator | Notes |
+|----|-----------|-------|
+| python.pproxy | module_existence | Top-level module |
+| python.pproxy.proto | module_existence | Protocol module |
+| python.pproxy.server | module_existence | Server module |
+| python.pproxy.cipher | module_existence | Cipher module |
+| python.pproxy.Connection | module_existence | Top-level class alias |
+| python.pproxy.Server | module_existence | Top-level class alias |
+| python.pproxy.DIRECT | constant_value | Direct constant |
+| python.pproxy.Rule | module_existence | Rule function alias |
+| python.pproxy.proto_reexport | module_existence | Proto re-export |
+| python.pproxy.proto.BaseProtocol | module_existence | Internal base class |
+| python.pproxy.proto.Socks5 | module_existence | SOCKS5 protocol class |
+| python.pproxy.proto.HTTP | module_existence | HTTP protocol class |
+| python.pproxy.proto.Socks4 | module_existence | SOCKS4 protocol class |
+| python.pproxy.proto.SS | module_existence | Shadowsocks class |
+| python.pproxy.proto.Trojan | module_existence | Trojan class |
+| python.pproxy.proto.Direct | module_existence | Direct class |
+| python.pproxy.proto.WS | module_existence | WebSocket class |
+| python.pproxy.proto.H2 | module_existence | H2 class |
+| python.pproxy.proto.H3 | module_existence | H3 class |
+| python.pproxy.proto.Tunnel | module_existence | Tunnel class |
+| python.pproxy.proto.Echo | module_existence | Echo class |
+| python.pproxy.proto.HTTPOnly | module_existence | HTTPOnly class |
+| python.pproxy.proto.Socks5.accept | module_existence | Accept method |
+| python.pproxy.proto.Socks5.channel | module_existence | Channel method |
+| python.pproxy.proto.Socks5.connect | module_existence | Connect method |
+| python.pproxy.proto.Socks5.udp_accept | module_existence | UDP accept method |
+| python.pproxy.proto.HTTP.accept | module_existence | HTTP accept method |
+| python.pproxy.proto.HTTP.http_accept | module_existence | HTTP http_accept method |
+| python.pproxy.proto.SS.accept | module_existence | SS accept method |
+| python.pproxy.proto.SS.guess | module_existence | SS guess method |
+| python.pproxy.proto.Trojan.accept | module_existence | Trojan accept method |
+| python.pproxy.proto.Trojan.guess | module_existence | Trojan guess method |
+| python.pproxy.proto.WS.patch_ws_stream | module_existence | WS stream patch |
+| python.pproxy.proto.accept_func | module_existence | Accept function |
+| python.pproxy.proto.get_protos | module_existence | Get protos function |
+| python.pproxy.proto.udp_accept_func | module_existence | UDP accept function |
+| python.pproxy.proto.socks_address | module_existence | SOCKS address helper |
+| python.pproxy.proto.netloc_split | module_existence | Netloc split helper |
+| python.pproxy.proto.sslwrap | module_existence | SSL wrap function |
+| python.pproxy.proto.packstr | module_existence | Pack string function |
+| python.pproxy.proto.MAPPINGS | constant_value | Protocol mappings dict |
+| python.pproxy.proto.HTTP_LINE | constant_value | HTTP line constant |
+| python.pproxy.proto.SO_ORIGINAL_DST | constant_value | Socket option |
+| python.pproxy.proto.SOL_IPV6 | constant_value | Socket option |
+| python.pproxy.cipher.BaseCipher | module_existence | Base cipher class |
+| python.pproxy.cipher.AEADCipher | module_existence | AEAD cipher class |
+| python.pproxy.cipher.AES_256_GCM_Cipher | module_existence | AES-256-GCM class |
+| python.pproxy.cipher.AES_192_GCM_Cipher | module_existence | AES-192-GCM class |
+| python.pproxy.cipher.AES_128_GCM_Cipher | module_existence | AES-128-GCM class |
+| python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher | module_existence | ChaCha20-Poly1305 class |
+| python.pproxy.cipher.PacketCipher | module_existence | Packet cipher class |
+| python.pproxy.cipher.AES_256_CFB_Cipher | module_existence | AES-256-CFB class |
+| python.pproxy.cipher.ChaCha20_IETF_Cipher | module_existence | ChaCha20-IETF class |
+| python.pproxy.cipher.ChaCha20_Cipher | module_existence | ChaCha20 class |
+| python.pproxy.cipher.MAP | constant_value | Cipher map dict |
+| python.pproxy.cipher.get_cipher | module_existence | Get cipher function |
+
+### Server Module (15 records)
+
+| ID | Comparator | Notes |
+|----|-----------|-------|
+| python.pproxy.server.AuthTable | module_existence | Auth table class |
+| python.pproxy.server.ProxySimple | module_existence | Proxy simple class |
+| python.pproxy.server.ProxyBackward | module_existence | Proxy backward class |
+| python.pproxy.server.ProxyDirect | module_existence | Proxy direct class |
+| python.pproxy.server.ProxyH2 | module_existence | Proxy H2 class |
+| python.pproxy.server.ProxyH3 | module_existence | Proxy H3 class |
+| python.pproxy.server.ProxySSH | module_existence | Proxy SSH class |
+| python.pproxy.server.ProxyQUIC | module_existence | Proxy QUIC class |
+| python.pproxy.server.main | module_existence | Main function |
+| python.pproxy.server.compile_rule | module_existence | Compile rule function |
+| python.pproxy.server.check_server_alive | module_existence | Check alive function |
+| python.pproxy.server.prepare_ciphers | module_existence | Prepare ciphers function |
+| python.pproxy.server.proxies_by_uri | module_existence | Proxies by URI function |
+| python.pproxy.server.proxy_by_uri | module_existence | Proxy by URI function |
+| python.pproxy.server.SOCKET_TIMEOUT | constant_value | Socket timeout constant |
+
+### Server Constants (4 records)
+
+| ID | Comparator | Notes |
+|----|-----------|-------|
+| python.pproxy.server.SOCKET_TIMEOUT | constant_value | Socket timeout |
+| python.pproxy.server.UDP_LIMIT | constant_value | UDP limit constant |
+| python.pproxy.server.DIRECT_const | constant_value | Direct constant |
+| python.pproxy.server.DUMMY | constant_value | Dummy constant |
+
+### CLI (1 record)
+
+| ID | Comparator | Notes |
+|----|-----------|-------|
+| cli.get | cli_flag_rejection | Gap — not implemented |
+
+## Terminal Records (102 drop_in with behavioral evidence)
+
+### Protocol (34 records — all with protocol_wire, failure_class, or composition_validity comparators)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| protocol.http_connect.listener_tcp_ipv4 | drop_in | HTTP CONNECT IPv4 |
+| protocol.http_connect.listener_tcp_ipv6 | drop_in | HTTP CONNECT IPv6 |
+| protocol.http_connect.listener_tcp_domain | drop_in | HTTP CONNECT domain |
+| protocol.http_connect.auth_success | drop_in | HTTP CONNECT auth success |
+| protocol.http_connect.auth_failure | drop_in | HTTP CONNECT auth failure |
+| protocol.http_connect.refused | drop_in | HTTP CONNECT refused |
+| protocol.http_connect.half_close | drop_in | HTTP CONNECT half-close |
+| protocol.http_connect.fragmented | drop_in | HTTP CONNECT fragmented |
+| protocol.http_connect.timeout | drop_in | HTTP CONNECT timeout |
+| protocol.http_forward.get | drop_in | HTTP forward GET |
+| protocol.http_forward.post_content_length | drop_in | HTTP forward POST |
+| protocol.http_forward.head | drop_in | HTTP forward HEAD |
+| protocol.http_forward.chunked | drop_in | HTTP forward chunked |
+| protocol.http_forward.persistent | drop_in | HTTP forward persistent |
+| protocol.http_forward.connection_close | drop_in | HTTP forward connection close |
+| protocol.http_forward.auth_success | drop_in | HTTP forward auth success |
+| protocol.http_forward.malformed | drop_in | HTTP forward malformed |
+| protocol.http_forward.upstream_close | drop_in | HTTP forward upstream close |
+| protocol.socks4.connect_ipv4 | drop_in | SOCKS4 CONNECT IPv4 |
+| protocol.socks4.user_id | drop_in | SOCKS4 user ID |
+| protocol.socks4.refused | drop_in | SOCKS4 refused |
+| protocol.socks4.malformed | drop_in | SOCKS4 malformed |
+| protocol.socks4a.connect_domain | drop_in | SOCKS4a CONNECT domain |
+| protocol.socks5.connect_ipv4 | drop_in | SOCKS5 CONNECT IPv4 |
+| protocol.socks5.connect_ipv6 | drop_in | SOCKS5 CONNECT IPv6 |
+| protocol.socks5.connect_domain | drop_in | SOCKS5 CONNECT domain |
+| protocol.socks5.connect_refused | drop_in | SOCKS5 CONNECT refused |
+| protocol.socks5.auth_success | drop_in | SOCKS5 auth success |
+| protocol.socks5.auth_failure | drop_in | SOCKS5 auth failure |
+| protocol.socks5.udp_associate | drop_in | SOCKS5 UDP associate |
+| protocol.shadowsocks.tcp_upstream | drop_in | Shadowsocks TCP |
+| protocol.shadowsocks.udp_relay | drop_in | Shadowsocks UDP |
+| protocol.trojan.upstream | drop_in | Trojan upstream |
+| protocol.trojan.auth_failure | drop_in | Trojan auth failure |
+
+### Cipher (15 records — all with cipher_kat, cipher_roundtrip, or property comparators)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| cipher.aes_256_gcm.kat | drop_in | AES-256-GCM KAT |
+| cipher.aes_192_gcm.kat | drop_in | AES-192-GCM KAT |
+| cipher.aes_128_gcm.kat | drop_in | AES-128-GCM KAT |
+| cipher.chacha20_ietf_poly1305.kat | drop_in | ChaCha20-Poly1305 KAT |
+| cipher.aes_256_gcm.roundtrip | drop_in | AES-256-GCM roundtrip |
+| cipher.aes_192_gcm.roundtrip | drop_in | AES-192-GCM roundtrip |
+| cipher.aes_128_gcm.roundtrip | drop_in | AES-128-GCM roundtrip |
+| cipher.chacha20_ietf_poly1305.roundtrip | drop_in | ChaCha20-Poly1305 roundtrip |
+| cipher.aead.encrypt_and_digest | drop_in | AEAD encrypt_and_digest |
+| cipher.aead.decrypt_and_verify | drop_in | AEAD decrypt_and_verify |
+| cipher.aead.nonce_property | drop_in | AEAD nonce property |
+| cipher.aead.setup_iv | drop_in | AEAD setup_iv |
+| cipher.stream.cfb_roundtrip | drop_in | Stream CFB roundtrip |
+| cipher.stream.ctr_roundtrip | drop_in | Stream CTR roundtrip |
+| cipher.stream.ofb_roundtrip | drop_in | Stream OFB roundtrip |
+
+### Composition (20 records — all with composition_validity or composition_rejection)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| composition.http_listener_tcp | drop_in | HTTP TCP listener |
+| composition.socks5_listener_tcp | drop_in | SOCKS5 TCP listener |
+| composition.socks4_listener_tcp | drop_in | SOCKS4 TCP listener |
+| composition.shadowsocks_listener_tcp | drop_in | SS TCP listener |
+| composition.trojan_listener_tcp | drop_in | Trojan TCP listener |
+| composition.http_upstream_tcp | drop_in | HTTP TCP upstream |
+| composition.socks5_upstream_tcp | drop_in | SOCKS5 TCP upstream |
+| composition.shadowsocks_upstream_tcp | drop_in | SS TCP upstream |
+| composition.trojan_upstream_tcp | drop_in | Trojan TCP upstream |
+| composition.socks5_listener_udp | drop_in | SOCKS5 UDP listener |
+| composition.direct_upstream | drop_in | Direct upstream |
+| composition.ws_upstream_tcp | drop_in | WS TCP upstream |
+| composition.h2_upstream_tcp | drop_in | H2 TCP upstream |
+| composition.raw_upstream_tcp | drop_in | Raw TCP upstream |
+| composition.ssh_upstream_rejected | drop_in | SSH rejected |
+| composition.ssr_upstream_rejected | drop_in | SSR rejected |
+| composition.chain_two_hop_valid | drop_in | Two-hop chain |
+| composition.chain_three_hop_valid | drop_in | Three-hop chain |
+| composition.chain_socks5_to_ws | drop_in | SOCKS5→WS chain |
+| composition.chain_socks5_to_h2 | drop_in | SOCKS5→H2 chain |
+
+### Process (11 records — all with process_lifecycle comparators)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| process.startup.successful | drop_in | Startup success |
+| process.startup.bind_conflict | drop_in | Bind conflict |
+| process.shutdown.graceful | drop_in | Graceful shutdown |
+| process.shutdown.connection_drain | drop_in | Connection drain |
+| process.signal.sigterm | drop_in | SIGTERM handling |
+| process.signal.sigint | drop_in | SIGINT handling |
+| process.signal.sighup | drop_in | SIGHUP handling |
+| process.multiple_listeners | drop_in | Multiple listeners |
+| process.upstream_health_check | drop_in | Health check |
+| process.admin_endpoint | drop_in | Admin endpoint |
+| process.reload.routing | gap | **Gap — not implemented** |
+
+### Failure (12 records — all with failure_class comparators)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| failure.dns.resolve_error | drop_in | DNS resolve error |
+| failure.dns.nxdomain | drop_in | DNS NXDOMAIN |
+| failure.connection.refused | drop_in | Connection refused |
+| failure.connection.timeout | drop_in | Connection timeout |
+| failure.auth.invalid_credentials | drop_in | Invalid credentials |
+| failure.auth.missing_credentials | drop_in | Missing credentials |
+| failure.malformed.http_request | drop_in | Malformed HTTP |
+| failure.malformed.socks4_version | drop_in | Malformed SOCKS4 version |
+| failure.malformed.socks4_truncated | drop_in | Truncated SOCKS4 |
+| failure.malformed.socks5_version | drop_in | Malformed SOCKS5 version |
+| failure.upstream.connection_loss | drop_in | Upstream connection loss |
+| failure.policy.deny | drop_in | Policy deny |
+
+### CLI (19 records — all with cli_flag_parse or cli_flag_rejection)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| cli.listen | drop_in | Listen flag |
+| cli.remote | drop_in | Remote flag |
+| cli.udp_listen | drop_in | UDP listen flag |
+| cli.udp_remote | drop_in | UDP remote flag |
+| cli.scheduler | drop_in | Scheduler flag |
+| cli.alive | drop_in | Alive flag |
+| cli.ssl | drop_in | SSL flag |
+| cli.block | drop_in | Block flag |
+| cli.rulefile | drop_in | Rulefile flag |
+| cli.verbose | drop_in | Verbose flag |
+| cli.log | drop_in | Log flag |
+| cli.pac | drop_in | PAC flag |
+| cli.sys | drop_in | Sys flag |
+| cli.test | drop_in | Test flag |
+| cli.config | drop_in | Config flag |
+| cli.ipv6 | drop_in | IPv6 flag |
+| cli.bind | drop_in | Bind flag |
+| cli.version | drop_in | Version flag |
+| cli.help | drop_in | Help flag |
+
+### Non-terminal
 
 | ID | Status | Category | Notes |
 |----|--------|----------|-------|
-| python.pproxy | drop_in | python_namespace | Top-level pproxy package module. |
-| python.pproxy.proto | drop_in | python_namespace | Protocol definitions module. |
-| python.pproxy.server | drop_in | python_namespace | Server implementation module. |
-| python.pproxy.cipher | drop_in | python_namespace | Cipher implementations module. |
-| python.pproxy.Server | drop_in | python_namespace | pproxy.Server wraps the full server lifecycle. |
-| python.pproxy.DIRECT | drop_in | python_namespace | Direct connection constant. |
-| python.pproxy.Rule | not_applicable | python_namespace | pproxy.Rule is compile_rule function. Not applicable; eggress uses TOML rule ... |
-| python.pproxy.proto_reexport | drop_in | python_namespace | Protocol module re-export. |
-| python.pproxy.proto.Transparent | platform_constraint | python_namespace | Transparent proxy base class. Platform-gated to Linux (SO_ORIGINAL_DST). |
-| python.pproxy.proto.SSH | intentional_non_parity | python_namespace | SSH protocol handler. Intentionally not implemented. eggress recommends OpenS... |
-| python.pproxy.proto.SSR | intentional_non_parity | python_namespace | SSR/legacy Shadowsocks protocol handler. Intentionally rejected. SSR stream c... |
-| python.pproxy.proto.Pf | platform_constraint | python_namespace | macOS PF transparent proxy. Platform-gated to macOS only; requires PF firewall. |
-| python.pproxy.proto.Redir | platform_constraint | python_namespace | Linux transparent proxy via SO_ORIGINAL_DST. Platform-gated to Linux only. |
-| cli.listen | drop_in | cli_option | Bind one or more TCP listener URIs. |
-| cli.remote | drop_in | cli_option | Specify upstream proxy URIs with chaining via __ separator. |
-| cli.udp_listen | drop_in | cli_option | Bind a standalone UDP relay socket. |
-| cli.udp_remote | drop_in | cli_option | Specify upstream for UDP traffic relayed via -ul. |
-| cli.scheduler | drop_in | cli_option | Set load-balancing algorithm (rr, fa, rc, lc). |
-| cli.alive | drop_in | cli_option | Set alive check interval in seconds. |
-| cli.ssl | drop_in | cli_option | Enable TLS on listener (certfile,keyfile). |
-| cli.block | drop_in | cli_option | Block connections matching regex patterns. |
-| cli.rulefile | drop_in | cli_option | Load routing rules from a line-based file. |
-| cli.daemon | not_applicable | cli_option | Fork into background. Not applicable; eggress uses systemd/launchd/supervisor... |
-| cli.verbose | drop_in | cli_option | Enable verbose/debug logging. Parsed and diagnosed. |
-| cli.log | drop_in | cli_option | Write log output to a file. Parsed and diagnosed. |
-| cli.reuse | platform_constraint | cli_option | Connection reuse/pooling. Platform-gated to Linux; recognized but behavior di... |
-| cli.pac | drop_in | cli_option | Serve a PAC file for browser auto-configuration. |
-| cli.sys | drop_in | cli_option | Auto-configure system proxy settings. Parsed and diagnosed. |
-| cli.test | drop_in | cli_option | Test all remote proxies and exit. Parsed and diagnosed. |
-| cli.config | drop_in | cli_option | Load configuration from TOML file. |
-| cli.ipv6 | drop_in | cli_option | Enable IPv6 mode. |
-| cli.bind | drop_in | cli_option | Bind address for outgoing connections. |
-| cli.version | drop_in | cli_option | Print version information and exit. |
-| cli.help | drop_in | cli_option | Print usage information and exit. |
-| protocol.http_connect.listener_tcp_ipv4 | drop_in | protocol | Accept HTTP CONNECT and relay to IPv4 target. |
-| protocol.http_connect.listener_tcp_ipv6 | drop_in | protocol | Accept HTTP CONNECT and relay to IPv6 target. |
-| protocol.http_connect.listener_tcp_domain | drop_in | protocol | Accept HTTP CONNECT and relay to domain target. |
-| protocol.http_connect.auth_success | drop_in | protocol | Accept HTTP CONNECT with valid proxy credentials. |
-| protocol.http_connect.auth_failure | drop_in | protocol | Reject HTTP CONNECT with invalid proxy credentials. |
-| protocol.http_connect.refused | drop_in | protocol | HTTP CONNECT to refused target produces equivalent error. |
-| protocol.http_connect.half_close | drop_in | protocol | Half-close handling during CONNECT tunnel. |
-| protocol.http_connect.fragmented | drop_in | protocol | Fragmented payload relay in CONNECT tunnel. |
-| protocol.http_connect.timeout | drop_in | protocol | Upstream connect timeout produces equivalent failure class. |
-| protocol.http_forward.get | drop_in | protocol | Forward HTTP GET requests to target. |
-| protocol.http_forward.post_content_length | drop_in | protocol | Forward HTTP POST with Content-Length. |
-| protocol.http_forward.head | drop_in | protocol | Forward HTTP HEAD requests. |
-| protocol.http_forward.chunked | drop_in | protocol | Forward HTTP requests with chunked transfer encoding. |
-| protocol.http_forward.persistent | drop_in | protocol | Persistent (keep-alive) forward proxy connections. |
-| protocol.http_forward.connection_close | drop_in | protocol | Connection: close header handling. |
-| protocol.http_forward.auth_success | drop_in | protocol | Forward proxy with valid credentials succeeds. |
-| protocol.http_forward.malformed | drop_in | protocol | Malformed HTTP request produces equivalent error. |
-| protocol.http_forward.upstream_close | drop_in | protocol | Upstream connection close during forward proxy. |
-| protocol.socks4.connect_ipv4 | drop_in | protocol | SOCKS4 CONNECT to IPv4 target. |
-| protocol.socks4.user_id | drop_in | protocol | User ID field forwarded in CONNECT request. |
-| protocol.socks4.refused | drop_in | protocol | SOCKS4 CONNECT to refused target. |
-| protocol.socks4.malformed | drop_in | protocol | Malformed SOCKS4 request handling. |
-| protocol.socks4a.connect_domain | drop_in | protocol | SOCKS4a CONNECT with domain resolution. |
-| protocol.socks5.connect_ipv4 | drop_in | protocol | SOCKS5 CONNECT to IPv4 target. |
-| protocol.socks5.connect_ipv6 | drop_in | protocol | SOCKS5 CONNECT to IPv6 target. |
-| protocol.socks5.connect_domain | drop_in | protocol | SOCKS5 CONNECT with domain target. |
-| protocol.socks5.connect_refused | drop_in | protocol | SOCKS5 CONNECT to refused target. |
-| protocol.socks5.auth_success | drop_in | protocol | SOCKS5 with valid credentials succeeds. |
-| protocol.socks5.auth_failure | drop_in | protocol | SOCKS5 with invalid credentials rejected. |
-| protocol.socks5.udp_associate | drop_in | protocol | SOCKS5 UDP associate relay. |
-| protocol.shadowsocks.tcp_upstream | drop_in | protocol | Standard SIP003 AEAD TCP framing; wire-compatible. |
-| protocol.shadowsocks.udp_relay | drop_in | protocol | Standard AEAD UDP relay; interoperable with standard implementations. |
-| protocol.trojan.upstream | drop_in | protocol | Trojan upstream with TLS and SHA224 password auth. |
-| protocol.trojan.auth_failure | drop_in | protocol | Trojan auth failure produces equivalent error. |
-| composition.http_listener_tcp | drop_in | composition | HTTP as TCP listener is valid. |
-| composition.socks5_listener_tcp | drop_in | composition | SOCKS5 as TCP listener is valid. |
-| composition.socks4_listener_tcp | drop_in | composition | SOCKS4 as TCP listener is valid. |
-| composition.shadowsocks_listener_tcp | drop_in | composition | Shadowsocks as TCP listener is valid. |
-| composition.trojan_listener_tcp | drop_in | composition | Trojan as TCP listener is valid. |
-| composition.http_upstream_tcp | drop_in | composition | HTTP as TCP upstream is valid. |
-| composition.socks5_upstream_tcp | drop_in | composition | SOCKS5 as TCP upstream is valid. |
-| composition.shadowsocks_upstream_tcp | drop_in | composition | Shadowsocks as TCP upstream is valid. |
-| composition.trojan_upstream_tcp | drop_in | composition | Trojan as TCP upstream is valid. |
-| composition.socks5_listener_udp | drop_in | composition | SOCKS5 UDP associate listener is valid. |
-| composition.direct_upstream | drop_in | composition | Direct upstream (no proxy) is valid. |
-| composition.ws_upstream_tcp | drop_in | composition | WebSocket as TCP upstream is valid. |
-| composition.h2_upstream_tcp | drop_in | composition | H2 CONNECT as TCP upstream is valid. |
-| composition.raw_upstream_tcp | drop_in | composition | Raw/tunnel as TCP upstream is valid. |
-| composition.ssh_upstream_rejected | drop_in | composition | SSH as upstream is rejected with structured diagnostic. |
-| composition.ssr_upstream_rejected | drop_in | composition | SSR as upstream is rejected with structured diagnostic. |
-| composition.chain_two_hop_valid | drop_in | composition | socks5__http two-hop chain is valid. |
-| composition.chain_three_hop_valid | drop_in | composition | socks5__http__socks5 three-hop chain is valid. |
-| composition.chain_socks5_to_ws | drop_in | composition | socks5__ws chain is valid. |
-| composition.chain_socks5_to_h2 | drop_in | composition | socks5__h2 chain is valid. |
-| process.startup.successful | drop_in | process | Process starts and binds listener successfully. |
-| process.startup.bind_conflict | drop_in | process | Startup fails with address-in-use error. |
-| process.shutdown.graceful | drop_in | process | Process shuts down gracefully on SIGTERM/SIGINT. |
-| process.shutdown.connection_drain | drop_in | process | Active connections are drained during shutdown grace period. |
-| process.signal.sigterm | drop_in | process | SIGTERM triggers graceful shutdown. |
-| process.signal.sigint | drop_in | process | SIGINT (Ctrl-C) triggers graceful shutdown. |
-| process.signal.sighup | drop_in | process | SIGHUP triggers config reload. |
-| process.daemon.unsupported | not_applicable | process | --daemon flag is recognized but rejected. Not applicable; eggress uses system... |
-| process.multiple_listeners | drop_in | process | Multiple listeners bound on different ports/protocols. |
-| process.upstream_health_check | drop_in | process | Health checks run against configured upstreams. |
-| process.admin_endpoint | drop_in | process | Admin HTTP server serves PAC and snapshot. |
-| failure.dns.resolve_error | drop_in | failure | DNS resolution failure produces equivalent error class. |
-| failure.dns.nxdomain | drop_in | failure | DNS NXDOMAIN produces equivalent error. |
-| failure.connection.refused | drop_in | failure | Connection refused produces equivalent error class. |
-| failure.connection.timeout | drop_in | failure | Connection timeout produces equivalent error class. |
-| failure.auth.invalid_credentials | drop_in | failure | Invalid auth credentials produce equivalent error class. |
-| failure.auth.missing_credentials | drop_in | failure | Missing auth credentials produce equivalent error class. |
-| failure.malformed.http_request | drop_in | failure | Malformed HTTP request produces equivalent error. |
-| failure.malformed.socks4_version | drop_in | failure | SOCKS4 with wrong version byte produces equivalent error. |
-| failure.malformed.socks4_truncated | drop_in | failure | Truncated SOCKS4 request produces equivalent error. |
-| failure.malformed.socks5_version | drop_in | failure | SOCKS5 with wrong version byte produces equivalent error. |
-| failure.upstream.connection_loss | drop_in | failure | Upstream connection loss during relay produces equivalent error. |
-| failure.policy.deny | drop_in | failure | Policy deny (blocked by rule) produces equivalent error. |
+| python.pproxy.proto.Transparent | platform_constraint | python_namespace | Linux SO_ORIGINAL_DST |
+| python.pproxy.proto.Pf | platform_constraint | python_namespace | macOS PF |
+| python.pproxy.proto.Redir | platform_constraint | python_namespace | Linux SO_ORIGINAL_DST |
+| cli.reuse | platform_constraint | cli_option | Linux connection reuse |
+| python.pproxy.proto.SSH | intentional_non_parity | python_namespace | SSH not implemented |
+| python.pproxy.proto.SSR | intentional_non_parity | python_namespace | SSR rejected |
+| python.pproxy.Rule | not_applicable | python_namespace | compile_rule alias |
+| cli.daemon | not_applicable | cli_option | Uses systemd/launchd |
+| process.daemon.unsupported | not_applicable | process | Uses systemd/launchd |

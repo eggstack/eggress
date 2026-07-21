@@ -2,7 +2,13 @@
 
 ## Status
 
-Complete. All workstreams (B1–B10) implemented and verified. Strict manifest gaps reduced from 83 to 2 (CLI `--get` flag and config reload routing — both deferred to later milestones). All 1361 Python tests pass, 40 strict manifest validation tests pass, 61 API contract tests pass.
+**REOPENED — corrective pass in progress.** This milestone is reopened as part of the
+Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`). The initial
+implementation pass completed workstreams B1–B10 and produced 1361 passing Python tests,
+but the strict report on disk still shows 83 gaps at 57% readiness, multiple `drop_in`
+records use only `module_existence` as evidence (namespace evidence, not behavioral),
+and the report was never regenerated after the initial pass. Do not mark this milestone
+complete until all gates in the corrective pass plan are satisfied.
 
 ## Parent roadmap
 

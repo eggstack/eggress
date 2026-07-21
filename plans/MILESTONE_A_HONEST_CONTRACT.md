@@ -2,7 +2,12 @@
 
 ## Status
 
-Ready for implementation.
+**REOPENED — corrective pass in progress.** This milestone is reopened as part of the
+Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`). The initial
+implementation pass produced the strict manifest, oracle provenance, and compatibility
+policy infrastructure, but did not satisfy the acceptance gates for paired oracle-backed
+evidence, deterministic report generation, or manifest validator enforcement. Do not mark
+this milestone complete until all gates in the corrective pass plan are satisfied.
 
 ## Parent roadmap
 

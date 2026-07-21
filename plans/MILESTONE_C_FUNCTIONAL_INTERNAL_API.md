@@ -2,7 +2,13 @@
 
 ## Status
 
-**COMPLETE.** All acceptance criteria met or honestly scoped. See completion summary below.
+**REOPENED — corrective pass in progress.** This milestone is reopened as part of the
+Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`). The initial
+implementation pass completed workstreams C1–C15 and produced 595 Python tests, but
+multiple records marked `drop_in` use only `module_existence` comparators (namespace
+evidence, not behavioral), several `not_applicable` reclassifications are incorrect for
+publicly importable symbols, and the strict report was never regenerated. Do not mark
+this milestone complete until all gates in the corrective pass plan are satisfied.
 
 ## Parent roadmap
 

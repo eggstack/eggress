@@ -4,6 +4,12 @@
 # through paired oracle/candidate testing. The oracle is the reference
 # pproxy 2.7.9 installation; the candidate is the eggress implementation.
 #
+# CORRECTIVE PASS NOTICE: This manifest is under active review as part of
+# the Milestones A-C Corrective Pass (plans/MILESTONES_A_C_CORRECTIVE_PASS.md).
+# Records using `comparator = "module_existence"` with `status = "drop_in"`
+# have namespace evidence only and require behavioral validation before true
+# drop_in status can be claimed. See the corrective pass plan for details.
+#
 # Status vocabulary:
 #   gap               - candidate does not implement this capability
 #   drop_in           - candidate matches oracle behavior exactly
