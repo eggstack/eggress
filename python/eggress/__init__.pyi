@@ -120,6 +120,22 @@ from eggress._asyncio import (
     HAS_TASKGROUP as HAS_TASKGROUP,
     HAS_EXCEPTIONGROUP as HAS_EXCEPTIONGROUP,
 )
+from eggress._asyncio_adapter import (
+    CompatibleStreamReader as CompatibleStreamReader,
+    CompatibleStreamWriter as CompatibleStreamWriter,
+    open_tcp_connection as open_tcp_connection,
+)
+from eggress._pproxy_proxy import (
+    AuthTable as AuthTable,
+    ProxyDirect as ProxyDirect,
+    ProxySimple as ProxySimple,
+    ProxyBackward as ProxyBackward,
+    ProxyH2 as ProxyH2,
+    ProxySSH as ProxySSH,
+    ProxyQUIC as ProxyQUIC,
+    ProxyH3 as ProxyH3,
+    DIRECT as PROXY_DIRECT,
+)
 from eggress._eggress import (
     EggressError as EggressError,
     ConfigError as ConfigError,

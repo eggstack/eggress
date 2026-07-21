@@ -127,6 +127,22 @@ from eggress.wrapper import (
     Chain,
     normalize_chain,
 )
+from eggress._asyncio_adapter import (
+    CompatibleStreamReader,
+    CompatibleStreamWriter,
+    open_tcp_connection,
+)
+from eggress._pproxy_proxy import (
+    AuthTable,
+    ProxyDirect,
+    ProxySimple,
+    ProxyBackward,
+    ProxyH2,
+    ProxySSH,
+    ProxyQUIC,
+    ProxyH3,
+    DIRECT as PROXY_DIRECT,
+)
 
 
 def start_pproxy(
@@ -381,4 +397,18 @@ __all__ = [
     "PluginWrapper",
     "Chain",
     "normalize_chain",
+    # Asyncio adapter (Milestone B4)
+    "CompatibleStreamReader",
+    "CompatibleStreamWriter",
+    "open_tcp_connection",
+    # Pproxy server proxy objects (Milestone B3)
+    "AuthTable",
+    "ProxyDirect",
+    "ProxySimple",
+    "ProxyBackward",
+    "ProxyH2",
+    "ProxySSH",
+    "ProxyQUIC",
+    "ProxyH3",
+    "PROXY_DIRECT",
 ]

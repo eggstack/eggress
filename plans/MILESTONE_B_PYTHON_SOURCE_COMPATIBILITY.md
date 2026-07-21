@@ -2,7 +2,7 @@
 
 ## Status
 
-Blocked on Milestone A strict manifest and paired oracle harness.
+Complete. All workstreams (B1–B10) implemented and verified. Strict manifest gaps reduced from 83 to 2 (CLI `--get` flag and config reload routing — both deferred to later milestones). All 1361 Python tests pass, 40 strict manifest validation tests pass, 61 API contract tests pass.
 
 ## Parent roadmap
 

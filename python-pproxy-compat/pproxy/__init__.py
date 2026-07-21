@@ -7,43 +7,26 @@ canonical ``eggress`` package alone never shadows upstream ``pproxy``.
 from __future__ import annotations
 
 import eggress as _eggress
-from eggress.pproxy import Server as _Server
-from eggress.pproxy_connection import ProxyConnection as Connection
+from eggress._pproxy_proxy import DIRECT as _DIRECT_INSTANCE
 
 from . import cipher, proto, server
+from .server import proxy_by_uri, proxies_by_uri, compile_rule
 
 __eggress_compat__ = True
 __eggress_version__ = _eggress.__version__
 __pproxy_compatibility_version__ = "2.7.9"
 __version__ = __eggress_version__
 
-Server = _Server
+# In pproxy 2.7.9, Connection and Server are both aliases for proxies_by_uri.
+# They are functions, not classes.
+Connection = proxies_by_uri
+Server = proxies_by_uri
 
+# In pproxy 2.7.9, DIRECT is a ProxyDirect() instance (singleton).
+DIRECT = _DIRECT_INSTANCE
 
-class _DirectSentinel:
-    """Marker for code that only uses pproxy's direct sentinel identity."""
-
-    name = "direct"
-
-    def __repr__(self) -> str:
-        return "DIRECT"
-
-
-DIRECT = _DirectSentinel()
-
-
-class Rule:
-    """Small compatibility record for rule-file based applications.
-
-    Live routing uses Eggress TOML matchers. The record preserves construction
-    and introspection for programs that pass a rule filename to a factory.
-    """
-
-    def __init__(self, filename: str | None = None) -> None:
-        self.filename = filename
-
-    def __repr__(self) -> str:
-        return f"Rule({self.filename!r})"
+# Rule is an alias for compile_rule (a function, not a class).
+Rule = compile_rule
 
 
 __all__ = [

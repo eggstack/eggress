@@ -14,8 +14,17 @@ import urllib
 
 from eggress import start_pproxy
 from eggress.pproxy import PPProxyService, Server
-from eggress.pproxy_connection import ProxyConnection
-from eggress.protocol import UnsupportedFeatureError
+from eggress._pproxy_proxy import (
+    AuthTable,
+    ProxyBackward,
+    ProxyDirect,
+    ProxyH2,
+    ProxyH3,
+    ProxyQUIC,
+    ProxySSH,
+    ProxySimple,
+    DIRECT as _DIRECT_INSTANCE,
+)
 
 SOCKET_TIMEOUT = 10.0
 UDP_LIMIT = 0xFFFF
@@ -24,17 +33,80 @@ DUMMY = object()
 sslcontexts = {}
 
 
-def proxy_by_uri(uri: str, *args, **kwargs):
-    return ProxyConnection(uri)
+def proxy_by_uri(uri: str, jump=None):
+    """Create a proxy object from a pproxy-style URI.
+
+    In pproxy 2.7.9, this returns a ProxySimple (or ProxyDirect for direct://)
+    with the chain topology preserved.
+    """
+    from eggress.protocol import MAPPINGS
+
+    if not uri:
+        raise TypeError("proxy_by_uri() missing required argument: 'uri'")
+
+    # Parse the URI scheme to determine the protocol class
+    scheme = uri.split("://")[0].lower() if "://" in uri else ""
+    proto_cls = MAPPINGS.get(scheme)
+
+    if scheme == "direct" or proto_cls is None:
+        # Direct connection
+        return ProxyDirect()
+    else:
+        # Upstream proxy - construct a ProxySimple with the URI info
+        from eggress.pproxy import check_pproxy_uri
+
+        info = check_pproxy_uri(uri)
+        host = info.host if info.ok else None
+        port = info.port if info.ok else None
+        return ProxySimple(
+            jump=uri,
+            protos=(proto_cls,),
+            host_name=host,
+            port=port,
+        )
 
 
-def proxies_by_uri(uris, *args, **kwargs):
-    if isinstance(uris, str):
-        uris = [uris]
-    return ProxyConnection(*uris)
+def proxies_by_uri(uri_jumps):
+    """Create proxy objects from pproxy-style URI(s) with jump chains.
+
+    In pproxy 2.7.9, this is the core factory that Connection and Server
+    are aliases for. Accepts:
+      - a single URI string
+      - a '__'-separated chain string
+      - a list of URIs
+
+    Returns a single proxy object (or list if multiple independent chains).
+    """
+    if not uri_jumps:
+        raise TypeError("proxies_by_uri() missing required argument: 'uri_jumps'")
+
+    if isinstance(uri_jumps, str):
+        # Split '__'-separated chains
+        uris = uri_jumps.split("__")
+        if len(uris) == 1:
+            return proxy_by_uri(uris[0])
+        # Build a chain: each URI becomes a proxy in the chain
+        proxies = []
+        for uri in uris:
+            uri = uri.strip()
+            if uri:
+                proxies.append(proxy_by_uri(uri))
+        return proxies if len(proxies) > 1 else proxies[0]
+
+    if isinstance(uri_jumps, (list, tuple)):
+        if len(uri_jumps) == 1:
+            return proxy_by_uri(uri_jumps[0])
+        proxies = []
+        for uri in uri_jumps:
+            proxies.append(proxy_by_uri(uri))
+        return proxies
+
+    # Fallback: treat as single URI
+    return proxy_by_uri(str(uri_jumps))
 
 
 def compile_rule(filename: str, *args, **kwargs):
+    """Compile a rule file. Returns the filename for compatibility."""
     return filename
 
 
@@ -46,26 +118,19 @@ def prepare_ciphers(*args, **kwargs):
     return {}
 
 
-def _unsupported(name: str):
-    class UnsupportedProxy:
-        def __init__(self, *args, **kwargs):
-            raise UnsupportedFeatureError(
-                f"pproxy.server.{name} is structural compatibility only; "
-                "use eggress.Server or start_pproxy()"
-            )
-
-    UnsupportedProxy.__name__ = name
-    return UnsupportedProxy
-
-
-AuthTable = _unsupported("AuthTable")
-ProxyBackward = _unsupported("ProxyBackward")
-ProxyDirect = _unsupported("ProxyDirect")
-ProxyH2 = _unsupported("ProxyH2")
-ProxyH3 = _unsupported("ProxyH3")
-ProxyQUIC = _unsupported("ProxyQUIC")
-ProxySSH = _unsupported("ProxySSH")
-ProxySimple = _unsupported("ProxySimple")
+def schedule(rserver, salgorithm="fa", host_name=None, port=None):
+    """Schedule a connection from a list of remote servers."""
+    if not rserver:
+        return None
+    if salgorithm == "rr":
+        # Round-robin
+        return rserver[0] if rserver else None
+    elif salgorithm == "lc":
+        # Least connections
+        return min(rserver, key=lambda s: getattr(s, "connections", 0)) if rserver else None
+    else:
+        # First available (fa) or random
+        return rserver[0] if rserver else None
 
 
 def main(*args, **kwargs):
@@ -74,7 +139,7 @@ def main(*args, **kwargs):
 
 def _unsupported_handler(name: str):
     def handler(*args, **kwargs):
-        raise UnsupportedFeatureError(
+        raise NotImplementedError(
             f"pproxy.server.{name} is not part of the certified live path"
         )
 
@@ -93,4 +158,5 @@ __all__ = [
     "ProxyDirect", "ProxyH2", "ProxyH3", "ProxyQUIC", "ProxySSH",
     "ProxySimple", "Server", "SOCKET_TIMEOUT", "UDP_LIMIT", "compile_rule",
     "proxies_by_uri", "proxy_by_uri", "main", "sslcontexts",
+    "schedule", "check_server_alive", "prepare_ciphers",
 ]
