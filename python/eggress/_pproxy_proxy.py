@@ -106,8 +106,8 @@ class ProxyDirect:
         return True
 
     @property
-    def bind(self) -> str | None:
-        return self._bind
+    def bind(self) -> str:
+        return "DIRECT"
 
     @property
     def lbind(self) -> str | None:
@@ -135,7 +135,7 @@ class ProxyDirect:
 
     @property
     def jump(self) -> Any:
-        return None
+        return getattr(self, "_jump", None)
 
     # -- connection lifecycle -----------------------------------------------
 
@@ -162,13 +162,9 @@ class ProxyDirect:
         local_addr: Any,
         lbind: str | None,
         timeout: float = 60,
-    ) -> None:
-        """Open a TCP connection through this proxy.
-
-        Requires runtime integration — raises :class:`NotImplementedError`
-        when called without a wired-up backend.
-        """
-        raise NotImplementedError("open_connection requires runtime integration")
+    ) -> Any:
+        """Open a TCP connection through this proxy."""
+        return await self.tcp_connect(host, port, local_addr=local_addr, lbind=lbind)
 
     async def prepare_connection(
         self,
@@ -190,11 +186,10 @@ class ProxyDirect:
         local_addr: str | None = None,
         lbind: str | None = None,
     ) -> Any:
-        """Open a TCP connection through this proxy.
-
-        Requires runtime integration.
-        """
-        raise NotImplementedError("tcp_connect requires runtime integration")
+        """Open a direct TCP connection."""
+        import asyncio
+        reader, writer = await asyncio.open_connection(host, port, local_addr=local_addr)
+        return reader, writer
 
     async def udp_open_connection(
         self,

@@ -60,7 +60,10 @@ def proxy_by_uri(uri: str, jump=None):
     proto_cls = MAPPINGS.get(scheme)
 
     if scheme == "direct" or proto_cls is None:
-        return ProxyDirect()
+        obj = ProxyDirect()
+        if jump is not None:
+            obj._jump = jump
+        return obj
     else:
         try:
             from eggress.pproxy import check_pproxy_uri
@@ -78,7 +81,7 @@ def proxy_by_uri(uri: str, jump=None):
             except Exception:
                 pass
         return ProxySimple(
-            jump=uri,
+            jump=jump if jump is not None else uri,
             protos=(proto_cls,),
             host_name=host,
             port=port,
@@ -104,13 +107,13 @@ def proxies_by_uri(uri_jumps):
         uris = uri_jumps.split("__")
         if len(uris) == 1:
             return proxy_by_uri(uris[0])
-        # Build a chain: each URI becomes a proxy in the chain
-        proxies = []
-        for uri in uris:
+        # Build nested chain: last URI is the innermost jump
+        jump = None
+        for uri in reversed(uris):
             uri = uri.strip()
             if uri:
-                proxies.append(proxy_by_uri(uri))
-        return proxies if len(proxies) > 1 else proxies[0]
+                jump = proxy_by_uri(uri, jump)
+        return jump
 
     if isinstance(uri_jumps, (list, tuple)):
         if len(uri_jumps) == 1:
