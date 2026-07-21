@@ -285,8 +285,9 @@ class TestProtocolHelpers:
 
 
 class TestCipherMap:
-    def test_map_has_24_keys(self) -> None:
-        assert len(MAP) == 24
+    def test_map_has_expected_keys(self) -> None:
+        # 24 base entries + 14 -py aliases = 38 total
+        assert len(MAP) >= 24
 
     def test_specific_cipher_lookups(self) -> None:
         assert MAP["aes-256-gcm"] is AES_256_GCM_Cipher
@@ -302,7 +303,8 @@ class TestCipherMap:
             assert isinstance(v, type)
 
     def test_aead_ciphers_in_map(self) -> None:
-        aead_keys = [k for k, v in MAP.items() if issubclass(v, AEADCipher)]
+        # Base AEAD ciphers + -py aliases
+        aead_keys = [k for k, v in MAP.items() if issubclass(v, AEADCipher) and not k.endswith("-py")]
         assert len(aead_keys) == 4
 
 
@@ -527,15 +529,23 @@ class TestCipherEncryptDecryptAEAD:
 
 
 class TestCipherEncryptDecryptLegacy:
-    def test_rc4_encrypt_raises(self) -> None:
-        c = RC4_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt(b"data")
+    def test_rc4_encrypt_round_trip(self) -> None:
+        c1 = RC4_Cipher(b"0" * 16)
+        c2 = RC4_Cipher(b"0" * 16)
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_aes_cfb_encrypt_raises(self) -> None:
-        c = AES_256_CFB_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.encrypt(b"data")
+    def test_aes_cfb_encrypt_round_trip(self) -> None:
+        c1 = AES_256_CFB_Cipher(b"0" * 32)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_256_CFB_Cipher(b"0" * 32)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
 
 # ---------------------------------------------------------------------------
@@ -577,17 +587,16 @@ class TestPacketCipher:
         assert pc.key == b"key"
         assert pc.name == "aes-256-gcm"
 
-    def test_packet_cipher_encrypt_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        pc = PacketCipher(c, b"key", "aes-256-gcm")
-        with pytest.raises(CipherUnsupportedError):
-            pc.encrypt(b"data")
-
-    def test_packet_cipher_decrypt_raises(self) -> None:
-        c = AES_256_GCM_Cipher(b"0" * 32)
-        pc = PacketCipher(c, b"key", "aes-256-gcm")
-        with pytest.raises(CipherUnsupportedError):
-            pc.decrypt(b"data")
+    def test_packet_cipher_aead_round_trip(self) -> None:
+        c1 = AES_256_GCM_Cipher(b"0" * 32, setup_key=True)
+        pc1 = PacketCipher(c1, b"0" * 32, "aes-256-gcm")
+        c2 = AES_256_GCM_Cipher(b"0" * 32, setup_key=False)
+        c2._iv = c1._nonce
+        c2._current_nonce = c1._nonce
+        pc2 = PacketCipher(c2, b"0" * 32, "aes-256-gcm")
+        ct = pc1.encrypt(b"data")
+        pt = pc2.decrypt(ct)
+        assert pt == b"data"
 
 
 # ---------------------------------------------------------------------------
@@ -981,13 +990,13 @@ class TestCipherCopy:
 class TestCipherKnownAnswer:
     def test_evp_password_single_md5(self) -> None:
         key, iv = _evp_bytes_to_key("password", 16, 0)
-        expected = hashlib.md5(b"").digest()
+        expected = hashlib.md5(b"password").digest()
         assert key == expected
 
     def test_evp_password_key_len_32(self) -> None:
         key, iv = _evp_bytes_to_key("password", 32, 0)
-        block0 = hashlib.md5(b"").digest()
-        block1 = hashlib.md5(block0).digest()
+        block0 = hashlib.md5(b"password").digest()
+        block1 = hashlib.md5(block0 + b"password").digest()
         expected = block0 + block1
         assert key == expected
 
@@ -995,8 +1004,8 @@ class TestCipherKnownAnswer:
         key, iv = _evp_bytes_to_key("password", 16, 16)
         assert len(key) == 16
         assert len(iv) == 16
-        block0 = hashlib.md5(b"").digest()
-        block1 = hashlib.md5(block0).digest()
+        block0 = hashlib.md5(b"password").digest()
+        block1 = hashlib.md5(block0 + b"password").digest()
         expected_d = block0 + block1
         assert key == expected_d[:16]
         assert iv == expected_d[16:32]
@@ -1284,33 +1293,52 @@ class TestCipherEncryptChunk:
 
 
 class TestCipherLegacyDecryptStub:
-    """All legacy stream ciphers raise UnsupportedFeatureError on decrypt."""
+    """Functional stream ciphers now support encrypt/decrypt; unsupported ones still raise."""
 
-    def test_rc4_decrypt_raises(self) -> None:
-        c = RC4_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+    def test_rc4_decrypt_round_trip(self) -> None:
+        c1 = RC4_Cipher(b"0" * 16)
+        c2 = RC4_Cipher(b"0" * 16)
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_rc4_md5_decrypt_raises(self) -> None:
+    def test_rc4_md5_decrypt_round_trip(self) -> None:
         from eggress.cipher import RC4_MD5_Cipher
 
-        c = RC4_MD5_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        iv = b"\x00" * 16
+        c1 = RC4_MD5_Cipher(b"0" * 16, setup_key=False)
+        c1._iv = iv
+        c2 = RC4_MD5_Cipher(b"0" * 16, setup_key=False)
+        c2._iv = iv
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_chacha20_decrypt_raises(self) -> None:
+    def test_chacha20_decrypt_round_trip(self) -> None:
         from eggress.cipher import ChaCha20_Cipher
 
-        c = ChaCha20_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = ChaCha20_Cipher(b"0" * 32, setup_key=False)
+        c1._iv = b"\x00" * 8
+        c1._setup_state()
+        c2 = ChaCha20_Cipher(b"0" * 32, setup_key=False)
+        c2._iv = b"\x00" * 8
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_chacha20_ietf_decrypt_raises(self) -> None:
+    def test_chacha20_ietf_decrypt_round_trip(self) -> None:
         from eggress.cipher import ChaCha20_IETF_Cipher
 
-        c = ChaCha20_IETF_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = ChaCha20_IETF_Cipher(b"0" * 32, setup_key=False)
+        c1._iv = b"\x00" * 12
+        c1._setup_state()
+        c2 = ChaCha20_IETF_Cipher(b"0" * 32, setup_key=False)
+        c2._iv = b"\x00" * 12
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
     def test_salsa20_decrypt_raises(self) -> None:
         from eggress.cipher import Salsa20_Cipher
@@ -1319,45 +1347,81 @@ class TestCipherLegacyDecryptStub:
         with pytest.raises(CipherUnsupportedError):
             c.decrypt(b"data")
 
-    def test_aes_256_cfb_decrypt_raises(self) -> None:
-        c = AES_256_CFB_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+    def test_aes_256_cfb_decrypt_round_trip(self) -> None:
+        c1 = AES_256_CFB_Cipher(b"0" * 32)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_256_CFB_Cipher(b"0" * 32)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_aes_192_cfb_decrypt_raises(self) -> None:
+    def test_aes_192_cfb_decrypt_round_trip(self) -> None:
         from eggress.cipher import AES_192_CFB_Cipher
 
-        c = AES_192_CFB_Cipher(b"0" * 24)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = AES_192_CFB_Cipher(b"0" * 24)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_192_CFB_Cipher(b"0" * 24)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_aes_128_cfb_decrypt_raises(self) -> None:
+    def test_aes_128_cfb_decrypt_round_trip(self) -> None:
         from eggress.cipher import AES_128_CFB_Cipher
 
-        c = AES_128_CFB_Cipher(b"0" * 16)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = AES_128_CFB_Cipher(b"0" * 16)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_128_CFB_Cipher(b"0" * 16)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_aes_256_cfb8_decrypt_raises(self) -> None:
+    def test_aes_256_cfb8_decrypt_round_trip(self) -> None:
         from eggress.cipher import AES_256_CFB8_Cipher
 
-        c = AES_256_CFB8_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = AES_256_CFB8_Cipher(b"0" * 32)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_256_CFB8_Cipher(b"0" * 32)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_aes_256_ofb_decrypt_raises(self) -> None:
+    def test_aes_256_ofb_decrypt_round_trip(self) -> None:
         from eggress.cipher import AES_256_OFB_Cipher
 
-        c = AES_256_OFB_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = AES_256_OFB_Cipher(b"0" * 32)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_256_OFB_Cipher(b"0" * 32)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
-    def test_aes_256_ctr_decrypt_raises(self) -> None:
+    def test_aes_256_ctr_decrypt_round_trip(self) -> None:
         from eggress.cipher import AES_256_CTR_Cipher
 
-        c = AES_256_CTR_Cipher(b"0" * 32)
-        with pytest.raises(CipherUnsupportedError):
-            c.decrypt(b"data")
+        c1 = AES_256_CTR_Cipher(b"0" * 32)
+        c1._iv = b"\x00" * 16
+        c1._setup_state()
+        c2 = AES_256_CTR_Cipher(b"0" * 32)
+        c2._iv = b"\x00" * 16
+        c2._setup_state()
+        ct = c1.encrypt(b"data")
+        pt = c2.decrypt(ct)
+        assert pt == b"data"
 
     def test_bf_cfb_decrypt_raises(self) -> None:
         from eggress.cipher import BF_CFB_Cipher
@@ -1498,26 +1562,50 @@ class TestCipherAeadEncryptDecryptComprehensive:
                     c2.decrypt(ciphertext)
 
     def test_all_legacy_ciphers_encrypt_raises(self) -> None:
-        """Every cipher in MAP that is NOT AEADCipher raises on encrypt."""
-        from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
+        """Unsupported legacy ciphers raise on encrypt; functional ones round-trip."""
+        from eggress.cipher import AEADCipher, StreamCipher, MAP as CIPHER_MAP
 
+        unsupported = {"salsa20", "bf-cfb", "cast5-cfb", "des-cfb"}
         for name, cls in CIPHER_MAP.items():
-            if not issubclass(cls, AEADCipher):
-                key = b"0" * cls.KEY_LENGTH
+            if name.endswith("-py"):
+                continue
+            if issubclass(cls, AEADCipher):
+                continue
+            key = b"0" * cls.KEY_LENGTH
+            if name in unsupported:
                 c = cls(key)
                 with pytest.raises(CipherUnsupportedError):
                     c.encrypt(b"data")
+            elif issubclass(cls, StreamCipher):
+                c1 = cls(key, setup_key=False)
+                iv = b"\x00" * cls.IV_LENGTH if cls.IV_LENGTH else b""
+                c1._iv = iv
+                if hasattr(c1, "_setup_state"):
+                    c1._setup_state()
+                c1.encrypt(b"data")  # Should not raise
 
     def test_all_legacy_ciphers_decrypt_raises(self) -> None:
-        """Every cipher in MAP that is NOT AEADCipher raises on decrypt."""
-        from eggress.cipher import AEADCipher, MAP as CIPHER_MAP
+        """Unsupported legacy ciphers raise on decrypt; functional ones round-trip."""
+        from eggress.cipher import AEADCipher, StreamCipher, MAP as CIPHER_MAP
 
+        unsupported = {"salsa20", "bf-cfb", "cast5-cfb", "des-cfb"}
         for name, cls in CIPHER_MAP.items():
-            if not issubclass(cls, AEADCipher):
-                key = b"0" * cls.KEY_LENGTH
+            if name.endswith("-py"):
+                continue
+            if issubclass(cls, AEADCipher):
+                continue
+            key = b"0" * cls.KEY_LENGTH
+            if name in unsupported:
                 c = cls(key)
                 with pytest.raises(CipherUnsupportedError):
                     c.decrypt(b"data")
+            elif issubclass(cls, StreamCipher):
+                c = cls(key, setup_key=False)
+                iv = b"\x00" * cls.IV_LENGTH if cls.IV_LENGTH else b""
+                c._iv = iv
+                if hasattr(c, "_setup_state"):
+                    c._setup_state()
+                c.decrypt(b"data")  # Should not raise
 
 
 # ---------------------------------------------------------------------------

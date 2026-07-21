@@ -27,21 +27,46 @@ class AuthTable:
         authtime: Timeout in seconds for the auth entry.
 
     The table tracks whether a client has been authenticated via the
-    ``authed()`` / ``set_authed(user)`` protocol.
+    ``authed()`` / ``set_authed(user)`` protocol, with optional
+    expiry timing.
     """
 
     def __init__(self, remote_ip: str | None = None, authtime: int | None = None) -> None:
         self.remote_ip = remote_ip
         self.authtime = authtime
         self._user: Any = None
+        self._auth_time: float | None = None
 
     def authed(self) -> Any:
         """Return the currently authenticated user, or ``None``."""
+        if self._user is None:
+            return None
+        if self.authtime is not None and self._auth_time is not None:
+            import time
+            if time.monotonic() - self._auth_time > self.authtime:
+                self._user = None
+                self._auth_time = None
+                return None
         return self._user
 
     def set_authed(self, user: Any) -> None:
         """Mark *user* as authenticated."""
+        import time
         self._user = user
+        self._auth_time = time.monotonic()
+
+    def clear(self) -> None:
+        """Clear authentication state."""
+        self._user = None
+        self._auth_time = None
+
+    def __bool__(self) -> bool:
+        """Truthiness: True if any user is currently authenticated."""
+        return self.authed() is not None
+
+    def __contains__(self, item: Any) -> bool:
+        """Membership test: ``user in auth_table``."""
+        return self.authed() == item
 
     def __repr__(self) -> str:
         return f"<AuthTable remote_ip={self.remote_ip!r} authtime={self.authtime}>"

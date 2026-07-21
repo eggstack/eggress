@@ -10,11 +10,33 @@ except ImportError:
     UnsupportedFeatureError = RuntimeError  # type: ignore[misc,assignment]
 
 try:
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 
     _HAS_CRYPTOGRAPHY = True
 except BaseException:
     _HAS_CRYPTOGRAPHY = False
+
+
+def _rc4_crypt(key: bytes, data: bytes) -> bytes:
+    """RC4 stream cipher (RFC 6229-compliant KSA + PRGA).
+
+    Pure-Python implementation for strict compatibility mode.
+    """
+    S = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + S[i] + key[i % len(key)]) & 0xFF
+        S[i], S[j] = S[j], S[i]
+
+    out = bytearray(len(data))
+    i = j = 0
+    for k in range(len(data)):
+        i = (i + 1) & 0xFF
+        j = (j + S[i]) & 0xFF
+        S[i], S[j] = S[j], S[i]
+        out[k] = data[k] ^ S[(S[i] + S[j]) & 0xFF]
+    return bytes(out)
 
 
 def _increment_nonce(nonce: bytes) -> bytes:
@@ -33,7 +55,8 @@ def _evp_bytes_to_key(password: str | bytes, key_len: int, iv_len: int) -> Tuple
     data = password.encode("utf-8") if isinstance(password, str) else password
     d = b""
     while len(d) < key_len + iv_len:
-        md5 = hashlib.md5(d[-16:] if d else b"").digest()
+        # D1 = MD5(data), D_i = MD5(D_(i-1)[-16:] || data)
+        md5 = hashlib.md5(d[-16:] + data).digest() if d else hashlib.md5(data).digest()
         d += md5
     return d[:key_len], d[key_len : key_len + iv_len]
 
@@ -130,6 +153,76 @@ class BaseCipher:
             if isinstance(self._key, bytearray):
                 for i in range(len(self._key)):
                     self._key[i] = 0
+
+
+class StreamCipher(BaseCipher):
+    """Base class for stream ciphers with incremental encrypt/decrypt.
+
+    Provides functional encrypt/decrypt using Python's ``cryptography``
+    library when available, or pure-Python fallbacks for legacy modes
+    like RC4.  Falls back to ``UnsupportedFeatureError`` if neither
+    backend is available.
+    """
+
+    BLOCK_SIZE: int = 1
+
+    def __init__(
+        self,
+        key: bytes | str,
+        ota: bool = False,
+        setup_key: bool = True,
+    ) -> None:
+        super().__init__(key, ota, setup_key)
+        self._encryptor: Any = None
+        self._decryptor: Any = None
+        self._setup_state()
+
+    def _setup_state(self) -> None:
+        """Initialize cipher state.  Subclasses override to set up encryptor/decryptor."""
+        pass
+
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        """Create an encryptor.  Override in subclasses."""
+        raise NotImplementedError
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        """Create a decryptor.  Override in subclasses."""
+        raise NotImplementedError
+
+    def encrypt(self, s: bytes) -> bytes:
+        """Encrypt *s* using the current cipher state."""
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"encrypt: install the 'cryptography' package for {self.name()}"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError(
+                f"encrypt: no encryptor available for {self.name()}"
+            )
+        return self._encryptor.update(s)
+
+    def decrypt(self, s: bytes) -> bytes:
+        """Decrypt *s* using the current cipher state."""
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"decrypt: install the 'cryptography' package for {self.name()}"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError(
+                f"decrypt: no decryptor available for {self.name()}"
+            )
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "StreamCipher":
+        cls = self.__class__
+        new = cls.__new__(cls)
+        new.__dict__.update(self.__dict__)
+        new._setup_state()
+        return new
 
 
 class AEADCipher(BaseCipher):
@@ -258,9 +351,8 @@ class AEADCipher(BaseCipher):
 class PacketCipher:
     """Wraps a cipher for UDP datagram use, adding nonce/tag framing.
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. All encryption and decryption is handled by the
-    Rust backend via protocol-level AEAD.
+    For AEAD ciphers, encrypt/decrypt operate on individual UDP packets
+    with the standard AEAD framing (nonce + ciphertext + tag).
     """
 
     def __init__(self, cipher: BaseCipher, key: bytes | str, name: str) -> None:
@@ -283,13 +375,27 @@ class PacketCipher:
         return self._name
 
     def encrypt(self, data: bytes) -> bytes:
+        """Encrypt a UDP packet.  Uses the underlying AEAD cipher's encrypt."""
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"PacketCipher.encrypt: install the 'cryptography' package for {self._name}"
+            )
+        if isinstance(self._cipher, AEADCipher):
+            return self._cipher.encrypt(data)
         raise UnsupportedFeatureError(
-            f"PacketCipher.encrypt: use protocol-level AEAD via Rust for {self._name}"
+            f"PacketCipher.encrypt: only AEAD ciphers are supported for UDP, got {self._name}"
         )
 
     def decrypt(self, data: bytes) -> bytes:
+        """Decrypt a UDP packet.  Uses the underlying AEAD cipher's decrypt."""
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                f"PacketCipher.decrypt: install the 'cryptography' package for {self._name}"
+            )
+        if isinstance(self._cipher, AEADCipher):
+            return self._cipher.decrypt(data)
         raise UnsupportedFeatureError(
-            f"PacketCipher.decrypt: use protocol-level AEAD via Rust for {self._name}"
+            f"PacketCipher.decrypt: only AEAD ciphers are supported for UDP, got {self._name}"
         )
 
     def __repr__(self) -> str:
@@ -340,103 +446,252 @@ class ChaCha20_IETF_POLY1305_Cipher(AEADCipher):
         return ChaCha20Poly1305(self._key)
 
 
-class RC4_Cipher(BaseCipher):
-    """RC4 stream cipher -- intentionally unsupported.
+class RC4_Cipher(StreamCipher):
+    """RC4 stream cipher.
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. RC4 is rejected with UnsupportedFeatureError.
+    Uses a pure-Python RC4 implementation for strict pproxy 2.7.9
+    compatibility.  RC4 is insecure and should not be used for new
+    configurations.
     """
 
     KEY_LENGTH = 16
     IV_LENGTH = 0
 
+    def _setup_state(self) -> None:
+        self._rc4_state = None
+        self._rc4_pos = 0
+        self._rc4_j = 0
+
+    def _rc4_init(self, key: bytes) -> None:
+        """Initialize RC4 state from key."""
+        S = list(range(256))
+        j = 0
+        for i in range(256):
+            j = (j + S[i] + key[i % len(key)]) & 0xFF
+            S[i], S[j] = S[j], S[i]
+        self._rc4_state = S
+        self._rc4_pos = 0
+        self._rc4_j = 0
+
+    def _rc4_process(self, data: bytes) -> bytes:
+        """Process data through RC4 stream cipher."""
+        if self._rc4_state is None:
+            self._rc4_init(self._key)
+        S = self._rc4_state
+        i = self._rc4_pos
+        j = self._rc4_j
+        out = bytearray(len(data))
+        for k in range(len(data)):
+            i = (i + 1) & 0xFF
+            j = (j + S[i]) & 0xFF
+            S[i], S[j] = S[j], S[i]
+            out[k] = data[k] ^ S[(S[i] + S[j]) & 0xFF]
+        self._rc4_pos = i
+        self._rc4_j = j
+        return bytes(out)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"RC4 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        return self._rc4_process(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"RC4 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        return self._rc4_process(s)
+
+    def __copy__(self) -> "RC4_Cipher":
+        new = RC4_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._rc4_init(self._key)
+        return new
 
 
-class RC4_MD5_Cipher(BaseCipher):
-    """RC4-MD5 stream cipher -- intentionally unsupported.
+class RC4_MD5_Cipher(StreamCipher):
+    """RC4-MD5 stream cipher.
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. RC4-MD5 is rejected with UnsupportedFeatureError.
+    RC4 with the first 16 bytes of the key stream XORed with MD5(key + IV).
+    Used by some legacy Shadowsocks implementations.
     """
 
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
+    def _setup_state(self) -> None:
+        self._rc4_state = None
+        self._rc4_pos = 0
+        self._rc4_j = 0
+
+    def _rc4_init(self, key: bytes, iv: bytes) -> None:
+        """Initialize RC4-MD5 state."""
+        derived = hashlib.md5(key + iv).digest()
+        S = list(range(256))
+        j = 0
+        for i in range(256):
+            j = (j + S[i] + derived[i % len(derived)]) & 0xFF
+            S[i], S[j] = S[j], S[i]
+        self._rc4_state = S
+        self._rc4_pos = 0
+        self._rc4_j = 0
+
+    def _rc4_process(self, data: bytes) -> bytes:
+        """Process data through RC4-MD5 stream cipher."""
+        if self._rc4_state is None:
+            iv = self._iv if self._iv else b"\x00" * 16
+            self._rc4_init(self._key, iv)
+        S = self._rc4_state
+        i = self._rc4_pos
+        j = self._rc4_j
+        out = bytearray(len(data))
+        for k in range(len(data)):
+            i = (i + 1) & 0xFF
+            j = (j + S[i]) & 0xFF
+            S[i], S[j] = S[j], S[i]
+            out[k] = data[k] ^ S[(S[i] + S[j]) & 0xFF]
+        self._rc4_pos = i
+        self._rc4_j = j
+        return bytes(out)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"RC4-MD5 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        return self._rc4_process(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"RC4-MD5 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        return self._rc4_process(s)
+
+    def __copy__(self) -> "RC4_MD5_Cipher":
+        new = RC4_MD5_Cipher(self._key, ota=self.ota, setup_key=False)
+        iv = self._iv if self._iv else b"\x00" * 16
+        new._rc4_init(self._key, iv)
+        return new
 
 
-class ChaCha20_Cipher(BaseCipher):
-    """ChaCha20 stream cipher -- intentionally unsupported.
+class ChaCha20_Cipher(StreamCipher):
+    """ChaCha20 stream cipher (non-IETF, 8-byte IV).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. ChaCha20 is rejected with UnsupportedFeatureError.
+    Uses the ``cryptography`` library's ChaCha20 implementation.
+    The 8-byte IV is zero-padded to 16 bytes for the backend.
     """
 
     KEY_LENGTH = 32
     IV_LENGTH = 8
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        # ChaCha20 backend requires 16-byte nonce; pad 8-byte IV
+        padded = iv.ljust(16, b"\x00")
+        cipher = Cipher(algorithms.ChaCha20(key, padded), mode=None)
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        padded = iv.ljust(16, b"\x00")
+        cipher = Cipher(algorithms.ChaCha20(key, padded), mode=None)
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 8
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"ChaCha20 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for ChaCha20"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: ChaCha20 unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"ChaCha20 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for ChaCha20"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: ChaCha20 unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "ChaCha20_Cipher":
+        new = ChaCha20_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class ChaCha20_IETF_Cipher(BaseCipher):
-    """ChaCha20-IETF stream cipher -- intentionally unsupported.
+class ChaCha20_IETF_Cipher(StreamCipher):
+    """ChaCha20-IETF stream cipher (12-byte nonce).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. ChaCha20-IETF is rejected with UnsupportedFeatureError.
+    Uses the ``cryptography`` library's ChaCha20 implementation with
+    the IETF 12-byte nonce variant.
     """
 
     KEY_LENGTH = 32
     IV_LENGTH = 12
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        # ChaCha20-IETF uses 12-byte nonce; pad to 16 bytes for backend
+        padded = iv.ljust(16, b"\x00")
+        cipher = Cipher(algorithms.ChaCha20(key, padded), mode=None)
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        padded = iv.ljust(16, b"\x00")
+        cipher = Cipher(algorithms.ChaCha20(key, padded), mode=None)
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 12
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"ChaCha20-IETF stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for ChaCha20-IETF"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: ChaCha20-IETF unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"ChaCha20-IETF stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for ChaCha20-IETF"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: ChaCha20-IETF unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "ChaCha20_IETF_Cipher":
+        new = ChaCha20_IETF_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
 class Salsa20_Cipher(BaseCipher):
-    """Salsa20 stream cipher -- intentionally unsupported.
+    """Salsa20 stream cipher -- unsupported (no ``cryptography`` backend).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. Salsa20 is rejected with UnsupportedFeatureError.
+    Salsa20 is not provided by the ``cryptography`` library and is
+    intentionally deferred to Milestone D or later.  Use ChaCha20 or
+    an AEAD method instead.
     """
 
     KEY_LENGTH = 32
@@ -444,298 +699,697 @@ class Salsa20_Cipher(BaseCipher):
 
     def encrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"Salsa20 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "Salsa20 is not supported (no cryptography backend); "
+            "use chacha20, chacha20-ietf-poly1305, or an AEAD method"
         )
 
     def decrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"Salsa20 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "Salsa20 is not supported (no cryptography backend); "
+            "use chacha20, chacha20-ietf-poly1305, or an AEAD method"
         )
 
 
-class AES_256_CFB_Cipher(BaseCipher):
-    """AES-256-CFB stream cipher -- intentionally unsupported.
+class AES_256_CFB_Cipher(StreamCipher):
+    """AES-256-CFB stream cipher (CFB = Cipher Feedback, full-block).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-256-CFB is rejected with UnsupportedFeatureError.
+    Uses the ``cryptography`` library's AES-CFB implementation.
     """
 
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-256-CFB"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-256-CFB unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-256-CFB"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-256-CFB unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_256_CFB_Cipher":
+        new = AES_256_CFB_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_192_CFB_Cipher(BaseCipher):
-    """AES-192-CFB stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-192-CFB is rejected with UnsupportedFeatureError.
-    """
+class AES_192_CFB_Cipher(StreamCipher):
+    """AES-192-CFB stream cipher."""
 
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-192-CFB"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-192-CFB unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-192-CFB"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-192-CFB unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_192_CFB_Cipher":
+        new = AES_192_CFB_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_128_CFB_Cipher(BaseCipher):
-    """AES-128-CFB stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-128-CFB is rejected with UnsupportedFeatureError.
-    """
+class AES_128_CFB_Cipher(StreamCipher):
+    """AES-128-CFB stream cipher."""
 
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-128-CFB"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-128-CFB unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-128-CFB"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-128-CFB unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_128_CFB_Cipher":
+        new = AES_128_CFB_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_256_CFB8_Cipher(BaseCipher):
-    """AES-256-CFB8 stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-256-CFB8 is rejected with UnsupportedFeatureError.
-    """
+class AES_256_CFB8_Cipher(StreamCipher):
+    """AES-256-CFB8 stream cipher (8-bit cipher feedback)."""
 
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB8(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB8(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-CFB8 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-256-CFB8"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-256-CFB8 unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-CFB8 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-256-CFB8"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-256-CFB8 unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_256_CFB8_Cipher":
+        new = AES_256_CFB8_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_192_CFB8_Cipher(BaseCipher):
-    """AES-192-CFB8 stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-192-CFB8 is rejected with UnsupportedFeatureError.
-    """
+class AES_192_CFB8_Cipher(StreamCipher):
+    """AES-192-CFB8 stream cipher (8-bit cipher feedback)."""
 
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB8(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB8(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-CFB8 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-192-CFB8"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-192-CFB8 unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-CFB8 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-192-CFB8"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-192-CFB8 unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_192_CFB8_Cipher":
+        new = AES_192_CFB8_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_128_CFB8_Cipher(BaseCipher):
-    """AES-128-CFB8 stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-128-CFB8 is rejected with UnsupportedFeatureError.
-    """
+class AES_128_CFB8_Cipher(StreamCipher):
+    """AES-128-CFB8 stream cipher (8-bit cipher feedback)."""
 
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB8(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CFB8(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-CFB8 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-128-CFB8"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-128-CFB8 unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-CFB8 stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-128-CFB8"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-128-CFB8 unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_128_CFB8_Cipher":
+        new = AES_128_CFB8_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_256_OFB_Cipher(BaseCipher):
-    """AES-256-OFB stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-256-OFB is rejected with UnsupportedFeatureError.
-    """
+class AES_256_OFB_Cipher(StreamCipher):
+    """AES-256-OFB stream cipher (Output Feedback mode)."""
 
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.OFB(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.OFB(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-OFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-256-OFB"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-256-OFB unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-OFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-256-OFB"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-256-OFB unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_256_OFB_Cipher":
+        new = AES_256_OFB_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_192_OFB_Cipher(BaseCipher):
-    """AES-192-OFB stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-192-OFB is rejected with UnsupportedFeatureError.
-    """
+class AES_192_OFB_Cipher(StreamCipher):
+    """AES-192-OFB stream cipher (Output Feedback mode)."""
 
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.OFB(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.OFB(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-OFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-192-OFB"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-192-OFB unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-OFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-192-OFB"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-192-OFB unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_192_OFB_Cipher":
+        new = AES_192_OFB_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_128_OFB_Cipher(BaseCipher):
-    """AES-128-OFB stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-128-OFB is rejected with UnsupportedFeatureError.
-    """
+class AES_128_OFB_Cipher(StreamCipher):
+    """AES-128-OFB stream cipher (Output Feedback mode)."""
 
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.OFB(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.OFB(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-OFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-128-OFB"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-128-OFB unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-OFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-128-OFB"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-128-OFB unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_128_OFB_Cipher":
+        new = AES_128_OFB_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_256_CTR_Cipher(BaseCipher):
-    """AES-256-CTR stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-256-CTR is rejected with UnsupportedFeatureError.
-    """
+class AES_256_CTR_Cipher(StreamCipher):
+    """AES-256-CTR stream cipher (Counter mode)."""
 
     KEY_LENGTH = 32
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-CTR stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-256-CTR"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-256-CTR unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-256-CTR stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-256-CTR"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-256-CTR unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_256_CTR_Cipher":
+        new = AES_256_CTR_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_192_CTR_Cipher(BaseCipher):
-    """AES-192-CTR stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-192-CTR is rejected with UnsupportedFeatureError.
-    """
+class AES_192_CTR_Cipher(StreamCipher):
+    """AES-192-CTR stream cipher (Counter mode)."""
 
     KEY_LENGTH = 24
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-CTR stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-192-CTR"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-192-CTR unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-192-CTR stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-192-CTR"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-192-CTR unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_192_CTR_Cipher":
+        new = AES_192_CTR_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
-class AES_128_CTR_Cipher(BaseCipher):
-    """AES-128-CTR stream cipher -- intentionally unsupported.
-
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. AES-128-CTR is rejected with UnsupportedFeatureError.
-    """
+class AES_128_CTR_Cipher(StreamCipher):
+    """AES-128-CTR stream cipher (Counter mode)."""
 
     KEY_LENGTH = 16
     IV_LENGTH = 16
 
+    def _make_encryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        return cipher.encryptor()
+
+    def _make_decryptor(self, key: bytes, iv: bytes) -> Any:
+        if not _HAS_CRYPTOGRAPHY:
+            return None
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        return cipher.decryptor()
+
+    def _setup_state(self) -> None:
+        if not _HAS_CRYPTOGRAPHY:
+            self._encryptor = None
+            self._decryptor = None
+            return
+        iv = self._iv if self._iv else b"\x00" * 16
+        self._encryptor = self._make_encryptor(self._key, iv)
+        self._decryptor = self._make_decryptor(self._key, iv)
+
     def encrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-CTR stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "encrypt: install the 'cryptography' package for AES-128-CTR"
+            )
+        if self._encryptor is None:
+            self._setup_state()
+        if self._encryptor is None:
+            raise UnsupportedFeatureError("encrypt: AES-128-CTR unavailable")
+        return self._encryptor.update(s)
 
     def decrypt(self, s: bytes) -> bytes:
-        raise UnsupportedFeatureError(
-            f"AES-128-CTR stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
-        )
+        if not _HAS_CRYPTOGRAPHY:
+            raise UnsupportedFeatureError(
+                "decrypt: install the 'cryptography' package for AES-128-CTR"
+            )
+        if self._decryptor is None:
+            self._setup_state()
+        if self._decryptor is None:
+            raise UnsupportedFeatureError("decrypt: AES-128-CTR unavailable")
+        return self._decryptor.update(s)
+
+    def __copy__(self) -> "AES_128_CTR_Cipher":
+        new = AES_128_CTR_Cipher(self._key, ota=self.ota, setup_key=False)
+        new._iv = self._iv
+        new._setup_state()
+        return new
 
 
 class BF_CFB_Cipher(BaseCipher):
-    """Blowfish-CFB stream cipher -- intentionally unsupported.
+    """Blowfish-CFB stream cipher -- unsupported (no ``cryptography`` backend).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. Blowfish-CFB is rejected with UnsupportedFeatureError.
+    Blowfish is not provided by the ``cryptography`` library and is
+    intentionally deferred to Milestone D or later.
     """
 
     KEY_LENGTH = 16
@@ -743,22 +1397,22 @@ class BF_CFB_Cipher(BaseCipher):
 
     def encrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"Blowfish-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "Blowfish-CFB is not supported (no cryptography backend); "
+            "use an AES or ChaCha20 method instead"
         )
 
     def decrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"Blowfish-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "Blowfish-CFB is not supported (no cryptography backend); "
+            "use an AES or ChaCha20 method instead"
         )
 
 
 class CAST5_CFB_Cipher(BaseCipher):
-    """CAST5-CFB stream cipher -- intentionally unsupported.
+    """CAST5-CFB stream cipher -- unsupported (no ``cryptography`` backend).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. CAST5-CFB is rejected with UnsupportedFeatureError.
+    CAST5 is not provided by the ``cryptography`` library and is
+    intentionally deferred to Milestone D or later.
     """
 
     KEY_LENGTH = 16
@@ -766,22 +1420,22 @@ class CAST5_CFB_Cipher(BaseCipher):
 
     def encrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"CAST5-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "CAST5-CFB is not supported (no cryptography backend); "
+            "use an AES or ChaCha20 method instead"
         )
 
     def decrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"CAST5-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "CAST5-CFB is not supported (no cryptography backend); "
+            "use an AES or ChaCha20 method instead"
         )
 
 
 class DES_CFB_Cipher(BaseCipher):
-    """DES-CFB stream cipher -- intentionally unsupported.
+    """DES-CFB stream cipher -- unsupported (no ``cryptography`` backend).
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. DES-CFB is rejected with UnsupportedFeatureError.
+    DES is insecure and not provided by the ``cryptography`` library.
+    Intentionally deferred to Milestone D or later.
     """
 
     KEY_LENGTH = 8
@@ -789,14 +1443,14 @@ class DES_CFB_Cipher(BaseCipher):
 
     def encrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"DES-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "DES-CFB is not supported (insecure, no cryptography backend); "
+            "use an AES or ChaCha20 method instead"
         )
 
     def decrypt(self, s: bytes) -> bytes:
         raise UnsupportedFeatureError(
-            f"DES-CFB stream cipher is not supported (Track F); "
-            f"use an AEAD method: aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305"
+            "DES-CFB is not supported (insecure, no cryptography backend); "
+            "use an AES or ChaCha20 method instead"
         )
 
 
@@ -825,6 +1479,22 @@ MAP: dict[str, type[BaseCipher]] = {
     "bf-cfb": BF_CFB_Cipher,
     "cast5-cfb": CAST5_CFB_Cipher,
     "des-cfb": DES_CFB_Cipher,
+    # pproxy 2.7.9 aliases: -py variants point to the same implementation
+    "aes-256-gcm-py": AES_256_GCM_Cipher,
+    "aes-128-gcm-py": AES_128_GCM_Cipher,
+    "chacha20-ietf-poly1305-py": ChaCha20_IETF_POLY1305_Cipher,
+    "rc4-md5-py": RC4_MD5_Cipher,
+    "chacha20-py": ChaCha20_Cipher,
+    "salsa20-py": Salsa20_Cipher,
+    "aes-256-cfb-py": AES_256_CFB_Cipher,
+    "aes-128-cfb-py": AES_128_CFB_Cipher,
+    "aes-256-cfb8-py": AES_256_CFB8_Cipher,
+    "aes-128-cfb8-py": AES_128_CFB8_Cipher,
+    "aes-256-ofb-py": AES_256_OFB_Cipher,
+    "aes-128-ofb-py": AES_128_OFB_Cipher,
+    "aes-256-ctr-py": AES_256_CTR_Cipher,
+    "aes-128-ctr-py": AES_128_CTR_Cipher,
+    "bf-cfb-py": BF_CFB_Cipher,
 }
 
 
@@ -942,6 +1612,7 @@ def get_cipher(
 
 __all__ = [
     "BaseCipher",
+    "StreamCipher",
     "AEADCipher",
     "PacketCipher",
     "AES_256_GCM_Cipher",

@@ -8,141 +8,213 @@ except ImportError:
 import sys
 from typing import Any, Sequence
 
-from eggress._eggress import (
-    EggressError,
-    ConfigError,
-    StartupError,
-    ReloadError,
-    ShutdownError,
-    UnsupportedFeatureError,
-    InternalError,
-)
-from eggress.config import EggressConfig
-from eggress.service import EggressService, EggressHandle, AsyncEggressHandle, PPProxyHandle
-from eggress.pproxy import (
-    TranslationResult,
-    TranslationWarning,
-    UnsupportedFeature,
-    translate_pproxy_args,
-    translate_pproxy_uri,
-    check_pproxy_args,
-    describe_reverse_pproxy_uri,
-    ReverseUriSummary,
-    UriInfo,
-    check_pproxy_uri,
-    redact_pproxy_uri,
-    Diagnostic,
-    diagnostics_for_uri,
-    supported_features,
-    compatibility_version,
-    AlreadyStartedError,
-    Server,
-    explain_config_toml,
-    explain_pproxy_args,
-    explain_pproxy_uri,
-    route_explain,
-    check_upstream,
-    CompatibilityReport,
-    FeatureInfo,
-    PPProxyService,
-)
-from eggress.connection import (
-    Connection,
-    ConnectionState,
-    ConnectionError as ConnectionBaseError,
-    ConnectionClosedError,
-    TimeoutError as ConnectionTimeoutError,
-    DnsError as ConnectionDnsError,
-    AuthError as ConnectionAuthError,
-    TlsError as ConnectionTlsError,
-    LoopMismatchError,
-    ConnectionCancelledError,
-    UseAfterCloseError,
-    UdpAssociationError,
-    UnsupportedCompositionError,
-)
-from eggress.pproxy_connection import ProxyConnection
-from eggress.async_connection import AsyncConnection
-from eggress.outbound import AsyncOutboundStream, OutboundConnector, OutboundStream
-from eggress._asyncio import AsyncBridge, CloseWaiter, LoopAffinityError
-from eggress._compat import (
-    PY_VERSION,
-    PY_MAJOR,
-    PY_MINOR,
-    HAS_TASKGROUP,
-    HAS_EXCEPTIONGROUP,
-)
-from eggress.protocol import (
-    BaseProtocol,
-    Direct,
-    HTTP,
-    HTTPOnly,
-    Socks4,
-    Socks5,
-    SS,
-    SSR,
-    Trojan,
-    WS,
-    H2,
-    H3,
-    SSH,
-    Transparent,
-    Redir,
-    Pf,
-    Tunnel,
-    Echo,
-    MAPPINGS as PROTOCOL_MAPPINGS,
-    get_protos,
-    packstr,
-    netloc_split,
-    HTTP_LINE,
-)
-from eggress.cipher import (
-    BaseCipher,
-    AEADCipher,
-    PacketCipher,
-    AES_256_GCM_Cipher,
-    AES_192_GCM_Cipher,
-    AES_128_GCM_Cipher,
-    ChaCha20_IETF_POLY1305_Cipher,
-    MAP as CIPHER_MAP,
-    get_cipher,
-)
-from eggress.plugin import (
-    PluginRegistry,
-    PluginBridge,
-    PluginError,
-    PluginTimeoutError,
-    PluginRejectedError,
-    PluginShutdownError,
-    PluginReentrantError,
-    CallbackResult,
-    CallbackMetrics,
-    CallbackWrapper,
-)
-from eggress.wrapper import (
-    BaseWrapper,
-    TLS,
-    Plugin as PluginWrapper,
-    Chain,
-    normalize_chain,
-)
-from eggress._asyncio_adapter import (
-    CompatibleStreamReader,
-    CompatibleStreamWriter,
-    open_tcp_connection,
-)
-from eggress._pproxy_proxy import (
-    AuthTable,
-    ProxyDirect,
-    ProxySimple,
-    ProxyBackward,
-    ProxyH2,
-    ProxySSH,
-    ProxyQUIC,
-    ProxyH3,
-    DIRECT as PROXY_DIRECT,
-)
+try:
+    from eggress._eggress import (
+        EggressError,
+        ConfigError,
+        StartupError,
+        ReloadError,
+        ShutdownError,
+        UnsupportedFeatureError,
+        InternalError,
+    )
+    _HAS_NATIVE = True
+except ImportError:
+    _HAS_NATIVE = False
+    class EggressError(Exception): pass  # type: ignore[no-redef]
+    class ConfigError(EggressError): pass  # type: ignore[no-redef]
+    class StartupError(EggressError): pass  # type: ignore[no-redef]
+    class ReloadError(EggressError): pass  # type: ignore[no-redef]
+    class ShutdownError(EggressError): pass  # type: ignore[no-redef]
+    class UnsupportedFeatureError(EggressError): pass  # type: ignore[no-redef]
+    class InternalError(EggressError): pass  # type: ignore[no-redef]
+
+try:
+    from eggress.config import EggressConfig
+except ImportError:
+    EggressConfig = None  # type: ignore[assignment,misc]
+
+try:
+    from eggress.service import EggressService, EggressHandle, AsyncEggressHandle, PPProxyHandle
+except ImportError:
+    EggressService = EggressHandle = AsyncEggressHandle = PPProxyHandle = None  # type: ignore[assignment,misc]
+
+try:
+    from eggress.pproxy import (
+        TranslationResult,
+        TranslationWarning,
+        UnsupportedFeature,
+        translate_pproxy_args,
+        translate_pproxy_uri,
+        check_pproxy_args,
+        describe_reverse_pproxy_uri,
+        ReverseUriSummary,
+        UriInfo,
+        check_pproxy_uri,
+        redact_pproxy_uri,
+        Diagnostic,
+        diagnostics_for_uri,
+        supported_features,
+        compatibility_version,
+        AlreadyStartedError,
+        Server,
+        explain_config_toml,
+        explain_pproxy_args,
+        explain_pproxy_uri,
+        route_explain,
+        check_upstream,
+        CompatibilityReport,
+        FeatureInfo,
+        PPProxyService,
+    )
+except ImportError:
+    pass  # pproxy module not available without native extension
+
+try:
+    from eggress.connection import (
+        Connection,
+        ConnectionState,
+        ConnectionError as ConnectionBaseError,
+        ConnectionClosedError,
+        TimeoutError as ConnectionTimeoutError,
+        DnsError as ConnectionDnsError,
+        AuthError as ConnectionAuthError,
+        TlsError as ConnectionTlsError,
+        LoopMismatchError,
+        ConnectionCancelledError,
+        UseAfterCloseError,
+        UdpAssociationError,
+        UnsupportedCompositionError,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress.pproxy_connection import ProxyConnection
+except ImportError:
+    ProxyConnection = None  # type: ignore[assignment,misc]
+
+try:
+    from eggress.async_connection import AsyncConnection
+except ImportError:
+    AsyncConnection = None  # type: ignore[assignment,misc]
+
+try:
+    from eggress.outbound import AsyncOutboundStream, OutboundConnector, OutboundStream
+except ImportError:
+    AsyncOutboundStream = OutboundConnector = OutboundStream = None  # type: ignore[assignment,misc]
+
+try:
+    from eggress._asyncio import AsyncBridge, CloseWaiter, LoopAffinityError
+except ImportError:
+    AsyncBridge = CloseWaiter = LoopAffinityError = None  # type: ignore[assignment,misc]
+
+try:
+    from eggress._compat import (
+        PY_VERSION,
+        PY_MAJOR,
+        PY_MINOR,
+        HAS_TASKGROUP,
+        HAS_EXCEPTIONGROUP,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress.protocol import (
+        BaseProtocol,
+        Direct,
+        HTTP,
+        HTTPOnly,
+        Socks4,
+        Socks5,
+        SS,
+        SSR,
+        Trojan,
+        WS,
+        H2,
+        H3,
+        SSH,
+        Transparent,
+        Redir,
+        Pf,
+        Tunnel,
+        Echo,
+        MAPPINGS as PROTOCOL_MAPPINGS,
+        get_protos,
+        packstr,
+        netloc_split,
+        HTTP_LINE,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress.cipher import (
+        BaseCipher,
+        AEADCipher,
+        StreamCipher,
+        PacketCipher,
+        AES_256_GCM_Cipher,
+        AES_192_GCM_Cipher,
+        AES_128_GCM_Cipher,
+        ChaCha20_IETF_POLY1305_Cipher,
+        MAP as CIPHER_MAP,
+        get_cipher,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress.plugin import (
+        PluginRegistry,
+        PluginBridge,
+        PluginError,
+        PluginTimeoutError,
+        PluginRejectedError,
+        PluginShutdownError,
+        PluginReentrantError,
+        CallbackResult,
+        CallbackMetrics,
+        CallbackWrapper,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress.wrapper import (
+        BaseWrapper,
+        TLS,
+        Plugin as PluginWrapper,
+        Chain,
+        normalize_chain,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress._asyncio_adapter import (
+        CompatibleStreamReader,
+        CompatibleStreamWriter,
+        open_tcp_connection,
+    )
+except ImportError:
+    pass
+
+try:
+    from eggress._pproxy_proxy import (
+        AuthTable,
+        ProxyDirect,
+        ProxySimple,
+        ProxyBackward,
+        ProxyH2,
+        ProxySSH,
+        ProxyQUIC,
+        ProxyH3,
+        DIRECT as PROXY_DIRECT,
+    )
+except ImportError:
+    pass
 
 
 def start_pproxy(

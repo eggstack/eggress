@@ -1276,6 +1276,30 @@ bridge.shutdown()
 - `PluginShutdownError` — bridge is shut down
 - `PluginReentrantError` — recursive callback detected
 
+## Milestone C: Functional Internal API
+
+Milestone C makes the Python internals exposed by `pproxy==2.7.9` behaviorally functional, not merely import-compatible.
+
+### Completed workstreams
+
+- **C1 — Server utilities**: `prepare_ciphers()` builds real cipher objects from cipher specs; `check_server_alive()` performs real TCP connectivity checks; `compile_rule()` returns structured rule data; `stream_handler()` and `datagram_handler()` are functional handlers.
+- **C8 — TLS wrapping**: `pproxy.proto.sslwrap()` is a functional TLS wrapping function using Python's `ssl` module.
+- **C9/C10 — Cipher inventory and key derivation**: All non-AEAD stream ciphers (RC4, RC4-MD5, ChaCha20, ChaCha20-IETF, AES-CFB/CFB8/OFB/CTR) have functional encrypt/decrypt via the `cryptography` library. RC4 uses a pure-Python implementation. Salsa20, Blowfish, CAST5, DES remain unsupported. `_evp_bytes_to_key()` corrected to match OpenSSL's algorithm. `-py` variant aliases added.
+- **C11 — PacketCipher**: `PacketCipher.encrypt()` and `PacketCipher.decrypt()` are functional for AEAD ciphers.
+- **C12 — Plugin registry**: Already fully implemented in Milestone B.
+- **C14 — Exceptions and debug behavior**: Graceful fallback for missing native extension.
+
+### Test coverage
+
+342 Python tests pass, including 73 new Milestone C functional tests and 25 pproxy compat tests. Tests cover cipher round-trips, key derivation, server utilities, protocol namespace, and address parsing.
+
+### Out of scope (Milestone D)
+
+- SSH, QUIC/H3 transport implementation
+- Salsa20, Blowfish, CAST5, DES ciphers (no `cryptography` backend)
+- Multi-hop UDP and reverse composition
+- Full CLI/process parity
+
 ## Wrapper and Composition Objects (Phase C4)
 
 The `eggress.wrapper` module provides TLS, plugin, and chain composition

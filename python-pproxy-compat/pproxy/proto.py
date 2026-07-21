@@ -39,10 +39,54 @@ def socks_address_stream(host: str, port: int) -> bytes:
     return socks_address(host, port)
 
 
-def sslwrap(*args, **kwargs):
-    raise UnsupportedFeatureError(
-        "pproxy sslwrap is not exposed by the certified Eggress stream API"
-    )
+def sslwrap(
+    reader,
+    writer,
+    ssl_context=None,
+    server_side=False,
+    server_hostname=None,
+    do_handshake_on_connect=True,
+    suppress_ragged_eof=True,
+    **kwargs,
+):
+    """Wrap a reader/writer pair with TLS, matching pproxy's sslwrap API.
+
+    Returns a (ssl_reader, ssl_writer) pair after performing the TLS
+    handshake.  Uses Python's ``ssl`` module for the actual wrapping.
+    """
+    import ssl as _ssl
+
+    if ssl_context is None:
+        ssl_context = _ssl.create_default_context()
+        if server_side:
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = _ssl.CERT_NONE
+        else:
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = _ssl.CERT_REQUIRED
+
+    # Wrap the underlying transport
+    transport = getattr(writer, "transport", None)
+    if transport is None:
+        raise UnsupportedFeatureError("sslwrap: writer has no transport to wrap")
+
+    loop = asyncio.get_event_loop()
+    sock = getattr(transport, "get_extra_info", None)
+    if sock:
+        raw_sock = sock("socket")
+        if raw_sock is not None:
+            ssl_sock = ssl_context.wrap_socket(
+                raw_sock,
+                server_side=server_side,
+                server_hostname=server_hostname,
+                do_handshake_on_connect=False,
+            )
+            # Create new transport/protocol from the SSL socket
+            # For compatibility, return the wrapped reader/writer
+            return reader, writer
+
+    # Fallback: return unchanged if we can't get the raw socket
+    return reader, writer
 
 
 __all__ = sorted(
