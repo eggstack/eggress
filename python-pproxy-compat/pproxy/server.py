@@ -128,13 +128,37 @@ def compile_rule(filename: str, *args, **kwargs):
     """Compile a rule file.
 
     In pproxy 2.7.9, this reads a rule file and returns a compiled rule
-    object.  For the certified subset, we validate the file exists and
-    return a simple rule structure.
+    object.  Rule files contain lines like:
+      +ip1,ip2,...:port   (allow)
+      -ip1,ip2,...:port   (deny)
+      # comments are ignored
+    Each rule is a dict with 'action' ('allow'/'deny'), 'ips' (list), and
+    'port' (int or None).
     """
     import os
+    rules = []
     if filename and os.path.isfile(filename):
-        return {"filename": filename, "rules": []}
-    return {"filename": filename, "rules": []}
+        with open(filename, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                action = "allow" if line.startswith("+") else "deny" if line.startswith("-") else None
+                if action is None:
+                    continue
+                rest = line[1:]
+                port = None
+                if ":" in rest:
+                    ip_part, port_part = rest.rsplit(":", 1)
+                    try:
+                        port = int(port_part)
+                    except ValueError:
+                        port = None
+                else:
+                    ip_part = rest
+                ips = [ip.strip() for ip in ip_part.split(",") if ip.strip()]
+                rules.append({"action": action, "ips": ips, "port": port})
+    return {"filename": filename, "rules": rules}
 
 
 def check_server_alive(proxy, timeout=5.0):
@@ -187,16 +211,23 @@ def prepare_ciphers(cipher_key=None, cipher_obj=None, plugins=None):
     return result
 
 
+_rr_cursor = 0
+
+
 def schedule(rserver, salgorithm="fa", host_name=None, port=None):
     """Schedule a connection from a list of remote servers."""
+    global _rr_cursor
     if not rserver:
         return None
+    eligible = [s for s in rserver if getattr(s, "alive", 1) != 0] or list(rserver)
     if salgorithm == "rr":
-        return rserver[0] if rserver else None
+        idx = _rr_cursor % len(eligible)
+        _rr_cursor += 1
+        return eligible[idx]
     elif salgorithm == "lc":
-        return min(rserver, key=lambda s: getattr(s, "connections", 0)) if rserver else None
+        return min(eligible, key=lambda s: getattr(s, "connections", 0))
     else:
-        return rserver[0] if rserver else None
+        return eligible[0]
 
 
 def main(*args, **kwargs):
@@ -297,10 +328,45 @@ def datagram_handler(
             remote.connection_change(-1)
 
 
-patch_StreamReader = _unsupported_handler("patch_StreamReader")
-patch_StreamWriter = _unsupported_handler("patch_StreamWriter")
-print_server_started = _unsupported_handler("print_server_started")
-test_url = _unsupported_handler("test_url")
+def patch_StreamReader(reader):
+    """Patch a StreamReader for compatibility. No-op, returns reader unchanged."""
+    return reader
+
+
+def patch_StreamWriter(writer):
+    """Patch a StreamWriter for compatibility. No-op, returns writer unchanged."""
+    return writer
+
+
+def print_server_started(*args, **kwargs):
+    """Print a server startup message. No-op for compatibility."""
+    return None
+
+
+def test_url(url, proxy=None, timeout=5.0):
+    """Test if a URL is reachable through the proxy.
+
+    Returns a dict with 'ok' (bool), 'code' (HTTP status or None),
+    and 'error' (str or None).
+    """
+    import urllib.request
+    import urllib.error
+    if not url:
+        return {"ok": False, "code": None, "error": "empty url"}
+    try:
+        req = urllib.request.Request(url, method="GET")
+        if proxy is not None:
+            proxy_uri = getattr(proxy, "jump", None) or getattr(proxy, "_jump", None)
+            if proxy_uri:
+                req.set_proxy(proxy_uri.split("://")[-1].split("/")[0], "http")
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        code = resp.getcode()
+        resp.close()
+        return {"ok": True, "code": code, "error": None}
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "code": e.code, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "code": None, "error": str(e)}
 
 __all__ = [
     "AuthTable", "DIRECT", "DUMMY", "PPProxyService", "ProxyBackward",

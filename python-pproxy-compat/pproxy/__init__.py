@@ -9,7 +9,7 @@ from __future__ import annotations
 import eggress as _eggress
 from eggress._pproxy_proxy import DIRECT as _DIRECT_INSTANCE
 
-from . import cipher, proto, server
+from . import cipher, cipherpy, plugin, proto, server
 from .server import proxy_by_uri, proxies_by_uri, compile_rule
 
 __eggress_compat__ = True
@@ -36,5 +36,7 @@ __all__ = [
     "Server",
     "proto",
     "cipher",
+    "cipherpy",
+    "plugin",
     "server",
 ]

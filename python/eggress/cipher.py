@@ -261,8 +261,9 @@ class AEADCipher(BaseCipher):
     def setup_iv(self, iv: Optional[bytes] = None) -> None:
         if iv is None:
             iv = os.urandom(self.NONCE_LENGTH)
-        super().setup_iv(iv)
-        self.setup_nonce(iv)
+        nonce = iv[: self.NONCE_LENGTH] if len(iv) > self.NONCE_LENGTH else iv
+        super().setup_iv(nonce)
+        self.setup_nonce(nonce)
 
     def __copy__(self) -> "AEADCipher":
         cls = self.__class__

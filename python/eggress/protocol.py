@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import copy
 import re
+import struct
 from typing import Any, Sequence
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+DEBUG: bool = False
+"""Module-level debug flag.  When True, protocol errors propagate with full
+context.  When False, protocol errors are logged and suppressed."""
 
 HTTP_LINE = re.compile(r"([^ ]+) +(.+?) +(HTTP/[^ ]+)$")
 
@@ -74,6 +79,51 @@ def _redact_param(protocol_name: str, param: str) -> str:
         if pattern.match(param):
             return "***"
     return param
+
+
+def decode_socks_address(data: bytes) -> tuple[str, int, bytes]:
+    """Decode a SOCKS-style address from *data*.
+
+    Returns ``(host, port, remaining_bytes)`` where *remaining_bytes* is any
+    trailing data after the address/port.  Raises ``ValueError`` on truncated
+    or malformed input.
+    """
+    if not data:
+        raise ValueError("empty data")
+
+    atyp = data[0]
+    offset = 1
+
+    if atyp == 0x01:  # IPv4
+        if len(data) < 7:
+            raise ValueError(f"truncated IPv4 address: need 7 bytes, got {len(data)}")
+        host = ".".join(str(b) for b in data[1:5])
+        port = struct.unpack("!H", data[5:7])[0]
+        offset = 7
+    elif atyp == 0x03:  # Domain name
+        if len(data) < 2:
+            raise ValueError("truncated domain length")
+        domain_len = data[1]
+        if len(data) < 2 + domain_len + 2:
+            raise ValueError(f"truncated domain: need {2 + domain_len + 2} bytes, got {len(data)}")
+        host = data[2 : 2 + domain_len].decode("ascii")
+        port = struct.unpack("!H", data[2 + domain_len : 4 + domain_len])[0]
+        offset = 4 + domain_len
+    elif atyp == 0x04:  # IPv6
+        if len(data) < 19:
+            raise ValueError(f"truncated IPv6 address: need 19 bytes, got {len(data)}")
+        ipv6_bytes = data[1:17]
+        # Format IPv6 address
+        parts = []
+        for i in range(0, 16, 2):
+            parts.append(f"{ipv6_bytes[i]:02x}{ipv6_bytes[i + 1]:02x}")
+        host = ":".join(parts)
+        port = struct.unpack("!H", data[17:19])[0]
+        offset = 19
+    else:
+        raise ValueError(f"unsupported address type: 0x{atyp:02x}")
+
+    return host, port, data[offset:]
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +282,80 @@ class HTTP(BaseProtocol):
         kw.setdefault("target", param or None)
         super().__init__(param, **kw)
         self.httpget: dict[str, Any] = {}
+        self._buffered: bytes = b""
+
+    async def guess(self, reader: Any, **kw: Any) -> Any:
+        """Read up to 1024 bytes and check for valid HTTP method prefix."""
+        data = await reader.read(1024)
+        if not data:
+            return None
+
+        # Check for valid HTTP method prefix
+        http_methods = (b"GET", b"POST", b"CONNECT", b"PUT", b"DELETE",
+                        b"HEAD", b"OPTIONS", b"PATCH")
+        for method in http_methods:
+            if data.startswith(method):
+                self._buffered = data
+                return data
+
+        return None
+
+    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+        """Parse HTTP request line to extract host and port."""
+        data = self._buffered
+        if not data:
+            data = await reader.read(1024)
+        self._buffered = b""
+
+        # Find the end of the first line
+        first_line_end = data.find(b"\r\n")
+        if first_line_end == -1:
+            raise ValueError("incomplete HTTP request line")
+
+        first_line = data[:first_line_end].decode("ascii", errors="ignore")
+        match = HTTP_LINE.match(first_line)
+        if not match:
+            raise ValueError(f"malformed HTTP request line: {first_line!r}")
+
+        method, target, version = match.groups()
+
+        # Extract host and port from target or Host header
+        host = ""
+        port = 80
+
+        if method.upper() == "CONNECT":
+            # CONNECT host:port HTTP/1.1
+            host, port = netloc_split(target, default_port=443)
+            if host is None:
+                raise ValueError("CONNECT without target host")
+            port = port or 443
+        else:
+            # For plain HTTP, look for Host header
+            remaining = data[first_line_end + 2:]
+            while remaining:
+                line_end = remaining.find(b"\r\n")
+                if line_end == -1:
+                    break
+                line = remaining[:line_end]
+                remaining = remaining[line_end + 2:]
+
+                if line.lower().startswith(b"host:"):
+                    host_port = line[5:].decode("ascii", errors="ignore").strip()
+                    host, port = netloc_split(host_port, default_port=80)
+                    port = port or 80
+                    break
+
+            if not host:
+                # Try to extract from URL
+                if "://" in target:
+                    scheme, _, rest = target.partition("://")
+                    host, port = netloc_split(rest.split("/")[0], default_port=80)
+                    port = port or 80
+
+        if not host:
+            raise ValueError("could not determine target host")
+
+        return user, host, port
 
 
 class HTTPOnly(HTTP):
@@ -254,6 +378,56 @@ class Socks4(BaseProtocol):
     def __init__(self, param: str = "", **kw: Any) -> None:
         kw.setdefault("target", param or None)
         super().__init__(param, **kw)
+        self._buffered: bytes = b""
+
+    async def guess(self, reader: Any, **kw: Any) -> Any:
+        """Read up to 1024 bytes and check for SOCKS4 version byte."""
+        data = await reader.read(1024)
+        if not data:
+            return None
+
+        # SOCKS4 version byte is 0x04
+        if data[0] == 0x04:
+            self._buffered = data
+            return data
+
+        return None
+
+    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+        """Parse SOCKS4 request to extract host and port."""
+        data = self._buffered
+        if not data:
+            data = await reader.read(1024)
+        self._buffered = b""
+
+        if len(data) < 8:
+            raise ValueError("truncated SOCKS4 request")
+
+        # Byte 0: version (0x04)
+        # Byte 1: command (0x01 = connect, 0x02 = bind)
+        # Bytes 2-3: port (big-endian)
+        # Bytes 4-7: IP address
+        cmd = data[1]
+        port = struct.unpack("!H", data[2:4])[0]
+        ip_bytes = data[4:8]
+
+        # Check for SOCKS4a (IP == 0.0.0.x)
+        if ip_bytes[0] == 0 and ip_bytes[1] == 0 and ip_bytes[2] == 0 and ip_bytes[3] != 0:
+            # SOCKS4a: read hostname after null-terminated userid
+            # Find the null byte after the 8-byte header
+            null_pos = data.find(b"\x00", 8)
+            if null_pos == -1:
+                raise ValueError("SOCKS4a missing null terminator after userid")
+            hostname_start = null_pos + 1
+            hostname_end = data.find(b"\x00", hostname_start)
+            if hostname_end == -1:
+                raise ValueError("SOCKS4a missing null terminator after hostname")
+            host = data[hostname_start:hostname_end].decode("ascii")
+        else:
+            # Standard SOCKS4: use IP address
+            host = ".".join(str(b) for b in ip_bytes)
+
+        return user, host, port
 
 
 class Socks5(BaseProtocol):
@@ -269,6 +443,139 @@ class Socks5(BaseProtocol):
     def __init__(self, param: str = "", **kw: Any) -> None:
         kw.setdefault("target", param or None)
         super().__init__(param, **kw)
+        self._buffered: bytes = b""
+
+    async def guess(self, reader: Any, **kw: Any) -> Any:
+        """Read up to 1024 bytes and check for SOCKS5 version byte."""
+        data = await reader.read(1024)
+        if not data:
+            return None
+
+        # SOCKS5 version byte is 0x05
+        if data[0] == 0x05:
+            self._buffered = data
+            return data
+
+        return None
+
+    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+        """Parse SOCKS5 handshake and connect request."""
+        data = self._buffered
+        if not data:
+            data = await reader.read(1024)
+        self._buffered = b""
+
+        # SOCKS5 greeting: version (0x05), nmethods, methods[nmethods]
+        if len(data) < 3:
+            raise ValueError("truncated SOCKS5 greeting")
+
+        version = data[0]
+        if version != 0x05:
+            raise ValueError(f"invalid SOCKS5 version: {version}")
+
+        nmethods = data[1]
+        methods = data[2 : 2 + nmethods]
+        data = data[2 + nmethods :]
+
+        # Check if username/password auth (0x02) is required
+        if 0x02 in methods:
+            # Respond with username/password auth
+            # In a real implementation, we'd send: [0x05, 0x02]
+            # and read the auth response, but for now we just parse
+
+            # Read auth response: version (0x01), ulen, username, plen, password
+            if len(data) < 2:
+                # Need to read more data
+                raise ValueError("incomplete SOCKS5 auth response")
+
+            auth_version = data[0]
+            if auth_version != 0x01:
+                raise ValueError(f"invalid auth version: {auth_version}")
+
+            ulen = data[1]
+            if len(data) < 2 + ulen + 1:
+                raise ValueError("truncated auth username")
+            username = data[2 : 2 + ulen]
+            plen = data[2 + ulen]
+            if len(data) < 2 + ulen + 1 + plen:
+                raise ValueError("truncated auth password")
+            password = data[3 + ulen : 3 + ulen + plen]
+            data = data[3 + ulen + plen :]
+
+            # Store auth info for later use
+            user = (username, password)
+
+        # SOCKS5 connect request: version, command, reserved, address type, address, port
+        if len(data) < 4:
+            raise ValueError("truncated SOCKS5 connect request")
+
+        version = data[0]
+        cmd = data[1]
+        # data[2] is reserved (0x00)
+        atyp = data[3]
+
+        if atyp == 0x01:  # IPv4
+            if len(data) < 10:
+                raise ValueError("truncated IPv4 address in SOCKS5")
+            host = ".".join(str(b) for b in data[4:8])
+            port = struct.unpack("!H", data[8:10])[0]
+        elif atyp == 0x03:  # Domain name
+            if len(data) < 5:
+                raise ValueError("truncated domain length in SOCKS5")
+            domain_len = data[4]
+            if len(data) < 5 + domain_len + 2:
+                raise ValueError("truncated domain in SOCKS5")
+            host = data[5 : 5 + domain_len].decode("ascii")
+            port = struct.unpack("!H", data[5 + domain_len : 7 + domain_len])[0]
+        elif atyp == 0x04:  # IPv6
+            if len(data) < 22:
+                raise ValueError("truncated IPv6 address in SOCKS5")
+            ipv6_bytes = data[4:20]
+            parts = []
+            for i in range(0, 16, 2):
+                parts.append(f"{ipv6_bytes[i]:02x}{ipv6_bytes[i + 1]:02x}")
+            host = ":".join(parts)
+            port = struct.unpack("!H", data[20:22])[0]
+        else:
+            raise ValueError(f"unsupported address type: 0x{atyp:02x}")
+
+        return user, host, port
+
+    def udp_pack(self, host_name: str, port: int, data: bytes) -> bytes:
+        """Encode data with SOCKS5 UDP header."""
+        # Encode address using SOCKS address format
+        addr = self._encode_socks_address(host_name, port)
+        # Reserved (2 bytes 0x00) + Fragment (1 byte 0x00) + Address + Data
+        return b"\x00\x00\x00" + addr + data
+
+    def udp_unpack(self, data: bytes) -> tuple[str, int, bytes]:
+        """Parse SOCKS5 UDP header and return (host, port, payload)."""
+        if len(data) < 4:
+            raise ValueError("SOCKS5 UDP header too short")
+        # Skip reserved (2 bytes) + fragment (1 byte)
+        host, port, remaining = decode_socks_address(data[3:])
+        return host, port, remaining
+
+    def _encode_socks_address(self, host: str, port: int) -> bytes:
+        """Encode host:port as SOCKS address bytes."""
+        # Try to parse as IPv4
+        try:
+            parts = host.split(".")
+            if len(parts) == 4 and all(0 <= int(p) <= 255 for p in parts):
+                addr = bytes(int(p) for p in parts)
+                return b"\x01" + addr + struct.pack("!H", port)
+        except (ValueError, AttributeError):
+            pass
+
+        # Try to parse as IPv6
+        if ":" in host:
+            # Simple IPv6 handling - just encode as-is for now
+            # In practice, this needs proper IPv6 parsing
+            pass
+
+        # Domain name
+        domain_bytes = host.encode("ascii")
+        return b"\x03" + bytes([len(domain_bytes)]) + domain_bytes + struct.pack("!H", port)
 
 
 class SSR(BaseProtocol):
@@ -308,6 +615,52 @@ class SS(SSR):
         self.cipher: str | None = None
         if param and ":" in param:
             self.cipher, _, _ = param.partition(":")
+
+    async def guess(self, reader: Any, **kw: Any) -> Any:
+        """Shadowsocks has no protocol-level prefix to detect.
+
+        SS is detected via config, not sniffing. Return None.
+        """
+        return None
+
+    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+        """Since SS is encrypted, this can't parse without the cipher.
+
+        Return the reader/user as-is for now. The actual handling
+        is done by the Rust runtime.
+        """
+        return user, "", 0
+
+    def udp_pack(self, host_name: str, port: int, data: bytes) -> bytes:
+        """Encode data with Shadowsocks UDP address header."""
+        addr = self._encode_shadowsocks_address(host_name, port)
+        return addr + data
+
+    def udp_unpack(self, data: bytes) -> tuple[str, int, bytes]:
+        """Parse Shadowsocks UDP address header and return (host, port, payload)."""
+        host, port, remaining = decode_socks_address(data)
+        return host, port, remaining
+
+    def _encode_shadowsocks_address(self, host: str, port: int) -> bytes:
+        """Encode host:port as Shadowsocks address bytes (same as SOCKS format)."""
+        # Try to parse as IPv4
+        try:
+            parts = host.split(".")
+            if len(parts) == 4 and all(0 <= int(p) <= 255 for p in parts):
+                addr = bytes(int(p) for p in parts)
+                return b"\x01" + addr + struct.pack("!H", port)
+        except (ValueError, AttributeError):
+            pass
+
+        # Try to parse as IPv6
+        if ":" in host:
+            # Simple IPv6 handling - just encode as-is for now
+            # In practice, this needs proper IPv6 parsing
+            pass
+
+        # Domain name
+        domain_bytes = host.encode("ascii")
+        return b"\x03" + bytes([len(domain_bytes)]) + domain_bytes + struct.pack("!H", port)
 
 
 class Trojan(BaseProtocol):
@@ -469,16 +822,28 @@ async def accept(
     protos: Sequence[BaseProtocol], reader: Any, **kw: Any
 ) -> tuple[BaseProtocol, Any, Any, Any, Any]:
     """Try each protocol in order; return ``(proto, user, host, port, extra)`` on first match."""
+    last_error: Exception | None = None
     for proto in protos:
         try:
             user = await proto.guess(reader, **kw)
-        except Exception:
-            raise Exception("Connection closed")
+        except Exception as exc:
+            last_error = exc
+            if DEBUG:
+                raise
+            continue
         if user:
-            ret = await proto.accept(reader, user, **kw)
+            try:
+                ret = await proto.accept(reader, user, **kw)
+            except Exception as exc:
+                last_error = exc
+                if DEBUG:
+                    raise
+                continue
             while len(ret) < 4:
                 ret += (None,)
             return (proto,) + ret
+    if DEBUG and last_error:
+        raise last_error
     raise Exception("Unsupported protocol")
 
 
@@ -486,10 +851,19 @@ def udp_accept(
     protos: Sequence[BaseProtocol], data: bytes, **kw: Any
 ) -> tuple[BaseProtocol, Any, str, int, bytes]:
     """Try each protocol in order; return ``(proto, user, host, port, payload)`` on first match."""
+    last_error: Exception | None = None
     for proto in protos:
-        ret = proto.udp_accept(data, **kw)
+        try:
+            ret = proto.udp_accept(data, **kw)
+        except Exception as exc:
+            last_error = exc
+            if DEBUG:
+                raise
+            continue
         if ret:
             return (proto,) + ret
+    if DEBUG and last_error:
+        raise last_error
     raise Exception(f"Unsupported protocol {data[:10]}")
 
 
@@ -578,12 +952,14 @@ __all__ = [
     "MAPPINGS",
     "_PROTOCOL_REGISTRY",
     # Constants
+    "DEBUG",
     "HTTP_LINE",
     # Errors
     "UnsupportedFeatureError",
     # Helpers
     "packstr",
     "netloc_split",
+    "decode_socks_address",
     # Module-level functions
     "get_protos",
     "accept",

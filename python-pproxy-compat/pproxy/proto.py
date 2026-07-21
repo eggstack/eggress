@@ -45,48 +45,110 @@ def sslwrap(
     ssl_context=None,
     server_side=False,
     server_hostname=None,
-    do_handshake_on_connect=True,
-    suppress_ragged_eof=True,
+    verbose=None,
     **kwargs,
 ):
     """Wrap a reader/writer pair with TLS, matching pproxy's sslwrap API.
 
-    Returns a (ssl_reader, ssl_writer) pair after performing the TLS
-    handshake.  Uses Python's ``ssl`` module for the actual wrapping.
+    Returns a (ssl_reader, ssl_writer) pair where ssl_reader is an
+    ``asyncio.StreamReader`` yielding decrypted data and ssl_writer is a
+    thin adapter that writes through the SSL transport.  Uses
+    ``asyncio.sslproto.SSLProtocol`` internally, mirroring the upstream
+    pproxy 2.7.9 implementation.
     """
-    import ssl as _ssl
-
     if ssl_context is None:
-        ssl_context = _ssl.create_default_context()
-        if server_side:
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = _ssl.CERT_NONE
-        else:
-            ssl_context.check_hostname = True
-            ssl_context.verify_mode = _ssl.CERT_REQUIRED
+        return reader, writer
 
-    # Wrap the underlying transport
-    transport = getattr(writer, "transport", None)
-    if transport is None:
-        raise UnsupportedFeatureError("sslwrap: writer has no transport to wrap")
+    ssl_reader = asyncio.StreamReader()
 
-    loop = asyncio.get_event_loop()
-    sock = getattr(transport, "get_extra_info", None)
-    if sock:
-        raw_sock = sock("socket")
-        if raw_sock is not None:
-            ssl_sock = ssl_context.wrap_socket(
-                raw_sock,
-                server_side=server_side,
-                server_hostname=server_hostname,
-                do_handshake_on_connect=False,
-            )
-            # Create new transport/protocol from the SSL socket
-            # For compatibility, return the wrapped reader/writer
-            return reader, writer
+    class _SSLProtocol(asyncio.Protocol):
+        def data_received(self, data):
+            ssl_reader.feed_data(data)
 
-    # Fallback: return unchanged if we can't get the raw socket
-    return reader, writer
+        def eof_received(self):
+            ssl_reader.feed_eof()
+
+        def connection_lost(self, exc):
+            ssl_reader.feed_eof()
+
+    ssl_proto = asyncio.sslproto.SSLProtocol(
+        asyncio.get_event_loop(),
+        _SSLProtocol(),
+        ssl_context,
+        None,
+        server_side,
+        server_hostname,
+        False,
+    )
+
+    class _SSLTransport(asyncio.Transport):
+        _paused = False
+
+        def __init__(self, extra=None):
+            self._extra = extra or {}
+            self.closed = False
+
+        def write(self, data):
+            if data and not self.closed:
+                writer.write(data)
+
+        def close(self):
+            self.closed = True
+            writer.close()
+
+        def _force_close(self, exc):
+            if not self.closed:
+                if verbose is not None:
+                    verbose(f"{exc} from {writer.get_extra_info('peername')[0]}")
+                ssl_proto._app_transport._closed = True
+                self.close()
+
+        def abort(self):
+            self.close()
+
+    ssl_proto.connection_made(_SSLTransport())
+
+    async def _channel():
+        read_size = 65536
+        buffer = None
+        if hasattr(ssl_proto, "get_buffer"):
+            buffer = ssl_proto.get_buffer(read_size)
+        try:
+            while not reader.at_eof() and not ssl_proto._app_transport._closed:
+                data = await reader.read(read_size)
+                if not data:
+                    break
+                if buffer is not None:
+                    data_len = len(data)
+                    buffer[:data_len] = data
+                    ssl_proto.buffer_updated(data_len)
+                else:
+                    ssl_proto.data_received(data)
+        except Exception:
+            pass
+        finally:
+            ssl_proto.eof_received()
+
+    asyncio.ensure_future(_channel())
+
+    class _SSLWriter:
+        def get_extra_info(self, key):
+            return writer.get_extra_info(key)
+
+        def write(self, data):
+            ssl_proto._app_transport.write(data)
+
+        def drain(self):
+            return writer.drain()
+
+        def is_closing(self):
+            return ssl_proto._app_transport._closed
+
+        def close(self):
+            if not ssl_proto._app_transport._closed:
+                ssl_proto._app_transport.close()
+
+    return ssl_reader, _SSLWriter()
 
 
 __all__ = sorted(
