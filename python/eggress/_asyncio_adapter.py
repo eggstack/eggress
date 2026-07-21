@@ -40,6 +40,8 @@ class CompatibleStreamReader:
 
     __slots__ = ("_stream", "_buffer", "_eof")
 
+    SOCKET_TIMEOUT: float = 10.0
+
     def __init__(self, stream: AsyncOutboundStream) -> None:
         self._stream = stream
         self._buffer = bytearray()
@@ -141,6 +143,30 @@ class CompatibleStreamReader:
     async def readline(self) -> bytes:
         """Read until a newline (``\\n``) or EOF."""
         return await self.readuntil(b"\n")
+
+    # ------------------------------------------------------------------
+    # pproxy-specific helpers
+    # ------------------------------------------------------------------
+
+    async def read_w(self, n: int = -1) -> bytes:
+        """Read up to *n* bytes with the default timeout (pproxy compatibility).
+
+        If *n* is ``-1`` (the default), read until EOF and return all
+        available data.
+        """
+        return await asyncio.wait_for(self.read(n), timeout=self.SOCKET_TIMEOUT)
+
+    async def read_n(self, n: int) -> bytes:
+        """Read exactly *n* bytes with the default timeout (pproxy compatibility)."""
+        return await asyncio.wait_for(self.readexactly(n), timeout=self.SOCKET_TIMEOUT)
+
+    async def read_until(self, separator: bytes = b"\n") -> bytes:
+        """Read until *separator* with the default timeout (pproxy compatibility)."""
+        return await asyncio.wait_for(self.readuntil(separator), timeout=self.SOCKET_TIMEOUT)
+
+    def rollback(self, data: bytes) -> None:
+        """Push data back into the read buffer (pproxy compatibility)."""
+        self._buffer[0:0] = data
 
     def at_eof(self) -> bool:
         """Return ``True`` if the stream is at EOF and the buffer is empty."""
