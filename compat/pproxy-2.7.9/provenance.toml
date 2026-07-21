@@ -1,0 +1,33 @@
+# pproxy 2.7.9 Oracle Provenance
+#
+# This file pins the exact upstream package used as the behavioral oracle
+# for all differential compatibility testing.
+
+[oracle]
+package = "pproxy"
+version = "2.7.9"
+source = "pypi"
+repository = "https://github.com/nicholaskh/pproxy"
+license = "MIT"
+retrieval_date = "2026-07-16"
+
+[oracle.interpreter]
+min_python = "3.9"
+tested_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+[oracle.optional_deps]
+socks = ["pysocks"]
+http = []
+shadowsocks = ["cryptography"]
+tls = ["cryptography"]
+all = ["pysocks", "cryptography"]
+
+[oracle.environment]
+# Bootstrap a reproducible oracle environment:
+#   python3.11 -m venv .venv-oracle
+#   .venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-oracle.txt
+#   .venv-oracle/bin/python -c "import pproxy; print(pproxy.__version__)"
+#
+# The oracle runner MUST verify version and hash before executing any probe.
+EGRESS_ORACLE_REQUIRE_VERSION = "2.7.9"
+EGRESS_ORACLE_REQUIRE_HASH = "see hashes.toml"

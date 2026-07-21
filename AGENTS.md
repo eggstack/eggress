@@ -214,6 +214,11 @@ cargo test -p eggress-testkit manifest_test_names_exist
 # Run all manifest validation tests (Phase 36)
 cargo test -p eggress-testkit --lib manifest
 
+# Run all strict manifest validation tests (Milestone A)
+cargo test -p eggress-testkit --lib strict_manifest
+cargo test -p eggress-testkit --lib strict_comparators
+cargo test -p eggress-testkit --lib strict_observations
+
 # Validate canonical parity manifest via Rust (Phase 53)
 cargo test -p eggress-testkit validate_real_canonical_manifest
 
@@ -243,6 +248,23 @@ python3 scripts/validate_pproxy_parity_manifest.py --check-matrix docs/parity/co
 
 # Run validator Rule 14 regression tests (Phase 52)
 python3.11 -m pytest tests/scripts/test_validate_pproxy_parity_manifest.py -v
+
+# Run strict manifest validation tests (Milestone A)
+cargo test -p eggress-testkit --lib strict_manifest
+
+# Run strict comparator tests (Milestone A)
+cargo test -p eggress-testkit --lib strict_comparators
+
+# Run strict observation tests (Milestone A)
+cargo test -p eggress-testkit --lib strict_observations
+
+# Validate the strict manifest
+# (reads docs/parity/pproxy_2_7_9_strict_manifest.toml)
+
+# Bootstrap the pproxy 2.7.9 oracle environment
+python3.11 -m venv .venv-oracle
+.venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-oracle.txt
+.venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-optional.txt
 
 # Run full Phase 36 release audit locally (Python 3.11 required for pproxy 2.7.9 interop)
 python3.11 -m pip install "pproxy==2.7.9"
@@ -497,6 +519,8 @@ eggress/
 │           ├── supervisor.rs # Robust process supervisor with artifact retention
 │           ├── ci.rs         # CI tier organization and gating
 │           └── report.rs     # JSON/Markdown report generation
+├── compat/                 # Upstream oracle definition and fixtures
+│   └── pproxy-2.7.9/      # Frozen pproxy 2.7.9 oracle: provenance, hashes, requirements
 ├── benches/                # Criterion benchmarks (tcp_relay, udp_relay, route_match, http_connect_upstream)
 ├── fuzz/                   # Fuzz harness smoke targets (socks5_udp_datagram, socks5_handshake, http_connect_response, trojan_request, route_match, uri_parse)
 ├── scripts/                # Helper scripts (test_wheel.sh)
@@ -549,6 +573,9 @@ eggress/
     │   └── CONTAINER.md
     ├── parity/
     │   ├── pproxy_capability_manifest.toml  # Canonical parity contract (148 capabilities)
+    │   ├── pproxy_2_7_9_strict_manifest.toml  # Strict behavioral manifest (Milestone A)
+    │   ├── PPROXY_2_7_9_STRICT_REPORT.md      # Generated strict report
+    │   ├── PPROXY_COMPATIBILITY_POLICY.md      # Vocabulary and governance rules
     │   ├── composition_schema.toml           # Schema for composition matrix (Phase A2)
     │   ├── composition_matrix.toml           # Protocol×role×traffic_kind graph (Phase A2)
     │   ├── PPROXY_PARITY_REPORT.md           # Generated parity report
@@ -673,6 +700,7 @@ See `docs/DIFFERENTIAL_TESTING.md` for gated differential and interoperability t
 - **Corrective verification pass**: Advanced transport chain entries (WS/Raw/H2) reclassified from `drop_in` to `compatible_with_warning` with role-specific notes documenting upstream-only terminal behavior. Composition matrix expanded with 6 new chain capability IDs (`protocol.chain.socks5_to_ws`, etc.) and `upstream_only_no_listener` constraint type. Admin body size limit returns 413 (not 400). Track B/C adds native Python streams, a separate compatibility wheel, and deterministic cipher dependencies; the manifest now contains 148 capabilities. See `plans/track_bc_release_closure_python_dropin_and_certification.md` for the full record.
 - **System proxy**: `eggress-system-proxy` provides read-only system proxy inspection, platform capability detection, and explicit dry-run apply. CLI subcommand `eggress system-proxy inspect` reads current settings. No hidden global mutation; apply requires explicit `--apply` flag. Supports macOS (`networksetup`), Windows (registry), Linux (`gsettings`), and environment variables. `CommandRunner` trait enables testable command execution. See `docs/system_proxy/`.
 - **Python API contract freeze (Phase C1)**: Machine-readable pproxy 2.7.9 API contract at `python/compat/pproxy_api_contract.json` (105 symbols, 10 constants, 6 aliases). Extracted via `python/compat/extract_api.py`. Behavioral probes at `python/compat/behavioral_probes.py` (46 probes). Classification at `python/compat/classification.json` (3 adapted, 1 intentional non-parity, 87 internal). Contract validator at `tests/compat/test_pproxy_api_contract.py` (56 tests). The canonical `eggress` wheel keeps its namespace clean; `eggress-pproxy-compat` is the separate opt-in top-level import distribution.
+- **Milestone A: Honest pproxy compatibility contract**: Replaces capability-oriented claims with a frozen, mechanically validated, behavior-oriented contract against pproxy==2.7.9. Artifacts: oracle provenance (`compat/pproxy-2.7.9/`), strict manifest (`docs/parity/pproxy_2_7_9_strict_manifest.toml`), compatibility policy (`docs/parity/PPROXY_COMPATIBILITY_POLICY.md`), known-defects registry. Testkit modules: `strict_manifest` (6 validation rules, 28 tests), `strict_comparators` (11 comparators, 44 tests), `strict_observations` (structured observation schema). Strict manifest reserves `drop_in` for behavioral matches validated by paired oracle/candidate testing. See `plans/MILESTONE_A_HONEST_CONTRACT.md` for the full plan.
 
 ## Skills
 

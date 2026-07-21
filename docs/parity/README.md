@@ -10,12 +10,36 @@ docs, and test comments.
 | File | Purpose |
 |------|---------|
 | `pproxy_capability_manifest.toml` | Machine-readable manifest of all pproxy capabilities |
+| `pproxy_2_7_9_strict_manifest.toml` | **Strict behavioral manifest** (Milestone A) — 194 capabilities validated by paired oracle/candidate testing |
+| `PPROXY_COMPATIBILITY_POLICY.md` | **Compatibility vocabulary and governance rules** (Milestone A) |
+| `PPROXY_2_7_9_STRICT_REPORT.md` | Generated strict report (from strict manifest) |
 | `composition_schema.toml` | Schema definition for the composition matrix |
 | `composition_matrix.toml` | Machine-readable composition graph (protocol×role×traffic_kind) |
 | `PPROXY_PARITY_REPORT.md` | Human-readable summary with tier counts and next steps |
 | `README.md` | This file — explains tiers, layers, evidence, and rules |
 
 The validator lives at `scripts/validate_pproxy_parity_manifest.py`.
+
+## Two Manifest Systems
+
+This directory contains two manifest systems with different purposes:
+
+### Canonical Capability Manifest (`pproxy_capability_manifest.toml`)
+- **Scope**: All pproxy capabilities, including native-equivalent and migration-compatible
+- **Use case**: Feature planning, development tracking, release notes
+- **Tiers**: drop_in, compatible_with_warning, native_equivalent, intentional_non_parity, unsupported
+- **Validated by**: `scripts/validate_pproxy_parity_manifest.py` (14 rules)
+
+### Strict Behavioral Manifest (`pproxy_2_7_9_strict_manifest.toml`) — Milestone A
+- **Scope**: Behaviorally testable capabilities against pproxy==2.7.9
+- **Use case**: Release certification, differential evidence tracking
+- **Status vocabulary**: gap, drop_in, known_upstream_defect, platform_constraint, not_applicable
+- **Validated by**: `eggress-testkit::strict_manifest` (6 rules, 28 tests)
+- **Comparators**: `eggress-testkit::strict_comparators` (11 comparators, 44 tests)
+- **Policy**: `PPROXY_COMPATIBILITY_POLICY.md` — governing rules for compatibility claims
+
+The strict manifest is the source of truth for release certification.
+The canonical capability manifest remains the source of truth for feature planning.
 
 ## Manifest Schema
 

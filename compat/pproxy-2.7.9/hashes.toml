@@ -1,0 +1,18 @@
+# pproxy 2.7.9 Package Hashes
+#
+# These hashes are verified before any oracle execution.
+# Source: PyPI metadata for pproxy-2.7.9
+
+[package]
+version = "2.7.9"
+source = "https://pypi.org/project/pproxy/2.7.9/"
+
+# SHA256 of pproxy-2.7.9.tar.gz (source distribution)
+sha256_sdist = "placeholder_update_on_first_run"
+
+# SHA256 of pproxy-2.7.9-py3-none-any.whl (wheel)
+sha256_wheel = "placeholder_update_on_first_run"
+
+# The oracle runner verifies these before execution.
+# On first run with EGRESS_ORACLE_REQUIRE_HASH=1, the runner will
+# compute and display the actual hashes for manual confirmation.

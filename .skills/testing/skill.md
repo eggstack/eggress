@@ -460,3 +460,40 @@ python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
 - `unsupported_release_blocker`: required for drop-in parity
 - `intentional_non_parity`: with explicit rationale
 - `internal_observed`: publicly reachable but not stable API
+
+## Milestone A: Strict Compatibility Testing
+
+### Strict Manifest
+
+The strict manifest (`docs/parity/pproxy_2_7_9_strict_manifest.toml`) defines 194 behavioral capabilities that must be validated through paired oracle/candidate testing.
+
+### Validation Commands
+
+```bash
+# Validate strict manifest structure and constraints
+cargo test -p eggress-testkit --lib strict_manifest
+
+# Run all strict comparators (11 comparators, 44 tests)
+cargo test -p eggress-testkit --lib strict_comparators
+
+# Run strict observation schema tests
+cargo test -p eggress-testkit --lib strict_observations
+```
+
+### Bootstrap Oracle Environment
+
+```bash
+python3.11 -m venv .venv-oracle
+.venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-oracle.txt
+.venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-optional.txt
+.venv-oracle/bin/python -c "import pproxy; print(pproxy.__version__)"
+```
+
+### Strict Manifest Validation Rules
+
+1. No duplicate record IDs
+2. All IDs non-empty
+3. All enum fields validated against allowed values
+4. Every `drop_in` has non-empty evidence or test refs
+5. No `drop_in` without oracle_probe
+6. No unresolved progress states at or below current milestone

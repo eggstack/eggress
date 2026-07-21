@@ -60,6 +60,19 @@ The Track B/C verification pass produced:
 - Full CLI flag inventory documenting parity with pproxy (`docs/cli/PPROXY_CLI_INVENTORY.md`)
 - SSR and SSH URIs rejected with structured diagnostics (intentional non-parity; SSH documented in ADR at `docs/adr/ADR_ssh_upstream_parity.md`)
 
+### Honest Contract (Milestone A)
+
+Eggress maintains a **frozen, behavior-oriented compatibility contract** against exactly `pproxy==2.7.9`. This contract is defined in:
+
+- **Strict manifest**: [`docs/parity/pproxy_2_7_9_strict_manifest.toml`](docs/parity/pproxy_2_7_9_strict_manifest.toml) — 194 behavioral capability records
+- **Oracle provenance**: [`compat/pproxy-2.7.9/provenance.toml`](compat/pproxy-2.7.9/provenance.toml) — pinned package, hashes, Python versions
+- **Compatibility policy**: [`docs/parity/PPROXY_COMPATIBILITY_POLICY.md`](docs/parity/PPROXY_COMPATIBILITY_POLICY.md) — vocabulary, governance rules, certification process
+- **Known defects**: [`compat/pproxy-2.7.9/known-defects.toml`](compat/pproxy-2.7.9/known-defects.toml) — upstream defect registry
+
+The strict contract reserves `drop_in` for capabilities validated by paired oracle/candidate differential testing. Candidate-only tests, import stubs, and native-equivalent APIs do not prove compatibility. See the compatibility policy for governing rules.
+
+This is **not** a claim that eggress is a complete drop-in replacement for pproxy. It is a precise, auditable statement of what has been verified and what remains to be implemented.
+
 ## Installation
 
 ### Pre-built binaries
@@ -80,7 +93,7 @@ sudo mv eggress /usr/local/bin/
 
 See [BINARY_INSTALL.md](docs/release/BINARY_INSTALL.md) for all platforms and checksum verification.
 
-The release archive includes a `pproxy` compatibility binary alongside `eggress`. Users can run `pproxy` directly as a drop-in replacement for the original `pproxy` command:
+The release archive includes a `pproxy` compatibility binary alongside `eggress`. Users can run `pproxy` directly for the certified modern pproxy compatibility subset:
 
 ```bash
 pproxy -l http://:8080 -r socks5://127.0.0.1:1080
@@ -536,6 +549,21 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - UDP limit changes apply only to new associations after reload.
 - UDP is available on listeners with the `socks5` protocol or in standalone mode (`mode = "standalone_pproxy_udp"`).
 - No UDP chain validation (UDP cannot traverse multi-hop proxy chains).
+
+## Project structure
+
+```text
+eggress/
+├── crates/                 # Workspace crates (core, cli, server, runtime, protocols, transport, etc.)
+├── compat/                 # Upstream oracle definition and fixtures
+│   └── pproxy-2.7.9/      # Frozen pproxy 2.7.9 oracle: provenance, hashes, requirements
+├── fuzz/                   # Fuzz harness smoke targets (libfuzzer-sys based)
+├── benches/                # Criterion benchmarks
+├── tests/                  # Cross-implementation tests (curl, pproxy)
+├── scripts/                # Helper and validation scripts
+├── docs/                   # Documentation, parity manifests, and release artifacts
+└── plans/                  # Historical planning documents
+```
 
 ## Dependency policy
 

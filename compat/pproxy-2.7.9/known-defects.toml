@@ -1,0 +1,36 @@
+# Known Upstream Defects Registry
+#
+# Each entry documents a reproducible defect in pproxy 2.7.9 that affects
+# the oracle but not the candidate (eggress). Defects require:
+# - A reproducible oracle-only failure
+# - Platforms and Python versions affected
+# - Expected candidate policy
+# - Approval rationale
+#
+# See docs/parity/PPROXY_COMPATIBILITY_POLICY.md Rule 6 for requirements.
+
+# No known defects at this time.
+# 
+# To add a defect:
+# 1. Reproduce the failure with pproxy 2.7.9 only
+# 2. Verify eggress handles the case correctly or matches the defect
+# 3. Add a record below with all required fields
+# 4. Add a regression test
+#
+# Example record:
+#
+# [[defect]]
+# id = "UPSTREAM-001"
+# title = "pproxy crashes on malformed SOCKS5 auth"
+# affected_scenarios = ["socks5.malformed_auth"]
+# reproducible_oracle_only = """
+#   pproxy 2.7.9 crashes with AssertionError when receiving
+#   malformed SOCKS5 authentication packet.
+# """
+# platforms = ["linux", "macos", "windows"]
+# python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+# upstream_source = "pproxy/server.py:123"
+# expected_candidate_policy = "reject_with_diagnostic"
+# approval_rationale = "Security: candidate rejects malformed input safely"
+# review_date = "2026-08-01"
+# regression_test = "test_upstream_defect_001"

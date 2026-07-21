@@ -1,0 +1,3 @@
+# Oracle environment requirements
+# Install: pip install -r requirements-oracle.txt
+pproxy==2.7.9

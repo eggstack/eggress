@@ -1,0 +1,4 @@
+# Optional dependencies for full protocol coverage
+# Install after requirements-oracle.txt
+pysocks>=1.7.1
+cryptography>=3.4

@@ -1,0 +1,3781 @@
+# pproxy 2.7.9 Strict Behavioral Compatibility Manifest
+#
+# Each record represents one discoverable capability that must be validated
+# through paired oracle/candidate testing. The oracle is the reference
+# pproxy 2.7.9 installation; the candidate is the eggress implementation.
+#
+# Status vocabulary:
+#   gap               - candidate does not implement this capability
+#   drop_in           - candidate matches oracle behavior exactly
+#   known_upstream_defect - candidate behavior differs due to upstream limitation
+#   platform_constraint  - capability is platform-gated
+#   not_applicable    - capability does not apply to the candidate architecture
+#
+# Comparator vocabulary:
+#   async_callable_signature  - compare async callable signature
+#   module_existence          - verify module/symbol exists
+#   constant_value            - compare constant value
+#   enum_membership           - compare enum/int constant membership
+#   method_signature           - compare method signature
+#   property_existence         - verify property exists on class
+#   class_hierarchy            - compare class bases/MRO
+#   cli_flag_parse             - verify CLI flag is parsed correctly
+#   cli_flag_rejection         - verify CLI flag is rejected with diagnostic
+#   protocol_wire              - compare wire-level protocol behavior
+#   cipher_roundtrip           - compare encrypt/decrypt roundtrip
+#   cipher_kat                 - compare known-answer test vectors
+#   process_lifecycle           - compare process start/stop behavior
+#   failure_class              - compare failure category
+#   composition_validity       - verify protocol x role combination is accepted
+#   composition_rejection      - verify protocol x role combination is rejected
+
+[meta]
+manifest_version = "1"
+pproxy_version = "2.7.9"
+schema = "strict_1"
+policy_ref = "docs/parity/PPROXY_COMPATIBILITY_POLICY.md"
+oracle_ref = "compat/pproxy-2.7.9/provenance.toml"
+
+# ================================================================
+# 1. Python Namespace Inventory
+# ================================================================
+
+# -- Modules --
+
+[[record]]
+id = "python.pproxy"
+category = "python_namespace"
+kind = "module"
+module = ""
+name = "pproxy"
+oracle_probe = "api.module_exists"
+candidate_probe = "api.module_exists"
+comparator = "module_existence"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Top-level pproxy package module."
+
+[[record]]
+id = "python.pproxy.proto"
+category = "python_namespace"
+kind = "module"
+module = "pproxy"
+name = "proto"
+oracle_probe = "api.module_exists"
+candidate_probe = "api.module_exists"
+comparator = "module_existence"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy"]
+test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Protocol definitions module."
+
+[[record]]
+id = "python.pproxy.server"
+category = "python_namespace"
+kind = "module"
+module = "pproxy"
+name = "server"
+oracle_probe = "api.module_exists"
+candidate_probe = "api.module_exists"
+comparator = "module_existence"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy"]
+test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Server implementation module."
+
+[[record]]
+id = "python.pproxy.cipher"
+category = "python_namespace"
+kind = "module"
+module = "pproxy"
+name = "cipher"
+oracle_probe = "api.module_exists"
+candidate_probe = "api.module_exists"
+comparator = "module_existence"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy"]
+test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Cipher implementations module."
+
+# -- Top-level exports --
+
+[[record]]
+id = "python.pproxy.Connection"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "Connection"
+oracle_probe = "api.connection_class_exists"
+candidate_probe = "api.connection_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "pproxy.Connection is proxies_by_uri function. eggress implements as Rust-backed class."
+
+[[record]]
+id = "python.pproxy.Server"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "Server"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists", "test_server_lifecycle.py"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "pproxy.Server wraps the full server lifecycle."
+
+[[record]]
+id = "python.pproxy.DIRECT"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.server"
+name = "DIRECT"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Direct connection constant."
+
+[[record]]
+id = "python.pproxy.Rule"
+category = "python_namespace"
+kind = "function"
+module = "pproxy"
+name = "Rule"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "pproxy.Rule is compile_rule function."
+
+[[record]]
+id = "python.pproxy.proto_reexport"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy"
+name = "proto"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "module_existence"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Protocol module re-export."
+
+# -- Protocol classes --
+
+[[record]]
+id = "python.pproxy.proto.BaseProtocol"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "BaseProtocol"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Base class for all pproxy protocol objects."
+
+[[record]]
+id = "python.pproxy.proto.Socks5"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Socks5"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "SOCKS5 protocol handler class."
+
+[[record]]
+id = "python.pproxy.proto.HTTP"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "HTTP"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP protocol handler class."
+
+[[record]]
+id = "python.pproxy.proto.Socks4"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Socks4"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "SOCKS4 protocol handler class."
+
+[[record]]
+id = "python.pproxy.proto.SS"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "SS"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Shadowsocks protocol handler class."
+
+[[record]]
+id = "python.pproxy.proto.Trojan"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Trojan"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Trojan protocol handler class."
+
+[[record]]
+id = "python.pproxy.proto.Direct"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Direct"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Direct connection protocol handler."
+
+[[record]]
+id = "python.pproxy.proto.Transparent"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Transparent"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Transparent proxy base class. Platform-gated."
+
+[[record]]
+id = "python.pproxy.proto.SSH"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "SSH"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "SSH protocol handler. Intentionally not implemented."
+
+[[record]]
+id = "python.pproxy.proto.SSR"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "SSR"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "SSR protocol handler. Intentionally not implemented."
+
+[[record]]
+id = "python.pproxy.proto.WS"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "WS"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "WebSocket protocol handler class."
+
+[[record]]
+id = "python.pproxy.proto.H2"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "H2"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP/2 CONNECT protocol handler."
+
+[[record]]
+id = "python.pproxy.proto.H3"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "H3"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP/3/QUIC protocol handler."
+
+[[record]]
+id = "python.pproxy.proto.Tunnel"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Tunnel"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Raw fixed-target tunnel protocol handler."
+
+[[record]]
+id = "python.pproxy.proto.Echo"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Echo"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Transparent echo protocol handler."
+
+[[record]]
+id = "python.pproxy.proto.Pf"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Pf"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["macos"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "macOS PF transparent proxy. Platform-gated to macOS."
+
+[[record]]
+id = "python.pproxy.proto.Redir"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "Redir"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Linux transparent proxy via SO_ORIGINAL_DST."
+
+[[record]]
+id = "python.pproxy.proto.HTTPOnly"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.proto"
+name = "HTTPOnly"
+oracle_probe = "api.protocol_class_exists"
+candidate_probe = "api.protocol_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_protocol_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP-only protocol handler (no CONNECT tunnel)."
+
+# -- Protocol class methods --
+
+[[record]]
+id = "python.pproxy.proto.Socks5.accept"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "accept"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.Socks5"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async accept(self, reader, user, writer, users, authtable, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.Socks5.channel"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "channel"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.Socks5"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async channel(self, reader, writer, stat_bytes, stat_conn)"
+
+[[record]]
+id = "python.pproxy.proto.Socks5.connect"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "connect"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.Socks5"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async connect(self, reader_remote, writer_remote, rauth, host_name, port, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.Socks5.udp_accept"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "udp_accept"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.Socks5"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "udp_accept(self, data, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.HTTP.accept"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "accept"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.HTTP"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async accept(self, reader, user, writer, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.HTTP.http_accept"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "http_accept"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.HTTP"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async http_accept(self, user, method, path, authority, ver, lines, host, pauth, reply, authtable, users, httpget=None, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.SS.accept"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "accept"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.SS"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async accept(self, reader, user, reader_cipher, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.SS.guess"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "guess"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.SS"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async guess(self, reader, users, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.Trojan.accept"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "accept"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.Trojan"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async accept(self, reader, user, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.Trojan.guess"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "guess"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.Trojan"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async guess(self, reader, users, **kw)"
+
+[[record]]
+id = "python.pproxy.proto.WS.patch_ws_stream"
+category = "python_namespace"
+kind = "method"
+module = "pproxy.proto"
+name = "patch_ws_stream"
+oracle_probe = "api.method_signature"
+candidate_probe = "api.method_signature"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto.WS"]
+test_refs = ["test_pproxy_api_contract.py::test_method_signature"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "patch_ws_stream(self, reader, writer, masked=False)"
+
+# -- Protocol module functions --
+
+[[record]]
+id = "python.pproxy.proto.accept_func"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "accept"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "async accept(protos, reader, **kw) protocol dispatcher."
+
+[[record]]
+id = "python.pproxy.proto.get_protos"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "get_protos"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "get_protos(rawprotos) parse protocol specification."
+
+[[record]]
+id = "python.pproxy.proto.udp_accept_func"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "udp_accept"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "udp_accept(protos, data, **kw) UDP datagram dispatcher."
+
+[[record]]
+id = "python.pproxy.proto.socks_address"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "socks_address"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "socks_address(reader, n) parse SOCKS address from stream."
+
+[[record]]
+id = "python.pproxy.proto.netloc_split"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "netloc_split"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "netloc_split(loc, default_host=None, default_port=None) split network location."
+
+[[record]]
+id = "python.pproxy.proto.sslwrap"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "sslwrap"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "sslwrap(reader, writer, sslcontext, ...) TLS wrapping utility."
+
+[[record]]
+id = "python.pproxy.proto.packstr"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.proto"
+name = "packstr"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "packstr(s, n=1) pack string with length prefix."
+
+# -- Protocol constants --
+
+[[record]]
+id = "python.pproxy.proto.MAPPINGS"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.proto"
+name = "MAPPINGS"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Protocol name to class mapping dictionary."
+
+[[record]]
+id = "python.pproxy.proto.HTTP_LINE"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.proto"
+name = "HTTP_LINE"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP line parsing state constant."
+
+[[record]]
+id = "python.pproxy.proto.SO_ORIGINAL_DST"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.proto"
+name = "SO_ORIGINAL_DST"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "enum_membership"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Linux transparent proxy socket option. Platform-gated."
+
+[[record]]
+id = "python.pproxy.proto.SOL_IPV6"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.proto"
+name = "SOL_IPV6"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "enum_membership"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.proto"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "IPv6 socket option level. Platform-gated."
+
+# -- Cipher classes --
+
+[[record]]
+id = "python.pproxy.cipher.BaseCipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "BaseCipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Base class for all cipher implementations."
+
+[[record]]
+id = "python.pproxy.cipher.AEADCipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "AEADCipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.BaseCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "AEAD cipher base class with encrypt/decrypt/encrypt_and_digest/decrypt_and_verify."
+
+[[record]]
+id = "python.pproxy.cipher.AES_256_GCM_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "AES_256_GCM_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.AEADCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "AES-256-GCM AEAD cipher."
+
+[[record]]
+id = "python.pproxy.cipher.AES_192_GCM_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "AES_192_GCM_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.AEADCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "AES-192-GCM AEAD cipher."
+
+[[record]]
+id = "python.pproxy.cipher.AES_128_GCM_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "AES_128_GCM_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.AEADCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "AES-128-GCM AEAD cipher."
+
+[[record]]
+id = "python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "ChaCha20_IETF_POLY1305_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.AEADCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "ChaCha20-IETF-Poly1305 AEAD cipher."
+
+[[record]]
+id = "python.pproxy.cipher.PacketCipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "PacketCipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.BaseCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Packet cipher base class for stream ciphers."
+
+[[record]]
+id = "python.pproxy.cipher.AES_256_CFB_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "AES_256_CFB_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.BaseCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "AES-256-CFB stream cipher."
+
+[[record]]
+id = "python.pproxy.cipher.ChaCha20_IETF_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "ChaCha20_IETF_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.BaseCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "ChaCha20-IETF stream cipher."
+
+[[record]]
+id = "python.pproxy.cipher.ChaCha20_Cipher"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.cipher"
+name = "ChaCha20_Cipher"
+oracle_probe = "api.cipher_class_exists"
+candidate_probe = "api.cipher_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher.BaseCipher"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "ChaCha20 original stream cipher."
+
+[[record]]
+id = "python.pproxy.cipher.MAP"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.cipher"
+name = "MAP"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Cipher name to class mapping dictionary."
+
+[[record]]
+id = "python.pproxy.cipher.get_cipher"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.cipher"
+name = "get_cipher"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.cipher"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Factory function: get_cipher(name, key, ...) returns cipher instance."
+
+# -- Server module symbols --
+
+[[record]]
+id = "python.pproxy.server.AuthTable"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "AuthTable"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Authentication table for proxy users."
+
+[[record]]
+id = "python.pproxy.server.ProxySimple"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxySimple"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Simple proxy handler class."
+
+[[record]]
+id = "python.pproxy.server.ProxyBackward"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxyBackward"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Backward/reverse proxy handler class."
+
+[[record]]
+id = "python.pproxy.server.ProxyDirect"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxyDirect"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Direct connection handler class."
+
+[[record]]
+id = "python.pproxy.server.ProxyH2"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxyH2"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP/2 proxy handler class."
+
+[[record]]
+id = "python.pproxy.server.ProxyH3"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxyH3"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "HTTP/3 proxy handler class."
+
+[[record]]
+id = "python.pproxy.server.ProxySSH"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxySSH"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "SSH proxy handler class."
+
+[[record]]
+id = "python.pproxy.server.ProxyQUIC"
+category = "python_namespace"
+kind = "class"
+module = "pproxy.server"
+name = "ProxyQUIC"
+oracle_probe = "api.server_class_exists"
+candidate_probe = "api.server_class_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "QUIC proxy handler class."
+
+[[record]]
+id = "python.pproxy.server.main"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.server"
+name = "main"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Server main entry point."
+
+[[record]]
+id = "python.pproxy.server.compile_rule"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.server"
+name = "compile_rule"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "compile_rule(filename) load routing rules from file."
+
+[[record]]
+id = "python.pproxy.server.check_server_alive"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.server"
+name = "check_server_alive"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Health check function for proxy servers."
+
+[[record]]
+id = "python.pproxy.server.prepare_ciphers"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.server"
+name = "prepare_ciphers"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Prepare cipher instances for Shadowsocks/SSR."
+
+[[record]]
+id = "python.pproxy.server.proxies_by_uri"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.server"
+name = "proxies_by_uri"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "proxies_by_uri(uri_jumps) create proxy handlers from URI list."
+
+[[record]]
+id = "python.pproxy.server.proxy_by_uri"
+category = "python_namespace"
+kind = "function"
+module = "pproxy.server"
+name = "proxy_by_uri"
+oracle_probe = "api.function_exists"
+candidate_probe = "api.function_exists"
+comparator = "module_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "proxy_by_uri(uri) create single proxy handler from URI."
+
+[[record]]
+id = "python.pproxy.server.SOCKET_TIMEOUT"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.server"
+name = "SOCKET_TIMEOUT"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Default socket timeout value."
+
+[[record]]
+id = "python.pproxy.server.UDP_LIMIT"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.server"
+name = "UDP_LIMIT"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "UDP rate limit constant."
+
+[[record]]
+id = "python.pproxy.server.DIRECT_const"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.server"
+name = "DIRECT"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Direct connection constant in server module."
+
+[[record]]
+id = "python.pproxy.server.DUMMY"
+category = "python_namespace"
+kind = "constant"
+module = "pproxy.server"
+name = "DUMMY"
+oracle_probe = "api.constant_exists"
+candidate_probe = "api.constant_exists"
+comparator = "constant_value"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = ["python.pproxy.server"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+evidence_refs = ["pproxy_api_contract.json"]
+notes = "Dummy placeholder constant."
+
+# ================================================================
+# 2. CLI Options
+# ================================================================
+
+[[record]]
+id = "cli.listen"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-l / --listen"
+oracle_probe = "cli.listen_flag"
+candidate_probe = "cli.listen_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_listen"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Bind one or more TCP listener URIs."
+
+[[record]]
+id = "cli.remote"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-r / --remote"
+oracle_probe = "cli.remote_flag"
+candidate_probe = "cli.remote_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_remote"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Specify upstream proxy URIs with chaining via __ separator."
+
+[[record]]
+id = "cli.udp_listen"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-ul / --udp-listen"
+oracle_probe = "cli.udp_listen_flag"
+candidate_probe = "cli.udp_listen_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_udp_listen"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Bind a standalone UDP relay socket."
+
+[[record]]
+id = "cli.udp_remote"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-ur / --udp-remote"
+oracle_probe = "cli.udp_remote_flag"
+candidate_probe = "cli.udp_remote_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_udp_remote"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Specify upstream for UDP traffic relayed via -ul."
+
+[[record]]
+id = "cli.scheduler"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-s / --scheduler"
+oracle_probe = "cli.scheduler_flag"
+candidate_probe = "cli.scheduler_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_scheduler"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Set load-balancing algorithm (rr, fa, rc, lc)."
+
+[[record]]
+id = "cli.alive"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-a / --alive"
+oracle_probe = "cli.alive_flag"
+candidate_probe = "cli.alive_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_alive"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Set alive check interval in seconds."
+
+[[record]]
+id = "cli.ssl"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--ssl"
+oracle_probe = "cli.ssl_flag"
+candidate_probe = "cli.ssl_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_ssl"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Enable TLS on listener (certfile,keyfile)."
+
+[[record]]
+id = "cli.block"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-b / --block"
+oracle_probe = "cli.block_flag"
+candidate_probe = "cli.block_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_block"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Block connections matching regex patterns."
+
+[[record]]
+id = "cli.rulefile"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--rulefile"
+oracle_probe = "cli.rulefile_flag"
+candidate_probe = "cli.rulefile_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_rulefile"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Load routing rules from a line-based file."
+
+[[record]]
+id = "cli.daemon"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--daemon / -d"
+oracle_probe = "cli.daemon_flag"
+candidate_probe = "cli.daemon_flag"
+comparator = "cli_flag_rejection"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_daemon"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Fork into background. Intentionally not supported."
+
+[[record]]
+id = "cli.verbose"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-v / --verbose"
+oracle_probe = "cli.verbose_flag"
+candidate_probe = "cli.verbose_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_verbose"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Enable verbose/debug logging. Parsed and diagnosed."
+
+[[record]]
+id = "cli.log"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--log"
+oracle_probe = "cli.log_flag"
+candidate_probe = "cli.log_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_log"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Write log output to a file. Parsed and diagnosed."
+
+[[record]]
+id = "cli.reuse"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--reuse"
+oracle_probe = "cli.reuse_flag"
+candidate_probe = "cli.reuse_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_reuse"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Connection reuse/pooling. Recognized, intentional non-parity."
+
+[[record]]
+id = "cli.pac"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--pac"
+oracle_probe = "cli.pac_flag"
+candidate_probe = "cli.pac_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_pac"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Serve a PAC file for browser auto-configuration."
+
+[[record]]
+id = "cli.sys"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--sys"
+oracle_probe = "cli.sys_flag"
+candidate_probe = "cli.sys_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_sys"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Auto-configure system proxy settings. Parsed and diagnosed."
+
+[[record]]
+id = "cli.test"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--test"
+oracle_probe = "cli.test_flag"
+candidate_probe = "cli.test_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_test"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Test all remote proxies and exit. Parsed and diagnosed."
+
+[[record]]
+id = "cli.get"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--get"
+oracle_probe = "cli.get_flag"
+candidate_probe = "cli.get_flag"
+comparator = "cli_flag_rejection"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_get"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Fetch a URL through the configured proxy. Recognized, unsupported."
+
+[[record]]
+id = "cli.config"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-f / --config"
+oracle_probe = "cli.config_flag"
+candidate_probe = "cli.config_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_config"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Load configuration from TOML file."
+
+[[record]]
+id = "cli.ipv6"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-6"
+oracle_probe = "cli.ipv6_flag"
+candidate_probe = "cli.ipv6_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_ipv6"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Enable IPv6 mode."
+
+[[record]]
+id = "cli.bind"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-bind"
+oracle_probe = "cli.bind_flag"
+candidate_probe = "cli.bind_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_bind"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Bind address for outgoing connections."
+
+[[record]]
+id = "cli.version"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--version"
+oracle_probe = "cli.version_flag"
+candidate_probe = "cli.version_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_version"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Print version information and exit."
+
+[[record]]
+id = "cli.help"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "--help"
+oracle_probe = "cli.help_flag"
+candidate_probe = "cli.help_flag"
+comparator = "cli_flag_parse"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_help"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Print usage information and exit."
+
+# ================================================================
+# 3. Protocol Behaviors
+# ================================================================
+
+# -- HTTP CONNECT --
+
+[[record]]
+id = "protocol.http_connect.listener_tcp_ipv4"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT listener TCP IPv4"
+oracle_probe = "protocol.http_connect_ipv4"
+candidate_probe = "protocol.http_connect_ipv4"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_tcp_echo", "differential_http_connect_ipv4_target"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Accept HTTP CONNECT and relay to IPv4 target."
+
+[[record]]
+id = "protocol.http_connect.listener_tcp_ipv6"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT listener TCP IPv6"
+oracle_probe = "protocol.http_connect_ipv6"
+candidate_probe = "protocol.http_connect_ipv6"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_ipv6_target"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Accept HTTP CONNECT and relay to IPv6 target."
+
+[[record]]
+id = "protocol.http_connect.listener_tcp_domain"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT listener TCP domain"
+oracle_probe = "protocol.http_connect_domain"
+candidate_probe = "protocol.http_connect_domain"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_domain_target"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Accept HTTP CONNECT and relay to domain target."
+
+[[record]]
+id = "protocol.http_connect.auth_success"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT auth success"
+oracle_probe = "protocol.http_connect_auth_success"
+candidate_probe = "protocol.http_connect_auth_success"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_auth_success"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Accept HTTP CONNECT with valid proxy credentials."
+
+[[record]]
+id = "protocol.http_connect.auth_failure"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT auth failure"
+oracle_probe = "protocol.http_connect_auth_failure"
+candidate_probe = "protocol.http_connect_auth_failure"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_auth_failure"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Reject HTTP CONNECT with invalid proxy credentials."
+
+[[record]]
+id = "protocol.http_connect.refused"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT refused target"
+oracle_probe = "protocol.http_connect_refused"
+candidate_probe = "protocol.http_connect_refused"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_refused_target"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "HTTP CONNECT to refused target produces equivalent error."
+
+[[record]]
+id = "protocol.http_connect.half_close"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT half-close"
+oracle_probe = "protocol.http_connect_half_close"
+candidate_probe = "protocol.http_connect_half_close"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_client_half_close", "differential_http_connect_server_half_close"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Half-close handling during CONNECT tunnel."
+
+[[record]]
+id = "protocol.http_connect.fragmented"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT fragmented payload"
+oracle_probe = "protocol.http_connect_fragmented"
+candidate_probe = "protocol.http_connect_fragmented"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_fragmented_client_payload", "differential_http_connect_fragmented_upstream_payload"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Fragmented payload relay in CONNECT tunnel."
+
+[[record]]
+id = "protocol.http_connect.timeout"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP CONNECT upstream timeout"
+oracle_probe = "protocol.http_connect_timeout"
+candidate_probe = "protocol.http_connect_timeout"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_timeout"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Upstream connect timeout produces equivalent failure class."
+
+# -- HTTP Forward --
+
+[[record]]
+id = "protocol.http_forward.get"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward GET"
+oracle_probe = "protocol.http_forward_get"
+candidate_probe = "protocol.http_forward_get"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_get"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Forward HTTP GET requests to target."
+
+[[record]]
+id = "protocol.http_forward.post_content_length"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward POST with Content-Length"
+oracle_probe = "protocol.http_forward_post"
+candidate_probe = "protocol.http_forward_post"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_post_with_body"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Forward HTTP POST with Content-Length."
+
+[[record]]
+id = "protocol.http_forward.head"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward HEAD"
+oracle_probe = "protocol.http_forward_head"
+candidate_probe = "protocol.http_forward_head"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_head"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Forward HTTP HEAD requests."
+
+[[record]]
+id = "protocol.http_forward.chunked"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward chunked encoding"
+oracle_probe = "protocol.http_forward_chunked"
+candidate_probe = "protocol.http_forward_chunked"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_chunked_body"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Forward HTTP requests with chunked transfer encoding."
+
+[[record]]
+id = "protocol.http_forward.persistent"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward persistent connection"
+oracle_probe = "protocol.http_forward_persistent"
+candidate_probe = "protocol.http_forward_persistent"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_persistent_connection"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Persistent (keep-alive) forward proxy connections."
+
+[[record]]
+id = "protocol.http_forward.connection_close"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward Connection close"
+oracle_probe = "protocol.http_forward_connection_close"
+candidate_probe = "protocol.http_forward_connection_close"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_connection_close"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Connection: close header handling."
+
+[[record]]
+id = "protocol.http_forward.auth_success"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward auth success"
+oracle_probe = "protocol.http_forward_auth_success"
+candidate_probe = "protocol.http_forward_auth_success"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_auth_success"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Forward proxy with valid credentials succeeds."
+
+[[record]]
+id = "protocol.http_forward.malformed"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward malformed request"
+oracle_probe = "protocol.http_forward_malformed"
+candidate_probe = "protocol.http_forward_malformed"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_malformed_request"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Malformed HTTP request produces equivalent error."
+
+[[record]]
+id = "protocol.http_forward.upstream_close"
+category = "protocol"
+kind = "role"
+module = "http"
+name = "HTTP forward upstream close"
+oracle_probe = "protocol.http_forward_upstream_close"
+candidate_probe = "protocol.http_forward_upstream_close"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_upstream_connection_close"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Upstream connection close during forward proxy."
+
+# -- SOCKS4 --
+
+[[record]]
+id = "protocol.socks4.connect_ipv4"
+category = "protocol"
+kind = "role"
+module = "socks4"
+name = "SOCKS4 CONNECT IPv4"
+oracle_probe = "protocol.socks4_connect_ipv4"
+candidate_probe = "protocol.socks4_connect_ipv4"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4_connect_tcp_echo"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS4 CONNECT to IPv4 target."
+
+[[record]]
+id = "protocol.socks4.user_id"
+category = "protocol"
+kind = "role"
+module = "socks4"
+name = "SOCKS4 user ID propagation"
+oracle_probe = "protocol.socks4_user_id"
+candidate_probe = "protocol.socks4_user_id"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4_user_id_propagation"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "User ID field forwarded in CONNECT request."
+
+[[record]]
+id = "protocol.socks4.refused"
+category = "protocol"
+kind = "role"
+module = "socks4"
+name = "SOCKS4 CONNECT refused"
+oracle_probe = "protocol.socks4_refused"
+candidate_probe = "protocol.socks4_refused"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4_refused_target"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS4 CONNECT to refused target."
+
+[[record]]
+id = "protocol.socks4.malformed"
+category = "protocol"
+kind = "role"
+module = "socks4"
+name = "SOCKS4 malformed request"
+oracle_probe = "protocol.socks4_malformed"
+candidate_probe = "protocol.socks4_malformed"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4_malformed_version", "differential_socks4_truncated_request"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Malformed SOCKS4 request handling."
+
+# -- SOCKS4a --
+
+[[record]]
+id = "protocol.socks4a.connect_domain"
+category = "protocol"
+kind = "role"
+module = "socks4a"
+name = "SOCKS4a CONNECT domain"
+oracle_probe = "protocol.socks4a_connect_domain"
+candidate_probe = "protocol.socks4a_connect_domain"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4a_connect_domain"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS4a CONNECT with domain resolution."
+
+# -- SOCKS5 --
+
+[[record]]
+id = "protocol.socks5.connect_ipv4"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 CONNECT IPv4"
+oracle_probe = "protocol.socks5_connect_ipv4"
+candidate_probe = "protocol.socks5_connect_ipv4"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_connect_tcp_echo"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 CONNECT to IPv4 target."
+
+[[record]]
+id = "protocol.socks5.connect_ipv6"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 CONNECT IPv6"
+oracle_probe = "protocol.socks5_connect_ipv6"
+candidate_probe = "protocol.socks5_connect_ipv6"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_connect_ipv6"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 CONNECT to IPv6 target."
+
+[[record]]
+id = "protocol.socks5.connect_domain"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 CONNECT domain"
+oracle_probe = "protocol.socks5_connect_domain"
+candidate_probe = "protocol.socks5_connect_domain"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_connect_domain"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 CONNECT with domain target."
+
+[[record]]
+id = "protocol.socks5.connect_refused"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 CONNECT refused"
+oracle_probe = "protocol.socks5_connect_refused"
+candidate_probe = "protocol.socks5_connect_refused"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_refused_target"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 CONNECT to refused target."
+
+[[record]]
+id = "protocol.socks5.auth_success"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 auth success"
+oracle_probe = "protocol.socks5_auth_success"
+candidate_probe = "protocol.socks5_auth_success"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_auth_success"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 with valid credentials succeeds."
+
+[[record]]
+id = "protocol.socks5.auth_failure"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 auth failure"
+oracle_probe = "protocol.socks5_auth_failure"
+candidate_probe = "protocol.socks5_auth_failure"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_auth_failure"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 with invalid credentials rejected."
+
+[[record]]
+id = "protocol.socks5.udp_associate"
+category = "protocol"
+kind = "role"
+module = "socks5"
+name = "SOCKS5 UDP associate"
+oracle_probe = "protocol.socks5_udp_associate"
+candidate_probe = "protocol.socks5_udp_associate"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_udp_associate"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "SOCKS5 UDP associate relay."
+
+# -- Shadowsocks --
+
+[[record]]
+id = "protocol.shadowsocks.tcp_upstream"
+category = "protocol"
+kind = "role"
+module = "ss"
+name = "Shadowsocks TCP upstream"
+oracle_probe = "protocol.shadowsocks_tcp"
+candidate_probe = "protocol.shadowsocks_tcp"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Standard SIP003 AEAD TCP framing; wire-compatible."
+
+[[record]]
+id = "protocol.shadowsocks.udp_relay"
+category = "protocol"
+kind = "role"
+module = "ss"
+name = "Shadowsocks UDP relay"
+oracle_probe = "protocol.shadowsocks_udp"
+candidate_probe = "protocol.shadowsocks_udp"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["shadowsocks_udp_tests"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Standard AEAD UDP relay; interoperable with standard implementations."
+
+# -- Trojan --
+
+[[record]]
+id = "protocol.trojan.upstream"
+category = "protocol"
+kind = "role"
+module = "trojan"
+name = "Trojan upstream"
+oracle_probe = "protocol.trojan_upstream"
+candidate_probe = "protocol.trojan_upstream"
+comparator = "protocol_wire"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_trojan_upstream"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Trojan upstream with TLS and SHA224 password auth."
+
+[[record]]
+id = "protocol.trojan.auth_failure"
+category = "protocol"
+kind = "role"
+module = "trojan"
+name = "Trojan auth failure"
+oracle_probe = "protocol.trojan_auth_failure"
+candidate_probe = "protocol.trojan_auth_failure"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_trojan_auth_failure"]
+evidence_refs = ["pproxy_capability_manifest"]
+notes = "Trojan auth failure produces equivalent error."
+
+# ================================================================
+# 4. Cipher Behaviors
+# ================================================================
+
+[[record]]
+id = "cipher.aes_256_gcm.kat"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AES-256-GCM"
+oracle_probe = "cipher.aes_256_gcm_kat"
+candidate_probe = "cipher.aes_256_gcm_kat"
+comparator = "cipher_kat"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADKnownAnswerVectors"]
+evidence_refs = ["NIST_SP_800_38D"]
+notes = "NIST SP 800-38D known-answer test vectors for AES-256-GCM."
+
+[[record]]
+id = "cipher.aes_192_gcm.kat"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AES-192-GCM"
+oracle_probe = "cipher.aes_192_gcm_kat"
+candidate_probe = "cipher.aes_192_gcm_kat"
+comparator = "cipher_kat"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADKnownAnswerVectors"]
+evidence_refs = ["NIST_SP_800_38D"]
+notes = "NIST SP 800-38D known-answer test vectors for AES-192-GCM."
+
+[[record]]
+id = "cipher.aes_128_gcm.kat"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AES-128-GCM"
+oracle_probe = "cipher.aes_128_gcm_kat"
+candidate_probe = "cipher.aes_128_gcm_kat"
+comparator = "cipher_kat"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADKnownAnswerVectors"]
+evidence_refs = ["NIST_SP_800_38D"]
+notes = "NIST SP 800-38D known-answer test vectors for AES-128-GCM."
+
+[[record]]
+id = "cipher.chacha20_ietf_poly1305.kat"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "ChaCha20-IETF-Poly1305"
+oracle_probe = "cipher.chacha20_ietf_poly1305_kat"
+candidate_probe = "cipher.chacha20_ietf_poly1305_kat"
+comparator = "cipher_kat"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADKnownAnswerVectors"]
+evidence_refs = ["RFC_8439"]
+notes = "RFC 8439 known-answer test vectors for ChaCha20-Poly1305."
+
+[[record]]
+id = "cipher.aes_256_gcm.roundtrip"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AES-256-GCM roundtrip"
+oracle_probe = "cipher.aes_256_gcm_roundtrip"
+candidate_probe = "cipher.aes_256_gcm_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADRoundtrip"]
+evidence_refs = []
+notes = "Encrypt/decrypt roundtrip for AES-256-GCM."
+
+[[record]]
+id = "cipher.aes_192_gcm.roundtrip"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AES-192-GCM roundtrip"
+oracle_probe = "cipher.aes_192_gcm_roundtrip"
+candidate_probe = "cipher.aes_192_gcm_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADRoundtrip"]
+evidence_refs = []
+notes = "Encrypt/decrypt roundtrip for AES-192-GCM."
+
+[[record]]
+id = "cipher.aes_128_gcm.roundtrip"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AES-128-GCM roundtrip"
+oracle_probe = "cipher.aes_128_gcm_roundtrip"
+candidate_probe = "cipher.aes_128_gcm_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADRoundtrip"]
+evidence_refs = []
+notes = "Encrypt/decrypt roundtrip for AES-128-GCM."
+
+[[record]]
+id = "cipher.chacha20_ietf_poly1305.roundtrip"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "ChaCha20-IETF-Poly1305 roundtrip"
+oracle_probe = "cipher.chacha20_ietf_poly1305_roundtrip"
+candidate_probe = "cipher.chacha20_ietf_poly1305_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADRoundtrip"]
+evidence_refs = []
+notes = "Encrypt/decrypt roundtrip for ChaCha20-Poly1305."
+
+[[record]]
+id = "cipher.aead.encrypt_and_digest"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AEAD encrypt_and_digest"
+oracle_probe = "cipher.aead_encrypt_and_digest"
+candidate_probe = "cipher.aead_encrypt_and_digest"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADEncryptAndDigest"]
+evidence_refs = []
+notes = "AEAD encrypt_and_digest returns (ciphertext, tag) tuple."
+
+[[record]]
+id = "cipher.aead.decrypt_and_verify"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AEAD decrypt_and_verify"
+oracle_probe = "cipher.aead_decrypt_and_verify"
+candidate_probe = "cipher.aead_decrypt_and_verify"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADDecryptAndVerify"]
+evidence_refs = []
+notes = "AEAD decrypt_and_verify with (ciphertext, tag) input."
+
+[[record]]
+id = "cipher.aead.nonce_property"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AEAD nonce property"
+oracle_probe = "cipher.aead_nonce"
+candidate_probe = "cipher.aead_nonce"
+comparator = "property_existence"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADNonceProperty"]
+evidence_refs = []
+notes = "AEADCipher exposes nonce property."
+
+[[record]]
+id = "cipher.aead.setup_iv"
+category = "cipher"
+kind = "aead"
+module = "pproxy.cipher"
+name = "AEAD setup_iv"
+oracle_probe = "cipher.aead_setup_iv"
+candidate_probe = "cipher.aead_setup_iv"
+comparator = "method_signature"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestAEADSetupIV"]
+evidence_refs = []
+notes = "AEADCipher.setup_iv(self, iv=None) initializes nonce."
+
+[[record]]
+id = "cipher.stream.cfb_roundtrip"
+category = "cipher"
+kind = "stream"
+module = "pproxy.cipher"
+name = "Stream cipher CFB roundtrip"
+oracle_probe = "cipher.stream_cfb_roundtrip"
+candidate_probe = "cipher.stream_cfb_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestStreamCFBRoundtrip"]
+evidence_refs = []
+notes = "AES-256-CFB encrypt/decrypt roundtrip."
+
+[[record]]
+id = "cipher.stream.ctr_roundtrip"
+category = "cipher"
+kind = "stream"
+module = "pproxy.cipher"
+name = "Stream cipher CTR roundtrip"
+oracle_probe = "cipher.stream_ctr_roundtrip"
+candidate_probe = "cipher.stream_ctr_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestStreamCTRRoundtrip"]
+evidence_refs = []
+notes = "AES-256-CTR encrypt/decrypt roundtrip."
+
+[[record]]
+id = "cipher.stream.ofb_roundtrip"
+category = "cipher"
+kind = "stream"
+module = "pproxy.cipher"
+name = "Stream cipher OFB roundtrip"
+oracle_probe = "cipher.stream_ofb_roundtrip"
+candidate_probe = "cipher.stream_ofb_roundtrip"
+comparator = "cipher_roundtrip"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+depends_on = []
+test_refs = ["test_protocol_cipher.py::TestStreamOFBRoundtrip"]
+evidence_refs = []
+notes = "AES-256-OFB encrypt/decrypt roundtrip."
+
+# ================================================================
+# 5. Composition Rules
+# ================================================================
+
+[[record]]
+id = "composition.http_listener_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "HTTP listener TCP"
+oracle_probe = "composition.http_listener_tcp"
+candidate_probe = "composition.http_listener_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "HTTP as TCP listener is valid."
+
+[[record]]
+id = "composition.socks5_listener_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "SOCKS5 listener TCP"
+oracle_probe = "composition.socks5_listener_tcp"
+candidate_probe = "composition.socks5_listener_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "SOCKS5 as TCP listener is valid."
+
+[[record]]
+id = "composition.socks4_listener_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "SOCKS4 listener TCP"
+oracle_probe = "composition.socks4_listener_tcp"
+candidate_probe = "composition.socks4_listener_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "SOCKS4 as TCP listener is valid."
+
+[[record]]
+id = "composition.shadowsocks_listener_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Shadowsocks listener TCP"
+oracle_probe = "composition.shadowsocks_listener_tcp"
+candidate_probe = "composition.shadowsocks_listener_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["shadowsocks_tcp_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "Shadowsocks as TCP listener is valid."
+
+[[record]]
+id = "composition.trojan_listener_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Trojan listener TCP"
+oracle_probe = "composition.trojan_listener_tcp"
+candidate_probe = "composition.trojan_listener_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "Trojan as TCP listener is valid."
+
+[[record]]
+id = "composition.http_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "HTTP upstream TCP"
+oracle_probe = "composition.http_upstream_tcp"
+candidate_probe = "composition.http_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "HTTP as TCP upstream is valid."
+
+[[record]]
+id = "composition.socks5_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "SOCKS5 upstream TCP"
+oracle_probe = "composition.socks5_upstream_tcp"
+candidate_probe = "composition.socks5_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "SOCKS5 as TCP upstream is valid."
+
+[[record]]
+id = "composition.shadowsocks_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Shadowsocks upstream TCP"
+oracle_probe = "composition.shadowsocks_upstream_tcp"
+candidate_probe = "composition.shadowsocks_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["shadowsocks_tcp_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "Shadowsocks as TCP upstream is valid."
+
+[[record]]
+id = "composition.trojan_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Trojan upstream TCP"
+oracle_probe = "composition.trojan_upstream_tcp"
+candidate_probe = "composition.trojan_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "Trojan as TCP upstream is valid."
+
+[[record]]
+id = "composition.socks5_listener_udp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "SOCKS5 listener UDP"
+oracle_probe = "composition.socks5_listener_udp"
+candidate_probe = "composition.socks5_listener_udp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_udp_associate"]
+evidence_refs = ["composition_matrix"]
+notes = "SOCKS5 UDP associate listener is valid."
+
+[[record]]
+id = "composition.direct_upstream"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Direct upstream"
+oracle_probe = "composition.direct_upstream"
+candidate_probe = "composition.direct_upstream"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "Direct upstream (no proxy) is valid."
+
+[[record]]
+id = "composition.ws_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "WebSocket upstream TCP"
+oracle_probe = "composition.ws_upstream_tcp"
+candidate_probe = "composition.ws_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_websocket_echo"]
+evidence_refs = ["composition_matrix"]
+notes = "WebSocket as TCP upstream is valid."
+
+[[record]]
+id = "composition.h2_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "H2 CONNECT upstream TCP"
+oracle_probe = "composition.h2_upstream_tcp"
+candidate_probe = "composition.h2_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_h2_connect_error_display"]
+evidence_refs = ["composition_matrix"]
+notes = "H2 CONNECT as TCP upstream is valid."
+
+[[record]]
+id = "composition.raw_upstream_tcp"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Raw tunnel upstream TCP"
+oracle_probe = "composition.raw_upstream_tcp"
+candidate_probe = "composition.raw_upstream_tcp"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "Raw/tunnel as TCP upstream is valid."
+
+[[record]]
+id = "composition.ssh_upstream_rejected"
+category = "composition"
+kind = "invalid"
+module = ""
+name = "SSH upstream rejected"
+oracle_probe = "composition.ssh_upstream_rejected"
+candidate_probe = "composition.ssh_upstream_rejected"
+comparator = "composition_rejection"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["pproxy_compat_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "SSH as upstream is rejected with structured diagnostic."
+
+[[record]]
+id = "composition.ssr_upstream_rejected"
+category = "composition"
+kind = "invalid"
+module = ""
+name = "SSR upstream rejected"
+oracle_probe = "composition.ssr_upstream_rejected"
+candidate_probe = "composition.ssr_upstream_rejected"
+comparator = "composition_rejection"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["pproxy_compat_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "SSR as upstream is rejected with structured diagnostic."
+
+[[record]]
+id = "composition.chain_two_hop_valid"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Two-hop chain valid"
+oracle_probe = "composition.chain_two_hop_valid"
+candidate_probe = "composition.chain_two_hop_valid"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "socks5__http two-hop chain is valid."
+
+[[record]]
+id = "composition.chain_three_hop_valid"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Three-hop chain valid"
+oracle_probe = "composition.chain_three_hop_valid"
+candidate_probe = "composition.chain_three_hop_valid"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "socks5__http__socks5 three-hop chain is valid."
+
+[[record]]
+id = "composition.chain_socks5_to_ws"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Chain SOCKS5 to WebSocket"
+oracle_probe = "composition.chain_socks5_to_ws"
+candidate_probe = "composition.chain_socks5_to_ws"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "socks5__ws chain is valid."
+
+[[record]]
+id = "composition.chain_socks5_to_h2"
+category = "composition"
+kind = "valid"
+module = ""
+name = "Chain SOCKS5 to H2"
+oracle_probe = "composition.chain_socks5_to_h2"
+candidate_probe = "composition.chain_socks5_to_h2"
+comparator = "composition_validity"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = ["composition_matrix"]
+notes = "socks5__h2 chain is valid."
+
+# ================================================================
+# 6. Process Lifecycle
+# ================================================================
+
+[[record]]
+id = "process.startup.successful"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Startup successful"
+oracle_probe = "process.startup_successful"
+candidate_probe = "process.startup_successful"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_startup"]
+evidence_refs = []
+notes = "Process starts and binds listener successfully."
+
+[[record]]
+id = "process.startup.bind_conflict"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Startup bind conflict"
+oracle_probe = "process.startup_bind_conflict"
+candidate_probe = "process.startup_bind_conflict"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_bind_conflict"]
+evidence_refs = []
+notes = "Startup fails with address-in-use error."
+
+[[record]]
+id = "process.shutdown.graceful"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Graceful shutdown"
+oracle_probe = "process.shutdown_graceful"
+candidate_probe = "process.shutdown_graceful"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_shutdown"]
+evidence_refs = []
+notes = "Process shuts down gracefully on SIGTERM/SIGINT."
+
+[[record]]
+id = "process.shutdown.connection_drain"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Connection drain on shutdown"
+oracle_probe = "process.shutdown_drain"
+candidate_probe = "process.shutdown_drain"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_drain"]
+evidence_refs = []
+notes = "Active connections are drained during shutdown grace period."
+
+[[record]]
+id = "process.reload.routing"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Config reload routing"
+oracle_probe = "process.reload_routing"
+candidate_probe = "process.reload_routing"
+comparator = "process_lifecycle"
+status = "gap"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_reload"]
+evidence_refs = []
+notes = "SIGHUP triggers config reload (routing only, not topology)."
+
+[[record]]
+id = "process.signal.sigterm"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "SIGTERM handling"
+oracle_probe = "process.sigterm"
+candidate_probe = "process.sigterm"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_shutdown"]
+evidence_refs = []
+notes = "SIGTERM triggers graceful shutdown."
+
+[[record]]
+id = "process.signal.sigint"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "SIGINT handling"
+oracle_probe = "process.sigint"
+candidate_probe = "process.sigint"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_shutdown"]
+evidence_refs = []
+notes = "SIGINT (Ctrl-C) triggers graceful shutdown."
+
+[[record]]
+id = "process.signal.sighup"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "SIGHUP handling"
+oracle_probe = "process.sighup"
+candidate_probe = "process.sighup"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_reload"]
+evidence_refs = []
+notes = "SIGHUP triggers config reload."
+
+[[record]]
+id = "process.daemon.unsupported"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Daemon mode unsupported"
+oracle_probe = "process.daemon_unsupported"
+candidate_probe = "process.daemon_unsupported"
+comparator = "cli_flag_rejection"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_daemon"]
+evidence_refs = []
+notes = "--daemon flag is recognized but rejected with structured diagnostic."
+
+[[record]]
+id = "process.multiple_listeners"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Multiple listeners"
+oracle_probe = "process.multiple_listeners"
+candidate_probe = "process.multiple_listeners"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = []
+notes = "Multiple listeners bound on different ports/protocols."
+
+[[record]]
+id = "process.upstream_health_check"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Upstream health check"
+oracle_probe = "process.upstream_health"
+candidate_probe = "process.upstream_health"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = []
+notes = "Health checks run against configured upstreams."
+
+[[record]]
+id = "process.admin_endpoint"
+category = "process"
+kind = "lifecycle"
+module = ""
+name = "Admin endpoint"
+oracle_probe = "process.admin_endpoint"
+candidate_probe = "process.admin_endpoint"
+comparator = "process_lifecycle"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["pac_static_tests"]
+evidence_refs = []
+notes = "Admin HTTP server serves PAC and snapshot."
+
+# ================================================================
+# 7. Failure Modes
+# ================================================================
+
+[[record]]
+id = "failure.dns.resolve_error"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "DNS resolution failure"
+oracle_probe = "failure.dns_resolve_error"
+candidate_probe = "failure.dns_resolve_error"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_dns_failure"]
+evidence_refs = []
+notes = "DNS resolution failure produces equivalent error class."
+
+[[record]]
+id = "failure.dns.nxdomain"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "DNS NXDOMAIN"
+oracle_probe = "failure.dns_nxdomain"
+candidate_probe = "failure.dns_nxdomain"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_dns_failure"]
+evidence_refs = []
+notes = "DNS NXDOMAIN produces equivalent error."
+
+[[record]]
+id = "failure.connection.refused"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Connection refused"
+oracle_probe = "failure.connection_refused"
+candidate_probe = "failure.connection_refused"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_refused_target", "differential_http_connect_refused_target"]
+evidence_refs = []
+notes = "Connection refused produces equivalent error class."
+
+[[record]]
+id = "failure.connection.timeout"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Connection timeout"
+oracle_probe = "failure.connection_timeout"
+candidate_probe = "failure.connection_timeout"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_connect_timeout"]
+evidence_refs = []
+notes = "Connection timeout produces equivalent error class."
+
+[[record]]
+id = "failure.auth.invalid_credentials"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Auth invalid credentials"
+oracle_probe = "failure.auth_invalid"
+candidate_probe = "failure.auth_invalid"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_auth_failure", "differential_socks5_auth_failure"]
+evidence_refs = []
+notes = "Invalid auth credentials produce equivalent error class."
+
+[[record]]
+id = "failure.auth.missing_credentials"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Auth missing credentials"
+oracle_probe = "failure.auth_missing"
+candidate_probe = "failure.auth_missing"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_auth_failure"]
+evidence_refs = []
+notes = "Missing auth credentials produce equivalent error class."
+
+[[record]]
+id = "failure.malformed.http_request"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Malformed HTTP request"
+oracle_probe = "failure.malformed_http"
+candidate_probe = "failure.malformed_http"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_malformed_request"]
+evidence_refs = []
+notes = "Malformed HTTP request produces equivalent error."
+
+[[record]]
+id = "failure.malformed.socks4_version"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Malformed SOCKS4 version"
+oracle_probe = "failure.malformed_socks4_version"
+candidate_probe = "failure.malformed_socks4_version"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4_malformed_version"]
+evidence_refs = []
+notes = "SOCKS4 with wrong version byte produces equivalent error."
+
+[[record]]
+id = "failure.malformed.socks4_truncated"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Malformed SOCKS4 truncated"
+oracle_probe = "failure.malformed_socks4_truncated"
+candidate_probe = "failure.malformed_socks4_truncated"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks4_truncated_request"]
+evidence_refs = []
+notes = "Truncated SOCKS4 request produces equivalent error."
+
+[[record]]
+id = "failure.malformed.socks5_version"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Malformed SOCKS5 version"
+oracle_probe = "failure.malformed_socks5_version"
+candidate_probe = "failure.malformed_socks5_version"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_socks5_malformed_version"]
+evidence_refs = []
+notes = "SOCKS5 with wrong version byte produces equivalent error."
+
+[[record]]
+id = "failure.upstream.connection_loss"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Upstream connection loss"
+oracle_probe = "failure.upstream_connection_loss"
+candidate_probe = "failure.upstream_connection_loss"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["differential_http_forward_upstream_connection_close"]
+evidence_refs = []
+notes = "Upstream connection loss during relay produces equivalent error."
+
+[[record]]
+id = "failure.policy.deny"
+category = "failure"
+kind = "error_class"
+module = ""
+name = "Policy deny"
+oracle_probe = "failure.policy_deny"
+candidate_probe = "failure.policy_deny"
+comparator = "failure_class"
+status = "drop_in"
+owner = "track-b"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["integration_tests"]
+evidence_refs = []
+notes = "Policy deny (blocked by rule) produces equivalent error."

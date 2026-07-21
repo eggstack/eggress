@@ -14,6 +14,9 @@ pub mod manifest;
 pub mod oracle;
 pub mod pproxy_oracle;
 pub mod report;
+pub mod strict_comparators;
+pub mod strict_manifest;
+pub mod strict_observations;
 
 use std::net::SocketAddr;
 use std::pin::Pin;
