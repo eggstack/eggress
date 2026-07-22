@@ -44,15 +44,15 @@ jobs:
         run: |
           python -m venv .venv-oracle
           .venv-oracle/bin/pip install "pproxy==2.7.9"
-      - name: Build and install candidate
-        run: |
-          pip install maturin
-          maturin develop --release -m crates/eggress-python/Cargo.toml
-          pip install ./python-pproxy-compat
       - name: Set up candidate venv
         run: |
           python -m venv .venv-candidate
-          .venv-candidate/bin/pip install -e . -e ./python-pproxy-compat
+          .venv-candidate/bin/pip install --upgrade pip
+      - name: Build and install candidate
+        run: |
+          .venv-candidate/bin/pip install maturin
+          .venv-candidate/bin/maturin develop --release -m crates/eggress-python/Cargo.toml
+          .venv-candidate/bin/pip install ./python-pproxy-compat
       - name: Run paired API probes
         run: |
           python scripts/run_strict_pproxy_api.py \
