@@ -10,7 +10,7 @@
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
 **Oracle ref:** compat/pproxy-2.7.9/provenance.toml
-**Commit SHA:** `218a90da67e1ff878e2682aed28ce0443675b0fe`
+**Commit SHA:** `3402c7eae77f1e830d41b7a5addf09dd4017b7b3`
 **Manifest hash:** `fb3a53ad7f89929bb78e5db30be21b390af84ad350220efbbe0820d86ce8fba6`
 **Generated:** 2026-07-22T00:00:00Z
 
@@ -55,8 +55,8 @@
 | cli_option | 22 |
 | composition | 20 |
 | cipher | 15 |
-| process | 12 |
 | failure | 12 |
+| process | 12 |
 
 ### By Owner
 

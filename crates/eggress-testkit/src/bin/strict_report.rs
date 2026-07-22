@@ -495,7 +495,7 @@ fn format_markdown(
 
     // By Status
     let mut status_sorted: Vec<_> = data.by_status.iter().collect();
-    status_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    status_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     out.push_str("### By Status\n\n");
     out.push_str("| Status | Count | Notes |\n");
     out.push_str("|--------|-------|-------|\n");
@@ -541,7 +541,7 @@ fn format_markdown(
 
     // By Evidence Level
     let mut ev_sorted: Vec<_> = data.by_evidence_level.iter().collect();
-    ev_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    ev_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     out.push_str("### By Evidence Level\n\n");
     out.push_str("| Evidence Level | Count | Notes |\n");
     out.push_str("|----------------|-------|-------|\n");
@@ -565,7 +565,7 @@ fn format_markdown(
 
     // By Category
     let mut cat_sorted: Vec<_> = data.by_category.iter().collect();
-    cat_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    cat_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     out.push_str("### By Category\n\n");
     out.push_str("| Category | Count |\n");
     out.push_str("|----------|-------|\n");
@@ -576,7 +576,7 @@ fn format_markdown(
 
     // By Owner
     let mut owner_sorted: Vec<_> = data.by_owner.iter().collect();
-    owner_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    owner_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     out.push_str("### By Owner\n\n");
     out.push_str("| Owner | Count |\n");
     out.push_str("|-------|-------|\n");
@@ -587,7 +587,7 @@ fn format_markdown(
 
     // By Milestone
     let mut ms_sorted: Vec<_> = data.by_milestone.iter().collect();
-    ms_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    ms_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     out.push_str("### By Milestone\n\n");
     out.push_str("| Milestone | Count |\n");
     out.push_str("|-----------|-------|\n");
@@ -767,7 +767,7 @@ fn format_json(
     // by_status
     out.push_str("  \"by_status\": {\n");
     let mut status_sorted: Vec<_> = data.by_status.iter().collect();
-    status_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    status_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     for (i, (status, count)) in status_sorted.iter().enumerate() {
         let comma = if i + 1 < status_sorted.len() { "," } else { "" };
         out.push_str(&format!("    \"{status}\": {count}{comma}\n"));
@@ -777,7 +777,7 @@ fn format_json(
     // by_category
     out.push_str("  \"by_category\": {\n");
     let mut cat_sorted: Vec<_> = data.by_category.iter().collect();
-    cat_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    cat_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     for (i, (cat, count)) in cat_sorted.iter().enumerate() {
         let comma = if i + 1 < cat_sorted.len() { "," } else { "" };
         out.push_str(&format!("    \"{cat}\": {count}{comma}\n"));
@@ -787,7 +787,7 @@ fn format_json(
     // by_evidence_level
     out.push_str("  \"by_evidence_level\": {\n");
     let mut ev_sorted: Vec<_> = data.by_evidence_level.iter().collect();
-    ev_sorted.sort_by(|a, b| b.1.cmp(a.1));
+    ev_sorted.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     for (i, (level, count)) in ev_sorted.iter().enumerate() {
         let comma = if i + 1 < ev_sorted.len() { "," } else { "" };
         out.push_str(&format!("    \"{level}\": {count}{comma}\n"));
