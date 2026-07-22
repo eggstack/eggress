@@ -139,6 +139,100 @@ def check_release_notes_count() -> None:
         print("  ✗ Could not find compatible count")
 
 
+def check_milestone_plan_status() -> None:
+    """[R5] Milestone A-C plans must not be CLOSED while corrective pass is in progress."""
+    print("\n[R5] Milestone plan status consistency")
+    corrective_pass = WORKSPACE_ROOT / "plans" / "MILESTONES_A_C_CORRECTIVE_PASS.md"
+    cp_content = read(corrective_pass)
+    cp_in_progress = "Ready for implementation" in cp_content or "corrective pass in progress" in cp_content.lower()
+
+    plans = [
+        "plans/MILESTONE_A_HONEST_CONTRACT.md",
+        "plans/MILESTONE_B_PYTHON_SOURCE_COMPATIBILITY.md",
+        "plans/MILESTONE_C_FUNCTIONAL_INTERNAL_API.md",
+    ]
+    for rel_path in plans:
+        path = WORKSPACE_ROOT / rel_path
+        if not path.exists():
+            FAILS.append(f"{rel_path} does not exist")
+            print(f"  ✗ {rel_path} does not exist")
+            continue
+        content = read(path)
+        is_closed = "CLOSED" in content.split("##")[0] if "##" in content else False
+        if cp_in_progress and is_closed:
+            FAILS.append(
+                f"{rel_path} says CLOSED but corrective pass is in progress"
+            )
+            print(f"  ✗ {rel_path} says CLOSED but corrective pass is in progress")
+        elif not is_closed:
+            print(f"  ✓ {rel_path} status is not CLOSED (correct)")
+        else:
+            print(f"  ✓ {rel_path} status consistent")
+
+
+def check_strict_report_consistency() -> None:
+    """[R6] Strict report gap count must match manifest gap records."""
+    print("\n[R6] Strict report vs manifest gap consistency")
+    manifest = WORKSPACE_ROOT / "docs" / "parity" / "pproxy_2_7_9_strict_manifest.toml"
+    report = WORKSPACE_ROOT / "docs" / "parity" / "PPROXY_2_7_9_STRICT_REPORT.md"
+    if not manifest.exists():
+        FAILS.append("Strict manifest not found")
+        print("  ✗ Strict manifest not found")
+        return
+    if not report.exists():
+        FAILS.append("Strict report not found")
+        print("  ✗ Strict report not found")
+        return
+
+    manifest_content = read(manifest)
+    report_content = read(report)
+
+    gap_count = manifest_content.count('status = "gap"')
+    report_gap_match = re.search(r"\|\s*Gap.*?\|\s*(\d+)", report_content)
+    if report_gap_match:
+        report_gaps = int(report_gap_match.group(1))
+        check(
+            gap_count == report_gaps,
+            f"Manifest has {gap_count} gap records; report says {report_gaps}",
+        )
+    else:
+        FAILS.append("Could not find gap count in strict report")
+        print("  ✗ Could not find gap count in strict report")
+
+
+def check_readme_no_false_completion_claims() -> None:
+    """[R7] README must not claim full A-C completion while corrective pass is active."""
+    print("\n[R7] README completion claim consistency")
+    readme = WORKSPACE_ROOT / "README.md"
+    if not readme.exists():
+        FAILS.append("README.md not found")
+        print("  ✗ README.md not found")
+        return
+    content = read(readme)
+    false_phrases = [
+        "milestone a.*complete",
+        "milestone b.*complete",
+        "milestone c.*complete",
+        "corrective pass complete",
+        "corrective pass has completed",
+        "full pproxy parity.*achieved",
+        "all.*acceptance criteria.*satisfied",
+    ]
+    # Use line-by-line matching to avoid cross-line false positives
+    lines = content.split("\n")
+    for phrase in false_phrases:
+        found = False
+        for line in lines:
+            if re.search(phrase, line, re.IGNORECASE):
+                found = True
+                break
+        if found:
+            FAILS.append(f"README contains possibly-stale claim matching: {phrase}")
+            print(f"  ✗ README contains possibly-stale claim matching: {phrase}")
+        else:
+            print(f"  ✓ README does not contain stale claim: {phrase}")
+
+
 def main() -> int:
     print("Release-doc consistency check")
     print("=" * 40)
@@ -147,6 +241,9 @@ def main() -> int:
     check_hosted_ci_caveat()
     check_json_artifact_policy()
     check_release_notes_count()
+    check_milestone_plan_status()
+    check_strict_report_consistency()
+    check_readme_no_false_completion_claims()
 
     print("\n" + "=" * 40)
     if FAILS:

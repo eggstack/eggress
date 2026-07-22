@@ -11,6 +11,7 @@ import re
 import socket
 import time
 import urllib
+import urllib.parse
 
 try:
     from eggress import start_pproxy
@@ -67,9 +68,12 @@ def proxy_by_uri(uri: str, jump=None):
         try:
             from eggress.pproxy import check_pproxy_uri
             info = check_pproxy_uri(uri)
-            host = info.host if info.ok else None
-            port = info.port if info.ok else None
-        except ImportError:
+            if info.ok:
+                host = info.host
+                port = info.port
+            else:
+                raise ValueError("check_pproxy_uri returned ok=False")
+        except Exception:
             # Fallback: parse host:port from URI
             host, port = None, None
             try:
@@ -79,18 +83,40 @@ def proxy_by_uri(uri: str, jump=None):
                 port = parsed.port
             except Exception:
                 pass
+        # Parse auth from URI fragment (#user:pass)
+        users = None
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(uri)
+            if parsed.fragment:
+                users = [parsed.fragment.encode()]
+        except Exception:
+            pass
         # Build bind string from host:port (matching pproxy oracle)
         bind_str = None
         if host and port:
             bind_str = f"{host}:{port}"
         elif host:
             bind_str = host
+        # Parse rule from query string
+        rule = None
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(uri)
+            if parsed.query:
+                rule = parsed.query
+        except Exception:
+            pass
+        # Instantiate the protocol object (matching oracle's get_protos behavior)
+        proto_instance = proto_cls(None)
         return ProxySimple(
             jump=jump if jump is not None else uri,
-            protos=(proto_cls,),
+            protos=(proto_instance,),
             bind=bind_str,
             host_name=host,
             port=port,
+            users=users,
+            rule=rule,
         )
 
 
@@ -198,11 +224,13 @@ async def stream_handler(
     try:
         reader, writer = proto.sslwrap(reader, writer, sslserver, True, None, verbose)
         if unix:
-            remote_ip, remote_text = 'local', 'unix_local'
+            remote_ip, server_ip, remote_text = 'local', None, 'unix_local'
         else:
             peername = writer.get_extra_info('peername')
             remote_ip, remote_port, *_ = peername if peername else ('unknow_remote_ip', 'unknow_remote_port')
+            server_ip = writer.get_extra_info('sockname')[0]
             remote_text = f'{remote_ip}:{remote_port}'
+        local_addr = None if server_ip in ('127.0.0.1', '::1', None) else (server_ip, 0)
         reader_cipher, _ = await prepare_ciphers(cipher, reader, writer, server_side=False)
         lproto, user, host_name, port, client_connected = await proto.accept(
             protos, reader=reader, writer=writer,
@@ -221,7 +249,7 @@ async def stream_handler(
             roption = schedule(rserver, salgorithm, host_name, port) or DIRECT
             verbose(f'{lproto.name} {remote_text}{roption.logtext(host_name, port)}')
             try:
-                reader_remote, writer_remote = await roption.open_connection(host_name, port, None, lbind)
+                reader_remote, writer_remote = await roption.open_connection(host_name, port, local_addr, lbind)
             except asyncio.TimeoutError:
                 raise Exception(f'Connection timeout {roption.bind}')
             try:
@@ -285,45 +313,66 @@ async def datagram_handler(
             verbose(f'{str(ex) or "Unsupported protocol"} from {remote_ip}')
 
 
-def patch_StreamReader(reader):
-    """Patch a StreamReader for compatibility. No-op, returns reader unchanged."""
-    return reader
+def patch_StreamReader(c=asyncio.StreamReader):
+    c.read_w = lambda self, n: asyncio.wait_for(self.read(n), timeout=SOCKET_TIMEOUT)
+    c.read_n = lambda self, n: asyncio.wait_for(self.readexactly(n), timeout=SOCKET_TIMEOUT)
+    c.read_until = lambda self, s: asyncio.wait_for(self.readuntil(s), timeout=SOCKET_TIMEOUT)
+    c.rollback = lambda self, s: self._buffer.__setitem__(slice(0, 0), s)
 
 
-def patch_StreamWriter(writer):
-    """Patch a StreamWriter for compatibility. No-op, returns writer unchanged."""
-    return writer
+def patch_StreamWriter(c=asyncio.StreamWriter):
+    c.is_closing = lambda self: self._transport.is_closing()
 
 
-def print_server_started(*args, **kwargs):
-    """Print a server startup message. No-op for compatibility."""
-    return None
+patch_StreamReader()
+patch_StreamWriter()
 
 
-def test_url(url, proxy=None, timeout=5.0):
-    """Test if a URL is reachable through the proxy.
+def print_server_started(option, server, print_fn):
+    for s in server.sockets:
+        laddr = s.getsockname()
+        h = laddr[0]
+        p = laddr[1]
+        f = str(s.family)
+        ipversion = "ipv4" if f == "AddressFamily.AF_INET" else ("ipv6" if f == "AddressFamily.AF_INET6" else "ipv?")
+        bind = ipversion + ' ' + h + ':' + str(p)
+        print_fn(option, bind)
 
-    Returns a dict with 'ok' (bool), 'code' (HTTP status or None),
-    and 'error' (str or None).
-    """
-    import urllib.request
-    import urllib.error
-    if not url:
-        return {"ok": False, "code": None, "error": "empty url"}
-    try:
-        req = urllib.request.Request(url, method="GET")
-        if proxy is not None:
-            proxy_uri = getattr(proxy, "jump", None) or getattr(proxy, "_jump", None)
-            if proxy_uri:
-                req.set_proxy(proxy_uri.split("://")[-1].split("/")[0], "http")
-        resp = urllib.request.urlopen(req, timeout=timeout)
-        code = resp.getcode()
-        resp.close()
-        return {"ok": True, "code": code, "error": None}
-    except urllib.error.HTTPError as e:
-        return {"ok": False, "code": e.code, "error": str(e)}
-    except Exception as e:
-        return {"ok": False, "code": None, "error": str(e)}
+
+async def test_url(url, rserver):
+    url = urllib.parse.urlparse(url)
+    assert url.scheme in ('http', 'https'), f'Unknown scheme {url.scheme}'
+    host_name, port = proto.netloc_split(url.netloc, default_port=80 if url.scheme == 'http' else 443)
+    initbuf = f'GET {url.path or "/"} HTTP/1.1\r\nHost: {host_name}\r\nUser-Agent: pproxy\r\nAccept: */*\r\nConnection: close\r\n\r\n'.encode()
+    for roption in rserver:
+        print(f'============ {roption.bind} ============')
+        try:
+            reader, writer = await roption.open_connection(host_name, port, None, None)
+        except asyncio.TimeoutError:
+            raise Exception(f'Connection timeout {rserver}')
+        try:
+            reader, writer = await roption.prepare_connection(reader, writer, host_name, port)
+        except Exception:
+            writer.close()
+            raise Exception('Unknown remote protocol')
+        if url.scheme == 'https':
+            import ssl
+            sslclient = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            sslclient.check_hostname = False
+            sslclient.verify_mode = ssl.CERT_NONE
+            reader, writer = proto.sslwrap(reader, writer, sslclient, False, host_name)
+        writer.write(initbuf)
+        headers = await reader.read_until(b'\r\n\r\n')
+        print(headers.decode()[:-4])
+        print(f'--------------------------------')
+        body = bytearray()
+        while not reader.at_eof():
+            s = await reader.read(65536)
+            if not s:
+                break
+            body.extend(s)
+        print(body.decode('utf8', 'ignore'))
+    print(f'============ success ============')
 
 DIRECT = ProxyDirect()
 

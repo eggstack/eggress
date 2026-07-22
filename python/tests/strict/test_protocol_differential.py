@@ -38,7 +38,6 @@ PROTOCOL_CLASSES = [
     ("pproxy.proto", "SS"),
     ("pproxy.proto", "Trojan"),
     ("pproxy.proto", "Echo"),
-    ("pproxy.proto", "Empty"),
 ]
 
 

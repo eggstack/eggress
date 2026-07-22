@@ -26,6 +26,7 @@ pub const ALLOWED_CATEGORIES: &[&str] = &[
 pub const ALLOWED_STATUSES: &[&str] = &[
     "gap",
     "drop_in",
+    "structural",
     "known_upstream_defect",
     "platform_constraint",
     "not_applicable",
@@ -82,6 +83,7 @@ const TERMINAL_STATUSES: &[&str] = &[
     "known_upstream_defect",
     "platform_constraint",
     "intentional_non_parity",
+    "structural",
 ];
 
 // ---------------------------------------------------------------------------
@@ -543,9 +545,21 @@ pub fn validate_strict_manifest(manifest: &StrictManifest) -> Result<(), StrictV
             });
         }
 
-        // Rule 8: module_existence/constant_value + drop_in requires non-structural evidence
+        // Rule 8: structural comparator + drop_in requires non-structural evidence
+        // Structural comparators only verify existence/signature/structure, not behavior.
+        // A drop_in record must have behavioral evidence (paired_oracle or bidirectional_interop)
+        // backed by a behavioral comparator (protocol_wire, cipher_kat, cipher_roundtrip, etc.).
+        let is_structural_comparator = matches!(
+            rec.comparator.as_str(),
+            "module_existence"
+                | "constant_value"
+                | "enum_membership"
+                | "method_signature"
+                | "property_existence"
+                | "class_hierarchy"
+        );
         if rec.status == "drop_in"
-            && (rec.comparator == "module_existence" || rec.comparator == "constant_value")
+            && is_structural_comparator
             && (rec.evidence_level == "structural_only" || rec.evidence_level == "none")
         {
             errs.push(

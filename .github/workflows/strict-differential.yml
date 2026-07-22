@@ -1,0 +1,85 @@
+name: strict-differential
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  strict-integrity:
+    name: Strict Manifest Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate strict manifest
+        run: cargo test -p eggress-testkit strict_manifest
+      - name: Validate strict report freshness
+        run: cargo run -p eggress-testkit --bin strict-report -- --check
+      - name: Check release docs consistency
+        run: python3 scripts/check_release_docs.py
+
+  strict-paired-api:
+    name: Strict Paired API (Python 3.11)
+    runs-on: ubuntu-latest
+    needs: strict-integrity
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pproxy oracle
+        run: pip install "pproxy==2.7.9"
+      - name: Verify pproxy oracle
+        run: python -m pproxy --help
+      - name: Set up oracle venv
+        run: |
+          python -m venv .venv-oracle
+          .venv-oracle/bin/pip install "pproxy==2.7.9"
+      - name: Build and install candidate
+        run: |
+          pip install maturin
+          maturin develop --release -m crates/eggress-python/Cargo.toml
+          pip install ./python-pproxy-compat
+      - name: Set up candidate venv
+        run: |
+          python -m venv .venv-candidate
+          .venv-candidate/bin/pip install -e . -e ./python-pproxy-compat
+      - name: Run paired API probes
+        run: |
+          python scripts/run_strict_pproxy_api.py \
+            --oracle-venv .venv-oracle \
+            --candidate-venv .venv-candidate
+      - name: Run differential tests
+        env:
+          EGRESS_REQUIRE_PPROXY_DIFFERENTIAL: "1"
+        run: |
+          .venv-candidate/bin/python -m pytest python/tests/strict/ -v --timeout=60
+      - name: Run oracle examples against candidate
+        run: |
+          for f in compat/pproxy-2.7.9/examples/direct_tcp.py \
+                   compat/pproxy-2.7.9/examples/chain_example.py \
+                   compat/pproxy-2.7.9/examples/server_config.py \
+                   compat/pproxy-2.7.9/examples/client_connection.py; do
+            echo "=== Running $f ==="
+            .venv-candidate/bin/python "$f" || exit 1
+          done
+      - name: Run network examples
+        run: |
+          PROXY_URI=direct:// .venv-candidate/bin/python \
+            compat/pproxy-2.7.9/examples/tcp_echo_through_proxy.py || exit 1
+          .venv-candidate/bin/python \
+            compat/pproxy-2.7.9/examples/server_start_lifecycle.py || exit 1
+      - name: Upload paired observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-paired-observations
+          path: target/strict/paired_observations/
+          if-no-files-found: ignore

@@ -10,8 +10,8 @@
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
 **Oracle ref:** compat/pproxy-2.7.9/provenance.toml
-**Commit SHA:** `7545d28664372133cafbcf2ef84edc92227cf27c`
-**Manifest hash:** `4260026f680249915a91b8f46bcf0b17c6c123c540fe051c014690a8a399bf6a`
+**Commit SHA:** `189de5db941282dda852c6f34e10e57da0a8ee2d`
+**Manifest hash:** `fb3a53ad7f89929bb78e5db30be21b390af84ad350220efbbe0820d86ce8fba6`
 **Generated:** 2026-07-22T00:00:00Z
 
 ## Summary
@@ -28,8 +28,9 @@
 
 | Status | Count | Notes |
 |--------|-------|-------|
-| drop_in | 136 | 81 need behavioral evidence (module_existence only) |
+| drop_in | 108 |  |
 | not_applicable | 49 | Internal details, daemon, Rule |
+| structural | 28 |  |
 | platform_constraint | 4 | Transparent, Pf, Redir, reuse |
 | intentional_non_parity | 3 | SSH, SSR |
 | gap | 2 | Gap — cli.get, process.reload.routing |
@@ -54,8 +55,8 @@
 | cli_option | 22 |
 | composition | 20 |
 | cipher | 15 |
-| process | 12 |
 | failure | 12 |
+| process | 12 |
 
 ### By Owner
 
@@ -82,10 +83,10 @@ Records with unresolved `gap` status (2 total):
 
 ## Records Needing Behavioral Evidence
 
-The following 81 records are marked `drop_in` in the manifest but use only
-`module_existence` or `constant_value` as their comparator. These have **namespace
-evidence only** and require paired oracle/candidate behavioral validation before
-true `drop_in` status can be claimed under the corrective pass.
+The following 81 records use structural comparators (module_existence, method_signature,
+constant_value, property_existence, class_hierarchy) and have namespace-level evidence
+only. These require paired oracle/candidate behavioral validation (protocol_wire,
+cipher_kat, cipher_roundtrip, etc.) before their status can be upgraded to `drop_in`.
 
 ### cipher (2 records)
 
@@ -196,8 +197,8 @@ true `drop_in` status can be claimed under the corrective pass.
 | cipher.chacha20_ietf_poly1305.roundtrip | drop_in | Milestone B: validated by existing cipher behavioral tests. |
 | cipher.aead.encrypt_and_digest | drop_in | Milestone B: validated by existing cipher behavioral tests. |
 | cipher.aead.decrypt_and_verify | drop_in | Milestone B: validated by existing cipher behavioral tests. |
-| cipher.aead.nonce_property | drop_in | Milestone B: validated by existing cipher behavioral tests. |
-| cipher.aead.setup_iv | drop_in | Milestone B: validated by existing cipher behavioral tests. |
+| cipher.aead.nonce_property | structural | Milestone B: validated by existing cipher behavioral tests. |
+| cipher.aead.setup_iv | structural | Milestone B: validated by existing cipher behavioral tests. |
 | cipher.stream.cfb_roundtrip | drop_in | Milestone B: validated by existing cipher behavioral tests. |
 | cipher.stream.ctr_roundtrip | drop_in | Milestone B: validated by existing cipher behavioral tests. |
 | cipher.stream.ofb_roundtrip | drop_in | Milestone B: validated by existing cipher behavioral tests. |
@@ -329,15 +330,15 @@ true `drop_in` status can be claimed under the corrective pass.
 
 | ID | Status | Notes |
 |----|--------|-------|
-| python.pproxy | drop_in | Top-level pproxy package module. Paired oracle comparison: symbol not found i... |
-| python.pproxy.proto | drop_in | Protocol definitions module. |
-| python.pproxy.server | drop_in | Server implementation module. |
-| python.pproxy.cipher | drop_in | Cipher implementations module. |
-| python.pproxy.Connection | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.Server | drop_in | pproxy.Server wraps the full server lifecycle. |
-| python.pproxy.DIRECT | drop_in | Direct connection constant. |
-| python.pproxy.Rule | drop_in | Milestone B: now an alias for compile_rule (matches oracle). |
-| python.pproxy.proto_reexport | drop_in | Protocol module re-export. |
+| python.pproxy | structural | Top-level pproxy package module. Paired oracle comparison: symbol not found i... |
+| python.pproxy.proto | structural | Protocol definitions module. |
+| python.pproxy.server | structural | Server implementation module. |
+| python.pproxy.cipher | structural | Cipher implementations module. |
+| python.pproxy.Connection | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.Server | structural | pproxy.Server wraps the full server lifecycle. |
+| python.pproxy.DIRECT | structural | Direct connection constant. |
+| python.pproxy.Rule | structural | Milestone B: now an alias for compile_rule (matches oracle). |
+| python.pproxy.proto_reexport | structural | Protocol module re-export. |
 | python.pproxy.proto.BaseProtocol | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
 | python.pproxy.proto.Socks5 | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
 | python.pproxy.proto.HTTP | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
@@ -390,22 +391,22 @@ true `drop_in` status can be claimed under the corrective pass.
 | python.pproxy.cipher.ChaCha20_Cipher | not_applicable | Functional ChaCha20 stream cipher with 8-byte IV via cryptography backend. |
 | python.pproxy.cipher.MAP | not_applicable | Functional cipher registry mapping names to classes. Includes -py aliases for... |
 | python.pproxy.cipher.get_cipher | not_applicable | Functional cipher factory: parses name:password[!ota], returns (error, ApplyC... |
-| python.pproxy.server.AuthTable | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.ProxySimple | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.ProxyBackward | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.ProxyDirect | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.ProxyH2 | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.ProxyH3 | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.AuthTable | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxySimple | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyBackward | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyDirect | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyH2 | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyH3 | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
 | python.pproxy.server.ProxySSH | intentional_non_parity | SSH is intentionally not supported by eggress. |
-| python.pproxy.server.ProxyQUIC | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.main | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.compile_rule | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.check_server_alive | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.prepare_ciphers | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.proxies_by_uri | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.proxy_by_uri | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
-| python.pproxy.server.SOCKET_TIMEOUT | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.UDP_LIMIT | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.DIRECT_const | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.DUMMY | drop_in | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.ProxyQUIC | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.main | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.compile_rule | structural | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.check_server_alive | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.prepare_ciphers | structural | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.proxies_by_uri | structural | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.proxy_by_uri | structural | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.SOCKET_TIMEOUT | structural | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.UDP_LIMIT | structural | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.DIRECT_const | structural | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.DUMMY | structural | Milestone B: properly implemented with matching signature and behavior. |
 

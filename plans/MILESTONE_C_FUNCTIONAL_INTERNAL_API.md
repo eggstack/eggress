@@ -2,12 +2,11 @@
 
 ## Status
 
-**CLOSED — corrective pass complete.** The corrective pass has completed. `drop_in` records
-now carry behavioral evidence (not only `module_existence`), `not_applicable` reclassifications
-have been corrected for publicly importable symbols, and the strict report has been
-regenerated from the manifest. Paired oracle evidence, manifest validation, and CI integrity
-checks all pass. This milestone's acceptance criteria are satisfied. See
-`plans/MILESTONES_A_C_CORRECTIVE_PASS.md` for the full corrective pass record.
+**REOPENED — corrective pass in progress.** The corrective pass
+(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Probe scripts for cipher,
+protocol, and process lifecycle have been written but never executed against oracle/candidate
+venvs. No behavioral evidence has been generated. This milestone cannot be closed until
+the acceptance matrix in the corrective pass plan is fully satisfied.
 
 ## Parent roadmap
 

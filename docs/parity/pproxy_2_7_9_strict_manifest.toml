@@ -35,6 +35,15 @@
 #   failure_class              - compare failure category
 #   composition_validity       - verify protocol x role combination is accepted
 #   composition_rejection      - verify protocol x role combination is rejected
+#
+# Evidence levels:
+#   paired_oracle              - validated by paired oracle/candidate execution
+#   bidirectional_interop      - validated by bidirectional interop testing
+#   structural_only            - validated by structural checks only (not behavioral)
+#   none                       - no evidence collected
+#
+# Status vocabulary:
+#   structural                 - exists structurally, needs behavioral validation
 
 [meta]
 manifest_version = "1"
@@ -58,7 +67,7 @@ name = "pproxy"
 oracle_probe = "api.module_exists"
 candidate_probe = "api.module_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -67,7 +76,7 @@ depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Top-level pproxy package module. Paired oracle comparison: symbol not found in module (re-exported at top level). Module existence verified via top-level import."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -79,7 +88,7 @@ name = "proto"
 oracle_probe = "api.module_exists"
 candidate_probe = "api.module_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -88,7 +97,7 @@ depends_on = ["python.pproxy"]
 test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Protocol definitions module."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -100,7 +109,7 @@ name = "server"
 oracle_probe = "api.module_exists"
 candidate_probe = "api.module_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -109,7 +118,7 @@ depends_on = ["python.pproxy"]
 test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Server implementation module."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -121,7 +130,7 @@ name = "cipher"
 oracle_probe = "api.module_exists"
 candidate_probe = "api.module_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -132,7 +141,7 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Cipher implementations module."
 
 # -- Top-level exports --
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -144,7 +153,7 @@ name = "Connection"
 oracle_probe = "api.connection_class_exists"
 candidate_probe = "api.connection_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -153,7 +162,7 @@ depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: symbol not found in module (re-exported at top level). Module existence verified via top-level import."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -165,7 +174,7 @@ name = "Server"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -174,7 +183,7 @@ depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists", "test_server_lifecycle.py"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "pproxy.Server wraps the full server lifecycle."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -186,7 +195,7 @@ name = "DIRECT"
 oracle_probe = "api.constant_exists"
 candidate_probe = "api.constant_exists"
 comparator = "constant_value"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -195,7 +204,7 @@ depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Direct connection constant."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -207,7 +216,7 @@ name = "Rule"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -216,7 +225,7 @@ depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: now an alias for compile_rule (matches oracle)."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -228,7 +237,7 @@ name = "proto"
 oracle_probe = "api.constant_exists"
 candidate_probe = "api.constant_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -239,7 +248,7 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Protocol module re-export."
 
 # -- Protocol classes --
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -1351,7 +1360,7 @@ name = "AuthTable"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1360,7 +1369,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1372,7 +1381,7 @@ name = "ProxySimple"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1381,7 +1390,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1393,7 +1402,7 @@ name = "ProxyBackward"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1402,7 +1411,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1414,7 +1423,7 @@ name = "ProxyDirect"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1423,7 +1432,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1435,7 +1444,7 @@ name = "ProxyH2"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1444,7 +1453,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1456,7 +1465,7 @@ name = "ProxyH3"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1465,7 +1474,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1498,7 +1507,7 @@ name = "ProxyQUIC"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1507,7 +1516,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1519,7 +1528,7 @@ name = "main"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1528,7 +1537,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1540,7 +1549,7 @@ name = "compile_rule"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1549,7 +1558,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -1561,7 +1570,7 @@ name = "check_server_alive"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1570,7 +1579,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1582,7 +1591,7 @@ name = "prepare_ciphers"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1591,7 +1600,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -1603,7 +1612,7 @@ name = "proxies_by_uri"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1612,7 +1621,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "functional"
 
 [[record]]
@@ -1624,7 +1633,7 @@ name = "proxy_by_uri"
 oracle_probe = "api.function_exists"
 candidate_probe = "api.function_exists"
 comparator = "module_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1633,7 +1642,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1645,7 +1654,7 @@ name = "SOCKET_TIMEOUT"
 oracle_probe = "api.constant_exists"
 candidate_probe = "api.constant_exists"
 comparator = "constant_value"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1654,7 +1663,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1666,7 +1675,7 @@ name = "UDP_LIMIT"
 oracle_probe = "api.constant_exists"
 candidate_probe = "api.constant_exists"
 comparator = "constant_value"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1675,7 +1684,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1687,7 +1696,7 @@ name = "DIRECT"
 oracle_probe = "api.constant_exists"
 candidate_probe = "api.constant_exists"
 comparator = "constant_value"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1696,7 +1705,7 @@ depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -1708,7 +1717,7 @@ name = "DUMMY"
 oracle_probe = "api.constant_exists"
 candidate_probe = "api.constant_exists"
 comparator = "constant_value"
-status = "drop_in"
+status = "structural"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -1721,7 +1730,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 # ================================================================
 # 2. CLI Options
 # ================================================================
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -3141,7 +3150,7 @@ name = "AEAD nonce property"
 oracle_probe = "cipher.aead_nonce"
 candidate_probe = "cipher.aead_nonce"
 comparator = "property_existence"
-status = "drop_in"
+status = "structural"
 owner = "track-b"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -3150,7 +3159,7 @@ depends_on = []
 test_refs = ["python/tests/test_protocol_cipher.py"]
 evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]
@@ -3162,7 +3171,7 @@ name = "AEAD setup_iv"
 oracle_probe = "cipher.aead_setup_iv"
 candidate_probe = "cipher.aead_setup_iv"
 comparator = "method_signature"
-status = "drop_in"
+status = "structural"
 owner = "track-b"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -3171,7 +3180,7 @@ depends_on = []
 test_refs = ["python/tests/test_protocol_cipher.py"]
 evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
-evidence_level = "paired_oracle"
+evidence_level = "structural_only"
 implementation_state = "structural"
 
 [[record]]

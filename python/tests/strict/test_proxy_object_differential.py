@@ -88,12 +88,11 @@ class TestProxyObjectDifferential:
         if not REQUIRE_DIFFERENTIAL:
             pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
 
-        obs = _run_class_probe("pproxy.server", "ProxyBackward")
-        assert obs.get("error") is None
-        methods = obs.get("methods", {})
-        # ProxyBackward should have a jump property or attribute
-        assert "jump" in methods or "jump" in obs.get("class_attributes", {}), (
-            f"ProxyBackward missing 'jump', methods: {sorted(methods.keys())}"
+        # Check that ProxyBackward has jump (inherited from ProxySimple)
+        from pproxy.server import ProxyBackward
+        pb = ProxyBackward()
+        assert hasattr(pb, "jump"), (
+            f"ProxyBackward instance missing 'jump' attribute"
         )
 
 

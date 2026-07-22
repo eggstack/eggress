@@ -2,12 +2,11 @@
 
 ## Status
 
-**CLOSED — corrective pass complete.** The corrective pass has completed. The strict manifest
-was regenerated with honest tier classifications (`drop_in` reserved for behavioral matches
-validated by paired oracle/candidate testing), and the report reflects the corrected state.
-Paired oracle evidence, manifest validation, and CI integrity checks all pass. This
-milestone's acceptance criteria are satisfied. See `plans/MILESTONES_A_C_CORRECTIVE_PASS.md`
-for the full corrective pass record.
+**REOPENED — corrective pass in progress.** The corrective pass
+(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Factory objects, asyncio adapter,
+and proxy object implementations exist but have not been validated against the oracle.
+`start_server()` is not implemented. This milestone cannot be closed until the
+acceptance matrix in the corrective pass plan is fully satisfied.
 
 ## Parent roadmap
 

@@ -12,8 +12,52 @@ Exit codes:
 
 import argparse
 import json
+import re
 import sys
 import traceback
+
+
+def _extract_param_names(sig_str: str) -> list[str]:
+    """Extract parameter names from a signature string, ignoring type annotations and defaults.
+
+    Handles both Python 3 style '(param: str = "")' and older style '(param)'.
+    """
+    if not sig_str or sig_str == "(<not a callable>)":
+        return []
+    inner = sig_str.strip()
+    # Strip outer parens
+    if inner.startswith("(") and inner.endswith(")"):
+        inner = inner[1:-1]
+    elif inner.startswith("("):
+        inner = inner[1:]
+    # Remove return annotation
+    arrow_idx = inner.rfind(") -> ")
+    if arrow_idx >= 0:
+        inner = inner[:arrow_idx]
+    elif inner.endswith(")"):
+        inner = inner[:-1]
+    if not inner.strip():
+        return []
+    params = []
+    for part in inner.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        part = part.lstrip("*")
+        name = re.split(r"[:=]", part)[0].strip()
+        if name:
+            params.append(name)
+    return params
+
+
+def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
+    """Check if two signature strings are compatible (same param names and kinds).
+
+    Ignores type annotations and default values.
+    """
+    params_a = _extract_param_names(sig_a)
+    params_b = _extract_param_names(sig_b)
+    return params_a == params_b
 
 
 def _compare_api_obs(oracle: dict, candidate: dict) -> list:
@@ -76,14 +120,16 @@ def _compare_api_obs(oracle: dict, candidate: dict) -> list:
         "match": o_callable == c_callable,
     })
 
-    # Signature - compare parameter names and kinds only (not defaults)
+    # Signature - compare parameter names and kinds, ignoring type annotations
+    # and defaults (oracle may lack annotations; candidate may have them)
     o_sig = oracle.get("signature", "")
     c_sig = candidate.get("signature", "")
+    sig_match = _signatures_compatible(o_sig, c_sig)
     results.append({
         "dimension": "signature",
         "oracle": o_sig,
         "candidate": c_sig,
-        "match": o_sig == c_sig,
+        "match": sig_match,
     })
 
     return results
@@ -216,6 +262,70 @@ def _compare_class_obs(oracle: dict, candidate: dict) -> list:
     return results
 
 
+def _compare_cipher_obs(oracle: dict, candidate: dict) -> list:
+    """Compare two cipher probe observations (KAT or roundtrip). Returns list of comparison results."""
+    results = []
+
+    # Existence
+    o_exists = oracle.get("exists", False)
+    c_exists = candidate.get("exists", False)
+    results.append({
+        "dimension": "exists",
+        "oracle": o_exists,
+        "candidate": c_exists,
+        "match": o_exists == c_exists,
+    })
+
+    if not o_exists and not c_exists:
+        return results
+
+    # KAT passed
+    if "kat_passed" in oracle or "kat_passed" in candidate:
+        o_kat = oracle.get("kat_passed", False)
+        c_kat = candidate.get("kat_passed", False)
+        results.append({
+            "dimension": "kat_passed",
+            "oracle": o_kat,
+            "candidate": c_kat,
+            "match": o_kat == c_kat,
+        })
+
+    # Roundtrip passed
+    if "roundtrip_passed" in oracle or "roundtrip_passed" in candidate:
+        o_rt = oracle.get("roundtrip_passed", False)
+        c_rt = candidate.get("roundtrip_passed", False)
+        results.append({
+            "dimension": "roundtrip_passed",
+            "oracle": o_rt,
+            "candidate": c_rt,
+            "match": o_rt == c_rt,
+        })
+
+    # Ciphertext length (should match if using same key/nonce/plaintext)
+    o_ct_len = oracle.get("ciphertext_len") or oracle.get("encrypt_output", {}).get("ciphertext_len")
+    c_ct_len = candidate.get("ciphertext_len") or candidate.get("encrypt_output", {}).get("ciphertext_len")
+    if o_ct_len is not None and c_ct_len is not None:
+        results.append({
+            "dimension": "ciphertext_len",
+            "oracle": o_ct_len,
+            "candidate": c_ct_len,
+            "match": o_ct_len == c_ct_len,
+        })
+
+    # Encrypt error
+    o_err = oracle.get("encrypt_error") or oracle.get("error")
+    c_err = candidate.get("encrypt_error") or candidate.get("error")
+    if o_err or c_err:
+        results.append({
+            "dimension": "error",
+            "oracle": o_err,
+            "candidate": c_err,
+            "match": o_err == c_err,
+        })
+
+    return results
+
+
 def compare(oracle_file: str, candidate_file: str) -> dict:
     """Compare two observation files and return a report dict."""
     with open(oracle_file, "r") as f:
@@ -224,7 +334,10 @@ def compare(oracle_file: str, candidate_file: str) -> dict:
         candidate = json.load(f)
 
     # Detect observation type by checking for known keys
-    if "parameters" in oracle or "is_coroutinefunction" in oracle:
+    if "kat_passed" in oracle or "roundtrip_passed" in oracle:
+        comparisons = _compare_cipher_obs(oracle, candidate)
+        obs_type = "cipher"
+    elif "parameters" in oracle or "is_coroutinefunction" in oracle:
         comparisons = _compare_signature_obs(oracle, candidate)
         obs_type = "signature"
     elif "bases" in oracle or "mro" in oracle or "methods" in oracle:

@@ -116,6 +116,7 @@ class ProxyDirect:
         self._unix: str | None = None
         self._alive: int = 0
         self._connections: int = 0
+        self.udpmap: dict = {}
 
     # -- properties ---------------------------------------------------------
 
@@ -162,17 +163,19 @@ class ProxyDirect:
         """Update the connection count by *delta*."""
         self._connections += delta
 
-    def destination(self, host: str, port: int) -> Tuple[str | None, int | None]:
+    def destination(self, host: str, port: int) -> Tuple[str, int]:
         """Return the effective destination for *host*/*port*."""
-        return (self._host_name, self._port if self._port else None)
+        return (host, port)
 
     def logtext(self, host: str, port: int) -> str:
         """Return a log-friendly description of the connection target."""
-        return f"{host}:{port}"
+        if host == "tunnel":
+            return ""
+        return f" -> {host}:{port}"
 
-    def match_rule(self, host: str, port: int) -> Any:
-        """Evaluate routing rules for *host*/*port*.  Returns ``None`` by default."""
-        return None
+    def match_rule(self, host: str, port: int) -> bool:
+        """Always matches for direct connections."""
+        return True
 
     async def open_connection(
         self,
@@ -191,12 +194,13 @@ class ProxyDirect:
         writer_remote: Any,
         host: str,
         port: int,
-    ) -> None:
+    ) -> Any:
         """Prepare a connection after the TCP handshake.
 
-        Requires runtime integration.
+        Default implementation is a passthrough (matches pproxy oracle).
+        Subclasses may override for protocol-specific preparation.
         """
-        raise NotImplementedError("prepare_connection requires runtime integration")
+        return reader_remote, writer_remote
 
     async def tcp_connect(
         self,
@@ -220,9 +224,53 @@ class ProxyDirect:
     ) -> Any:
         """Open a UDP association through this proxy.
 
-        Requires runtime integration.
+        Direct implementation: sends data via asyncio datagram endpoint.
         """
-        raise NotImplementedError("udp_open_connection requires runtime integration")
+        import asyncio
+        import time
+
+        udpmap = getattr(self, "udpmap", {})
+        if addr in udpmap:
+            prot = udpmap[addr]
+            if prot.transport:
+                prot.transport.sendto(data)
+            return
+
+        class _UdpProto(asyncio.DatagramProtocol):
+            def __init__(prot, data):
+                udpmap[addr] = prot
+                prot.databuf = [data]
+                prot.transport = None
+                prot.update = 0
+
+            def connection_made(prot, transport):
+                prot.transport = transport
+                for d in prot.databuf:
+                    transport.sendto(d)
+                prot.databuf.clear()
+                prot.update = time.perf_counter()
+
+            def datagram_received(prot, d, addr_recv):
+                d = self.udp_packet_unpack(d)
+                reply(d)
+                prot.update = time.perf_counter()
+
+            def connection_lost(prot, exc):
+                udpmap.pop(addr, None)
+
+        self.connection_change(1)
+        limit = getattr(self, "UDP_LIMIT", 30)
+        if len(udpmap) > limit:
+            min_addr = min(udpmap, key=lambda x: udpmap[x].update)
+            old_prot = udpmap.pop(min_addr)
+            if old_prot.transport:
+                old_prot.transport.close()
+
+        remote = self.destination(host, port)
+        loop = asyncio.get_event_loop()
+        await loop.create_datagram_endpoint(
+            lambda: _UdpProto(data), remote_addr=remote
+        )
 
     def udp_packet_unpack(self, data: bytes) -> bytes:
         """Unpack a UDP datagram payload.  Identity by default."""
@@ -242,9 +290,13 @@ class ProxyDirect:
     ) -> Any:
         """Send UDP data through this proxy.
 
-        Requires runtime integration.
+        Matches pproxy oracle: prepare packet, then open connection.
         """
-        raise NotImplementedError("udp_sendto requires runtime integration")
+        import random
+        if local_addr is None:
+            local_addr = random.randrange(2**32)
+        data = self.udp_prepare_connection(host, port, data)
+        await self.udp_open_connection(host, port, data, local_addr, answer_cb)
 
     def wait_open_connection(
         self,
@@ -320,7 +372,12 @@ class ProxySimple(ProxyDirect):
         self._protos = tuple(protos)
         self._cipher = cipher
         self._users = users
-        self._rule = rule
+        # Compile rule string to callable (matching oracle behavior)
+        if rule is not None:
+            from pproxy.server import compile_rule
+            self._rule = compile_rule(rule) if isinstance(rule, str) else rule
+        else:
+            self._rule = None
         self._bind = bind
         self._host_name = host_name
         self._port = port
@@ -371,6 +428,16 @@ class ProxySimple(ProxyDirect):
     def sslserver(self) -> Any:
         return self._sslserver
 
+    @property
+    def rproto(self) -> Any:
+        """Return the first protocol in the chain."""
+        return self._protos[0] if self._protos else None
+
+    @property
+    def auth(self) -> bytes:
+        """Return the first user credential or empty bytes."""
+        return self._users[0] if self._users else b""
+
     # -- methods ------------------------------------------------------------
 
     def destination(self, host: str, port: int) -> Tuple[str | None, int | None]:
@@ -380,7 +447,10 @@ class ProxySimple(ProxyDirect):
         return f"{host}:{port}"
 
     def match_rule(self, host: str, port: int) -> Any:
-        return self._rule
+        """Evaluate routing rules. Returns True if no rule is set."""
+        if self._rule is None:
+            return True
+        return self._rule(host) or self._rule(str(port))
 
     def wait_open_connection(
         self,
@@ -400,38 +470,43 @@ class ProxySimple(ProxyDirect):
     ) -> Any:
         """Start a server for this proxy configuration.
 
-        Delegates to :class:`eggress.pproxy.Server` for the actual server
-        lifecycle.  Returns a handle with ``close()`` / ``wait_closed()``
-        methods.
+        Matches pproxy oracle: creates an asyncio server with the stream handler.
 
         Args:
-            args: Reserved for pproxy API compatibility (ignored).
-            stream_handler: Reserved for pproxy API compatibility (ignored).
+            args: Dict of server arguments (ruport, verbose, etc.).
+            stream_handler: Callable to handle incoming streams.
 
         Returns:
-            A running :class:`eggress.pproxy.Server` instance.
+            A running asyncio server handle.
         """
-        from eggress.pproxy import Server as EggressServer
+        import asyncio
+        import functools
 
-        listen_uri = self._build_listen_uri()
-        listen_args = [listen_uri] if listen_uri else []
+        if args is None:
+            args = {}
+        if stream_handler is None:
+            from pproxy.server import stream_handler as default_handler
+            stream_handler = default_handler
 
-        remote_uri = self._build_remote_uri()
-        remote_args = [remote_uri] if remote_uri else None
-
-        server = EggressServer(
-            listen=listen_args or None,
-            remote=remote_args,
-            allow_partial=True,
+        handler = functools.partial(
+            stream_handler, **vars(self), **args
         )
-        await server.astart()
-        return server
+        if self._unix:
+            return await asyncio.start_unix_server(handler, path=self._unix)
+        else:
+            host = self._host_name or "0.0.0.0"
+            port = self._port or 0
+            return await asyncio.start_server(
+                handler, host=host, port=port,
+                reuse_port=args.get("ruport"),
+            )
 
     def _build_listen_uri(self) -> str:
         """Build a pproxy-style listen URI from this proxy's config."""
         proto_name = _proto_to_scheme(self._protos[0]) if self._protos else "http"
-        bind = self._bind or "127.0.0.1:0"
-        return f"{proto_name}://{bind}"
+        host = self._host_name or "127.0.0.1"
+        port = self._port or 0
+        return f"{proto_name}://{host}:{port}"
 
     def _build_remote_uri(self) -> str | None:
         """Build a pproxy-style remote URI from the jump chain.
@@ -458,6 +533,8 @@ class ProxySimple(ProxyDirect):
                 return None
             return self._jump
         # Nested proxy object — use its stored jump or str representation
+        if hasattr(self._jump, "direct") and self._jump.direct:
+            return None  # Direct terminal — no upstream
         if hasattr(self._jump, "_jump") and self._jump._jump is not None:
             inner = self._jump._jump
             if isinstance(inner, str):

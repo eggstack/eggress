@@ -2,12 +2,12 @@
 
 ## Status
 
-**CLOSED — corrective pass complete.** The corrective pass has completed. Paired oracle-backed
-evidence is in place, manifest validation rules enforce strict entry requirements, and the
-strict report is regenerated from the manifest. CI integrity checks (Rust `validate_canonical_manifest`,
-Python `--strict` validation, `--check-report`) all pass. This milestone's acceptance
-criteria are satisfied. See `plans/MILESTONES_A_C_CORRECTIVE_PASS.md` for the full corrective
-pass record.
+**REOPENED — corrective pass in progress.** The corrective pass
+(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Manifest integrity and report
+generation infrastructure are in place, but paired oracle/candidate behavioral evidence
+has not been generated. 81 records still need behavioral validation. This milestone
+cannot be closed until the acceptance matrix in the corrective pass plan is fully
+satisfied.
 
 ## Parent roadmap
 

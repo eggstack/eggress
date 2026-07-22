@@ -39,6 +39,41 @@ MANIFEST_PATH = Path("docs/parity/pproxy_2_7_9_strict_manifest.toml")
 SCRIPTS_DIR = Path("scripts")
 
 
+def _extract_param_names(sig_str: str) -> list:
+    """Extract parameter names from a signature string, ignoring type annotations."""
+    if not sig_str or sig_str == "(<not a callable>)":
+        return []
+    inner = sig_str.strip()
+    # Strip outer parens
+    if inner.startswith("(") and inner.endswith(")"):
+        inner = inner[1:-1]
+    elif inner.startswith("("):
+        inner = inner[1:]
+    # Remove return annotation: find ') -> ' and strip from there
+    arrow_idx = inner.rfind(") -> ")
+    if arrow_idx >= 0:
+        inner = inner[:arrow_idx]
+    elif inner.endswith(")"):
+        inner = inner[:-1]
+    if not inner.strip():
+        return []
+    params = []
+    for part in inner.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        part = part.lstrip("*")
+        name = re.split(r"[:=]", part)[0].strip()
+        if name:
+            params.append(name)
+    return params
+
+
+def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
+    """Check if two signature strings are compatible (same param names)."""
+    return _extract_param_names(sig_a) == _extract_param_names(sig_b)
+
+
 def parse_manifest(path: Path) -> list[dict]:
     """Parse the strict manifest TOML into a list of record dicts."""
     content = path.read_text()
@@ -67,6 +102,19 @@ def extract_probe_args(record: dict) -> Optional[tuple[str, str]]:
     module = record.get("module", "")
     name = record.get("name", "")
     kind = record.get("kind", "")
+    comparator = record.get("comparator", "")
+
+    # Cipher records use --cipher flag instead of --module/--symbol
+    if comparator in ("cipher_kat", "cipher_roundtrip"):
+        return (name, name)  # name is the cipher class name
+
+    # Protocol wire records
+    if comparator == "protocol_wire":
+        return (module or name, name)
+
+    # Process lifecycle records
+    if comparator == "process_lifecycle":
+        return ("pproxy.server", name)
 
     if kind == "module":
         # For module existence checks, probe the parent module for the submodule
@@ -80,6 +128,10 @@ def extract_probe_args(record: dict) -> Optional[tuple[str, str]]:
         if module and name:
             return (module, name)
 
+    # Role/kind records: use module and name if available
+    if kind in ("role", "lifecycle") and name:
+        return (module or "pproxy", name)
+
     return None
 
 
@@ -88,9 +140,14 @@ def probe_in_venv(
     probe_script: str,
     module: str,
     symbol: str,
+    extra_args: Optional[list[str]] = None,
 ) -> dict:
     """Run a probe script in a venv and return the observation."""
-    cmd = [venv_python, str(SCRIPTS_DIR / probe_script), "--module", module, "--symbol", symbol]
+    cmd = [venv_python, str(SCRIPTS_DIR / probe_script)]
+    if extra_args:
+        cmd.extend(extra_args)
+    else:
+        cmd.extend(["--module", module, "--symbol", symbol])
     try:
         result = subprocess.run(
             cmd,
@@ -128,6 +185,9 @@ def compare_observations(oracle: dict, candidate: dict) -> dict:
     """Compare two observations and return a comparison report."""
     comparisons = []
 
+    # Detect if this is a cipher observation
+    is_cipher = "kat_passed" in oracle or "roundtrip_passed" in oracle
+
     # Existence
     o_exists = oracle.get("exists", False)
     c_exists = candidate.get("exists", False)
@@ -147,57 +207,89 @@ def compare_observations(oracle: dict, candidate: dict) -> dict:
             "comparisons": comparisons,
         }
 
-    # Type
-    o_type = oracle.get("type")
-    c_type = candidate.get("type")
-    comparisons.append({
-        "dimension": "type",
-        "oracle": o_type,
-        "candidate": c_type,
-        "match": o_type == c_type,
-    })
+    if is_cipher:
+        # Cipher observations: compare kat_passed, roundtrip_passed, ciphertext_len
+        if "kat_passed" in oracle or "kat_passed" in candidate:
+            o_kat = oracle.get("kat_passed", False)
+            c_kat = candidate.get("kat_passed", False)
+            comparisons.append({
+                "dimension": "kat_passed",
+                "oracle": o_kat,
+                "candidate": c_kat,
+                "match": o_kat == c_kat,
+            })
+        if "roundtrip_passed" in oracle or "roundtrip_passed" in candidate:
+            o_rt = oracle.get("roundtrip_passed", False)
+            c_rt = candidate.get("roundtrip_passed", False)
+            comparisons.append({
+                "dimension": "roundtrip_passed",
+                "oracle": o_rt,
+                "candidate": c_rt,
+                "match": o_rt == c_rt,
+            })
+        o_ct_len = oracle.get("ciphertext_len") or oracle.get("encrypt_output", {}).get("ciphertext_len")
+        c_ct_len = candidate.get("ciphertext_len") or candidate.get("encrypt_output", {}).get("ciphertext_len")
+        if o_ct_len is not None and c_ct_len is not None:
+            comparisons.append({
+                "dimension": "ciphertext_len",
+                "oracle": o_ct_len,
+                "candidate": c_ct_len,
+                "match": o_ct_len == c_ct_len,
+            })
+    else:
+        # API observations: compare type, qualname, is_coroutine, is_callable, signature
 
-    # Qualname
-    o_qualname = oracle.get("qualname", "")
-    c_qualname = candidate.get("qualname", "")
-    o_local = o_qualname.rsplit(".", 1)[-1] if o_qualname else ""
-    c_local = c_qualname.rsplit(".", 1)[-1] if c_qualname else ""
-    comparisons.append({
-        "dimension": "qualname_local",
-        "oracle": o_local,
-        "candidate": c_local,
-        "match": o_local == c_local,
-    })
+        # Type
+        o_type = oracle.get("type")
+        c_type = candidate.get("type")
+        comparisons.append({
+            "dimension": "type",
+            "oracle": o_type,
+            "candidate": c_type,
+            "match": o_type == c_type,
+        })
 
-    # Is coroutine
-    o_coro = oracle.get("is_coroutine")
-    c_coro = candidate.get("is_coroutine")
-    comparisons.append({
-        "dimension": "is_coroutine",
-        "oracle": o_coro,
-        "candidate": c_coro,
-        "match": o_coro == c_coro,
-    })
+        # Qualname
+        o_qualname = oracle.get("qualname", "")
+        c_qualname = candidate.get("qualname", "")
+        o_local = o_qualname.rsplit(".", 1)[-1] if o_qualname else ""
+        c_local = c_qualname.rsplit(".", 1)[-1] if c_qualname else ""
+        comparisons.append({
+            "dimension": "qualname_local",
+            "oracle": o_local,
+            "candidate": c_local,
+            "match": o_local == c_local,
+        })
 
-    # Is callable
-    o_callable = oracle.get("is_callable", False)
-    c_callable = candidate.get("is_callable", False)
-    comparisons.append({
-        "dimension": "is_callable",
-        "oracle": o_callable,
-        "candidate": c_callable,
-        "match": o_callable == c_callable,
-    })
+        # Is coroutine
+        o_coro = oracle.get("is_coroutine")
+        c_coro = candidate.get("is_coroutine")
+        comparisons.append({
+            "dimension": "is_coroutine",
+            "oracle": o_coro,
+            "candidate": c_coro,
+            "match": o_coro == c_coro,
+        })
 
-    # Signature
-    o_sig = oracle.get("signature", "")
-    c_sig = candidate.get("signature", "")
-    comparisons.append({
-        "dimension": "signature",
-        "oracle": o_sig,
-        "candidate": c_sig,
-        "match": o_sig == c_sig,
-    })
+        # Is callable
+        o_callable = oracle.get("is_callable", False)
+        c_callable = candidate.get("is_callable", False)
+        comparisons.append({
+            "dimension": "is_callable",
+            "oracle": o_callable,
+            "candidate": c_callable,
+            "match": o_callable == c_callable,
+        })
+
+        # Signature - compare parameter names, ignoring type annotations
+        o_sig = oracle.get("signature", "")
+        c_sig = candidate.get("signature", "")
+        comparisons.append({
+            "dimension": "signature",
+            "oracle": o_sig,
+            "candidate": c_sig,
+            "match": _signatures_compatible(o_sig, c_sig),
+        })
 
     all_match = all(c["match"] for c in comparisons)
     mismatches = [c for c in comparisons if not c["match"]]
@@ -279,11 +371,16 @@ def run_paired_comparison(
         "api": "strict_api_probe.py",
         "signature": "strict_signature_probe.py",
         "class": "strict_class_probe.py",
+        "cipher_kat": "strict_cipher_kat_probe.py",
+        "cipher_roundtrip": "strict_cipher_roundtrip_probe.py",
+        "protocol_wire": "strict_protocol_wire_probe.py",
+        "process_lifecycle": "strict_process_lifecycle_probe.py",
+        "failure_class": "strict_api_probe.py",  # Fallback to api probe
     }
-    probe_script = probe_map.get(probe_type, "strict_api_probe.py")
 
     for i, record in enumerate(records, 1):
         rid = record.get("id", "?")
+        comparator = record.get("comparator", "module_existence")
         args = extract_probe_args(record)
         if not args:
             results.append({
@@ -294,13 +391,36 @@ def run_paired_comparison(
             continue
 
         module, symbol = args
-        print(f"  [{i}/{total}] {rid} ({module}.{symbol})", file=sys.stderr)
+
+        # Select probe based on comparator
+        if comparator in ("cipher_kat", "cipher_roundtrip"):
+            probe_script = probe_map.get(comparator, "strict_api_probe.py")
+            extra_args = ["--cipher", symbol]
+        elif comparator == "protocol_wire":
+            probe_script = probe_map.get(comparator, "strict_api_probe.py")
+            extra_args = ["--module", module, "--symbol", symbol, "--test", "address_encode"]
+        elif comparator == "process_lifecycle":
+            probe_script = probe_map.get(comparator, "strict_api_probe.py")
+            # Determine appropriate test based on record kind
+            kind = record.get("kind", "")
+            if kind == "class":
+                test_name = "proxy_object"
+            elif kind == "function":
+                test_name = "server_create"
+            else:
+                test_name = "constants"
+            extra_args = ["--module", module, "--symbol", symbol, "--test", test_name]
+        else:
+            probe_script = probe_map.get(probe_type, "strict_api_probe.py")
+            extra_args = None
+
+        print(f"  [{i}/{total}] {rid} ({module}.{symbol}) [{comparator}]", file=sys.stderr)
 
         # Run oracle probe
-        oracle_obs = probe_in_venv(oracle_python, probe_script, module, symbol)
+        oracle_obs = probe_in_venv(oracle_python, probe_script, module, symbol, extra_args)
 
         # Run candidate probe
-        candidate_obs = probe_in_venv(candidate_python, probe_script, module, symbol)
+        candidate_obs = probe_in_venv(candidate_python, probe_script, module, symbol, extra_args)
 
         # Compare
         comparison = compare_observations(oracle_obs, candidate_obs)

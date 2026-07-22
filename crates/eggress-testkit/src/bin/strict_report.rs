@@ -371,6 +371,7 @@ fn build_report_data(manifest: &StrictManifest) -> ReportData {
         "known_upstream_defect",
         "platform_constraint",
         "intentional_non_parity",
+        "structural",
     ];
 
     for rec in &manifest.record {
@@ -499,10 +500,21 @@ fn format_markdown(
     for (status, count) in &status_sorted {
         let notes = match status.as_str() {
             "drop_in" => {
-                format!(
-                    "{} need behavioral evidence (module_existence only)",
-                    data.needs_behavioral.len()
-                )
+                let drop_in_structural: usize = data
+                    .needs_behavioral
+                    .iter()
+                    .filter(|e| {
+                        manifest
+                            .record
+                            .iter()
+                            .any(|r| r.id == e.id && r.status == "drop_in")
+                    })
+                    .count();
+                if drop_in_structural > 0 {
+                    format!("{} need behavioral evidence upgrade", drop_in_structural)
+                } else {
+                    String::new()
+                }
             }
             "gap" => {
                 let gap_ids: Vec<_> = data.gap_records.iter().map(|g| g.id.as_str()).collect();
@@ -605,19 +617,21 @@ fn format_markdown(
     // Records Needing Behavioral Evidence
     out.push_str("## Records Needing Behavioral Evidence\n\n");
     if data.needs_behavioral.is_empty() {
-        out.push_str("_All drop_in records have behavioral evidence._\n\n");
+        out.push_str("_All records have behavioral evidence._\n\n");
     } else {
         out.push_str(&format!(
-            "The following {} records are marked `drop_in` in the manifest but use only\n",
+            "The following {} records use structural comparators (module_existence, method_signature,\n",
             data.needs_behavioral.len()
         ));
         out.push_str(
-            "`module_existence` or `constant_value` as their comparator. These have **namespace\n",
+            "constant_value, property_existence, class_hierarchy) and have namespace-level evidence\n",
         );
         out.push_str(
-            "evidence only** and require paired oracle/candidate behavioral validation before\n",
+            "only. These require paired oracle/candidate behavioral validation (protocol_wire,\n",
         );
-        out.push_str("true `drop_in` status can be claimed under the corrective pass.\n\n");
+        out.push_str(
+            "cipher_kat, cipher_roundtrip, etc.) before their status can be upgraded to `drop_in`.\n\n",
+        );
 
         // Group by category
         let mut by_cat: HashMap<String, Vec<&BehavioralEntry>> = HashMap::new();
