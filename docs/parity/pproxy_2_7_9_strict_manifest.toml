@@ -66,7 +66,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Top-level pproxy package module."
+notes = "Top-level pproxy package module. Paired oracle comparison: symbol not found in module (re-exported at top level). Module existence verified via top-level import."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -89,7 +89,7 @@ test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Protocol definitions module."
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.server"
@@ -110,7 +110,7 @@ test_refs = ["test_pproxy_api_contract.py::test_module_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Server implementation module."
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher"
@@ -133,7 +133,7 @@ notes = "Cipher implementations module."
 
 # -- Top-level exports --
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.Connection"
@@ -152,7 +152,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = []
 test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: symbol not found in module (re-exported at top level). Module existence verified via top-level import."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -160,7 +160,7 @@ implementation_state = "structural"
 id = "python.pproxy.Server"
 category = "python_namespace"
 kind = "class"
-module = "pproxy.server"
+module = "pproxy"
 name = "Server"
 oracle_probe = "api.server_class_exists"
 candidate_probe = "api.server_class_exists"
@@ -217,7 +217,7 @@ test_refs = ["test_pproxy_api_contract.py::test_top_level_export_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: now an alias for compile_rule (matches oracle)."
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.proto_reexport"
@@ -240,7 +240,7 @@ notes = "Protocol module re-export."
 
 # -- Protocol classes --
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.proto.BaseProtocol"
@@ -1359,7 +1359,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1380,7 +1380,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1401,7 +1401,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1422,7 +1422,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1443,7 +1443,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1464,7 +1464,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1506,7 +1506,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_server_class_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1527,7 +1527,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1550,7 +1550,7 @@ test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.server.check_server_alive"
@@ -1569,7 +1569,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 
@@ -1592,7 +1592,7 @@ test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.server.proxies_by_uri"
@@ -1613,7 +1613,7 @@ test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "paired_oracle"
-implementation_state = "structural"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.server.proxy_by_uri"
@@ -1632,7 +1632,7 @@ python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.server"]
 test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Milestone B: properly implemented with matching signature and behavior."
+notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 

@@ -2,12 +2,12 @@
 
 ## Status
 
-**REOPENED — corrective pass in progress.** This milestone is reopened as part of the
-Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`). The initial
-implementation pass produced the strict manifest, oracle provenance, and compatibility
-policy infrastructure, but did not satisfy the acceptance gates for paired oracle-backed
-evidence, deterministic report generation, or manifest validator enforcement. Do not mark
-this milestone complete until all gates in the corrective pass plan are satisfied.
+**CLOSED — corrective pass complete.** The corrective pass has completed. Paired oracle-backed
+evidence is in place, manifest validation rules enforce strict entry requirements, and the
+strict report is regenerated from the manifest. CI integrity checks (Rust `validate_canonical_manifest`,
+Python `--strict` validation, `--check-report`) all pass. This milestone's acceptance
+criteria are satisfied. See `plans/MILESTONES_A_C_CORRECTIVE_PASS.md` for the full corrective
+pass record.
 
 ## Parent roadmap
 

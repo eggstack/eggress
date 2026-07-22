@@ -96,3 +96,17 @@ jobs:
       # - run: cargo test -p eggress-cli --test interoperability_curl -- --ignored
       #   env:
       #     EGRESS_REQUIRE_CURL_INTEROP: "1"
+
+  strict-integrity:
+    name: Strict Manifest Integrity (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate strict manifest
+        run: cargo test -p eggress-testkit strict_manifest
+      - name: Check strict report freshness
+        run: cargo run -p eggress-testkit --bin strict-report -- --check
+      - name: Check release doc consistency
+        run: python3 scripts/check_release_docs.py

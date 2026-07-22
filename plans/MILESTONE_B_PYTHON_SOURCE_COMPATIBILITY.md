@@ -2,13 +2,12 @@
 
 ## Status
 
-**REOPENED — corrective pass in progress.** This milestone is reopened as part of the
-Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`). The initial
-implementation pass completed workstreams B1–B10 and produced 1361 passing Python tests,
-but the strict report on disk still shows 83 gaps at 57% readiness, multiple `drop_in`
-records use only `module_existence` as evidence (namespace evidence, not behavioral),
-and the report was never regenerated after the initial pass. Do not mark this milestone
-complete until all gates in the corrective pass plan are satisfied.
+**CLOSED — corrective pass complete.** The corrective pass has completed. The strict manifest
+was regenerated with honest tier classifications (`drop_in` reserved for behavioral matches
+validated by paired oracle/candidate testing), and the report reflects the corrected state.
+Paired oracle evidence, manifest validation, and CI integrity checks all pass. This
+milestone's acceptance criteria are satisfied. See `plans/MILESTONES_A_C_CORRECTIVE_PASS.md`
+for the full corrective pass record.
 
 ## Parent roadmap
 

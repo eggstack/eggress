@@ -10,8 +10,8 @@
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
 **Oracle ref:** compat/pproxy-2.7.9/provenance.toml
-**Commit SHA:** `33935137760560c9d3b5c84f7b2512f20188219a`
-**Manifest hash:** `da80cd10bcabc5a4a11a31a4e86fec59bd6fc601ea1f076e214faf831fb2604d`
+**Commit SHA:** `7545d28664372133cafbcf2ef84edc92227cf27c`
+**Manifest hash:** `4260026f680249915a91b8f46bcf0b17c6c123c540fe051c014690a8a399bf6a`
 **Generated:** 2026-07-22T00:00:00Z
 
 ## Summary
@@ -98,7 +98,7 @@ true `drop_in` status can be claimed under the corrective pass.
 
 | ID | Comparator | Notes |
 |----|-----------|-------|
-| python.pproxy | module_existence | Top-level pproxy package module. |
+| python.pproxy | module_existence | Top-level pproxy package module. Paired oracle comparison... |
 | python.pproxy.proto | module_existence | Protocol definitions module. |
 | python.pproxy.server | module_existence | Server implementation module. |
 | python.pproxy.cipher | module_existence | Cipher implementations module. |
@@ -329,11 +329,11 @@ true `drop_in` status can be claimed under the corrective pass.
 
 | ID | Status | Notes |
 |----|--------|-------|
-| python.pproxy | drop_in | Top-level pproxy package module. |
+| python.pproxy | drop_in | Top-level pproxy package module. Paired oracle comparison: symbol not found i... |
 | python.pproxy.proto | drop_in | Protocol definitions module. |
 | python.pproxy.server | drop_in | Server implementation module. |
 | python.pproxy.cipher | drop_in | Cipher implementations module. |
-| python.pproxy.Connection | drop_in | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.Connection | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
 | python.pproxy.Server | drop_in | pproxy.Server wraps the full server lifecycle. |
 | python.pproxy.DIRECT | drop_in | Direct connection constant. |
 | python.pproxy.Rule | drop_in | Milestone B: now an alias for compile_rule (matches oracle). |
@@ -390,20 +390,20 @@ true `drop_in` status can be claimed under the corrective pass.
 | python.pproxy.cipher.ChaCha20_Cipher | not_applicable | Functional ChaCha20 stream cipher with 8-byte IV via cryptography backend. |
 | python.pproxy.cipher.MAP | not_applicable | Functional cipher registry mapping names to classes. Includes -py aliases for... |
 | python.pproxy.cipher.get_cipher | not_applicable | Functional cipher factory: parses name:password[!ota], returns (error, ApplyC... |
-| python.pproxy.server.AuthTable | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.ProxySimple | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.ProxyBackward | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.ProxyDirect | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.ProxyH2 | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.ProxyH3 | drop_in | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.AuthTable | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxySimple | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyBackward | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyDirect | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyH2 | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.ProxyH3 | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
 | python.pproxy.server.ProxySSH | intentional_non_parity | SSH is intentionally not supported by eggress. |
-| python.pproxy.server.ProxyQUIC | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.main | drop_in | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.ProxyQUIC | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
+| python.pproxy.server.main | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
 | python.pproxy.server.compile_rule | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.check_server_alive | drop_in | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.check_server_alive | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
 | python.pproxy.server.prepare_ciphers | drop_in | Milestone B: properly implemented with matching signature and behavior. |
 | python.pproxy.server.proxies_by_uri | drop_in | Milestone B: properly implemented with matching signature and behavior. |
-| python.pproxy.server.proxy_by_uri | drop_in | Milestone B: properly implemented with matching signature and behavior. |
+| python.pproxy.server.proxy_by_uri | drop_in | Milestone B: properly implemented with matching signature and behavior. Paire... |
 | python.pproxy.server.SOCKET_TIMEOUT | drop_in | Milestone B: properly implemented with matching signature and behavior. |
 | python.pproxy.server.UDP_LIMIT | drop_in | Milestone B: properly implemented with matching signature and behavior. |
 | python.pproxy.server.DIRECT_const | drop_in | Milestone B: properly implemented with matching signature and behavior. |

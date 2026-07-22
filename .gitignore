@@ -14,3 +14,5 @@ __pycache__/
 python-pproxy-compat/build/
 *.so
 .venv-pproxy/
+.venv-oracle-api/
+.venv-candidate-api/
