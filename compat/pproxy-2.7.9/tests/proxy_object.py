@@ -70,7 +70,7 @@ def test_proxy_simple():
     check("ProxySimple bind is set", s.bind == "test:8080")
     check("ProxySimple host_name is set", s.host_name == "test")
     check("ProxySimple port is set", s.port == 8080)
-    check("ProxySimple protos is list", isinstance(s.protos, list))
+    check("ProxySimple protos is tuple", isinstance(s.protos, tuple))
     check("ProxySimple has cipher attr", hasattr(s, "cipher"))
     check("ProxySimple has users attr", hasattr(s, "users"))
     check("ProxySimple has rule attr", hasattr(s, "rule"))

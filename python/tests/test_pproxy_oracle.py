@@ -131,10 +131,12 @@ class TestModuleExports:
 
         assert hasattr(pproxy, "DIRECT")
 
-    def test_no_version_attribute(self):
+    def test_version_attribute(self):
         import pproxy
 
-        assert not hasattr(pproxy, "__version__")
+        assert hasattr(pproxy, "__version__")
+        assert hasattr(pproxy, "__pproxy_compatibility_version__")
+        assert pproxy.__pproxy_compatibility_version__ == "2.7.9"
 
     def test_snapshot_module_exports_present(self):
         snapshot = _load_snapshot()

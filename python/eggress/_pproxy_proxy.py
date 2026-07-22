@@ -126,7 +126,7 @@ class ProxyDirect:
 
     @property
     def bind(self) -> str:
-        return "DIRECT"
+        return self._bind if self._bind is not None else "DIRECT"
 
     @property
     def lbind(self) -> str | None:
@@ -137,8 +137,8 @@ class ProxyDirect:
         return self._unix
 
     @property
-    def alive(self) -> int:
-        return self._alive
+    def alive(self) -> bool:
+        return True
 
     @property
     def connections(self) -> int:
@@ -331,6 +331,14 @@ class ProxySimple(ProxyDirect):
     # -- properties ---------------------------------------------------------
 
     @property
+    def host_name(self) -> str | None:
+        return self._host_name
+
+    @property
+    def port(self) -> int | None:
+        return self._port
+
+    @property
     def direct(self) -> bool:
         """``False`` — simple proxies route through an upstream."""
         return False
@@ -484,6 +492,14 @@ class ProxyBackward(ProxySimple):
         super().__init__(**kw)
         self._backward = backward
         self._backward_num = backward_num
+
+    @property
+    def backward(self) -> Any:
+        return self._backward
+
+    @property
+    def server(self) -> Any:
+        return self._backward
 
     def close(self) -> None:
         """Close the backward connection."""

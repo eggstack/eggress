@@ -37,11 +37,10 @@ try:
 except ImportError:
     pass
 
-SOCKET_TIMEOUT = 10.0
-UDP_LIMIT = 0xFFFF
-DIRECT = "direct://"
-DUMMY = object()
-sslcontexts = {}
+SOCKET_TIMEOUT = 60
+UDP_LIMIT = 30
+DUMMY = lambda s: s
+sslcontexts = []
 
 
 def proxy_by_uri(uri: str, jump=None):
@@ -80,157 +79,91 @@ def proxy_by_uri(uri: str, jump=None):
                 port = parsed.port
             except Exception:
                 pass
+        # Build bind string from host:port (matching pproxy oracle)
+        bind_str = None
+        if host and port:
+            bind_str = f"{host}:{port}"
+        elif host:
+            bind_str = host
         return ProxySimple(
             jump=jump if jump is not None else uri,
             protos=(proto_cls,),
+            bind=bind_str,
             host_name=host,
             port=port,
         )
 
 
 def proxies_by_uri(uri_jumps):
-    """Create proxy objects from pproxy-style URI(s) with jump chains.
-
-    In pproxy 2.7.9, this is the core factory that Connection and Server
-    are aliases for. Accepts:
-      - a single URI string
-      - a '__'-separated chain string
-      - a list of URIs
-
-    Returns a single proxy object (or list if multiple independent chains).
-    """
-    if not uri_jumps:
-        raise TypeError("proxies_by_uri() missing required argument: 'uri_jumps'")
-
-    if isinstance(uri_jumps, str):
-        # Split '__'-separated chains
-        uris = uri_jumps.split("__")
-        if len(uris) == 1:
-            return proxy_by_uri(uris[0])
-        # Build nested chain: last URI is the innermost jump
-        jump = None
-        for uri in reversed(uris):
-            uri = uri.strip()
-            if uri:
-                jump = proxy_by_uri(uri, jump)
-        return jump
-
-    if isinstance(uri_jumps, (list, tuple)):
-        if len(uri_jumps) == 1:
-            return proxy_by_uri(uri_jumps[0])
-        proxies = []
-        for uri in uri_jumps:
-            proxies.append(proxy_by_uri(uri))
-        return proxies
-
-    # Fallback: treat as single URI
-    return proxy_by_uri(str(uri_jumps))
+    jump = DIRECT
+    for uri in reversed(uri_jumps.split('__')):
+        jump = proxy_by_uri(uri, jump)
+    return jump
 
 
-def compile_rule(filename: str, *args, **kwargs):
-    """Compile a rule file.
-
-    In pproxy 2.7.9, this reads a rule file and returns a compiled rule
-    object.  Rule files contain lines like:
-      +ip1,ip2,...:port   (allow)
-      -ip1,ip2,...:port   (deny)
-      # comments are ignored
-    Each rule is a dict with 'action' ('allow'/'deny'), 'ips' (list), and
-    'port' (int or None).
-    """
-    import os
-    rules = []
-    if filename and os.path.isfile(filename):
-        with open(filename, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                action = "allow" if line.startswith("+") else "deny" if line.startswith("-") else None
-                if action is None:
-                    continue
-                rest = line[1:]
-                port = None
-                if ":" in rest:
-                    ip_part, port_part = rest.rsplit(":", 1)
-                    try:
-                        port = int(port_part)
-                    except ValueError:
-                        port = None
-                else:
-                    ip_part = rest
-                ips = [ip.strip() for ip in ip_part.split(",") if ip.strip()]
-                rules.append({"action": action, "ips": ips, "port": port})
-    return {"filename": filename, "rules": rules}
+def compile_rule(filename):
+    if filename.startswith("{") and filename.endswith("}"):
+        return re.compile(filename[1:-1]).match
+    with open(filename) as f:
+        return re.compile('(:?' + ''.join('|'.join(i.strip() for i in f if i.strip() and not i.startswith('#'))) + ')$').match
 
 
-def check_server_alive(proxy, timeout=5.0):
-    """Check if a proxy server is alive.
-
-    Performs a basic connectivity check (TCP connect) to the proxy's
-    host:port within the given timeout.  Returns True if reachable,
-    False otherwise.
-    """
-    import socket as _socket
-    if proxy is None:
-        return False
-    host = getattr(proxy, "_host_name", None) or getattr(proxy, "host_name", None)
-    port = getattr(proxy, "_port", None) or getattr(proxy, "port", None)
-    if not host or not port:
-        return False
-    try:
-        sock = _socket.create_connection((host, int(port)), timeout=min(timeout, 5.0))
-        sock.close()
-        return True
-    except (OSError, TypeError, ValueError):
-        return False
-
-
-def prepare_ciphers(cipher_key=None, cipher_obj=None, plugins=None):
-    """Build cipher and plugin objects from proxy definitions.
-
-    Returns a dict with cipher, plugin, and datagram entries suitable
-    for server runtime use.  When cipher_key is provided, the full
-    cipher registry is consulted and a functional cipher object is
-    returned.
-    """
-    result = {}
-    if cipher_key:
-        from eggress.cipher import get_cipher, PacketCipher, AEADCipher
-
-        err, apply_fn = get_cipher(cipher_key)
-        if err:
-            raise ValueError(f"cipher setup failed: {err}")
-        result["cipher"] = apply_fn.cipher
-        result["cipher_name"] = apply_fn.name
-        result["key"] = apply_fn.key
-        result["ota"] = apply_fn.ota
-        if apply_fn.datagram:
-            result["datagram"] = apply_fn.datagram
-    elif cipher_obj:
-        result["cipher"] = cipher_obj
-    if plugins:
-        result["plugins"] = plugins
-    return result
+async def check_server_alive(interval, rserver, verbose=DUMMY):
+    while True:
+        await asyncio.sleep(interval)
+        for remote in rserver:
+            if type(remote) is ProxyDirect:
+                continue
+            try:
+                _, writer = await remote.open_connection(None, None, None, None, timeout=3)
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                if remote.alive:
+                    verbose(f'{getattr(remote.rproto, "name", "?")} {getattr(remote, "bind", "?")} -> OFFLINE')
+                    remote.alive = False
+                continue
+            if not remote.alive:
+                verbose(f'{getattr(remote.rproto, "name", "?")} {getattr(remote, "bind", "?")} -> ONLINE')
+                remote.alive = True
+            try:
+                if isinstance(remote, ProxyBackward):
+                    writer.write(b'\x00')
+                writer.close()
+            except Exception:
+                pass
 
 
-_rr_cursor = 0
-
-
-def schedule(rserver, salgorithm="fa", host_name=None, port=None):
-    """Schedule a connection from a list of remote servers."""
-    global _rr_cursor
-    if not rserver:
-        return None
-    eligible = [s for s in rserver if getattr(s, "alive", 1) != 0] or list(rserver)
-    if salgorithm == "rr":
-        idx = _rr_cursor % len(eligible)
-        _rr_cursor += 1
-        return eligible[idx]
-    elif salgorithm == "lc":
-        return min(eligible, key=lambda s: getattr(s, "connections", 0))
+async def prepare_ciphers(cipher, reader, writer, bind=None, server_side=True):
+    if cipher:
+        cipher.pdecrypt = cipher.pdecrypt2 = cipher.pencrypt = cipher.pencrypt2 = DUMMY
+        for plugin in cipher.plugins:
+            if server_side:
+                await plugin.init_server_data(reader, writer, cipher, bind)
+            else:
+                await plugin.init_client_data(reader, writer, cipher)
+            plugin.add_cipher(cipher)
+        return cipher(reader, writer, cipher.pdecrypt, cipher.pdecrypt2, cipher.pencrypt, cipher.pencrypt2)
     else:
-        return eligible[0]
+        return None, None
+
+
+def schedule(rserver, salgorithm, host_name, port):
+    filter_cond = lambda o: o.alive and o.match_rule(host_name, port)
+    if salgorithm == 'fa':
+        return next(filter(filter_cond, rserver), None)
+    elif salgorithm == 'rr':
+        for i, roption in enumerate(rserver):
+            if filter_cond(roption):
+                rserver.append(rserver.pop(i))
+                return roption
+    elif salgorithm == 'rc':
+        filters = [i for i in rserver if filter_cond(i)]
+        return random.choice(filters) if filters else None
+    elif salgorithm == 'lc':
+        return min(filter(filter_cond, rserver), default=None, key=lambda i: i.connections)
+    else:
+        raise Exception('Unknown scheduling algorithm')
 
 
 def main(*args, **kwargs):
@@ -248,87 +181,108 @@ def _unsupported_handler(name: str):
 async def stream_handler(
     reader,
     writer,
+    unix,
+    lbind,
+    protos,
     rserver,
-    auth,
-    verbose=False,
-    protocol_name=None,
-    cipher=None,
-    plugins=None,
+    cipher,
+    sslserver,
+    debug=0,
+    authtime=86400*30,
+    block=None,
+    salgorithm='fa',
+    verbose=DUMMY,
+    modstat=lambda u, r, h: lambda i: DUMMY,
     **kwargs,
 ):
-    """Handle a proxied TCP stream connection.
-
-    Matches the pproxy 2.7.9 stream_handler signature and observable
-    sequence: authenticate, select remote, forward data, clean up.
-    """
-    import asyncio as _asyncio
-
-    if auth is not None:
-        if hasattr(auth, "authed") and auth.authed() is None:
-            if hasattr(writer, "close"):
-                writer.close()
-            return
-
-    remote = rserver
-    if isinstance(rserver, (list, tuple)):
-        remote = schedule(rserver)
-    if remote is None:
-        if hasattr(writer, "close"):
-            writer.close()
-        return
-
-    if hasattr(remote, "connection_change"):
-        remote.connection_change(1)
-
     try:
-        while True:
+        reader, writer = proto.sslwrap(reader, writer, sslserver, True, None, verbose)
+        if unix:
+            remote_ip, remote_text = 'local', 'unix_local'
+        else:
+            peername = writer.get_extra_info('peername')
+            remote_ip, remote_port, *_ = peername if peername else ('unknow_remote_ip', 'unknow_remote_port')
+            remote_text = f'{remote_ip}:{remote_port}'
+        reader_cipher, _ = await prepare_ciphers(cipher, reader, writer, server_side=False)
+        lproto, user, host_name, port, client_connected = await proto.accept(
+            protos, reader=reader, writer=writer,
+            authtable=AuthTable(remote_ip, authtime),
+            reader_cipher=reader_cipher,
+            sock=writer.get_extra_info('socket'),
+            **kwargs,
+        )
+        if host_name == 'echo':
+            asyncio.ensure_future(lproto.channel(reader, writer, DUMMY, DUMMY))
+        elif host_name == 'empty':
+            asyncio.ensure_future(lproto.channel(reader, writer, None, DUMMY))
+        elif block and block(host_name):
+            raise Exception('BLOCK ' + host_name)
+        else:
+            roption = schedule(rserver, salgorithm, host_name, port) or DIRECT
+            verbose(f'{lproto.name} {remote_text}{roption.logtext(host_name, port)}')
             try:
-                data = await reader.read(65536)
-                if not data:
-                    break
-                if hasattr(writer, "write"):
-                    writer.write(data)
-                    await writer.drain()
-            except (ConnectionError, _asyncio.IncompleteReadError):
-                break
-    finally:
-        if hasattr(remote, "connection_change"):
-            remote.connection_change(-1)
-        if hasattr(writer, "close"):
+                reader_remote, writer_remote = await roption.open_connection(host_name, port, None, lbind)
+            except asyncio.TimeoutError:
+                raise Exception(f'Connection timeout {roption.bind}')
+            try:
+                reader_remote, writer_remote = await roption.prepare_connection(reader_remote, writer_remote, host_name, port)
+                use_http = (await client_connected(writer_remote)) if client_connected else None
+            except Exception:
+                writer_remote.close()
+                raise Exception('Unknown remote protocol')
+            m = modstat(user, remote_ip, host_name)
+            lchannel = lproto.http_channel if use_http else lproto.channel
+            asyncio.ensure_future(lproto.channel(reader_remote, writer, m(2 + roption.direct), m(4 + roption.direct)))
+            asyncio.ensure_future(lchannel(reader, writer_remote, m(roption.direct), roption.connection_change))
+    except Exception as ex:
+        if not isinstance(ex, asyncio.TimeoutError) and not str(ex).startswith('Connection closed'):
+            verbose(f'{str(ex) or "Unsupported protocol"} from {remote_ip}')
+        try:
             writer.close()
+        except Exception:
+            pass
+        if debug:
+            raise
 
 
-def datagram_handler(
+async def datagram_handler(
+    writer,
     data,
-    rserver,
-    auth=None,
-    verbose=False,
-    protocol_name=None,
-    cipher=None,
-    plugins=None,
+    addr,
+    protos,
+    urserver,
+    block,
+    cipher,
+    salgorithm,
+    verbose=DUMMY,
     **kwargs,
 ):
-    """Handle a proxied UDP datagram.
-
-    Matches the pproxy 2.7.9 datagram_handler signature.
-    """
-    if auth is not None:
-        if hasattr(auth, "authed") and auth.authed() is None:
-            return None
-
-    remote = rserver
-    if isinstance(rserver, (list, tuple)):
-        remote = schedule(rserver)
-    if remote is None:
-        return None
-
-    if hasattr(remote, "connection_change"):
-        remote.connection_change(1)
     try:
-        return data
-    finally:
-        if hasattr(remote, "connection_change"):
-            remote.connection_change(-1)
+        remote_ip, remote_port, *_ = addr
+        remote_text = f'{remote_ip}:{remote_port}'
+        data = cipher.datagram.decrypt(data) if cipher else data
+        lproto, user, host_name, port, data = proto.udp_accept(
+            protos, data, sock=writer.get_extra_info('socket'), **kwargs,
+        )
+        if host_name == 'echo':
+            writer.sendto(data, addr)
+        elif host_name == 'empty':
+            pass
+        elif block and block(host_name):
+            raise Exception('BLOCK ' + host_name)
+        else:
+            roption = schedule(urserver, salgorithm, host_name, port) or DIRECT
+            verbose(f'UDP {lproto.name} {remote_text}{roption.logtext(host_name, port)}')
+            data = roption.udp_prepare_connection(host_name, port, data)
+
+            def reply(rdata):
+                rdata = lproto.udp_pack(host_name, port, rdata)
+                writer.sendto(cipher.datagram.encrypt(rdata) if cipher else rdata, addr)
+
+            await roption.udp_open_connection(host_name, port, data, addr, reply)
+    except Exception as ex:
+        if not str(ex).startswith('Connection closed'):
+            verbose(f'{str(ex) or "Unsupported protocol"} from {remote_ip}')
 
 
 def patch_StreamReader(reader):
@@ -370,6 +324,8 @@ def test_url(url, proxy=None, timeout=5.0):
         return {"ok": False, "code": e.code, "error": str(e)}
     except Exception as e:
         return {"ok": False, "code": None, "error": str(e)}
+
+DIRECT = ProxyDirect()
 
 __all__ = [
     "AuthTable", "DIRECT", "DUMMY", "PPProxyService", "ProxyBackward",
