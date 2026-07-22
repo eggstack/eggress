@@ -9,6 +9,7 @@ on:
 jobs:
   build_wheels:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +64,7 @@ jobs:
 
   build_sdist:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

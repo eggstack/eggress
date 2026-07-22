@@ -139,20 +139,8 @@ impl SupervisedProcess {
         }
         self.killed = true;
 
-        #[cfg(unix)]
-        {
-            let _ = Command::new("kill")
-                .args(["-9", &format!("-{}", self.pid)])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-
-        #[cfg(not(unix))]
-        {
-            if let Some(ref mut child) = self.child {
-                let _ = child.kill();
-            }
+        if let Some(ref mut child) = self.child {
+            let _ = child.kill();
         }
 
         if let Some(ref mut child) = self.child {

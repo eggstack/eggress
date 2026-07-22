@@ -14,6 +14,7 @@ jobs:
   strict-integrity:
     name: Strict Manifest Integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -28,6 +29,7 @@ jobs:
   strict-paired-api:
     name: Strict Paired API (Python 3.11)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: strict-integrity
     steps:
       - uses: actions/checkout@v4

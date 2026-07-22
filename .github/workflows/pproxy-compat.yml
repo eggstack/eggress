@@ -15,6 +15,7 @@ jobs:
   pproxy-compat:
     name: pproxy Compat (Ubuntu)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -362,8 +362,10 @@ struct TerminalEntry {
 }
 
 fn build_report_data(manifest: &StrictManifest) -> ReportData {
-    let mut data = ReportData::default();
-    data.total = manifest.record.len();
+    let mut data = ReportData {
+        total: manifest.record.len(),
+        ..Default::default()
+    };
 
     const TERMINAL: &[&str] = &[
         "drop_in",

@@ -19,6 +19,7 @@ jobs:
   ci-gates:
     name: CI Gates
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -29,10 +30,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Check
         run: cargo check --workspace --all-targets
-      # Tests are covered by the CI workflow (test matrix: macOS + Windows).
-      # Running cargo test --workspace on Ubuntu CI runners hangs for 50+
-      # minutes due to kernel-specific test interactions. Omit from release
-      # gates to keep the pipeline responsive.
+      # Tests are covered by the CI workflow (test matrix: Ubuntu + macOS + Windows).
+      # The prior Ubuntu test hang (supervised_process_kill_group using external
+      # kill command) was fixed by switching to child.kill(). Ubuntu is now
+      # included in the CI test matrix.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -51,6 +52,7 @@ jobs:
     name: Binary (${{ matrix.target }})
     needs: ci-gates
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -120,6 +122,7 @@ jobs:
     name: Wheel (${{ matrix.os }}-${{ matrix.target }})
     needs: ci-gates
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +182,7 @@ jobs:
     name: Source Distribution
     needs: ci-gates
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -198,6 +202,7 @@ jobs:
     name: Top-level pproxy compatibility wheel
     needs: ci-gates
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -216,6 +221,7 @@ jobs:
     name: Checksums & SBOM
     needs: [build-binaries, build-wheels, build-sdist, build-pproxy-compat]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -290,6 +296,7 @@ jobs:
     name: Container Image
     needs: [build-binaries]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -349,6 +356,7 @@ jobs:
     name: GitHub Release
     needs: [build-binaries, build-wheels, build-sdist, build-pproxy-compat, checksums]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       packages: write
