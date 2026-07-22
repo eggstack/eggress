@@ -51,23 +51,39 @@ done
 }
 
 # Run interop tests using the existing Rust interop infrastructure
+# These tests are gated by EGRESS_REQUIRE_EXTERNAL_INTEROP=1
 echo "Running Rust interop tests (oracle client -> candidate server, candidate client -> oracle server)..."
 echo ""
 
-# These tests exercise real TCP connections between the two implementations
-cargo test -p eggress-cli --test interoperability_pproxy -- --ignored \
+INTEROP_EXIT=0
+
+# Run eggress-server/pproxy-client tests (pproxy as external client)
+if EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test interoperability_pproxy -- --ignored \
     --skip test_pproxy_http_server_eggress_client \
     --skip test_pproxy_socks5_server_eggress_client \
-    2>&1 || true
+    2>&1; then
+    echo "  PASS: eggress-server/pproxy-client interop"
+else
+    echo "  WARN: Some interop tests failed or were skipped (pproxy may not be installed)"
+    INTEROP_EXIT=1
+fi
 
 # Run Python-level bidirectional interop tests if they exist
 if [ -f "$SCRIPT_DIR/run_strict_pproxy_interop.py" ]; then
-    python3 "$SCRIPT_DIR/run_strict_pproxy_interop.py" \
+    echo ""
+    echo "Running Python bidirectional interop tests..."
+    if python3 "$SCRIPT_DIR/run_strict_pproxy_interop.py" \
         --oracle-venv "$ORACLE_VENV" \
         --candidate-venv "$CANDIDATE_VENV" \
         --output-dir "$OUTPUT_DIR" \
-        "$@"
+        "$@"; then
+        echo "  PASS: Python bidirectional interop"
+    else
+        echo "  FAIL: Python bidirectional interop"
+        INTEROP_EXIT=1
+    fi
 fi
 
 echo ""
 echo "=== Tier 3 complete ==="
+exit $INTEROP_EXIT

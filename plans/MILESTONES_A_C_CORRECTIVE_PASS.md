@@ -2,11 +2,7 @@
 
 ## Status
 
-**In progress — 25/31 acceptance criteria met.** Remaining items:
-- URI factory signatures aligned (18 protocol constructors now match oracle `(self, param)`)
-- Plugin lifecycle tests added (15/15 oracle/candidate matched)
-- Runtime/failure/cleanup dimensions captured (11/11 matched)
-- Protocol accept/guess/connect methods aligned to oracle signatures
+**In progress — 30/31 acceptance criteria met.** Remaining items:
 - Hosted CI blocked on infrastructure (known non-functional)
 
 ## Parent roadmap and plans
