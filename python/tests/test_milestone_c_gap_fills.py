@@ -283,8 +283,8 @@ class TestDatagramHandlerGapFills(unittest.TestCase):
 # C1/C2: Structural differential test scaffolding
 # ---------------------------------------------------------------------------
 
-class TestDifferentialScaffolding(unittest.TestCase):
-    """Structural differential tests — verify the scaffolding is in place."""
+class TestUnitScaffolding(unittest.TestCase):
+    """Unit scaffolding — verify the scaffolding is in place (Tier 0)."""
 
     def test_pproxy_differential_module_exists(self):
         """The differential test module exists and is importable."""
@@ -353,8 +353,8 @@ class TestDifferentialScaffolding(unittest.TestCase):
 # C14: Python-level interop test scaffolding
 # ---------------------------------------------------------------------------
 
-class TestInteropScaffolding(unittest.TestCase):
-    """Structural interop scaffolding — verifies the test infrastructure is in place."""
+class TestNamespaceSmoke(unittest.TestCase):
+    """Namespace smoke — verifies pproxy submodules are importable (Tier 1)."""
 
     def test_pproxy_server_importable(self):
         """pproxy.server can be imported without errors."""

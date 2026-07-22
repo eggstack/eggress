@@ -22,8 +22,8 @@ from eggress import (
 )
 
 
-class TestImports:
-    """Verify all new types are importable."""
+class TestNamespaceSmoke:
+    """Verify all new types are importable (namespace smoke, Tier 1)."""
 
     def test_import_pproxy_service(self):
         assert PPProxyService is not None
