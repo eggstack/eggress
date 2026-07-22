@@ -622,7 +622,8 @@ class TestProtocolAttributes:
         assert p.target is None
 
     def test_direct_explicit_target(self) -> None:
-        p = Direct("x", target="y:1")
+        p = Direct("x")
+        p.target = "y:1"
         assert p.target == "y:1"
 
     def test_http_target_from_param(self) -> None:
@@ -718,11 +719,13 @@ class TestProtocolAttributes:
         assert p.dest is None
 
     def test_explicit_source(self) -> None:
-        p = Direct("x", source="0.0.0.0:8080")
+        p = Direct("x")
+        p.source = "0.0.0.0:8080"
         assert p.source == "0.0.0.0:8080"
 
     def test_explicit_dest(self) -> None:
-        p = HTTP("x", dest="remote:443")
+        p = HTTP("x")
+        p.dest = "remote:443"
         assert p.dest == "remote:443"
 
     def test_pickle_roundtrip_preserves_target(self) -> None:
@@ -732,13 +735,15 @@ class TestProtocolAttributes:
         assert r.param == "pw@host:443"
 
     def test_pickle_roundtrip_preserves_dest(self) -> None:
-        p = Tunnel("dest:80", source="0.0.0.0:9090")
+        p = Tunnel("dest:80")
+        p.source = "0.0.0.0:9090"
         r = pickle.loads(pickle.dumps(p))
         assert r.dest == "dest:80"
         assert r.source == "0.0.0.0:9090"
 
     def test_copy_preserves_target(self) -> None:
-        p = Direct("x:1", target="y:2")
+        p = Direct("x:1")
+        p.target = "y:2"
         c = copy.copy(p)
         assert c.target == "y:2"
 
@@ -747,17 +752,14 @@ class TestProtocolAttributes:
         c = copy.deepcopy(p)
         assert c.target == "host:443"
 
-    def test_equality_considers_target(self) -> None:
-        assert Direct("x", target="a") != Direct("x", target="b")
+    def test_equality_considers_param(self) -> None:
+        assert Direct("a") != Direct("b")
 
-    def test_equality_considers_dest(self) -> None:
-        assert Tunnel("x", dest="a") != Tunnel("x", dest="b")
+    def test_equality_same_param_equal(self) -> None:
+        assert Direct("x") == Direct("x")
 
-    def test_hash_considers_target(self) -> None:
-        assert hash(Direct("x", target="a")) != hash(Direct("x", target="b"))
-
-    def test_hash_considers_dest(self) -> None:
-        assert hash(Tunnel("x", dest="a")) != hash(Tunnel("x", dest="b"))
+    def test_hash_same_param_equal(self) -> None:
+        assert hash(Direct("x")) == hash(Direct("x"))
 
 
 # ---------------------------------------------------------------------------

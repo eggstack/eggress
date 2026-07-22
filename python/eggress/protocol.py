@@ -143,17 +143,11 @@ class BaseProtocol:
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp",)
     _ROLE: str = "both"  # "listener" | "upstream" | "both"
 
-    def __init__(
-        self,
-        param: str = "",
-        target: str | None = None,
-        dest: str | None = None,
-        source: str | None = None,
-    ) -> None:
+    def __init__(self, param: str = "") -> None:
         self.param = param
-        self.target = target
-        self.dest = dest
-        self.source = source
+        self.target: str | None = None
+        self.dest: str | None = None
+        self.source: str | None = None
 
     # -- identity -----------------------------------------------------------
 
@@ -251,13 +245,10 @@ class BaseProtocol:
         return (
             type(self) is type(other)
             and self.param == getattr(other, "param", None)
-            and self.target == getattr(other, "target", None)
-            and self.dest == getattr(other, "dest", None)
-            and self.source == getattr(other, "source", None)
         )
 
     def __hash__(self) -> int:
-        return hash((type(self), self.param, self.target, self.dest, self.source))
+        return hash((type(self), self.param))
 
     def __repr__(self) -> str:
         redacted = _redact_param(self.name, self.param)
@@ -271,24 +262,33 @@ class BaseProtocol:
     # -- pickling / copying -------------------------------------------------
 
     def __reduce__(self) -> tuple[type[BaseProtocol], tuple[str], dict[str, str | None]]:
-        return (
-            self.__class__,
-            (self.param,),
-            {"target": self.target, "dest": self.dest, "source": self.source},
-        )
+        state: dict[str, str | None] = {}
+        if self.target is not None:
+            state["target"] = self.target
+        if self.dest is not None:
+            state["dest"] = self.dest
+        if self.source is not None:
+            state["source"] = self.source
+        return (self.__class__, (self.param,), state)
 
     def __copy__(self) -> BaseProtocol:
-        return self.__class__(
-            self.param, target=self.target, dest=self.dest, source=self.source
-        )
+        c = self.__class__(self.param)
+        c.target = self.target
+        c.dest = self.dest
+        c.source = self.source
+        return c
 
     def __deepcopy__(self, memo: dict[int, Any]) -> BaseProtocol:
-        return self.__class__(
-            copy.deepcopy(self.param, memo),
-            target=copy.deepcopy(self.target, memo),
-            dest=copy.deepcopy(self.dest, memo),
-            source=copy.deepcopy(self.source, memo),
-        )
+        c = self.__class__(copy.deepcopy(self.param, memo))
+        c.target = copy.deepcopy(self.target, memo)
+        c.dest = copy.deepcopy(self.dest, memo)
+        c.source = copy.deepcopy(self.source, memo)
+        return c
+
+    def __setstate__(self, state: dict[str, str | None]) -> None:
+        self.target = state.get("target")
+        self.dest = state.get("dest")
+        self.source = state.get("source")
 
 
 # ---------------------------------------------------------------------------
@@ -304,9 +304,9 @@ class Direct(BaseProtocol):
     functional wire-level protocol handling.
     """
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        kw.setdefault("target", param or None)
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        self.target = param or None
 
 
 class HTTP(BaseProtocol):
@@ -317,9 +317,9 @@ class HTTP(BaseProtocol):
     functional wire-level protocol handling.
     """
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        kw.setdefault("target", param or None)
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        self.target = param or None
         self.httpget: dict[str, Any] = {}
         self._buffered: bytes = b""
 
@@ -339,7 +339,7 @@ class HTTP(BaseProtocol):
 
         return None
 
-    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+    async def accept(self, reader: Any, user: Any, writer: Any, **kw: Any) -> tuple[Any, str, int]:
         """Parse HTTP request line to extract host and port."""
         data = self._buffered
         if not data:
@@ -414,9 +414,9 @@ class Socks4(BaseProtocol):
     functional wire-level protocol handling.
     """
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        kw.setdefault("target", param or None)
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        self.target = param or None
         self._buffered: bytes = b""
 
     async def guess(self, reader: Any, **kw: Any) -> Any:
@@ -432,7 +432,7 @@ class Socks4(BaseProtocol):
 
         return None
 
-    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+    async def accept(self, reader: Any, user: Any, writer: Any, users: Any, authtable: Any, **kw: Any) -> tuple[Any, str, int]:
         """Parse SOCKS4 request to extract host and port."""
         data = self._buffered
         if not data:
@@ -479,9 +479,9 @@ class Socks5(BaseProtocol):
 
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp", "udp")
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        kw.setdefault("target", param or None)
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        self.target = param or None
         self._buffered: bytes = b""
 
     async def guess(self, reader: Any, **kw: Any) -> Any:
@@ -497,7 +497,7 @@ class Socks5(BaseProtocol):
 
         return None
 
-    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+    async def accept(self, reader: Any, user: Any, writer: Any, users: Any, authtable: Any, **kw: Any) -> tuple[Any, str, int]:
         """Parse SOCKS5 handshake and connect request."""
         data = self._buffered
         if not data:
@@ -662,7 +662,7 @@ class SS(SSR):
         """
         return None
 
-    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+    async def accept(self, reader: Any, user: Any, reader_cipher: Any = None, **kw: Any) -> tuple[Any, str, int]:
         """Since SS is encrypted, this can't parse without the cipher.
 
         Return the reader/user as-is for now. The actual handling
@@ -710,14 +710,11 @@ class Trojan(BaseProtocol):
     functional wire-level protocol handling.
     """
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        if "target" not in kw:
-            target: str | None = None
-            if param:
-                _, _, host_part = param.rpartition("@")
-                target = host_part if host_part else param
-            kw["target"] = target
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        if param:
+            _, _, host_part = param.rpartition("@")
+            self.target = host_part if host_part else param
 
 
 class WS(BaseProtocol):
@@ -728,13 +725,10 @@ class WS(BaseProtocol):
     functional wire-level protocol handling.
     """
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        if "target" not in kw:
-            target: str | None = None
-            if param:
-                target = param.split("/", 1)[0] if "/" in param else param
-            kw["target"] = target
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        if param:
+            self.target = param.split("/", 1)[0] if "/" in param else param
 
 
 class H2(HTTP):
@@ -745,8 +739,8 @@ class H2(HTTP):
     functional wire-level protocol handling.
     """
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
 
 
 class H3(H2):
@@ -817,9 +811,9 @@ class Pf(Transparent):
 class Tunnel(Transparent):
     """Fixed-target tunnel (data forwarded to a predetermined destination)."""
 
-    def __init__(self, param: str = "", **kw: Any) -> None:
-        kw.setdefault("dest", param or None)
-        super().__init__(param, **kw)
+    def __init__(self, param: str = "") -> None:
+        super().__init__(param)
+        self.dest = param or None
         self.destination: str = param
 
     def query_remote(self, sock: Any) -> tuple[str, int]:

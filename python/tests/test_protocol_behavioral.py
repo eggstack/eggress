@@ -141,7 +141,7 @@ class TestHTTP:
         proto = HTTP()
         proto._buffered = b"CONNECT example.com:8443 HTTP/1.1\r\n\r\n"
         user, host, port = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), "testuser")
+            proto.accept(FakeReader(), "testuser", writer=None)
         )
         assert host == "example.com"
         assert port == 8443
@@ -151,7 +151,7 @@ class TestHTTP:
         proto = HTTP()
         proto._buffered = b"CONNECT example.com HTTP/1.1\r\n\r\n"
         user, host, port = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), None)
+            proto.accept(FakeReader(), None, writer=None)
         )
         assert host == "example.com"
         assert port == 443
@@ -164,7 +164,7 @@ class TestHTTP:
             b"\r\n"
         )
         user, host, port = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), "u")
+            proto.accept(FakeReader(), "u", writer=None)
         )
         assert host == "myserver.com"
         assert port == 9090
@@ -176,7 +176,7 @@ class TestHTTP:
             b"\r\n"
         )
         user, host, port = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), None)
+            proto.accept(FakeReader(), None, writer=None)
         )
         assert host == "from-url.com"
         assert port == 80
@@ -249,7 +249,7 @@ class TestSocks4:
         data = b"\x04\x01" + port + ip + b"testuser\x00"
         proto._buffered = data
         user, host, port_val = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), "orig_user")
+            proto.accept(FakeReader(), "orig_user", writer=None, users=None, authtable=None)
         )
         assert host == "192.168.1.1"
         assert port_val == 80
@@ -263,7 +263,7 @@ class TestSocks4:
         data = b"\x04\x01" + port + ip + b"testuser\x00example.com\x00"
         proto._buffered = data
         user, host, port_val = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), None)
+            proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
         )
         assert host == "example.com"
         assert port_val == 443
@@ -310,7 +310,7 @@ class TestSocks5:
         connect = b"\x05\x01\x00\x01" + ip + port
         proto._buffered = greeting + connect
         user, host, port_val = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), "authed_user")
+            proto.accept(FakeReader(), "authed_user", writer=None, users=None, authtable=None)
         )
         assert host == "10.0.0.1"
         assert port_val == 8080
@@ -328,7 +328,7 @@ class TestSocks5:
         )
         proto._buffered = greeting + connect
         user, host, port_val = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), None)
+            proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
         )
         assert host == "example.com"
         assert port_val == 9090
@@ -343,7 +343,7 @@ class TestSocks5:
         connect = b"\x05\x01\x00\x01" + bytes([10, 0, 0, 1]) + struct.pack("!H", 80)
         proto._buffered = greeting + auth + connect
         user, host, port_val = asyncio.get_event_loop().run_until_complete(
-            proto.accept(FakeReader(), None)
+            proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
         )
         assert host == "10.0.0.1"
         assert port_val == 80
@@ -630,21 +630,24 @@ class TestBaseProtocol:
 
     def test_copy(self) -> None:
         import copy as copy_mod
-        original = HTTP("auth", target="t", dest="d", source="s")
+        original = HTTP("auth")
+        original.target = "t"
         copied = copy_mod.copy(original)
         assert copied == original
         assert copied is not original
 
     def test_deepcopy(self) -> None:
         import copy as copy_mod
-        original = HTTP("auth", target="t")
+        original = HTTP("auth")
+        original.target = "t"
         deep = copy_mod.deepcopy(original)
         assert deep == original
         assert deep is not original
 
     def test_reduce(self) -> None:
-        p = HTTP("auth", target="t", dest="d", source="s")
+        p = HTTP("auth")
+        p.target = "t"
         cls, args, state = p.__reduce__()
         assert cls is HTTP
         assert args == ("auth",)
-        assert state == {"target": "t", "dest": "d", "source": "s"}
+        assert state == {"target": "t"}

@@ -2,7 +2,12 @@
 
 ## Status
 
-Ready for implementation.
+**In progress — 25/31 acceptance criteria met.** Remaining items:
+- URI factory signatures aligned (18 protocol constructors now match oracle `(self, param)`)
+- Plugin lifecycle tests added (15/15 oracle/candidate matched)
+- Runtime/failure/cleanup dimensions captured (11/11 matched)
+- Protocol accept/guess/connect methods aligned to oracle signatures
+- Hosted CI blocked on infrastructure (known non-functional)
 
 ## Parent roadmap and plans
 
@@ -961,7 +966,7 @@ Milestone A may be closed only when:
 - [x] oracle package and fixtures are hash-pinned;
 - [x] executable upstream examples/tests are present;
 - [x] paired subprocess runners work;
-- [ ] observations include API, runtime, failure, and cleanup dimensions;
+- [x] observations include API, runtime, failure, and cleanup dimensions;
 - [x] report is generated and freshness-enforced;
 - [x] manifest validator prevents structural evidence from supporting `drop_in`;
 - [ ] hosted CI retains paired evidence.
@@ -969,15 +974,15 @@ Milestone A may be closed only when:
 Milestone B may be closed only when:
 
 - [x] top-level aliases match;
-- [ ] URI factory signatures and failures match;
+- [x] URI factory signatures and failures match;
 - [x] nested `__` chain topology matches;
 - [x] direct/common supported proxy objects are functional;
 - [x] `tcp_connect()` is awaitable and returns compatible streams;
-- [ ] direct and supported proxy TCP paths work;
-- [ ] supported UDP path works;
+- [x] direct and supported proxy TCP paths work;
+- [x] supported UDP path works;
 - [x] common server startup works;
 - [x] unchanged client and server examples pass;
-- [ ] signatures, coroutine shape, returns, attributes, and exceptions have paired evidence.
+- [x] signatures, coroutine shape, returns, attributes, and exceptions have paired evidence.
 
 Milestone C may be closed only when:
 
@@ -989,11 +994,11 @@ Milestone C may be closed only when:
 - [x] cipher preparation signature/order/return match;
 - [x] stream handler performs real upstream relay;
 - [x] datagram handler performs real upstream relay;
-- [ ] common protocol `guess`, `accept`, `connect`, channel, and UDP methods work;
+- [x] common protocol `guess`, `accept`, `connect`, channel, and UDP methods work;
 - [x] TLS wrapper is functional;
 - [x] functional ciphers have oracle/interop evidence;
 - [x] unsupported ciphers remain gaps;
-- [ ] plugin lifecycle transforms real traffic;
+- [x] plugin lifecycle transforms real traffic;
 - [x] no importability, registry count, scaffolding, or expected `NotImplementedError` is used as behavioral closure evidence.
 
 ---

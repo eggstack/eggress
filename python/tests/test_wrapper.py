@@ -39,7 +39,10 @@ class _DummyProtocol(BaseProtocol):
         dest: str | None = "dest-host",
         source: str | None = "source-host",
     ) -> None:
-        super().__init__(param, target=target, dest=dest, source=source)
+        super().__init__(param)
+        self.target = target
+        self.dest = dest
+        self.source = source
 
 
 # ---------------------------------------------------------------------------
