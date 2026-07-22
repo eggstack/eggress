@@ -1105,11 +1105,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Base class for all ciphers. encrypt/decrypt in the base raises UnsupportedFeatureError; subclasses provide functional implementations."
+evidence_level = "paired_oracle"
+implementation_state = "structural"
 
 [[record]]
 id = "python.pproxy.cipher.AEADCipher"
@@ -1126,11 +1126,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.BaseCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional AEAD base class with encrypt, decrypt, encrypt_and_digest, decrypt_and_verify via cryptography backend."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.AES_256_GCM_Cipher"
@@ -1147,11 +1147,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.AEADCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional AES-256-GCM AEAD cipher with encrypt/decrypt round-trip and NIST KAT validation."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.AES_192_GCM_Cipher"
@@ -1168,11 +1168,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.AEADCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional AES-192-GCM AEAD cipher with encrypt/decrypt round-trip validation."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.AES_128_GCM_Cipher"
@@ -1189,11 +1189,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.AEADCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional AES-128-GCM AEAD cipher with encrypt/decrypt round-trip validation."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher"
@@ -1210,11 +1210,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.AEADCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional ChaCha20-Poly1305 AEAD cipher with encrypt/decrypt round-trip and RFC 8439 validation."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.PacketCipher"
@@ -1231,11 +1231,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.BaseCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional UDP packet cipher wrapping AEAD ciphers with nonce/tag framing."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.AES_256_CFB_Cipher"
@@ -1252,11 +1252,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.BaseCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional AES-256-CFB stream cipher with encrypt/decrypt round-trip via cryptography backend."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.ChaCha20_IETF_Cipher"
@@ -1273,11 +1273,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.BaseCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional ChaCha20-IETF stream cipher with 12-byte nonce via cryptography backend."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.ChaCha20_Cipher"
@@ -1294,11 +1294,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher.BaseCipher"]
-test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_cipher_class_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional ChaCha20 stream cipher with 8-byte IV via cryptography backend."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.MAP"
@@ -1315,11 +1315,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher"]
-test_refs = ["test_pproxy_api_contract.py::test_constant_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_constant_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional cipher registry mapping names to classes. Includes -py aliases for pproxy 2.7.9 compat."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.cipher.get_cipher"
@@ -1336,13 +1336,11 @@ milestone = "B"
 platforms = ["linux", "macos", "windows"]
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 depends_on = ["python.pproxy.cipher"]
-test_refs = ["test_pproxy_api_contract.py::test_function_exists"]
+test_refs = ["test_pproxy_api_contract.py::test_function_exists", "test_cipher_truth.py"]
 evidence_refs = ["pproxy_api_contract.json"]
-notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
-
-# -- Server module symbols --
-evidence_level = "none"
-implementation_state = "absent"
+notes = "Functional cipher factory: parses name:password[!ota], returns (error, ApplyCipher). Validates all error paths."
+evidence_level = "paired_oracle"
+implementation_state = "functional"
 
 [[record]]
 id = "python.pproxy.server.AuthTable"
