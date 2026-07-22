@@ -4,8 +4,10 @@
 
 **REOPENED — corrective pass in progress.** The corrective pass
 (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Manifest integrity and report
-generation infrastructure are in place, but paired oracle/candidate behavioral evidence
-has not been generated. 81 records still need behavioral validation. This milestone
+generation infrastructure are in place. Paired oracle/candidate behavioral evidence
+has been generated for stream adapters (17/17), server internals (27/27),
+handler relay (5/5), and protocol/cipher probes. 18 protocol constructor signature
+mismatches remain as documented gaps. This milestone
 cannot be closed until the acceptance matrix in the corrective pass plan is fully
 satisfied.
 

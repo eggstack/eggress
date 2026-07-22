@@ -987,8 +987,8 @@ Milestone C may be closed only when:
 - [x] rule compilation returns an oracle-compatible callable;
 - [x] scheduler algorithms and mutation match;
 - [x] cipher preparation signature/order/return match;
-- [ ] stream handler performs real upstream relay;
-- [ ] datagram handler performs real upstream relay;
+- [x] stream handler performs real upstream relay;
+- [x] datagram handler performs real upstream relay;
 - [ ] common protocol `guess`, `accept`, `connect`, channel, and UDP methods work;
 - [x] TLS wrapper is functional;
 - [x] functional ciphers have oracle/interop evidence;

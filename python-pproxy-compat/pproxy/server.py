@@ -13,6 +13,8 @@ import time
 import urllib
 import urllib.parse
 
+from pproxy import proto
+
 try:
     from eggress import start_pproxy
 except ImportError:
