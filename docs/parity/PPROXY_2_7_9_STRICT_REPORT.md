@@ -10,9 +10,9 @@
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
 **Oracle ref:** compat/pproxy-2.7.9/provenance.toml
-**Commit SHA:** `17f1e9c32fcc92756022d70e64a8b65108cb7df6`
-**Manifest hash:** `425c9d7657216a4bc83d9d7b4ea660f399afa8bd9e7dac361832e47fb6357a6e`
-**Generated:** 2026-07-21T00:00:00Z
+**Commit SHA:** `33935137760560c9d3b5c84f7b2512f20188219a`
+**Manifest hash:** `da80cd10bcabc5a4a11a31a4e86fec59bd6fc601ea1f076e214faf831fb2604d`
+**Generated:** 2026-07-22T00:00:00Z
 
 ## Summary
 
@@ -147,18 +147,18 @@ true `drop_in` status can be claimed under the corrective pass.
 | python.pproxy.proto.HTTP_LINE | constant_value | Internal pproxy implementation detail; not part of the pu... |
 | python.pproxy.proto.SO_ORIGINAL_DST | enum_membership | Internal pproxy implementation detail; not part of the pu... |
 | python.pproxy.proto.SOL_IPV6 | enum_membership | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.BaseCipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.AEADCipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.AES_256_GCM_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.AES_192_GCM_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.AES_128_GCM_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.PacketCipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.AES_256_CFB_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.ChaCha20_IETF_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.ChaCha20_Cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.MAP | constant_value | Internal pproxy implementation detail; not part of the pu... |
-| python.pproxy.cipher.get_cipher | module_existence | Internal pproxy implementation detail; not part of the pu... |
+| python.pproxy.cipher.BaseCipher | module_existence | Base class for all ciphers. encrypt/decrypt in the base r... |
+| python.pproxy.cipher.AEADCipher | module_existence | Functional AEAD base class with encrypt, decrypt, encrypt... |
+| python.pproxy.cipher.AES_256_GCM_Cipher | module_existence | Functional AES-256-GCM AEAD cipher with encrypt/decrypt r... |
+| python.pproxy.cipher.AES_192_GCM_Cipher | module_existence | Functional AES-192-GCM AEAD cipher with encrypt/decrypt r... |
+| python.pproxy.cipher.AES_128_GCM_Cipher | module_existence | Functional AES-128-GCM AEAD cipher with encrypt/decrypt r... |
+| python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher | module_existence | Functional ChaCha20-Poly1305 AEAD cipher with encrypt/dec... |
+| python.pproxy.cipher.PacketCipher | module_existence | Functional UDP packet cipher wrapping AEAD ciphers with n... |
+| python.pproxy.cipher.AES_256_CFB_Cipher | module_existence | Functional AES-256-CFB stream cipher with encrypt/decrypt... |
+| python.pproxy.cipher.ChaCha20_IETF_Cipher | module_existence | Functional ChaCha20-IETF stream cipher with 12-byte nonce... |
+| python.pproxy.cipher.ChaCha20_Cipher | module_existence | Functional ChaCha20 stream cipher with 8-byte IV via cryp... |
+| python.pproxy.cipher.MAP | constant_value | Functional cipher registry mapping names to classes. Incl... |
+| python.pproxy.cipher.get_cipher | module_existence | Functional cipher factory: parses name:password[!ota], re... |
 | python.pproxy.server.AuthTable | module_existence | Milestone B: properly implemented with matching signature... |
 | python.pproxy.server.ProxySimple | module_existence | Milestone B: properly implemented with matching signature... |
 | python.pproxy.server.ProxyBackward | module_existence | Milestone B: properly implemented with matching signature... |
@@ -378,18 +378,18 @@ true `drop_in` status can be claimed under the corrective pass.
 | python.pproxy.proto.HTTP_LINE | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
 | python.pproxy.proto.SO_ORIGINAL_DST | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
 | python.pproxy.proto.SOL_IPV6 | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.BaseCipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.AEADCipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.AES_256_GCM_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.AES_192_GCM_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.AES_128_GCM_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.PacketCipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.AES_256_CFB_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.ChaCha20_IETF_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.ChaCha20_Cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.MAP | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
-| python.pproxy.cipher.get_cipher | not_applicable | Internal pproxy implementation detail; not part of the public source-compatib... |
+| python.pproxy.cipher.BaseCipher | not_applicable | Base class for all ciphers. encrypt/decrypt in the base raises UnsupportedFea... |
+| python.pproxy.cipher.AEADCipher | not_applicable | Functional AEAD base class with encrypt, decrypt, encrypt_and_digest, decrypt... |
+| python.pproxy.cipher.AES_256_GCM_Cipher | not_applicable | Functional AES-256-GCM AEAD cipher with encrypt/decrypt round-trip and NIST K... |
+| python.pproxy.cipher.AES_192_GCM_Cipher | not_applicable | Functional AES-192-GCM AEAD cipher with encrypt/decrypt round-trip validation. |
+| python.pproxy.cipher.AES_128_GCM_Cipher | not_applicable | Functional AES-128-GCM AEAD cipher with encrypt/decrypt round-trip validation. |
+| python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher | not_applicable | Functional ChaCha20-Poly1305 AEAD cipher with encrypt/decrypt round-trip and ... |
+| python.pproxy.cipher.PacketCipher | not_applicable | Functional UDP packet cipher wrapping AEAD ciphers with nonce/tag framing. |
+| python.pproxy.cipher.AES_256_CFB_Cipher | not_applicable | Functional AES-256-CFB stream cipher with encrypt/decrypt round-trip via cryp... |
+| python.pproxy.cipher.ChaCha20_IETF_Cipher | not_applicable | Functional ChaCha20-IETF stream cipher with 12-byte nonce via cryptography ba... |
+| python.pproxy.cipher.ChaCha20_Cipher | not_applicable | Functional ChaCha20 stream cipher with 8-byte IV via cryptography backend. |
+| python.pproxy.cipher.MAP | not_applicable | Functional cipher registry mapping names to classes. Includes -py aliases for... |
+| python.pproxy.cipher.get_cipher | not_applicable | Functional cipher factory: parses name:password[!ota], returns (error, ApplyC... |
 | python.pproxy.server.AuthTable | drop_in | Milestone B: properly implemented with matching signature and behavior. |
 | python.pproxy.server.ProxySimple | drop_in | Milestone B: properly implemented with matching signature and behavior. |
 | python.pproxy.server.ProxyBackward | drop_in | Milestone B: properly implemented with matching signature and behavior. |
