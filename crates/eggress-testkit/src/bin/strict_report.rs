@@ -842,6 +842,13 @@ fn normalize_timestamps(content: &str) -> String {
             } else {
                 result.push_str("**Generated:** <normalized>\n");
             }
+        } else if line.starts_with("**Commit SHA:**") || line.starts_with("  \"commit_sha\":") {
+            // Replace with normalized placeholder — SHA differs between commits
+            if line.contains('"') {
+                result.push_str("  \"commit_sha\": \"<normalized>\",\n");
+            } else {
+                result.push_str("**Commit SHA:** `<normalized>`\n");
+            }
         } else {
             result.push_str(line);
             result.push('\n');
