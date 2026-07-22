@@ -2,11 +2,11 @@
 
 ## Status
 
-**REOPENED — corrective pass in progress.** The corrective pass
-(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Factory objects, asyncio adapter,
-and proxy object implementations exist but have not been validated against the oracle.
-`start_server()` is not implemented. This milestone cannot be closed until the
-acceptance matrix in the corrective pass plan is fully satisfied.
+**REOPENED — corrective pass nearing completion (30/31 criteria met).** The corrective pass
+(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) has validated factory objects, asyncio adapter,
+proxy objects, protocol signatures, TCP/UDP paths, and paired evidence against the oracle.
+Protocol accept/guess/connect methods aligned to oracle signatures. Only hosted CI evidence
+retention remains unchecked (blocked on non-functional CI infrastructure).
 
 ## Parent roadmap
 

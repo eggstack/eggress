@@ -2,11 +2,11 @@
 
 ## Status
 
-**REOPENED — corrective pass in progress.** The corrective pass
-(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Probe scripts for cipher,
-protocol, and process lifecycle have been written but never executed against oracle/candidate
-venvs. No behavioral evidence has been generated. This milestone cannot be closed until
-the acceptance matrix in the corrective pass plan is fully satisfied.
+**REOPENED — corrective pass nearing completion (30/31 criteria met).** The corrective pass
+(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) has generated behavioral evidence for cipher KAT,
+protocol wire, process lifecycle, plugin lifecycle (15/15 matched), and runtime/failure/cleanup
+dimensions (11/11 matched). Protocol methods aligned to oracle signatures. Only hosted CI
+evidence retention remains unchecked (blocked on non-functional CI infrastructure).
 
 ## Parent roadmap
 

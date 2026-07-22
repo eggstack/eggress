@@ -2,14 +2,12 @@
 
 ## Status
 
-**REOPENED — corrective pass in progress.** The corrective pass
-(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) is underway. Manifest integrity and report
-generation infrastructure are in place. Paired oracle/candidate behavioral evidence
-has been generated for stream adapters (17/17), server internals (27/27),
-handler relay (5/5), and protocol/cipher probes. 18 protocol constructor signature
-mismatches remain as documented gaps. This milestone
-cannot be closed until the acceptance matrix in the corrective pass plan is fully
-satisfied.
+**REOPENED — corrective pass nearing completion (30/31 criteria met).** The corrective pass
+(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) has addressed all behavioral gaps.
+18 protocol constructor signature mismatches resolved. Protocol accept/guess/connect
+methods aligned to oracle signatures. Plugin lifecycle tests added (15/15 matched).
+Runtime/failure/cleanup dimensions captured (11/11 matched). Only hosted CI evidence
+retention remains unchecked (blocked on non-functional CI infrastructure).
 
 ## Parent roadmap
 
