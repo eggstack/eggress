@@ -5201,7 +5201,8 @@ async fn differential_standalone_udp_domain_target() {
     echo_jh.abort();
 
     // pproxy's `-ul` uses its own UDP relay protocol, not SOCKS5 framing.
-    if pproxy_response.as_ref().is_some_and(|r| r.is_empty()) {
+    // pproxy may return None (no response) or Some(empty) for domain-targeted SOCKS5-framed UDP.
+    if pproxy_response.as_ref().is_none_or(|r| r.is_empty()) {
         eprintln!("pproxy did not respond to domain-targeted SOCKS5-framed UDP (uses its own UDP relay protocol) — acceptable behavioral difference");
         assert!(
             eggress_response.is_some(),

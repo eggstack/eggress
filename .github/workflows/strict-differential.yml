@@ -49,6 +49,9 @@ jobs:
           python -m venv .venv-candidate
           .venv-candidate/bin/pip install --upgrade pip
       - name: Build and install candidate
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv-candidate
+          CARGO_TERM_COLOR: always
         run: |
           .venv-candidate/bin/pip install maturin
           .venv-candidate/bin/maturin develop --release -m crates/eggress-python/Cargo.toml

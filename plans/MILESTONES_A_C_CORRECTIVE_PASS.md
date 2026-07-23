@@ -2,8 +2,15 @@
 
 ## Status
 
-**In progress — 30/31 acceptance criteria met.** Remaining items:
+**Local verification complete — 30/31 acceptance criteria met.** Remaining items:
 - Hosted CI blocked on infrastructure (known non-functional)
+
+The corrective pass is complete against all local verification gates. The single
+unmet criterion (hosted CI evidence retention) is a known infrastructure issue
+and is recorded in `docs/CI_STATUS.md` as a non-code blocker. See
+`docs/PHASE_54_MILESTONES_A_C_CORRECTIVE_PASS_COMPLETION.md` for the full closure
+record including local verification commands, observed test counts, and known
+residual gaps.
 
 ## Parent roadmap and plans
 
