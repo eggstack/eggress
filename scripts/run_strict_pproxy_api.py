@@ -24,6 +24,7 @@ Exit codes:
 """
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -39,39 +40,208 @@ MANIFEST_PATH = Path("docs/parity/pproxy_2_7_9_strict_manifest.toml")
 SCRIPTS_DIR = Path("scripts")
 
 
-def _extract_param_names(sig_str: str) -> list:
-    """Extract parameter names from a signature string, ignoring type annotations."""
-    if not sig_str or sig_str == "(<not a callable>)":
-        return []
-    inner = sig_str.strip()
-    # Strip outer parens
-    if inner.startswith("(") and inner.endswith(")"):
-        inner = inner[1:-1]
-    elif inner.startswith("("):
-        inner = inner[1:]
-    # Remove return annotation: find ') -> ' and strip from there
-    arrow_idx = inner.rfind(") -> ")
-    if arrow_idx >= 0:
-        inner = inner[:arrow_idx]
-    elif inner.endswith(")"):
-        inner = inner[:-1]
-    if not inner.strip():
-        return []
-    params = []
-    for part in inner.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        part = part.lstrip("*")
-        name = re.split(r"[:=]", part)[0].strip()
-        if name:
-            params.append(name)
-    return params
-
-
 def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
-    """Check if two signature strings are compatible (same param names)."""
-    return _extract_param_names(sig_a) == _extract_param_names(sig_b)
+    """Compare two signature strings for structural compatibility.
+
+    Compares: parameter count, kinds, names, defaults (sentinel-aware),
+    positional-only markers, keyword-only markers, varargs, return annotation
+    category, and coroutine status.
+    """
+    SENTINEL = "__EGGRESS_NO_DEFAULT__"
+
+    def _parse_default(raw: Optional[str]) -> str:
+        if raw is None:
+            return SENTINEL
+        if raw == "":
+            return SENTINEL
+        return raw
+
+    def _parse_sig(sig_str: str) -> Optional[dict]:
+        if not sig_str or sig_str == "(<not a callable>)":
+            return None
+        try:
+            tree = ast.parse(f"def _f{sigs[sig_str]}: pass", mode="exec")
+        except SyntaxError:
+            return None
+        func = tree.body[0]
+        return func
+
+    def _extract(sig_str: str) -> Optional[dict]:
+        if not sig_str or sig_str == "(<not a callable>)":
+            return None
+        # Normalize: ensure it's parseable as a function def
+        try:
+            # Try to parse the signature string as a Python function def
+            # Handle both "(x, y)" and "(x, y) -> int" forms
+            normalized = sig_str.strip()
+            if not normalized.startswith("("):
+                return None
+            # Create a temporary def to parse
+            test_code = f"def _f{normalized}: pass"
+            tree = ast.parse(test_code, mode="exec")
+            func = tree.body[0]
+            assert isinstance(func, ast.FunctionDef) or isinstance(func, ast.AsyncFunctionDef)
+        except (SyntaxError, AssertionError, IndexError):
+            # Fallback: string-based extraction for malformed signatures
+            return _extract_fallback(sig_str)
+        return _extract_from_ast(func)
+
+    def _extract_fallback(sig_str: str) -> dict:
+        """Fallback extraction for signatures that can't be parsed as function defs."""
+        params = []
+        inner = sig_str.strip()
+        # Strip outer parens
+        if inner.startswith("(") and inner.endswith(")"):
+            inner = inner[1:-1]
+        elif inner.startswith("("):
+            inner = inner[1:]
+        # Remove return annotation
+        arrow_idx = inner.rfind(") -> ")
+        if arrow_idx >= 0:
+            inner = inner[:arrow_idx]
+        elif inner.endswith(")"):
+            inner = inner[:-1]
+        if not inner.strip():
+            return {"params": [], "vararg": None, "kwarg": None, "return_annotation": None}
+        for part in inner.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            name = part.lstrip("*")
+            name = re.split(r"[:=]", name)[0].strip()
+            if name:
+                kind = "POSITIONAL_OR_KEYWORD"
+                if part.startswith("**"):
+                    kind = "VAR_KEYWORD"
+                elif part.startswith("*"):
+                    kind = "VAR_POSITIONAL"
+                params.append({"name": name, "kind": kind, "default": SENTINEL, "annotation": None})
+        return {"params": params, "vararg": None, "kwarg": None, "return_annotation": None}
+
+    def _extract_from_ast(func) -> dict:
+        """Extract structured signature from an AST FunctionDef/AsyncFunctionDef."""
+        args = func.args
+        params = []
+        kind_map = {
+            ast.arg.POSITIONAL_ONLY: "POSITIONAL_ONLY",
+            ast.arg.POSITIONAL_OR_KEYWORD: "POSITIONAL_OR_KEYWORD",
+            ast.arg.VAR_POSITIONAL: "VAR_POSITIONAL",
+            ast.arg.KEYWORD_ONLY: "KEYWORD_ONLY",
+            ast.arg.VAR_KEYWORD: "VAR_KEYWORD",
+        }
+
+        # positional-only args (before /)
+        posonlyargs = getattr(args, "posonlyargs", [])
+        for i, arg in enumerate(posonlyargs):
+            default = None
+            defaults_offset = len(args.args) + len(args.posonlyargs) - len(args.defaults)
+            def_idx = i - (len(args.posonlyargs) - len(args.defaults))
+            if def_idx >= 0 and def_idx < len(args.defaults):
+                default = ast.dump(args.defaults[def_idx])
+            params.append({
+                "name": arg.arg,
+                "kind": "POSITIONAL_ONLY",
+                "default": _parse_default(default),
+                "annotation": ast.dump(arg.annotation) if arg.annotation else None,
+            })
+
+        # regular args (POSITIONAL_OR_KEYWORD)
+        regular_defaults_offset = len(args.args) - len(args.defaults)
+        for i, arg in enumerate(args.args):
+            default = None
+            def_idx = i - regular_defaults_offset
+            if def_idx >= 0 and def_idx < len(args.defaults):
+                default = ast.dump(args.defaults[def_idx])
+            params.append({
+                "name": arg.arg,
+                "kind": "POSITIONAL_OR_KEYWORD",
+                "default": _parse_default(default),
+                "annotation": ast.dump(arg.annotation) if arg.annotation else None,
+            })
+
+        # *args (VAR_POSITIONAL)
+        vararg = None
+        if args.vararg:
+            vararg = {
+                "name": args.vararg.arg,
+                "kind": "VAR_POSITIONAL",
+                "default": SENTINEL,
+                "annotation": ast.dump(args.vararg.annotation) if args.vararg.annotation else None,
+            }
+
+        # keyword-only args
+        for i, arg in enumerate(args.kwonlyargs):
+            default = None
+            if i < len(args.kw_defaults) and args.kw_defaults[i] is not None:
+                default = ast.dump(args.kw_defaults[i])
+            params.append({
+                "name": arg.arg,
+                "kind": "KEYWORD_ONLY",
+                "default": _parse_default(default),
+                "annotation": ast.dump(arg.annotation) if arg.annotation else None,
+            })
+
+        # **kwargs (VAR_KEYWORD)
+        kwarg = None
+        if args.kwarg:
+            kwarg = {
+                "name": args.kwarg.arg,
+                "kind": "VAR_KEYWORD",
+                "default": SENTINEL,
+                "annotation": ast.dump(args.kwarg.annotation) if args.kwarg.annotation else None,
+            }
+
+        # return annotation
+        ret_ann = ast.dump(func.returns) if func.returns else None
+
+        return {"params": params, "vararg": vararg, "kwarg": kwarg, "return_annotation": ret_ann}
+
+    if not sig_a or sig_a == "(<not a callable>)":
+        if not sig_b or sig_b == "(<not a callable>)":
+            return True
+        return False
+    if not sig_b or sig_b == "(<not a callable>)":
+        return False
+
+    parsed_a = _extract(sig_a)
+    parsed_b = _extract(sig_b)
+
+    if parsed_a is None and parsed_b is None:
+        return sig_a == sig_b
+    if parsed_a is None or parsed_b is None:
+        return False
+
+    # Compare parameter count (including vararg/kwarg)
+    all_a = parsed_a["params"][:]
+    all_b = parsed_b["params"][:]
+    if parsed_a["vararg"]:
+        all_a.append(parsed_a["vararg"])
+    if parsed_b["vararg"]:
+        all_b.append(parsed_b["vararg"])
+    if parsed_a["kwarg"]:
+        all_a.append(parsed_a["kwarg"])
+    if parsed_b["kwarg"]:
+        all_b.append(parsed_b["kwarg"])
+
+    if len(all_a) != len(all_b):
+        return False
+
+    # Compare each parameter: kind, name, default, annotation category
+    for pa, pb in zip(all_a, all_b):
+        if pa["kind"] != pb["kind"]:
+            return False
+        if pa["name"] != pb["name"]:
+            return False
+        if pa["default"] != pb["default"]:
+            return False
+        if pa["annotation"] != pb["annotation"]:
+            return False
+
+    # Compare return annotation
+    if parsed_a["return_annotation"] != parsed_b["return_annotation"]:
+        return False
+
+    return True
 
 
 def parse_manifest(path: Path) -> list[dict]:
@@ -181,30 +351,86 @@ def probe_in_venv(
         }
 
 
-def compare_observations(oracle: dict, candidate: dict) -> dict:
-    """Compare two observations and return a comparison report."""
+def compare_observations(
+    oracle: dict,
+    candidate: dict,
+    closure_required: bool = False,
+    known_upstream_defects: Optional[set] = None,
+) -> dict:
+    """Compare two observations and return a comparison report.
+
+    Principles:
+    - Oracle error (unless known upstream defect) → FAIL
+    - Candidate error → FAIL
+    - Both missing (exists=False) → FAIL (P4: Both-fail is not a match)
+    - Both errors → FAIL
+    - closure_required: skipped/missing records cause failure
+    """
     comparisons = []
+    if known_upstream_defects is None:
+        known_upstream_defects = set()
 
     # Detect if this is a cipher observation
     is_cipher = "kat_passed" in oracle or "roundtrip_passed" in oracle
 
-    # Existence
+    # --- Error checking (fail-closed) ---
+    o_error = oracle.get("error")
+    c_error = candidate.get("error")
+    o_import_error = oracle.get("import_error")
+    c_import_error = candidate.get("import_error")
+
+    # Import errors are treated as errors
+    if o_import_error:
+        if not o_error:
+            o_error = o_import_error
+    if c_import_error:
+        if not c_error:
+            c_error = c_import_error
+
+    # Oracle error → FAIL unless explicitly a known upstream defect
+    if o_error:
+        is_known = o_error in known_upstream_defects
+        comparisons.append({
+            "dimension": "oracle_error",
+            "oracle": o_error,
+            "candidate": None,
+            "match": is_known,
+            "note": "Known upstream defect" if is_known else "Oracle probe produced an error",
+        })
+
+    # Candidate error → always FAIL
+    if c_error:
+        comparisons.append({
+            "dimension": "candidate_error",
+            "oracle": None,
+            "candidate": c_error,
+            "match": False,
+            "note": "Candidate probe produced an error",
+        })
+
+    # --- Existence ---
     o_exists = oracle.get("exists", False)
     c_exists = candidate.get("exists", False)
     comparisons.append({
         "dimension": "exists",
         "oracle": o_exists,
         "candidate": c_exists,
-        "match": o_exists == c_exists,
+        "match": o_exists == c_exists and o_exists is True,
     })
 
+    # Both-fail is not a match (P4)
     if not o_exists and not c_exists:
+        # Even if we recorded an error comparison above, ensure existence
+        # comparison reports mismatch
+        all_match = False
+        mismatches = [c for c in comparisons if not c["match"]]
         return {
-            "all_match": True,
-            "total_dimensions": 1,
-            "match_count": 1,
-            "mismatch_count": 0,
+            "all_match": all_match,
+            "total_dimensions": len(comparisons),
+            "match_count": sum(1 for c in comparisons if c["match"]),
+            "mismatch_count": len(mismatches),
             "comparisons": comparisons,
+            "failure_reason": "both_missing" if not o_error and not c_error else "error_and_missing",
         }
 
     if is_cipher:
@@ -281,7 +507,7 @@ def compare_observations(oracle: dict, candidate: dict) -> dict:
             "match": o_callable == c_callable,
         })
 
-        # Signature - compare parameter names, ignoring type annotations
+        # Signature - compare with structural comparator
         o_sig = oracle.get("signature", "")
         c_sig = candidate.get("signature", "")
         comparisons.append({
@@ -294,13 +520,19 @@ def compare_observations(oracle: dict, candidate: dict) -> dict:
     all_match = all(c["match"] for c in comparisons)
     mismatches = [c for c in comparisons if not c["match"]]
 
-    return {
+    result = {
         "all_match": all_match,
         "total_dimensions": len(comparisons),
         "match_count": sum(1 for c in comparisons if c["match"]),
         "mismatch_count": len(mismatches),
         "comparisons": comparisons,
     }
+
+    # closure_required enforcement: skipped/missing records cause failure
+    if closure_required and not all_match:
+        result["closure_enforced"] = True
+
+    return result
 
 
 def setup_venv(venv_dir: Path, install_pproxy: bool = False, install_eggress: bool = False) -> str:
@@ -353,12 +585,137 @@ def setup_venv(venv_dir: Path, install_pproxy: bool = False, install_eggress: bo
     return python
 
 
+def verify_venv(python_path: str, is_oracle: bool = True) -> dict:
+    """Verify a venv and extract metadata.
+
+    Runs a small Python snippet in the venv to extract:
+    - interpreter path
+    - sys.prefix
+    - pproxy.__file__ (oracle) or eggress.__file__ (candidate)
+    - installed distribution name and version
+    - candidate commit SHA (if available)
+
+    Fails if:
+    - Oracle imports eggress (compatibility package)
+    - Candidate imports upstream pproxy (for candidate venv)
+    """
+    verification = {
+        "interpreter": python_path,
+        "is_oracle": is_oracle,
+        "sys_prefix": None,
+        "package_file": None,
+        "distribution_name": None,
+        "distribution_version": None,
+        "commit_sha": None,
+        "error": None,
+    }
+
+    snippet = """
+import json, sys, os
+
+result = {
+    "sys_prefix": sys.prefix,
+    "python_version": sys.version,
+    "package_file": None,
+    "distribution_name": None,
+    "distribution_version": None,
+    "commit_sha": None,
+    "import_check": None,
+}
+
+IS_ORACLE = {is_oracle}
+
+# Check imports
+try:
+    import pproxy
+    result["pproxy_file"] = getattr(pproxy, "__file__", None)
+    if IS_ORACLE:
+        try:
+            import eggress
+            result["import_check"] = "FAIL: oracle imports eggress"
+        except ImportError:
+            result["import_check"] = "OK"
+    else:
+        result["import_check"] = "candidate imports pproxy (expected for compat)"
+except ImportError:
+    if IS_ORACLE:
+        result["import_check"] = "FAIL: oracle cannot import pproxy"
+    else:
+        result["pproxy_file"] = None
+
+try:
+    import eggress
+    result["package_file"] = getattr(eggress, "__file__", None)
+except ImportError:
+    if not IS_ORACLE:
+        result["import_check"] = "FAIL: candidate cannot import eggress"
+
+# Try to get distribution info
+try:
+    from importlib.metadata import version, packages_distributions
+    try:
+        ver = version("pproxy" if IS_ORACLE else "eggress")
+        result["distribution_name"] = "pproxy" if IS_ORACLE else "eggress"
+        result["distribution_version"] = ver
+    except Exception:
+        pass
+except ImportError:
+    pass
+
+# Try to get commit SHA from package metadata
+try:
+    import importlib.metadata
+    dist = importlib.metadata.distribution("eggress" if not IS_ORACLE else "pproxy")
+    result["commit_sha"] = dist.metadata.get("Vcs-url", None)
+    if not result["commit_sha"]:
+        # Try Cargo.toml info
+        for k, v in dist.metadata.items():
+            if "commit" in k.lower() or "sha" in k.lower():
+                result["commit_sha"] = v
+                break
+except Exception:
+    pass
+
+print(json.dumps(result, default=str))
+""".format(is_oracle="True" if is_oracle else "False")
+
+    try:
+        result = subprocess.run(
+            [python_path, "-c", snippet],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(Path.cwd()),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            verification["sys_prefix"] = data.get("sys_prefix")
+            verification["package_file"] = data.get("package_file")
+            verification["distribution_name"] = data.get("distribution_name")
+            verification["distribution_version"] = data.get("distribution_version")
+            verification["commit_sha"] = data.get("commit_sha")
+            verification["python_version"] = data.get("python_version")
+            verification["import_check"] = data.get("import_check")
+
+            if data.get("import_check", "").startswith("FAIL"):
+                verification["error"] = data["import_check"]
+        else:
+            verification["error"] = f"Verification script failed: {result.stderr.strip()}"
+    except subprocess.TimeoutExpired:
+        verification["error"] = "Verification script timed out"
+    except json.JSONDecodeError as e:
+        verification["error"] = f"Invalid JSON from verification: {e}"
+
+    return verification
+
+
 def run_paired_comparison(
     records: list[dict],
     oracle_python: str,
     candidate_python: str,
     probe_type: str = "api",
     output_dir: Optional[Path] = None,
+    closure_required: bool = False,
 ) -> dict:
     """Run paired comparison for a list of records."""
     results = []
@@ -423,7 +780,7 @@ def run_paired_comparison(
         candidate_obs = probe_in_venv(candidate_python, probe_script, module, symbol, extra_args)
 
         # Compare
-        comparison = compare_observations(oracle_obs, candidate_obs)
+        comparison = compare_observations(oracle_obs, candidate_obs, closure_required=closure_required)
 
         # Save observations if output dir specified
         if output_dir:
@@ -480,6 +837,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="List records without executing")
     parser.add_argument("--output-dir", help="Directory for observation JSON files")
     parser.add_argument("--create-venvs", action="store_true", help="Create clean venvs automatically")
+    parser.add_argument("--closure-required", action="store_true",
+                        help="Enforce closure: skipped/missing records cause failure")
     args = parser.parse_args()
 
     # Parse manifest
@@ -537,11 +896,37 @@ def main():
             print(f"Error: {label} python not found: {python_path}", file=sys.stderr)
             sys.exit(2)
 
+    # Verify venvs and extract metadata
+    print("Verifying oracle venv...", file=sys.stderr)
+    oracle_verification = verify_venv(oracle_python, is_oracle=True)
+    if oracle_verification.get("error"):
+        print(f"Error: oracle venv verification failed: {oracle_verification['error']}", file=sys.stderr)
+        sys.exit(2)
+
+    print("Verifying candidate venv...", file=sys.stderr)
+    candidate_verification = verify_venv(candidate_python, is_oracle=False)
+    if candidate_verification.get("error"):
+        print(f"Error: candidate venv verification failed: {candidate_verification['error']}", file=sys.stderr)
+        sys.exit(2)
+
+    print(f"  Oracle: {oracle_verification.get('distribution_name')} "
+          f"{oracle_verification.get('distribution_version')} "
+          f"({oracle_verification.get('python_version', '').split()[0]})",
+          file=sys.stderr)
+    print(f"  Candidate: {candidate_verification.get('distribution_name')} "
+          f"{candidate_verification.get('distribution_version')} "
+          f"({candidate_verification.get('python_version', '').split()[0]})",
+          file=sys.stderr)
+
     # Run comparison
     output_dir = Path(args.output_dir) if args.output_dir else Path("target/strict/paired_observations")
     print(f"\nRunning paired comparison for {len(testable)} records...", file=sys.stderr)
 
-    report = run_paired_comparison(testable, oracle_python, candidate_python, output_dir=output_dir)
+    report = run_paired_comparison(
+        testable, oracle_python, candidate_python,
+        output_dir=output_dir,
+        closure_required=args.closure_required,
+    )
 
     # Print summary
     print(f"\n{'='*60}")
@@ -563,6 +948,9 @@ def main():
                         print(f"    {comp['dimension']}: oracle={comp['oracle']}, candidate={comp['candidate']}")
 
     # Write report
+    report["oracle_verification"] = oracle_verification
+    report["candidate_verification"] = candidate_verification
+    report["closure_required"] = args.closure_required
     report_file = output_dir / "paired_api_report.json"
     output_dir.mkdir(parents=True, exist_ok=True)
     report_file.write_text(json.dumps(report, indent=2, default=str))

@@ -22,7 +22,7 @@ _PREFERRED_SCHEMES = {"socks5", "socks4", "http", "ss", "trojan", "h2", "h3"}
 
 
 def _proto_to_scheme(proto_cls: Any) -> str:
-    """Convert a protocol class to its pproxy scheme name."""
+    """Convert a protocol class or instance to its pproxy scheme name."""
     if not _SCHEME_BY_CLASS:
         from eggress.protocol import _PROTOCOL_REGISTRY
         for scheme, cls in _PROTOCOL_REGISTRY.items():
@@ -30,7 +30,14 @@ def _proto_to_scheme(proto_cls: Any) -> str:
                 _SCHEME_BY_CLASS[cls] = scheme
             elif scheme in _PREFERRED_SCHEMES:
                 _SCHEME_BY_CLASS[cls] = scheme
-    return _SCHEME_BY_CLASS.get(proto_cls, "http")
+    # Handle both class and instance inputs
+    if proto_cls in _SCHEME_BY_CLASS:
+        return _SCHEME_BY_CLASS[proto_cls]
+    # If an instance was passed, try its class
+    cls = type(proto_cls)
+    if cls in _SCHEME_BY_CLASS:
+        return _SCHEME_BY_CLASS[cls]
+    return "http"
 
 
 # ---------------------------------------------------------------------------

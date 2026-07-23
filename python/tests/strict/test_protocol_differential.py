@@ -4,40 +4,21 @@ These tests compare the pproxy oracle protocol class hierarchy against
 the eggress candidate implementation.
 
 Tier: 2 (paired API oracle)
-Gate: EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1
+Gate: --oracle-observations-dir and --candidate-observations-dir required
 """
-
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
 
-REQUIRE_DIFFERENTIAL = os.environ.get("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL") == "1"
-SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
-
-
-def _run_class_probe(module: str, class_name: str) -> dict:
-    """Run the strict_class_probe.py and return the observation."""
-    cmd = [sys.executable, str(SCRIPTS_DIR / "strict_class_probe.py"), "--module", module, "--class-name", class_name]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode == 0 and result.stdout.strip():
-        return json.loads(result.stdout)
-    return {"module": module, "class_name": class_name, "error": result.stderr}
-
-
 PROTOCOL_CLASSES = [
-    ("pproxy.proto", "Direct"),
-    ("pproxy.proto", "HTTP"),
-    ("pproxy.proto", "HTTPOnly"),
-    ("pproxy.proto", "Socks4"),
-    ("pproxy.proto", "Socks5"),
-    ("pproxy.proto", "SS"),
-    ("pproxy.proto", "Trojan"),
-    ("pproxy.proto", "Echo"),
+    ("python.pproxy.proto.Direct", "pproxy.proto", "Direct"),
+    ("python.pproxy.proto.HTTP", "pproxy.proto", "HTTP"),
+    ("python.pproxy.proto.HTTPOnly", "pproxy.proto", "HTTPOnly"),
+    ("python.pproxy.proto.Socks4", "pproxy.proto", "Socks4"),
+    ("python.pproxy.proto.Socks5", "pproxy.proto", "Socks5"),
+    ("python.pproxy.proto.SS", "pproxy.proto", "SS"),
+    ("python.pproxy.proto.Trojan", "pproxy.proto", "Trojan"),
+    ("python.pproxy.proto.Echo", "pproxy.proto", "Echo"),
 ]
 
 
@@ -45,86 +26,103 @@ PROTOCOL_CLASSES = [
 class TestProtocolClassExistence:
     """Verify protocol classes exist in the candidate."""
 
-    @pytest.mark.parametrize("module,class_name", PROTOCOL_CLASSES)
-    def test_class_exists(self, module, class_name):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    @pytest.mark.parametrize("rid,module,class_name", PROTOCOL_CLASSES)
+    def test_class_exists(self, rid, module, class_name, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_class_probe(module, class_name)
-        assert obs.get("error") is None, f"Failed to probe {class_name}: {obs.get('error')}"
-        assert obs.get("bases") is not None, f"{class_name} has no bases"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
+
+        assert oracle_obs.get("error") is None, f"Oracle failed to probe {class_name}: {oracle_obs.get('error')}"
+        assert candidate_obs.get("error") is None, f"Candidate failed to probe {class_name}: {candidate_obs.get('error')}"
+        assert oracle_obs.get("bases") is not None, f"Oracle: {class_name} has no bases"
+        assert candidate_obs.get("bases") is not None, f"Candidate: {class_name} has no bases"
 
 
 @pytest.mark.differential
 class TestProtocolClassStructure:
     """Verify protocol class structure matches oracle."""
 
-    @pytest.mark.parametrize("module,class_name", [
-        ("pproxy.proto", "Direct"),
-        ("pproxy.proto", "HTTP"),
-        ("pproxy.proto", "Socks5"),
+    @pytest.mark.parametrize("rid,module,class_name", [
+        ("python.pproxy.proto.Direct", "pproxy.proto", "Direct"),
+        ("python.pproxy.proto.HTTP", "pproxy.proto", "HTTP"),
+        ("python.pproxy.proto.Socks5", "pproxy.proto", "Socks5"),
     ])
-    def test_has_guess_method(self, module, class_name):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    def test_has_guess_method(self, rid, module, class_name, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_class_probe(module, class_name)
-        assert obs.get("error") is None
-        methods = obs.get("methods", {})
-        assert "guess" in methods, f"{class_name} missing 'guess' method, methods: {sorted(methods.keys())}"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
 
-    @pytest.mark.parametrize("module,class_name", [
-        ("pproxy.proto", "Direct"),
-        ("pproxy.proto", "HTTP"),
-        ("pproxy.proto", "Socks5"),
+        assert oracle_obs.get("error") is None
+        assert candidate_obs.get("error") is None
+        o_methods = oracle_obs.get("methods", {})
+        c_methods = candidate_obs.get("methods", {})
+        assert "guess" in o_methods, f"Oracle: {class_name} missing 'guess' method"
+        assert "guess" in c_methods, f"Candidate: {class_name} missing 'guess' method"
+
+    @pytest.mark.parametrize("rid,module,class_name", [
+        ("python.pproxy.proto.Direct", "pproxy.proto", "Direct"),
+        ("python.pproxy.proto.HTTP", "pproxy.proto", "HTTP"),
+        ("python.pproxy.proto.Socks5", "pproxy.proto", "Socks5"),
     ])
-    def test_has_accept_method(self, module, class_name):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    def test_has_accept_method(self, rid, module, class_name, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_class_probe(module, class_name)
-        assert obs.get("error") is None
-        methods = obs.get("methods", {})
-        assert "accept" in methods, f"{class_name} missing 'accept' method"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
 
-    @pytest.mark.parametrize("module,class_name", [
-        ("pproxy.proto", "Direct"),
-        ("pproxy.proto", "HTTP"),
-        ("pproxy.proto", "Socks5"),
+        assert oracle_obs.get("error") is None
+        assert candidate_obs.get("error") is None
+        o_methods = oracle_obs.get("methods", {})
+        c_methods = candidate_obs.get("methods", {})
+        assert "accept" in o_methods, f"Oracle: {class_name} missing 'accept' method"
+        assert "accept" in c_methods, f"Candidate: {class_name} missing 'accept' method"
+
+    @pytest.mark.parametrize("rid,module,class_name", [
+        ("python.pproxy.proto.Direct", "pproxy.proto", "Direct"),
+        ("python.pproxy.proto.HTTP", "pproxy.proto", "HTTP"),
+        ("python.pproxy.proto.Socks5", "pproxy.proto", "Socks5"),
     ])
-    def test_has_connect_method(self, module, class_name):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    def test_has_connect_method(self, rid, module, class_name, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_class_probe(module, class_name)
-        assert obs.get("error") is None
-        methods = obs.get("methods", {})
-        assert "connect" in methods, f"{class_name} missing 'connect' method"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
+
+        assert oracle_obs.get("error") is None
+        assert candidate_obs.get("error") is None
+        o_methods = oracle_obs.get("methods", {})
+        c_methods = candidate_obs.get("methods", {})
+        assert "connect" in o_methods, f"Oracle: {class_name} missing 'connect' method"
+        assert "connect" in c_methods, f"Candidate: {class_name} missing 'connect' method"
 
 
 @pytest.mark.differential
 class TestProtocolMAPPINGS:
     """Verify the MAPPINGS registry is present and populated."""
 
-    def test_mappings_exists(self):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    def test_mappings_exists(self, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        cmd = [sys.executable, str(SCRIPTS_DIR / "strict_api_probe.py"), "--module", "pproxy.proto", "--symbol", "MAPPINGS"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0 and result.stdout.strip():
-            obs = json.loads(result.stdout)
-            assert obs.get("exists") is True, "MAPPINGS not found in pproxy.proto"
-        else:
-            pytest.fail(f"Failed to probe MAPPINGS: {result.stderr}")
+        oracle_obs = load_observation(oracle_dir, "python.pproxy.proto.MAPPINGS", "oracle")
+        candidate_obs = load_observation(candidate_dir, "python.pproxy.proto.MAPPINGS", "candidate")
 
-    def test_mappings_has_direct(self):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+        result = compare_observations(oracle_obs, candidate_obs)
+        assert result["all_match"], (
+            f"MAPPINGS mismatch: {[c for c in result['comparisons'] if not c['match']]}"
+        )
 
-        try:
-            import pproxy.proto
-            mappings = getattr(pproxy.proto, "MAPPINGS", {})
-            assert "direct" in mappings or "" in mappings, f"MAPPINGS missing direct: {list(mappings.keys())[:10]}"
-        except ImportError:
-            pytest.skip("pproxy.proto not importable")
+    def test_mappings_has_direct(self, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
+
+        oracle_obs = load_observation(oracle_dir, "python.pproxy.proto.MAPPINGS", "oracle")
+        candidate_obs = load_observation(candidate_dir, "python.pproxy.proto.MAPPINGS", "candidate")
+
+        # Both should have MAPPINGS with 'direct' or '' key
+        for label, obs in [("oracle", oracle_obs), ("candidate", candidate_obs)]:
+            if obs.get("exists"):
+                attrs = obs.get("attributes", [])
+                assert "direct" in attrs or "" in attrs, (
+                    f"{label} MAPPINGS missing direct: {attrs[:10]}"
+                )

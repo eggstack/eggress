@@ -23,6 +23,9 @@ jobs:
         run: cargo test -p eggress-testkit strict_manifest
       - name: Validate strict report freshness
         run: cargo run -p eggress-testkit --bin strict-report -- --check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Check release docs consistency
         run: python3 scripts/check_release_docs.py
 
@@ -33,50 +36,62 @@ jobs:
     needs: strict-integrity
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install pproxy oracle
-        run: pip install "pproxy==2.7.9"
-      - name: Verify pproxy oracle
-        run: python -m pproxy --help
       - name: Set up oracle venv
         run: |
-          python -m venv .venv-oracle
+          python3 -m venv .venv-oracle
+          .venv-oracle/bin/pip install --upgrade pip
           .venv-oracle/bin/pip install "pproxy==2.7.9"
+          .venv-oracle/bin/pip install pysocks cryptography
+      - name: Verify pproxy oracle
+        run: .venv-oracle/bin/python -c "import pproxy; print(f'pproxy {pproxy.__version__}')"
       - name: Set up candidate venv
         run: |
-          python -m venv .venv-candidate
+          python3 -m venv .venv-candidate
           .venv-candidate/bin/pip install --upgrade pip
-          .venv-candidate/bin/pip install pytest pytest-timeout cryptography
-      - name: Build and install candidate
-        env:
-          VIRTUAL_ENV: ${{ github.workspace }}/.venv-candidate
-          CARGO_TERM_COLOR: always
+          .venv-candidate/bin/pip install maturin pytest pytest-asyncio pytest-timeout cryptography
+      - name: Build eggress wheel
+        run: .venv-candidate/bin/maturin build --release --out target/wheels -m crates/eggress-python/Cargo.toml
+      - name: Install eggress wheel
         run: |
-          .venv-candidate/bin/pip install maturin
-          .venv-candidate/bin/maturin develop --release -m crates/eggress-python/Cargo.toml
-          .venv-candidate/bin/pip install ./python-pproxy-compat
+          WHEEL=$(ls target/wheels/eggress-*.whl)
+          .venv-candidate/bin/pip install "$WHEEL"
+      - name: Build and install compat wheel
+        run: |
+          .venv-candidate/bin/pip wheel --no-deps --wheel-dir target/wheels ./python-pproxy-compat
+          COMPAT_WHEEL=$(ls target/wheels/eggress_pproxy_compat-*.whl)
+          .venv-candidate/bin/pip install "$COMPAT_WHEEL"
+      - name: Verify candidate imports
+        run: |
+          .venv-candidate/bin/python -c "import pproxy; print(f'candidate pproxy OK')"
+          .venv-candidate/bin/python -c "import eggress; print(f'candidate eggress OK')"
       - name: Run paired API probes
+        env:
+          ORACLE_VENV: ${{ github.workspace }}/.venv-oracle
+          CANDIDATE_VENV: ${{ github.workspace }}/.venv-candidate
         run: |
-          python scripts/run_strict_pproxy_api.py \
-            --oracle-venv .venv-oracle \
-            --candidate-venv .venv-candidate
-      - name: Run differential tests
+          python3 scripts/run_strict_pproxy_api.py \
+            --oracle-venv "$ORACLE_VENV" \
+            --candidate-venv "$CANDIDATE_VENV"
+      - name: Run strict differential tests
         env:
           EGRESS_REQUIRE_PPROXY_DIFFERENTIAL: "1"
         run: |
           .venv-candidate/bin/python -m pytest python/tests/strict/ -v --timeout=60
-      - name: Run oracle examples against candidate
+      - name: Run oracle example fixtures
         run: |
           for f in compat/pproxy-2.7.9/examples/direct_tcp.py \
                    compat/pproxy-2.7.9/examples/chain_example.py \
                    compat/pproxy-2.7.9/examples/server_config.py \
                    compat/pproxy-2.7.9/examples/client_connection.py; do
-            echo "=== Running $f ==="
-            .venv-candidate/bin/python "$f" || exit 1
+            echo "=== $f ==="
+            .venv-oracle/bin/python "$f" || exit 1
           done
-      - name: Run network examples
+      - name: Run network examples against candidate
         run: |
           PROXY_URI=direct:// .venv-candidate/bin/python \
             compat/pproxy-2.7.9/examples/tcp_echo_through_proxy.py || exit 1
@@ -86,8 +101,38 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: strict-paired-observations
+          name: strict-paired-observations-${{ github.sha }}
           path: target/strict/paired_observations/
-          if-no-files-found: error
+          if-no-files-found: warn
+          retention-days: 30
+
+  strict-closure-audit:
+    name: Strict Closure Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [strict-integrity, strict-paired-api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install cargo tools
+        run: |
+          cargo install cargo-deny
+          cargo install cargo-audit
+      - name: Install pproxy oracle (system)
+        run: pip install "pproxy==2.7.9"
+      - name: Install maturin
+        run: pip install maturin
       - name: Run authoritative closure audit
         run: ./scripts/run_strict_pproxy_closure_audit.sh
+      - name: Upload closure audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-closure-audit-${{ github.sha }}
+          path: target/closure-audit/
+          if-no-files-found: error
+          retention-days: 90

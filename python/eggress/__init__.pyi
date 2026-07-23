@@ -135,6 +135,7 @@ from eggress._pproxy_proxy import (
     ProxyQUIC as ProxyQUIC,
     ProxyH3 as ProxyH3,
     DIRECT as PROXY_DIRECT,
+    _CompatServerHandle as _CompatServerHandle,
 )
 from eggress._eggress import (
     EggressError as EggressError,

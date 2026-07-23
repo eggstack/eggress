@@ -4,58 +4,30 @@ These tests compare the pproxy oracle server internals against
 the eggress candidate implementation.
 
 Tier: 2 (paired API oracle)
-Gate: EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1
+Gate: --oracle-observations-dir and --candidate-observations-dir required
 """
-
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
 
-REQUIRE_DIFFERENTIAL = os.environ.get("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL") == "1"
-SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
-
-
-def _run_api_probe(module: str, symbol: str) -> dict:
-    """Run the strict_api_probe.py and return the observation."""
-    cmd = [sys.executable, str(SCRIPTS_DIR / "strict_api_probe.py"), "--module", module, "--symbol", symbol]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode == 0 and result.stdout.strip():
-        return json.loads(result.stdout)
-    return {"module": module, "symbol": symbol, "exists": False, "error": result.stderr}
-
-
-def _run_sig_probe(module: str, symbol: str) -> dict:
-    """Run the strict_signature_probe.py and return the observation."""
-    cmd = [sys.executable, str(SCRIPTS_DIR / "strict_signature_probe.py"), "--module", module, "--symbol", symbol]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode == 0 and result.stdout.strip():
-        return json.loads(result.stdout)
-    return {"module": module, "symbol": symbol, "error": result.stderr}
-
-
 SERVER_HELPERS = [
-    ("pproxy.server", "compile_rule"),
-    ("pproxy.server", "schedule"),
-    ("pproxy.server", "check_server_alive"),
-    ("pproxy.server", "prepare_ciphers"),
-    ("pproxy.server", "stream_handler"),
-    ("pproxy.server", "datagram_handler"),
-    ("pproxy.server", "test_url"),
-    ("pproxy.server", "print_server_started"),
-    ("pproxy.server", "main"),
+    ("python.pproxy.server.compile_rule", "pproxy.server", "compile_rule"),
+    ("python.pproxy.server.schedule", "pproxy.server", "schedule"),
+    ("python.pproxy.server.check_server_alive", "pproxy.server", "check_server_alive"),
+    ("python.pproxy.server.prepare_ciphers", "pproxy.server", "prepare_ciphers"),
+    ("python.pproxy.server.stream_handler", "pproxy.server", "stream_handler"),
+    ("python.pproxy.server.datagram_handler", "pproxy.server", "datagram_handler"),
+    ("python.pproxy.server.test_url", "pproxy.server", "test_url"),
+    ("python.pproxy.server.print_server_started", "pproxy.server", "print_server_started"),
+    ("python.pproxy.server.main", "pproxy.server", "main"),
 ]
 
 SERVER_CONSTANTS = [
-    ("pproxy.server", "SOCKET_TIMEOUT"),
-    ("pproxy.server", "UDP_LIMIT"),
-    ("pproxy.server", "DUMMY"),
-    ("pproxy.server", "DIRECT"),
-    ("pproxy.server", "sslcontexts"),
+    ("python.pproxy.server.SOCKET_TIMEOUT", "pproxy.server", "SOCKET_TIMEOUT"),
+    ("python.pproxy.server.UDP_LIMIT", "pproxy.server", "UDP_LIMIT"),
+    ("python.pproxy.server.DUMMY", "pproxy.server", "DUMMY"),
+    ("python.pproxy.server.DIRECT", "pproxy.server", "DIRECT"),
+    ("python.pproxy.server.sslcontexts", "pproxy.server", "sslcontexts"),
 ]
 
 
@@ -63,63 +35,92 @@ SERVER_CONSTANTS = [
 class TestServerHelperExistence:
     """Verify all server helpers exist in the candidate."""
 
-    @pytest.mark.parametrize("module,symbol", SERVER_HELPERS)
-    def test_helper_exists(self, module, symbol):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    @pytest.mark.parametrize("rid,module,symbol", SERVER_HELPERS)
+    def test_helper_exists(self, rid, module, symbol, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_api_probe(module, symbol)
-        assert obs.get("exists") is True, f"{module}.{symbol} not found: {obs.get('error')}"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
+
+        result = compare_observations(oracle_obs, candidate_obs)
+        assert result["all_match"], (
+            f"{module}.{symbol} mismatch: "
+            f"{[c for c in result['comparisons'] if not c['match']]}"
+        )
 
 
 @pytest.mark.differential
 class TestServerConstantExistence:
     """Verify all server constants exist in the candidate."""
 
-    @pytest.mark.parametrize("module,symbol", SERVER_CONSTANTS)
-    def test_constant_exists(self, module, symbol):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    @pytest.mark.parametrize("rid,module,symbol", SERVER_CONSTANTS)
+    def test_constant_exists(self, rid, module, symbol, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_api_probe(module, symbol)
-        assert obs.get("exists") is True, f"{module}.{symbol} not found: {obs.get('error')}"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
+
+        result = compare_observations(oracle_obs, candidate_obs)
+        assert result["all_match"], (
+            f"{module}.{symbol} mismatch: "
+            f"{[c for c in result['comparisons'] if not c['match']]}"
+        )
 
 
 @pytest.mark.differential
 class TestServerHelperSignatures:
     """Verify server helper signatures match the oracle."""
 
-    @pytest.mark.parametrize("module,symbol", [
-        ("pproxy.server", "compile_rule"),
-        ("pproxy.server", "schedule"),
-        ("pproxy.server", "check_server_alive"),
-        ("pproxy.server", "prepare_ciphers"),
+    @pytest.mark.parametrize("rid,module,symbol", [
+        ("python.pproxy.server.compile_rule", "pproxy.server", "compile_rule"),
+        ("python.pproxy.server.schedule", "pproxy.server", "schedule"),
+        ("python.pproxy.server.check_server_alive", "pproxy.server", "check_server_alive"),
+        ("python.pproxy.server.prepare_ciphers", "pproxy.server", "prepare_ciphers"),
     ])
-    def test_signature_has_params(self, module, symbol):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    def test_signature_has_params(self, rid, module, symbol, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_sig_probe(module, symbol)
-        assert obs.get("error") is None, f"Signature probe failed for {symbol}: {obs.get('error')}"
-        params = obs.get("parameters", [])
-        assert len(params) > 0, f"{symbol} has no parameters"
+        oracle_obs = load_observation(oracle_dir, rid, "oracle")
+        candidate_obs = load_observation(candidate_dir, rid, "candidate")
+
+        # Both should have signature info
+        o_sig = oracle_obs.get("signature")
+        c_sig = candidate_obs.get("signature")
+        assert o_sig is not None, f"Oracle: {symbol} has no signature"
+        assert c_sig is not None, f"Candidate: {symbol} has no signature"
+
+        result = compare_observations(oracle_obs, candidate_obs)
+        assert result["all_match"], (
+            f"{symbol} signature mismatch: "
+            f"{[c for c in result['comparisons'] if not c['match']]}"
+        )
 
 
 @pytest.mark.differential
 class TestCompileRuleCallable:
     """Test that compile_rule returns an oracle-compatible callable."""
 
-    def test_compile_rule_is_function(self):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+    def test_compile_rule_is_function(self, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
 
-        obs = _run_api_probe("pproxy.server", "compile_rule")
-        assert obs.get("exists") is True
-        assert obs.get("type") == "function", f"compile_rule type: {obs.get('type')}"
+        oracle_obs = load_observation(oracle_dir, "python.pproxy.server.compile_rule", "oracle")
+        candidate_obs = load_observation(candidate_dir, "python.pproxy.server.compile_rule", "candidate")
 
-    def test_compile_rule_not_coroutine(self):
-        if not REQUIRE_DIFFERENTIAL:
-            pytest.skip("EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 required")
+        assert oracle_obs.get("exists"), f"Oracle: compile_rule not found"
+        assert candidate_obs.get("exists"), f"Candidate: compile_rule not found"
 
-        obs = _run_api_probe("pproxy.server", "compile_rule")
-        assert obs.get("is_coroutine") is False, f"compile_rule is_coroutine: {obs.get('is_coroutine')}"
+        result = compare_observations(oracle_obs, candidate_obs)
+        assert result["all_match"], (
+            f"compile_rule mismatch: {[c for c in result['comparisons'] if not c['match']]}"
+        )
+
+    def test_compile_rule_not_coroutine(self, require_obs_dirs):
+        oracle_dir, candidate_dir = require_obs_dirs
+
+        oracle_obs = load_observation(oracle_dir, "python.pproxy.server.compile_rule", "oracle")
+        candidate_obs = load_observation(candidate_dir, "python.pproxy.server.compile_rule", "candidate")
+
+        result = compare_observations(oracle_obs, candidate_obs)
+        assert result["all_match"], (
+            f"compile_rule mismatch: {[c for c in result['comparisons'] if not c['match']]}"
+        )
