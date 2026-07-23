@@ -7,7 +7,7 @@ and shuts down cleanly. Tests the full server lifecycle.
 Environment variables:
     LISTEN_PORT - Port for the server to listen on (default: 0, auto-assigned)
 
-Provenance: Derived from pproxy 2.7.9 API patterns.
+Provenance: Eggress-authored behavioral scenario based on pproxy 2.7.9 public API.
 License: MIT (pproxy)
 Tested with: pproxy==2.7.9 on Python 3.11
 """

@@ -2,15 +2,10 @@
 
 ## Status
 
-**Local verification complete — 30/31 acceptance criteria met.** Remaining items:
-- Hosted CI blocked on infrastructure (known non-functional)
+**REOPENED — final evidence and runtime closure in progress.**
 
-The corrective pass is complete against all local verification gates. The single
-unmet criterion (hosted CI evidence retention) is a known infrastructure issue
-and is recorded in `docs/CI_STATUS.md` as a non-code blocker. See
-`docs/PHASE_54_MILESTONES_A_C_CORRECTIVE_PASS_COMPLETION.md` for the full closure
-record including local verification commands, observed test counts, and known
-residual gaps.
+Post-completion review found additional behavioral and evidence defects. The
+mandatory acceptance matrix items below require revalidation.
 
 ## Parent roadmap and plans
 
@@ -966,43 +961,43 @@ Do not combine the truth reset with implementation changes. Reviewers must be ab
 
 Milestone A may be closed only when:
 
-- [x] oracle package and fixtures are hash-pinned;
-- [x] executable upstream examples/tests are present;
-- [x] paired subprocess runners work;
-- [x] observations include API, runtime, failure, and cleanup dimensions;
-- [x] report is generated and freshness-enforced;
-- [x] manifest validator prevents structural evidence from supporting `drop_in`;
+- [ ] oracle package and fixtures are hash-pinned;
+- [ ] executable upstream examples/tests are present;
+- [ ] paired subprocess runners work;
+- [ ] observations include API, runtime, failure, and cleanup dimensions;
+- [ ] report is generated and freshness-enforced;
+- [ ] manifest validator prevents structural evidence from supporting `drop_in`;
 - [ ] hosted CI retains paired evidence.
 
 Milestone B may be closed only when:
 
-- [x] top-level aliases match;
-- [x] URI factory signatures and failures match;
-- [x] nested `__` chain topology matches;
-- [x] direct/common supported proxy objects are functional;
-- [x] `tcp_connect()` is awaitable and returns compatible streams;
-- [x] direct and supported proxy TCP paths work;
-- [x] supported UDP path works;
-- [x] common server startup works;
-- [x] unchanged client and server examples pass;
-- [x] signatures, coroutine shape, returns, attributes, and exceptions have paired evidence.
+- [ ] top-level aliases match;
+- [ ] URI factory signatures and failures match;
+- [ ] nested `__` chain topology matches;
+- [ ] direct/common supported proxy objects are functional;
+- [ ] `tcp_connect()` is awaitable and returns compatible streams;
+- [ ] direct and supported proxy TCP paths work;
+- [ ] supported UDP path works;
+- [ ] common server startup works;
+- [ ] unchanged client and server examples pass;
+- [ ] signatures, coroutine shape, returns, attributes, and exceptions have paired evidence.
 
 Milestone C may be closed only when:
 
-- [x] `pproxy.server` constants and sentinels match;
-- [x] stream monkey patches match;
-- [x] `AuthTable` shared behavior matches;
-- [x] rule compilation returns an oracle-compatible callable;
-- [x] scheduler algorithms and mutation match;
-- [x] cipher preparation signature/order/return match;
-- [x] stream handler performs real upstream relay;
-- [x] datagram handler performs real upstream relay;
-- [x] common protocol `guess`, `accept`, `connect`, channel, and UDP methods work;
-- [x] TLS wrapper is functional;
-- [x] functional ciphers have oracle/interop evidence;
-- [x] unsupported ciphers remain gaps;
-- [x] plugin lifecycle transforms real traffic;
-- [x] no importability, registry count, scaffolding, or expected `NotImplementedError` is used as behavioral closure evidence.
+- [ ] `pproxy.server` constants and sentinels match;
+- [ ] stream monkey patches match;
+- [ ] `AuthTable` shared behavior matches;
+- [ ] rule compilation returns an oracle-compatible callable;
+- [ ] scheduler algorithms and mutation match;
+- [ ] cipher preparation signature/order/return match;
+- [ ] stream handler performs real upstream relay;
+- [ ] datagram handler performs real upstream relay;
+- [ ] common protocol `guess`, `accept`, `connect`, channel, and UDP methods work;
+- [ ] TLS wrapper is functional;
+- [ ] functional ciphers have oracle/interop evidence;
+- [ ] unsupported ciphers remain gaps;
+- [ ] plugin lifecycle transforms real traffic;
+- [ ] no importability, registry count, scaffolding, or expected `NotImplementedError` is used as behavioral closure evidence.
 
 ---
 

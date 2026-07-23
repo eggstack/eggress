@@ -10,7 +10,7 @@ oracle_version = "2.7.9"
 
 [[fixture]]
 path = "examples/client_connection.py"
-upstream_source = "pproxy API contract and upstream examples"
+upstream_source = "Eggress-authored scenario based on pproxy 2.7.9 public API"
 license = "MIT"
 hash = "5d69092b0ca000d2294cb5c1fe3f09d9fded7f2d16cff9856baae01b7d70400e"
 normalization = "Parameterized endpoints, preserved call structure"
@@ -19,7 +19,7 @@ tests = 56
 
 [[fixture]]
 path = "examples/server_config.py"
-upstream_source = "pproxy API contract and upstream examples"
+upstream_source = "Eggress-authored scenario based on pproxy 2.7.9 public API"
 license = "MIT"
 hash = "08370f4e869075941375320942a78520f1a5ad90a302c6a1277d75b5b67c356f"
 normalization = "Parameterized endpoints, preserved call structure"
@@ -28,7 +28,7 @@ tests = 37
 
 [[fixture]]
 path = "examples/chain_example.py"
-upstream_source = "pproxy API contract and upstream examples"
+upstream_source = "Eggress-authored scenario based on pproxy 2.7.9 public API"
 license = "MIT"
 hash = "f8ede0a1c75e1940b147e5ab4a82932956ff253cabff1b404f79f22aee3a267b"
 normalization = "New fixture; chain syntax documented in pproxy README"
@@ -37,7 +37,7 @@ tests = 26
 
 [[fixture]]
 path = "examples/direct_tcp.py"
-upstream_source = "pproxy API contract and upstream examples"
+upstream_source = "Eggress-authored scenario based on pproxy 2.7.9 public API"
 license = "MIT"
 hash = "8703cf0e8d31f2a8d5f3297a2ffcdea69bdeced902741ff9857e3cfcc6dea08f"
 normalization = "New fixture; direct connection derived from pproxy.server.ProxyDirect"
@@ -46,7 +46,7 @@ tests = 31
 
 [[fixture]]
 path = "tests/api_namespace.py"
-upstream_source = "pproxy API contract and namespace-baseline.json"
+upstream_source = "Eggress-authored scenario based on pproxy 2.7.9 public API"
 license = "MIT"
 hash = "43962b7bb3e4bf02a1750219fdebb412b443e20461d78d17a2e7cb17332a7dcd"
 normalization = "Derived from namespace-baseline.json extracted from pproxy 2.7.9"
@@ -55,7 +55,7 @@ tests = 92
 
 [[fixture]]
 path = "tests/proxy_object.py"
-upstream_source = "pproxy API contract and upstream source"
+upstream_source = "Eggress-authored scenario based on pproxy 2.7.9 public API"
 license = "MIT"
 hash = "6c5624afbfd2821908a5a0ae90dbdd948d6e51df134f72c71d8f5a989eeae9a5"
 normalization = "New fixture; proxy hierarchy derived from pproxy.server source"

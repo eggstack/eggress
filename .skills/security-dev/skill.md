@@ -97,6 +97,14 @@ cargo deny check
 cargo audit
 ```
 
+## Closure audit
+
+Run the Milestones A-C closure audit to verify all gates pass:
+
+```bash
+./scripts/run_strict_pproxy_closure_audit.sh
+```
+
 ## Security documentation
 
 - `SECURITY.md` — vulnerability disclosure process

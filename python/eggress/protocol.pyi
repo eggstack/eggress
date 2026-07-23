@@ -56,6 +56,7 @@ class HTTP(BaseProtocol):
     functional wire-level protocol handling.
     """
     httpget: dict[str, Any]
+    async def connect(self, reader: Any, writer: Any, host: str, port: int, stat_bytes: Any = ...) -> tuple[Any, Any]: ...
 class HTTPOnly(HTTP):
     """HTTP-only forward proxy (no CONNECT tunnelling).
 
@@ -70,6 +71,7 @@ class Socks4(BaseProtocol):
     composition resolution (A2 composition cells) without implementing
     functional wire-level protocol handling.
     """
+    async def connect(self, reader: Any, writer: Any, host: str, port: int, stat_bytes: Any = ..., userid: bytes = ...) -> tuple[Any, Any]: ...
 class Socks5(BaseProtocol):
     """SOCKS5 proxy protocol.
 
@@ -77,6 +79,7 @@ class Socks5(BaseProtocol):
     composition resolution (A2 composition cells) without implementing
     functional wire-level protocol handling.
     """
+    async def connect(self, reader: Any, writer: Any, host: str, port: int, stat_bytes: Any = ..., auth: tuple[str, str] | None = ...) -> tuple[Any, Any]: ...
 class SS(SSR):
     """Shadowsocks AEAD proxy protocol.
 

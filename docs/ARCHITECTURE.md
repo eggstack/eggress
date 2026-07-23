@@ -229,6 +229,7 @@ Python bindings via PyO3 wrapping `eggress-embed`:
 - `CompatibilityReport`, `FeatureInfo` — tier classification and diagnostics
 - `start_pproxy()` — multi-mode convenience function (args, local/remote, config, config_path)
 - `Server` — pproxy-compatible server wrapper with sync/async context managers, observability (`status()`, `sessions`, `last_error`), hot-reload, and resource management
+- Protocol classes (`HTTP`, `Socks4`, `Socks5`) with functional `connect()` client methods for client-side handshakes
 - URI helpers: `check_pproxy_uri`, `redact_pproxy_uri`, `diagnostics_for_uri`, `supported_features`
 - Config explanation: `explain_config_toml`, `explain_pproxy_args`, `explain_pproxy_uri`
 - Translation: `translate_pproxy_args`, `translate_pproxy_uri`, `check_pproxy_args`

@@ -88,6 +88,7 @@ Listens on a filesystem socket path for local-only deployments.
 - [ ] Credentials never logged (use redacted Display)
 - [ ] Bounded parsers/handshake timeouts
 - [ ] Capability classifier reflects actual wire compatibility (not just internal code existence)
+- [ ] Strict manifest `certification_scope` field set for any new capability records
 
 ## Embed API (eggress-embed)
 

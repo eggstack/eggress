@@ -1,7 +1,7 @@
-# Upstream pproxy Examples
+# pproxy Oracle Fixtures
 
-This directory contains executable examples from the pproxy 2.7.9
-upstream distribution, used as test fixtures for the paired
+This directory contains Eggress-authored behavioral scenarios based on
+the pproxy 2.7.9 public API, used as test fixtures for the paired
 oracle/candidate differential testing harness.
 
 ## Files
@@ -20,7 +20,8 @@ oracle/candidate differential testing harness.
 
 ## Provenance
 
-These fixtures are derived from:
+These fixtures are Eggress-authored behavioral scenarios based on the
+pproxy 2.7.9 public API. They are derived from:
 - pproxy CLI help text (`pproxy --help`)
 - pproxy Python API contract
 - pproxy upstream README and documentation

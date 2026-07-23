@@ -217,9 +217,8 @@ class BaseProtocol:
                 data = await reader.read(65536)
                 if not data:
                     break
-                if stat_bytes is None:
-                    continue
-                stat_bytes(len(data))
+                if stat_bytes is not None:
+                    stat_bytes(len(data))
                 writer.write(data)
                 await writer.drain()
         except Exception:
@@ -396,6 +395,48 @@ class HTTP(BaseProtocol):
 
         return user, host, port
 
+    async def connect(
+        self,
+        reader: Any,
+        writer: Any,
+        host: str,
+        port: int,
+        stat_bytes: Any = None,
+        **kw: Any,
+    ) -> tuple[Any, Any]:
+        """Perform HTTP CONNECT handshake.
+
+        Sends ``CONNECT host:port HTTP/1.1`` and reads the response.
+        Returns ``(reader, writer)`` on 200; raises ``ConnectionError``
+        otherwise.
+        """
+        request = f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n"
+        writer.write(request.encode("ascii"))
+        await writer.drain()
+
+        # Read response line
+        response_line = await reader.readline()
+        if not response_line:
+            raise ConnectionError("HTTP CONNECT: connection closed before response")
+
+        # Parse status code
+        parts = response_line.split(b" ", 2)
+        if len(parts) < 2:
+            raise ConnectionError(f"HTTP CONNECT: malformed response: {response_line!r}")
+
+        status_code = int(parts[1])
+
+        # Read headers until empty line
+        while True:
+            header_line = await reader.readline()
+            if not header_line or header_line == b"\r\n":
+                break
+
+        if status_code != 200:
+            raise ConnectionError(f"HTTP CONNECT failed with status {status_code}")
+
+        return reader, writer
+
 
 class HTTPOnly(HTTP):
     """HTTP-only forward proxy (no CONNECT tunnelling).
@@ -467,6 +508,60 @@ class Socks4(BaseProtocol):
             host = ".".join(str(b) for b in ip_bytes)
 
         return user, host, port
+
+    async def connect(
+        self,
+        reader: Any,
+        writer: Any,
+        host: str,
+        port: int,
+        stat_bytes: Any = None,
+        userid: bytes = b"",
+        **kw: Any,
+    ) -> tuple[Any, Any]:
+        """Perform SOCKS4/4a connect handshake.
+
+        For IP addresses, sends a standard SOCKS4 request. For domain names,
+        sends a SOCKS4a request (IP 0.0.0.1 followed by the domain). Returns
+        ``(reader, writer)`` on success; raises ``ConnectionError`` otherwise.
+        """
+        # Determine if host is IP or domain
+        is_ip = False
+        ip_bytes = b"\x00\x00\x00\x01"  # SOCKS4a sentinel (0.0.0.1)
+        try:
+            parts = host.split(".")
+            if len(parts) == 4 and all(0 <= int(p) <= 255 for p in parts):
+                ip_bytes = bytes(int(p) for p in parts)
+                is_ip = True
+        except (ValueError, AttributeError):
+            pass
+
+        # Build request: version(0x04) + cmd(0x01) + port(2 bytes) + ip(4 bytes)
+        request = b"\x04\x01" + struct.pack("!H", port) + ip_bytes
+
+        # Append userid (null-terminated)
+        request += userid + b"\x00"
+
+        # For SOCKS4a, append the domain name after the null terminator
+        if not is_ip:
+            domain_bytes = host.encode("ascii")
+            request += domain_bytes + b"\x00"
+
+        writer.write(request)
+        await writer.drain()
+
+        # Read 8-byte response
+        response = await reader.readexactly(8)
+        if len(response) < 8:
+            raise ConnectionError("SOCKS4: incomplete response")
+
+        # Check version and status
+        # response[0] = null byte, response[1] = status (0x5a = success)
+        if response[1] != 0x5A:
+            status = response[1]
+            raise ConnectionError(f"SOCKS4: connection failed with status 0x{status:02x}")
+
+        return reader, writer
 
 
 class Socks5(BaseProtocol):
@@ -579,6 +674,104 @@ class Socks5(BaseProtocol):
             raise ValueError(f"unsupported address type: 0x{atyp:02x}")
 
         return user, host, port
+
+    async def connect(
+        self,
+        reader: Any,
+        writer: Any,
+        host: str,
+        port: int,
+        stat_bytes: Any = None,
+        auth: tuple[str, str] | None = None,
+        **kw: Any,
+    ) -> tuple[Any, Any]:
+        """Perform SOCKS5 handshake and connect.
+
+        Sends greeting, handles optional username/password auth, then sends
+        the CONNECT request. Returns ``(reader, writer)`` on success; raises
+        ``ConnectionError`` otherwise.
+        """
+        # Step 1: Send greeting
+        if auth:
+            greeting = b"\x05\x01\x02"  # version 5, 1 method, username/password
+        else:
+            greeting = b"\x05\x01\x00"  # version 5, 1 method, no auth
+        writer.write(greeting)
+        await writer.drain()
+
+        # Step 2: Read server choice
+        choice = await reader.readexactly(2)
+        if choice[0] != 0x05:
+            raise ConnectionError(f"SOCKS5: invalid version: {choice[0]}")
+        if choice[1] == 0xFF:
+            raise ConnectionError("SOCKS5: no acceptable auth method")
+
+        # Step 3: Auth negotiation
+        if auth:
+            if choice[1] != 0x02:
+                raise ConnectionError(f"SOCKS5: server chose method 0x{choice[1]:02x}, expected 0x02")
+
+            username, password = auth
+            user_bytes = username.encode("utf-8")
+            pass_bytes = password.encode("utf-8")
+            auth_request = b"\x01" + bytes([len(user_bytes)]) + user_bytes + bytes([len(pass_bytes)]) + pass_bytes
+            writer.write(auth_request)
+            await writer.drain()
+
+            # Read auth response (2 bytes: version + status)
+            auth_response = await reader.readexactly(2)
+            if auth_response[0] != 0x01:
+                raise ConnectionError(f"SOCKS5: invalid auth version: {auth_response[0]}")
+            if auth_response[1] != 0x00:
+                raise ConnectionError("SOCKS5: authentication failed")
+
+        # Step 4: Build connect request
+        # Use domain name (ATYP 0x03) for hostname resolution by the proxy
+        domain_bytes = host.encode("ascii")
+        connect_request = (
+            b"\x05\x01\x00"  # version 5, connect cmd, reserved
+            + b"\x03"  # address type: domain
+            + bytes([len(domain_bytes)])
+            + domain_bytes
+            + struct.pack("!H", port)
+        )
+        writer.write(connect_request)
+        await writer.drain()
+
+        # Step 5: Read connect response
+        response = await reader.readexactly(4)
+        if response[0] != 0x05:
+            raise ConnectionError(f"SOCKS5: invalid response version: {response[0]}")
+        if response[1] != 0x00:
+            # Map SOCKS5 reply codes to human-readable errors
+            reply_codes = {
+                0x01: "general SOCKS server failure",
+                0x02: "connection not allowed by ruleset",
+                0x03: "network unreachable",
+                0x04: "host unreachable",
+                0x05: "connection refused",
+                0x06: "TTL expired",
+                0x07: "command not supported",
+                0x08: "address type not supported",
+            }
+            error_msg = reply_codes.get(response[1], f"unknown error 0x{response[1]:02x}")
+            raise ConnectionError(f"SOCKS5: connect failed - {error_msg}")
+
+        # Read the bound address (variable length based on address type)
+        atyp = response[3]
+        if atyp == 0x01:  # IPv4
+            await reader.readexactly(4)  # skip bound address
+            await reader.readexactly(2)  # skip bound port
+        elif atyp == 0x03:  # Domain
+            domain_len = (await reader.readexactly(1))[0]
+            await reader.readexactly(domain_len + 2)  # skip domain + port
+        elif atyp == 0x04:  # IPv6
+            await reader.readexactly(16)  # skip bound address
+            await reader.readexactly(2)  # skip bound port
+        else:
+            raise ConnectionError(f"SOCKS5: unexpected address type: 0x{atyp:02x}")
+
+        return reader, writer
 
     def udp_pack(self, host_name: str, port: int, data: bytes) -> bytes:
         """Encode data with SOCKS5 UDP header."""

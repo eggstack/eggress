@@ -78,6 +78,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Top-level pproxy package module. Paired oracle comparison: symbol not found in module (re-exported at top level). Module existence verified via top-level import."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto"
@@ -99,6 +101,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Protocol definitions module."
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server"
@@ -120,6 +124,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Server implementation module."
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher"
@@ -143,6 +149,8 @@ notes = "Cipher implementations module."
 # -- Top-level exports --
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.Connection"
@@ -164,6 +172,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: symbol not found in module (re-exported at top level). Module existence verified via top-level import."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.Server"
@@ -185,6 +195,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "pproxy.Server wraps the full server lifecycle."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.DIRECT"
@@ -206,6 +218,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Direct connection constant."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.Rule"
@@ -227,6 +241,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: now an alias for compile_rule (matches oracle)."
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto_reexport"
@@ -250,6 +266,8 @@ notes = "Protocol module re-export."
 # -- Protocol classes --
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.BaseProtocol"
@@ -271,6 +289,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Socks5"
@@ -292,6 +312,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.HTTP"
@@ -313,6 +335,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Socks4"
@@ -334,6 +358,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SS"
@@ -355,6 +381,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Trojan"
@@ -376,6 +404,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Direct"
@@ -397,6 +427,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Transparent"
@@ -418,6 +450,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Transparent proxy base class. Platform-gated to Linux (SO_ORIGINAL_DST)."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SSH"
@@ -439,6 +473,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "SSH protocol handler. Intentionally not implemented. eggress recommends OpenSSH dynamic forwarding (ssh -D) for SSH tunneling."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SSR"
@@ -460,6 +496,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "SSR/legacy Shadowsocks protocol handler. Intentionally rejected. SSR stream ciphers are insecure; eggress only supports standard SIP003 AEAD methods."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.WS"
@@ -481,6 +519,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.H2"
@@ -502,6 +542,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.H3"
@@ -523,6 +565,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Tunnel"
@@ -544,6 +588,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Echo"
@@ -565,6 +611,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Pf"
@@ -586,6 +634,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "macOS PF transparent proxy. Platform-gated to macOS only; requires PF firewall."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Redir"
@@ -607,6 +657,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Linux transparent proxy via SO_ORIGINAL_DST. Platform-gated to Linux only."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.HTTPOnly"
@@ -630,6 +682,8 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 # -- Protocol class methods --
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Socks5.accept"
@@ -651,6 +705,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Socks5.channel"
@@ -672,6 +728,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Socks5.connect"
@@ -693,6 +751,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Socks5.udp_accept"
@@ -714,6 +774,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.HTTP.accept"
@@ -735,6 +797,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.HTTP.http_accept"
@@ -756,6 +820,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SS.accept"
@@ -777,6 +843,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SS.guess"
@@ -798,6 +866,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Trojan.accept"
@@ -819,6 +889,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.Trojan.guess"
@@ -840,6 +912,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.WS.patch_ws_stream"
@@ -863,6 +937,8 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 # -- Protocol module functions --
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.accept_func"
@@ -884,6 +960,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.get_protos"
@@ -905,6 +983,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.udp_accept_func"
@@ -926,6 +1006,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.socks_address"
@@ -947,6 +1029,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.netloc_split"
@@ -968,6 +1052,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.sslwrap"
@@ -989,6 +1075,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.packstr"
@@ -1012,6 +1100,8 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 # -- Protocol constants --
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.MAPPINGS"
@@ -1033,6 +1123,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.HTTP_LINE"
@@ -1054,6 +1146,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SO_ORIGINAL_DST"
@@ -1075,6 +1169,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Internal pproxy implementation detail; not part of the public source-compatibility surface."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.proto.SOL_IPV6"
@@ -1098,6 +1194,8 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 # -- Cipher classes --
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.BaseCipher"
@@ -1119,6 +1217,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Base class for all ciphers. encrypt/decrypt in the base raises UnsupportedFeatureError; subclasses provide functional implementations."
 evidence_level = "paired_oracle"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.AEADCipher"
@@ -1140,6 +1240,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional AEAD base class with encrypt, decrypt, encrypt_and_digest, decrypt_and_verify via cryptography backend."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.AES_256_GCM_Cipher"
@@ -1161,6 +1263,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional AES-256-GCM AEAD cipher with encrypt/decrypt round-trip and NIST KAT validation."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.AES_192_GCM_Cipher"
@@ -1182,6 +1286,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional AES-192-GCM AEAD cipher with encrypt/decrypt round-trip validation."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.AES_128_GCM_Cipher"
@@ -1203,6 +1309,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional AES-128-GCM AEAD cipher with encrypt/decrypt round-trip validation."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.ChaCha20_IETF_POLY1305_Cipher"
@@ -1224,6 +1332,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional ChaCha20-Poly1305 AEAD cipher with encrypt/decrypt round-trip and RFC 8439 validation."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.PacketCipher"
@@ -1245,6 +1355,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional UDP packet cipher wrapping AEAD ciphers with nonce/tag framing."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.AES_256_CFB_Cipher"
@@ -1266,6 +1378,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional AES-256-CFB stream cipher with encrypt/decrypt round-trip via cryptography backend."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.ChaCha20_IETF_Cipher"
@@ -1287,6 +1401,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional ChaCha20-IETF stream cipher with 12-byte nonce via cryptography backend."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.ChaCha20_Cipher"
@@ -1308,6 +1424,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional ChaCha20 stream cipher with 8-byte IV via cryptography backend."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.MAP"
@@ -1329,6 +1447,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional cipher registry mapping names to classes. Includes -py aliases for pproxy 2.7.9 compat."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.cipher.get_cipher"
@@ -1350,6 +1470,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Functional cipher factory: parses name:password[!ota], returns (error, ApplyCipher). Validates all error paths."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.AuthTable"
@@ -1371,6 +1493,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxySimple"
@@ -1392,6 +1516,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxyBackward"
@@ -1413,6 +1539,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxyDirect"
@@ -1434,6 +1562,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxyH2"
@@ -1455,6 +1585,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxyH3"
@@ -1476,6 +1608,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxySSH"
@@ -1497,6 +1631,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "SSH is intentionally not supported by eggress."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.ProxyQUIC"
@@ -1518,6 +1654,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.main"
@@ -1539,6 +1677,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.compile_rule"
@@ -1560,6 +1700,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.check_server_alive"
@@ -1581,6 +1723,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.prepare_ciphers"
@@ -1602,6 +1746,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.proxies_by_uri"
@@ -1623,6 +1769,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "structural_only"
 implementation_state = "functional"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.proxy_by_uri"
@@ -1644,6 +1792,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior. Paired oracle comparison: signature differs only in type annotations (candidate has annotations, oracle does not). Candidate is more precise."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.SOCKET_TIMEOUT"
@@ -1665,6 +1815,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.UDP_LIMIT"
@@ -1686,6 +1838,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.DIRECT_const"
@@ -1707,6 +1861,8 @@ evidence_refs = ["pproxy_api_contract.json"]
 notes = "Milestone B: properly implemented with matching signature and behavior."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "python.pproxy.server.DUMMY"
@@ -1732,6 +1888,8 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 # ================================================================
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = true
 
 [[record]]
 id = "cli.listen"
@@ -1753,6 +1911,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Bind one or more TCP listener URIs."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.remote"
@@ -1774,6 +1934,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Specify upstream proxy URIs with chaining via __ separator."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.udp_listen"
@@ -1795,6 +1957,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Bind a standalone UDP relay socket."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.udp_remote"
@@ -1816,6 +1980,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Specify upstream for UDP traffic relayed via -ul."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.scheduler"
@@ -1837,6 +2003,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Set load-balancing algorithm (rr, fa, rc, lc)."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.alive"
@@ -1858,6 +2026,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Set alive check interval in seconds."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.ssl"
@@ -1879,6 +2049,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Enable TLS on listener (certfile,keyfile)."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.block"
@@ -1900,6 +2072,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Block connections matching regex patterns."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.rulefile"
@@ -1921,6 +2095,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Load routing rules from a line-based file."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.daemon"
@@ -1942,6 +2118,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Fork into background. Not applicable; eggress uses systemd/launchd/supervisord for process management instead of built-in daemonization."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.verbose"
@@ -1963,6 +2141,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Enable verbose/debug logging. Parsed and diagnosed."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.log"
@@ -1984,6 +2164,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Write log output to a file. Parsed and diagnosed."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.reuse"
@@ -2005,6 +2187,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Connection reuse/pooling. Platform-gated to Linux; recognized but behavior differs from pproxy on other platforms."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.pac"
@@ -2026,6 +2210,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Serve a PAC file for browser auto-configuration."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.sys"
@@ -2047,6 +2233,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Auto-configure system proxy settings. Parsed and diagnosed."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.test"
@@ -2068,6 +2256,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Test all remote proxies and exit. Parsed and diagnosed."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.get"
@@ -2080,7 +2270,7 @@ candidate_probe = "cli.get_flag"
 comparator = "cli_flag_rejection"
 status = "gap"
 owner = "track-a"
-milestone = "B"
+milestone = "D"
 platforms = ["linux", "macos", "windows"]
 python_versions = []
 depends_on = []
@@ -2089,6 +2279,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Fetch a URL through the configured proxy. Recognized, unsupported."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "process"
+closure_required = false
 
 [[record]]
 id = "cli.config"
@@ -2110,6 +2302,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Load configuration from TOML file."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.ipv6"
@@ -2131,6 +2325,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Enable IPv6 mode."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.bind"
@@ -2152,6 +2348,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Bind address for outgoing connections."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.version"
@@ -2173,6 +2371,8 @@ evidence_refs = ["pproxy_cli_inventory"]
 notes = "Print version information and exit."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cli.help"
@@ -2200,6 +2400,8 @@ notes = "Print usage information and exit."
 # -- HTTP CONNECT --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.listener_tcp_ipv4"
@@ -2221,6 +2423,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Accept HTTP CONNECT and relay to IPv4 target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.listener_tcp_ipv6"
@@ -2242,6 +2446,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Accept HTTP CONNECT and relay to IPv6 target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.listener_tcp_domain"
@@ -2263,6 +2469,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Accept HTTP CONNECT and relay to domain target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.auth_success"
@@ -2284,6 +2492,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Accept HTTP CONNECT with valid proxy credentials."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.auth_failure"
@@ -2305,6 +2515,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Reject HTTP CONNECT with invalid proxy credentials."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.refused"
@@ -2326,6 +2538,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "HTTP CONNECT to refused target produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.half_close"
@@ -2347,6 +2561,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Half-close handling during CONNECT tunnel."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.fragmented"
@@ -2368,6 +2584,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Fragmented payload relay in CONNECT tunnel."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_connect.timeout"
@@ -2391,6 +2609,8 @@ notes = "Upstream connect timeout produces equivalent failure class."
 # -- HTTP Forward --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.get"
@@ -2412,6 +2632,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Forward HTTP GET requests to target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.post_content_length"
@@ -2433,6 +2655,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Forward HTTP POST with Content-Length."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.head"
@@ -2454,6 +2678,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Forward HTTP HEAD requests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.chunked"
@@ -2475,6 +2701,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Forward HTTP requests with chunked transfer encoding."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.persistent"
@@ -2496,6 +2724,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Persistent (keep-alive) forward proxy connections."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.connection_close"
@@ -2517,6 +2747,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Connection: close header handling."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.auth_success"
@@ -2538,6 +2770,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Forward proxy with valid credentials succeeds."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.malformed"
@@ -2559,6 +2793,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Malformed HTTP request produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.http_forward.upstream_close"
@@ -2582,6 +2818,8 @@ notes = "Upstream connection close during forward proxy."
 # -- SOCKS4 --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks4.connect_ipv4"
@@ -2603,6 +2841,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS4 CONNECT to IPv4 target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks4.user_id"
@@ -2624,6 +2864,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "User ID field forwarded in CONNECT request."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks4.refused"
@@ -2645,6 +2887,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS4 CONNECT to refused target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks4.malformed"
@@ -2668,6 +2912,8 @@ notes = "Malformed SOCKS4 request handling."
 # -- SOCKS4a --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks4a.connect_domain"
@@ -2691,6 +2937,8 @@ notes = "SOCKS4a CONNECT with domain resolution."
 # -- SOCKS5 --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.connect_ipv4"
@@ -2712,6 +2960,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS5 CONNECT to IPv4 target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.connect_ipv6"
@@ -2733,6 +2983,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS5 CONNECT to IPv6 target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.connect_domain"
@@ -2754,6 +3006,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS5 CONNECT with domain target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.connect_refused"
@@ -2775,6 +3029,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS5 CONNECT to refused target."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.auth_success"
@@ -2796,6 +3052,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS5 with valid credentials succeeds."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.auth_failure"
@@ -2817,6 +3075,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "SOCKS5 with invalid credentials rejected."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.socks5.udp_associate"
@@ -2840,6 +3100,8 @@ notes = "SOCKS5 UDP associate relay."
 # -- Shadowsocks --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.shadowsocks.tcp_upstream"
@@ -2861,6 +3123,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Standard SIP003 AEAD TCP framing; wire-compatible."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.shadowsocks.udp_relay"
@@ -2884,6 +3148,8 @@ notes = "Standard AEAD UDP relay; interoperable with standard implementations."
 # -- Trojan --
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.trojan.upstream"
@@ -2905,6 +3171,8 @@ evidence_refs = ["pproxy_capability_manifest"]
 notes = "Trojan upstream with TLS and SHA224 password auth."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "protocol.trojan.auth_failure"
@@ -2930,6 +3198,8 @@ notes = "Trojan auth failure produces equivalent error."
 # ================================================================
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cipher.aes_256_gcm.kat"
@@ -2951,6 +3221,8 @@ evidence_refs = ["NIST_SP_800_38D"]
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cipher.aes_192_gcm.kat"
@@ -2972,6 +3244,8 @@ evidence_refs = ["NIST_SP_800_38D"]
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cipher.aes_128_gcm.kat"
@@ -2993,6 +3267,8 @@ evidence_refs = ["NIST_SP_800_38D"]
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cipher.chacha20_ietf_poly1305.kat"
@@ -3014,6 +3290,8 @@ evidence_refs = ["RFC_8439"]
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "cipher.aes_256_gcm.roundtrip"
@@ -3035,6 +3313,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.aes_192_gcm.roundtrip"
@@ -3056,6 +3336,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.aes_128_gcm.roundtrip"
@@ -3077,6 +3359,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.chacha20_ietf_poly1305.roundtrip"
@@ -3098,6 +3382,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.aead.encrypt_and_digest"
@@ -3119,6 +3405,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.aead.decrypt_and_verify"
@@ -3140,6 +3428,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.aead.nonce_property"
@@ -3161,6 +3451,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = false
 
 [[record]]
 id = "cipher.aead.setup_iv"
@@ -3182,6 +3474,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "structural_only"
 implementation_state = "structural"
+certification_scope = "structural"
+closure_required = false
 
 [[record]]
 id = "cipher.stream.cfb_roundtrip"
@@ -3203,6 +3497,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.stream.ctr_roundtrip"
@@ -3224,6 +3520,8 @@ evidence_refs = []
 notes = "Milestone B: validated by existing cipher behavioral tests."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "cipher.stream.ofb_roundtrip"
@@ -3249,6 +3547,8 @@ notes = "Milestone B: validated by existing cipher behavioral tests."
 # ================================================================
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "composition.http_listener_tcp"
@@ -3270,6 +3570,8 @@ evidence_refs = ["composition_matrix"]
 notes = "HTTP as TCP listener is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.socks5_listener_tcp"
@@ -3291,6 +3593,8 @@ evidence_refs = ["composition_matrix"]
 notes = "SOCKS5 as TCP listener is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.socks4_listener_tcp"
@@ -3312,6 +3616,8 @@ evidence_refs = ["composition_matrix"]
 notes = "SOCKS4 as TCP listener is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.shadowsocks_listener_tcp"
@@ -3333,6 +3639,8 @@ evidence_refs = ["composition_matrix"]
 notes = "Shadowsocks as TCP listener is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.trojan_listener_tcp"
@@ -3354,6 +3662,8 @@ evidence_refs = ["composition_matrix"]
 notes = "Trojan as TCP listener is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.http_upstream_tcp"
@@ -3375,6 +3685,8 @@ evidence_refs = ["composition_matrix"]
 notes = "HTTP as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.socks5_upstream_tcp"
@@ -3396,6 +3708,8 @@ evidence_refs = ["composition_matrix"]
 notes = "SOCKS5 as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.shadowsocks_upstream_tcp"
@@ -3417,6 +3731,8 @@ evidence_refs = ["composition_matrix"]
 notes = "Shadowsocks as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.trojan_upstream_tcp"
@@ -3438,6 +3754,8 @@ evidence_refs = ["composition_matrix"]
 notes = "Trojan as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.socks5_listener_udp"
@@ -3459,6 +3777,8 @@ evidence_refs = ["composition_matrix"]
 notes = "SOCKS5 UDP associate listener is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.direct_upstream"
@@ -3480,6 +3800,8 @@ evidence_refs = ["composition_matrix"]
 notes = "Direct upstream (no proxy) is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.ws_upstream_tcp"
@@ -3501,6 +3823,8 @@ evidence_refs = ["composition_matrix"]
 notes = "WebSocket as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.h2_upstream_tcp"
@@ -3522,6 +3846,8 @@ evidence_refs = ["composition_matrix"]
 notes = "H2 CONNECT as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.raw_upstream_tcp"
@@ -3543,6 +3869,8 @@ evidence_refs = ["composition_matrix"]
 notes = "Raw/tunnel as TCP upstream is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.ssh_upstream_rejected"
@@ -3564,6 +3892,8 @@ evidence_refs = ["composition_matrix"]
 notes = "SSH as upstream is rejected with structured diagnostic."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.ssr_upstream_rejected"
@@ -3585,6 +3915,8 @@ evidence_refs = ["composition_matrix"]
 notes = "SSR as upstream is rejected with structured diagnostic."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.chain_two_hop_valid"
@@ -3606,6 +3938,8 @@ evidence_refs = ["composition_matrix"]
 notes = "socks5__http two-hop chain is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.chain_three_hop_valid"
@@ -3627,6 +3961,8 @@ evidence_refs = ["composition_matrix"]
 notes = "socks5__http__socks5 three-hop chain is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.chain_socks5_to_ws"
@@ -3648,6 +3984,8 @@ evidence_refs = ["composition_matrix"]
 notes = "socks5__ws chain is valid."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "composition.chain_socks5_to_h2"
@@ -3673,6 +4011,8 @@ notes = "socks5__h2 chain is valid."
 # ================================================================
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = true
 
 [[record]]
 id = "process.startup.successful"
@@ -3694,6 +4034,8 @@ evidence_refs = []
 notes = "Process starts and binds listener successfully."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.startup.bind_conflict"
@@ -3715,6 +4057,8 @@ evidence_refs = []
 notes = "Startup fails with address-in-use error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.shutdown.graceful"
@@ -3736,6 +4080,8 @@ evidence_refs = []
 notes = "Process shuts down gracefully on SIGTERM/SIGINT."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.shutdown.connection_drain"
@@ -3757,6 +4103,8 @@ evidence_refs = []
 notes = "Active connections are drained during shutdown grace period."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.reload.routing"
@@ -3769,7 +4117,7 @@ candidate_probe = "process.reload_routing"
 comparator = "process_lifecycle"
 status = "gap"
 owner = "track-c"
-milestone = "B"
+milestone = "E"
 platforms = ["linux", "macos"]
 python_versions = []
 depends_on = []
@@ -3778,6 +4126,8 @@ evidence_refs = []
 notes = "SIGHUP triggers config reload (routing only, not topology)."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "process"
+closure_required = false
 
 [[record]]
 id = "process.signal.sigterm"
@@ -3799,6 +4149,8 @@ evidence_refs = []
 notes = "SIGTERM triggers graceful shutdown."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.signal.sigint"
@@ -3820,6 +4172,8 @@ evidence_refs = []
 notes = "SIGINT (Ctrl-C) triggers graceful shutdown."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.signal.sighup"
@@ -3841,6 +4195,8 @@ evidence_refs = []
 notes = "SIGHUP triggers config reload."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.daemon.unsupported"
@@ -3862,6 +4218,8 @@ evidence_refs = []
 notes = "--daemon flag is recognized but rejected. Not applicable; eggress uses systemd/launchd/supervisord for process management."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.multiple_listeners"
@@ -3883,6 +4241,8 @@ evidence_refs = []
 notes = "Multiple listeners bound on different ports/protocols."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.upstream_health_check"
@@ -3904,6 +4264,8 @@ evidence_refs = []
 notes = "Health checks run against configured upstreams."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "process.admin_endpoint"
@@ -3929,6 +4291,8 @@ notes = "Admin HTTP server serves PAC and snapshot."
 # ================================================================
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.dns.resolve_error"
@@ -3950,6 +4314,8 @@ evidence_refs = []
 notes = "DNS resolution failure produces equivalent error class."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.dns.nxdomain"
@@ -3971,6 +4337,8 @@ evidence_refs = []
 notes = "DNS NXDOMAIN produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.connection.refused"
@@ -3992,6 +4360,8 @@ evidence_refs = []
 notes = "Connection refused produces equivalent error class."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.connection.timeout"
@@ -4013,6 +4383,8 @@ evidence_refs = []
 notes = "Connection timeout produces equivalent error class."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.auth.invalid_credentials"
@@ -4034,6 +4406,8 @@ evidence_refs = []
 notes = "Invalid auth credentials produce equivalent error class."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.auth.missing_credentials"
@@ -4055,6 +4429,8 @@ evidence_refs = []
 notes = "Missing auth credentials produce equivalent error class."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.malformed.http_request"
@@ -4076,6 +4452,8 @@ evidence_refs = []
 notes = "Malformed HTTP request produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.malformed.socks4_version"
@@ -4097,6 +4475,8 @@ evidence_refs = []
 notes = "SOCKS4 with wrong version byte produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.malformed.socks4_truncated"
@@ -4118,6 +4498,8 @@ evidence_refs = []
 notes = "Truncated SOCKS4 request produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.malformed.socks5_version"
@@ -4139,6 +4521,8 @@ evidence_refs = []
 notes = "SOCKS5 with wrong version byte produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.upstream.connection_loss"
@@ -4160,6 +4544,8 @@ evidence_refs = []
 notes = "Upstream connection loss during relay produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false
 
 [[record]]
 id = "failure.policy.deny"
@@ -4181,3 +4567,5 @@ evidence_refs = []
 notes = "Policy deny (blocked by rule) produces equivalent error."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
+certification_scope = "behavioral"
+closure_required = false

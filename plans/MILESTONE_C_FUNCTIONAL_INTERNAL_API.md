@@ -2,11 +2,7 @@
 
 ## Status
 
-**REOPENED — corrective pass nearing completion (30/31 criteria met).** The corrective pass
-(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) has generated behavioral evidence for cipher KAT,
-protocol wire, process lifecycle, plugin lifecycle (15/15 matched), and runtime/failure/cleanup
-dimensions (11/11 matched). Protocol methods aligned to oracle signatures. Only hosted CI
-evidence retention remains unchecked (blocked on non-functional CI infrastructure).
+**REOPENED — final evidence and runtime closure in progress.**
 
 ## Parent roadmap
 
@@ -800,22 +796,22 @@ When a protocol class is blocked by a missing transport such as SSH or QUIC, com
 
 | # | Criterion | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | Server utilities functional + differential verified | **MET** | `compile_rule`, `check_server_alive`, `prepare_ciphers`, `schedule`, `stream_handler`, `datagram_handler` all functional. Structural differential scaffolding in place (`test_milestone_c_gap_fills.py`). |
-| 2 | AuthTable/scheduling/rules/cipher prep match oracle | **MET** | AuthTable expiry/truthiness/membership/clear implemented. Scheduling (fa/rr/lc) implemented with alive filtering. Rules parsed from files. Cipher prep delegates to `eggress.cipher`. |
-| 3 | Stream/datagram handlers match ordering/state/cleanup | **MET** | Happy-path echo, auth rejection, null rserver, ConnectionError, EOF, connection_change tracking all tested. Simplified handlers (no upstream connect) — honest scope. |
-| 4 | Protocol constructors and attributes match | **MET** | 24 protocol classes with matching signatures. Exhaustive constructor/attribute tests. |
-| 5 | Address encoding/decoding bytes and failures match | **MET** | `decode_socks_address` for IPv4/domain/IPv6. 20 encoding tests. |
-| 6 | Protocol guessing preserves and consumes bytes | **MET** | `guess()` methods buffer and preserve bytes. Module-level `accept()` dispatches correctly. |
-| 7 | accept/connect/channel/UDP methods functional | **MET** | `accept()` functional for HTTP/Socks4/Socks5. `connect()`/`udp_connect()` raise `NotImplementedError` — honest gap requiring Rust runtime. |
-| 8 | sslwrap() operational | **MET** | Returns TLS-wrapped `(reader, writer)` via asyncio SSLProtocol. |
-| 9 | Cipher registry and aliases match | **MET** | 39 MAP entries in both `eggress.cipher.MAP` and `pproxy.cipherpy.MAP` (24 base + 15 `-py` variants). |
-| 10 | Key derivation/AEAD/packet known-answer tests pass | **MET** | EVP_BytesToKey known-answer, AEAD round-trip, nonce increment, encrypt_and_digest/decrypt_and_verify, stream cipher round-trips all tested. |
-| 11 | Plugin registry and lifecycle functional | **MET** | `PluginRegistry`, `PluginBridge`, `CallbackWrapper` with backpressure, timeout, reentrancy, GIL release, metrics. |
-| 12 | cipherpy fallbacks work | **MET** | Fallback MAP with stub classes and `_evp_bytes_to_key` when `eggress.cipher` unavailable. |
-| 13 | Negative-path and debug-mode propagation match | **MET** | `DEBUG` flag controls exception propagation in `accept()`/`udp_accept()`. Tests verify both suppress and propagate paths. |
-| 14 | Bidirectional external interop passes | **MET** | Structural interop scaffolding in place. Full interop gated behind `EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1` (requires `pproxy==2.7.9`). |
-| 15 | No import-only or unconditional stubs remain | **MET** | All modules export working implementations. `NotImplementedError` only for genuinely unimplementable methods. |
-| 16 | Transport gaps assigned to Milestone D | **MET** | SSH, QUIC, H3, SSR, Salsa20, BF_CFB, CAST5_CFB, DES_CFB explicitly deferred. |
+| 1 | Server utilities functional + differential verified | **MET (historical, pending revalidation)** | `compile_rule`, `check_server_alive`, `prepare_ciphers`, `schedule`, `stream_handler`, `datagram_handler` all functional. Structural differential scaffolding in place (`test_milestone_c_gap_fills.py`). |
+| 2 | AuthTable/scheduling/rules/cipher prep match oracle | **MET (historical, pending revalidation)** | AuthTable expiry/truthiness/membership/clear implemented. Scheduling (fa/rr/lc) implemented with alive filtering. Rules parsed from files. Cipher prep delegates to `eggress.cipher`. |
+| 3 | Stream/datagram handlers match ordering/state/cleanup | **MET (historical, pending revalidation)** | Happy-path echo, auth rejection, null rserver, ConnectionError, EOF, connection_change tracking all tested. Simplified handlers (no upstream connect) — honest scope. |
+| 4 | Protocol constructors and attributes match | **MET (historical, pending revalidation)** | 24 protocol classes with matching signatures. Exhaustive constructor/attribute tests. |
+| 5 | Address encoding/decoding bytes and failures match | **MET (historical, pending revalidation)** | `decode_socks_address` for IPv4/domain/IPv6. 20 encoding tests. |
+| 6 | Protocol guessing preserves and consumes bytes | **MET (historical, pending revalidation)** | `guess()` methods buffer and preserve bytes. Module-level `accept()` dispatches correctly. |
+| 7 | accept/connect/channel/UDP methods functional | **MET (historical, pending revalidation)** | `accept()` functional for HTTP/Socks4/Socks5. `connect()`/`udp_connect()` raise `NotImplementedError` — honest gap requiring Rust runtime. |
+| 8 | sslwrap() operational | **MET (historical, pending revalidation)** | Returns TLS-wrapped `(reader, writer)` via asyncio SSLProtocol. |
+| 9 | Cipher registry and aliases match | **MET (historical, pending revalidation)** | 39 MAP entries in both `eggress.cipher.MAP` and `pproxy.cipherpy.MAP` (24 base + 15 `-py` variants). |
+| 10 | Key derivation/AEAD/packet known-answer tests pass | **MET (historical, pending revalidation)** | EVP_BytesToKey known-answer, AEAD round-trip, nonce increment, encrypt_and_digest/decrypt_and_verify, stream cipher round-trips all tested. |
+| 11 | Plugin registry and lifecycle functional | **MET (historical, pending revalidation)** | `PluginRegistry`, `PluginBridge`, `CallbackWrapper` with backpressure, timeout, reentrancy, GIL release, metrics. |
+| 12 | cipherpy fallbacks work | **MET (historical, pending revalidation)** | Fallback MAP with stub classes and `_evp_bytes_to_key` when `eggress.cipher` unavailable. |
+| 13 | Negative-path and debug-mode propagation match | **MET (historical, pending revalidation)** | `DEBUG` flag controls exception propagation in `accept()`/`udp_accept()`. Tests verify both suppress and propagate paths. |
+| 14 | Bidirectional external interop passes | **MET (historical, pending revalidation)** | Structural interop scaffolding in place. Full interop gated behind `EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1` (requires `pproxy==2.7.9`). |
+| 15 | No import-only or unconditional stubs remain | **MET (historical, pending revalidation)** | All modules export working implementations. `NotImplementedError` only for genuinely unimplementable methods. |
+| 16 | Transport gaps assigned to Milestone D | **MET (historical, pending revalidation)** | SSH, QUIC, H3, SSR, Salsa20, BF_CFB, CAST5_CFB, DES_CFB explicitly deferred. |
 
 ### Remaining honest gaps (Milestone D scope)
 

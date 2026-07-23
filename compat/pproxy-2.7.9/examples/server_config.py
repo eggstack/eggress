@@ -4,7 +4,7 @@
 Tests Server construction from URI patterns, listener configuration,
 and rule compilation. Does NOT start actual servers.
 
-Provenance: Derived from pproxy API contract and upstream examples.
+Provenance: Eggress-authored behavioral scenario based on pproxy 2.7.9 public API.
 License: MIT (pproxy)
 Tested with: pproxy==2.7.9 on Python 3.11
 """

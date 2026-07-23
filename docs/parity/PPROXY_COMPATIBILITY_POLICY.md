@@ -178,7 +178,7 @@ cargo test -p eggress-pproxy-compat
 
 - Clean oracle environment bootstrap (pproxy==2.7.9, pinned hash)
 - Paired API and CLI probes against oracle
-- Unchanged upstream examples against oracle
+- Eggress-authored behavioral scenarios against oracle
 - Common HTTP/SOCKS5/direct scenarios
 
 Requires: `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`

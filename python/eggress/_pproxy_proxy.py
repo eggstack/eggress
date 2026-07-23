@@ -41,43 +41,52 @@ def _proto_to_scheme(proto_cls: Any) -> str:
 class AuthTable:
     """pproxy-compatible authentication state table.
 
+    State is shared across instances for the same remote_ip, matching
+    pproxy 2.7.9 behavior. Different IPs are isolated.
+
     Args:
         remote_ip: IP address of the remote client.
         authtime: Timeout in seconds for the auth entry.
-
-    The table tracks whether a client has been authenticated via the
-    ``authed()`` / ``set_authed(user)`` protocol, with optional
-    expiry timing.
     """
+
+    # Class-level shared state: {remote_ip: {"user": ..., "auth_time": ...}}
+    _shared_state: dict[str, dict[str, Any]] = {}
 
     def __init__(self, remote_ip: str | None = None, authtime: int | None = None) -> None:
         self.remote_ip = remote_ip
         self.authtime = authtime
-        self._user: Any = None
-        self._auth_time: float | None = None
+        # Use shared state for this IP
+        if remote_ip is not None:
+            if remote_ip not in AuthTable._shared_state:
+                AuthTable._shared_state[remote_ip] = {"user": None, "auth_time": None}
+            self._state = AuthTable._shared_state[remote_ip]
+        else:
+            # No IP: per-instance state (matches oracle behavior)
+            self._state = {"user": None, "auth_time": None}
 
     def authed(self) -> Any:
         """Return the currently authenticated user, or ``None``."""
-        if self._user is None:
+        user = self._state["user"]
+        if user is None:
             return None
-        if self.authtime is not None and self._auth_time is not None:
+        if self.authtime is not None and self._state["auth_time"] is not None:
             import time
-            if time.monotonic() - self._auth_time > self.authtime:
-                self._user = None
-                self._auth_time = None
+            if time.monotonic() - self._state["auth_time"] > self.authtime:
+                self._state["user"] = None
+                self._state["auth_time"] = None
                 return None
-        return self._user
+        return user
 
     def set_authed(self, user: Any) -> None:
         """Mark *user* as authenticated."""
         import time
-        self._user = user
-        self._auth_time = time.monotonic()
+        self._state["user"] = user
+        self._state["auth_time"] = time.monotonic()
 
     def clear(self) -> None:
         """Clear authentication state."""
-        self._user = None
-        self._auth_time = None
+        self._state["user"] = None
+        self._state["auth_time"] = None
 
     def __bool__(self) -> bool:
         """Truthiness: True if any user is currently authenticated."""
@@ -89,6 +98,11 @@ class AuthTable:
 
     def __repr__(self) -> str:
         return f"<AuthTable remote_ip={self.remote_ip!r} authtime={self.authtime}>"
+
+    @classmethod
+    def _reset_shared(cls) -> None:
+        """Reset all shared state. For testing only."""
+        cls._shared_state.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +466,35 @@ class ProxySimple(ProxyDirect):
             return True
         return self._rule(host) or self._rule(str(port))
 
+    async def tcp_connect(
+        self,
+        host: str,
+        port: int,
+        local_addr: str | None = None,
+        lbind: str | None = None,
+    ) -> Any:
+        """Open a TCP connection through the upstream proxy.
+
+        If no upstream is configured, connects directly (ProxyDirect behavior).
+        """
+        upstream_uri = self._build_remote_uri()
+        if upstream_uri is None:
+            return await super().tcp_connect(
+                host, port, local_addr=local_addr, lbind=lbind
+            )
+
+        from eggress.outbound import OutboundConnector
+        from eggress._asyncio_adapter import (
+            CompatibleStreamReader,
+            CompatibleStreamWriter,
+        )
+
+        connector = OutboundConnector.from_pproxy_uri(upstream_uri)
+        stream = await connector.aconnect_tcp(host, port, timeout=60)
+        reader = CompatibleStreamReader(stream)
+        writer = CompatibleStreamWriter(stream, reader, host, port)
+        return reader, writer
+
     def wait_open_connection(
         self,
         host: str,
@@ -477,7 +520,8 @@ class ProxySimple(ProxyDirect):
             stream_handler: Callable to handle incoming streams.
 
         Returns:
-            A running asyncio server handle.
+            An ``asyncio.Server`` handle with ``close()``, ``wait_closed()``,
+            and ``sockets`` — matching the pproxy 2.7.9 contract.
         """
         import asyncio
         import functools
@@ -488,17 +532,31 @@ class ProxySimple(ProxyDirect):
             from pproxy.server import stream_handler as default_handler
             stream_handler = default_handler
 
-        handler = functools.partial(
-            stream_handler, **vars(self), **args
-        )
+        # Build keyword arguments matching stream_handler's parameter names.
+        # pproxy 2.7.9's ProxySimple stores these as public attributes
+        # (unix, lbind, protos, cipher, sslserver), but we use underscore-
+        # prefixed private attrs, so we must map explicitly.
+        handler_kwargs: dict[str, Any] = {
+            "unix": self._unix,
+            "lbind": self._lbind,
+            "protos": self._protos,
+            "cipher": self._cipher,
+            "sslserver": self._sslserver,
+        }
+        # Merge caller-provided args (rserver, debug, verbose, etc.).
+        if isinstance(args, dict):
+            handler_kwargs.update(args)
+
+        handler = functools.partial(stream_handler, **handler_kwargs)
         if self._unix:
             return await asyncio.start_unix_server(handler, path=self._unix)
         else:
             host = self._host_name or "0.0.0.0"
             port = self._port or 0
+            ruport = handler_kwargs.get("ruport") if isinstance(args, dict) else None
             return await asyncio.start_server(
                 handler, host=host, port=port,
-                reuse_port=args.get("ruport"),
+                reuse_port=ruport,
             )
 
     def _build_listen_uri(self) -> str:

@@ -5,7 +5,7 @@ Tests object construction, attribute existence, and chain topology
 without requiring network access. Endpoint configuration via environment
 variables where applicable.
 
-Provenance: Derived from pproxy API contract and upstream examples.
+Provenance: Eggress-authored behavioral scenario based on pproxy 2.7.9 public API.
 License: MIT (pproxy)
 Tested with: pproxy==2.7.9 on Python 3.11
 """

@@ -4,7 +4,7 @@
 Tests --help, --version, parser defaults, and invalid URI handling
 by invoking pproxy as a subprocess.
 
-Provenance: Derived from pproxy 2.7.9 CLI.
+Provenance: Eggress-authored behavioral scenario based on pproxy 2.7.9 public API.
 License: MIT (pproxy)
 Tested with: pproxy==2.7.9 on Python 3.11
 """

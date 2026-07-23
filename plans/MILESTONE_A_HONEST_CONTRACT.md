@@ -2,12 +2,7 @@
 
 ## Status
 
-**REOPENED — corrective pass nearing completion (30/31 criteria met).** The corrective pass
-(`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`) has addressed all behavioral gaps.
-18 protocol constructor signature mismatches resolved. Protocol accept/guess/connect
-methods aligned to oracle signatures. Plugin lifecycle tests added (15/15 matched).
-Runtime/failure/cleanup dimensions captured (11/11 matched). Only hosted CI evidence
-retention remains unchecked (blocked on non-functional CI infrastructure).
+**REOPENED — final evidence and runtime closure in progress.**
 
 ## Parent roadmap
 

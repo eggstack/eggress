@@ -497,3 +497,15 @@ python3.11 -m venv .venv-oracle
 4. Every `drop_in` has non-empty evidence or test refs
 5. No `drop_in` without oracle_probe
 6. No unresolved progress states at or below current milestone
+
+## Closure Audit
+
+The Milestones A-C closure audit runs all standard gates in sequence:
+
+```bash
+./scripts/run_strict_pproxy_closure_audit.sh
+```
+
+Runs: `cargo fmt --check`, `cargo check`, `cargo clippy`, `cargo test --workspace`, and `check_release_docs.py`. Reports pass/fail per gate with timing.
+
+The closure plan and evidence checklist are at `plans/MILESTONES_A_C_FINAL_EVIDENCE_RUNTIME_CLOSURE.md`.

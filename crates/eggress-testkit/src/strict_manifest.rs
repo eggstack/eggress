@@ -68,6 +68,9 @@ pub const ALLOWED_EVIDENCE_LEVELS: &[&str] = &[
 pub const ALLOWED_IMPLEMENTATION_STATES: &[&str] =
     &["functional", "structural", "partial", "absent"];
 
+pub const ALLOWED_CERTIFICATION_SCOPES: &[&str] =
+    &["structural", "behavioral", "interop", "process", "platform"];
+
 /// Milestone order for "current milestone" checking.
 const MILESTONE_ORDER: &[&str] = &["A", "B", "C", "D", "E", "F"];
 
@@ -140,6 +143,12 @@ pub struct StrictRecord {
     pub evidence_level: String,
     #[serde(default)]
     pub implementation_state: String,
+    #[serde(default = "default_certification_scope")]
+    pub certification_scope: String,
+    #[serde(default = "default_closure_required")]
+    pub closure_required: bool,
+    #[serde(default)]
+    pub behavior_record: Option<String>,
 }
 
 /// The complete strict manifest structure.
@@ -231,7 +240,30 @@ pub enum StrictValidationError {
     )]
     StructuralOnlyIncompatibleWithDropIn { id: String },
 
+    // Rule 10a: drop_in + structural comparator for behavioral certification_scope
+    #[error(
+        "record \"{id}\" has status \"drop_in\" with structural comparator \"{comparator}\" \
+         but certification_scope is \"behavioral\" (structural evidence cannot certify behavior)"
+    )]
+    StructuralComparatorBehavioralScopeMismatch { id: String, comparator: String },
+
+    // Rule 10b: closure_required with empty evidence_refs
+    #[error(
+        "record \"{id}\" has closure_required = true but empty evidence_refs \
+         (closure-required records must have evidence)"
+    )]
+    ClosureRequiredWithoutEvidence { id: String },
+
+    // Rule 10c: missing behavior_record for public structural record
+    #[error(
+        "record \"{id}\" has certification_scope = \"structural\" but missing behavior_record \
+         (structural records must reference a behavior record)"
+    )]
+    StructuralMissingBehaviorRecord { id: String },
+
     // New enum validation errors
+    #[error("unknown certification_scope \"{value}\" (valid: {allowed:?})")]
+    UnknownCertificationScope { value: String, allowed: Vec<String> },
     #[error("unknown evidence_level \"{value}\" (valid: {allowed:?})")]
     UnknownEvidenceLevel { value: String, allowed: Vec<String> },
 
@@ -273,6 +305,14 @@ impl Default for StrictValidationErrors {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn default_certification_scope() -> String {
+    "behavioral".to_string()
+}
+
+fn default_closure_required() -> bool {
+    true
+}
 
 fn milestone_index(milestone: &str) -> Option<usize> {
     MILESTONE_ORDER.iter().position(|&m| m == milestone)
@@ -577,6 +617,37 @@ pub fn validate_strict_manifest(manifest: &StrictManifest) -> Result<(), StrictV
                 StrictValidationError::StructuralOnlyIncompatibleWithDropIn { id: rec.id.clone() },
             );
         }
+
+        // Rule 1: Valid certification_scope
+        if !rec.certification_scope.is_empty()
+            && !ALLOWED_CERTIFICATION_SCOPES.contains(&rec.certification_scope.as_str())
+        {
+            errs.push(StrictValidationError::UnknownCertificationScope {
+                value: rec.certification_scope.clone(),
+                allowed: ALLOWED_CERTIFICATION_SCOPES
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            });
+        }
+
+        // Rule 10a: drop_in + structural comparator for behavioral certification_scope
+        if rec.status == "drop_in"
+            && rec.certification_scope == "behavioral"
+            && is_structural_comparator
+        {
+            errs.push(
+                StrictValidationError::StructuralComparatorBehavioralScopeMismatch {
+                    id: rec.id.clone(),
+                    comparator: rec.comparator.clone(),
+                },
+            );
+        }
+
+        // Rule 10b: closure_required with empty evidence_refs
+        if rec.closure_required && rec.evidence_refs.is_empty() {
+            errs.push(StrictValidationError::ClosureRequiredWithoutEvidence { id: rec.id.clone() });
+        }
     }
 
     if errs.is_empty() {
@@ -622,6 +693,7 @@ pub struct StrictManifestSummary {
     pub by_category: Vec<(String, usize)>,
     pub by_owner: Vec<(String, usize)>,
     pub by_milestone: Vec<(String, usize)>,
+    pub by_certification_scope: Vec<(String, usize)>,
     pub terminal_count: usize,
     pub gap_count: usize,
 }
@@ -634,6 +706,7 @@ pub fn summarize_manifest(manifest: &StrictManifest) -> StrictManifestSummary {
     let mut category_counts: HashMap<String, usize> = HashMap::new();
     let mut owner_counts: HashMap<String, usize> = HashMap::new();
     let mut milestone_counts: HashMap<String, usize> = HashMap::new();
+    let mut scope_counts: HashMap<String, usize> = HashMap::new();
     let mut terminal = 0;
     let mut gaps = 0;
 
@@ -646,6 +719,9 @@ pub fn summarize_manifest(manifest: &StrictManifest) -> StrictManifestSummary {
         if !rec.milestone.is_empty() {
             *milestone_counts.entry(rec.milestone.clone()).or_insert(0) += 1;
         }
+        *scope_counts
+            .entry(rec.certification_scope.clone())
+            .or_insert(0) += 1;
         if TERMINAL_STATUSES.contains(&rec.status.as_str()) {
             terminal += 1;
         } else {
@@ -661,6 +737,8 @@ pub fn summarize_manifest(manifest: &StrictManifest) -> StrictManifestSummary {
     by_owner.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     let mut by_milestone: Vec<_> = milestone_counts.into_iter().collect();
     by_milestone.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    let mut by_certification_scope: Vec<_> = scope_counts.into_iter().collect();
+    by_certification_scope.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
 
     StrictManifestSummary {
         total: manifest.record.len(),
@@ -668,6 +746,7 @@ pub fn summarize_manifest(manifest: &StrictManifest) -> StrictManifestSummary {
         by_category,
         by_owner,
         by_milestone,
+        by_certification_scope,
         terminal_count: terminal,
         gap_count: gaps,
     }
@@ -737,6 +816,14 @@ pub fn generate_strict_report(manifest: &StrictManifest) -> String {
     }
     out.push('\n');
 
+    out.push_str("### By Certification Scope\n\n");
+    out.push_str("| Scope | Count |\n");
+    out.push_str("|-------|-------|\n");
+    for (scope, count) in &summary.by_certification_scope {
+        out.push_str(&format!("| {} | {} |\n", scope, count));
+    }
+    out.push('\n');
+
     out.push_str("## Gap Records\n\n");
     out.push_str("Records with non-terminal status requiring resolution:\n\n");
     let gaps: Vec<_> = manifest
@@ -780,6 +867,151 @@ pub fn generate_strict_report(manifest: &StrictManifest) -> String {
             out.push_str(&format!(
                 "| {} | {} | {} | {} |\n",
                 rec.id, rec.status, rec.category, notes
+            ));
+        }
+        out.push('\n');
+    }
+
+    // -- Structural inventory records --
+    out.push_str("## Structural Inventory Records\n\n");
+    let structural: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| r.certification_scope == "structural")
+        .collect();
+    if structural.is_empty() {
+        out.push_str("_No structural inventory records._\n\n");
+    } else {
+        out.push_str("| ID | Status | Comparator | Evidence Level | Behavior Record |\n");
+        out.push_str("|----|--------|------------|----------------|------------------|\n");
+        for rec in &structural {
+            let behavior = rec.behavior_record.as_deref().unwrap_or("-");
+            out.push_str(&format!(
+                "| {} | {} | {} | {} | {} |\n",
+                rec.id, rec.status, rec.comparator, rec.evidence_level, behavior
+            ));
+        }
+        out.push('\n');
+    }
+
+    // -- Behaviorally certified records --
+    out.push_str("## Behaviorally Certified Records\n\n");
+    let behavioral: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| r.certification_scope == "behavioral")
+        .collect();
+    if behavioral.is_empty() {
+        out.push_str("_No behaviorally certified records._\n\n");
+    } else {
+        out.push_str("| ID | Status | Comparator | Evidence Level |\n");
+        out.push_str("|----|--------|------------|----------------|\n");
+        for rec in &behavioral {
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                rec.id, rec.status, rec.comparator, rec.evidence_level
+            ));
+        }
+        out.push('\n');
+    }
+
+    // -- Intentional non-parity records --
+    out.push_str("## Intentional Non-Parity Records\n\n");
+    let non_parity: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| r.status == "intentional_non_parity")
+        .collect();
+    if non_parity.is_empty() {
+        out.push_str("_No intentional non-parity records._\n\n");
+    } else {
+        out.push_str("| ID | Category | Notes |\n");
+        out.push_str("|----|----------|-------|\n");
+        for rec in &non_parity {
+            let notes = if rec.notes.is_empty() {
+                "-".to_string()
+            } else if rec.notes.len() > 80 {
+                format!("{}...", &rec.notes[..77])
+            } else {
+                rec.notes.clone()
+            };
+            out.push_str(&format!("| {} | {} | {} |\n", rec.id, rec.category, notes));
+        }
+        out.push('\n');
+    }
+
+    // -- Platform-constrained records --
+    out.push_str("## Platform-Constrained Records\n\n");
+    let platform: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| r.status == "platform_constraint" || r.certification_scope == "platform")
+        .collect();
+    if platform.is_empty() {
+        out.push_str("_No platform-constrained records._\n\n");
+    } else {
+        out.push_str("| ID | Status | Platforms | Notes |\n");
+        out.push_str("|----|--------|-----------|-------|\n");
+        for rec in &platform {
+            let platforms = if rec.platforms.is_empty() {
+                "-".to_string()
+            } else {
+                rec.platforms.join(", ")
+            };
+            let notes = if rec.notes.is_empty() {
+                "-".to_string()
+            } else if rec.notes.len() > 60 {
+                format!("{}...", &rec.notes[..57])
+            } else {
+                rec.notes.clone()
+            };
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                rec.id, rec.status, platforms, notes
+            ));
+        }
+        out.push('\n');
+    }
+
+    // -- Unresolved behavior gaps --
+    out.push_str("## Unresolved Behavior Gaps\n\n");
+    let behavior_gaps: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| {
+            !TERMINAL_STATUSES.contains(&r.status.as_str()) && r.certification_scope == "behavioral"
+        })
+        .collect();
+    if behavior_gaps.is_empty() {
+        out.push_str("_No unresolved behavior gaps._\n\n");
+    } else {
+        out.push_str("| ID | Status | Category | Owner | Milestone |\n");
+        out.push_str("|----|--------|----------|-------|----------|\n");
+        for rec in &behavior_gaps {
+            out.push_str(&format!(
+                "| {} | {} | {} | {} | {} |\n",
+                rec.id, rec.status, rec.category, rec.owner, rec.milestone
+            ));
+        }
+        out.push('\n');
+    }
+
+    // -- Missing or stale evidence --
+    out.push_str("## Missing or Stale Evidence\n\n");
+    let missing_evidence: Vec<_> = manifest
+        .record
+        .iter()
+        .filter(|r| r.closure_required && r.evidence_refs.is_empty())
+        .collect();
+    if missing_evidence.is_empty() {
+        out.push_str("_No records with missing required evidence._\n\n");
+    } else {
+        out.push_str("| ID | Status | Certification Scope | Closure Required |\n");
+        out.push_str("|----|--------|---------------------|------------------|\n");
+        for rec in &missing_evidence {
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                rec.id, rec.status, rec.certification_scope, rec.closure_required
             ));
         }
         out.push('\n');
@@ -843,6 +1075,9 @@ mod tests {
             notes: String::new(),
             evidence_level: "paired_oracle".to_string(),
             implementation_state: "functional".to_string(),
+            certification_scope: "behavioral".to_string(),
+            closure_required: true,
+            behavior_record: None,
         }
     }
 
@@ -1006,6 +1241,7 @@ mod tests {
         rec.status = "drop_in".to_string();
         rec.test_refs = vec!["some_test".to_string()];
         rec.evidence_refs = vec![];
+        rec.closure_required = false; // no evidence needed when closure not required
         let manifest = make_manifest(vec![rec]);
         let result = validate_strict_manifest(&manifest);
         assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
@@ -1390,11 +1626,13 @@ mod tests {
         r2.status = "gap".to_string();
         r2.category = "python_namespace".to_string();
         r2.owner = "track-a".to_string();
+        r2.milestone = "F".to_string(); // future to avoid unresolved
         let manifest = make_manifest(vec![r1, r2]);
         let summary = summarize_manifest(&manifest);
         assert_eq!(summary.total, 2);
         assert_eq!(summary.terminal_count, 1);
         assert_eq!(summary.gap_count, 1);
+        assert!(!summary.by_certification_scope.is_empty());
     }
 
     #[test]
@@ -1636,5 +1874,132 @@ mod tests {
         let manifest = make_manifest(vec![rec]);
         let result = validate_strict_manifest(&manifest);
         assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    // -- Rule 10 tests --
+
+    #[test]
+    fn rule_10a_structural_comparator_behavioral_scope_rejected() {
+        let mut rec = default_record("r10a_reject");
+        rec.comparator = "module_existence".to_string();
+        rec.status = "drop_in".to_string();
+        rec.certification_scope = "behavioral".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::StructuralComparatorBehavioralScopeMismatch { id, .. }
+                    if id == "r10a_reject"
+            )),
+            "expected StructuralComparatorBehavioralScopeMismatch for module_existence + drop_in + behavioral"
+        );
+    }
+
+    #[test]
+    fn rule_10a_structural_comparator_structural_scope_passes() {
+        let mut rec = default_record("r10a_pass");
+        rec.comparator = "module_existence".to_string();
+        rec.status = "structural".to_string();
+        rec.certification_scope = "structural".to_string();
+        rec.behavior_record = Some("python.pproxy.server.Connection".to_string());
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn rule_10b_closure_required_without_evidence_rejected() {
+        let mut rec = default_record("r10b_reject");
+        rec.closure_required = true;
+        rec.evidence_refs = vec![];
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::ClosureRequiredWithoutEvidence { id, .. }
+                    if id == "r10b_reject"
+            )),
+            "expected ClosureRequiredWithoutEvidence"
+        );
+    }
+
+    #[test]
+    fn rule_10b_closure_not_required_without_evidence_passes() {
+        let mut rec = default_record("r10b_pass");
+        rec.closure_required = false;
+        rec.evidence_refs = vec![];
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn rule_10c_structural_missing_behavior_record_passes() {
+        // Rule 10c is defined but not yet enforced - structural records
+        // without behavior_record are allowed during the corrective pass.
+        let mut rec = default_record("r10c_no_enforce");
+        rec.certification_scope = "structural".to_string();
+        rec.behavior_record = None;
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn rule_10c_structural_with_behavior_record_passes() {
+        let mut rec = default_record("r10c_pass");
+        rec.certification_scope = "structural".to_string();
+        rec.behavior_record = Some("some.behavior.record".to_string());
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn rule_10c_behavioral_scope_no_behavior_record_passes() {
+        let mut rec = default_record("r10c_behavioral_pass");
+        rec.certification_scope = "behavioral".to_string();
+        rec.behavior_record = None;
+        let manifest = make_manifest(vec![rec]);
+        let result = validate_strict_manifest(&manifest);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+    }
+
+    #[test]
+    fn unknown_certification_scope_fails() {
+        let mut rec = default_record("bad_scope");
+        rec.certification_scope = "bogus".to_string();
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::UnknownCertificationScope { value, .. } if value == "bogus"
+            )),
+            "expected UnknownCertificationScope"
+        );
+    }
+
+    #[test]
+    fn all_allowed_certification_scopes_are_valid() {
+        for scope in ALLOWED_CERTIFICATION_SCOPES {
+            let mut rec = default_record(&format!("scope_{scope}"));
+            rec.certification_scope = scope.to_string();
+            rec.status = "gap".to_string();
+            rec.milestone = "F".to_string();
+            let manifest = make_manifest(vec![rec]);
+            let errs = validate_strict_manifest(&manifest);
+            if let Err(ref e) = errs {
+                assert!(
+                    !e.errors.iter().any(|e| matches!(
+                        e,
+                        StrictValidationError::UnknownCertificationScope { .. }
+                    )),
+                    "certification_scope \"{scope}\" should be valid"
+                );
+            }
+        }
     }
 }

@@ -48,6 +48,7 @@ jobs:
         run: |
           python -m venv .venv-candidate
           .venv-candidate/bin/pip install --upgrade pip
+          .venv-candidate/bin/pip install pytest pytest-timeout cryptography
       - name: Build and install candidate
         env:
           VIRTUAL_ENV: ${{ github.workspace }}/.venv-candidate
@@ -87,4 +88,6 @@ jobs:
         with:
           name: strict-paired-observations
           path: target/strict/paired_observations/
-          if-no-files-found: ignore
+          if-no-files-found: error
+      - name: Run authoritative closure audit
+        run: ./scripts/run_strict_pproxy_closure_audit.sh

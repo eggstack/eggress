@@ -7,7 +7,7 @@ proxy (direct:// by default) and verifies responses.
 Environment variables:
     PROXY_URI  - Proxy URI (default: direct://)
 
-Provenance: Derived from pproxy 2.7.9 API patterns.
+Provenance: Eggress-authored behavioral scenario based on pproxy 2.7.9 public API.
 License: MIT (pproxy)
 Tested with: pproxy==2.7.9 on Python 3.11
 """

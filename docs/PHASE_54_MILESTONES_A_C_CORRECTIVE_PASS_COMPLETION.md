@@ -1,5 +1,11 @@
 # Milestones A–C Corrective Pass — Completion Record
 
+> **SUPERSEDED** — This completion record is preserved for historical reference.
+> Post-completion review found additional behavioral and evidence defects.
+> See `plans/MILESTONES_A_C_FINAL_EVIDENCE_RUNTIME_CLOSURE.md` for the
+> current closure pass. Test counts and acceptance claims below are historical
+> observations whose coverage did not prove full A–C closure.
+
 **Date:** 2026-07-23
 **Base commit:** 4fcccaf
 **Plan:** `plans/MILESTONES_A_C_CORRECTIVE_PASS.md`
