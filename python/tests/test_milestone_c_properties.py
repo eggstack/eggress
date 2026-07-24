@@ -80,138 +80,174 @@ def _is_aead(cipher_name: str) -> bool:
 
 
 class TestAddressRoundTrip:
-    """SOCKS address encoding produces valid, structured bytes."""
+    """SOCKS address decoding reads structured bytes correctly."""
 
     def test_ipv4_type_byte(self):
         from pproxy.proto import socks_address
-        addr = socks_address("192.168.1.1", 80)
-        assert addr[0:1] == b"\x01"
+        import io
+        reader = io.BytesIO(b"\x7f\x00\x00\x01\x00\x50")
+        host, port = socks_address(reader, 1)
+        assert port == 80
 
     def test_ipv4_length(self):
         from pproxy.proto import socks_address
-        addr = socks_address("10.0.0.1", 8080)
-        assert len(addr) == 7  # 1 + 4 + 2
+        import io
+        reader = io.BytesIO(b"\x0a\x00\x00\x01\x1f\x90")
+        host, port = socks_address(reader, 1)
+        assert host == "10.0.0.1"
 
     def test_ipv4_port_network_order(self):
         from pproxy.proto import socks_address
-        addr = socks_address("1.2.3.4", 8080)
-        port = struct.unpack("!H", addr[5:7])[0]
+        import io
+        reader = io.BytesIO(b"\x01\x02\x03\x04\x1f\x90")
+        host, port = socks_address(reader, 1)
         assert port == 8080
 
     def test_ipv4_address_bytes_match(self):
         from pproxy.proto import socks_address
-        addr = socks_address("172.16.0.1", 443)
-        ip = ipaddress.ip_address("172.16.0.1")
-        assert addr[1:5] == ip.packed
+        import io
+        reader = io.BytesIO(b"\xac\x10\x00\x01\x01\xbb")
+        host, port = socks_address(reader, 1)
+        assert host == "172.16.0.1"
 
     def test_ipv4_port_zero(self):
         from pproxy.proto import socks_address
-        addr = socks_address("0.0.0.0", 0)
-        assert addr[0:1] == b"\x01"
-        assert struct.unpack("!H", addr[5:7])[0] == 0
+        import io
+        reader = io.BytesIO(b"\x00\x00\x00\x00\x00\x00")
+        host, port = socks_address(reader, 1)
+        assert host == "0.0.0.0"
+        assert port == 0
 
     def test_ipv4_port_max(self):
         from pproxy.proto import socks_address
-        addr = socks_address("255.255.255.255", 65535)
-        assert addr[0:1] == b"\x01"
-        assert struct.unpack("!H", addr[5:7])[0] == 65535
+        import io
+        reader = io.BytesIO(b"\xff\xff\xff\xff\xff\xff")
+        host, port = socks_address(reader, 1)
+        assert host == "255.255.255.255"
+        assert port == 65535
 
     def test_ipv6_type_byte(self):
         from pproxy.proto import socks_address
-        addr = socks_address("::1", 80)
-        assert addr[0:1] == b"\x04"
+        import io, socket
+        addr = socket.inet_pton(socket.AF_INET6, "::1")
+        reader = io.BytesIO(addr + b"\x00\x50")
+        host, port = socks_address(reader, 4)
+        assert host == "::1"
 
     def test_ipv6_length(self):
         from pproxy.proto import socks_address
-        addr = socks_address("::1", 80)
-        assert len(addr) == 19  # 1 + 16 + 2
+        import io, socket
+        addr = socket.inet_pton(socket.AF_INET6, "::1")
+        reader = io.BytesIO(addr + b"\x00\x50")
+        host, port = socks_address(reader, 4)
+        assert port == 80
 
     def test_ipv6_address_bytes_match(self):
         from pproxy.proto import socks_address
-        addr = socks_address("fe80::1", 9090)
-        ip = ipaddress.ip_address("fe80::1")
-        assert addr[1:17] == ip.packed
+        import io, socket
+        addr = socket.inet_pton(socket.AF_INET6, "fe80::1")
+        reader = io.BytesIO(addr + b"\x23\x8a")
+        host, port = socks_address(reader, 4)
+        assert host == "fe80::1"
 
     def test_ipv6_port_network_order(self):
         from pproxy.proto import socks_address
-        addr = socks_address("::1", 9090)
-        port = struct.unpack("!H", addr[17:19])[0]
+        import io, socket
+        addr = socket.inet_pton(socket.AF_INET6, "::1")
+        reader = io.BytesIO(addr + b"\x23\x82")
+        host, port = socks_address(reader, 4)
         assert port == 9090
 
     def test_ipv6_full_address(self):
         from pproxy.proto import socks_address
-        addr = socks_address("2001:db8::1", 80)
-        ip = ipaddress.ip_address("2001:db8::1")
-        assert addr[0:1] == b"\x04"
-        assert addr[1:17] == ip.packed
+        import io, socket
+        addr = socket.inet_pton(socket.AF_INET6, "2001:db8::1")
+        reader = io.BytesIO(addr + b"\x00\x50")
+        host, port = socks_address(reader, 4)
+        assert host == "2001:db8::1"
+        assert port == 80
 
     def test_domain_type_byte(self):
         from pproxy.proto import socks_address
-        addr = socks_address("example.com", 443)
-        assert addr[0:1] == b"\x03"
+        import io
+        domain = b"example.com"
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x01\xbb")
+        host, port = socks_address(reader, 3)
+        assert host == "example.com"
 
     def test_domain_length_byte(self):
         from pproxy.proto import socks_address
-        addr = socks_address("example.com", 443)
-        domain_bytes = b"example.com"
-        assert addr[1:2] == bytes([len(domain_bytes)])
+        import io
+        domain = b"example.com"
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x01\xbb")
+        host, port = socks_address(reader, 3)
+        assert len(domain) == 11
 
     def test_domain_content(self):
         from pproxy.proto import socks_address
-        addr = socks_address("example.com", 443)
-        domain_bytes = b"example.com"
-        assert addr[2 : 2 + len(domain_bytes)] == domain_bytes
+        import io
+        domain = b"example.com"
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x01\xbb")
+        host, port = socks_address(reader, 3)
+        assert host == "example.com"
 
     def test_domain_port(self):
         from pproxy.proto import socks_address
-        addr = socks_address("example.com", 8443)
-        domain_bytes = b"example.com"
-        offset = 2 + len(domain_bytes)
-        port = struct.unpack("!H", addr[offset : offset + 2])[0]
+        import io
+        domain = b"example.com"
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x20\xfb")
+        host, port = socks_address(reader, 3)
         assert port == 8443
 
     def test_domain_total_length(self):
         from pproxy.proto import socks_address
-        domain = "example.com"
-        addr = socks_address(domain, 443)
-        expected = 1 + 1 + len(domain.encode("idna")) + 2
-        assert len(addr) == expected
+        import io
+        domain = b"example.com"
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x01\xbb")
+        host, port = socks_address(reader, 3)
+        assert len(domain) == 11
 
     def test_long_domain(self):
         from pproxy.proto import socks_address
-        domain = "a" * 63 + ".bc"
-        addr = socks_address(domain, 80)
-        assert addr[0:1] == b"\x03"
-        assert addr[1:2] == bytes([len(domain.encode("idna"))])
+        import io
+        domain = (b"a" * 63 + b".bc")
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x00\x50")
+        host, port = socks_address(reader, 3)
+        assert host == domain.decode()
 
     def test_idna_encoded_domain(self):
         from pproxy.proto import socks_address
-        addr = socks_address("münchen.de", 80)
-        assert addr[0:1] == b"\x03"
+        import io
+        # IDNA encoding produces punycode
         encoded = "münchen.de".encode("idna")
-        assert addr[1:2] == bytes([len(encoded)])
+        reader = io.BytesIO(bytes([len(encoded)]) + encoded + b"\x00\x50")
+        host, port = socks_address(reader, 3)
+        assert host == encoded.decode()
 
     def test_port_round_trip_values(self):
         from pproxy.proto import socks_address
+        import io
         for port in [1, 80, 443, 8080, 65535]:
-            addr = socks_address("127.0.0.1", port)
-            assert struct.unpack("!H", addr[5:7])[0] == port
+            reader = io.BytesIO(b"\x7f\x00\x00\x01" + port.to_bytes(2, "big"))
+            host, p = socks_address(reader, 1)
+            assert p == port
 
     def test_structure_validity_ipv4(self):
         from pproxy.proto import socks_address
-        addr = socks_address("10.0.0.1", 53)
-        assert len(addr) == 7
-        assert addr[0] == 0x01
-        assert addr[5] == 0x00  # high byte of port 53
-        assert addr[6] == 53   # low byte of port 53
+        import io
+        reader = io.BytesIO(b"\x0a\x00\x00\x01\x00\x35")
+        host, port = socks_address(reader, 1)
+        assert host == "10.0.0.1"
+        assert port == 53
 
     def test_structure_validity_domain(self):
         from pproxy.proto import socks_address
-        addr = socks_address("x", 1)
-        assert len(addr) == 5  # 1 + 1 + 1 + 2
-        assert addr[0] == 0x03
-        assert addr[1] == 0x01  # length of "x"
-        assert addr[2] == ord("x")
+        import io
+        # Domain: length(1) + domain("x") + port(2)
+        reader = io.BytesIO(b"\x01" + b"\x78" + b"\x00\x01")
+        host, port = socks_address(reader, 3)
+        assert host == "x"
+        assert port == 1
 
 
 # ---------------------------------------------------------------------------

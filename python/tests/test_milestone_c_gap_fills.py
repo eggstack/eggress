@@ -380,7 +380,7 @@ class TestNamespaceSmoke(unittest.TestCase):
     def test_pproxy_plugin_importable(self):
         """pproxy.plugin can be imported without errors."""
         from pproxy import plugin
-        self.assertTrue(hasattr(plugin, "PluginRegistry") or hasattr(plugin, "DIRECT"))
+        self.assertTrue(hasattr(plugin, "get_plugin") or hasattr(plugin, "PLUGIN"))
 
 
 # ---------------------------------------------------------------------------
@@ -443,10 +443,10 @@ class TestCipherRegistryCompleteness(unittest.TestCase):
         from eggress.cipher import MAP
         self.assertEqual(len(MAP), 39)
 
-    def test_cipherpy_map_has_39_entries(self):
-        """pproxy.cipherpy.MAP has exactly 39 entries."""
-        from pproxy.cipherpy import MAP
-        self.assertEqual(len(MAP), 39)
+    def test_pproxy_cipher_map_has_24_entries(self):
+        """pproxy.cipher.MAP has exactly 24 base entries (no -py variants)."""
+        from pproxy.cipher import MAP
+        self.assertEqual(len(MAP), 24)
 
     def test_all_base_ciphers_in_eggress_map(self):
         """All 24 base cipher names are in eggress.cipher.MAP."""
@@ -464,10 +464,9 @@ class TestCipherRegistryCompleteness(unittest.TestCase):
         for name in base_names:
             self.assertIn(name, MAP, f"Missing base cipher: {name}")
 
-    def test_py_variants_in_both_maps(self):
-        """All 15 -py variant aliases are in both MAPs."""
-        from eggress.cipher import MAP as EGGRESS_MAP
-        from pproxy.cipherpy import MAP as CIPHERPY_MAP
+    def test_py_variants_in_eggress_map(self):
+        """All 15 -py variant aliases are in eggress.cipher.MAP."""
+        from eggress.cipher import MAP
         py_variants = [
             "aes-256-gcm-py", "aes-128-gcm-py",
             "chacha20-ietf-poly1305-py", "rc4-md5-py", "chacha20-py",
@@ -477,8 +476,7 @@ class TestCipherRegistryCompleteness(unittest.TestCase):
             "aes-256-ctr-py", "aes-128-ctr-py", "bf-cfb-py",
         ]
         for name in py_variants:
-            self.assertIn(name, EGGRESS_MAP, f"Missing in eggress MAP: {name}")
-            self.assertIn(name, CIPHERPY_MAP, f"Missing in cipherpy MAP: {name}")
+            self.assertIn(name, MAP, f"Missing in eggress MAP: {name}")
 
     def test_py_variants_point_to_same_class(self):
         """Each -py variant points to the same class as its base name."""

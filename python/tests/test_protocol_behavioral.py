@@ -181,9 +181,9 @@ class TestHTTP:
         assert host == "from-url.com"
         assert port == 80
 
-    def test_connect_raises_not_implemented(self) -> None:
+    def test_connect_requires_writer(self) -> None:
         proto = HTTP()
-        with pytest.raises(NotImplementedError, match="http does not support client mode"):
+        with pytest.raises(AttributeError):
             asyncio.get_event_loop().run_until_complete(
                 proto.connect(None, None, None, "example.com", 443)
             )

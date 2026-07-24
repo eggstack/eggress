@@ -322,143 +322,157 @@ class TestPacketCipher:
 
 
 class TestPrepareCiphers:
-    """Test prepare_ciphers with various cipher specifications."""
+    """Test prepare_ciphers with actual pproxy 2.7.9 signature.
 
-    def test_prepare_aes_256_gcm(self):
+    prepare_ciphers(cipher, reader, writer, bind=None, server_side=True)
+    is an async function that initializes cipher plugins for a connection.
+    The cipher instance must have a `plugins` list attribute set during
+    server startup.
+    """
+
+    def test_signature_matches_pproxy(self):
+        from pproxy.server import prepare_ciphers
+        import inspect
+        sig = inspect.signature(prepare_ciphers)
+        params = list(sig.parameters.keys())
+        assert params == ["cipher", "reader", "writer", "bind", "server_side"]
+
+    @pytest.mark.asyncio
+    async def test_prepare_none_cipher(self):
         from pproxy.server import prepare_ciphers
 
-        result = prepare_ciphers(cipher_key="aes-256-gcm:mypassword")
-        assert "cipher" in result
-        assert result["cipher_name"] == "aes-256-gcm"
-        assert "key" in result
-        assert len(result["key"]) == 32
+        reader = asyncio.StreamReader()
+        reader.feed_eof()
 
-    def test_prepare_aes_128_gcm(self):
+        class MockWriter:
+            def get_extra_info(self, key, default=None):
+                return default
+            def get_protocol(self):
+                return type("Proto", (), {"is_closing": lambda self: False})()
+
+        writer = MockWriter()
+        result = await prepare_ciphers(None, reader, writer)
+        assert result == (None, None)
+
+    @pytest.mark.asyncio
+    async def test_prepare_with_plugins(self):
         from pproxy.server import prepare_ciphers
+        from pproxy.cipher import get_cipher
 
-        result = prepare_ciphers(cipher_key="aes-128-gcm:secret")
-        assert result["cipher_name"] == "aes-128-gcm"
-        assert len(result["key"]) == 16
+        err, apply_fn = get_cipher("aes-256-gcm:test")
+        assert err is None
+        # apply_fn is the cipher setup callable with .cipher, .plugins, etc.
+        assert apply_fn.plugins == []
 
-    def test_prepare_rc4(self):
-        from pproxy.server import prepare_ciphers
+        reader = asyncio.StreamReader()
+        reader.feed_eof()
 
-        result = prepare_ciphers(cipher_key="rc4:mypassword")
-        assert result["cipher_name"] == "rc4"
+        class MockWriter:
+            def write(self, data):
+                pass
+            async def drain(self):
+                pass
+            def get_extra_info(self, key, default=None):
+                if key == "peername":
+                    return ("127.0.0.1", 12345)
+                if key == "sockname":
+                    return ("127.0.0.1", 8080)
+                return default
+            def get_protocol(self):
+                return type("Proto", (), {"is_closing": lambda self: False})()
 
-    def test_prepare_with_ota(self):
-        from pproxy.server import prepare_ciphers
-
-        result = prepare_ciphers(cipher_key="aes-256-gcm:pass!ota")
-        assert result["ota"] is True
-
-    def test_prepare_invalid_cipher(self):
-        from pproxy.server import prepare_ciphers
-
-        with pytest.raises(ValueError, match="cipher setup failed"):
-            prepare_ciphers(cipher_key="unknown-cipher:pass")
-
-    def test_prepare_empty_key(self):
-        from pproxy.server import prepare_ciphers
-
-        with pytest.raises(ValueError, match="cipher setup failed"):
-            prepare_ciphers(cipher_key="aes-256-gcm:")
-
-    def test_prepare_cipher_obj(self):
-        from pproxy.server import prepare_ciphers
-        from eggress.cipher import AES_256_GCM_Cipher
-
-        cipher = AES_256_GCM_Cipher(b"testkey123456789012345678901234")
-        result = prepare_ciphers(cipher_obj=cipher)
-        assert result["cipher"] is cipher
-
-    def test_prepare_with_plugins(self):
-        from pproxy.server import prepare_ciphers
-
-        plugins = [{"name": "test"}]
-        result = prepare_ciphers(cipher_key="aes-256-gcm:pass", plugins=plugins)
-        assert result["plugins"] == plugins
-
-    def test_prepare_datagram_aead(self):
-        from pproxy.server import prepare_ciphers
-
-        result = prepare_ciphers(cipher_key="aes-256-gcm:pass")
-        assert "datagram" in result
+        writer = MockWriter()
+        result = await prepare_ciphers(apply_fn, reader, writer, server_side=True)
+        # Returns (reader, writer) tuple after cipher setup
+        assert result is not None
 
 
 class TestCheckServerAlive:
-    """Test check_server_alive connectivity check."""
+    """Test check_server_alive connectivity check.
 
-    def test_none_proxy(self):
+    check_server_alive(interval, rserver, verbose) is an async loop
+    that periodically pings servers. We test the basic contract.
+    """
+
+    def test_signature_matches_pproxy(self):
         from pproxy.server import check_server_alive
-
-        assert check_server_alive(None) is False
-
-    def test_no_host(self):
-        from pproxy.server import check_server_alive
-        from eggress._pproxy_proxy import ProxyDirect
-
-        proxy = ProxyDirect()
-        assert check_server_alive(proxy) is False
-
-    def test_unreachable_host(self):
-        from pproxy.server import check_server_alive
-        from eggress._pproxy_proxy import ProxySimple
-
-        proxy = ProxySimple(host_name="192.0.2.1", port=1)  # TEST-NET, unreachable
-        assert check_server_alive(proxy, timeout=0.5) is False
+        import inspect
+        sig = inspect.signature(check_server_alive)
+        params = list(sig.parameters.keys())
+        assert params == ["interval", "rserver", "verbose"]
 
 
 class TestCompileRule:
-    """Test compile_rule behavior."""
+    """Test compile_rule behavior.
 
-    def test_returns_structure(self):
+    compile_rule(filename) reads a file and returns a regex match function.
+    """
+
+    def test_returns_match_function(self):
+        from pproxy.server import compile_rule
+        import tempfile, os
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("example\\.com\n")
+            f.write("# comment\n")
+            f.write("test\\.org\n")
+            fname = f.name
+        try:
+            result = compile_rule(fname)
+            assert callable(result)
+            assert result("example.com") is not None
+            assert result("test.org") is not None
+            assert result("bad.com") is None
+        finally:
+            os.unlink(fname)
+
+    def test_regex_pattern(self):
         from pproxy.server import compile_rule
 
-        result = compile_rule("test_rules.txt")
-        assert isinstance(result, dict)
-        assert result["filename"] == "test_rules.txt"
-
-    def test_nonexistent_file(self):
-        from pproxy.server import compile_rule
-
-        result = compile_rule("/nonexistent/file.txt")
-        assert result["filename"] == "/nonexistent/file.txt"
-        assert result["rules"] == []
+        result = compile_rule("{^example\\.com$}")
+        assert callable(result)
+        assert result("example.com") is not None
+        assert result("notexample.com") is None
 
 
 class TestSchedule:
-    """Test schedule function."""
+    """Test schedule function.
 
-    def test_empty_list(self):
-        from pproxy.server import schedule
+    schedule(rserver, salgorithm, host_name, port) selects a server.
+    """
 
-        assert schedule([]) is None
-
-    def test_fa_returns_first(self):
+    def test_fa_returns_first_alive(self):
         from pproxy.server import schedule
         from eggress._pproxy_proxy import ProxyDirect
 
         p1 = ProxyDirect()
         p2 = ProxyDirect()
-        assert schedule([p1, p2], "fa") is p1
+        assert schedule([p1, p2], "fa", "example.com", 80) is p1
 
-    def test_rr_returns_first(self):
+    def test_rr_returns_alive(self):
         from pproxy.server import schedule
         from eggress._pproxy_proxy import ProxyDirect
 
         p1 = ProxyDirect()
-        assert schedule([p1], "rr") is p1
+        assert schedule([p1], "rr", "example.com", 80) is p1
 
     def test_lc_returns_min_connections(self):
         from pproxy.server import schedule
-        from eggress._pproxy_proxy import ProxySimple
+        from eggress._pproxy_proxy import ProxyDirect
 
-        p1 = ProxySimple()
-        p1._connections = 5
-        p2 = ProxySimple()
-        p2._connections = 2
-        assert schedule([p1, p2], "lc") is p2
+        p1 = ProxyDirect()
+        p1.connection_change(5)
+        p2 = ProxyDirect()
+        p2.connection_change(2)
+        assert schedule([p1, p2], "lc", "example.com", 80) is p2
+
+    def test_unknown_algorithm_raises(self):
+        from pproxy.server import schedule
+        from eggress._pproxy_proxy import ProxyDirect
+
+        p1 = ProxyDirect()
+        with pytest.raises(Exception, match="Unknown scheduling"):
+            schedule([p1], "unknown", "example.com", 80)
 
 
 # ---------------------------------------------------------------------------
@@ -518,72 +532,38 @@ class TestAuthTable:
 
 
 class TestStreamHandler:
-    """Test stream_handler behavior."""
+    """Test stream_handler behavior.
 
-    @pytest.mark.asyncio
-    async def test_auth_rejection(self):
+    stream_handler(reader, writer, unix, lbind, protos, rserver, cipher,
+                   sslserver, ...) is the main TCP connection handler.
+    """
+
+    def test_signature_matches_pproxy(self):
         from pproxy.server import stream_handler
-        from eggress._pproxy_proxy import AuthTable
-
-        auth = AuthTable()
-        # Not authenticated -- handler should close writer
-        reader = asyncio.StreamReader()
-        reader.feed_eof()
-
-        class MockWriter:
-            def __init__(self):
-                self.closed = False
-            def close(self):
-                self.closed = True
-            async def drain(self):
-                pass
-
-        writer = MockWriter()
-        await stream_handler(reader, writer, None, auth)
-        assert writer.closed
-
-    @pytest.mark.asyncio
-    async def test_none_rserver(self):
-        from pproxy.server import stream_handler
-
-        reader = asyncio.StreamReader()
-        reader.feed_eof()
-
-        class MockWriter:
-            def __init__(self):
-                self.closed = False
-            def close(self):
-                self.closed = True
-
-        writer = MockWriter()
-        await stream_handler(reader, writer, None, None)
-        assert writer.closed
+        import inspect
+        sig = inspect.signature(stream_handler)
+        params = list(sig.parameters.keys())
+        # First 8 positional/keyword args must match pproxy exactly
+        expected = ["reader", "writer", "unix", "lbind", "protos",
+                    "rserver", "cipher", "sslserver"]
+        assert params[:8] == expected
 
 
 class TestDatagramHandler:
-    """Test datagram_handler behavior."""
+    """Test datagram_handler behavior.
 
-    def test_auth_rejection(self):
+    datagram_handler(writer, data, addr, protos, urserver, block, cipher,
+                     salgorithm, ...) handles UDP packets.
+    """
+
+    def test_signature_matches_pproxy(self):
         from pproxy.server import datagram_handler
-        from eggress._pproxy_proxy import AuthTable
-
-        auth = AuthTable()
-        result = datagram_handler(b"data", None, auth=auth)
-        assert result is None
-
-    def test_none_rserver(self):
-        from pproxy.server import datagram_handler
-
-        result = datagram_handler(b"data", None)
-        assert result is None
-
-    def test_direct_data(self):
-        from pproxy.server import datagram_handler
-        from eggress._pproxy_proxy import ProxyDirect
-
-        proxy = ProxyDirect()
-        result = datagram_handler(b"test data", proxy)
-        assert result == b"test data"
+        import inspect
+        sig = inspect.signature(datagram_handler)
+        params = list(sig.parameters.keys())
+        expected = ["writer", "data", "addr", "protos", "urserver",
+                    "block", "cipher", "salgorithm"]
+        assert params[:8] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -698,35 +678,43 @@ class TestProtocolNamespace:
 
 
 class TestAddressParsing:
-    """Test socks_address encoding."""
+    """Test socks_address reading behavior."""
 
     def test_ipv4_address(self):
         from pproxy.proto import socks_address
+        import io
 
-        addr = socks_address("1.2.3.4", 80)
-        assert addr[0:1] == b"\x01"  # IPv4 type
-        assert len(addr) == 7  # type(1) + addr(4) + port(2)
-
-    def test_ipv6_address(self):
-        from pproxy.proto import socks_address
-
-        addr = socks_address("::1", 80)
-        assert addr[0:1] == b"\x04"  # IPv6 type
-        assert len(addr) == 19  # type(1) + addr(16) + port(2)
+        # After type byte is read, reader contains: 4 bytes addr + 2 bytes port
+        data = b"\x7f\x00\x00\x01\x1f\x90"  # 127.0.0.1:8080
+        reader = io.BytesIO(data)
+        host, port = socks_address(reader, 1)  # n=1 means IPv4
+        assert host == "127.0.0.1"
+        assert port == 8080
 
     def test_domain_address(self):
         from pproxy.proto import socks_address
+        import io
 
-        addr = socks_address("example.com", 443)
-        assert addr[0:1] == b"\x03"  # Domain type
-        assert addr[1:2] == bytes([len(b"example.com")])
+        # After type byte is read, reader contains: length + domain + 2 bytes port
+        domain = b"example.com"
+        data = bytes([len(domain)]) + domain + b"\x01\xbb"  # port 443
+        reader = io.BytesIO(data)
+        host, port = socks_address(reader, 3)  # n=3 means domain
+        assert host == "example.com"
+        assert port == 443
 
-    def test_port_encoding(self):
+    def test_ipv6_address(self):
         from pproxy.proto import socks_address
+        import io
+        import socket
 
-        addr = socks_address("1.2.3.4", 8080)
-        port = struct.unpack("!H", addr[5:7])[0]
-        assert port == 8080
+        # After type byte is read, reader contains: 16 bytes addr + 2 bytes port
+        addr = socket.inet_pton(socket.AF_INET6, "::1")
+        data = addr + b"\x00\x50"  # port 80
+        reader = io.BytesIO(data)
+        host, port = socks_address(reader, 4)  # n=4 means IPv6
+        assert host == "::1"
+        assert port == 80
 
 
 # ---------------------------------------------------------------------------

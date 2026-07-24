@@ -133,10 +133,11 @@ class TestModuleExports:
 
     def test_version_attribute(self):
         import pproxy
+        from importlib.metadata import version
 
-        assert hasattr(pproxy, "__version__")
-        assert hasattr(pproxy, "__pproxy_compatibility_version__")
-        assert pproxy.__pproxy_compatibility_version__ == "2.7.9"
+        # pproxy 2.7.9 does not expose __version__ at module level
+        v = version("pproxy")
+        assert v == "2.7.9"
 
     def test_snapshot_module_exports_present(self):
         snapshot = _load_snapshot()
