@@ -746,8 +746,14 @@ def run_paired_comparison(
             probe_script = probe_map.get(comparator, "strict_api_probe.py")
             extra_args = ["--cipher", symbol]
         elif comparator == "protocol_wire":
-            probe_script = probe_map.get(comparator, "strict_api_probe.py")
-            extra_args = ["--module", module, "--symbol", symbol, "--test", "address_encode"]
+            # protocol_wire probes are live test scenarios, not API symbol lookups.
+            # Skip them in the paired API runner.
+            results.append({
+                "id": rid,
+                "status": "skipped",
+                "reason": "protocol_wire is a live test scenario, not an API probe",
+            })
+            continue
         elif comparator == "process_lifecycle":
             probe_script = probe_map.get(comparator, "strict_api_probe.py")
             # Determine appropriate test based on record kind
