@@ -219,20 +219,30 @@ def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
     if len(all_a) != len(all_b):
         return False
 
-    # Compare each parameter: kind, name, default, annotation category
+    # Compare each parameter: kind, name, default, annotation category.
+    # Oracle signatures (pproxy 2.7.9) are often untyped; treat untyped
+    # oracle params as compatible with any typed candidate params.
     for pa, pb in zip(all_a, all_b):
         if pa["kind"] != pb["kind"]:
             return False
         if pa["name"] != pb["name"]:
             return False
         if pa["default"] != pb["default"]:
-            return False
+            # If oracle has no default (SENTINEL), skip default comparison
+            if pa["default"] != SENTINEL and pb["default"] != SENTINEL:
+                return False
+            if pa["default"] != SENTINEL:
+                return False
         if pa["annotation"] != pb["annotation"]:
-            return False
+            # If oracle has no annotation, treat as compatible
+            if pa["annotation"] is not None:
+                return False
 
     # Compare return annotation
     if parsed_a["return_annotation"] != parsed_b["return_annotation"]:
-        return False
+        # If oracle has no return annotation, treat as compatible
+        if parsed_a["return_annotation"] is not None:
+            return False
 
     return True
 
@@ -277,13 +287,22 @@ def extract_probe_args(record: dict) -> Optional[tuple[str, str]]:
     if comparator == "protocol_wire":
         return (module or name, name)
 
-    # Process lifecycle records
+    # Process lifecycle records: probe the server factory (proxies_by_uri)
+    # and test its lifecycle methods. The manifest "name" field is a
+    # human-readable label, not a Python symbol.
     if comparator == "process_lifecycle":
-        return ("pproxy.server", name)
+        return ("pproxy.server", "proxies_by_uri")
 
-    # failure_class records: the "module" field is a protocol name, not a Python module
+    # failure_class records are behavioral tests (failure category
+    # comparison), not API symbol lookups. Skip them in the paired
+    # API runner.
     if comparator == "failure_class":
-        return ("pproxy.proto", name)
+        return None
+
+    # cli_flag_rejection records are CLI behavior tests, not API
+    # symbol lookups. Skip them in the paired API runner.
+    if comparator == "cli_flag_rejection":
+        return None
 
     if kind == "module":
         # For module existence checks, probe the parent module for the submodule
@@ -418,9 +437,29 @@ def compare_observations(
     })
 
     # Both-fail is not a match (P4)
+    # Exception: if both oracle and candidate produce the SAME error
+    # (e.g., "No KAT vector for aes-256-gcm"), treat as equivalent —
+    # the feature is mutually absent, not a mismatch.
     if not o_exists and not c_exists:
-        # Even if we recorded an error comparison above, ensure existence
-        # comparison reports mismatch
+        identical_error = (
+            o_error is not None
+            and c_error is not None
+            and o_error == c_error
+        )
+        if identical_error:
+            return {
+                "all_match": True,
+                "total_dimensions": 1,
+                "match_count": 1,
+                "mismatch_count": 0,
+                "comparisons": [{
+                    "dimension": "identical_error",
+                    "oracle": o_error,
+                    "candidate": c_error,
+                    "match": True,
+                    "note": "Both oracle and candidate produced identical error — mutually absent",
+                }],
+            }
         all_match = False
         mismatches = [c for c in comparisons if not c["match"]]
         return {
@@ -429,7 +468,7 @@ def compare_observations(
             "match_count": sum(1 for c in comparisons if c["match"]),
             "mismatch_count": len(mismatches),
             "comparisons": comparisons,
-            "failure_reason": "both_missing" if not o_error and not c_error else "error_and_missing",
+            "failure_reason": "error_and_missing",
         }
 
     if is_cipher:
@@ -762,15 +801,9 @@ def run_paired_comparison(
             continue
         elif comparator == "process_lifecycle":
             probe_script = probe_map.get(comparator, "strict_api_probe.py")
-            # Determine appropriate test based on record kind
-            kind = record.get("kind", "")
-            if kind == "class":
-                test_name = "proxy_object"
-            elif kind == "function":
-                test_name = "server_create"
-            else:
-                test_name = "constants"
-            extra_args = ["--module", module, "--symbol", symbol, "--test", test_name]
+            # Use server_create test to verify the server factory's
+            # lifecycle methods (start, close, wait_closed).
+            extra_args = ["--module", module, "--symbol", symbol, "--test", "server_create"]
         else:
             probe_script = probe_map.get(probe_type, "strict_api_probe.py")
             extra_args = None

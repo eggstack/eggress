@@ -168,10 +168,6 @@ async fn test_pproxy_http_server_eggress_client() {
     }
 
     // Connect through pproxy using eggress's chain executor
-    let _stream = tokio::net::TcpStream::connect(("127.0.0.1", pproxy_port))
-        .await
-        .unwrap();
-
     let executor = build_executor();
     let chain = vec![ProxyHopSpec {
         protocols: vec![ProtocolSpec::Http],
@@ -225,10 +221,6 @@ async fn test_pproxy_socks5_server_eggress_client() {
     }
 
     // Connect through pproxy using eggress's chain executor
-    let _stream = tokio::net::TcpStream::connect(("127.0.0.1", pproxy_port))
-        .await
-        .unwrap();
-
     let executor = build_executor();
     let chain = vec![ProxyHopSpec {
         protocols: vec![ProtocolSpec::Socks5],
