@@ -122,18 +122,11 @@ run_gate "12_python_test_suite" bash -c "
     COMPAT_WHEEL=\$(ls dist/eggress_pproxy_compat-*.whl 2>/dev/null | head -1) && \
     [ -n \"\$EGGRESS_WHEEL\" ] || { echo 'ERROR: eggress wheel not found' >&2; exit 1; } && \
     [ -n \"\$COMPAT_WHEEL\" ] || { echo 'ERROR: compat wheel not found' >&2; exit 1; } && \
-    echo \"Installing eggress wheel: \$EGGRESS_WHEEL\" && \
-    '$VENV_DIR/bin/pip' install \"\$EGGRESS_WHEEL\" pytest pytest-asyncio 2>&1 && \
-    echo '--- Installed packages ---' && \
-    '$VENV_DIR/bin/pip' list 2>&1 && \
-    echo '--- eggress package files ---' && \
-    ls -la '$VENV_DIR/lib/python3.*/site-packages/eggress/' 2>&1 | head -30 && \
-    echo '--- eggress native module check ---' && \
-    '$VENV_DIR/bin/python' -c \"import eggress._eggress; print('_eggress OK')\" 2>&1 || \
-        '$VENV_DIR/bin/python' -c \"import eggress; print('eggress imported, _HAS_NATIVE:', getattr(eggress, '_HAS_NATIVE', 'N/A')); print('file:', eggress.__file__)\" 2>&1 && \
-    echo \"Installing compat wheel: \$COMPAT_WHEEL\" && \
-    '$VENV_DIR/bin/pip' install \"\$COMPAT_WHEEL\" 2>&1 && \
+    '$VENV_DIR/bin/pip' install \"\$EGGRESS_WHEEL\" pytest pytest-asyncio >/dev/null 2>&1 && \
+    '$VENV_DIR/bin/pip' install \"\$COMPAT_WHEEL\" >/dev/null 2>&1 && \
     '$VENV_DIR/bin/python' -m pytest python/tests -x -q \
+        --import-mode=importlib \
+        --rootdir='$AUDIT_DIR' \
         --junitxml='$AUDIT_DIR/junit-python.xml' \
         --tb=short
 "
@@ -158,12 +151,13 @@ run_gate_optional "14_strict_python_differential" bash -c "
         EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3 -m pytest python/tests/strict -q \
             --oracle-observations-dir '$OBS_DIR' \
             --candidate-observations-dir '$OBS_DIR' \
+            --import-mode=importlib \
             --tb=short
     else
         echo 'No paired observations available; skipping strict differential tests.'
         echo 'Run the strict-paired-api CI job to generate them.'
         # Run without observation dirs so require_obs_dirs fixture skips all tests
-        EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3 -m pytest python/tests/strict -q --tb=short
+        EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3 -m pytest python/tests/strict -q --import-mode=importlib --tb=short
     fi
 "
 
@@ -177,19 +171,19 @@ run_gate_optional "16_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INT
 run_gate_optional "17_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
 
 # ── Gate 18: cipher KAT and interop probes ──────────────────────
-run_gate "18_cipher_kat" bash -c 'python3 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short 2>&1'
+run_gate "18_cipher_kat" bash -c 'python3 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1'
 
 # ── Gate 19: plugin transformed-traffic probe ────────────────────
-run_gate "19_plugin_probe" bash -c 'python3 -m pytest python/tests/test_plugin.py -q --tb=short'
+run_gate "19_plugin_probe" bash -c 'python3 -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib'
 
 # ── Gate 20: process lifecycle probe ─────────────────────────────
-run_gate "20_process_lifecycle" bash -c 'python3 -m pytest python/tests/test_server_lifecycle.py -q --tb=short'
+run_gate "20_process_lifecycle" bash -c 'python3 -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib'
 
 # ── Gate 21: runtime/failure/cleanup probe ──────────────────────
 run_gate "21_runtime_failure_cleanup" cargo test -p eggress-runtime --test lifecycle_invariants
 
 # ── Gate 22: resource-leak and process-cleanup checks ────────────
-run_gate "22_resource_leak_check" bash -c 'python3 -m pytest python/tests/test_connection_behavioral.py -q --tb=short'
+run_gate "22_resource_leak_check" bash -c 'python3 -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib'
 
 # ── Gate 23: report and evidence hash binding ────────────────────
 EVIDENCE_DIR="$AUDIT_DIR/evidence"
