@@ -10,9 +10,9 @@
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
 **Oracle ref:** compat/pproxy-2.7.9/provenance.toml
-**Commit SHA:** `3402c7eae77f1e830d41b7a5addf09dd4017b7b3`
-**Manifest hash:** `fb3a53ad7f89929bb78e5db30be21b390af84ad350220efbbe0820d86ce8fba6`
-**Generated:** 2026-07-22T00:00:00Z
+**Commit SHA:** `7783279668195ab48e3bb9e14225ff0973289518`
+**Manifest hash:** `0dc142301f3a0fcc88906085f7ba9e66317703fd88f05dbbde8319b29d5b8219`
+**Generated:** 2026-07-24T00:00:00Z
 
 ## Summary
 
@@ -70,7 +70,9 @@
 
 | Milestone | Count |
 |-----------|-------|
-| B | 194 |
+| B | 192 |
+| D | 1 |
+| E | 1 |
 
 ## Gap Records
 
@@ -78,8 +80,8 @@ Records with unresolved `gap` status (2 total):
 
 | ID | Status | Category | Owner | Milestone |
 |----|--------|----------|-------|----------|
-| cli.get | gap | cli_option | track-a | B |
-| process.reload.routing | gap | process | track-c | B |
+| cli.get | gap | cli_option | track-a | D |
+| process.reload.routing | gap | process | track-c | E |
 
 ## Records Needing Behavioral Evidence
 
