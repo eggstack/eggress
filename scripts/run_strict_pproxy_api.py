@@ -269,7 +269,9 @@ def extract_probe_args(record: dict) -> Optional[tuple[str, str]]:
 
     # Cipher records use --cipher flag instead of --module/--symbol
     if comparator in ("cipher_kat", "cipher_roundtrip"):
-        return (name, name)  # name is the cipher class name
+        # Normalize cipher name: lowercase and strip " roundtrip" suffix
+        cipher_name = name.lower().replace(" roundtrip", "")
+        return (cipher_name, cipher_name)
 
     # Protocol wire records
     if comparator == "protocol_wire":
@@ -278,6 +280,10 @@ def extract_probe_args(record: dict) -> Optional[tuple[str, str]]:
     # Process lifecycle records
     if comparator == "process_lifecycle":
         return ("pproxy.server", name)
+
+    # failure_class records: the "module" field is a protocol name, not a Python module
+    if comparator == "failure_class":
+        return ("pproxy.proto", name)
 
     if kind == "module":
         # For module existence checks, probe the parent module for the submodule
