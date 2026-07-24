@@ -1502,7 +1502,10 @@ MAP: dict[str, type[BaseCipher]] = {
 class _ApplyCipher:
     """Callable returned by get_cipher that carries cipher metadata."""
 
-    __slots__ = ("cipher", "_key", "_name", "_ota", "_plugins", "_datagram")
+    __slots__ = (
+        "cipher", "_key", "_name", "_ota", "_plugins", "_datagram",
+        "pdecrypt", "pdecrypt2", "pencrypt", "pencrypt2",
+    )
 
     def __init__(
         self,
@@ -1519,6 +1522,10 @@ class _ApplyCipher:
         self._ota = ota
         self._plugins = plugins or []
         self._datagram = datagram
+        self.pdecrypt = None
+        self.pdecrypt2 = None
+        self.pencrypt = None
+        self.pencrypt2 = None
 
     @property
     def key(self) -> bytes:
