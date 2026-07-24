@@ -1547,8 +1547,17 @@ class _ApplyCipher:
     def datagram(self) -> Optional[PacketCipher]:
         return self._datagram
 
-    def __call__(self, data: bytes) -> bytes:
-        return data
+    def __call__(self, reader: Any = None, writer: Any = None, pdecrypt: Any = None, pdecrypt2: Any = None, pencrypt: Any = None, pencrypt2: Any = None) -> Any:
+        """pproxy compatibility: called by prepare_ciphers to apply cipher setup."""
+        if pdecrypt is not None:
+            self.pdecrypt = pdecrypt
+        if pdecrypt2 is not None:
+            self.pdecrypt2 = pdecrypt2
+        if pencrypt is not None:
+            self.pencrypt = pencrypt
+        if pencrypt2 is not None:
+            self.pencrypt2 = pencrypt2
+        return (reader, writer)
 
     def __repr__(self) -> str:
         return f"<ApplyCipher name={self._name!r} ota={self._ota}>"
