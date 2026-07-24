@@ -122,13 +122,6 @@ def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
         """Extract structured signature from an AST FunctionDef/AsyncFunctionDef."""
         args = func.args
         params = []
-        kind_map = {
-            ast.arg.POSITIONAL_ONLY: "POSITIONAL_ONLY",
-            ast.arg.POSITIONAL_OR_KEYWORD: "POSITIONAL_OR_KEYWORD",
-            ast.arg.VAR_POSITIONAL: "VAR_POSITIONAL",
-            ast.arg.KEYWORD_ONLY: "KEYWORD_ONLY",
-            ast.arg.VAR_KEYWORD: "VAR_KEYWORD",
-        }
 
         # positional-only args (before /)
         posonlyargs = getattr(args, "posonlyargs", [])
