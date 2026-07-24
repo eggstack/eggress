@@ -803,6 +803,18 @@ def run_paired_comparison(
     for i, record in enumerate(records, 1):
         rid = record.get("id", "?")
         comparator = record.get("comparator", "module_existence")
+        record_status = record.get("status", "")
+
+        # Skip records where the feature is explicitly declared as not
+        # applicable — these are documented absences, not testable.
+        if record_status == "not_applicable":
+            results.append({
+                "id": rid,
+                "status": "skipped",
+                "reason": f"status={record_status} — not a testable feature",
+            })
+            continue
+
         args = extract_probe_args(record)
         if not args:
             results.append({
