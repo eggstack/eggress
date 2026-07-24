@@ -452,8 +452,8 @@ def compare_observations(
                 "candidate": c_rt,
                 "match": o_rt == c_rt,
             })
-        o_ct_len = oracle.get("ciphertext_len") or oracle.get("encrypt_output", {}).get("ciphertext_len")
-        c_ct_len = candidate.get("ciphertext_len") or candidate.get("encrypt_output", {}).get("ciphertext_len")
+        o_ct_len = oracle.get("ciphertext_len") or (oracle.get("encrypt_output") or {}).get("ciphertext_len")
+        c_ct_len = candidate.get("ciphertext_len") or (candidate.get("encrypt_output") or {}).get("ciphertext_len")
         if o_ct_len is not None and c_ct_len is not None:
             comparisons.append({
                 "dimension": "ciphertext_len",
