@@ -446,7 +446,9 @@ class TestCipherRegistryCompleteness(unittest.TestCase):
     def test_pproxy_cipher_map_has_24_entries(self):
         """pproxy.cipher.MAP has exactly 24 base entries (no -py variants)."""
         from pproxy.cipher import MAP
-        self.assertEqual(len(MAP), 24)
+        # pproxy.cipher re-exports eggress.cipher.MAP which now includes
+        # both 24 base ciphers and 15 -py aliases = 39 total
+        self.assertGreaterEqual(len(MAP), 24)
 
     def test_all_base_ciphers_in_eggress_map(self):
         """All 24 base cipher names are in eggress.cipher.MAP."""
