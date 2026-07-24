@@ -613,15 +613,15 @@ def verify_venv(python_path: str, is_oracle: bool = True) -> dict:
     snippet = """
 import json, sys, os
 
-result = {
-    "sys_prefix": sys.prefix,
-    "python_version": sys.version,
-    "package_file": None,
-    "distribution_name": None,
-    "distribution_version": None,
-    "commit_sha": None,
-    "import_check": None,
-}
+result = dict(
+    sys_prefix=sys.prefix,
+    python_version=sys.version,
+    package_file=None,
+    distribution_name=None,
+    distribution_version=None,
+    commit_sha=None,
+    import_check=None,
+)
 
 IS_ORACLE = {is_oracle}
 
@@ -652,7 +652,7 @@ except ImportError:
 
 # Try to get distribution info
 try:
-    from importlib.metadata import version, packages_distributions
+    from importlib.metadata import version
     try:
         ver = version("pproxy" if IS_ORACLE else "eggress")
         result["distribution_name"] = "pproxy" if IS_ORACLE else "eggress"
@@ -668,7 +668,6 @@ try:
     dist = importlib.metadata.distribution("eggress" if not IS_ORACLE else "pproxy")
     result["commit_sha"] = dist.metadata.get("Vcs-url", None)
     if not result["commit_sha"]:
-        # Try Cargo.toml info
         for k, v in dist.metadata.items():
             if "commit" in k.lower() or "sha" in k.lower():
                 result["commit_sha"] = v
