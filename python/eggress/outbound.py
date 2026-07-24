@@ -39,10 +39,16 @@ import asyncio
 import warnings
 from typing import Any
 
-from eggress._eggress import (
-    PyOutboundConnector as _PyOutboundConnector,
-    PyOutboundStream as _PyOutboundStream,
-)
+try:
+    from eggress._eggress import (
+        PyOutboundConnector as _PyOutboundConnector,
+        PyOutboundStream as _PyOutboundStream,
+    )
+except ImportError:
+    _PyOutboundConnector = None  # type: ignore[assignment]
+    _PyOutboundStream = None  # type: ignore[assignment]
+
+_HAS_NATIVE_OUTBOUND: bool = _PyOutboundConnector is not None
 
 
 class OutboundStream:
