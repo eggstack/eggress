@@ -122,8 +122,17 @@ run_gate "12_python_test_suite" bash -c "
     COMPAT_WHEEL=\$(ls dist/eggress_pproxy_compat-*.whl 2>/dev/null | head -1) && \
     [ -n \"\$EGGRESS_WHEEL\" ] || { echo 'ERROR: eggress wheel not found' >&2; exit 1; } && \
     [ -n \"\$COMPAT_WHEEL\" ] || { echo 'ERROR: compat wheel not found' >&2; exit 1; } && \
-    '$VENV_DIR/bin/pip' install \"\$EGGRESS_WHEEL\" pytest pytest-asyncio >/dev/null 2>&1 && \
-    '$VENV_DIR/bin/pip' install \"\$COMPAT_WHEEL\" >/dev/null 2>&1 && \
+    echo \"Installing eggress wheel: \$EGGRESS_WHEEL\" && \
+    '$VENV_DIR/bin/pip' install \"\$EGGRESS_WHEEL\" pytest pytest-asyncio 2>&1 && \
+    echo '--- Installed packages ---' && \
+    '$VENV_DIR/bin/pip' list 2>&1 && \
+    echo '--- eggress package files ---' && \
+    ls -la '$VENV_DIR/lib/python3.*/site-packages/eggress/' 2>&1 | head -30 && \
+    echo '--- eggress native module check ---' && \
+    '$VENV_DIR/bin/python' -c \"import eggress._eggress; print('_eggress OK')\" 2>&1 || \
+        '$VENV_DIR/bin/python' -c \"import eggress; print('eggress imported, _HAS_NATIVE:', getattr(eggress, '_HAS_NATIVE', 'N/A')); print('file:', eggress.__file__)\" 2>&1 && \
+    echo \"Installing compat wheel: \$COMPAT_WHEEL\" && \
+    '$VENV_DIR/bin/pip' install \"\$COMPAT_WHEEL\" 2>&1 && \
     '$VENV_DIR/bin/python' -m pytest python/tests -x -q \
         --junitxml='$AUDIT_DIR/junit-python.xml' \
         --tb=short
