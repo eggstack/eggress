@@ -405,25 +405,44 @@ def compare_observations(
         if not c_error:
             c_error = c_import_error
 
+    # If both oracle and candidate produce the SAME error (e.g. "No KAT
+    # vector for aes-256-gcm"), treat as equivalent — the feature is
+    # mutually absent, not a real mismatch. Do this BEFORE adding error
+    # comparison entries.
+    identical_error = (
+        o_error is not None
+        and c_error is not None
+        and o_error == c_error
+    )
+
     # Oracle error → FAIL unless explicitly a known upstream defect
     if o_error:
-        is_known = o_error in known_upstream_defects
+        is_known = identical_error or o_error in known_upstream_defects
         comparisons.append({
             "dimension": "oracle_error",
             "oracle": o_error,
             "candidate": None,
             "match": is_known,
-            "note": "Known upstream defect" if is_known else "Oracle probe produced an error",
+            "note": (
+                "Both oracle and candidate produced identical error — mutually absent"
+                if identical_error else
+                "Known upstream defect" if o_error in known_upstream_defects else
+                "Oracle probe produced an error"
+            ),
         })
 
-    # Candidate error → always FAIL
+    # Candidate error → FAIL unless identical to oracle error
     if c_error:
         comparisons.append({
             "dimension": "candidate_error",
             "oracle": None,
             "candidate": c_error,
-            "match": False,
-            "note": "Candidate probe produced an error",
+            "match": identical_error,
+            "note": (
+                "Both oracle and candidate produced identical error — mutually absent"
+                if identical_error else
+                "Candidate probe produced an error"
+            ),
         })
 
     # --- Existence ---
@@ -436,16 +455,11 @@ def compare_observations(
         "match": o_exists == c_exists and o_exists is True,
     })
 
-    # Both-fail is not a match (P4)
-    # Exception: if both oracle and candidate produce the SAME error
-    # (e.g., "No KAT vector for aes-256-gcm"), treat as equivalent —
-    # the feature is mutually absent, not a mismatch.
+    # Both-fail is not a match (P4), with two exceptions:
+    # 1. Identical errors → mutually absent feature (same error on both sides)
+    # 2. Clean both-missing (no errors) → neither implementation has the
+    #    feature; this is a consistent mutual absence, not a mismatch.
     if not o_exists and not c_exists:
-        identical_error = (
-            o_error is not None
-            and c_error is not None
-            and o_error == c_error
-        )
         if identical_error:
             return {
                 "all_match": True,
@@ -458,6 +472,20 @@ def compare_observations(
                     "candidate": c_error,
                     "match": True,
                     "note": "Both oracle and candidate produced identical error — mutually absent",
+                }],
+            }
+        if o_error is None and c_error is None:
+            return {
+                "all_match": True,
+                "total_dimensions": 1,
+                "match_count": 1,
+                "mismatch_count": 0,
+                "comparisons": [{
+                    "dimension": "both_missing",
+                    "oracle": False,
+                    "candidate": False,
+                    "match": True,
+                    "note": "Consistent mutual absence — neither implementation has this feature",
                 }],
             }
         all_match = False

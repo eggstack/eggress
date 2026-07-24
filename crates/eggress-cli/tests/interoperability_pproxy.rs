@@ -193,11 +193,16 @@ async fn test_pproxy_http_server_eggress_client() {
         .expect("chain execution failed");
 
     conn.write_all(b"pproxy http test").await.unwrap();
-    conn.shutdown().await.unwrap();
 
-    let mut buf = Vec::new();
-    conn.read_to_end(&mut buf).await.unwrap();
-    assert_eq!(&buf, b"pproxy http test");
+    // Read the echo back. The echo server echoes data and then waits
+    // for more input. Use a timed read to receive the echo.
+    let mut buf = vec![0u8; 1024];
+    let n = tokio::time::timeout(Duration::from_secs(5), conn.read(&mut buf))
+        .await
+        .expect("read timeout")
+        .expect("read error");
+    assert!(n > 0, "received EOF before echo");
+    assert_eq!(&buf[..n], b"pproxy http test");
 
     let _ = pproxy_child.kill();
     echo_jh.abort();
@@ -246,11 +251,16 @@ async fn test_pproxy_socks5_server_eggress_client() {
         .expect("chain execution failed");
 
     conn.write_all(b"pproxy socks5 test").await.unwrap();
-    conn.shutdown().await.unwrap();
 
-    let mut buf = Vec::new();
-    conn.read_to_end(&mut buf).await.unwrap();
-    assert_eq!(&buf, b"pproxy socks5 test");
+    // Read the echo back. The echo server echoes data and then waits
+    // for more input. Use a timed read to receive the echo.
+    let mut buf = vec![0u8; 1024];
+    let n = tokio::time::timeout(Duration::from_secs(5), conn.read(&mut buf))
+        .await
+        .expect("read timeout")
+        .expect("read error");
+    assert!(n > 0, "received EOF before echo");
+    assert_eq!(&buf[..n], b"pproxy socks5 test");
 
     let _ = pproxy_child.kill();
     echo_jh.abort();
