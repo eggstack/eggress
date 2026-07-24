@@ -48,7 +48,7 @@ jobs:
           .venv-oracle/bin/pip install "pproxy==2.7.9"
           .venv-oracle/bin/pip install pysocks cryptography
       - name: Verify pproxy oracle
-        run: .venv-oracle/bin/python -c "import pproxy; print(f'pproxy {pproxy.__version__}')"
+        run: .venv-oracle/bin/python -c "from importlib.metadata import version; print(f'pproxy {version(\"pproxy\")}')"
       - name: Set up candidate venv
         run: |
           python3 -m venv .venv-candidate
