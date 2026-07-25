@@ -1557,7 +1557,11 @@ class _ApplyCipher:
             self.pencrypt = pencrypt
         if pencrypt2 is not None:
             self.pencrypt2 = pencrypt2
-        return (reader, writer)
+        # When called with positional args (from prepare_ciphers), return (reader, writer)
+        if writer is not None:
+            return (reader, writer)
+        # When called with a single data arg, return it as-is (identity)
+        return reader
 
     def __repr__(self) -> str:
         return f"<ApplyCipher name={self._name!r} ota={self._ota}>"
