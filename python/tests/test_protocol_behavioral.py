@@ -108,39 +108,39 @@ class TestHTTP:
     def test_guess_detects_get(self) -> None:
         proto = HTTP()
         reader = FakeReader(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
         assert result.startswith(b"GET")
 
     def test_guess_detects_connect(self) -> None:
         proto = HTTP()
         reader = FakeReader(b"CONNECT example.com:443 HTTP/1.1\r\n\r\n")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
         assert result.startswith(b"CONNECT")
 
     def test_guess_detects_post(self) -> None:
         proto = HTTP()
         reader = FakeReader(b"POST /submit HTTP/1.1\r\nHost: x.com\r\n\r\n")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
 
     def test_guess_rejects_non_http(self) -> None:
         proto = HTTP()
         reader = FakeReader(b"\x05\x01\x00")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
     def test_guess_empty_data(self) -> None:
         proto = HTTP()
         reader = FakeReader(b"")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
     def test_accept_connect_parses_host_port(self) -> None:
         proto = HTTP()
         proto._buffered = b"CONNECT example.com:8443 HTTP/1.1\r\n\r\n"
-        user, host, port = asyncio.get_event_loop().run_until_complete(
+        user, host, port = asyncio.run(
             proto.accept(FakeReader(), "testuser", writer=None)
         )
         assert host == "example.com"
@@ -150,7 +150,7 @@ class TestHTTP:
     def test_accept_connect_default_port(self) -> None:
         proto = HTTP()
         proto._buffered = b"CONNECT example.com HTTP/1.1\r\n\r\n"
-        user, host, port = asyncio.get_event_loop().run_until_complete(
+        user, host, port = asyncio.run(
             proto.accept(FakeReader(), None, writer=None)
         )
         assert host == "example.com"
@@ -163,7 +163,7 @@ class TestHTTP:
             b"Host: myserver.com:9090\r\n"
             b"\r\n"
         )
-        user, host, port = asyncio.get_event_loop().run_until_complete(
+        user, host, port = asyncio.run(
             proto.accept(FakeReader(), "u", writer=None)
         )
         assert host == "myserver.com"
@@ -175,7 +175,7 @@ class TestHTTP:
             b"GET http://from-url.com/page HTTP/1.1\r\n"
             b"\r\n"
         )
-        user, host, port = asyncio.get_event_loop().run_until_complete(
+        user, host, port = asyncio.run(
             proto.accept(FakeReader(), None, writer=None)
         )
         assert host == "from-url.com"
@@ -184,7 +184,7 @@ class TestHTTP:
     def test_connect_requires_writer(self) -> None:
         proto = HTTP()
         with pytest.raises(AttributeError):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 proto.connect(None, None, None, "example.com", 443)
             )
 
@@ -201,13 +201,13 @@ class TestHTTPOnly:
     def test_inherits_http_guess(self) -> None:
         proto = HTTPOnly()
         reader = FakeReader(b"GET / HTTP/1.1\r\n\r\n")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
 
     def test_guess_rejects_non_http(self) -> None:
         proto = HTTPOnly()
         reader = FakeReader(b"\x05\x01")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
 
@@ -225,20 +225,20 @@ class TestSocks4:
         # SOCKS4 connect request: version=0x04, cmd=0x01, port, ip
         data = b"\x04\x01\x00\x50\x7f\x00\x00\x01"
         reader = FakeReader(data)
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
         assert result[0] == 0x04
 
     def test_guess_rejects_non_socks4(self) -> None:
         proto = Socks4()
         reader = FakeReader(b"\x05\x01\x00")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
     def test_guess_empty(self) -> None:
         proto = Socks4()
         reader = FakeReader(b"")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
     def test_accept_standard_socks4(self) -> None:
@@ -248,7 +248,7 @@ class TestSocks4:
         ip = bytes([192, 168, 1, 1])
         data = b"\x04\x01" + port + ip + b"testuser\x00"
         proto._buffered = data
-        user, host, port_val = asyncio.get_event_loop().run_until_complete(
+        user, host, port_val = asyncio.run(
             proto.accept(FakeReader(), "orig_user", writer=None, users=None, authtable=None)
         )
         assert host == "192.168.1.1"
@@ -262,7 +262,7 @@ class TestSocks4:
         ip = bytes([0, 0, 0, 1])
         data = b"\x04\x01" + port + ip + b"testuser\x00example.com\x00"
         proto._buffered = data
-        user, host, port_val = asyncio.get_event_loop().run_until_complete(
+        user, host, port_val = asyncio.run(
             proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
         )
         assert host == "example.com"
@@ -283,20 +283,20 @@ class TestSocks5:
         # SOCKS5 greeting: version=0x05, nmethods=1, method=0x00
         data = b"\x05\x01\x00"
         reader = FakeReader(data)
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
         assert result[0] == 0x05
 
     def test_guess_rejects_non_socks5(self) -> None:
         proto = Socks5()
         reader = FakeReader(b"\x04\x01\x00\x50")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
     def test_guess_empty(self) -> None:
         proto = Socks5()
         reader = FakeReader(b"")
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is None
 
     def test_accept_socks5_no_auth_ipv4(self) -> None:
@@ -309,7 +309,7 @@ class TestSocks5:
         port = struct.pack("!H", 8080)
         connect = b"\x05\x01\x00\x01" + ip + port
         proto._buffered = greeting + connect
-        user, host, port_val = asyncio.get_event_loop().run_until_complete(
+        user, host, port_val = asyncio.run(
             proto.accept(FakeReader(), "authed_user", writer=None, users=None, authtable=None)
         )
         assert host == "10.0.0.1"
@@ -327,7 +327,7 @@ class TestSocks5:
             + struct.pack("!H", 9090)
         )
         proto._buffered = greeting + connect
-        user, host, port_val = asyncio.get_event_loop().run_until_complete(
+        user, host, port_val = asyncio.run(
             proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
         )
         assert host == "example.com"
@@ -342,7 +342,7 @@ class TestSocks5:
         # Connect request: IPv4 10.0.0.1:80
         connect = b"\x05\x01\x00\x01" + bytes([10, 0, 0, 1]) + struct.pack("!H", 80)
         proto._buffered = greeting + auth + connect
-        user, host, port_val = asyncio.get_event_loop().run_until_complete(
+        user, host, port_val = asyncio.run(
             proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
         )
         assert host == "10.0.0.1"
@@ -444,7 +444,7 @@ class TestProtocolDetection:
     def test_http_methods_detected(self, data: bytes, expected_class: type) -> None:
         proto = HTTP()
         reader = FakeReader(data)
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
 
     @pytest.mark.parametrize(
@@ -458,7 +458,7 @@ class TestProtocolDetection:
     def test_socks5_detected(self, data: bytes) -> None:
         proto = Socks5()
         reader = FakeReader(data)
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
         assert result[0] == 0x05
 
@@ -473,7 +473,7 @@ class TestProtocolDetection:
     def test_socks4_detected(self, data: bytes) -> None:
         proto = Socks4()
         reader = FakeReader(data)
-        result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+        result = asyncio.run(proto.guess(reader))
         assert result is not None
         assert result[0] == 0x04
 
@@ -481,7 +481,7 @@ class TestProtocolDetection:
         for ProtoClass in (HTTP, Socks4, Socks5):
             proto = ProtoClass()
             reader = FakeReader(b"\xff\xfe\xfd\xfc\xfb")
-            result = asyncio.get_event_loop().run_until_complete(proto.guess(reader))
+            result = asyncio.run(proto.guess(reader))
             assert result is None
 
 
