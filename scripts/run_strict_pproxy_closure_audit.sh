@@ -171,19 +171,19 @@ run_gate_optional "16_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INT
 run_gate_optional "17_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
 
 # ── Gate 18: cipher KAT and interop probes ──────────────────────
-run_gate "18_cipher_kat" bash -c 'python3 -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1'
+run_gate "18_cipher_kat" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1"
 
 # ── Gate 19: plugin transformed-traffic probe ────────────────────
-run_gate "19_plugin_probe" bash -c 'python3 -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib'
+run_gate "19_plugin_probe" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib"
 
 # ── Gate 20: process lifecycle probe ─────────────────────────────
-run_gate "20_process_lifecycle" bash -c 'python3 -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib'
+run_gate "20_process_lifecycle" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib"
 
 # ── Gate 21: runtime/failure/cleanup probe ──────────────────────
 run_gate "21_runtime_failure_cleanup" cargo test -p eggress-runtime --test lifecycle_invariants
 
 # ── Gate 22: resource-leak and process-cleanup checks ────────────
-run_gate "22_resource_leak_check" bash -c 'python3 -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib'
+run_gate "22_resource_leak_check" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib"
 
 # ── Gate 23: report and evidence hash binding ────────────────────
 EVIDENCE_DIR="$AUDIT_DIR/evidence"
