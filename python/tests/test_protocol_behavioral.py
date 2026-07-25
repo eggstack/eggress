@@ -88,12 +88,12 @@ class TestDirect:
     def test_guess_not_implemented(self) -> None:
         d = Direct()
         with pytest.raises(NotImplementedError, match="direct does not implement guess"):
-            asyncio.get_event_loop().run_until_complete(d.guess(FakeReader()))
+            asyncio.run(d.guess(FakeReader()))
 
     def test_accept_not_implemented(self) -> None:
         d = Direct()
         with pytest.raises(NotImplementedError, match="direct does not implement accept"):
-            asyncio.get_event_loop().run_until_complete(d.accept(FakeReader(), None))
+            asyncio.run(d.accept(FakeReader(), None))
 
 
 # ---------------------------------------------------------------------------
