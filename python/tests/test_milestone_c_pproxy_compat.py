@@ -56,11 +56,9 @@ class TestPproxyNamespace:
     def test_version_info(self):
         import pproxy
 
-        # pproxy 2.7.9 does not expose __version__ at module level
-        # The version is available through package metadata
-        from importlib.metadata import version
-        v = version("pproxy")
-        assert v == "2.7.9"
+        # pproxy compat provides __version__ at module level (from eggress)
+        v = pproxy.__version__
+        assert v == "0.1.0"
 
 
 # ---------------------------------------------------------------------------
