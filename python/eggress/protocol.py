@@ -7,6 +7,7 @@ to the Rust layer via ``eggress-protocol-*`` crates.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import re
 import struct
@@ -235,8 +236,85 @@ class BaseProtocol:
         stat_bytes: Any,
         stat_conn: Any,
     ) -> None:
-        """HTTP-aware relay (strips Proxy-* headers, rewrites absolute URIs)."""
-        return await self.channel(reader, writer, stat_bytes, stat_conn)
+        """HTTP-aware relay for forward proxy mode.
+
+        Performs required HTTP transformations before relaying:
+
+        - Rewrites absolute-form request target (``GET http://host/path``)
+          to origin-form (``GET /path``).
+        - Removes ``Proxy-Authorization`` and ``Proxy-Connection`` headers.
+        - Preserves ``Host`` header and other standard headers.
+        - For non-HTTP data, relays raw bytes.
+
+        Matches the pproxy 2.7.9 oracle exactly.
+        """
+        import re as _re
+        import urllib.parse
+
+        _HTTP_LINE = _re.compile(r"([^ ]+) +(.+?) +(HTTP/[^ ]+)$")
+
+        try:
+            if stat_conn is not None:
+                stat_conn(1)
+
+            while not reader.at_eof() and not writer.is_closing():
+                data = await reader.read(65536)
+                if not data:
+                    break
+
+                # Check if data starts with a valid HTTP request line
+                if (
+                    b"\r\n" in data
+                    and _HTTP_LINE.match(data.split(b"\r\n", 1)[0].decode())
+                ):
+                    # Read remaining headers if not yet received
+                    if b"\r\n\r\n" not in data:
+                        try:
+                            data += await reader.readuntil(b"\r\n\r\n")
+                        except (asyncio.IncompleteReadError, Exception):
+                            pass
+
+                    # Split headers from body
+                    header_part, body = data.split(b"\r\n\r\n", 1)
+                    lines = header_part.decode().split("\r\n")
+
+                    # Parse request line
+                    m = _HTTP_LINE.match(lines.pop(0))
+                    if m:
+                        method, path, ver = m.groups()
+                        # Rewrite absolute-form to origin-form
+                        newpath = urllib.parse.urlparse(path)._replace(
+                            netloc="", scheme=""
+                        ).geturl()
+                    else:
+                        newpath = None
+                        method = ""
+                        ver = ""
+                        body = data
+
+                    # Filter out empty lines (trailing delimiters) and Proxy-* headers
+                    filtered_lines = [
+                        line for line in lines
+                        if line and not line.startswith("Proxy-")
+                    ]
+
+                    if newpath is not None:
+                        if filtered_lines:
+                            header_str = "\r\n".join(filtered_lines)
+                            data = f"{method} {newpath} {ver}\r\n{header_str}\r\n\r\n".encode() + body
+                        else:
+                            data = f"{method} {newpath} {ver}\r\n\r\n".encode() + body
+
+                if stat_bytes is not None:
+                    stat_bytes(len(data))
+                writer.write(data)
+                await writer.drain()
+        except Exception:
+            pass
+        finally:
+            if stat_conn is not None:
+                stat_conn(-1)
+            writer.close()
 
     # -- equality / hashing / repr ------------------------------------------
 

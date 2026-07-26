@@ -75,9 +75,9 @@ pub const ALLOWED_CERTIFICATION_SCOPES: &[&str] =
 const MILESTONE_ORDER: &[&str] = &["A", "B", "C", "D", "E", "F"];
 
 /// Current release milestone — records at or below this milestone
-/// with non-terminal status are flagged. Set to "A" while milestone B
-/// work is still in progress.
-const CURRENT_MILESTONE: &str = "A";
+/// with non-terminal status are flagged. Set to "C" for the A–C
+/// corrective closure pass.
+const CURRENT_MILESTONE: &str = "C";
 
 /// Terminal statuses that do not represent unresolved progress.
 const TERMINAL_STATUSES: &[&str] = &[
@@ -103,6 +103,8 @@ pub struct StrictManifestMeta {
     pub policy_ref: String,
     #[serde(default)]
     pub oracle_ref: String,
+    #[serde(default)]
+    pub closure_through: String,
 }
 
 /// A single record entry in the strict manifest.
@@ -149,6 +151,8 @@ pub struct StrictRecord {
     pub closure_required: bool,
     #[serde(default)]
     pub behavior_record: Option<String>,
+    #[serde(default)]
+    pub inventory_only: bool,
 }
 
 /// The complete strict manifest structure.
@@ -648,6 +652,19 @@ pub fn validate_strict_manifest(manifest: &StrictManifest) -> Result<(), StrictV
         if rec.closure_required && rec.evidence_refs.is_empty() {
             errs.push(StrictValidationError::ClosureRequiredWithoutEvidence { id: rec.id.clone() });
         }
+
+        // Rule 10c: missing behavior_record for public structural record
+        // Structural records that are closure_required must have either a
+        // behavior_record link or explicit inventory_only classification.
+        if rec.closure_required
+            && rec.certification_scope == "structural"
+            && rec.behavior_record.is_none()
+            && !rec.inventory_only
+        {
+            errs.push(StrictValidationError::StructuralMissingBehaviorRecord {
+                id: rec.id.clone(),
+            });
+        }
     }
 
     if errs.is_empty() {
@@ -1044,6 +1061,7 @@ mod tests {
             schema: "strict_1".to_string(),
             policy_ref: String::new(),
             oracle_ref: String::new(),
+            closure_through: "C".to_string(),
         }
     }
 
@@ -1078,6 +1096,7 @@ mod tests {
             certification_scope: "behavioral".to_string(),
             closure_required: true,
             behavior_record: None,
+            inventory_only: false,
         }
     }
 
@@ -1936,12 +1955,32 @@ mod tests {
     }
 
     #[test]
-    fn rule_10c_structural_missing_behavior_record_passes() {
-        // Rule 10c is defined but not yet enforced - structural records
-        // without behavior_record are allowed during the corrective pass.
-        let mut rec = default_record("r10c_no_enforce");
+    fn rule_10c_structural_missing_behavior_record_fails() {
+        // Rule 10c: structural closure_required records without behavior_record
+        // or inventory_only must fail validation.
+        let mut rec = default_record("r10c_reject");
         rec.certification_scope = "structural".to_string();
         rec.behavior_record = None;
+        rec.inventory_only = false;
+        let manifest = make_manifest(vec![rec]);
+        let errs = validate_strict_manifest(&manifest).unwrap_err();
+        assert!(
+            errs.errors.iter().any(|e| matches!(
+                e,
+                StrictValidationError::StructuralMissingBehaviorRecord { id, .. }
+                    if id == "r10c_reject"
+            )),
+            "expected StructuralMissingBehaviorRecord"
+        );
+    }
+
+    #[test]
+    fn rule_10c_structural_inventory_only_passes() {
+        // Rule 10c: structural records with inventory_only = true are exempt.
+        let mut rec = default_record("r10c_inventory_only");
+        rec.certification_scope = "structural".to_string();
+        rec.behavior_record = None;
+        rec.inventory_only = true;
         let manifest = make_manifest(vec![rec]);
         let result = validate_strict_manifest(&manifest);
         assert!(result.is_ok(), "expected Ok, got {:?}", result.err());

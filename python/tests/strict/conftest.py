@@ -31,6 +31,12 @@ def pytest_addoption(parser):
         default=None,
         help="Directory containing candidate observation JSON files",
     )
+    parser.addoption(
+        "--closure-required",
+        action="store_true",
+        default=False,
+        help="Enable closure mode: missing observation dirs are hard failures",
+    )
 
 
 def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
@@ -317,9 +323,21 @@ def load_observation(obs_dir: Path, rid: str, side: str) -> dict:
 
 @pytest.fixture
 def require_obs_dirs(request):
-    """Require that observation directories are configured, skip test otherwise."""
+    """Require that observation directories are configured.
+
+    In closure mode (``--closure-required``), missing directories are a hard
+    failure, not a skip.  Candidate-only developer runs may retain skip
+    behavior.
+    """
     oracle_dir = request.config.getoption("--oracle-observations-dir")
     candidate_dir = request.config.getoption("--candidate-observations-dir")
+    closure_required = request.config.getoption("--closure-required", default=False)
+
     if not oracle_dir or not candidate_dir:
+        if closure_required:
+            pytest.fail(
+                "closure mode requires --oracle-observations-dir and "
+                "--candidate-observations-dir to be provided"
+            )
         pytest.skip("--oracle-observations-dir and --candidate-observations-dir required")
     return Path(oracle_dir), Path(candidate_dir)

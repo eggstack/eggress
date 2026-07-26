@@ -1,0 +1,251 @@
+# Milestones A-C Skip Inventory
+#
+# Machine-readable inventory of all skipped/xfail tests in the A-C closure
+# suite. Each entry classifies whether the skip is a closure blocker.
+#
+# Classification:
+#   supported_blocked  — skip for a supported A-C behavior; blocks closure
+#   deferred           — skip for a later-milestone feature; does not block A-C
+#   platform           — skip for a platform-specific limitation; may block A-C
+#   gated              — skip gated on environment/dependency; blocks if cannot
+#                        be satisfied in the closure environment
+
+# ── Address parsing (PC3) ──────────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_milestone_c_properties.py::TestAddressRoundTrip"
+reason = "socks_address implemented as encoder; tests expect reader-based decoder (pproxy 2.7.9 stream reader API)"
+milestone = "C"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC3"
+
+[[skip]]
+test_node_id = "python/tests/test_milestone_c_functional.py::TestAddressParsing::test_ipv4_address"
+reason = "socks_address implemented as encoder; tests expect reader-based decoder"
+milestone = "C"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC3"
+
+[[skip]]
+test_node_id = "python/tests/test_milestone_c_functional.py::TestAddressParsing::test_domain_address"
+reason = "socks_address implemented as encoder; tests expect reader-based decoder"
+milestone = "C"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC3"
+
+[[skip]]
+test_node_id = "python/tests/test_milestone_c_functional.py::TestAddressParsing::test_ipv6_address"
+reason = "socks_address implemented as encoder; tests expect reader-based decoder"
+milestone = "C"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC3"
+
+# ── Server lifecycle (PC4) ─────────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_server_lifecycle_pproxy.py::test_start_server_socks5_listens"
+reason = "Compat wheel stream_handler() signature mismatch with asyncio StreamReaderProtocol"
+milestone = "C"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC4"
+
+# ── Gated differential tests ───────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_pproxy_differential.py"
+reason = "Gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL; requires pproxy==2.7.9 installed in both oracle and candidate venvs"
+milestone = "A"
+classification = "gated"
+closure_blocked = true
+planned_workstream = "PC8"
+
+# ── Outbound stream verification — external infrastructure ──────────
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughSOCKS5"
+reason = "Requires a running SOCKS5 proxy on 127.0.0.1:1080"
+milestone = "B"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC2"
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughHTTP"
+reason = "Requires a running HTTP CONNECT proxy on 127.0.0.1:8080"
+milestone = "B"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC2"
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughSOCKS4"
+reason = "Requires a running SOCKS4 proxy on 127.0.0.1:1080"
+milestone = "B"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC2"
+
+# ── Outbound stream — later milestone protocols ────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughSS"
+reason = "Requires a running Shadowsocks proxy (later milestone)"
+milestone = "D"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughTrojan"
+reason = "Requires a running Trojan proxy (later milestone)"
+milestone = "D"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughWS"
+reason = "Requires a running WebSocket proxy (later milestone)"
+milestone = "D"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughRaw"
+reason = "Requires a running raw tunnel proxy (later milestone)"
+milestone = "D"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughH2"
+reason = "Requires a running H2 proxy (later milestone)"
+milestone = "D"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundMultiHopTwoHopChain"
+reason = "Requires two-hop proxy chain infrastructure"
+milestone = "B"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC2"
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundMultiHopThreeHopChain"
+reason = "Requires three-hop proxy chain infrastructure"
+milestone = "B"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundConnectorIPv6"
+reason = "IPv6 not available in all test environments"
+milestone = "C"
+classification = "platform"
+closure_blocked = false
+planned_workstream = null
+
+# ── Server lifecycle — later milestone integration ──────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_server_lifecycle_pproxy.py::test_server_lifecycle_pproxy_integration"
+reason = "Real pproxy integration test (requires full pproxy runtime)"
+milestone = "C"
+classification = "gated"
+closure_blocked = false
+planned_workstream = null
+
+# ── Utility fixtures ───────────────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_pproxy_utility_fixtures.py"
+reason = "Module-level skip gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL"
+milestone = "C"
+classification = "gated"
+closure_blocked = false
+planned_workstream = "PC8"
+
+# ── Oracle availability tests ──────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_pproxy_oracle.py"
+reason = "Gated on pproxy/eggress availability and API snapshot"
+milestone = "A"
+classification = "gated"
+closure_blocked = false
+planned_workstream = "PC8"
+
+# ── Bidirectional interop ──────────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/interop/test_pproxy_bidirectional_*.py"
+reason = "Gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL + pproxy importability"
+milestone = "A"
+classification = "gated"
+closure_blocked = false
+planned_workstream = "PC8"
+
+# ── Strict tests — missing observation dirs ────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/strict/conftest.py (observation fixtures)"
+reason = "Skip if --oracle-observations-dir not provided"
+milestone = "A"
+classification = "supported_blocked"
+closure_blocked = true
+planned_workstream = "PC6"
+
+# ── Protocol cipher — optional dependency ──────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors"
+reason = "Gated on _HAS_CRYPTOGRAPHY"
+milestone = "C"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null
+
+# ── Other platform/infra skips ─────────────────────────────────────
+
+[[skip]]
+test_node_id = "python/tests/test_pproxy_dropin.py"
+reason = "OpenSSL availability"
+milestone = "C"
+classification = "platform"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_performance_smoke.py"
+reason = "Native extension arch mismatch"
+milestone = "C"
+classification = "platform"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_server_lifecycle.py"
+reason = "OpenSSL, IPv6, native extension arch, FD enumeration"
+milestone = "C"
+classification = "platform"
+closure_blocked = false
+planned_workstream = null
+
+[[skip]]
+test_node_id = "python/tests/test_reverse_uri_helper.py"
+reason = "Reverse_servers TOML unsupported"
+milestone = "D"
+classification = "deferred"
+closure_blocked = false
+planned_workstream = null

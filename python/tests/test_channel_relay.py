@@ -38,6 +38,26 @@ class MockStreamReader:
         self._buf = self._buf[n:]
         return out
 
+    async def readline(self) -> bytes:
+        if not self._buf:
+            self._at_eof = True
+            return b""
+        idx = self._buf.find(b"\n")
+        if idx == -1:
+            out = self._buf
+            self._buf = b""
+            return out
+        out = self._buf[: idx + 1]
+        self._buf = self._buf[idx + 1 :]
+        return out
+
+    async def readexactly(self, n: int) -> bytes:
+        if len(self._buf) < n:
+            raise asyncio.IncompleteReadError(self._buf, n)
+        out = self._buf[:n]
+        self._buf = self._buf[n:]
+        return out
+
     def at_eof(self) -> bool:
         return self._at_eof and not self._buf
 
@@ -174,6 +194,15 @@ class TestHttpChannel:
         writer = MockStreamWriter()
         await proto.http_channel(reader, writer, None, None)
         assert writer.getvalue() == b"GET / HTTP/1.1\r\n\r\n"
+
+    @pytest.mark.asyncio
+    async def test_rewrites_absolute_form_uri(self) -> None:
+        """Absolute-form request target is rewritten to origin-form."""
+        proto = BaseProtocol()
+        reader = MockStreamReader(b"GET http://example.com/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        writer = MockStreamWriter()
+        await proto.http_channel(reader, writer, None, None)
+        assert writer.getvalue() == b"GET /path HTTP/1.1\r\nHost: example.com\r\n\r\n"
 
     @pytest.mark.asyncio
     async def test_relays_when_stat_bytes_is_none(self) -> None:

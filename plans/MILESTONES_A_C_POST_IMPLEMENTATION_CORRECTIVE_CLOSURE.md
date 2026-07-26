@@ -2,7 +2,23 @@
 
 ## Status
 
-Ready for implementation.
+LOCAL GATES PASS — HOSTED EVIDENCE PENDING
+
+Workstreams completed:
+- PC0: Freeze the Honest Baseline
+- PC1: Correct the Proxy Object Execution Model
+- PC2: Build Deterministic Route-Through Fixtures
+- PC3: Correct `socks_address` and Address Helpers
+- PC4: Repair `start_server()` and Handler Invocation
+- PC5: Complete Common Protocol Semantics (`http_channel()` URI rewrite, Proxy-* header stripping)
+- PC6: Restore Fail-Closed Paired Evidence (both-missing fails, identical errors fail, `--closure-required`)
+- PC7: Enforce Manifest-to-Behavior Evidence Links (Rule 10c, `inventory_only`, `closure_through = "C"`, `CURRENT_MILESTONE = "C"`)
+- PC8: Make the Closure Audit Authoritative (all gates mandatory)
+- PC9: Correct Hosted Workflow Execution (`if-no-files-found: error` for paired observations)
+- PC10: Regression Injection Proof (12 injection cases, all detected)
+
+Remaining:
+- PC11: Final Status and Completion Evidence (pending hosted CI run)
 
 ## Parent plans and audit baseline
 

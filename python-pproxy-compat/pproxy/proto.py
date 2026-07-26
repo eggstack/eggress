@@ -35,6 +35,11 @@ def socks_address(host: str, port: int) -> bytes:
     return kind + address.packed + port.to_bytes(2, "big")
 
 
+def encode_socks_address(host: str, port: int) -> bytes:
+    """Encode a SOCKS address (internal helper, same as ``socks_address``)."""
+    return socks_address(host, port)
+
+
 def socks_address_stream(host: str, port: int) -> bytes:
     return socks_address(host, port)
 
@@ -161,6 +166,7 @@ __all__ = sorted(
         "accept",
         "asyncio",
         "base64",
+        "encode_socks_address",
         "hashlib",
         "hmac",
         "io",

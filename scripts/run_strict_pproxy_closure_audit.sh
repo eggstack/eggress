@@ -131,21 +131,15 @@ run_gate "12_python_test_suite" bash -c "
         --tb=short
 "
 
-# ── Gate 13: paired API runner ───────────────────────────────────
-run_gate_optional "13_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh'
+# ── Gate 13: paired API runner (mandatory) ─────────────────────────
+run_gate "13_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh --closure-required'
 
-# ── Gate 14: strict Python differential tests ────────────────────
-# The strict differential tests have their own dedicated CI job
-# (strict-paired-api). In the closure audit context, the necessary
-# oracle/candidate venvs from the paired API job are not available
-# on the filesystem. The observations are uploaded as artifacts by
-# the paired API job but not downloaded into this job's workspace.
-# Gate 13 (optional, above) may leave stale partial venvs that
-# interfere with a fresh run here. Skip when observations are not
-# available so the gate does not produce spurious failures.
+# ── Gate 14: strict Python differential tests (mandatory) ──────────
+# Requires observation directories from the paired API job (gate 13).
+# Missing directories are a hard failure, not a skip.
 OBS_DIR="$AUDIT_DIR/paired_observations"
 mkdir -p "$OBS_DIR"
-run_gate_optional "14_strict_python_differential" bash -c "
+run_gate "14_strict_python_differential" bash -c "
     # Check if observations from the paired API job were pre-staged
     if [ -d '$OBS_DIR' ] && ls '$OBS_DIR'/*_oracle.json >/dev/null 2>&1; then
         EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3 -m pytest python/tests/strict -q \
@@ -154,21 +148,20 @@ run_gate_optional "14_strict_python_differential" bash -c "
             --import-mode=importlib \
             --tb=short
     else
-        echo 'No paired observations available; skipping strict differential tests.'
-        echo 'Run the strict-paired-api CI job to generate them.'
-        # Run without observation dirs so require_obs_dirs fixture skips all tests
-        EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3 -m pytest python/tests/strict -q --import-mode=importlib --tb=short
+        echo 'ERROR: No paired observations available; strict differential tests require observation directories.' >&2
+        echo 'Run gate 13 (paired_api_runner) first to generate them.' >&2
+        exit 1
     fi
 "
 
 # ── Gate 15: required runtime examples/scenarios ─────────────────
 run_gate "15_runtime_examples" cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
-# ── Gate 16: external TCP interoperability ───────────────────────
-run_gate_optional "16_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh'
+# ── Gate 16: external TCP interoperability (mandatory) ─────────────
+run_gate "16_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh'
 
-# ── Gate 17: external UDP interoperability ───────────────────────
-run_gate_optional "17_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
+# ── Gate 17: external UDP interoperability (mandatory) ─────────────
+run_gate "17_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
 
 # ── Gate 18: cipher KAT and interop probes ──────────────────────
 run_gate "18_cipher_kat" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1"

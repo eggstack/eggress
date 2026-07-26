@@ -49,6 +49,7 @@
 manifest_version = "1"
 pproxy_version = "2.7.9"
 schema = "strict_1"
+closure_through = "C"
 policy_ref = "docs/parity/PPROXY_COMPATIBILITY_POLICY.md"
 oracle_ref = "compat/pproxy-2.7.9/provenance.toml"
 
@@ -79,6 +80,7 @@ notes = "Top-level pproxy package module. Paired oracle comparison: symbol not f
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -102,6 +104,7 @@ notes = "Protocol definitions module."
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -125,6 +128,7 @@ notes = "Server implementation module."
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -150,6 +154,7 @@ notes = "Cipher implementations module."
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -173,6 +178,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -196,6 +202,7 @@ notes = "pproxy.Server wraps the full server lifecycle."
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -219,6 +226,7 @@ notes = "Direct connection constant."
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -242,6 +250,7 @@ notes = "Milestone B: now an alias for compile_rule (matches oracle)."
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -267,6 +276,7 @@ notes = "Protocol module re-export."
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -290,6 +300,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -313,6 +324,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -336,6 +348,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -359,6 +372,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -382,6 +396,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -405,6 +420,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -428,6 +444,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -451,6 +468,7 @@ notes = "Transparent proxy base class. Platform-gated to Linux (SO_ORIGINAL_DST)
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -474,6 +492,7 @@ notes = "SSH protocol handler. Intentionally not implemented. eggress recommends
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -497,6 +516,7 @@ notes = "SSR/legacy Shadowsocks protocol handler. Intentionally rejected. SSR st
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -520,6 +540,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -543,6 +564,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -566,6 +588,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -589,6 +612,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -612,6 +636,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -635,6 +660,7 @@ notes = "macOS PF transparent proxy. Platform-gated to macOS only; requires PF f
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -658,6 +684,7 @@ notes = "Linux transparent proxy via SO_ORIGINAL_DST. Platform-gated to Linux on
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -683,6 +710,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -706,6 +734,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -729,6 +758,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -752,6 +782,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -775,6 +806,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -798,6 +830,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -821,6 +854,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -844,6 +878,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -867,6 +902,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -890,6 +926,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -913,6 +950,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -938,6 +976,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -961,6 +1000,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -984,6 +1024,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1007,6 +1048,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1030,6 +1072,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1053,6 +1096,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1076,6 +1120,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1101,6 +1146,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1124,6 +1170,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1147,6 +1194,7 @@ notes = "Internal pproxy implementation detail; not part of the public source-co
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1218,6 +1266,7 @@ notes = "Base class for all ciphers. encrypt/decrypt in the base raises Unsuppor
 evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1241,6 +1290,7 @@ notes = "Functional AEAD base class with encrypt, decrypt, encrypt_and_digest, d
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1264,6 +1314,7 @@ notes = "Functional AES-256-GCM AEAD cipher with encrypt/decrypt round-trip and 
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1287,6 +1338,7 @@ notes = "Functional AES-192-GCM AEAD cipher with encrypt/decrypt round-trip vali
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1310,6 +1362,7 @@ notes = "Functional AES-128-GCM AEAD cipher with encrypt/decrypt round-trip vali
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1333,6 +1386,7 @@ notes = "Functional ChaCha20-Poly1305 AEAD cipher with encrypt/decrypt round-tri
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1356,6 +1410,7 @@ notes = "Functional UDP packet cipher wrapping AEAD ciphers with nonce/tag frami
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1379,6 +1434,7 @@ notes = "Functional AES-256-CFB stream cipher with encrypt/decrypt round-trip vi
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1402,6 +1458,7 @@ notes = "Functional ChaCha20-IETF stream cipher with 12-byte nonce via cryptogra
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1425,6 +1482,7 @@ notes = "Functional ChaCha20 stream cipher with 8-byte IV via cryptography backe
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1448,6 +1506,7 @@ notes = "Functional cipher registry mapping names to classes. Includes -py alias
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1471,6 +1530,7 @@ notes = "Functional cipher factory: parses name:password[!ota], returns (error, 
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1494,6 +1554,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1517,6 +1578,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1540,6 +1602,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1563,6 +1626,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1586,6 +1650,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1609,6 +1674,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1632,6 +1698,7 @@ notes = "SSH is intentionally not supported by eggress."
 evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1655,6 +1722,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1678,6 +1746,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1701,6 +1770,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1724,6 +1794,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1747,6 +1818,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1770,6 +1842,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1793,6 +1866,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1816,6 +1890,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1839,6 +1914,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1862,6 +1938,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
@@ -1889,6 +1966,7 @@ notes = "Milestone B: properly implemented with matching signature and behavior.
 evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
+inventory_only = true
 closure_required = true
 
 [[record]]
