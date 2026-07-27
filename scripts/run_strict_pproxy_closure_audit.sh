@@ -147,7 +147,8 @@ if [ ! -e "$OBS_DIR" ]; then
 fi
 run_gate "14_strict_python_differential" bash -c "
     # Check if observations from the paired API job were pre-staged
-    if [ -d '$OBS_DIR' ] && ls '$OBS_DIR'/*_oracle.json >/dev/null 2>&1; then
+    OBS_COUNT=\$(ls '$OBS_DIR'/*_oracle.json 2>/dev/null | wc -l)
+    if [ \"\$OBS_COUNT\" -gt 0 ]; then
         EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 '$VENV_DIR/bin/python' -m pytest python/tests/strict -q \
             --oracle-observations-dir '$OBS_DIR' \
             --candidate-observations-dir '$OBS_DIR' \
@@ -155,6 +156,7 @@ run_gate "14_strict_python_differential" bash -c "
     else
         echo 'ERROR: No paired observations available; strict differential tests require observation directories.' >&2
         echo 'Run gate 13 (paired_api_runner) first to generate them.' >&2
+        echo 'Expected location: target/strict/paired_observations/' >&2
         exit 1
     fi
 "

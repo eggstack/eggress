@@ -16,9 +16,10 @@ Workstreams completed:
 - PC8: Make the Closure Audit Authoritative (all gates mandatory)
 - PC9: Correct Hosted Workflow Execution (`if-no-files-found: error` for paired observations)
 - PC10: Regression Injection Proof (12 injection cases, all detected)
+- PC11: Strict Differential Gate Repair (fixed imports, observation path, module-level assertions, signature comparator)
 
 Remaining:
-- PC11: Final Status and Completion Evidence (pending hosted CI run)
+- PC12: Final Status and Completion Evidence (pending hosted CI run)
 
 ## Parent plans and audit baseline
 

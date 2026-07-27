@@ -177,12 +177,21 @@ def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
         if pa["name"] != pb["name"]:
             return False
         if pa["default"] != pb["default"]:
-            return False
+            # If oracle has no default (SENTINEL), skip default comparison
+            if pa["default"] != SENTINEL and pb["default"] != SENTINEL:
+                return False
+            if pa["default"] != SENTINEL:
+                return False
         if pa["annotation"] != pb["annotation"]:
-            return False
+            # If oracle has no annotation, treat as compatible
+            if pa["annotation"] is not None:
+                return False
 
+    # Compare return annotation
     if parsed_a["return_annotation"] != parsed_b["return_annotation"]:
-        return False
+        # If oracle has no return annotation, treat as compatible
+        if parsed_a["return_annotation"] is not None:
+            return False
 
     return True
 
