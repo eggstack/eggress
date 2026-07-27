@@ -314,11 +314,8 @@ def load_observation(obs_dir: Path, rid: str, side: str) -> dict:
         rid: Record ID (e.g. "python.pproxy")
         side: "oracle" or "candidate"
     """
-    filename = f"{rid.replace('.', '_')}_{side}.json"
-    filepath = obs_dir / filename
-    if not filepath.exists():
-        return {"exists": False, "error": f"Observation file not found: {filepath}"}
-    return json.loads(filepath.read_text())
+    from .obs_helpers import load_observation as _load
+    return _load(obs_dir, rid, side)
 
 
 @pytest.fixture

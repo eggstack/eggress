@@ -53,7 +53,7 @@ if [ ! -d "$CANDIDATE_VENV" ]; then
     "$CANDIDATE_VENV/bin/pip" install maturin pytest pytest-asyncio >/dev/null 2>&1
 
     echo "Building eggress wheel..."
-    maturin build --release --out target/wheels 2>/dev/null
+    maturin build --release --out target/wheels -m crates/eggress-python/Cargo.toml 2>/dev/null
 
     EGGRESS_WHEEL=$(ls target/wheels/eggress-*.whl 2>/dev/null | head -1)
     if [ -n "$EGGRESS_WHEEL" ]; then

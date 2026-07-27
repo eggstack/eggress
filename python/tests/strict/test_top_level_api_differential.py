@@ -14,6 +14,20 @@ from pathlib import Path
 import pytest
 
 
+def load_observation(obs_dir, rid, side):
+    """Load an observation JSON file."""
+    import os
+    filename = f"{rid.replace('.', '_')}_{side}.json"
+    filepath = os.path.join(str(obs_dir), filename)
+    if not os.path.exists(filepath):
+        return {"exists": False, "error": f"Observation file not found: {filepath}"}
+    with open(filepath) as fh:
+        return json.load(fh)
+
+
+
+
+
 # Top-level module existence tests
 TOP_LEVEL_MODULES = [
     ("python.pproxy", "pproxy", "pproxy", "pproxy"),

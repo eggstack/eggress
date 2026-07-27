@@ -138,14 +138,19 @@ run_gate "13_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh --cl
 # Requires observation directories from the paired API job (gate 13).
 # Missing directories are a hard failure, not a skip.
 OBS_DIR="$AUDIT_DIR/paired_observations"
-mkdir -p "$OBS_DIR"
+# Link gate 13's output directory if it exists and OBS_DIR doesn't
+if [ ! -e "$OBS_DIR" ] && [ -d "target/strict/paired_observations" ]; then
+    ln -sfn "$(pwd)/target/strict/paired_observations" "$OBS_DIR"
+fi
+if [ ! -e "$OBS_DIR" ]; then
+    mkdir -p "$OBS_DIR"
+fi
 run_gate "14_strict_python_differential" bash -c "
     # Check if observations from the paired API job were pre-staged
     if [ -d '$OBS_DIR' ] && ls '$OBS_DIR'/*_oracle.json >/dev/null 2>&1; then
-        EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 python3 -m pytest python/tests/strict -q \
+        EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 '$VENV_DIR/bin/python' -m pytest python/tests/strict -q \
             --oracle-observations-dir '$OBS_DIR' \
             --candidate-observations-dir '$OBS_DIR' \
-            --import-mode=importlib \
             --tb=short
     else
         echo 'ERROR: No paired observations available; strict differential tests require observation directories.' >&2

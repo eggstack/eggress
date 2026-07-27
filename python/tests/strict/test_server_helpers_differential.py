@@ -10,6 +10,20 @@ Gate: --oracle-observations-dir and --candidate-observations-dir required
 import pytest
 
 
+def load_observation(obs_dir, rid, side):
+    """Load an observation JSON file."""
+    import os
+    filename = f"{rid.replace('.', '_')}_{side}.json"
+    filepath = os.path.join(str(obs_dir), filename)
+    if not os.path.exists(filepath):
+        return {"exists": False, "error": f"Observation file not found: {filepath}"}
+    with open(filepath) as fh:
+        return json.load(fh)
+
+
+
+
+
 SERVER_HELPERS = [
     ("python.pproxy.server.compile_rule", "pproxy.server", "compile_rule"),
     ("python.pproxy.server.schedule", "pproxy.server", "schedule"),

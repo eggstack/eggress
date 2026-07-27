@@ -218,8 +218,9 @@ class ProxyDirect:
     ) -> Any:
         """Prepare a connection after the TCP handshake.
 
-        Default implementation is a passthrough (matches pproxy oracle).
-        Subclasses may override for protocol-specific preparation.
+        Default implementation is a passthrough (matches pproxy oracle
+        ProxyDirect).  ProxySimple overrides to perform the protocol handshake
+        and recurse through the jump chain.
         """
         return reader_remote, writer_remote
 
@@ -480,27 +481,81 @@ class ProxySimple(ProxyDirect):
         local_addr: str | None = None,
         lbind: str | None = None,
     ) -> Any:
-        """Open a TCP connection through the upstream proxy.
+        """Open a TCP connection through this proxy endpoint.
 
-        If no upstream is configured, connects directly (ProxyDirect behavior).
+        Matches the pproxy oracle model: always connect to the proxy endpoint
+        (self.host_name, self.port) first, then perform the protocol handshake
+        to reach the final target (host, port).  ``jump`` controls server-side
+        forwarding, not client-side routing — it must never cause the client to
+        bypass the proxy endpoint.
         """
-        upstream_uri = self._build_remote_uri()
-        if upstream_uri is None:
-            return await super().tcp_connect(
-                host, port, local_addr=local_addr, lbind=lbind
+        import asyncio
+
+        proxy_host = self.host_name
+        proxy_port = self.port
+        if not proxy_host or not proxy_port:
+            raise ValueError("ProxySimple endpoint is incomplete")
+
+        # Resolve local address for binding
+        if local_addr or lbind:
+            resolved = lbind or local_addr
+            local = (resolved, 0)
+        else:
+            local = None
+
+        reader, writer = await asyncio.open_connection(
+            proxy_host, proxy_port, local_addr=local,
+        )
+        try:
+            reader, writer = await self.prepare_connection(
+                reader, writer, host, port,
+            )
+            return reader, writer
+        except BaseException:
+            writer.close()
+            if hasattr(writer, "wait_closed"):
+                await writer.wait_closed()
+            raise
+
+    async def prepare_connection(
+        self,
+        reader_remote: Any,
+        writer_remote: Any,
+        host: str,
+        port: int,
+    ) -> Any:
+        """Perform the protocol handshake and recurse through the jump chain.
+
+        Matches the pproxy oracle: SSL wrap, cipher prepare, protocol
+        handshake via ``rproto.connect()``, then recurse to
+        ``self.jump.prepare_connection()``.
+        """
+        rproto = self._protos[0] if self._protos else None
+        whost, wport = self._jump.destination(host, port)
+
+        if rproto is not None:
+            auth_tuple = None
+            if self.auth:
+                cred = self.auth
+                if isinstance(cred, bytes):
+                    parts = cred.split(b":", 1)
+                    auth_tuple = (
+                        parts[0].decode("utf-8", errors="replace"),
+                        parts[1].decode("utf-8", errors="replace") if len(parts) > 1 else "",
+                    )
+                else:
+                    auth_tuple = (str(cred), "")
+            await rproto.connect(
+                reader_remote,
+                writer_remote,
+                whost,
+                wport,
+                auth=auth_tuple,
             )
 
-        from eggress.outbound import OutboundConnector
-        from eggress._asyncio_adapter import (
-            CompatibleStreamReader,
-            CompatibleStreamWriter,
+        return await self._jump.prepare_connection(
+            reader_remote, writer_remote, host, port,
         )
-
-        connector = OutboundConnector.from_pproxy_uri(upstream_uri)
-        stream = await connector.aconnect_tcp(host, port, timeout=60)
-        reader = CompatibleStreamReader(stream)
-        writer = CompatibleStreamWriter(stream, reader, host, port)
-        return reader, writer
 
     def wait_open_connection(
         self,
