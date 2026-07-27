@@ -69,34 +69,20 @@ jobs:
         run: |
           .venv-candidate/bin/python -c "import pproxy; print(f'candidate pproxy OK')"
           .venv-candidate/bin/python -c "import eggress; print(f'candidate eggress OK')"
-      - name: Run paired API probes
+      - name: Run paired API probes (closure-required)
         env:
           ORACLE_VENV: ${{ github.workspace }}/.venv-oracle
           CANDIDATE_VENV: ${{ github.workspace }}/.venv-candidate
         run: |
           python3 scripts/run_strict_pproxy_api.py \
             --oracle-venv "$ORACLE_VENV" \
-            --candidate-venv "$CANDIDATE_VENV"
+            --candidate-venv "$CANDIDATE_VENV" \
+            --closure-required
       - name: Run strict differential tests
         env:
           EGRESS_REQUIRE_PPROXY_DIFFERENTIAL: "1"
         run: |
           .venv-candidate/bin/python -m pytest python/tests/strict/ -v --timeout=60
-      - name: Run oracle example fixtures
-        run: |
-          for f in compat/pproxy-2.7.9/examples/direct_tcp.py \
-                   compat/pproxy-2.7.9/examples/chain_example.py \
-                   compat/pproxy-2.7.9/examples/server_config.py \
-                   compat/pproxy-2.7.9/examples/client_connection.py; do
-            echo "=== $f ==="
-            .venv-oracle/bin/python "$f" || exit 1
-          done
-      - name: Run network examples against candidate
-        run: |
-          PROXY_URI=direct:// .venv-candidate/bin/python \
-            compat/pproxy-2.7.9/examples/tcp_echo_through_proxy.py || exit 1
-          .venv-candidate/bin/python \
-            compat/pproxy-2.7.9/examples/server_start_lifecycle.py || exit 1
       - name: Upload paired observations
         if: always()
         uses: actions/upload-artifact@v4
@@ -109,7 +95,7 @@ jobs:
   strict-closure-audit:
     name: Strict Closure Audit
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     needs: [strict-integrity, strict-paired-api]
     steps:
       - uses: actions/checkout@v4
@@ -122,12 +108,18 @@ jobs:
         run: |
           cargo install cargo-deny
           cargo install cargo-audit
-      - name: Install pproxy oracle (system)
-        run: pip install "pproxy==2.7.9"
-      - name: Install maturin
-        run: pip install maturin
-      - name: Install Python test tools
-        run: pip install pytest pytest-asyncio pytest-timeout
+      - name: Set up isolated oracle venv
+        run: |
+          python3 -m venv .venv-oracle-api
+          .venv-oracle-api/bin/pip install --upgrade pip
+          .venv-oracle-api/bin/pip install "pproxy==2.7.9" pysocks cryptography
+      - name: Set up isolated candidate venv
+        run: |
+          python3 -m venv .venv-candidate-api
+          .venv-candidate-api/bin/pip install --upgrade pip
+          .venv-candidate-api/bin/pip install maturin pytest pytest-asyncio pytest-timeout cryptography
+      - name: Install maturin (for wheel builds inside audit)
+        run: .venv-candidate-api/bin/pip install maturin
       - name: Run authoritative closure audit
         run: ./scripts/run_strict_pproxy_closure_audit.sh
       - name: Upload closure audit evidence

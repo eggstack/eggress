@@ -216,15 +216,6 @@ def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
     if parsed_b["kwarg"]:
         all_b.append(parsed_b["kwarg"])
 
-    # Heuristic: if one side uses (*args, **kwargs) — a variadic
-    # "accept anything" wrapper — and the other side uses explicit
-    # positional-only params, treat as structurally compatible. The
-    # variadic wrapper is a superset of the explicit signature.
-    a_is_variadic = bool(parsed_a["vararg"] or parsed_a["kwarg"])
-    b_is_variadic = bool(parsed_b["vararg"] or parsed_b["kwarg"])
-    if a_is_variadic != b_is_variadic:
-        return True
-
     if len(all_a) != len(all_b):
         return False
 
@@ -258,24 +249,14 @@ def _signatures_compatible(sig_a: str, sig_b: str) -> bool:
 
 def parse_manifest(path: Path) -> list[dict]:
     """Parse the strict manifest TOML into a list of record dicts."""
-    content = path.read_text()
-    raw_records = content.split("[[record]]")[1:]
+    import tomllib
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    raw_records = data.get("record", [])
     records = []
-    for raw in raw_records:
-        data = {}
-        for line in raw.strip().split("\n"):
-            line = line.strip()
-            if line.startswith("#") or not line:
-                continue
-            m = re.match(r'(\w+)\s*=\s*"([^"]*)"', line)
-            if m:
-                data[m.group(1)] = m.group(2)
-            m_list = re.match(r'(\w+)\s*=\s*\[([^\]]*)\]', line)
-            if m_list:
-                vals = re.findall(r'"([^"]*)"', m_list.group(2))
-                data[m_list.group(1)] = vals
-        if "id" in data:
-            records.append(data)
+    for rec in raw_records:
+        if isinstance(rec, dict) and "id" in rec:
+            records.append(rec)
     return records
 
 

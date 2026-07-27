@@ -2,7 +2,7 @@
 
 ## Status
 
-Ready for implementation.
+PARTIAL — CE0-CE3, CE7, CE10-CE11 complete. CE4-CE6, CE8-CE9, CE12-CE13 remaining.
 
 ## Baseline
 

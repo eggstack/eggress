@@ -17,9 +17,10 @@ Workstreams completed:
 - PC9: Correct Hosted Workflow Execution (`if-no-files-found: error` for paired observations)
 - PC10: Regression Injection Proof (12 injection cases, all detected)
 - PC11: Strict Differential Gate Repair (fixed imports, observation path, module-level assertions, signature comparator)
+- PC12: Chain Differential Evidence Closure (CE0-CE3, CE7, CE10-CE11 complete; CE4-CE6, CE8-CE9, CE12-CE13 remaining)
 
 Remaining:
-- PC12: Final Status and Completion Evidence (pending hosted CI run)
+- PC13: Final Status and Completion Evidence (pending hosted CI run)
 
 ## Parent plans and audit baseline
 

@@ -74,10 +74,18 @@ echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "Artifact dir: $AUDIT_DIR"
 echo ""
 
+# Fresh-run: clean stale observation directories and venvs
+echo "Cleaning stale environments..."
+rm -rf "$AUDIT_DIR/paired_observations"
+rm -rf "$AUDIT_DIR/venv-pytest"
+rm -rf .venv-oracle-api .venv-candidate-api
+mkdir -p "$AUDIT_DIR"
+echo ""
+
 # Ensure pytest is available for Python test gates
 if ! python3 -c "import pytest" 2>/dev/null; then
     echo "Installing pytest (required for Python test gates)..."
-    pip install pytest pytest-asyncio pytest-timeout >/dev/null 2>&1 || true
+    pip install pytest pytest-asyncio pytest-timeout >/dev/null 2>&1
 fi
 
 # ── Gate 1: cargo fmt ──────────────────────────────────────────────

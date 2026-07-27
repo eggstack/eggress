@@ -1,0 +1,179 @@
+{
+  "oracle_version": "unknown",
+  "oracle_file": "/home/sugarwookie/.local/lib/python3.12/site-packages/pproxy/__init__.py",
+  "oracle_hash": "2031fa7025956f4c417251f2f2dbd57fe9e4fca7ff42557070dad976c5e92214",
+  "interpreter": "/usr/bin/python3.12",
+  "timestamp": 1785192505.7571266,
+  "topology": [
+    {
+      "uri": "http://127.0.0.1:18080",
+      "type": "ProxySimple",
+      "host_name": "127.0.0.1",
+      "port": 18080,
+      "direct": false,
+      "bind": "127.0.0.1:18080",
+      "protos": [
+        "http"
+      ],
+      "jump": {
+        "type": "ProxyDirect",
+        "host_name": null,
+        "port": null,
+        "direct": true,
+        "protos": []
+      },
+      "destination": [
+        "127.0.0.1",
+        18080
+      ],
+      "jump_destination": [
+        "example.com",
+        443
+      ]
+    },
+    {
+      "uri": "socks5://127.0.0.1:11080",
+      "type": "ProxySimple",
+      "host_name": "127.0.0.1",
+      "port": 11080,
+      "direct": false,
+      "bind": "127.0.0.1:11080",
+      "protos": [
+        "socks5"
+      ],
+      "jump": {
+        "type": "ProxyDirect",
+        "host_name": null,
+        "port": null,
+        "direct": true,
+        "protos": []
+      },
+      "destination": [
+        "127.0.0.1",
+        11080
+      ],
+      "jump_destination": [
+        "example.com",
+        443
+      ]
+    },
+    {
+      "uri": "socks5://127.0.0.1:11080__http://127.0.0.1:18080",
+      "type": "ProxySimple",
+      "host_name": "127.0.0.1",
+      "port": 11080,
+      "direct": false,
+      "bind": "127.0.0.1:11080",
+      "protos": [
+        "socks5"
+      ],
+      "jump": {
+        "type": "ProxySimple",
+        "host_name": "127.0.0.1",
+        "port": 18080,
+        "direct": false,
+        "protos": [
+          "http"
+        ],
+        "jump": {
+          "type": "ProxyDirect",
+          "direct": true
+        }
+      },
+      "destination": [
+        "127.0.0.1",
+        11080
+      ],
+      "jump_destination": [
+        "127.0.0.1",
+        18080
+      ],
+      "jump_jump_destination": [
+        "example.com",
+        443
+      ]
+    },
+    {
+      "uri": "http://127.0.0.1:18080__socks5://127.0.0.1:11080",
+      "type": "ProxySimple",
+      "host_name": "127.0.0.1",
+      "port": 18080,
+      "direct": false,
+      "bind": "127.0.0.1:18080",
+      "protos": [
+        "http"
+      ],
+      "jump": {
+        "type": "ProxySimple",
+        "host_name": "127.0.0.1",
+        "port": 11080,
+        "direct": false,
+        "protos": [
+          "socks5"
+        ],
+        "jump": {
+          "type": "ProxyDirect",
+          "direct": true
+        }
+      },
+      "destination": [
+        "127.0.0.1",
+        18080
+      ],
+      "jump_destination": [
+        "127.0.0.1",
+        11080
+      ],
+      "jump_jump_destination": [
+        "example.com",
+        443
+      ]
+    }
+  ],
+  "wire_events": [
+    {
+      "uri": "socks5://127.0.0.1:11080__http://127.0.0.1:18080",
+      "outer_type": "SOCKS5",
+      "inner_type": "HTTP",
+      "actual_uri": "socks5://127.0.0.1:36949__http://127.0.0.1:34925",
+      "events": [
+        {
+          "sequence": 1,
+          "proxy": "outer",
+          "host": "127.0.0.1",
+          "port": 34925
+        },
+        {
+          "sequence": 2,
+          "proxy": "inner",
+          "host": "chain-target.invalid",
+          "port": 443
+        }
+      ],
+      "outer_event_count": 1,
+      "inner_event_count": 1
+    },
+    {
+      "uri": "http://127.0.0.1:18080__socks5://127.0.0.1:11080",
+      "outer_type": "HTTP",
+      "inner_type": "SOCKS5",
+      "actual_uri": "http://127.0.0.1:37999__socks5://127.0.0.1:44645",
+      "events": [
+        {
+          "sequence": 1,
+          "proxy": "outer",
+          "host": "127.0.0.1",
+          "port": 44645
+        },
+        {
+          "sequence": 2,
+          "proxy": "inner",
+          "host": "chain-target.invalid",
+          "port": 443
+        }
+      ],
+      "outer_event_count": 1,
+      "inner_event_count": 1
+    }
+  ]
+}
