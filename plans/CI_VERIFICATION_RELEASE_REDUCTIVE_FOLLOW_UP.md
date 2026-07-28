@@ -2,7 +2,9 @@
 
 ## Status
 
-**READY FOR IMPLEMENTATION**
+**SUPERSEDED — IMPLEMENTED THROUGH CORRECTIVE CLOSURE**
+
+This plan was partially implemented. The remaining defects were addressed by the corrective closure plan: `plans/CI_VERIFICATION_RELEASE_CORRECTIVE_CLOSURE.md`.
 
 ## Baseline
 

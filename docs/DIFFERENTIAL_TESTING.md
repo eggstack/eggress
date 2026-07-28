@@ -121,7 +121,7 @@ The oracle harness has been expanded with:
   - `ReadinessProbe` enum: TcpPort, StdoutPattern, FixedDelay, FileExists
   - Structured `ProcessExit` with exit code, signal, lifetime
 
-#### Test Profiles
+#### Certification Profiles
 - **Structural**: Schema validation, startup, port binding (gate: `EGRESS_ORACLE=1`)
 - **Differential**: HTTP, SOCKS, CLI, UDP with pinned pproxy (gate: `EGRESS_ORACLE_EXTENDED=1`)
 - **Platform**: OS-specific or privileged checks, explicitly selected (gate: `EGRESS_ORACLE_PLATFORM=1`)
@@ -129,8 +129,8 @@ The oracle harness has been expanded with:
 #### Report Generation
 - JSON reports with observation data, timing tolerances, divergence tracking
 - Markdown reports grouped by category with status icons
-- Manifest consistency checks (validates capability IDs)
 - Profile filtering
+- Manifest consistency checks (validates capability IDs)
 
 #### Running Oracle Tests
 

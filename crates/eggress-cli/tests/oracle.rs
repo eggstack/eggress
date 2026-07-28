@@ -590,7 +590,7 @@ async fn run_scenario_comparison(scenario: &OracleScenario) -> ScenarioResult {
         eggress_observation: None,
         timing_tolerance_ms: None,
         divergence_ids: Vec::new(),
-        ci_tier: None,
+        certification_profile: None,
         capability_ids: scenario
             .capability_ids
             .iter()
@@ -806,7 +806,7 @@ fn report_json_roundtrip() {
         eggress_observation: None,
         timing_tolerance_ms: None,
         divergence_ids: Vec::new(),
-        ci_tier: None,
+        certification_profile: None,
         capability_ids: Vec::new(),
     });
     let json = report.to_json();

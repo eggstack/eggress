@@ -176,7 +176,7 @@ The oracle harness under `eggress-testkit/src/oracle/` provides:
 - **`observations.rs`** — `ProxyObservation` semantic capture model: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status. `compare_observations()` produces structured comparison results
 - **`probes.rs`** — Reusable protocol client probes: `socks5_tcp_connect`, `socks5_tcp_connect_auth`, `socks5_connect_refused`, `socks5_auth_failure`, `http_connect`, `http_connect_refused`, `http_forward_get`, `http_forward_post`, `socks4_connect`, `socks4a_connect`. Each returns `ProbeResult`
 - **`supervisor.rs`** — `SupervisedProcess` with process-group ownership (Unix), bounded stdout/stderr capture, artifact retention (logs saved on drop), `ReadinessProbe` enum (TcpPort, StdoutPattern, FixedDelay, FileExists), structured `ProcessExit`
-- **`ci.rs`** — 3-profile scenario filtering: Structural (no pproxy needed), Differential (requires pproxy), Platform (OS-specific or privileged). Gate env vars: `EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`
+- **`ci.rs`** (renamed to `profile.rs`): 3-profile scenario filtering: Structural (no pproxy needed), Differential (requires pproxy), Platform (OS-specific or privileged). Gate env vars: `EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`
 - **`report.rs`** — JSON and Markdown report generation with manifest consistency checks and CI tier filtering
 
 TOML scenario files live under `crates/eggress-testkit/tests/oracle/scenarios/`. Schema validation tests run without pproxy:
@@ -485,12 +485,12 @@ python3.11 -m venv .venv-oracle
 5. No `drop_in` without oracle_probe
 6. No unresolved progress states at or below current milestone
 
-## Closure Audit
+## pproxy behavioral certification
 
-The pproxy behavioral certification runs all standard gates in sequence:
+The pproxy behavioral certification runs only pproxy-specific checks:
 
 ```bash
 ./scripts/run_pproxy_certification.sh
 ```
 
-Runs: `cargo fmt --check`, `cargo check`, `cargo clippy`, `cargo test --workspace`, wheel builds, differential tests, and interoperability tests. Reports pass/fail per gate with timing.
+Runs: strict manifest tests, paired API runner, differential tests, interop tests, cipher KAT, plugin probes, process lifecycle, and resource cleanup. Produces a compact JSON summary. Does not run formatting, linting, workspace tests, dependency audits, or wheel builds.

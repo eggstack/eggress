@@ -24,6 +24,9 @@ The canonical `eggress` wheel never aliases `pproxy` through `sys.modules`.
 ## Build
 
 ```bash
+rm -rf dist
+mkdir -p dist
+
 # Build the core wheel
 (cd crates/eggress-python && maturin build --release --out ../../dist)
 
@@ -37,21 +40,22 @@ python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
 ## Test in a clean venv
 
 ```bash
+rm -rf .venv-release-test
 python3 -m venv .venv-release-test
+.venv-release-test/bin/pip install --upgrade pip
 .venv-release-test/bin/pip install dist/eggress-*.whl
 .venv-release-test/bin/pip install dist/eggress_pproxy_compat-*.whl
 .venv-release-test/bin/pip install pytest pytest-asyncio
 .venv-release-test/bin/python -m pytest python/tests tests/compat -q
 .venv-release-test/bin/python -c "import eggress; print(eggress.__version__)"
 .venv-release-test/bin/python -c "import pproxy; print('pproxy import OK')"
-deactivate
 rm -rf .venv-release-test
 ```
 
 ## Check metadata
 
 ```bash
-twine check dist/*
+python3 -m twine check dist/*
 ```
 
 ## Upload
@@ -64,10 +68,20 @@ twine upload --repository testpypi dist/*
 twine upload dist/*
 ```
 
-If a published version is broken, yank it via the PyPI web interface or
-`twine upload --repository pypi --replace dist/*`, then bump the patch
-version and publish a corrected release. Crates.io versions are immutable;
-the same roll-forward policy applies here.
+## Broken release repair
+
+If a published version is broken:
+
+1. Yank the defective version via the PyPI web interface or supported registry API.
+2. Correct the repository source.
+3. Increment the package version.
+4. Remove stale build outputs (`rm -rf dist`).
+5. Rebuild both packages from a clean output directory.
+6. Test both packages together in a clean environment.
+7. Upload the new version.
+
+Do not attempt to overwrite or replace an existing published version.
+Published package versions are immutable; repair is always a roll-forward.
 
 ## Version alignment
 

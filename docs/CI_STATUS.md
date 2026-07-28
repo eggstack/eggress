@@ -63,7 +63,7 @@ Run these only when their trigger condition applies:
 | `cargo audit --ignore RUSTSEC-2025-0134` | Dependency changes; release preparation |
 | pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
 | Shadowsocks external interoperability | Shadowsocks wire-format, cipher, or relay changes |
-| strict closure audit | Explicit compatibility-certification work |
+| pproxy behavioral certification | Explicit compatibility-certification work |
 | benchmarks, load, soak, or fuzzing | Performance, concurrency, parser, or hardening work |
 | cross-platform local/hosted checks | Platform-specific code or release preparation |
 

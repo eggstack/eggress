@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use super::observations::ProxyObservation;
 use super::scenario::ScenarioCategory;
 
-/// Test profile for scenario filtering.
+/// Certification profile for scenario filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CiTier {
+pub enum CertificationProfile {
     /// No external process required; runs without pproxy.
     Structural,
     /// Requires pproxy oracle and external interoperability.
@@ -77,9 +77,9 @@ pub struct ScenarioResult {
     /// Divergence IDs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub divergence_ids: Vec<String>,
-    /// CI tier.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ci_tier: Option<CiTier>,
+    /// Certification profile.
+    #[serde(rename = "profile", skip_serializing_if = "Option::is_none")]
+    pub certification_profile: Option<CertificationProfile>,
     /// Capability IDs from the scenario definition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capability_ids: Vec<String>,
@@ -268,11 +268,11 @@ impl OracleReport {
         warnings
     }
 
-    /// Filter scenarios by CI tier.
-    pub fn scenarios_for_tier(&self, tier: CiTier) -> Vec<&ScenarioResult> {
+    /// Filter scenarios by certification profile.
+    pub fn scenarios_for_profile(&self, profile: CertificationProfile) -> Vec<&ScenarioResult> {
         self.scenarios
             .iter()
-            .filter(|s| s.ci_tier == Some(tier))
+            .filter(|s| s.certification_profile == Some(profile))
             .collect()
     }
 }
@@ -292,7 +292,7 @@ impl ScenarioResult {
             eggress_observation: None,
             timing_tolerance_ms: None,
             divergence_ids: Vec::new(),
-            ci_tier: None,
+            certification_profile: None,
             capability_ids: Vec::new(),
         }
     }
@@ -343,8 +343,8 @@ impl ScenarioResult {
         self
     }
 
-    pub fn with_ci_tier(mut self, tier: CiTier) -> Self {
-        self.ci_tier = Some(tier);
+    pub fn with_certification_profile(mut self, profile: CertificationProfile) -> Self {
+        self.certification_profile = Some(profile);
         self
     }
 
@@ -589,27 +589,27 @@ mod tests {
         let mut report = OracleReport::new();
         report.add_scenario(
             ScenarioResult::new("fast", ScenarioCategory::CliDefaults, "fast")
-                .with_ci_tier(CiTier::Structural),
+                .with_certification_profile(CertificationProfile::Structural),
         );
         report.add_scenario(
             ScenarioResult::new("core", ScenarioCategory::HttpSocksTcp, "core")
-                .with_ci_tier(CiTier::Differential),
+                .with_certification_profile(CertificationProfile::Differential),
         );
         report.add_scenario(ScenarioResult::new(
-            "no_tier",
+            "no_profile",
             ScenarioCategory::Chains,
-            "no tier",
+            "no profile",
         ));
 
-        let structural = report.scenarios_for_tier(CiTier::Structural);
+        let structural = report.scenarios_for_profile(CertificationProfile::Structural);
         assert_eq!(structural.len(), 1);
         assert_eq!(structural[0].id, "fast");
 
-        let differential = report.scenarios_for_tier(CiTier::Differential);
+        let differential = report.scenarios_for_profile(CertificationProfile::Differential);
         assert_eq!(differential.len(), 1);
         assert_eq!(differential[0].id, "core");
 
-        let platform = report.scenarios_for_tier(CiTier::Platform);
+        let platform = report.scenarios_for_profile(CertificationProfile::Platform);
         assert!(platform.is_empty());
     }
 
@@ -620,13 +620,16 @@ mod tests {
             .with_elapsed(Duration::from_secs(1))
             .with_comparisons(vec![make_comparison("dim", "a", "a")])
             .with_divergences(vec!["div1".to_string()])
-            .with_ci_tier(CiTier::Differential)
+            .with_certification_profile(CertificationProfile::Differential)
             .with_capability_ids(vec!["cap1".to_string()]);
 
         assert_eq!(result.status, ScenarioStatus::Pass);
         assert_eq!(result.elapsed_ms, 1000);
         assert_eq!(result.divergence_ids, vec!["div1"]);
-        assert_eq!(result.ci_tier, Some(CiTier::Differential));
+        assert_eq!(
+            result.certification_profile,
+            Some(CertificationProfile::Differential)
+        );
         assert_eq!(result.capability_ids, vec!["cap1"]);
     }
 
@@ -639,12 +642,12 @@ mod tests {
     }
 
     #[test]
-    fn ci_tier_serde() {
-        let tier = CiTier::Structural;
-        let json = serde_json::to_string(&tier).unwrap();
+    fn certification_profile_serde() {
+        let profile = CertificationProfile::Structural;
+        let json = serde_json::to_string(&profile).unwrap();
         assert_eq!(json, "\"structural\"");
-        let parsed: CiTier = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, tier);
+        let parsed: CertificationProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, profile);
     }
 
     #[test]
@@ -695,7 +698,7 @@ mod tests {
                 .with_status(ScenarioStatus::Pass)
                 .with_timing_tolerance(50)
                 .with_divergences(vec!["d1".to_string()])
-                .with_ci_tier(CiTier::Differential)
+                .with_certification_profile(CertificationProfile::Differential)
                 .with_capability_ids(vec!["cap.x".to_string()]),
         );
 
@@ -704,7 +707,10 @@ mod tests {
         let s = &parsed.scenarios[0];
         assert_eq!(s.timing_tolerance_ms, Some(50));
         assert_eq!(s.divergence_ids, vec!["d1"]);
-        assert_eq!(s.ci_tier, Some(CiTier::Differential));
+        assert_eq!(
+            s.certification_profile,
+            Some(CertificationProfile::Differential)
+        );
         assert_eq!(s.capability_ids, vec!["cap.x"]);
     }
 }
