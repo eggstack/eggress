@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import re
+import socket
 import struct
 from typing import Any, Sequence
 
@@ -671,7 +672,12 @@ class Socks5(BaseProtocol):
         return None
 
     async def accept(self, reader: Any, user: Any, writer: Any, users: Any, authtable: Any, **kw: Any) -> tuple[Any, str, int]:
-        """Parse SOCKS5 handshake and connect request."""
+        """Parse SOCKS5 handshake and connect request, sending replies.
+
+        Matches the pproxy 2.7.9 oracle: reads greeting, negotiates auth,
+        sends method selection reply, reads CONNECT request, sends CONNECT
+        reply, and returns ``(user, host_name, port)``.
+        """
         data = self._buffered
         if not data:
             data = await reader.read(1024)
@@ -689,69 +695,83 @@ class Socks5(BaseProtocol):
         methods = data[2 : 2 + nmethods]
         data = data[2 + nmethods :]
 
-        # Check if username/password auth (0x02) is required
-        if 0x02 in methods:
-            # Respond with username/password auth
-            # In a real implementation, we'd send: [0x05, 0x02]
-            # and read the auth response, but for now we just parse
-
-            # Read auth response: version (0x01), ulen, username, plen, password
+        # Negotiate auth method — match oracle behavior exactly
+        is_authed = authtable.authed() if authtable else None
+        if users and (not is_authed or b"\x00" not in methods):
+            if b"\x02" not in methods:
+                raise Exception("Unauthorized SOCKS")
+            if writer is not None:
+                writer.write(b"\x05\x02")
+            # Read auth sub-negotiation: version(1) + ulen(1) + user + plen(1) + pass
             if len(data) < 2:
-                # Need to read more data
-                raise ValueError("incomplete SOCKS5 auth response")
-
+                data += await reader.read(1024)
             auth_version = data[0]
             if auth_version != 0x01:
                 raise ValueError(f"invalid auth version: {auth_version}")
-
             ulen = data[1]
             if len(data) < 2 + ulen + 1:
-                raise ValueError("truncated auth username")
+                data += await reader.read(1024)
             username = data[2 : 2 + ulen]
             plen = data[2 + ulen]
             if len(data) < 2 + ulen + 1 + plen:
-                raise ValueError("truncated auth password")
+                data += await reader.read(1024)
             password = data[3 + ulen : 3 + ulen + plen]
             data = data[3 + ulen + plen :]
+            cred = username + b":" + password
+            if cred not in (users or []):
+                raise Exception(f"Unauthorized SOCKS {username}:{password}")
+            user = cred
+            if writer is not None:
+                writer.write(b"\x01\x00")
+        elif users and not is_authed:
+            raise Exception("Unauthorized SOCKS")
+        else:
+            if writer is not None:
+                writer.write(b"\x05\x00")
 
-            # Store auth info for later use
-            user = (username, password)
+        if users and authtable:
+            authtable.set_authed(user)
 
-        # SOCKS5 connect request: version, command, reserved, address type, address, port
-        if len(data) < 4:
-            raise ValueError("truncated SOCKS5 connect request")
-
-        version = data[0]
-        cmd = data[1]
-        # data[2] is reserved (0x00)
+        # Read CONNECT request: VER(1) CMD(1) RSV(1) ATYP(1) ADDR PORT(2)
+        required = 4
+        if len(data) < required:
+            data += await reader.read(1024)
+        if data[:3] != b"\x05\x01\x00":
+            raise ValueError("Unknown SOCKS protocol")
         atyp = data[3]
 
         if atyp == 0x01:  # IPv4
             if len(data) < 10:
-                raise ValueError("truncated IPv4 address in SOCKS5")
-            host = ".".join(str(b) for b in data[4:8])
-            port = struct.unpack("!H", data[8:10])[0]
-        elif atyp == 0x03:  # Domain name
+                data += await reader.read(1024)
+            addr_bytes = data[4:8]
+            port = int.from_bytes(data[8:10], "big")
+            host_name = socket.inet_ntoa(addr_bytes)
+            raw_addr_port = data[4:10]
+            data = data[10:]
+        elif atyp == 0x03:  # Domain
             if len(data) < 5:
-                raise ValueError("truncated domain length in SOCKS5")
+                data += await reader.read(1024)
             domain_len = data[4]
             if len(data) < 5 + domain_len + 2:
-                raise ValueError("truncated domain in SOCKS5")
-            host = data[5 : 5 + domain_len].decode("ascii")
-            port = struct.unpack("!H", data[5 + domain_len : 7 + domain_len])[0]
+                data += await reader.read(1024)
+            host_name = data[5 : 5 + domain_len].decode()
+            port = int.from_bytes(data[5 + domain_len : 5 + domain_len + 2], "big")
+            raw_addr_port = data[4:5 + domain_len + 2]
+            data = data[5 + domain_len + 2 :]
         elif atyp == 0x04:  # IPv6
             if len(data) < 22:
-                raise ValueError("truncated IPv6 address in SOCKS5")
-            ipv6_bytes = data[4:20]
-            parts = []
-            for i in range(0, 16, 2):
-                parts.append(f"{ipv6_bytes[i]:02x}{ipv6_bytes[i + 1]:02x}")
-            host = ":".join(parts)
-            port = struct.unpack("!H", data[20:22])[0]
+                data += await reader.read(1024)
+            host_name = socket.inet_ntop(socket.AF_INET6, data[4:20])
+            port = int.from_bytes(data[20:22], "big")
+            raw_addr_port = data[4:22]
+            data = data[22:]
         else:
             raise ValueError(f"unsupported address type: 0x{atyp:02x}")
 
-        return user, host, port
+        # Send CONNECT success reply: VER(1) REP(1) RSV(1) BND.ADDR+BND.PORT
+        if writer is not None:
+            writer.write(b"\x05\x00\x00" + raw_addr_port)
+        return user, host_name, port
 
     async def connect(
         self,

@@ -591,17 +591,15 @@ class ProxySimple(ProxyDirect):
         if args is None:
             args = {}
         if stream_handler is None:
-            from pproxy.server import stream_handler as default_handler
-            stream_handler = default_handler
+            stream_handler = _eggress_stream_handler
 
         # Build keyword arguments matching stream_handler's parameter names.
-        # pproxy 2.7.9's ProxySimple stores these as public attributes
-        # (unix, lbind, protos, cipher, sslserver), but we use underscore-
-        # prefixed private attrs, so we must map explicitly.
         handler_kwargs: dict[str, Any] = {
             "unix": self._unix,
             "lbind": self._lbind,
             "protos": self._protos,
+            "rserver": [],
+            "users": self._users or [],
             "cipher": self._cipher,
             "sslserver": self._sslserver,
         }
@@ -955,6 +953,80 @@ class ProxyH3(ProxyQUIC):
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------
+
+async def _eggress_stream_handler(
+    reader: Any,
+    writer: Any,
+    protos: tuple[Any, ...] = (),
+    rserver: Any = None,
+    users: Any = None,
+    cipher: Any = None,
+    sslserver: Any = None,
+    unix: Any = None,
+    lbind: Any = None,
+    **kwargs: Any,
+) -> None:
+    """Minimal stream handler compatible with eggress protocol classes.
+
+    Detects the protocol, accepts the handshake, connects to the target
+    via the jump proxy, and sets up bidirectional relay.
+    """
+    import asyncio
+    from eggress.protocol import accept as proto_accept
+
+    _DUMMY = lambda *a, **kw: None
+
+    try:
+        peername = writer.get_extra_info("peername")
+        remote_ip = peername[0] if peername else "unknown"
+        authtable = AuthTable(remote_ip)
+        lproto, user, host_name, port, client_connected = await proto_accept(
+            protos, reader=reader, writer=writer,
+            authtable=authtable, sock=writer.get_extra_info("socket"),
+            users=users or [],
+        )
+        if host_name == "echo":
+            asyncio.ensure_future(lproto.channel(reader, writer, _DUMMY, _DUMMY))
+            return
+        if host_name == "empty":
+            asyncio.ensure_future(lproto.channel(reader, writer, None, _DUMMY))
+            return
+
+        # Connect to the target directly (DIRECT for single-hop)
+        from pproxy.server import DIRECT as oracle_DIRECT, schedule
+        rserver_list = rserver if rserver is not None else []
+        roption = schedule(rserver_list, "fa", host_name, port) or oracle_DIRECT
+        try:
+            reader_remote, writer_remote = await roption.open_connection(
+                host_name, port, None, lbind
+            )
+        except asyncio.TimeoutError:
+            raise Exception(f"Connection timeout {roption.bind}")
+        try:
+            reader_remote, writer_remote = await roption.prepare_connection(
+                reader_remote, writer_remote, host_name, port
+            )
+        except Exception:
+            writer_remote.close()
+            raise
+
+        use_http = (await client_connected(writer_remote)) if client_connected else None
+        m = lambda i: _DUMMY  # stat callback
+        lchannel = lproto.http_channel if use_http else lproto.channel
+        asyncio.ensure_future(
+            lproto.channel(reader_remote, writer, m(0), m(0))
+        )
+        asyncio.ensure_future(
+            lchannel(reader, writer_remote, m(0), m(0))
+        )
+    except Exception as ex:
+        import sys
+        print(f"_eggress_stream_handler error: {ex}", file=sys.stderr, flush=True)
+        try:
+            writer.close()
+        except Exception:
+            pass
+
 
 DIRECT: ProxyDirect = ProxyDirect()
 """Module-level ``ProxyDirect`` singleton, equivalent to ``pproxy.DIRECT``."""

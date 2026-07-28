@@ -343,11 +343,11 @@ class TestSocks5:
         connect = b"\x05\x01\x00\x01" + bytes([10, 0, 0, 1]) + struct.pack("!H", 80)
         proto._buffered = greeting + auth + connect
         user, host, port_val = asyncio.run(
-            proto.accept(FakeReader(), None, writer=None, users=None, authtable=None)
+            proto.accept(FakeReader(), None, writer=None, users=[b"user:pass"], authtable=None)
         )
         assert host == "10.0.0.1"
         assert port_val == 80
-        assert user == (b"user", b"pass")
+        assert user == b"user:pass"
 
     def test_udp_pack_ipv4(self) -> None:
         proto = Socks5()

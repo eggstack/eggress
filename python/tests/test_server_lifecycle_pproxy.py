@@ -449,45 +449,49 @@ def _socks5_connect(proxy_host, proxy_port, target_host, target_port):
     return s
 
 
-@pytest.mark.skip(
-    reason="Compat wheel stream_handler() signature mismatch with asyncio "
-    "StreamReaderProtocol — deep pproxy compat issue"
-)
 def test_start_server_socks5_listens():
-    """SOCKS5 started via start_server is reachable on the bound port."""
+    """SOCKS5 started via start_server negotiates and relays payload."""
     async def _run():
-        proxy = _get_proxy_simple("socks5://127.0.0.1:0")
-        server = await proxy.start_server(args={})
+        echo_host, echo_port, echo_srv = _echo_server()
         try:
-            addrs = _server_addrs(server)
-            assert len(addrs) > 0
-            host, port = addrs[0]
-            import socket as _socket
-            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            s.settimeout(5.0)
+            from eggress._pproxy_proxy import ProxySimple
+            from eggress.protocol import Socks5
+            proxy = ProxySimple(protos=(Socks5(),), host_name="127.0.0.1")
+            server = await proxy.start_server(args={})
             try:
-                s.connect((host, int(port)))
-                # pproxy's Socks5.accept reads greeting + CONNECT in one go,
-                # so we send both together to avoid IncompleteReadError.
-                import struct
-                octets = [127, 0, 0, 1]
-                connect_req = (
-                    b"\x05\x01\x00"
-                    + b"\x05\x01\x00\x01"
-                    + bytes(octets)
-                    + struct.pack("!H", 1)
-                )
-                s.sendall(connect_req)
-                # Allow the handler to process the connection
-                await asyncio.sleep(0.1)
-                resp = s.recv(32)
-                # We should get a SOCKS5 response (greeting + connect)
-                assert len(resp) >= 2
-                assert resp[0] == 0x05
+                addrs = _server_addrs(server)
+                assert len(addrs) > 0
+                host, port = addrs[0]
+                # Use asyncio stream to avoid blocking the event loop
+                reader, writer = await asyncio.open_connection(host, int(port))
+                try:
+                    # Send SOCKS5 greeting + CONNECT request
+                    import struct
+                    octets = [int(x) for x in echo_host.split(".")]
+                    connect_req = (
+                        b"\x05\x01\x00\x01"
+                        + bytes(octets)
+                        + struct.pack("!H", echo_port)
+                    )
+                    writer.write(b"\x05\x01\x00" + connect_req)
+                    await writer.drain()
+                    # Read greeting + connect response
+                    resp = await asyncio.wait_for(reader.read(32), timeout=5.0)
+                    assert len(resp) >= 2, f"SOCKS5 response too short: {resp!r}"
+                    assert resp[0] == 0x05, f"SOCKS5 version mismatch: {resp!r}"
+                    assert resp[1] == 0x00, f"SOCKS5 connect failed: {resp!r}"
+                    # Send payload through the tunnel
+                    writer.write(b"hello proxy")
+                    await writer.drain()
+                    data = await asyncio.wait_for(reader.read(64), timeout=5.0)
+                    assert data == b"hello proxy", f"Echo mismatch: {data!r}"
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
             finally:
-                s.close()
+                await _close_server(server)
         finally:
-            await _close_server(server)
+            echo_srv.close()
 
     asyncio.run(_run())
 

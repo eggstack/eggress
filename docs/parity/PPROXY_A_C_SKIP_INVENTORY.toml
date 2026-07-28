@@ -10,50 +10,6 @@
 #   gated              — skip gated on environment/dependency; blocks if cannot
 #                        be satisfied in the closure environment
 
-# ── Address parsing (PC3) ──────────────────────────────────────────
-
-[[skip]]
-test_node_id = "python/tests/test_milestone_c_properties.py::TestAddressRoundTrip"
-reason = "socks_address implemented as encoder; tests expect reader-based decoder (pproxy 2.7.9 stream reader API)"
-milestone = "C"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC3"
-
-[[skip]]
-test_node_id = "python/tests/test_milestone_c_functional.py::TestAddressParsing::test_ipv4_address"
-reason = "socks_address implemented as encoder; tests expect reader-based decoder"
-milestone = "C"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC3"
-
-[[skip]]
-test_node_id = "python/tests/test_milestone_c_functional.py::TestAddressParsing::test_domain_address"
-reason = "socks_address implemented as encoder; tests expect reader-based decoder"
-milestone = "C"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC3"
-
-[[skip]]
-test_node_id = "python/tests/test_milestone_c_functional.py::TestAddressParsing::test_ipv6_address"
-reason = "socks_address implemented as encoder; tests expect reader-based decoder"
-milestone = "C"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC3"
-
-# ── Server lifecycle (PC4) ─────────────────────────────────────────
-
-[[skip]]
-test_node_id = "python/tests/test_server_lifecycle_pproxy.py::test_start_server_socks5_listens"
-reason = "Compat wheel stream_handler() signature mismatch with asyncio StreamReaderProtocol"
-milestone = "C"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC4"
-
 # ── Gated differential tests ───────────────────────────────────────
 
 [[skip]]

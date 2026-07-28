@@ -22,8 +22,55 @@ SOL_IPV6 = getattr(socket, "SOL_IPV6", 41)
 SO_ORIGINAL_DST = getattr(socket, "SO_ORIGINAL_DST", 80)
 
 
-def socks_address(host: str, port: int) -> bytes:
-    """Encode a SOCKS address in the standard address-plus-port format."""
+def socks_address(reader, n):
+    """Decode a SOCKS address from *reader* given address type *n*.
+
+    Matches the pproxy 2.7.9 oracle signature exactly:
+    ``socks_address(reader, n) -> (host, port)``.
+
+    *n* is the address-type byte already read from the stream:
+
+    - ``1``: IPv4 (4 bytes + 2-byte port)
+    - ``3``: domain (1-byte length + domain + 2-byte port)
+    - ``4``: IPv6 (16 bytes + 2-byte port)
+    """
+    if n == 1:
+        host_name = socket.inet_ntoa(reader.read(4))
+    elif n == 3:
+        data = reader.read(reader.read(1)[0])
+        host_name = data.decode()
+    elif n == 4:
+        host_name = socket.inet_ntop(socket.AF_INET6, reader.read(16))
+    else:
+        raise Exception(f"Unknown address header {n}")
+    data_port = reader.read(2)
+    return host_name, int.from_bytes(data_port, "big")
+
+
+async def socks_address_stream(reader, n):
+    """Async variant of :func:`socks_address` for stream readers.
+
+    Matches the pproxy 2.7.9 oracle signature exactly:
+    ``socks_address_stream(reader, n) -> (host, port, data)``.
+    """
+    if n in (1, 17):
+        data = await reader.read_n(4)
+        host_name = socket.inet_ntoa(data)
+    elif n in (3, 19):
+        data = await reader.read_n(1)
+        data += await reader.read_n(data[0])
+        host_name = data[1:].decode()
+    elif n in (4, 20):
+        data = await reader.read_n(16)
+        host_name = socket.inet_ntop(socket.AF_INET6, data)
+    else:
+        raise Exception(f"Unknown address header {n}")
+    data_port = await reader.read_n(2)
+    return host_name, int.from_bytes(data_port, "big"), data + data_port
+
+
+def encode_socks_address(host: str, port: int) -> bytes:
+    """Encode a host:port pair into SOCKS address bytes (internal helper)."""
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
@@ -33,15 +80,6 @@ def socks_address(host: str, port: int) -> bytes:
         return b"\x03" + bytes([len(encoded)]) + encoded + port.to_bytes(2, "big")
     kind = b"\x01" if address.version == 4 else b"\x04"
     return kind + address.packed + port.to_bytes(2, "big")
-
-
-def encode_socks_address(host: str, port: int) -> bytes:
-    """Encode a SOCKS address (internal helper, same as ``socks_address``)."""
-    return socks_address(host, port)
-
-
-def socks_address_stream(host: str, port: int) -> bytes:
-    return socks_address(host, port)
 
 
 def sslwrap(
