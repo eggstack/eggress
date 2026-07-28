@@ -118,10 +118,10 @@ jobs:
           python3 -m venv .venv-candidate-api
           .venv-candidate-api/bin/pip install --upgrade pip
           .venv-candidate-api/bin/pip install maturin pytest pytest-asyncio pytest-timeout cryptography
-      - name: Install maturin (for wheel builds inside audit)
-        run: .venv-candidate-api/bin/pip install maturin
       - name: Run authoritative closure audit
-        run: ./scripts/run_strict_pproxy_closure_audit.sh
+        run: |
+          export PATH="${{ github.workspace }}/.venv-candidate-api/bin:$PATH"
+          ./scripts/run_strict_pproxy_closure_audit.sh
       - name: Upload closure audit evidence
         if: always()
         uses: actions/upload-artifact@v4
