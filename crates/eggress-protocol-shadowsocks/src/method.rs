@@ -55,10 +55,14 @@ impl CipherMethod {
     /// Derive an AEAD subkey from password and salt using HKDF-SHA1.
     ///
     /// Uses `EVP_BytesToKey(password)` as IKM (matching OpenSSL/shadowsocks-rust),
-    /// then HKDF-SHA1 with info="ss-subkey" per SIP003.
+    /// truncated to `key_size` bytes, then HKDF-SHA1 with info="ss-subkey" per SIP003.
     pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
-        let ikm = evp_bytes_to_key(password);
-        let hk = Hkdf::<Sha1>::new(Some(salt), &ikm);
+        let full_ikm = evp_bytes_to_key(password);
+        // shadowsocks-rust passes only key_size bytes as IKM to HKDF.
+        // evp_bytes_to_key produces 48 bytes; we must truncate to key_size
+        // to match the subkey derivation.
+        let ikm = &full_ikm[..self.key_size()];
+        let hk = Hkdf::<Sha1>::new(Some(salt), ikm);
         let mut key = vec![0u8; self.key_size()];
         hk.expand(b"ss-subkey", &mut key)
             .map_err(|e| ShadowsocksError::Other(format!("HKDF expand failed: {e}")))?;

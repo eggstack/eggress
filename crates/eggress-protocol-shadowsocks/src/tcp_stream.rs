@@ -18,6 +18,8 @@ pub const MAX_CHUNK_PAYLOAD: usize = 65535;
 /// Internal read state machine for standard SIP003 framing.
 #[derive(Clone, Copy, Debug)]
 enum ReadState {
+    /// Waiting to read the peer's salt (first packet from peer).
+    PeerSalt,
     /// Waiting for the 18-byte encrypted length block.
     LengthBlock,
     /// Reading `len` bytes of encrypted payload.
@@ -29,19 +31,29 @@ enum ReadState {
 /// Wraps an `AsyncRead + AsyncWrite` stream and encrypts/decrypts all data
 /// using standard Shadowsocks AEAD chunk framing (SIP003).
 ///
-/// Wire format per chunk:
-/// ```text
-/// [18 bytes: AEAD(encrypt, key, nonce_n, len_u16_be)]                    -- length block
-/// [payload_len + 16 bytes: AEAD(encrypt, key, nonce_n+1, payload)]       -- payload block
-/// ```
+/// In SIP003, each direction uses its own salt and subkey:
+/// - The SENDER prepends a random salt to the first packet, derives a subkey
+///   from it, and encrypts all subsequent packets with that subkey.
+/// - The RECEIVER reads the salt from the first packet, derives the same
+///   subkey, and uses it for decryption.
 ///
-/// Read and write nonces are independent and both start at 1 (nonce 0 was
-/// consumed by the address header). Each AEAD chunk consumes two nonces
-/// (one for length, one for payload).
+/// This means:
+/// - For the client: `subkey` is the write subkey (for encrypting to server),
+///   and the read subkey is derived from the server's first response salt.
+/// - For the server: `subkey` is the read subkey (for decrypting from client),
+///   and the write subkey is sent as the first bytes of the response.
 pub struct ShadowsocksAeadStream<S> {
     inner: S,
     method: CipherMethod,
-    subkey: Vec<u8>,
+    /// Subkey for writing (encrypting outbound data).
+    write_subkey: Vec<u8>,
+    /// Subkey for reading (decrypting inbound data). `None` until the peer's
+    /// salt is received on the first read.
+    read_subkey: Option<Vec<u8>>,
+    /// Password for deriving the read subkey from the peer's salt.
+    password: Option<String>,
+    /// Whether the write side needs to send its salt before the first data chunk.
+    send_write_salt: bool,
     write_nonce: NonceCounter,
     read_nonce: NonceCounter,
     read_plain: BytesMut,
@@ -51,16 +63,103 @@ pub struct ShadowsocksAeadStream<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
+    /// Create a new AEAD stream (same subkey for both directions — for internal use).
     pub fn new(inner: S, method: CipherMethod, subkey: Vec<u8>) -> Self {
         let nonce_size = method.nonce_size();
         Self {
             inner,
             method,
-            subkey,
-            // Nonces 0 and 1 were consumed by the address header (length + payload).
-            // Data chunks start at nonce 2.
+            write_subkey: subkey.clone(),
+            read_subkey: Some(subkey),
+            password: None,
+            send_write_salt: false,
+            write_nonce: NonceCounter::starting_at(nonce_size, 0),
+            read_nonce: NonceCounter::starting_at(nonce_size, 0),
+            read_plain: BytesMut::new(),
+            read_buf: BytesMut::new(),
+            read_state: ReadState::LengthBlock,
+            write_buf: BytesMut::new(),
+        }
+    }
+
+    /// Create a client-side AEAD stream.
+    ///
+    /// - `write_subkey`: derived from the client's salt (for encrypting to server).
+    /// - On first read, the peer's salt is read and `read_subkey` is derived.
+    pub fn new_client(
+        inner: S,
+        method: CipherMethod,
+        write_subkey: Vec<u8>,
+        password: String,
+    ) -> Self {
+        let nonce_size = method.nonce_size();
+        Self {
+            inner,
+            method,
+            write_subkey,
+            read_subkey: None,
+            password: Some(password),
+            send_write_salt: false,
+            // Write nonces start at 2 (address header used 0,1).
             write_nonce: NonceCounter::starting_at(nonce_size, 2),
+            // Read nonces start at 0 (peer's first response).
+            read_nonce: NonceCounter::starting_at(nonce_size, 0),
+            read_plain: BytesMut::new(),
+            read_buf: BytesMut::new(),
+            read_state: ReadState::PeerSalt,
+            write_buf: BytesMut::new(),
+        }
+    }
+
+    /// Create a server-side AEAD stream.
+    ///
+    /// - `read_subkey`: derived from the client's salt (for decrypting from client).
+    /// - `send_write_salt`: if true, the server will send a fresh salt before the
+    ///   first data chunk (for interop with standard implementations).
+    pub fn new_server(
+        inner: S,
+        method: CipherMethod,
+        read_subkey: Vec<u8>,
+        send_write_salt: bool,
+        password: String,
+    ) -> Self {
+        let nonce_size = method.nonce_size();
+        Self {
+            inner,
+            method,
+            write_subkey: Vec::new(), // will be derived when salt is sent
+            read_subkey: Some(read_subkey),
+            password: Some(password),
+            send_write_salt,
+            // Read nonces start at 2 (address header used 0,1).
             read_nonce: NonceCounter::starting_at(nonce_size, 2),
+            // Write nonces start at 0 (first response).
+            write_nonce: NonceCounter::starting_at(nonce_size, 0),
+            read_plain: BytesMut::new(),
+            read_buf: BytesMut::new(),
+            read_state: ReadState::LengthBlock,
+            write_buf: BytesMut::new(),
+        }
+    }
+
+    /// Create a new AEAD stream with explicit starting nonces (legacy/internal).
+    pub fn new_with_nonces(
+        inner: S,
+        method: CipherMethod,
+        subkey: Vec<u8>,
+        write_start: u64,
+        read_start: u64,
+    ) -> Self {
+        let nonce_size = method.nonce_size();
+        Self {
+            inner,
+            method,
+            write_subkey: subkey.clone(),
+            read_subkey: Some(subkey),
+            password: None,
+            send_write_salt: false,
+            write_nonce: NonceCounter::starting_at(nonce_size, write_start),
+            read_nonce: NonceCounter::starting_at(nonce_size, read_start),
             read_plain: BytesMut::new(),
             read_buf: BytesMut::new(),
             read_state: ReadState::LengthBlock,
@@ -133,6 +232,35 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
         loop {
             let state = this.read_state;
             match state {
+                ReadState::PeerSalt => {
+                    // Read the peer's salt to derive the read subkey.
+                    let salt_size = this.method.salt_size();
+                    match read_until(&mut this.inner, cx, &mut this.read_buf, salt_size) {
+                        Poll::Ready(Ok(true)) => {}
+                        Poll::Ready(Ok(false)) => {
+                            this.read_buf.clear();
+                            return Poll::Ready(Ok(()));
+                        }
+                        Poll::Ready(Err(e)) => {
+                            this.read_buf.clear();
+                            return Poll::Ready(Err(e));
+                        }
+                        Poll::Pending => return Poll::Pending,
+                    }
+
+                    let salt = this.read_buf.split_to(salt_size);
+                    let password = this
+                        .password
+                        .as_deref()
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no password for subkey derivation"))?;
+                    let read_subkey = this
+                        .method
+                        .derive_key(password.as_bytes(), &salt)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    this.read_subkey = Some(read_subkey);
+                    this.read_buf.clear();
+                    this.read_state = ReadState::LengthBlock;
+                }
                 ReadState::LengthBlock => {
                     // Read the 18-byte encrypted length block (2 plaintext bytes + 16 tag).
                     match read_until(&mut this.inner, cx, &mut this.read_buf, 18) {
@@ -149,10 +277,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         Poll::Pending => return Poll::Pending,
                     }
 
+                    let subkey = this.read_subkey.as_ref().ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::Other, "read subkey not yet derived")
+                    })?;
+
                     // Decrypt length block with current nonce.
                     let nonce = this.read_nonce.current();
                     let len_plaintext =
-                        aead_decrypt_raw(this.method, &this.subkey, &nonce, &this.read_buf[..18])
+                        aead_decrypt_raw(this.method, subkey, &nonce, &this.read_buf[..18])
                             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     // Advance past length nonce.
@@ -193,10 +325,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         Poll::Pending => return Poll::Pending,
                     }
 
+                    let subkey = this.read_subkey.as_ref().ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::Other, "read subkey not yet derived")
+                    })?;
+
                     // Decrypt payload with current nonce (now at payload nonce).
                     let nonce = this.read_nonce.current();
                     let plaintext =
-                        aead_decrypt_raw(this.method, &this.subkey, &nonce, &this.read_buf)
+                        aead_decrypt_raw(this.method, subkey, &nonce, &this.read_buf)
                             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     // Advance past payload nonce.
@@ -224,6 +360,25 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
 
+        // If the server needs to send its salt before the first data chunk:
+        if this.send_write_salt {
+            // Generate a random salt and derive the write subkey.
+            use rand::RngCore;
+            let mut salt = vec![0u8; this.method.salt_size()];
+            rand::thread_rng().fill_bytes(&mut salt);
+            let password = this
+                .password
+                .as_deref()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no password for subkey derivation"))?;
+            let write_subkey = this
+                .method
+                .derive_key(password.as_bytes(), &salt)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            this.write_subkey = write_subkey;
+            this.write_buf.extend_from_slice(&salt);
+            this.send_write_salt = false;
+        }
+
         // Flush any leftover ciphertext buffered from a previous call.
         while !this.write_buf.is_empty() {
             match Pin::new(&mut this.inner).poll_write(cx, &this.write_buf) {
@@ -248,7 +403,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
         // Encrypt length block: AEAD(len_u16_be, nonce)
         let len_bytes = (chunk_size as u16).to_be_bytes();
         let len_nonce = this.write_nonce.current();
-        let len_ct = aead_encrypt_raw(this.method, &this.subkey, &len_nonce, &len_bytes)
+        let len_ct = aead_encrypt_raw(this.method, &this.write_subkey, &len_nonce, &len_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         this.write_nonce.advance().map_err(io::Error::other)?;
 
@@ -256,7 +411,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
         let payload_nonce = this.write_nonce.current();
         let payload_ct = aead_encrypt_raw(
             this.method,
-            &this.subkey,
+            &this.write_subkey,
             &payload_nonce,
             &buf[..chunk_size],
         )
@@ -482,13 +637,13 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x33u8; 32];
 
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey.clone());
+        // Use new_with_nonces to start at nonce 0 (for testing raw wire data).
+        let mut server_stream = ShadowsocksAeadStream::new_with_nonces(server, method, subkey.clone(), 0, 0);
 
         // Manually send a zero-length payload chunk (raw, not through the adapter).
         // Wire format: AEAD(len_u16=0, nonce) + AEAD(empty, nonce+1)
-        // The reader starts at nonce counter=2, so encrypt with nonce 2.
         let mut nonce = vec![0u8; method.nonce_size()];
-        nonce[0] = 2;
+        nonce[0] = 0;
         let wire = encrypt_chunk_standard(method, &subkey, &nonce, b"").unwrap();
         let mut raw_stream = client;
         raw_stream.write_all(&wire).await.unwrap();
@@ -498,7 +653,7 @@ mod tests {
         let mut buf = vec![0u8; 64];
         let result = server_stream.read(&mut buf).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0);
+        assert_eq!(result.unwrap(), 0); // EOF
     }
 
     #[tokio::test]

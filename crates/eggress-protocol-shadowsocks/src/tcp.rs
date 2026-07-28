@@ -53,8 +53,12 @@ pub async fn shadowsocks_connect(
         m.record_tcp_flow_open();
     }
 
-    // Data chunks start at nonce 2 (nonce 0+1 were used for the address header).
-    Ok(Box::new(ShadowsocksAeadStream::new(stream, method, subkey)))
+    // Data chunks: write nonces start at 2 (address header used 0,1),
+    // read nonces start at 0 (peer's first response uses nonce 0).
+    // The peer will send its own salt, from which we derive the read subkey.
+    Ok(Box::new(ShadowsocksAeadStream::new_client(
+        stream, method, subkey, password.to_string(),
+    )))
 }
 
 /// Server-side accept: read the salt, decrypt the address header (sent as a
@@ -126,9 +130,12 @@ pub async fn shadowsocks_accept(
         m.record_tcp_flow_open();
     }
 
-    // Data chunks start at nonce 2 (nonces 0+1 consumed by address header).
+    // Data chunks: read nonces start at 2 (address header used 0,1),
+    // write nonces start at 0 (first response to client uses nonce 0).
     Ok((
-        Box::new(ShadowsocksAeadStream::new(stream, method, subkey)),
+        Box::new(ShadowsocksAeadStream::new_server(
+            stream, method, subkey, true, password.to_string(),
+        )),
         target_addr,
     ))
 }
