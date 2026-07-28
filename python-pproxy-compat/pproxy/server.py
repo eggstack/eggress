@@ -194,8 +194,8 @@ def schedule(rserver, salgorithm, host_name, port):
         raise Exception('Unknown scheduling algorithm')
 
 
-def main(*args, **kwargs):
-    return start_pproxy(*args, **kwargs)
+def main(args=None):
+    return start_pproxy(args)
 
 
 def _unsupported_handler(name: str):

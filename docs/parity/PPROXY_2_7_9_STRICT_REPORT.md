@@ -10,9 +10,9 @@
 **Manifest schema:** strict_1
 **Policy:** docs/parity/PPROXY_COMPATIBILITY_POLICY.md
 **Oracle ref:** compat/pproxy-2.7.9/provenance.toml
-**Commit SHA:** `85a7d0cae82f810b8b841bc62686e4fe0a1506a3`
-**Manifest hash:** `35b5efac01791deb21c63f914baa87af142847cfae6df0e336d67ee763b4a4bf`
-**Generated:** 2026-07-27T00:00:00Z
+**Commit SHA:** `b50a8315f276349cf52d38dfd796d64257ba7c64`
+**Manifest hash:** `d9b8f3ea456b58ae9a0674837fca43af0f0c5c1864a612c089db8abc3a9a6209`
+**Generated:** 2026-07-28T00:00:00Z
 
 ## Summary
 

@@ -49,6 +49,8 @@ jobs:
       - name: Build and install
         run: maturin develop
         working-directory: crates/eggress-python
+      - name: Build and install pproxy compat wheel
+        run: pip wheel --no-deps --wheel-dir /tmp/compat-wheels ./python-pproxy-compat && pip install /tmp/compat-wheels/eggress_pproxy_compat-*.whl
       - name: Verify py.typed
         run: python -c "import importlib.resources; p = importlib.resources.files('eggress').joinpath('py.typed'); assert p.is_file(), 'py.typed not found'; print('py.typed found')"
       - name: Syntax check
