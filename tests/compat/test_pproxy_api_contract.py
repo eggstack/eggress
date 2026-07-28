@@ -201,13 +201,14 @@ def _parse_module_names(filepath: Path) -> set[str]:
 def _parse_imported_names(filepath: Path) -> set[str]:
     """Return the set of names brought into scope via import statements.
 
-    Handles both ``import X`` and ``from X import Y, Z, ...`` at the
-    top level (not inside try/except or other blocks).
+    Handles both ``import X`` and ``from X import Y, Z, ...`` including
+    those nested inside ``try/except`` blocks (which is how __init__.py
+    conditionally imports optional modules).
     """
     source = filepath.read_text()
     tree = ast.parse(source)
     names: set[str] = set()
-    for node in ast.iter_child_nodes(tree):
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 names.add(alias.asname or alias.name)

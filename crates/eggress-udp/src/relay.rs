@@ -1173,7 +1173,7 @@ mod tests {
         let relay_addr = relay_socket.local_addr().unwrap();
 
         let limits = UdpLimits {
-            idle_timeout: std::time::Duration::from_millis(300),
+            idle_timeout: std::time::Duration::from_millis(500),
             ..UdpLimits::default()
         };
         let config = relay_config_with_limits(reject_router(), limits);
