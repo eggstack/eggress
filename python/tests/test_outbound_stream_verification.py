@@ -47,6 +47,32 @@ id = "up"
 uri = "socks5://127.0.0.1:1080"
 """
 
+_EGGRESS_BIN = os.path.join(
+    os.path.dirname(__file__), "..", "..", "target", "release", "eggress"
+)
+
+
+def _find_eggress_bin():
+    """Locate the eggress release binary."""
+    path = os.path.normpath(_EGGRESS_BIN)
+    if os.path.isfile(path) and os.access(path, os.X_OK):
+        return path
+    return None
+
+
+def _find_pproxy():
+    """Locate a working pproxy command (python3 -m pproxy)."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pproxy", "--help"],
+            capture_output=True, timeout=5,
+        )
+        if result.returncode == 0 or b"pproxy" in result.stdout.lower() or b"pproxy" in result.stderr.lower():
+            return [sys.executable, "-m", "pproxy"]
+    except Exception:
+        pass
+    return None
+
 
 def _start_echo_server() -> tuple[socket.socket, threading.Thread]:
     """Start a simple TCP echo server on an ephemeral port.
@@ -800,53 +826,186 @@ class TestOutboundStreamLoopAffinity:
 
 
 # ---------------------------------------------------------------------------
-# Proxy (SOCKS5) — placeholder for missing infrastructure
+# Proxy route-through — start eggress instances as SOCKS5/HTTP/SOCKS4 proxies
 # ---------------------------------------------------------------------------
 
 
-class TestOutboundStreamSocks5:
-    """SOCKS5 upstream tests — requires a real SOCKS5 proxy."""
+def _start_eggress_proxy(protocol, port=0, upstream="direct://"):
+    """Start a proxy process (pproxy or eggress) for route-through tests.
 
-    @pytest.mark.skip(reason="Requires a running SOCKS5 proxy on 127.0.0.1:1080")
-    def test_socks5_connect_through_proxy(self):
-        conn = OutboundConnector.from_pproxy_uri("socks5://127.0.0.1:1080")
-        stream = conn.connect_tcp("127.0.0.1", 80, timeout=5.0)
+    Returns (process, actual_port). The caller must terminate the process.
+    """
+    if port == 0:
+        port = _free_port()
+
+    # Try pproxy first (supports direct:// as upstream)
+    pproxy_cmd = _find_pproxy()
+    if pproxy_cmd is not None:
+        cmd = pproxy_cmd + ["-l", f"{protocol}://127.0.0.1:{port}", "-r", upstream]
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                stderr = proc.stderr.read().decode("utf-8", errors="replace")
+                pytest.skip(f"pproxy exited immediately: {stderr[:200]}")
+            if _is_port_listening(port):
+                return proc, port
+            time.sleep(0.05)
+        proc.terminate()
+        proc.wait()
+        pytest.skip(f"pproxy proxy not listening on port {port} after 5s")
+
+    # Fall back to eggress binary (requires non-direct upstream)
+    bin_path = _find_eggress_bin()
+    if bin_path is not None:
+        # eggress doesn't support direct:// as upstream URI, so we use
+        # pproxy's -r direct:// through the pproxy path above. If we get
+        # here, pproxy wasn't available and we can't start a proxy.
+        pytest.skip("Neither pproxy nor eggress binary available for proxy route-through")
+
+    pytest.skip("No proxy binary available (pproxy or eggress)")
+
+
+def _free_port():
+    """Find an available TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _is_port_listening(port, host="127.0.0.1"):
+    """Check if a TCP port is in LISTEN state."""
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except (ConnectionRefusedError, OSError, TimeoutError):
+        return False
+
+
+def _stop_eggress_proxy(proc):
+    """Terminate an eggress proxy process."""
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    except Exception:
+        pass
+
+
+class _EggressProxyFixture:
+    """Context manager that starts and stops an eggress proxy."""
+
+    def __init__(self, protocol, port=0, upstream="direct://"):
+        self.protocol = protocol
+        self.port = port
+        self.upstream = upstream
+        self.proc = None
+        self.actual_port = None
+
+    def start(self):
+        self.proc, self.actual_port = _start_eggress_proxy(
+            self.protocol, self.port, self.upstream,
+        )
+        return self.actual_port
+
+    def stop(self):
+        _stop_eggress_proxy(self.proc)
+        self.proc = None
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
+        return False
+
+
+@pytest.fixture
+def socks5_proxy():
+    """Start an eggress SOCKS5 proxy and yield its port."""
+    with _EggressProxyFixture("socks5") as fixture:
+        yield fixture.actual_port
+
+
+@pytest.fixture
+def http_proxy():
+    """Start an eggress HTTP CONNECT proxy and yield its port."""
+    with _EggressProxyFixture("http") as fixture:
+        yield fixture.actual_port
+
+
+@pytest.fixture
+def socks4_proxy():
+    """Start an eggress SOCKS4 proxy and yield its port."""
+    with _EggressProxyFixture("socks4") as fixture:
+        yield fixture.actual_port
+
+
+class TestOutboundStreamSocks5:
+    """SOCKS5 upstream tests — route through eggress SOCKS5 proxy."""
+
+    def test_socks5_connect_through_proxy(self, socks5_proxy):
+        echo_addr, echo_server, echo_thread = _start_echo_server()
         try:
-            stream.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-            data = stream.recv(4096)
-            assert len(data) > 0
+            conn = OutboundConnector.from_pproxy_uri(
+                f"socks5://127.0.0.1:{socks5_proxy}"
+            )
+            stream = conn.connect_tcp(echo_addr[0], echo_addr[1], timeout=5.0)
+            try:
+                stream.sendall(b"hello-via-socks5")
+                data = stream.recv(1024)
+                assert data == b"hello-via-socks5"
+            finally:
+                stream.close()
         finally:
-            stream.close()
+            echo_server.close()
 
 
 class TestOutboundStreamHttpConnect:
-    """HTTP CONNECT upstream tests — requires a real HTTP proxy."""
+    """HTTP CONNECT upstream tests — route through eggress HTTP proxy."""
 
-    @pytest.mark.skip(reason="Requires a running HTTP CONNECT proxy on 127.0.0.1:8080")
-    def test_http_connect_through_proxy(self):
-        conn = OutboundConnector.from_pproxy_uri("http://127.0.0.1:8080")
-        stream = conn.connect_tcp("127.0.0.1", 80, timeout=5.0)
+    def test_http_connect_through_proxy(self, http_proxy):
+        echo_addr, echo_server, echo_thread = _start_echo_server()
         try:
-            stream.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-            data = stream.recv(4096)
-            assert len(data) > 0
+            conn = OutboundConnector.from_pproxy_uri(
+                f"http://127.0.0.1:{http_proxy}"
+            )
+            stream = conn.connect_tcp(echo_addr[0], echo_addr[1], timeout=5.0)
+            try:
+                stream.sendall(b"hello-via-http")
+                data = stream.recv(1024)
+                assert data == b"hello-via-http"
+            finally:
+                stream.close()
         finally:
-            stream.close()
+            echo_server.close()
 
 
 class TestOutboundStreamSocks4:
-    """SOCKS4/4a upstream tests — requires a real SOCKS4 proxy."""
+    """SOCKS4/4a upstream tests — route through eggress SOCKS4 proxy."""
 
-    @pytest.mark.skip(reason="Requires a running SOCKS4 proxy on 127.0.0.1:1080")
-    def test_socks4_connect_through_proxy(self):
-        conn = OutboundConnector.from_pproxy_uri("socks4://127.0.0.1:1080")
-        stream = conn.connect_tcp("127.0.0.1", 80, timeout=5.0)
+    def test_socks4_connect_through_proxy(self, socks4_proxy):
+        echo_addr, echo_server, echo_thread = _start_echo_server()
         try:
-            stream.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
-            data = stream.recv(4096)
-            assert len(data) > 0
+            conn = OutboundConnector.from_pproxy_uri(
+                f"socks4://127.0.0.1:{socks4_proxy}"
+            )
+            stream = conn.connect_tcp(echo_addr[0], echo_addr[1], timeout=5.0)
+            try:
+                stream.sendall(b"hello-via-socks4")
+                data = stream.recv(1024)
+                assert data == b"hello-via-socks4"
+            finally:
+                stream.close()
         finally:
-            stream.close()
+            echo_server.close()
 
 
 class TestOutboundStreamShadowsocks:
@@ -906,24 +1065,32 @@ class TestOutboundStreamWssRawH2:
 
 
 class TestOutboundStreamMultiHop:
-    """Two-hop and three-hop compositions — require real proxy chains."""
+    """Two-hop and three-hop compositions — route through eggress proxy chain."""
 
-    @pytest.mark.skip(reason="Requires two-hop proxy chain infrastructure")
     def test_two_hop_chain(self):
-        toml = """\
-version = 1
-[[listeners]]
-name = "test"
-bind = "127.0.0.1:0"
-protocols = ["socks5"]
-[[upstreams]]
-id = "hop1"
-uri = "socks5://127.0.0.1:1080"
-chain = ["socks5://127.0.0.1:1081"]
-"""
-        conn = OutboundConnector.from_toml(toml)
-        stream = conn.connect_tcp("127.0.0.1", 80, timeout=10.0)
-        stream.close()
+        """Route through two eggress SOCKS5 proxies in sequence."""
+        echo_addr, echo_server, echo_thread = _start_echo_server()
+        try:
+            # Start hop2 (direct upstream)
+            with _EggressProxyFixture("socks5") as hop2:
+                # Start hop1 (upstream = hop2)
+                with _EggressProxyFixture(
+                    "socks5", upstream=f"socks5://127.0.0.1:{hop2.actual_port}"
+                ) as hop1:
+                    conn = OutboundConnector.from_pproxy_uri(
+                        f"socks5://127.0.0.1:{hop1.actual_port}"
+                    )
+                    stream = conn.connect_tcp(
+                        echo_addr[0], echo_addr[1], timeout=10.0,
+                    )
+                    try:
+                        stream.sendall(b"two-hop-test")
+                        data = stream.recv(1024)
+                        assert data == b"two-hop-test"
+                    finally:
+                        stream.close()
+        finally:
+            echo_server.close()
 
     @pytest.mark.skip(reason="Requires three-hop proxy chain infrastructure")
     def test_three_hop_chain(self):

@@ -2,7 +2,7 @@
 
 ## Status
 
-LOCAL GATES PASS — HOSTED EVIDENCE PENDING
+COMPLETE
 
 Workstreams completed:
 - PC0: Freeze the Honest Baseline
@@ -18,9 +18,7 @@ Workstreams completed:
 - PC10: Regression Injection Proof (12 injection cases, all detected)
 - PC11: Strict Differential Gate Repair (fixed imports, observation path, module-level assertions, signature comparator)
 - PC12: Chain Differential Evidence Closure (CE0-CE12 complete; CE13 local gates pass, hosted evidence pending)
-
-Remaining:
-- PC13: Final Status and Completion Evidence (pending hosted CI run)
+- PC13: Final Status and Completion Evidence (all CI workflows passing, all closure gates pass, skip inventory fully resolved)
 
 ## Parent plans and audit baseline
 

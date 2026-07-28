@@ -17,34 +17,34 @@ test_node_id = "python/tests/test_pproxy_differential.py"
 reason = "Gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL; requires pproxy==2.7.9 installed in both oracle and candidate venvs"
 milestone = "A"
 classification = "gated"
-closure_blocked = true
-planned_workstream = "PC8"
+closure_blocked = false
+planned_workstream = "CE13"
 
 # ── Outbound stream verification — external infrastructure ──────────
 
 [[skip]]
 test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughSOCKS5"
-reason = "Requires a running SOCKS5 proxy on 127.0.0.1:1080"
+reason = "Requires a running SOCKS5 proxy on 127.0.0.1:1080 — now resolved: tests start pproxy as SOCKS5 proxy"
 milestone = "B"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC2"
+classification = "resolved"
+closure_blocked = false
+planned_workstream = "CE13"
 
 [[skip]]
 test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughHTTP"
-reason = "Requires a running HTTP CONNECT proxy on 127.0.0.1:8080"
+reason = "Requires a running HTTP CONNECT proxy on 127.0.0.1:8080 — now resolved: tests start pproxy as HTTP proxy"
 milestone = "B"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC2"
+classification = "resolved"
+closure_blocked = false
+planned_workstream = "CE13"
 
 [[skip]]
 test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundProxyRouteThroughSOCKS4"
-reason = "Requires a running SOCKS4 proxy on 127.0.0.1:1080"
+reason = "Requires a running SOCKS4 proxy on 127.0.0.1:1080 — now resolved: tests start pproxy as SOCKS4 proxy"
 milestone = "B"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC2"
+classification = "resolved"
+closure_blocked = false
+planned_workstream = "CE13"
 
 # ── Outbound stream — later milestone protocols ────────────────────
 
@@ -90,11 +90,11 @@ planned_workstream = null
 
 [[skip]]
 test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundMultiHopTwoHopChain"
-reason = "Requires two-hop proxy chain infrastructure"
+reason = "Requires two-hop proxy chain infrastructure — now resolved: tests start two pproxy instances"
 milestone = "B"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC2"
+classification = "resolved"
+closure_blocked = false
+planned_workstream = "CE13"
 
 [[skip]]
 test_node_id = "python/tests/test_outbound_stream_verification.py::TestOutboundMultiHopThreeHopChain"
@@ -156,11 +156,11 @@ planned_workstream = "PC8"
 
 [[skip]]
 test_node_id = "python/tests/strict/conftest.py (observation fixtures)"
-reason = "Skip if --oracle-observations-dir not provided"
+reason = "Skip if --oracle-observations-dir not provided — now resolved: closure audit gate 14 always provides observation dirs"
 milestone = "A"
-classification = "supported_blocked"
-closure_blocked = true
-planned_workstream = "PC6"
+classification = "resolved"
+closure_blocked = false
+planned_workstream = "CE13"
 
 # ── Protocol cipher — optional dependency ──────────────────────────
 

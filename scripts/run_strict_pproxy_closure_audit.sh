@@ -139,21 +139,28 @@ run_gate "12_python_test_suite" bash -c "
         --tb=short
 "
 
-# ── Gate 13: paired API runner (mandatory) ─────────────────────────
-run_gate "13_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh --closure-required'
+# ── Gate 13: pproxy differential tests (mandatory) ────────────────
+# Requires pproxy==2.7.9 installed in the test venv.
+run_gate "13_pproxy_differential" bash -c "
+    '$VENV_DIR/bin/pip' install pproxy==2.7.9 >/dev/null 2>&1 && \
+    EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 '$VENV_DIR/bin/python' -m pytest python/tests/test_pproxy_differential.py -v --tb=short --import-mode=importlib 2>&1
+"
 
-# ── Gate 14: strict Python differential tests (mandatory) ──────────
-# Requires observation directories from the paired API job (gate 13).
+# ── Gate 14: paired API runner (mandatory) ─────────────────────────
+run_gate "14_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh --closure-required'
+
+# ── Gate 15: strict Python differential tests (mandatory) ──────────
+# Requires observation directories from the paired API job (gate 14).
 # Missing directories are a hard failure, not a skip.
 OBS_DIR="$AUDIT_DIR/paired_observations"
-# Link gate 13's output directory if it exists and OBS_DIR doesn't
+# Link gate 14's output directory if it exists and OBS_DIR doesn't
 if [ ! -e "$OBS_DIR" ] && [ -d "target/strict/paired_observations" ]; then
     ln -sfn "$(pwd)/target/strict/paired_observations" "$OBS_DIR"
 fi
 if [ ! -e "$OBS_DIR" ]; then
     mkdir -p "$OBS_DIR"
 fi
-run_gate "14_strict_python_differential" bash -c "
+run_gate "15_strict_python_differential" bash -c "
     # Check if observations from the paired API job were pre-staged
     OBS_COUNT=\$(ls '$OBS_DIR'/*_oracle.json 2>/dev/null | wc -l)
     if [ \"\$OBS_COUNT\" -gt 0 ]; then
@@ -163,40 +170,40 @@ run_gate "14_strict_python_differential" bash -c "
             --tb=short
     else
         echo 'ERROR: No paired observations available; strict differential tests require observation directories.' >&2
-        echo 'Run gate 13 (paired_api_runner) first to generate them.' >&2
+        echo 'Run gate 14 (paired_api_runner) first to generate them.' >&2
         echo 'Expected location: target/strict/paired_observations/' >&2
         exit 1
     fi
 "
 
-# ── Gate 15: required runtime examples/scenarios ─────────────────
-run_gate "15_runtime_examples" cargo test -p eggress-testkit pproxy_oracle -- --ignored
+# ── Gate 16: required runtime examples/scenarios ─────────────────
+run_gate "16_runtime_examples" cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
-# ── Gate 16: external TCP interoperability (mandatory) ─────────────
-run_gate "16_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh'
+# ── Gate 17: external TCP interoperability (mandatory) ─────────────
+run_gate "17_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh'
 
-# ── Gate 17: external UDP interoperability (mandatory) ─────────────
-run_gate "17_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
+# ── Gate 18: external UDP interoperability (mandatory) ─────────────
+run_gate "18_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
 
-# ── Gate 18: cipher KAT and interop probes ──────────────────────
-run_gate "18_cipher_kat" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1"
+# ── Gate 19: cipher KAT and interop probes ──────────────────────
+run_gate "19_cipher_kat" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1"
 
-# ── Gate 19: plugin transformed-traffic probe ────────────────────
-run_gate "19_plugin_probe" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib"
+# ── Gate 20: plugin transformed-traffic probe ────────────────────
+run_gate "20_plugin_probe" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib"
 
-# ── Gate 20: process lifecycle probe ─────────────────────────────
-run_gate "20_process_lifecycle" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib"
+# ── Gate 21: process lifecycle probe ─────────────────────────────
+run_gate "21_process_lifecycle" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib"
 
-# ── Gate 21: runtime/failure/cleanup probe ──────────────────────
-run_gate "21_runtime_failure_cleanup" cargo test -p eggress-runtime --test lifecycle_invariants
+# ── Gate 22: runtime/failure/cleanup probe ──────────────────────
+run_gate "22_runtime_failure_cleanup" cargo test -p eggress-runtime --test lifecycle_invariants
 
-# ── Gate 22: resource-leak and process-cleanup checks ────────────
-run_gate "22_resource_leak_check" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib"
+# ── Gate 23: resource-leak and process-cleanup checks ────────────
+run_gate "23_resource_leak_check" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib"
 
-# ── Gate 23: report and evidence hash binding ────────────────────
+# ── Gate 24: report and evidence hash binding ────────────────────
 EVIDENCE_DIR="$AUDIT_DIR/evidence"
 mkdir -p "$EVIDENCE_DIR"
-run_gate "23_evidence_hash_binding" bash -c "
+run_gate "24_evidence_hash_binding" bash -c "
     COMMIT_SHA=\$(git rev-parse HEAD) && \
     echo \"\$COMMIT_SHA\" > '$EVIDENCE_DIR/candidate_commit.sha' && \
     echo '--- Manifest SHA-256 ---' && \
