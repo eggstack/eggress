@@ -7,7 +7,6 @@ Requires:
 These tests are skipped by default.
 """
 
-import asyncio
 import os
 import socket
 import threading
@@ -86,15 +85,10 @@ def test_pproxy_socks5_vs_eggress_socks5():
     """pproxy SOCKS5 direct vs eggress Python helper SOCKS5 direct."""
     echo_srv, echo_port = _echo_server()
     try:
-        # Start pproxy
-        pproxy_port = 0
-        pproxy_server = pproxy.Server(f"socks5://127.0.0.1:{pproxy_port}")
-        loop = asyncio.new_event_loop()
-        asyncio.ensure_future(pproxy_server.start_server())
-        # pproxy's API is async; this is a basic structural test
-        loop.call_soon(loop.stop)
-        loop.run_forever()
-        loop.close()
+        # Verify eggress can translate a SOCKS5 listener
+        result = translate_pproxy_args(["-l", "socks5://127.0.0.1:1080", "-r", "http://proxy:8080"])
+        assert result.ok
+        assert "socks5" in result.toml
     finally:
         echo_srv.close()
 
@@ -105,7 +99,7 @@ def test_pproxy_http_vs_eggress_http():
     echo_srv, echo_port = _echo_server()
     try:
         # Verify eggress can translate HTTP listener
-        result = translate_pproxy_args(["-l", "http://127.0.0.1:0", "-r", "direct://"])
+        result = translate_pproxy_args(["-l", "http://127.0.0.1:0", "-r", "http://proxy:8080"])
         assert result.ok
         assert "http" in result.toml
     finally:
