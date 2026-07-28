@@ -22,6 +22,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/python-test.yml'
+  workflow_dispatch:
 
 concurrency:
   group: python-${{ github.workflow }}-${{ github.ref }}
