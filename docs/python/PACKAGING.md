@@ -43,10 +43,6 @@ behavior is deterministic. The canonical `eggress` wheel never installs or
 aliases `pproxy`; validate the compatibility wheel in a clean environment and
 do not combine it with the unrelated upstream `pproxy` distribution.
 
-The release workflow retains wheel hashes, environment metadata, redacted
-scenario results, and a `SHA256SUMS` file. Generate the same local evidence
-bundle with `python3 scripts/release_evidence.py`.
-
 ## `py.typed` marker
 
 The `eggress/py.typed` marker file is included in all wheel builds, declaring

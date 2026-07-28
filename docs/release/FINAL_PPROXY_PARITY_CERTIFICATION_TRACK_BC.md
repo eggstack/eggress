@@ -27,8 +27,6 @@ Track B/C closes the following release surfaces:
 - Cipher behavior has an explicit `eggress[cipher-api]` extra and a matching
   dependency in the compatibility distribution; legacy ciphers remain
   intentionally unsupported.
-- `scripts/release_evidence.py` produces redacted metadata, scenario results,
-  wheel hashes, retained inputs, and `SHA256SUMS` for release evidence.
 
 ## Local verification record
 

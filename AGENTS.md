@@ -68,7 +68,7 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
   cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
 
-./scripts/run_strict_pproxy_closure_audit.sh
+./scripts/run_pproxy_certification.sh
 ```
 
 Ordinary changes do not require generated evidence bundles, uploaded artifacts, screenshots, copied command transcripts, or new completion documents. Record the relevant tests in the commit or pull-request summary when useful.

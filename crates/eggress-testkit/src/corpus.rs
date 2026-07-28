@@ -106,14 +106,14 @@ fn load_toml(path: &Path) -> Result<toml::Value, CorpusValidationError> {
 
 /// Load all manifest feature IDs from the canonical pproxy manifest.
 fn load_manifest_feature_ids(workspace_root: &Path) -> HashSet<String> {
-    let manifest_path = workspace_root.join("tests/compat/pproxy_manifest.toml");
+    let manifest_path = workspace_root.join("docs/parity/pproxy_capability_manifest.toml");
     let Ok(value) = load_toml(&manifest_path) else {
         return HashSet::new();
     };
     let mut ids = HashSet::new();
-    if let Some(features) = value.get("features").and_then(|v| v.as_array()) {
-        for f in features {
-            if let Some(id) = f.get("id").and_then(|v| v.as_str()) {
+    if let Some(capabilities) = value.get("capability").and_then(|v| v.as_array()) {
+        for cap in capabilities {
+            if let Some(id) = cap.get("id").and_then(|v| v.as_str()) {
                 ids.insert(id.to_string());
             }
         }
@@ -406,17 +406,13 @@ pub fn validate_corpus_manifest_mapping(path: &Path) -> Result<usize, CorpusVali
         // Edge-case URIs (invalid syntax, scheme+transport combos like socks5+in+ssl)
         // are intentionally excluded since they test parser rejection, not feature parity.
         let expected_features: Vec<&str> = match scheme {
-            "h2" => vec!["h2_connect_server", "h2_connect_upstream", "h2_uri_scheme"],
-            "ws" | "wss" => vec![
-                "websocket_tunnel_server",
-                "websocket_tunnel_upstream",
-                "websocket_uri_scheme",
-            ],
-            "raw" => vec!["raw_tunnel", "raw_uri_scheme"],
-            "quic" | "h3" => vec!["quic_h3_transport"],
-            "ssr" => vec!["shadowsocks_r", "cli_translate_ssr_rejection"],
-            "ssh" => vec!["cli_translate_ssh_rejection"],
-            "ftp" => vec!["unsupported_protocol_diagnostics"],
+            "h2" => vec!["uri.scheme_h2"],
+            "ws" | "wss" => vec!["uri.scheme_ws"],
+            "raw" => vec!["uri.scheme_raw"],
+            "quic" | "h3" => vec![],
+            "ssr" => vec!["uri.scheme_ssr", "protocol.ssr"],
+            "ssh" => vec!["uri.scheme_ssh"],
+            "ftp" => vec![],
             _ => vec![],
         };
 

@@ -99,10 +99,10 @@ cargo audit
 
 ## Closure audit
 
-Run the Milestones A-C closure audit to verify all gates pass:
+Run the pproxy behavioral certification to verify all gates pass:
 
 ```bash
-./scripts/run_strict_pproxy_closure_audit.sh
+./scripts/run_pproxy_certification.sh
 ```
 
 ## Security documentation

@@ -1,189 +1,87 @@
-# PyPI Release Procedure
+# Python Release Procedure
 
-This document covers building, testing, and publishing the `eggress` Python package to PyPI.
+Build, test, and publish the `eggress` Python packages locally. Python
+publication is separate from crates.io and must not be coupled to the Rust
+release workflow.
+
+## Packages
+
+| Package | Source | Purpose |
+|---------|--------|---------|
+| `eggress` | `crates/eggress-python/` | Core Python bindings (PyO3 + native extension) |
+| `eggress-pproxy-compat` | `python-pproxy-compat/` | Separate `import pproxy` compatibility layer |
+
+The canonical `eggress` wheel never aliases `pproxy` through `sys.modules`.
 
 ## Prerequisites
 
-- Rust toolchain (stable)
-- Python >= 3.9
-- `maturin` (`pip install maturin`)
-- PyPI account with API token (or trusted publisher configured)
-- TestPyPI account (recommended for dry runs)
+- Rust stable toolchain
+- Python >= 3.9 with `pip`
+- `maturin` (`pip install "maturin>=1.0,<2.0"`)
+- `twine` (`pip install twine`)
+- PyPI account with API token (local `~/.pypirc` or `TWINE_USERNAME`/`TWINE_PASSWORD`)
 
-## Version Policy
-
-- Python package version is aligned with the Rust workspace version
-- Current version: see `crates/eggress-python/pyproject.toml` (authoritative)
-- Release tags use the format `vX.Y.Z`
-- `python/pyproject.toml` is a local-dev convenience only; builds for PyPI use `crates/eggress-python/pyproject.toml`
-
-## Local Build and Test
-
-### Build the wheel
+## Build
 
 ```bash
-cd crates/eggress-python
-maturin build --release --out ../../dist
-```
+# Build the core wheel
+(cd crates/eggress-python && maturin build --release --out ../../dist)
 
-### Test in a clean venv
-
-```bash
-python3 -m venv .venv-wheel-test
-source .venv-wheel-test/bin/activate
-pip install dist/eggress-*.whl
-pip install pytest
-python -m pytest python/tests -v
-deactivate
-rm -rf .venv-wheel-test
-```
-
-Or use the helper script:
-
-```bash
-./scripts/test_wheel.sh
-```
-
-The optional certified pproxy subset is a separate pure-Python distribution.
-Build it from `./python-pproxy-compat` and install it alongside the matching
-`eggress` wheel. This is the supported way to provide `import pproxy`; the
-canonical `eggress` wheel intentionally does not alias that namespace.
-
-### Verify wheel contents
-
-```bash
-python -m zipfile -l dist/*.whl
-```
-
-Check that:
-- `eggress/_eggress.*.so` (or `.dylib`/`.pyd`) is present
-- `eggress/__init__.py` is present
-- `eggress/py.typed` is present
-- `eggress/config.py` and `eggress/service.py` are present
-- No `.env`, keys, certs, or test-only configs are included
-- `METADATA` and `RECORD` are present
-
-## TestPyPI Release
-
-TestPyPI is recommended for validating the upload/install pipeline before production.
-
-**Status: Not yet published.** The package name `eggress` must be reserved on
-TestPyPI before the first pre-release upload. This is a pre-release RC task,
-not a GA requirement.
-
-```bash
-# Build
-cd crates/eggress-python
-maturin build --release --out ../../dist
-
-# Upload to TestPyPI
-maturin upload --repository testpypi ../../dist/*
-
-# Test install from TestPyPI
-python3 -m venv .venv-testpypi
-source .venv-testpypi/bin/activate
-pip install --index-url https://test.pypi.org/simple --extra-index-url https://pypi.org/simple eggress==0.1.0
-python -c "import eggress; print(eggress.__version__)"
-python -m pytest python/tests -v
-deactivate
-rm -rf .venv-testpypi
-```
-
-> **Note:** `--extra-index-url https://pypi.org/simple` is needed because TestPyPI may not have all
-> transitive dependencies (e.g., pytest). This falls back to production PyPI for missing packages.
-
-## Production PyPI Release
-
-### 1. Update version
-
-```bash
-# Update version in python/pyproject.toml
-# Update __version__ in python/eggress/__init__.py
-# Update version in crates/eggress-python/Cargo.toml (optional, for reference)
-```
-
-### 2. Build release artifacts
-
-```bash
-cd crates/eggress-python
-maturin build --release --out ../../dist
-maturin sdist --out ../../dist
-
-# Build the separate top-level pproxy compatibility wheel from the repository root
-cd ../..
+# Build the compat wheel
 python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
+
+# Build source distribution
+(cd crates/eggress-python && maturin sdist --out ../../dist)
 ```
 
-### 3. Run wheel tests
+## Test in a clean venv
 
 ```bash
-cd ../..
-./scripts/test_wheel.sh
-```
-
-### 4. Upload to PyPI
-
-```bash
-maturin upload ../../dist/*
-```
-
-Or use the GitHub Actions workflow:
-- Trigger the `publish-pypi.yml` workflow with `repository: pypi`
-
-### 5. Verify production install
-
-```bash
-python3 -m venv .venv-prod-test
-source .venv-prod-test/bin/activate
-pip install eggress==0.1.0
-python -c "import eggress; print(eggress.__version__)"
-python -m pytest python/tests -v
+python3 -m venv .venv-release-test
+.venv-release-test/bin/pip install dist/eggress-*.whl
+.venv-release-test/bin/pip install dist/eggress_pproxy_compat-*.whl
+.venv-release-test/bin/pip install pytest pytest-asyncio
+.venv-release-test/bin/python -m pytest python/tests tests/compat -q
+.venv-release-test/bin/python -c "import eggress; print(eggress.__version__)"
+.venv-release-test/bin/python -c "import pproxy; print('pproxy import OK')"
 deactivate
-rm -rf .venv-prod-test
+rm -rf .venv-release-test
 ```
 
-### 6. Create GitHub release
+## Check metadata
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+twine check dist/*
 ```
 
-Create a GitHub release with:
-- Release notes
-- Wheel artifacts attached
-- Link to PyPI package
-
-## Rollback / Yank
-
-If a published release has issues:
+## Upload
 
 ```bash
-# Yank the release (keeps it installable but marks as broken)
-pip install yank  # if needed
-twine upload --repository pypi --replace dist/*
+# Optional: TestPyPI first
+twine upload --repository testpypi dist/*
+
+# Production
+twine upload dist/*
 ```
 
-Or use the PyPI web interface to yank the release.
+If a published version is broken, yank it via the PyPI web interface or
+`twine upload --repository pypi --replace dist/*`, then bump the patch
+version and publish a corrected release. Crates.io versions are immutable;
+the same roll-forward policy applies here.
 
-To publish a fixed version, bump the patch version (e.g., 0.1.0 -> 0.1.1) and follow the release process again.
+## Version alignment
 
-## Known Limitations
+Python package version is aligned with the Rust workspace version. See
+`crates/eggress-python/pyproject.toml` for the authoritative source.
 
-- Hosted GitHub Actions CI is non-functional due to billing issues
-- Local verification is the source of truth until CI resumes
-- Wheel builds for Linux aarch64 require cross-compilation or CI with native arm64 runner
-- The Rust crate `eggress-python` has `publish = false` (intentional — it is not published to crates.io)
-- Windows arm64 wheels are not currently built
+## Supply chain checks
 
-## Supply Chain Checks
-
-Before any release, run:
+Before upload, verify wheel contents:
 
 ```bash
-cargo deny check
-cargo audit
-python -m zipfile -l dist/*.whl
+python -m zipfile -l dist/eggress-*.whl
 ```
 
-See `docs/DEPENDENCY_POLICY.md` for the full dependency policy.
+Confirm that `eggress/_eggress.*.so` (or `.dylib`/`.pyd`), `eggress/__init__.py`,
+`eggress/py.typed`, `METADATA`, and `RECORD` are present. Confirm that no
+`.env`, keys, certs, or test-only configs are included.

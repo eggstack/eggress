@@ -13,15 +13,16 @@ use serde::{Deserialize, Serialize};
 use super::observations::ProxyObservation;
 use super::scenario::ScenarioCategory;
 
-/// CI tier for scenario filtering.
+/// Test profile for scenario filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CiTier {
-    FastStructural,
-    CoreDifferential,
-    ExtendedDifferential,
-    PlatformDifferential,
-    PrivilegedExternal,
+    /// No external process required; runs without pproxy.
+    Structural,
+    /// Requires pproxy oracle and external interoperability.
+    Differential,
+    /// Platform-specific or privileged checks; explicitly selected.
+    Platform,
 }
 
 /// Top-level oracle report.
@@ -588,11 +589,11 @@ mod tests {
         let mut report = OracleReport::new();
         report.add_scenario(
             ScenarioResult::new("fast", ScenarioCategory::CliDefaults, "fast")
-                .with_ci_tier(CiTier::FastStructural),
+                .with_ci_tier(CiTier::Structural),
         );
         report.add_scenario(
             ScenarioResult::new("core", ScenarioCategory::HttpSocksTcp, "core")
-                .with_ci_tier(CiTier::CoreDifferential),
+                .with_ci_tier(CiTier::Differential),
         );
         report.add_scenario(ScenarioResult::new(
             "no_tier",
@@ -600,16 +601,16 @@ mod tests {
             "no tier",
         ));
 
-        let fast = report.scenarios_for_tier(CiTier::FastStructural);
-        assert_eq!(fast.len(), 1);
-        assert_eq!(fast[0].id, "fast");
+        let structural = report.scenarios_for_tier(CiTier::Structural);
+        assert_eq!(structural.len(), 1);
+        assert_eq!(structural[0].id, "fast");
 
-        let core = report.scenarios_for_tier(CiTier::CoreDifferential);
-        assert_eq!(core.len(), 1);
-        assert_eq!(core[0].id, "core");
+        let differential = report.scenarios_for_tier(CiTier::Differential);
+        assert_eq!(differential.len(), 1);
+        assert_eq!(differential[0].id, "core");
 
-        let extended = report.scenarios_for_tier(CiTier::ExtendedDifferential);
-        assert!(extended.is_empty());
+        let platform = report.scenarios_for_tier(CiTier::Platform);
+        assert!(platform.is_empty());
     }
 
     #[test]
@@ -619,13 +620,13 @@ mod tests {
             .with_elapsed(Duration::from_secs(1))
             .with_comparisons(vec![make_comparison("dim", "a", "a")])
             .with_divergences(vec!["div1".to_string()])
-            .with_ci_tier(CiTier::CoreDifferential)
+            .with_ci_tier(CiTier::Differential)
             .with_capability_ids(vec!["cap1".to_string()]);
 
         assert_eq!(result.status, ScenarioStatus::Pass);
         assert_eq!(result.elapsed_ms, 1000);
         assert_eq!(result.divergence_ids, vec!["div1"]);
-        assert_eq!(result.ci_tier, Some(CiTier::CoreDifferential));
+        assert_eq!(result.ci_tier, Some(CiTier::Differential));
         assert_eq!(result.capability_ids, vec!["cap1"]);
     }
 
@@ -639,9 +640,9 @@ mod tests {
 
     #[test]
     fn ci_tier_serde() {
-        let tier = CiTier::FastStructural;
+        let tier = CiTier::Structural;
         let json = serde_json::to_string(&tier).unwrap();
-        assert_eq!(json, "\"fast_structural\"");
+        assert_eq!(json, "\"structural\"");
         let parsed: CiTier = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, tier);
     }
@@ -694,7 +695,7 @@ mod tests {
                 .with_status(ScenarioStatus::Pass)
                 .with_timing_tolerance(50)
                 .with_divergences(vec!["d1".to_string()])
-                .with_ci_tier(CiTier::ExtendedDifferential)
+                .with_ci_tier(CiTier::Differential)
                 .with_capability_ids(vec!["cap.x".to_string()]),
         );
 
@@ -703,7 +704,7 @@ mod tests {
         let s = &parsed.scenarios[0];
         assert_eq!(s.timing_tolerance_ms, Some(50));
         assert_eq!(s.divergence_ids, vec!["d1"]);
-        assert_eq!(s.ci_tier, Some(CiTier::ExtendedDifferential));
+        assert_eq!(s.ci_tier, Some(CiTier::Differential));
         assert_eq!(s.capability_ids, vec!["cap.x"]);
     }
 }

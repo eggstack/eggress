@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# pproxy behavioral certification script.
+#
+# Runs pproxy-specific behavioral gates: format, lint, workspace tests,
+# dependency checks, strict manifest validation, wheel builds, differential
+# tests, interoperability tests, and process lifecycle probes.
+#
+# This script does NOT run: release-document consistency checks, evidence
+# hash binding, SBOM generation, container builds, or general release
+# gatekeeping. Those are release concerns, not compatibility concerns.
+#
+# Run from the workspace root:
+#   ./scripts/run_pproxy_certification.sh
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
@@ -112,18 +125,15 @@ run_gate "07_strict_manifest_tests" cargo test -p eggress-testkit strict_manifes
 # ── Gate 8: strict report freshness ──────────────────────────────
 run_gate "08_strict_report_freshness" cargo run -p eggress-testkit --bin strict-report -- --check
 
-# ── Gate 9: release-doc consistency ──────────────────────────────
-run_gate "09_release_doc_consistency" python3 scripts/check_release_docs.py
+# ── Gate 9: canonical wheel build ───────────────────────────────
+run_gate "09_canonical_wheel_build" bash -c 'cd crates/eggress-python && maturin build --release --out ../../dist'
 
-# ── Gate 10: canonical wheel build ───────────────────────────────
-run_gate "10_canonical_wheel_build" bash -c 'cd crates/eggress-python && maturin build --release --out ../../dist'
+# ── Gate 10: compat wheel build ──────────────────────────────────
+run_gate "10_compat_wheel_build" bash -c 'python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat'
 
-# ── Gate 11: compat wheel build ──────────────────────────────────
-run_gate "11_compat_wheel_build" bash -c 'python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat'
-
-# ── Gate 12: candidate Python test suite ─────────────────────────
+# ── Gate 11: candidate Python test suite ─────────────────────────
 VENV_DIR="$AUDIT_DIR/venv-pytest"
-run_gate "12_python_test_suite" bash -c "
+run_gate "11_python_test_suite" bash -c "
     python3 -m venv '$VENV_DIR' && \
     '$VENV_DIR/bin/pip' install --upgrade pip >/dev/null 2>&1 && \
     EGGRESS_WHEEL=\$(ls dist/eggress-*.whl 2>/dev/null | head -1) && \
@@ -139,18 +149,18 @@ run_gate "12_python_test_suite" bash -c "
         --tb=short
 "
 
-# ── Gate 13: pproxy differential tests (mandatory) ────────────────
+# ── Gate 12: pproxy differential tests (mandatory) ────────────────
 # Requires pproxy==2.7.9 installed in the test venv.
-run_gate "13_pproxy_differential" bash -c "
+run_gate "12_pproxy_differential" bash -c "
     '$VENV_DIR/bin/pip' install pproxy==2.7.9 >/dev/null 2>&1 && \
     EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 '$VENV_DIR/bin/python' -m pytest python/tests/test_pproxy_differential.py -v --tb=short --import-mode=importlib 2>&1
 "
 
-# ── Gate 14: paired API runner (mandatory) ─────────────────────────
-run_gate "14_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh --closure-required'
+# ── Gate 13: paired API runner (mandatory) ─────────────────────────
+run_gate "13_paired_api_runner" bash -c './scripts/run_strict_pproxy_api.sh --closure-required'
 
-# ── Gate 15: strict Python differential tests (mandatory) ──────────
-# Requires observation directories from the paired API job (gate 14).
+# ── Gate 14: strict Python differential tests (mandatory) ──────────
+# Requires observation directories from the paired API job (gate 13).
 # Missing directories are a hard failure, not a skip.
 OBS_DIR="$AUDIT_DIR/paired_observations"
 # Link gate 14's output directory if it exists and OBS_DIR doesn't
@@ -160,7 +170,7 @@ fi
 if [ ! -e "$OBS_DIR" ]; then
     mkdir -p "$OBS_DIR"
 fi
-run_gate "15_strict_python_differential" bash -c "
+run_gate "14_strict_python_differential" bash -c "
     # Check if observations from the paired API job were pre-staged
     OBS_COUNT=\$(ls '$OBS_DIR'/*_oracle.json 2>/dev/null | wc -l)
     if [ \"\$OBS_COUNT\" -gt 0 ]; then
@@ -170,57 +180,35 @@ run_gate "15_strict_python_differential" bash -c "
             --tb=short
     else
         echo 'ERROR: No paired observations available; strict differential tests require observation directories.' >&2
-        echo 'Run gate 14 (paired_api_runner) first to generate them.' >&2
+        echo 'Run gate 13 (paired_api_runner) first to generate them.' >&2
         echo 'Expected location: target/strict/paired_observations/' >&2
         exit 1
     fi
 "
 
-# ── Gate 16: required runtime examples/scenarios ─────────────────
-run_gate "16_runtime_examples" cargo test -p eggress-testkit pproxy_oracle -- --ignored
+# ── Gate 15: required runtime examples/scenarios ─────────────────
+run_gate "15_runtime_examples" cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
-# ── Gate 17: external TCP interoperability (mandatory) ─────────────
-run_gate "17_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh'
+# ── Gate 16: external TCP interoperability (mandatory) ─────────────
+run_gate "16_external_tcp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh'
 
-# ── Gate 18: external UDP interoperability (mandatory) ─────────────
-run_gate "18_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
+# ── Gate 17: external UDP interoperability (mandatory) ─────────────
+run_gate "17_external_udp_interop" bash -c 'EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh'
 
-# ── Gate 19: cipher KAT and interop probes ──────────────────────
-run_gate "19_cipher_kat" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1"
+# ── Gate 18: cipher KAT and interop probes ──────────────────────
+run_gate "18_cipher_kat" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors -v --tb=short --import-mode=importlib 2>&1"
 
-# ── Gate 20: plugin transformed-traffic probe ────────────────────
-run_gate "20_plugin_probe" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib"
+# ── Gate 19: plugin transformed-traffic probe ────────────────────
+run_gate "19_plugin_probe" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_plugin.py -q --tb=short --import-mode=importlib"
 
-# ── Gate 21: process lifecycle probe ─────────────────────────────
-run_gate "21_process_lifecycle" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib"
+# ── Gate 20: process lifecycle probe ─────────────────────────────
+run_gate "20_process_lifecycle" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_server_lifecycle.py -q --tb=short --import-mode=importlib"
 
-# ── Gate 22: runtime/failure/cleanup probe ──────────────────────
-run_gate "22_runtime_failure_cleanup" cargo test -p eggress-runtime --test lifecycle_invariants
+# ── Gate 21: runtime/failure/cleanup probe ──────────────────────
+run_gate "21_runtime_failure_cleanup" cargo test -p eggress-runtime --test lifecycle_invariants
 
-# ── Gate 23: resource-leak and process-cleanup checks ────────────
-run_gate "23_resource_leak_check" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib"
-
-# ── Gate 24: report and evidence hash binding ────────────────────
-EVIDENCE_DIR="$AUDIT_DIR/evidence"
-mkdir -p "$EVIDENCE_DIR"
-run_gate "24_evidence_hash_binding" bash -c "
-    COMMIT_SHA=\$(git rev-parse HEAD) && \
-    echo \"\$COMMIT_SHA\" > '$EVIDENCE_DIR/candidate_commit.sha' && \
-    echo '--- Manifest SHA-256 ---' && \
-    sha256sum docs/parity/pproxy_capability_manifest.toml > '$EVIDENCE_DIR/manifest_sha256.txt' && \
-    sha256sum docs/parity/pproxy_2_7_9_strict_manifest.toml >> '$EVIDENCE_DIR/manifest_sha256.txt' && \
-    echo '--- Oracle package info ---' && \
-    python3 -c 'import importlib.metadata; print(importlib.metadata.version(\"pproxy\"))' > '$EVIDENCE_DIR/oracle_version.txt' 2>/dev/null || echo 'pproxy not installed globally' > '$EVIDENCE_DIR/oracle_version.txt' && \
-    sha256sum compat/pproxy-2.7.9/requirements-oracle.txt > '$EVIDENCE_DIR/oracle_hash.txt' 2>/dev/null || echo 'N/A' > '$EVIDENCE_DIR/oracle_hash.txt' && \
-    echo '--- Environment lock ---' && \
-    python3 --version > '$EVIDENCE_DIR/python_version.txt' && \
-    rustc --version > '$EVIDENCE_DIR/rust_version.txt' && \
-    cargo --version >> '$EVIDENCE_DIR/rust_version.txt' && \
-    echo '--- Evidence bound ---' && \
-    echo \"Commit: \$COMMIT_SHA\" && \
-    cat '$EVIDENCE_DIR/manifest_sha256.txt' && \
-    echo 'Evidence hash binding complete.'
-"
+# ── Gate 22: resource-leak and process-cleanup checks ────────────
+run_gate "22_resource_leak_check" bash -c "'$VENV_DIR/bin/python' -m pytest python/tests/test_connection_behavioral.py -q --tb=short --import-mode=importlib"
 
 # ── Generate summary report ──────────────────────────────────────
 END_TOTAL=$(date +%s)
@@ -261,12 +249,7 @@ cat >> "$REPORT" <<REPORT_EOF
 - Audit dir: \`$AUDIT_DIR\`
 - Gate logs: \`$AUDIT_DIR/gate_*.log\`
 - Python JUnit XML: \`$AUDIT_DIR/junit-python.xml\`
-- Evidence dir: \`$EVIDENCE_DIR\`
 - Report: \`$REPORT\`
-
-## Evidence Files
-
-$(ls -la "$EVIDENCE_DIR"/ 2>/dev/null || echo "No evidence directory")
 
 REPORT_EOF
 

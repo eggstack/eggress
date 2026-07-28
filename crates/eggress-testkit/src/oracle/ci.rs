@@ -1,29 +1,26 @@
 use super::report::CiTier;
 use super::scenario::{OracleScenario, ScenarioCategory};
 
-pub const TIER_FAST_GATE: &str = "EGRESS_ORACLE";
-pub const TIER_CORE_GATE: &str = "EGRESS_ORACLE";
-pub const TIER_EXTENDED_GATE: &str = "EGRESS_ORACLE_EXTENDED";
-pub const TIER_PLATFORM_GATE: &str = "EGRESS_ORACLE_PLATFORM";
-pub const TIER_PRIVILEGED_GATE: &str = "EGRESS_ORACLE_PRIVILEGED";
+pub const STRUCTURAL_GATE: &str = "EGRESS_ORACLE";
+pub const DIFFERENTIAL_GATE: &str = "EGRESS_ORACLE_EXTENDED";
+pub const PLATFORM_GATE: &str = "EGRESS_ORACLE_PLATFORM";
 
 pub fn tier_gate_enabled(tier: CiTier) -> bool {
     let var = match tier {
-        CiTier::FastStructural | CiTier::CoreDifferential => TIER_FAST_GATE,
-        CiTier::ExtendedDifferential => TIER_EXTENDED_GATE,
-        CiTier::PlatformDifferential => TIER_PLATFORM_GATE,
-        CiTier::PrivilegedExternal => TIER_PRIVILEGED_GATE,
+        CiTier::Structural => STRUCTURAL_GATE,
+        CiTier::Differential => DIFFERENTIAL_GATE,
+        CiTier::Platform => PLATFORM_GATE,
     };
     std::env::var(var).map(|v| v == "1").unwrap_or(false)
 }
 
 pub fn default_tier(scenario: &OracleScenario) -> CiTier {
     match scenario.category {
-        ScenarioCategory::CliDefaults => CiTier::FastStructural,
-        ScenarioCategory::HttpSocksTcp => CiTier::CoreDifferential,
-        ScenarioCategory::Chains => CiTier::CoreDifferential,
-        ScenarioCategory::Rules => CiTier::CoreDifferential,
-        ScenarioCategory::Udp => CiTier::ExtendedDifferential,
+        ScenarioCategory::CliDefaults => CiTier::Structural,
+        ScenarioCategory::HttpSocksTcp => CiTier::Differential,
+        ScenarioCategory::Chains => CiTier::Differential,
+        ScenarioCategory::Rules => CiTier::Differential,
+        ScenarioCategory::Udp => CiTier::Differential,
     }
 }
 
@@ -34,11 +31,11 @@ pub fn assign_tiers(scenarios: &[OracleScenario]) -> Vec<(CiTier, &OracleScenari
             let mut tier = default_tier(s);
 
             if s.platform.requires_root || s.platform.required_os.is_some() {
-                tier = CiTier::PlatformDifferential;
+                tier = CiTier::Platform;
             }
 
-            if tier == CiTier::FastStructural && s.id.starts_with("ext.") {
-                tier = CiTier::ExtendedDifferential;
+            if tier == CiTier::Structural && s.id.starts_with("ext.") {
+                tier = CiTier::Differential;
             }
 
             (tier, s)
@@ -51,8 +48,7 @@ pub fn scenarios_for_tier(scenarios: &[OracleScenario], tier: CiTier) -> Vec<&Or
         .iter()
         .filter(|s| {
             let assigned = default_tier(s);
-            assigned == tier
-                || (tier == CiTier::CoreDifferential && assigned == CiTier::FastStructural)
+            assigned == tier || (tier == CiTier::Differential && assigned == CiTier::Structural)
         })
         .collect()
 }
@@ -68,33 +64,21 @@ pub struct CiTierConfig {
 pub fn all_tier_configs() -> Vec<CiTierConfig> {
     vec![
         CiTierConfig {
-            tier: CiTier::FastStructural,
-            gate_var: TIER_FAST_GATE,
-            description: "Fast structural tests: schema validation, startup, port binding",
+            tier: CiTier::Structural,
+            gate_var: STRUCTURAL_GATE,
+            description: "Structural: schema validation, startup, port binding",
             required: true,
         },
         CiTierConfig {
-            tier: CiTier::CoreDifferential,
-            gate_var: TIER_CORE_GATE,
-            description: "Core differential: HTTP, SOCKS, CLI with pinned pproxy",
+            tier: CiTier::Differential,
+            gate_var: DIFFERENTIAL_GATE,
+            description: "Differential: HTTP, SOCKS, CLI, UDP with pinned pproxy",
             required: true,
         },
         CiTierConfig {
-            tier: CiTier::ExtendedDifferential,
-            gate_var: TIER_EXTENDED_GATE,
-            description: "Extended differential: UDP, TLS, Shadowsocks, Trojan, routing",
-            required: false,
-        },
-        CiTierConfig {
-            tier: CiTier::PlatformDifferential,
-            gate_var: TIER_PLATFORM_GATE,
-            description: "Platform-specific: macOS, Windows, Linux-specific subsets",
-            required: false,
-        },
-        CiTierConfig {
-            tier: CiTier::PrivilegedExternal,
-            gate_var: TIER_PRIVILEGED_GATE,
-            description: "Privileged/external: transparent proxy, packet capture",
+            tier: CiTier::Platform,
+            gate_var: PLATFORM_GATE,
+            description: "Platform-specific: root, OS-specific subsets",
             required: false,
         },
     ]
@@ -130,8 +114,8 @@ mod tests {
             let tier = default_tier(s);
             assert_eq!(
                 tier,
-                CiTier::FastStructural,
-                "CLI scenario {} should be FastStructural",
+                CiTier::Structural,
+                "CLI scenario {} should be Structural",
                 s.id
             );
         }
@@ -145,8 +129,8 @@ mod tests {
             let tier = default_tier(s);
             assert_eq!(
                 tier,
-                CiTier::CoreDifferential,
-                "HTTP/SOCKS scenario {} should be CoreDifferential",
+                CiTier::Differential,
+                "HTTP/SOCKS scenario {} should be Differential",
                 s.id
             );
         }
@@ -159,8 +143,8 @@ mod tests {
             let tier = default_tier(s);
             assert_eq!(
                 tier,
-                CiTier::CoreDifferential,
-                "Chain scenario {} should be CoreDifferential",
+                CiTier::Differential,
+                "Chain scenario {} should be Differential",
                 s.id
             );
         }
@@ -173,8 +157,8 @@ mod tests {
             let tier = default_tier(s);
             assert_eq!(
                 tier,
-                CiTier::ExtendedDifferential,
-                "UDP scenario {} should be ExtendedDifferential",
+                CiTier::Differential,
+                "UDP scenario {} should be Differential",
                 s.id
             );
         }
@@ -182,29 +166,29 @@ mod tests {
 
     #[test]
     fn tier_gate_defaults() {
-        std::env::remove_var(TIER_FAST_GATE);
-        std::env::remove_var(TIER_EXTENDED_GATE);
-        assert!(!tier_gate_enabled(CiTier::FastStructural));
-        assert!(!tier_gate_enabled(CiTier::ExtendedDifferential));
+        std::env::remove_var(STRUCTURAL_GATE);
+        std::env::remove_var(DIFFERENTIAL_GATE);
+        assert!(!tier_gate_enabled(CiTier::Structural));
+        assert!(!tier_gate_enabled(CiTier::Differential));
     }
 
     #[test]
     fn all_tier_configs_complete() {
         let configs = all_tier_configs();
-        assert_eq!(configs.len(), 5);
+        assert_eq!(configs.len(), 3);
         let mut tiers: Vec<_> = configs.iter().map(|c| c.tier).collect();
         tiers.sort_by_key(|t| format!("{:?}", t));
         tiers.dedup();
-        assert_eq!(tiers.len(), 5);
+        assert_eq!(tiers.len(), 3);
     }
 
     #[test]
     fn scenarios_for_tier_filtering() {
         let all = super::super::scenario::all_scenarios();
-        let fast = scenarios_for_tier(&all, CiTier::FastStructural);
-        assert!(!fast.is_empty());
-        for s in &fast {
-            assert_eq!(default_tier(s), CiTier::FastStructural);
+        let structural = scenarios_for_tier(&all, CiTier::Structural);
+        assert!(!structural.is_empty());
+        for s in &structural {
+            assert_eq!(default_tier(s), CiTier::Structural);
         }
     }
 

@@ -24,9 +24,8 @@ cargo bench --workspace
 **Blocking:** No. Results are informational. Future phases may add regression
 threshold checks against stored baselines.
 
-**CI integration:** Not currently in CI (hosted CI billing issue). When CI
-resumes, consider adding `cargo bench --workspace --no-run` to verify
-benchmarks compile.
+**CI integration:** Not currently in CI. Consider adding
+`cargo bench --workspace --no-run` to verify benchmarks compile.
 
 ### Tier 1 — Performance Smoke (before release)
 

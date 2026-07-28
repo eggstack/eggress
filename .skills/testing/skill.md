@@ -170,13 +170,13 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 
 The oracle harness under `eggress-testkit/src/oracle/` provides:
 
-- **`mod.rs`** — Module root, gate checks (`EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`, `EGRESS_ORACLE_PRIVILEGED`), timeout constants
+- **`mod.rs`** — Module root, gate checks (`EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`), timeout constants
 - **`scenario.rs`** — 31 hardcoded scenarios (backward compat, no TOML files needed)
 - **`schema.rs`** — TOML scenario schema (version 1), loader, validator. Maps scenarios to A2 composition IDs
 - **`observations.rs`** — `ProxyObservation` semantic capture model: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status. `compare_observations()` produces structured comparison results
 - **`probes.rs`** — Reusable protocol client probes: `socks5_tcp_connect`, `socks5_tcp_connect_auth`, `socks5_connect_refused`, `socks5_auth_failure`, `http_connect`, `http_connect_refused`, `http_forward_get`, `http_forward_post`, `socks4_connect`, `socks4a_connect`. Each returns `ProbeResult`
 - **`supervisor.rs`** — `SupervisedProcess` with process-group ownership (Unix), bounded stdout/stderr capture, artifact retention (logs saved on drop), `ReadinessProbe` enum (TcpPort, StdoutPattern, FixedDelay, FileExists), structured `ProcessExit`
-- **`ci.rs`** — 5-tier CI organization: FastStructural, CoreDifferential, ExtendedDifferential, PlatformDifferential, PrivilegedExternal. Each tier has its own gate env var
+- **`ci.rs`** — 3-profile scenario filtering: Structural (no pproxy needed), Differential (requires pproxy), Platform (OS-specific or privileged). Gate env vars: `EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`
 - **`report.rs`** — JSON and Markdown report generation with manifest consistency checks and CI tier filtering
 
 TOML scenario files live under `crates/eggress-testkit/tests/oracle/scenarios/`. Schema validation tests run without pproxy:
@@ -324,8 +324,6 @@ python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py p
 The separate compatibility wheel must also be smoke-tested in an isolated
 environment with `import eggress` and `import pproxy`; do not report an
 upstream pproxy differential suite as passing when its dependency is absent.
-Use `python3 scripts/release_evidence.py` to retain redacted metadata,
-scenario results, wheel hashes, and `SHA256SUMS`.
 
 ## pproxy compatibility harness (Phase 18)
 
@@ -408,17 +406,6 @@ python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PP
 python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
 ```
 
-Generate the final parity release report JSON:
-```bash
-python3 scripts/phase36_report.py
-# writes target/compat/final-pproxy-parity-report.json
-```
-
-The full Phase 36 release audit is gated and requires Python 3.11 (pproxy
-2.7.9 is incompatible with Python 3.14). See
-`docs/release/PARITY_RELEASE_GO_NO_GO.md` for the gating rationale.
-- `target/compat/pproxy-parity-report.md`
-
 ## Phase C1: Python API Contract Tests
 
 The pproxy API contract is a machine-readable inventory of every public symbol
@@ -500,12 +487,10 @@ python3.11 -m venv .venv-oracle
 
 ## Closure Audit
 
-The Milestones A-C closure audit runs all standard gates in sequence:
+The pproxy behavioral certification runs all standard gates in sequence:
 
 ```bash
-./scripts/run_strict_pproxy_closure_audit.sh
+./scripts/run_pproxy_certification.sh
 ```
 
-Runs: `cargo fmt --check`, `cargo check`, `cargo clippy`, `cargo test --workspace`, and `check_release_docs.py`. Reports pass/fail per gate with timing.
-
-The closure plan and evidence checklist are at `plans/MILESTONES_A_C_FINAL_EVIDENCE_RUNTIME_CLOSURE.md`.
+Runs: `cargo fmt --check`, `cargo check`, `cargo clippy`, `cargo test --workspace`, wheel builds, differential tests, and interoperability tests. Reports pass/fail per gate with timing.

@@ -40,14 +40,13 @@ distribution provide:
 - Python API parity specification with tier classification (Phase 29) — 424-line inventory covering 114 pproxy API entries across exports, protocols, ciphers, scheduling, lifecycle, and error surfaces
 - Authoritative parity capability manifest (`docs/parity/pproxy_capability_manifest.toml`) — 148 capabilities across 5 categories with tier classification and machine-readable validation
 - Reusable differential parity harness (`eggress-testkit::differential`) — 27 scenarios against pproxy 2.7.9 — Phase 41
-- Phase 42 corrective consistency pass: `CompatibilityReport` uses the five-tier manifest vocabulary; `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies to all listeners (matches pproxy); parity report can be regenerated (`--write-report`) and consistency-checked (`--check-report`) from the manifest
+- Phase 42 corrective consistency pass: `CompatibilityReport` uses the manifest vocabulary; `PPProxyService.from_args` preserves the full pproxy argument vector through `translate_pproxy_args`; `--ssl` applies to all listeners (matches pproxy); parity report can be regenerated (`--write-report`) and consistency-checked (`--check-report`) from the manifest
 
 ### Release-candidate verification evidence
 
 The Track B/C verification pass produced:
 
 - `docs/release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md` — the certification record for the modern pproxy subset claim
-- `scripts/release_evidence.py` — hardened evidence generator with `--require-clean`, `--expected-commit`, `--verify-tracked-inputs`, and distinct exit codes for guard violations
 - `python/tests/test_outbound_stream_verification.py` — 40 lifecycle/resource tests for native `OutboundConnector`/`OutboundStream`/`AsyncOutboundStream`/`ProxyConnection`
 - `python/tests/test_protocol_cipher.py::TestAEADKnownAnswerVectors` — RFC 8439 / NIST SP 800-38D known-answer vectors for the 3 supported AEAD ciphers
 - 12 in-tree fuzz-smoke tests across 5 crates (`http`, `trojan`, `websocket`, `shadowsocks`, `config`)
@@ -76,30 +75,16 @@ The strict contract reserves `drop_in` for capabilities validated by paired orac
 
 ## Installation
 
-### Pre-built binaries
-
-Download the latest release from [GitHub Releases](https://github.com/{owner}/eggress/releases):
+### From crates.io (when published)
 
 ```bash
-# Linux x86_64
-curl -L https://github.com/{owner}/eggress/releases/download/v0.1.0/eggress-0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
-sudo mv eggress /usr/local/bin/
-
-# macOS arm64 (Apple Silicon)
-curl -L https://github.com/{owner}/eggress/releases/download/v0.1.0/eggress-0.1.0-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv eggress /usr/local/bin/
-
-# Windows: download .zip from GitHub Releases
+cargo install eggress-cli
 ```
 
-See [BINARY_INSTALL.md](docs/release/BINARY_INSTALL.md) for all platforms and checksum verification.
-
-The release archive includes a `pproxy` compatibility binary alongside `eggress`. Users can run `pproxy` directly for the certified modern pproxy compatibility subset:
+### Build from source
 
 ```bash
-pproxy -l http://:8080 -r socks5://127.0.0.1:1080
-pproxy --help
-pproxy --version
+cargo install --path crates/eggress-cli
 ```
 
 ### Python package
@@ -113,20 +98,6 @@ pip install eggress-pproxy-compat
 ```
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
-
-### Container image
-
-```bash
-docker pull ghcr.io/{owner}/eggress:v0.1.0
-```
-
-See [CONTAINER.md](docs/release/CONTAINER.md) for configuration and usage.
-
-### Build from source
-
-```bash
-cargo install --path crates/eggress-cli
-```
 
 ## Usage
 
@@ -481,20 +452,13 @@ differential testing possible, user demand, CONNECT-UDP/MASQUE standardization.
 - [x] macOS binaries (x86_64, arm64)
 - [x] Windows binaries (x86_64)
 - [ ] Static or minimally dynamic builds where practical
-- [x] Container image (distroless, multi-arch)
 - [ ] Reproducible builds
-- [x] Signed release artifacts (cosign)
-- [x] SBOM (cargo-auditable + cyclonedx)
-- [ ] Crates.io packages
+- [ ] Crates.io packages (blocked: CLI depends on internal crates; see `docs/release/RELEASE_PROCESS.md`)
 - [x] Migration guide from Python `pproxy`
 - [x] Python package on PyPI (wheels for Linux/macOS/Windows)
-- [x] PyPI release workflow (GitHub Actions)
-- [x] PyPI release documentation
+- [x] Python release documentation
 - [x] Python import strategy and packaging docs (Phase 32)
 - [x] Python wheel smoke tests (Phase 32)
-- [x] Release workflow with artifact upload (Phase 49)
-- [x] SHA-256 checksums for all artifacts (Phase 49)
-- [x] Binary install documentation (Phase 49)
 
 ### pproxy compatibility
 
@@ -595,11 +559,10 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Full roadmap](docs/ROADMAP.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [URI grammar](docs/URI_GRAMMAR.md)
-- [Phase 2 completion](docs/PHASE_2_COMPLETION.md)
-- [Phase 3 completion](docs/PHASE_3_COMPLETION.md)
-- [Phase 4 UDP upstream relay](docs/PHASE_4_UDP_UPSTREAM_RELAY_COMPLETION.md)
-- [Phase 5 upstream protocol parity](docs/PHASE_5_UPSTREAM_PROTOCOL_PARITY_COMPLETION.md)
 - [Testing](docs/TESTING.md)
+- [CI status](docs/CI_STATUS.md)
+- [Release process](docs/release/RELEASE_PROCESS.md)
+- [PyPI release procedure](docs/PYPI_RELEASE.md)
 - [Security review](docs/SECURITY_REVIEW.md)
 - [Security disclosure](SECURITY.md)
 - [Secure configuration guide](docs/security/SECURE_CONFIGURATION.md)
@@ -610,43 +573,16 @@ Dependency hygiene is enforced via `deny.toml` at the workspace root. CI runs `c
 - [Config reference](docs/CONFIG_REFERENCE.md)
 - [Metrics](docs/METRICS.md)
 - [Operations](docs/OPERATIONS.md)
-- [Release readiness](docs/RELEASE_READINESS.md)
-- [CI status](docs/CI_STATUS.md)
-- [Protocol: HTTP CONNECT](docs/protocols/HTTP_CONNECT.md)
-- [Protocol: SOCKS4](docs/protocols/SOCKS4.md)
-- [Protocol: Shadowsocks](docs/protocols/SHADOWSOCKS.md)
-- [Protocol: Trojan](docs/protocols/TROJAN.md)
-- [Compatibility evidence](docs/COMPATIBILITY_EVIDENCE.md)
 - [pproxy parity spec](docs/PPROXY_PARITY_SPEC.md)
 - [pproxy migration](docs/PPROXY_MIGRATION.md)
-- [Phase 7 pproxy parity spec](docs/PHASE_7_PPROXY_PARITY_SPEC_COMPLETION.md)
 - [Failure semantics](docs/FAILURE_SEMANTICS.md)
-- [Phase 36 final parity release audit](docs/release/) — frozen targets, final parity report, platform support matrix, migration guide, release notes, go/no-go checklist.
-- [Phase 12 scheduler/chain/failure parity](docs/PHASE_12_SCHEDULER_CHAIN_FAILURE_PARITY_COMPLETION.md)
 - [Python bindings](docs/PYTHON_BINDINGS.md)
-- [Phase 16 Python pproxy library parity](docs/PHASE_16_PYTHON_PPROXY_LIBRARY_PARITY_COMPLETION.md)
-- [Phase 17 true pproxy parity release candidate](docs/PHASE_17_TRUE_PPROXY_PARITY_RELEASE_CANDIDATE_COMPLETION.md)
-- [Phase 17 RC polish](docs/PHASE_17_RC_POLISH_COMPLETION.md)
-- [True pproxy parity release candidate](docs/TRUE_PPROXY_PARITY_RELEASE_CANDIDATE.md) (historical, superseded by Phase 36 audit)
-- [Phase 18 pproxy oracle and evidence harness](plans/PHASE_18_PPROXY_ORACLE_AND_EVIDENCE_HARNESS.md)
-- [Phase 19 HTTP/SOCKS baseline closure](docs/PHASE_19_HTTP_SOCKS_BASELINE_CLOSURE_COMPLETION.md)
-- [Phase 25-28 hardening pass](docs/PHASE_25_28_HARDENING_COMPLETION.md)
-- [Performance testing](docs/performance/README.md)
-- [Benchmark inventory](docs/performance/BENCHMARK_INVENTORY.md)
-- [Regression gate policy](docs/performance/REGRESSION_GATE_POLICY.md)
-- [PyPI release procedure](docs/PYPI_RELEASE.md)
 - [Wheel artifact audit](docs/WHEEL_AUDIT.md)
 - [Import strategy](docs/python/IMPORT_STRATEGY.md)
 - [Installation guide](docs/python/INSTALLATION.md)
 - [Migration from pproxy](docs/python/MIGRATION_FROM_PPROXY.md)
 - [Python packaging](docs/python/PACKAGING.md)
-- [Release checklist](docs/python/RELEASE_CHECKLIST.md)
 - [Python import/distribution ADR](docs/adr/ADR_python_import_and_distribution_strategy.md)
-- [Release process](docs/release/RELEASE_PROCESS.md)
-- [Release artifact matrix](docs/release/ARTIFACT_MATRIX.md)
-- [Binary install guide](docs/release/BINARY_INSTALL.md)
-- [CLI binary matrix](docs/release/BINARY_MATRIX.md)
-- [Container image](docs/release/CONTAINER.md)
 
 ## Status discipline
 

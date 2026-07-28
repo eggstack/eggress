@@ -83,7 +83,7 @@ Run these when changing pproxy behavior, URI translation, compatibility manifest
 The strict certification audit is reserved for explicit closure or release evaluation:
 
 ```bash
-./scripts/run_strict_pproxy_closure_audit.sh
+./scripts/run_pproxy_certification.sh
 ```
 
 Its generated reports are evidence for compatibility claims. They are not routine merge artifacts.

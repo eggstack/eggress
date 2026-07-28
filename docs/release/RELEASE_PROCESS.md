@@ -8,6 +8,8 @@ No release cadence is encoded in the repository. A maintainer releases when the 
 
 The primary release channel is crates.io using local `cargo publish` commands. Git tags and GitHub Releases are optional bookkeeping performed manually after crates.io publication; they are not release prerequisites or automation triggers.
 
+**Current publication status:** Crates.io publication is blocked. The CLI (`eggress-cli`) is the only intended public product, but it depends on ~20 internal crates by workspace path. All internal crates are marked `publish = false`. Publishing the CLI requires either publishing the internal dependency closure or restructuring crate boundaries. This is a deliberate architectural decision, not an oversight. Publication will resume when a crate-boundary consolidation plan is completed.
+
 Python/PyPI distribution is a separate manual operation and must not be coupled to the Rust release workflow.
 
 ## Prerequisites
@@ -51,10 +53,12 @@ For every crate intended for publication, verify:
 Use a dry run for each public crate:
 
 ```bash
-cargo publish --dry-run -p <crate-name>
+cargo publish --dry-run -p eggress-cli
 ```
 
 A dry-run failure is a packaging defect. Fix it before publishing rather than adding CI automation around it.
+
+> **Note:** `cargo publish --dry-run` currently fails because `eggress-cli` depends on internal crates marked `publish = false`. This is expected until crate boundaries are restructured.
 
 ## 3. Publish dependency-first
 
@@ -63,7 +67,7 @@ Publish crates in dependency order. Leaf libraries must be available in the crat
 For each crate:
 
 ```bash
-cargo publish -p <crate-name>
+cargo publish -p eggress-cli
 ```
 
 Wait for crates.io index propagation before publishing the next dependent crate. Re-run that dependent crate's dry run if resolution is uncertain.

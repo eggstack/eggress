@@ -41,13 +41,6 @@ python3 -m venv /tmp/eggress-pproxy-compat-test
 /tmp/eggress-pproxy-compat-test/bin/python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
 ```
 
-Generate redacted evidence after the candidate commit is fixed:
-
-```bash
-python3 scripts/release_evidence.py --output target/release-evidence \
-  --reference pproxy=2.7.9 --reference python=3.11
-```
-
 ## 4. Source distribution smoke test
 
 ```bash
