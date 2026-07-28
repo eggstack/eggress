@@ -1,0 +1,79 @@
+# CE8: Strict Differential Evidence Index
+#
+# Maps each strict test file to its required observation RIDs
+# and the probe script that produces each observation.
+#
+# This file is consumed by build_strict_evidence_index.py.
+
+[[producer]]
+rid = "python.pproxy.proto"
+test_files = [
+    "python/tests/strict/test_protocol_differential.py",
+    "python/tests/strict/test_top_level_api_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.proto"
+
+[[producer]]
+rid = "python.pproxy.server"
+test_files = [
+    "python/tests/strict/test_server_helpers_differential.py",
+    "python/tests/strict/test_proxy_object_differential.py",
+    "python/tests/strict/test_top_level_api_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.server"
+
+[[producer]]
+rid = "python.pproxy.server.compile_rule"
+test_files = [
+    "python/tests/strict/test_server_helpers_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.server"
+symbol = "compile_rule"
+
+[[producer]]
+rid = "python.pproxy.server.DIRECT"
+test_files = [
+    "python/tests/strict/test_server_helpers_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.server"
+symbol = "DIRECT"
+
+[[producer]]
+rid = "python.pproxy.server.ProxyBackward"
+test_files = [
+    "python/tests/strict/test_proxy_object_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.server"
+symbol = "ProxyBackward"
+
+[[producer]]
+rid = "python.pproxy.server.ProxyDirect"
+test_files = [
+    "python/tests/strict/test_proxy_object_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.server"
+symbol = "ProxyDirect"
+
+[[producer]]
+rid = "python.pproxy.cipher"
+test_files = [
+    "python/tests/strict/test_cipher_differential.py",
+    "python/tests/strict/test_top_level_api_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.cipher"
+
+[[producer]]
+rid = "python.pproxy.server.ProxySimple"
+test_files = [
+    "python/tests/strict/test_proxy_object_differential.py",
+]
+probe = "strict_api_probe.py"
+module = "pproxy.server"
+symbol = "ProxySimple"
