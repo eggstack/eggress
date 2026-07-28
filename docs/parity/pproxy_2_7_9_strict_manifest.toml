@@ -81,6 +81,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "namespace_marker"
 closure_required = true
 
 [[record]]
@@ -105,6 +106,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "namespace_marker"
 closure_required = true
 
 [[record]]
@@ -129,6 +131,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "namespace_marker"
 closure_required = true
 
 [[record]]
@@ -155,6 +158,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -179,6 +183,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -203,6 +208,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -227,6 +233,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "metadata_constant"
 closure_required = true
 
 [[record]]
@@ -251,6 +258,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "reexport_only"
 closure_required = true
 
 [[record]]
@@ -277,6 +285,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "reexport_only"
 closure_required = true
 
 [[record]]
@@ -301,6 +310,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -325,6 +335,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -349,6 +360,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -373,6 +385,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -397,6 +410,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -421,6 +435,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -445,6 +460,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -469,6 +485,7 @@ evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "platform_gated"
 closure_required = true
 
 [[record]]
@@ -493,6 +510,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "intentional_non_parity"
 closure_required = true
 
 [[record]]
@@ -517,6 +535,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "intentional_non_parity"
 closure_required = true
 
 [[record]]
@@ -541,6 +560,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -565,6 +585,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -589,6 +610,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -613,6 +635,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -637,6 +660,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -661,6 +685,7 @@ evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "platform_gated"
 closure_required = true
 
 [[record]]
@@ -685,6 +710,7 @@ evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "platform_gated"
 closure_required = true
 
 [[record]]
@@ -711,6 +737,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -735,6 +762,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -759,6 +787,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -783,6 +812,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -807,6 +837,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -831,6 +862,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -855,6 +887,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -879,6 +912,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -903,6 +937,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -927,6 +962,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -951,6 +987,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -977,6 +1014,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1001,6 +1039,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1025,6 +1064,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1049,6 +1089,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1073,6 +1114,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1097,6 +1139,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1121,6 +1164,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1147,6 +1191,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1171,6 +1216,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1195,6 +1241,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "internal_implementation"
 closure_required = true
 
 [[record]]
@@ -1267,6 +1314,7 @@ evidence_level = "paired_oracle"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1291,6 +1339,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1315,6 +1364,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1339,6 +1389,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1363,6 +1414,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1387,6 +1439,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1411,6 +1464,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1435,6 +1489,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1459,6 +1514,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1483,6 +1539,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1507,6 +1564,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1531,6 +1589,7 @@ evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "cipher_registry_or_functional"
 closure_required = true
 
 [[record]]
@@ -1555,6 +1614,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1579,6 +1639,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1603,6 +1664,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1627,6 +1689,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1651,6 +1714,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1675,6 +1739,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1699,6 +1764,7 @@ evidence_level = "none"
 implementation_state = "absent"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "intentional_non_parity"
 closure_required = true
 
 [[record]]
@@ -1723,6 +1789,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1747,6 +1814,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1771,6 +1839,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1795,6 +1864,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1819,6 +1889,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1843,6 +1914,7 @@ evidence_level = "structural_only"
 implementation_state = "functional"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1867,6 +1939,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1891,6 +1964,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1915,6 +1989,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1939,6 +2014,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
@@ -1967,6 +2043,7 @@ evidence_level = "structural_only"
 implementation_state = "structural"
 certification_scope = "structural"
 inventory_only = true
+reason_code = "covered_by_parent_behavior"
 closure_required = true
 
 [[record]]
