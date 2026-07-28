@@ -2,7 +2,25 @@
 
 ## Status
 
-PARTIAL — CE0-CE3, CE7, CE10-CE11 complete. CE4-CE6, CE8-CE9, CE12-CE13 remaining.
+LOCAL GATES PASS — HOSTED EVIDENCE PENDING
+
+Completed workstreams:
+- CE0: Freeze Truthful Status and Defect Inventory
+- CE1: Freeze Oracle Chain Topology and Execution Order
+- CE2: Correct Candidate Chain Execution
+- CE3: Strengthen Deterministic Route-Through Fixtures
+- CE4: Correct socks_address Exactly
+- CE5: Close Real Server Listener Behavior
+- CE6: Finish Common Protocol Semantics
+- CE7: Rewrite the Paired Comparator to Fail Closed
+- CE8: Complete Observation Production and Delegated Evidence
+- CE9: Audit inventory_only and Behavior Links
+- CE10: Rebuild the Authoritative Closure Audit
+- CE11: Correct Hosted Workflow Closure
+- CE12: Regression Injection Proof (6/7 gates detected)
+
+Remaining:
+- CE13: Final Evidence and Status Promotion (local gates pass; hosted evidence pending)
 
 ## Baseline
 
