@@ -110,6 +110,8 @@ jobs:
           cargo install cargo-audit
       - name: Install maturin system-wide
         run: pip3 install "maturin>=1.0,<2.0"
+      - name: Install pproxy for interop tests
+        run: pip3 install "pproxy==2.7.9"
       - name: Set up isolated oracle venv
         run: |
           python3 -m venv .venv-oracle-api
