@@ -2,7 +2,7 @@
 
 ## Status
 
-COMPLETE
+LOCAL GATES PASS — HOSTED EVIDENCE PENDING
 
 Completed workstreams:
 - CE0: Freeze Truthful Status and Defect Inventory
@@ -18,7 +18,7 @@ Completed workstreams:
 - CE10: Rebuild the Authoritative Closure Audit
 - CE11: Correct Hosted Workflow Closure
 - CE12: Regression Injection Proof (6/7 gates detected)
-- CE13: Final Evidence and Status Promotion (all CI workflows passing, all closure gates pass)
+- CE13: Final Evidence and Status Promotion (local gates pass; hosted evidence pending)
 
 ## Baseline
 

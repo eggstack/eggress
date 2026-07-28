@@ -249,6 +249,108 @@ class TestAddressRoundTrip:
         assert host == "x"
         assert port == 1
 
+    def test_ipv4_truncated_after_atyp(self):
+        from pproxy.proto import socks_address
+        import io
+        reader = io.BytesIO(b"")
+        with pytest.raises(Exception):
+            socks_address(reader, 1)
+
+    def test_ipv4_truncated_after_partial_addr(self):
+        from pproxy.proto import socks_address
+        import io
+        reader = io.BytesIO(b"\x7f\x00")
+        with pytest.raises(Exception):
+            socks_address(reader, 1)
+
+    def test_ipv4_truncated_at_port(self):
+        from pproxy.proto import socks_address
+        import io
+        # Oracle reads available bytes and returns host with port=0
+        reader = io.BytesIO(b"\x7f\x00\x00\x01\x00")
+        host, port = socks_address(reader, 1)
+        assert host == "127.0.0.1"
+        assert port == 0
+
+    def test_domain_truncated_at_length(self):
+        from pproxy.proto import socks_address
+        import io
+        reader = io.BytesIO(b"")
+        with pytest.raises(Exception):
+            socks_address(reader, 3)
+
+    def test_domain_truncated_at_content(self):
+        from pproxy.proto import socks_address
+        import io
+        # Oracle reads available bytes for domain content
+        reader = io.BytesIO(b"\x05ab")
+        host, port = socks_address(reader, 3)
+        assert host == "ab"
+        assert port == 0
+
+    def test_domain_truncated_at_port(self):
+        from pproxy.proto import socks_address
+        import io
+        # Oracle reads available bytes for domain, port defaults to 0
+        reader = io.BytesIO(b"\x05abcde")
+        host, port = socks_address(reader, 3)
+        assert host == "abcde"
+        assert port == 0
+
+    def test_ipv6_truncated_at_addr(self):
+        from pproxy.proto import socks_address
+        import io
+        reader = io.BytesIO(b"\x00" * 8)
+        with pytest.raises(Exception):
+            socks_address(reader, 4)
+
+    def test_ipv6_truncated_at_port(self):
+        from pproxy.proto import socks_address
+        import io
+        # Oracle reads 16 addr bytes + available port bytes
+        reader = io.BytesIO(b"\x00" * 16 + b"\x00")
+        host, port = socks_address(reader, 4)
+        assert host == "::"
+        assert port == 0
+
+    def test_trailing_bytes_preserved(self):
+        from pproxy.proto import socks_address
+        import io
+        trailing = b"EXTRA_DATA_HERE"
+        reader = io.BytesIO(b"\x7f\x00\x00\x01\x00\x50" + trailing)
+        host, port = socks_address(reader, 1)
+        assert host == "127.0.0.1"
+        remaining = reader.read()
+        assert remaining == trailing
+
+    def test_trailing_bytes_domain_preserved(self):
+        from pproxy.proto import socks_address
+        import io
+        domain = b"example.com"
+        trailing = b"\xde\xad"
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x01\xbb" + trailing)
+        host, port = socks_address(reader, 3)
+        assert host == "example.com"
+        remaining = reader.read()
+        assert remaining == trailing
+
+    def test_empty_domain(self):
+        from pproxy.proto import socks_address
+        import io
+        reader = io.BytesIO(b"\x00" + b"\x00\x50")
+        host, port = socks_address(reader, 3)
+        assert host == ""
+        assert port == 80
+
+    def test_max_length_domain(self):
+        from pproxy.proto import socks_address
+        import io
+        domain = b"a" * 255
+        reader = io.BytesIO(bytes([len(domain)]) + domain + b"\x00\x50")
+        host, port = socks_address(reader, 3)
+        assert host == domain.decode()
+        assert port == 80
+
 
 # ---------------------------------------------------------------------------
 # 2. TestCipherRoundTrip
