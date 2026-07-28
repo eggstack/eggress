@@ -1,184 +1,135 @@
-# Release Process (Phase 49)
+# Manual Release Process
 
-This document defines the end-to-end release process for eggress, covering
-Rust binaries, Python wheels, container images, and all associated artifacts.
+Egress releases are operator-driven. GitHub Actions does not publish crates, build release bundles, create GitHub Releases, push container images, publish Python packages, or react to version tags.
+
+No release cadence is encoded in the repository. A maintainer releases when the code and version are ready.
+
+## Release target
+
+The primary release channel is crates.io using local `cargo publish` commands. Git tags and GitHub Releases are optional bookkeeping performed manually after crates.io publication; they are not release prerequisites or automation triggers.
+
+Python/PyPI distribution is a separate manual operation and must not be coupled to the Rust release workflow.
 
 ## Prerequisites
 
-- Rust stable toolchain (MSRV 1.75)
-- Python >= 3.9 with `maturin` installed
-- `gh` CLI authenticated (for GitHub Release creation)
-- `cargo-deny` and `cargo-audit` installed
-- Write access to the repository
+- A clean local checkout of the intended commit.
+- Rust stable and the repository MSRV available.
+- crates.io credentials configured with `cargo login` or `CARGO_REGISTRY_TOKEN`.
+- The intended version committed in all affected manifests and user-visible version constants.
+- Release notes or changelog text prepared when the change warrants it.
 
-## Pre-release checklist
+Crates.io versions are immutable. A published version cannot be overwritten. If publication partially succeeds or a package is incorrect, fix the repository, increment the version, and publish a new version.
 
-### 1. Code quality gates
+## 1. Verify the release candidate
 
-All of these must pass on `main` before tagging:
+Run the broad local gate once on the exact release commit:
 
 ```bash
 cargo fmt --all -- --check
-cargo check --workspace --all-targets
-cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --locked
+```
+
+Run dependency and advisory checks because release inputs are changing:
+
+```bash
 cargo deny check
-cargo audit
+cargo audit --ignore RUSTSEC-2025-0134
 ```
 
-### 2. Python package verification
+Run specialized interoperability, Python, performance, or cross-platform checks only when the release contains relevant changes or makes claims that depend on them. The selection policy is in `docs/TESTING.md`.
+
+## 2. Check package metadata
+
+For every crate intended for publication, verify:
+
+- the package version is correct;
+- published internal dependencies specify a crates.io version as well as any local path used for workspace development;
+- required `description`, `license`, `repository`, `readme`, and include/exclude metadata are present;
+- generated package contents do not contain secrets, fixtures, large evidence directories, or development-only artifacts.
+
+Use a dry run for each public crate:
 
 ```bash
-cd crates/eggress-python
-maturin build --release --out ../../dist
-cd ../..
-./scripts/test_wheel.sh
-python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
+cargo publish --dry-run -p <crate-name>
 ```
 
-### 3. Manifest validation
+A dry-run failure is a packaging defect. Fix it before publishing rather than adding CI automation around it.
+
+## 3. Publish dependency-first
+
+Publish crates in dependency order. Leaf libraries must be available in the crates.io index before crates that depend on them can be published. The CLI or other top-level facade should be published last.
+
+For each crate:
 
 ```bash
-cargo test -p eggress-testkit --lib manifest
-cargo test -p eggress-testkit --lib corpus
+cargo publish -p <crate-name>
 ```
 
-### 4. Version alignment
+Wait for crates.io index propagation before publishing the next dependent crate. Re-run that dependent crate's dry run if resolution is uncertain.
 
-Verify version is consistent across:
+Do not use `--allow-dirty` for a normal release. Do not publish from an unreviewed working tree.
 
-- `Cargo.toml` workspace version
-- `crates/eggress-python/pyproject.toml`
-- `crates/eggress-python/Cargo.toml`
-- `python/eggress/__init__.py` (`__version__`)
+## 4. Verify crates.io installation
 
-### 5. Documentation review
-
-- [ ] Release notes updated (`docs/release/RELEASE_NOTES_PARITY_RC.md`)
-- [ ] Platform support matrix current (`docs/release/PLATFORM_SUPPORT_MATRIX.md`)
-- [ ] Migration guide current (`docs/release/MIGRATION_FROM_PPROXY_FINAL.md`)
-- [ ] README install section accurate
-
-## Release steps
-
-### Step 1: Create release branch (optional)
+Install the published top-level package into a clean temporary location:
 
 ```bash
-git checkout -b release/v0.1.0
+cargo install eggress-cli --version <version> --locked --root /tmp/eggress-release-check
+/tmp/eggress-release-check/bin/eggress --version
+/tmp/eggress-release-check/bin/pproxy --help
 ```
 
-### Step 2: Tag the release
+Use an equivalent temporary directory on platforms where `/tmp` is unavailable.
+
+If the release includes public libraries, create a minimal temporary consumer project and confirm that Cargo resolves the published versions without workspace paths.
+
+## 5. Optional manual repository bookkeeping
+
+After crates.io verification, a maintainer may create and push a tag:
 
 ```bash
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v<version> -m "Release v<version>"
+git push origin v<version>
 ```
 
-### Step 3: Wait for CI
-
-The `v*` tag triggers:
-
-- **`python-wheels.yml`**: Builds wheels for 5 platforms, uploads as artifacts
-- **`release.yml`**: Builds CLI binaries, generates checksums/SBOM, creates GitHub Release
-
-### Step 4: Create GitHub Release
-
-If not auto-created by CI:
+A GitHub Release may also be created manually for notes or separately built binaries:
 
 ```bash
-gh release create v0.1.0 \
-  --title "eggress v0.1.0" \
-  --notes-file docs/release/RELEASE_NOTES_PARITY_RC.md \
-  --draft
+gh release create v<version> \
+  --title "eggress v<version>" \
+  --notes-file <release-notes-file>
 ```
 
-### Step 5: Upload artifacts to GitHub Release
+These commands are optional and must remain manual. Pushing a tag must not start publishing, artifact construction, signing, container pushes, or release creation in GitHub Actions.
 
-```bash
-gh release upload v0.1.0 \
-  dist/eggress-*.tar.gz \
-  dist/eggress-*.zip \
-  dist/SHA256SUMS \
-  dist/sbom.json
-```
+## Python distribution
 
-### Step 6: Publish Python package to PyPI
+When the Python packages are ready for a separate release, build and publish them locally with maturin and the chosen Python package repository credentials. Verify canonical `eggress` and `eggress-pproxy-compat` packages together in a clean environment before upload.
 
-Trigger the `publish-pypi.yml` workflow manually, or:
+Python publishing is intentionally outside the crates.io release procedure. Removing GitHub publishing workflows does not imply that Python packaging is abandoned; it means packaging cadence and credentials remain under explicit operator control.
 
-```bash
-cd crates/eggress-python
-maturin upload --repository pypi ../../dist/*
-```
+## Roll-forward policy
 
-### Step 7: Build and push container image
+Crates.io publication is irreversible except for yanking. For a defective release:
 
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/{owner}/eggress:v0.1.0 \
-  -t ghcr.io/{owner}/eggress:latest \
-  --push .
-```
+1. Yank the affected version when appropriate.
+2. Correct the defect.
+3. Increment the package version.
+4. Repeat dry runs and relevant verification.
+5. Publish the corrected version.
 
-### Step 8: Finalize GitHub Release
+Do not delete or retag an existing version to simulate replacement.
 
-```bash
-gh release edit v0.1.0 --draft=false
-```
+## Prohibited automation
 
-## Post-release
+The following must not be added back without an explicit project-level decision:
 
-### Verify installation methods
+- publishing on a tag or branch push;
+- crates.io tokens or trusted-publishing configuration in GitHub Actions;
+- automated GitHub Release creation;
+- mandatory release artifact, checksum, SBOM, signature, or container jobs;
+- a release workflow that repeats the ordinary CI suite;
+- release gates that require generated evidence unrelated to the changed release surface.
 
-```bash
-# Binary
-./eggress --version
-
-# Python
-pip install eggress==0.1.0
-python -c "import eggress; print(eggress.__version__)"
-
-# Container
-docker pull ghcr.io/{owner}/eggress:v0.1.0
-docker run --rm ghcr.io/{owner}/eggress:v0.1.0 --version
-```
-
-### Update documentation
-
-- [ ] Tag the release in README badge/links
-- [ ] Update ROADMAP.md with completed phase
-- [ ] Create `docs/release/RELEASE_v0.1.0.md` if needed
-
-## Rollback
-
-If a critical regression is found:
-
-1. **Yank Python wheels**: `twine yank eggress==0.1.0`
-2. **Delete GitHub Release** (binaries are not yankable)
-3. **Push patch**: `v0.1.1` with the fix
-4. **Rebuild and republish** all artifacts
-
-## Versioning
-
-- Use semantic versioning: `MAJOR.MINOR.PATCH`
-- Tags use the format `vX.Y.Z`
-- Python package version must match the git tag version
-- Workspace `Cargo.toml` version is the single source of truth
-
-## CI/CD flow
-
-```
-git tag v0.1.0
-  │
-  ├─→ python-wheels.yml (v* trigger)
-  │     ├─ Build wheels (5 platforms)
-  │     ├─ Build sdist
-  │     └─ Upload artifacts
-  │
-  └─→ release.yml (v* trigger)
-        ├─ Build CLI binaries (5 targets)
-        ├─ Generate SHA256SUMS
-        ├─ Generate SBOM
-        ├─ Build container image
-        └─ Create GitHub Release with all artifacts
-```
+Release correctness comes from a clean release commit, proportionate local verification, package dry runs, explicit operator publication, and post-publication installation checks.
