@@ -466,8 +466,9 @@ enabled = true
         "service should be ready"
     );
 
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-
+    // Wait for health probes to run. fast-fail (threshold=1) should become
+    // Unhealthy quickly, but slow-fail (threshold=3) needs more time.
+    // Retry the check with backoff to handle macOS timing variability.
     let admin_addr = state
         .admin_local_addr
         .lock()
@@ -475,21 +476,32 @@ enabled = true
         .expect("admin should have bound");
     let admin_str = admin_addr.to_string();
 
-    let (status, body) = http_get(&admin_str, "/-/upstreams").await;
-    assert_eq!(status, 200);
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let groups = json.as_array().unwrap();
-    let members = groups[0]["members"].as_array().unwrap();
+    let mut fast_unhealthy = false;
+    let mut slow_not_unhealthy = false;
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let (status, body) = http_get(&admin_str, "/-/upstreams").await;
+        if status != 200 {
+            continue;
+        }
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let groups = json.as_array().unwrap();
+        let members = groups[0]["members"].as_array().unwrap();
+        let fast = members.iter().find(|m| m["id"] == "fast-fail").unwrap();
+        let slow = members.iter().find(|m| m["id"] == "slow-fail").unwrap();
+        fast_unhealthy = fast["health"] == "Unhealthy";
+        slow_not_unhealthy = slow["health"] != "Unhealthy";
+        if fast_unhealthy && slow_not_unhealthy {
+            break;
+        }
+    }
 
-    let fast = members.iter().find(|m| m["id"] == "fast-fail").unwrap();
-    let slow = members.iter().find(|m| m["id"] == "slow-fail").unwrap();
-
-    assert_eq!(
-        fast["health"], "Unhealthy",
+    assert!(
+        fast_unhealthy,
         "fast-fail (threshold=1) should be Unhealthy after probe failures"
     );
     assert!(
-        slow["health"] != "Unhealthy",
+        slow_not_unhealthy,
         "slow-fail (threshold=3) should not be Unhealthy yet"
     );
 
