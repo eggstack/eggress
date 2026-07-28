@@ -1,150 +1,88 @@
-# CI Status
+# CI and Verification Policy
 
-## Hosted CI State
+This document is the source of truth for repository verification. It supersedes older phase-completion documents and workflow descriptions that treated every available check as a mandatory gate.
 
-As of 2026-06-26, hosted GitHub Actions CI is **non-functional** due to a
-billing/payment issue on the repository account. All workflow runs fail
-immediately (within 1–2 seconds) with:
+## Policy
 
-> The job was not started because recent account payments have failed or your
-> spending limit needs to be increased. Please check the 'Billing & plans'
-> section in your settings
+Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for ordinary development, not a release engine, compatibility evidence archive, or substitute for focused local testing.
 
-This affects both `ci.yml` and `security.yml` workflows on every push to
-`main` and every pull request. No jobs actually execute — the failures are
-not code-related.
+The repository has two automatic workflows:
 
-## Required Local Verification
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite.
+- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 
-Before merging or marking a phase complete, run **all** of the following:
+There are no tag-triggered release workflows, artifact assembly workflows, publishing workflows, cross-platform release matrices, or mandatory compatibility-evidence uploads.
+
+## Routine development
+
+Use the narrowest local command that exercises the code being changed. Examples:
+
+```bash
+cargo test -p eggress-routing
+cargo test -p eggress-runtime retry_fallback
+cargo test -p eggress-cli --test cli_exit_codes
+```
+
+Formatting should normally be applied locally before commit:
+
+```bash
+cargo fmt --all
+```
+
+A routine change does not require security audits, cross-platform matrices, ignored interoperability suites, benchmark runs, parity-report regeneration, or completion-evidence documents unless the change directly affects those areas.
+
+## Before merge
+
+For a normal Rust change, the expected broad local check is:
 
 ```bash
 cargo fmt --all -- --check
-cargo check --workspace --all-targets
-cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo deny check
-cargo audit
+cargo test --workspace --locked
 ```
 
-These correspond to the six CI jobs: Format, Check, Test, Clippy, Deny,
-and Audit. If all pass locally, the changes are correct regardless of
-hosted CI status.
+For a Python-facing change, also build the extension and run the relevant Python tests:
 
-## Workflows
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
+(cd crates/eggress-python && ../../.venv/bin/maturin develop)
+.venv/bin/python -m pip install --no-deps ./python-pproxy-compat
+.venv/bin/python -m pytest python/tests tests/compat -q
+```
 
-### ci.yml (primary)
+A focused test may be sufficient during iteration. The broad workspace check is expected before merging a substantial change, not after every edit.
 
-Triggers on pushes to `main` and pull requests to `main`. Contains these
-separate visible jobs:
+## Specialized checks
 
-| Job | Runner | What it checks |
-|-----|--------|----------------|
-| Format | ubuntu-latest | `cargo fmt --all -- --check` |
-| Check | ubuntu/macos/windows | `cargo check --workspace --all-targets` |
-| Test | ubuntu/macos/windows | `cargo test --workspace` |
-| Clippy | ubuntu-latest | `cargo clippy --workspace --all-targets -- -D warnings` |
-| Deny | ubuntu-latest | `cargo deny check` (license + advisory) |
-| Audit | ubuntu-latest | `cargo audit` (security advisories) |
-| Interoperability | ubuntu-latest | Cross-implementation tests (pproxy, curl) |
+Run these only when their trigger condition applies:
 
-### pproxy-compatibility.yml
+| Check | Trigger |
+|---|---|
+| `cargo deny check` | Dependency, feature, or license-policy changes; release preparation |
+| `cargo audit --ignore RUSTSEC-2025-0134` | Dependency changes; release preparation |
+| pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
+| Shadowsocks external interoperability | Shadowsocks wire-format, cipher, or relay changes |
+| strict closure audit | Explicit compatibility-certification work |
+| benchmarks, load, soak, or fuzzing | Performance, concurrency, parser, or hardening work |
+| cross-platform local/hosted checks | Platform-specific code or release preparation |
 
-Triggers on pushes to `main`, pull requests to `main`, and manual dispatch.
-Runs the full pproxy compatibility suite:
+The commands remain documented in `docs/TESTING.md`, `docs/DIFFERENTIAL_TESTING.md`, and `AGENTS.md`. Their existence does not make them routine merge gates.
 
-| Job | Runner | What it checks |
-|-----|--------|----------------|
-| pproxy Compat | ubuntu-latest | Manifest validation, pproxy oracle tests, differential tests, interoperability tests, parity report |
+## Evidence and completion records
 
-Requires `pproxy==2.7.9` (Python). Manifest validation runs before differential
-tests. Parity report artifacts are uploaded on every run.
+Ordinary implementation work requires a clear commit message and passing relevant tests. It does not require generated parity reports, uploaded workflow artifacts, large completion documents, screenshots, or copied command transcripts.
 
-### shadowsocks-interop.yml
+Compatibility claims must still be backed by the applicable oracle or interoperability suite. Evidence should be generated when a claim changes or a release is being evaluated, not on every push.
 
-Triggers on pushes to `main`, pull requests to `main`, and manual dispatch.
-Runs Shadowsocks standard interop tests:
+## Release boundary
 
-| Job | Runner | What it checks |
-|-----|--------|----------------|
-| Shadowsocks Interop | ubuntu-latest | TCP/UDP interop with `ssserver`/`sslocal` from `shadowsocks-rust` |
+Release cadence is entirely manual. GitHub Actions must not publish crates, create GitHub Releases, push container images, build release bundles, or react to version tags.
 
-Requires `shadowsocks-rust` (installed via `cargo install`). Logs uploaded
-on failure. This is a manually-gated workflow — Shadowsocks interop claims
-cite this workflow but it is not required for merge.
+The release operator performs release checks and `cargo publish` locally. See `docs/release/RELEASE_PROCESS.md`.
 
-### security.yml (legacy — removed)
+## Design rationale
 
-Previously ran duplicate `cargo-deny` and `cargo-audit` jobs using older
-action versions. Superseded by the Deny and Audit jobs in `ci.yml`. Removed
-to avoid confusion and wasted billing minutes.
+The previous apparatus duplicated compilation and linting across multiple workflows, ran operating-system and Python-version matrices for routine changes, installed external implementations on every push, generated evidence artifacts continuously, and repeated the same gates inside release automation. That increased latency and maintenance without proportionate correctness benefit.
 
-### python-test.yml
-
-Runs Python tests on push to `main` and pull requests affecting Python code.
-
-| Job | Runner | What it checks |
-|-----|--------|----------------|
-| Test (matrix) | ubuntu-latest, macos-latest × Python 3.9/3.12/3.13 | `maturin develop` + `pytest python/tests` |
-
-### python-compat.yml
-
-Runs clean canonical/compatibility wheel smoke tests on Linux, macOS, and
-Windows. It verifies that the canonical wheel stays namespace-clean and that
-the separate `eggress-pproxy-compat` wheel supplies the top-level `pproxy`
-imports and native outbound stream tests.
-
-### python-wheels.yml
-
-Builds platform wheels on version tags (`v*`).
-
-| Job | Runner | What it builds |
-|-----|--------|----------------|
-| build_wheels (matrix) | ubuntu/macos/windows × x86_64/aarch64 | Platform-specific wheel |
-| build_sdist | ubuntu-latest | Source distribution |
-
-### publish-pypi.yml
-
-Publishes to PyPI or TestPyPI via manual dispatch. Uses trusted publishing (OIDC).
-
-| Input | Options | Default |
-|-------|---------|---------|
-| repository | `testpypi`, `pypi` | `testpypi` |
-
-**Note:** All Python workflows are subject to the same billing limitations as `ci.yml`. Local verification remains the source of truth.
-
-## Performance Testing
-
-Performance tests are gated and not run in CI by default. See `docs/performance/` for the full guide.
-
-| Test | Command | Gating |
-|------|---------|--------|
-| Tier 0 benchmarks | `cargo bench --workspace` | Informational (manual) |
-| Tier 1 smoke | `cargo test -p eggress-runtime --test performance_smoke` | Automated |
-| Tier 2 soak | `EGRESS_REQUIRE_SOAK=1 cargo test -p eggress-runtime --test reverse_soak -- --ignored` | Gated |
-| Tier 3 pproxy | `EGRESS_REQUIRE_PPROXY_PERF=1 scripts/perf/run_pproxy_comparison.sh` | Gated |
-| Python perf | `python -m pytest python/tests/test_performance_smoke.py` | Automated |
-
-## How to Interpret Completion Docs
-
-When hosted CI is unavailable, completion documents (e.g.
-`PHASE_*_COMPLETION.md`) should record:
-
-1. **Local verification commands run** — which of the six commands were
-   executed and their pass/fail status.
-2. **Local test output** — relevant test names and counts, not full trace.
-3. **Absence of hosted CI** — explicitly note that hosted CI was not
-   observable, and that local verification is the source of truth.
-
-Do not claim "CI passed" when only local verification was performed. Say
-"Local verification passed" instead.
-
-## Known Blockers
-
-- **Billing**: GitHub Actions minutes are unavailable until the repository
-  owner resolves the payment issue in Settings → Billing & plans.
-- **No secrets required**: None of the CI jobs depend on custom repository
-  secrets. The only secret used is `GITHUB_TOKEN` (automatic).
-- **No paid-only actions**: All actions used (`actions/checkout`,
-  `dtolnay/rust-toolchain`, `Swatinem/rust-cache`,
-  `EmbarkStudios/cargo-deny-action`) are free for public repositories.
+The lean policy preserves the highest-value invariant checks while moving expensive or environment-sensitive verification to the point where it is technically relevant.
