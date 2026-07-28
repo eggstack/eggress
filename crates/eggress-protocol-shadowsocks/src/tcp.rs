@@ -57,7 +57,10 @@ pub async fn shadowsocks_connect(
     // read nonces start at 0 (peer's first response uses nonce 0).
     // The peer will send its own salt, from which we derive the read subkey.
     Ok(Box::new(ShadowsocksAeadStream::new_client(
-        stream, method, subkey, password.to_string(),
+        stream,
+        method,
+        subkey,
+        password.to_string(),
     )))
 }
 
@@ -134,7 +137,11 @@ pub async fn shadowsocks_accept(
     // write nonces start at 0 (first response to client uses nonce 0).
     Ok((
         Box::new(ShadowsocksAeadStream::new_server(
-            stream, method, subkey, true, password.to_string(),
+            stream,
+            method,
+            subkey,
+            true,
+            password.to_string(),
         )),
         target_addr,
     ))

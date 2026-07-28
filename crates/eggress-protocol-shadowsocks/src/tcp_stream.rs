@@ -252,7 +252,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                     let password = this
                         .password
                         .as_deref()
-                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no password for subkey derivation"))?;
+                        .ok_or_else(|| io::Error::other("no password for subkey derivation"))?;
                     let read_subkey = this
                         .method
                         .derive_key(password.as_bytes(), &salt)
@@ -277,9 +277,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         Poll::Pending => return Poll::Pending,
                     }
 
-                    let subkey = this.read_subkey.as_ref().ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::Other, "read subkey not yet derived")
-                    })?;
+                    let subkey = this
+                        .read_subkey
+                        .as_ref()
+                        .ok_or_else(|| io::Error::other("read subkey not yet derived"))?;
 
                     // Decrypt length block with current nonce.
                     let nonce = this.read_nonce.current();
@@ -325,15 +326,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         Poll::Pending => return Poll::Pending,
                     }
 
-                    let subkey = this.read_subkey.as_ref().ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::Other, "read subkey not yet derived")
-                    })?;
+                    let subkey = this
+                        .read_subkey
+                        .as_ref()
+                        .ok_or_else(|| io::Error::other("read subkey not yet derived"))?;
 
                     // Decrypt payload with current nonce (now at payload nonce).
                     let nonce = this.read_nonce.current();
-                    let plaintext =
-                        aead_decrypt_raw(this.method, subkey, &nonce, &this.read_buf)
-                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let plaintext = aead_decrypt_raw(this.method, subkey, &nonce, &this.read_buf)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     // Advance past payload nonce.
                     this.read_nonce.advance().map_err(io::Error::other)?;
@@ -369,7 +370,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
             let password = this
                 .password
                 .as_deref()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no password for subkey derivation"))?;
+                .ok_or_else(|| io::Error::other("no password for subkey derivation"))?;
             let write_subkey = this
                 .method
                 .derive_key(password.as_bytes(), &salt)
@@ -638,7 +639,8 @@ mod tests {
         let subkey = vec![0x33u8; 32];
 
         // Use new_with_nonces to start at nonce 0 (for testing raw wire data).
-        let mut server_stream = ShadowsocksAeadStream::new_with_nonces(server, method, subkey.clone(), 0, 0);
+        let mut server_stream =
+            ShadowsocksAeadStream::new_with_nonces(server, method, subkey.clone(), 0, 0);
 
         // Manually send a zero-length payload chunk (raw, not through the adapter).
         // Wire format: AEAD(len_u16=0, nonce) + AEAD(empty, nonce+1)
