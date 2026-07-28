@@ -47,12 +47,14 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
-      - name: Build native wheel
-        run: ../../.venv/bin/maturin build --release --out ../../target/wheels
+          echo "VIRTUAL_ENV=${{ github.workspace }}/.venv" >> "$GITHUB_ENV"
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+      - name: Clean stale native extension
+        run: git clean -fX python/eggress
+      - name: Build and install
+        run: maturin develop
         working-directory: crates/eggress-python
-      - name: Install packages
-        run: |
-          .venv/bin/python -m pip install target/wheels/eggress-*.whl
-          .venv/bin/python -m pip install --no-deps ./python-pproxy-compat
+      - name: Install compat package
+        run: pip wheel --no-deps --wheel-dir /tmp/compat-wheels ./python-pproxy-compat && pip install /tmp/compat-wheels/eggress_pproxy_compat-*.whl
       - name: Run Python smoke suite
-        run: .venv/bin/python -m pytest python/tests tests/compat -q
+        run: python -m pytest python/tests tests/compat -q
