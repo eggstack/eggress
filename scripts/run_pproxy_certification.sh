@@ -92,12 +92,13 @@ fatal_step "install candidate deps" "$CANDIDATE_VENV/bin/python" -m pip install 
 
 # Build and install the native extension
 echo "Building eggress native extension..."
-fatal_step "build eggress extension" bash -c "
-    VIRTUAL_ENV='$CANDIDATE_VENV' \
-    PATH='$CANDIDATE_VENV/bin:\$PATH' \
-    '$CANDIDATE_VENV/bin/maturin' develop \
-    --manifest-path crates/eggress-python/Cargo.toml
-"
+(
+    export VIRTUAL_ENV="$CANDIDATE_VENV"
+    export PYO3_PYTHON="$CANDIDATE_VENV/bin/python"
+    export PATH="$CANDIDATE_VENV/bin:$PATH"
+    fatal_step "build eggress extension" "$CANDIDATE_VENV/bin/maturin" develop \
+        --manifest-path crates/eggress-python/Cargo.toml
+)
 
 # Install local compatibility package
 fatal_step "install compat package" "$CANDIDATE_VENV/bin/python" -m pip install --no-deps ./python-pproxy-compat

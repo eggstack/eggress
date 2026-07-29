@@ -855,8 +855,8 @@ def run_paired_comparison(
         if oracle_output_dir and candidate_output_dir:
             oracle_output_dir.mkdir(parents=True, exist_ok=True)
             candidate_output_dir.mkdir(parents=True, exist_ok=True)
-            oracle_file = oracle_output_dir / f"{rid.replace('.', '_')}.json"
-            candidate_file = candidate_output_dir / f"{rid.replace('.', '_')}.json"
+            oracle_file = oracle_output_dir / f"{rid.replace('.', '_')}_oracle.json"
+            candidate_file = candidate_output_dir / f"{rid.replace('.', '_')}_candidate.json"
             oracle_file.write_text(json.dumps(oracle_obs, indent=2, default=str))
             candidate_file.write_text(json.dumps(candidate_obs, indent=2, default=str))
         elif output_dir:
