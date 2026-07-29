@@ -770,6 +770,8 @@ def run_paired_comparison(
     candidate_python: str,
     probe_type: str = "api",
     output_dir: Optional[Path] = None,
+    oracle_output_dir: Optional[Path] = None,
+    candidate_output_dir: Optional[Path] = None,
     closure_required: bool = False,
 ) -> dict:
     """Run paired comparison for a list of records."""
@@ -849,15 +851,20 @@ def run_paired_comparison(
         # Compare
         comparison = compare_observations(oracle_obs, candidate_obs, closure_required=closure_required)
 
-        # Save observations if output dir specified
-        if output_dir:
+        # Save observations if output dirs specified
+        if oracle_output_dir and candidate_output_dir:
+            oracle_output_dir.mkdir(parents=True, exist_ok=True)
+            candidate_output_dir.mkdir(parents=True, exist_ok=True)
+            oracle_file = oracle_output_dir / f"{rid.replace('.', '_')}.json"
+            candidate_file = candidate_output_dir / f"{rid.replace('.', '_')}.json"
+            oracle_file.write_text(json.dumps(oracle_obs, indent=2, default=str))
+            candidate_file.write_text(json.dumps(candidate_obs, indent=2, default=str))
+        elif output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
             oracle_file = output_dir / f"{rid.replace('.', '_')}_oracle.json"
             candidate_file = output_dir / f"{rid.replace('.', '_')}_candidate.json"
-            comparison_file = output_dir / f"{rid.replace('.', '_')}_comparison.json"
             oracle_file.write_text(json.dumps(oracle_obs, indent=2, default=str))
             candidate_file.write_text(json.dumps(candidate_obs, indent=2, default=str))
-            comparison_file.write_text(json.dumps(comparison, indent=2, default=str))
 
         result = {
             "id": rid,
@@ -902,7 +909,9 @@ def main():
     parser.add_argument("--implementation-state", help="Filter by implementation_state")
     parser.add_argument("--status", help="Filter by status")
     parser.add_argument("--dry-run", action="store_true", help="List records without executing")
-    parser.add_argument("--output-dir", help="Directory for observation JSON files")
+    parser.add_argument("--output-dir", help="Directory for observation JSON files (legacy single-dir mode)")
+    parser.add_argument("--oracle-output-dir", help="Directory for oracle observation JSON files")
+    parser.add_argument("--candidate-output-dir", help="Directory for candidate observation JSON files")
     parser.add_argument("--create-venvs", action="store_true", help="Create clean venvs automatically")
     parser.add_argument("--closure-required", action="store_true",
                         help="Enforce closure: skipped/missing records cause failure")
@@ -986,12 +995,21 @@ def main():
           file=sys.stderr)
 
     # Run comparison
-    output_dir = Path(args.output_dir) if args.output_dir else Path("target/strict/paired_observations")
+    oracle_out = Path(args.oracle_output_dir) if args.oracle_output_dir else None
+    candidate_out = Path(args.candidate_output_dir) if args.candidate_output_dir else None
+    output_dir = Path(args.output_dir) if args.output_dir else None
+
+    # Default: single output dir for backward compatibility
+    if not oracle_out and not candidate_out and not output_dir:
+        output_dir = Path("target/strict/paired_observations")
+
     print(f"\nRunning paired comparison for {len(testable)} records...", file=sys.stderr)
 
     report = run_paired_comparison(
         testable, oracle_python, candidate_python,
         output_dir=output_dir,
+        oracle_output_dir=oracle_out,
+        candidate_output_dir=candidate_out,
         closure_required=args.closure_required,
     )
 
@@ -1018,8 +1036,9 @@ def main():
     report["oracle_verification"] = oracle_verification
     report["candidate_verification"] = candidate_verification
     report["closure_required"] = args.closure_required
-    report_file = output_dir / "paired_api_report.json"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    report_dir = candidate_out or output_dir or Path("target/strict/paired_observations")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_file = report_dir / "paired_api_report.json"
     report_file.write_text(json.dumps(report, indent=2, default=str))
     print(f"\nReport written to: {report_file}", file=sys.stderr)
 

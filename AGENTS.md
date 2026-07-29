@@ -75,24 +75,25 @@ Ordinary changes do not require generated evidence bundles, uploaded artifacts, 
 
 ## Hosted CI boundary
 
-The repository intentionally has two automatic workflows:
+The repository has two automatic smoke workflows and one manual publish workflow:
 
 - `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, and workspace tests.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job.
+- `.github/workflows/publish-python.yml`: Python package publication to PyPI/TestPyPI using OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch.
 
-Do not recreate tag-triggered publishing, release artifact matrices, automated GitHub Releases, container publishing, continuous parity evidence generation, or mandatory external interoperability workflows without an explicit project-level decision.
+Do not recreate release artifact matrices, automated GitHub Releases, container publishing, continuous parity evidence generation, or mandatory external interoperability workflows without an explicit project-level decision.
 
 Hosted CI is a smoke signal. It is not the release mechanism and is not a reason to duplicate every available local check.
 
 ## Release policy
 
-Release cadence is manual. The release operator performs local verification, package dry runs, and `cargo publish` directly to crates.io.
+Python publication to PyPI uses OIDC trusted publishers via `.github/workflows/publish-python.yml`. Push a `v*` tag or use manual dispatch to trigger publication. The workflow requires repository environments `pypi` and `testpypi`.
 
-Git tags and GitHub Releases are optional manual bookkeeping after crates.io publication. Pushing a tag must not publish packages or create artifacts through GitHub Actions.
+Rust crate publication to crates.io is manual. The release operator performs local verification, package dry runs, and `cargo publish` directly to crates.io.
+
+Git tags and GitHub Releases are optional manual bookkeeping. Pushing a tag triggers the Python publish workflow but must not publish Rust crates or create release artifacts.
 
 Crates.io versions are immutable. If a release is defective or partially published, increment the version and roll forward; do not attempt to replace an existing version.
-
-Python/PyPI publication is a separate manual process and is not coupled to the Rust release workflow.
 
 ## Workspace map
 

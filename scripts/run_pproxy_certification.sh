@@ -190,23 +190,28 @@ echo "Candidate python: $CANDIDATE_PYTHON_VERSION"
 echo ""
 
 # ── Check 1: pproxy differential tests (mandatory) ────────────────
-run_check "pproxy_differential" required bash -c "
-    EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1 2>&1
-"
+run_check "pproxy_differential" required env \
+    EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
+    EGRESS_ORACLE_PYTHON="$ORACLE_PYTHON" \
+    cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
 
 # ── Check 2: paired API runner (mandatory) ─────────────────────────
-run_check "paired_api_runner" required bash -c '
-    ORACLE_VENV="'"$ORACLE_VENV"'" CANDIDATE_VENV="'"$CANDIDATE_VENV"'" OUTPUT_DIR="'"$OBS_DIR"'" \
-        ./scripts/run_strict_pproxy_api.sh --closure-required
-'
+run_check "paired_api_runner" required "$SCRIPT_DIR/run_strict_pproxy_api.sh" \
+    --no-bootstrap \
+    --oracle-python "$ORACLE_PYTHON" \
+    --candidate-python "$CANDIDATE_PYTHON" \
+    --oracle-output-dir "$OBS_DIR/oracle" \
+    --candidate-output-dir "$OBS_DIR/candidate" \
+    --closure-required
 
 # ── Check 3: strict Python differential tests (mandatory) ──────────
 run_check "strict_python_differential" required bash -c "
-    OBS_COUNT=\$(ls '$OBS_DIR'/*_oracle.json 2>/dev/null | wc -l)
-    if [ \"\$OBS_COUNT\" -gt 0 ]; then
-        EGRESS_REQUIRE_PPROXY_DIFFERENTIAL=1 '$CANDIDATE_PYTHON' -m pytest python/tests/strict -q \
-            --oracle-observations-dir '$OBS_DIR' \
-            --candidate-observations-dir '$OBS_DIR' \
+    OBS_COUNT_ORACLE=\$(ls '$OBS_DIR/oracle'/*_oracle.json 2>/dev/null | wc -l)
+    OBS_COUNT_CANDIDATE=\$(ls '$OBS_DIR/candidate'/*_candidate.json 2>/dev/null | wc -l)
+    if [ \"\$OBS_COUNT_ORACLE\" -gt 0 ] && [ \"\$OBS_COUNT_CANDIDATE\" -gt 0 ]; then
+        '$CANDIDATE_PYTHON' -m pytest python/tests/strict -q \
+            --oracle-observations-dir '$OBS_DIR/oracle' \
+            --candidate-observations-dir '$OBS_DIR/candidate' \
             --tb=short 2>&1
     else
         echo 'ERROR: No paired observations available.' >&2
@@ -215,16 +220,14 @@ run_check "strict_python_differential" required bash -c "
 "
 
 # ── Check 4: external TCP interoperability (mandatory) ─────────────
-run_check "external_tcp_interop" required bash -c '
-    ORACLE_VENV="'"$ORACLE_VENV"'" CANDIDATE_VENV="'"$CANDIDATE_VENV"'" \
-        EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/run_strict_pproxy_interop.sh
-'
+run_check "external_tcp_interop" required "$SCRIPT_DIR/run_strict_pproxy_interop.sh" \
+    --no-bootstrap \
+    --oracle-python "$ORACLE_PYTHON" \
+    --candidate-python "$CANDIDATE_PYTHON"
 
 # ── Check 5: external UDP interoperability (mandatory) ─────────────
-run_check "external_udp_interop" required bash -c '
-    ORACLE_VENV="'"$ORACLE_VENV"'" CANDIDATE_VENV="'"$CANDIDATE_VENV"'" \
-        EGRESS_REQUIRE_EXTERNAL_INTEROP=1 ./scripts/compat_udp_pproxy.sh
-'
+run_check "external_udp_interop" required "$SCRIPT_DIR/compat_udp_pproxy.sh" \
+    --oracle-python "$ORACLE_PYTHON"
 
 # ── Check 6: cipher KAT and interop probes ──────────────────────
 run_check "cipher_kat" required bash -c '
@@ -253,10 +256,11 @@ for c in "${CHECKS[@]}"; do
     echo "$c" >> "$CHECKS_FILE"
 done
 
-"$CANDIDATE_PYTHON" - "$CHECKS_FILE" "$COMMIT" "$ORACLE_VERSION" "$ORACLE_PYTHON_VERSION" "$CANDIDATE_PYTHON_VERSION" "$PASS" "$FAIL" "$SKIP" "$TOTAL_ELAPSED_MS" "$CERT_DIR" <<'PYEOF'
+"$CANDIDATE_PYTHON" - "$CHECKS_FILE" "$COMMIT" "$ORACLE_VERSION" "$ORACLE_PYTHON_VERSION" "$CANDIDATE_PYTHON_VERSION" "$PASS" "$FAIL" "$SKIP" "$TOTAL_ELAPSED_MS" "$CERT_DIR" "$OBS_DIR" <<'PYEOF'
 import json
 import sys
 import os
+from pathlib import Path
 
 checks_file = sys.argv[1]
 commit = sys.argv[2]
@@ -268,6 +272,7 @@ failed = int(sys.argv[7])
 skipped = int(sys.argv[8])
 elapsed_ms = int(sys.argv[9])
 cert_dir = sys.argv[10]
+obs_dir = sys.argv[11]
 
 checks = []
 with open(checks_file) as f:
@@ -277,6 +282,13 @@ with open(checks_file) as f:
             checks.append(json.loads(line))
 
 result = "pass" if failed == 0 else "fail"
+
+# Count observations
+oracle_obs_dir = Path(obs_dir) / "oracle"
+candidate_obs_dir = Path(obs_dir) / "candidate"
+oracle_count = len(list(oracle_obs_dir.glob("*.json"))) if oracle_obs_dir.exists() else 0
+candidate_count = len(list(candidate_obs_dir.glob("*.json"))) if candidate_obs_dir.exists() else 0
+compared_count = min(oracle_count, candidate_count)
 
 summary = {
     "schema_version": 2,
@@ -296,6 +308,11 @@ summary = {
     "failed": failed,
     "skipped": skipped,
     "elapsed_ms": elapsed_ms,
+    "observations": {
+        "oracle": oracle_count,
+        "candidate": candidate_count,
+        "compared": compared_count
+    },
     "checks": checks
 }
 

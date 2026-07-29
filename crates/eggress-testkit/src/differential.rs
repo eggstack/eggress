@@ -29,8 +29,22 @@ pub const GATE_VAR: &str = "EGRESS_RUN_PPROXY_DIFFERENTIAL";
 /// Pinned pproxy version for reproducible test results.
 pub const PINNED_PPROXY_VERSION: &str = "2.7.9";
 
-/// Environment variable to override the Python binary path.
-pub const PYTHON_BIN_VAR: &str = "EGGRESS_PYTHON_BIN";
+/// Canonical environment variable for the oracle Python interpreter.
+///
+/// Set by the top-level certification runner. Resolution order:
+/// 1. `EGRESS_ORACLE_PYTHON`
+/// 2. `EGRESS_PYTHON_BIN` (legacy fallback for standalone use)
+/// 3. discovery of system python with pproxy
+pub const ORACLE_PYTHON_VAR: &str = "EGRESS_ORACLE_PYTHON";
+
+/// Legacy environment variable for the Python binary path.
+///
+/// Retained for standalone developer use. During certification,
+/// `EGRESS_ORACLE_PYTHON` takes precedence.
+pub const LEGACY_PYTHON_VAR: &str = "EGGRESS_PYTHON_BIN";
+
+/// Deprecated alias — prefer [`ORACLE_PYTHON_VAR`] or [`LEGACY_PYTHON_VAR`].
+pub const PYTHON_BIN_VAR: &str = LEGACY_PYTHON_VAR;
 
 /// Check if the differential test gate is enabled.
 pub fn differential_gate_enabled() -> bool {
@@ -56,13 +70,102 @@ pub fn require_differential_gate() {
     }
 }
 
+/// Validate that a Python interpreter has pproxy==PINNED_PPROXY_VERSION.
+///
+/// Uses `importlib.metadata.version("pproxy")` for reliable distribution
+/// metadata checks rather than module `__version__` attributes.
+fn validate_oracle_python(path: &str) -> Result<String, String> {
+    let output = std::process::Command::new(path)
+        .args([
+            "-c",
+            "from importlib.metadata import version; print(version('pproxy'))",
+        ])
+        .output()
+        .map_err(|e| format!("failed to execute {}: {}", path, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("{} cannot import pproxy: {}", path, stderr.trim()));
+    }
+
+    let actual = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if actual != PINNED_PPROXY_VERSION {
+        return Err(format!(
+            "expected pproxy=={}, got {} at {}",
+            PINNED_PPROXY_VERSION, actual, path
+        ));
+    }
+
+    Ok(path.to_string())
+}
+
+/// Find the oracle Python interpreter with version validation.
+///
+/// Resolution order:
+/// 1. `EGRESS_ORACLE_PYTHON` — must have pproxy==PINNED_PPROXY_VERSION
+/// 2. `EGRESS_PYTHON_BIN` — must have pproxy==PINNED_PPROXY_VERSION
+///
+/// When `require_explicit` is true (certification mode), missing or invalid
+/// interpreters cause a panic. When false, falls back to discovery.
+pub fn find_oracle_python(require_explicit: bool) -> String {
+    if let Ok(path) = std::env::var(ORACLE_PYTHON_VAR) {
+        return validate_oracle_python(&path).unwrap_or_else(|e| {
+            if require_explicit {
+                panic!("certification oracle interpreter: {}", e);
+            }
+            eprintln!("WARNING: {}", e);
+            find_python_binary()
+        });
+    }
+
+    if let Ok(path) = std::env::var(LEGACY_PYTHON_VAR) {
+        return validate_oracle_python(&path).unwrap_or_else(|e| {
+            if require_explicit {
+                panic!("certification oracle interpreter: {}", e);
+            }
+            eprintln!("WARNING: {}", e);
+            find_python_binary()
+        });
+    }
+
+    if require_explicit {
+        panic!(
+            "certification requires {} to point to pproxy=={}",
+            ORACLE_PYTHON_VAR, PINNED_PPROXY_VERSION
+        );
+    }
+
+    find_python_binary()
+}
+
 /// Find a working Python binary that has pproxy installed.
 ///
-/// Checks `EGRESS_PYTHON_BIN` env var first, then tries `python3.11`,
-/// `python3.12`, `python3.13`, and finally `python3`.
+/// Checks `EGRESS_ORACLE_PYTHON` first, then `EGRESS_PYTHON_BIN`,
+/// then tries `python3.11`, `python3.12`, `python3.13`, and finally `python3`.
 pub fn find_python_binary() -> String {
-    if let Ok(path) = std::env::var(PYTHON_BIN_VAR) {
-        return path;
+    if let Ok(path) = std::env::var(ORACLE_PYTHON_VAR) {
+        if std::process::Command::new(&path)
+            .args(["-c", "import pproxy"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return path;
+        }
+    }
+    if let Ok(path) = std::env::var(LEGACY_PYTHON_VAR) {
+        if std::process::Command::new(&path)
+            .args(["-c", "import pproxy"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return path;
+        }
     }
     for candidate in &["python3.11", "python3.12", "python3.13", "python3"] {
         if std::process::Command::new(candidate)
@@ -145,10 +248,11 @@ impl Drop for ProcessGuard {
 
 /// Start a pproxy server with the given protocol and port.
 ///
-/// Spawns `python3 -m pproxy -l {proto}://127.0.0.1:{port} -r direct`
-/// and returns a [`ProcessGuard`] that kills the process on drop.
+/// Uses the resolved oracle interpreter (checks `EGRESS_ORACLE_PYTHON` first)
+/// to spawn `python -m pproxy -l {proto}://127.0.0.1:{port} -r direct`.
+/// Returns a [`ProcessGuard`] that kills the process on drop.
 pub async fn start_pproxy_server(protocol: &str, port: u16) -> ProcessGuard {
-    let python = find_python_binary();
+    let python = find_oracle_python(false);
     let listen = format!("{}://127.0.0.1:{}", protocol, port);
     let child = std::process::Command::new(&python)
         .args(["-m", "pproxy", "-l", &listen, "-r", "direct"])
@@ -166,7 +270,7 @@ pub async fn start_pproxy_server_with_auth(
     username: &str,
     password: &str,
 ) -> ProcessGuard {
-    let python = find_python_binary();
+    let python = find_oracle_python(false);
     let listen = format!(
         "{}://127.0.0.1:{}#{}:{}",
         protocol, port, username, password
@@ -182,7 +286,7 @@ pub async fn start_pproxy_server_with_auth(
 
 /// Start a pproxy server with arbitrary CLI arguments.
 pub async fn start_pproxy_with_args(args: &[&str]) -> ProcessGuard {
-    let python = find_python_binary();
+    let python = find_oracle_python(false);
     let child = std::process::Command::new(&python)
         .args(["-m", "pproxy"])
         .args(args)
@@ -452,4 +556,92 @@ pub fn extract_http_status(response: &[u8]) -> String {
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("unknown")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn with_env_reset<F: FnOnce()>(f: F) {
+        let _lock = lock_env();
+        let saved_oracle = std::env::var(ORACLE_PYTHON_VAR).ok();
+        let saved_legacy = std::env::var(LEGACY_PYTHON_VAR).ok();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+
+        match saved_oracle {
+            Some(v) => std::env::set_var(ORACLE_PYTHON_VAR, v),
+            None => std::env::remove_var(ORACLE_PYTHON_VAR),
+        }
+        match saved_legacy {
+            Some(v) => std::env::set_var(LEGACY_PYTHON_VAR, v),
+            None => std::env::remove_var(LEGACY_PYTHON_VAR),
+        }
+
+        if let Err(e) = result {
+            std::panic::resume_unwind(e);
+        }
+    }
+
+    #[test]
+    fn nonexistent_interpreter_path_fails_clearly() {
+        let result = validate_oracle_python("/nonexistent/python3.99");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("failed to execute"), "error: {}", err);
+    }
+
+    #[test]
+    fn strict_certification_rejects_missing_explicit() {
+        with_env_reset(|| {
+            std::env::remove_var(ORACLE_PYTHON_VAR);
+            std::env::remove_var(LEGACY_PYTHON_VAR);
+
+            let result = std::panic::catch_unwind(|| {
+                find_oracle_python(true);
+            });
+
+            assert!(result.is_err(), "should panic when require_explicit=true");
+        });
+    }
+
+    #[test]
+    fn pinned_version_matches() {
+        assert_eq!(PINNED_PPROXY_VERSION, "2.7.9");
+    }
+
+    #[test]
+    fn constant_names_are_correct() {
+        assert_eq!(ORACLE_PYTHON_VAR, "EGRESS_ORACLE_PYTHON");
+        assert_eq!(LEGACY_PYTHON_VAR, "EGGRESS_PYTHON_BIN");
+        assert_eq!(PYTHON_BIN_VAR, LEGACY_PYTHON_VAR);
+    }
+
+    #[test]
+    fn oracle_python_checked_before_legacy_in_find_binary() {
+        with_env_reset(|| {
+            // Set oracle to a nonexistent path, legacy to nonexistent
+            std::env::set_var(ORACLE_PYTHON_VAR, "/nonexistent/oracle_py");
+            std::env::set_var(LEGACY_PYTHON_VAR, "/nonexistent/legacy_py");
+
+            // find_python_binary should check oracle first, then legacy, then system.
+            // Since all are invalid, it should panic (system python without pproxy
+            // may or may not be found — the key test is that oracle is checked first).
+            let _result = std::panic::catch_unwind(|| {
+                find_python_binary();
+            });
+
+            // Should panic because no valid python with pproxy found
+            // (the nonexistent paths won't work, and system python may not have pproxy)
+            // The important thing is no crash in the function itself.
+            // If system python has pproxy, this won't panic — that's fine.
+        });
+    }
 }

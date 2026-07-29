@@ -1,0 +1,97 @@
+name: Publish Python packages to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_target:
+        description: "Target registry"
+        required: true
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+concurrency:
+  group: publish-python-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    name: Build wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip "maturin>=1.0,<2.0"
+
+      - name: Build eggress wheel
+        run: maturin build --release --out dist -m crates/eggress-python/Cargo.toml
+
+      - name: Build compat wheel
+        run: python -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
+
+      - name: List built artifacts
+        run: ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels
+          path: dist/*.whl
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'pypi')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/eggress
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheels
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/eggress
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheels
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/

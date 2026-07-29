@@ -24,6 +24,7 @@ use eggress_protocol_http::connect::client::http_connect;
 use eggress_protocol_socks::socks5::client::socks5_connect;
 use eggress_protocol_socks::socks5::server::SocksAddr;
 use eggress_routing::{RouteActionSpec, RouteService, Router};
+use eggress_testkit::differential::find_oracle_python;
 use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyHopSpec};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -104,6 +105,10 @@ fn target_to_socks_addr(target: &TargetAddr) -> SocksAddr {
     }
 }
 
+fn oracle_python_path() -> String {
+    find_oracle_python(false)
+}
+
 fn socket_addr(host: &str, port: u16) -> std::net::SocketAddr {
     std::net::SocketAddr::new(host.parse().unwrap(), port)
 }
@@ -117,7 +122,8 @@ fn require_external_interop() {
 }
 
 fn python_available() -> bool {
-    std::process::Command::new("python3")
+    let python = find_oracle_python(false);
+    std::process::Command::new(&python)
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -127,7 +133,8 @@ fn python_available() -> bool {
 }
 
 fn pproxy_available() -> bool {
-    std::process::Command::new("python3")
+    let python = find_oracle_python(false);
+    std::process::Command::new(&python)
         .args(["-c", "import pproxy"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -147,8 +154,9 @@ fn skip_if_unavailable() {
 // ===== Helpers =====
 
 async fn start_pproxy_server(protocol: &str, port: u16) -> std::process::Child {
+    let python = find_oracle_python(false);
     let listen = format!("{}://127.0.0.1:{}", protocol, port);
-    std::process::Command::new("python3")
+    std::process::Command::new(&python)
         .args(["-m", "pproxy", "-l", &listen, "-r", "direct"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -162,11 +170,12 @@ async fn start_pproxy_server_with_auth(
     username: &str,
     password: &str,
 ) -> Option<std::process::Child> {
+    let python = find_oracle_python(false);
     let listen = format!(
         "{}://{}:{}@127.0.0.1:{}",
         protocol, username, password, port
     );
-    match std::process::Command::new("python3")
+    match std::process::Command::new(&python)
         .args(["-m", "pproxy", "-l", &listen, "-r", "direct"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -706,7 +715,7 @@ async fn differential_socks5_udp_associate() {
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
     let listen_tcp = format!("socks5://127.0.0.1:{}", pproxy_tcp_port);
     let listen_udp = format!("socks5://127.0.0.1:{}", pproxy_udp_port);
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -1569,7 +1578,7 @@ async fn probe_pproxy_chained_failure_behavior() {
     // Start pproxy with SOCKS5 on first port, chaining to a dead second hop
     let listen = format!("socks5://127.0.0.1:{}", pproxy_first_port);
     let upstream = format!("socks5://127.0.0.1:{}", dead_port);
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args(["-m", "pproxy", "-l", &listen, "-r", &upstream])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -1645,7 +1654,7 @@ async fn probe_pproxy_udp_relay_lifetime() {
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
     let listen_tcp = format!("socks5://127.0.0.1:{}", pproxy_tcp_port);
     let listen_udp = format!("socks5://127.0.0.1:{}", pproxy_udp_port);
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -1720,7 +1729,7 @@ async fn probe_pproxy_udp_through_socks5_upstream() {
     // Start pproxy as the upstream SOCKS5 server (direct mode)
     let upstream_port = eggress_testkit::get_free_port().await;
     let upstream_listen = format!("socks5://127.0.0.1:{}", upstream_port);
-    let mut upstream_child = std::process::Command::new("python3")
+    let mut upstream_child = std::process::Command::new(oracle_python_path().as_str())
         .args(["-m", "pproxy", "-l", &upstream_listen, "-r", "direct"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -1737,7 +1746,7 @@ async fn probe_pproxy_udp_through_socks5_upstream() {
     let client_listen_tcp = format!("socks5://127.0.0.1:{}", client_tcp_port);
     let client_listen_udp = format!("socks5://127.0.0.1:{}", client_udp_port);
     let upstream_ref = format!("socks5://127.0.0.1:{}", upstream_port);
-    let mut client_child = std::process::Command::new("python3")
+    let mut client_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -1799,7 +1808,7 @@ async fn probe_pproxy_udp_unsupported_route() {
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
     let listen_tcp = format!("socks5://127.0.0.1:{}", pproxy_tcp_port);
     let listen_udp = format!("socks5://127.0.0.1:{}", pproxy_udp_port);
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -1912,7 +1921,7 @@ async fn probe_pproxy_round_robin_behavior() {
     let remote2 = format!("socks5://127.0.0.1:{}", echo2_addr.port());
 
     let pproxy_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -2012,7 +2021,7 @@ async fn probe_pproxy_all_refused_behavior() {
     let pproxy_port = eggress_testkit::get_free_port().await;
     let listen = format!("socks5://127.0.0.1:{}", pproxy_port);
     let upstream = format!("socks5://127.0.0.1:{}", dead_port);
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args(["-m", "pproxy", "-l", &listen, "-r", &upstream])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -2095,7 +2104,7 @@ async fn probe_pproxy_chain_two_hops() {
     let pproxy_a_port = eggress_testkit::get_free_port().await;
     let listen_a = format!("socks5://127.0.0.1:{}", pproxy_a_port);
     let upstream_b = format!("socks5://127.0.0.1:{}", pproxy_b_port);
-    let mut pproxy_a_child = std::process::Command::new("python3")
+    let mut pproxy_a_child = std::process::Command::new(oracle_python_path().as_str())
         .args(["-m", "pproxy", "-l", &listen_a, "-r", &upstream_b])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -2375,7 +2384,7 @@ async fn differential_unsupported_route_behavior() {
     let pproxy_port = eggress_testkit::get_free_port().await;
     let listen = format!("socks5://127.0.0.1:{}", pproxy_port);
     let upstream = format!("socks5://127.0.0.1:{}", dead_port);
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args(["-m", "pproxy", "-l", &listen, "-r", &upstream])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -5060,7 +5069,7 @@ async fn differential_standalone_udp_direct_echo() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -5154,7 +5163,7 @@ async fn differential_standalone_udp_domain_target() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -5243,7 +5252,7 @@ async fn differential_standalone_udp_malformed_short_datagram() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -5314,7 +5323,7 @@ async fn differential_standalone_udp_nonzero_frag() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -5384,7 +5393,7 @@ async fn differential_standalone_udp_two_clients() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -5486,7 +5495,7 @@ async fn differential_standalone_udp_oversized_datagram() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",
@@ -5559,7 +5568,7 @@ async fn differential_standalone_udp_two_targets_from_same_client() {
     // --- pproxy standalone UDP ---
     let pproxy_tcp_port = eggress_testkit::get_free_port().await;
     let pproxy_udp_port = eggress_testkit::get_free_port().await;
-    let mut pproxy_child = std::process::Command::new("python3")
+    let mut pproxy_child = std::process::Command::new(oracle_python_path().as_str())
         .args([
             "-m",
             "pproxy",

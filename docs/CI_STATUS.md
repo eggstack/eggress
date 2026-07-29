@@ -6,12 +6,13 @@ This document is the source of truth for repository verification. It supersedes 
 
 Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for ordinary development, not a release engine, compatibility evidence archive, or substitute for focused local testing.
 
-The repository has two automatic workflows:
+The repository has two automatic smoke workflows and one manual publish workflow:
 
 - `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite. Triggers on push to `main` and manual dispatch.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages. Triggers on Python-relevant pushes to `main` and manual dispatch.
+- `.github/workflows/publish-python.yml`: Python package publication to PyPI/TestPyPI using OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch. Requires `id-token: write` permission and repository environments `pypi`/`testpypi`.
 
-Pull requests do not automatically trigger duplicate smoke runs. There are no tag-triggered release workflows, artifact assembly workflows, publishing workflows, cross-platform release matrices, or mandatory compatibility-evidence uploads. Both workflows use read-only permissions (`permissions: contents: read`). No workflow has access to publishing secrets or environments.
+Pull requests do not automatically trigger duplicate smoke runs. The two smoke workflows use read-only permissions (`permissions: contents: read`). The publish workflow uses `id-token: write` only for OIDC token exchange with PyPI.
 
 ## Routine development
 
@@ -77,9 +78,9 @@ Compatibility claims must still be backed by the applicable oracle or interopera
 
 ## Release boundary
 
-Release cadence is entirely manual. GitHub Actions must not publish crates, create GitHub Releases, push container images, build release bundles, or react to version tags.
+Python package publication to PyPI uses OIDC trusted publishers via `.github/workflows/publish-python.yml`. Push a `v*` tag or use manual dispatch to trigger publication. The workflow requires repository environments `pypi` and `testpypi` to be configured.
 
-The release operator performs release checks and `cargo publish` locally. See `docs/release/RELEASE_PROCESS.md`.
+Rust crate publication to crates.io remains entirely manual. The release operator performs release checks and `cargo publish` locally. See `docs/release/RELEASE_PROCESS.md`.
 
 ## Design rationale
 

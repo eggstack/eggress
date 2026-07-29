@@ -88,6 +88,12 @@ The pproxy behavioral certification uses isolated oracle and candidate environme
 
 It performs only pproxy-specific behavioral validation: paired oracle/candidate observations, differential tests, interoperability tests, cipher KAT, plugin probes, and process lifecycle probes. It does not run formatting, linting, workspace tests, dependency audits, or release packaging. Its output is a compact JSON summary.
 
+The certification runner creates isolated environments under `target/pproxy-certification/`:
+- `oracle-venv/`: pproxy==2.7.9 only
+- `candidate-venv/`: locally built eggress + compatibility package
+
+All pproxy subprocesses use the oracle interpreter via `EGRESS_ORACLE_PYTHON`. Candidate Python probes use `EGRESS_CANDIDATE_PYTHON`. Observations are written to separate `observations/oracle/` and `observations/candidate/` directories.
+
 ## Protocol interoperability
 
 External interoperability checks are subsystem-specific:

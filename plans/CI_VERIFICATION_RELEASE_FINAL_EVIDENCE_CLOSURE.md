@@ -2,9 +2,18 @@
 
 ## Status
 
-**COMPLETE**
+**REOPENED — CERTIFICATION EXECUTION CLOSURE REQUIRED**
 
-### Final implementation SHA
+Superseded by `plans/CI_VERIFICATION_RELEASE_CERTIFICATION_EXECUTION_CLOSURE.md`.
+
+Reopened because:
+- wrong environment gate in the first certification check;
+- direct `python3` usage bypassing the pinned oracle interpreter;
+- flat observation directory despite split-directory claims;
+- absence of a successful full certification run;
+- registry publisher state inferred rather than authenticated.
+
+### Historical implementation SHA (partial evidence, not certification proof)
 
 `56071d3ec8734bb0cd54d71de6b5b5bc8cd3a56d` (`56071d3`) on `main`.
 

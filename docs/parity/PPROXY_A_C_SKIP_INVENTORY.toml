@@ -14,7 +14,7 @@
 
 [[skip]]
 test_node_id = "python/tests/test_pproxy_differential.py"
-reason = "Gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL; requires pproxy==2.7.9 installed in both oracle and candidate venvs"
+reason = "Gated on EGRESS_REQUIRE_EXTERNAL_INTEROP; requires pproxy==2.7.9 installed in oracle environment"
 milestone = "A"
 classification = "gated"
 closure_blocked = false
@@ -126,7 +126,7 @@ planned_workstream = null
 
 [[skip]]
 test_node_id = "python/tests/test_pproxy_utility_fixtures.py"
-reason = "Module-level skip gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL"
+reason = "Module-level skip gated on EGRESS_REQUIRE_EXTERNAL_INTEROP"
 milestone = "C"
 classification = "gated"
 closure_blocked = false
@@ -146,7 +146,7 @@ planned_workstream = "PC8"
 
 [[skip]]
 test_node_id = "python/tests/interop/test_pproxy_bidirectional_*.py"
-reason = "Gated on EGRESS_REQUIRE_PPROXY_DIFFERENTIAL + pproxy importability"
+reason = "Gated on EGRESS_REQUIRE_EXTERNAL_INTEROP + pproxy importability"
 milestone = "A"
 classification = "gated"
 closure_blocked = false
