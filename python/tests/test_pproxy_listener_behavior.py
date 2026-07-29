@@ -207,11 +207,12 @@ def make_stream_handler(events):
                 except Exception:
                     pass
                 finally:
+                    await w.drain()
                     w.close()
 
             t1 = asyncio.ensure_future(relay(reader, remote_writer))
             t2 = asyncio.ensure_future(relay(remote_reader, writer))
-            await asyncio.wait([t1, t2], return_when=asyncio.ALL_COMPLETED)
+            await asyncio.gather(t1, t2)
 
             events.append({"kind": "relay_end"})
         except asyncio.CancelledError:
@@ -322,11 +323,12 @@ async def handle(reader, writer):
             except Exception:
                 pass
             finally:
+                await w.drain()
                 w.close()
 
         t1 = asyncio.ensure_future(relay(reader, remote_writer))
         t2 = asyncio.ensure_future(relay(remote_reader, writer))
-        await asyncio.wait([t1, t2], return_when=asyncio.ALL_COMPLETED)
+        await asyncio.gather(t1, t2)
         events.append({{"kind": "relay_end"}})
     except asyncio.CancelledError:
         raise
