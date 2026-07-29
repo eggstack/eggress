@@ -7,7 +7,7 @@ for the certified subset of pproxy 2.7.9 behavior.
 pip install eggress-pproxy-compat
 ```
 
-It installs `eggress==0.1.0` and the tested `cryptography` range as declared
+It installs `eggress==1.0.1` and the tested `cryptography` range as declared
 dependencies. The package does not modify `sys.modules`, `sys.path`, or an
 already-installed upstream package at runtime. Installing it into an
 environment that already contains upstream `pproxy` is not supported; remove

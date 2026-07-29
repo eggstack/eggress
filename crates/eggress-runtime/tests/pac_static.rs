@@ -188,7 +188,7 @@ body = "<h1>Status OK</h1>"
 [[admin.static_content]]
 path = "/version"
 content_type = "text/plain"
-body = "0.1.0"
+body = "1.0.1"
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -227,7 +227,7 @@ body = "0.1.0"
 
     let (status, body, headers) = http_get(&admin_str, "/version").await;
     assert_eq!(status, 200);
-    assert_eq!(body, "0.1.0");
+    assert_eq!(body, "1.0.1");
     assert!(
         headers
             .get("content-type")
@@ -401,7 +401,7 @@ enabled = true
 [[admin.static_content]]
 path = "/version"
 content_type = "text/plain"
-body = "0.1.0"
+body = "1.0.1"
 "#;
     let config2 = r#"
 version = 1
@@ -446,7 +446,7 @@ body = "0.2.0"
         .to_string();
 
     let (_status, body, _) = http_get(&admin_addr, "/version").await;
-    assert_eq!(body, "0.1.0");
+    assert_eq!(body, "1.0.1");
 
     {
         let mut f = std::fs::OpenOptions::new()

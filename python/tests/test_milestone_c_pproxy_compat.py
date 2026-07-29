@@ -61,7 +61,7 @@ class TestPproxyNamespace:
         if not hasattr(pproxy, "__version__"):
             pytest.skip("pproxy.__version__ not available (system pproxy, not compat wheel)")
         v = pproxy.__version__
-        assert v == "0.1.0"
+        assert v == "1.0.1"
 
 
 # ---------------------------------------------------------------------------

@@ -164,7 +164,7 @@ mod tests {
         let (status, body) = http_get(&addr, "/-/status").await;
         assert_eq!(status, 200);
         let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(json["version"], "0.1.0");
+        assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(json["generation"], 42);
         assert!(json["uptime_seconds"].is_number());
     }

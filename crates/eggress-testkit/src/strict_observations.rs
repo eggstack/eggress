@@ -222,7 +222,7 @@ mod tests {
     fn test_env() -> EnvironmentMeta {
         EnvironmentMeta {
             pproxy_version: Some("2.7.9".to_string()),
-            eggress_version: "0.1.0".to_string(),
+            eggress_version: "1.0.1".to_string(),
             python_version: "3.11.0".to_string(),
             os: "macos".to_string(),
             arch: "aarch64".to_string(),

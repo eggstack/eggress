@@ -6,7 +6,7 @@ build-backend = "maturin"
 
 [project]
 name = "eggress"
-version = "0.1.0"
+version = "1.0.1"
 requires-python = ">=3.9"
 description = "Python bindings for the eggress proxy — pproxy-compatible URI translation, configuration, and service management"
 readme = "README.md"

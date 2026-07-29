@@ -140,7 +140,7 @@ default = "direct"
 
     // Serialize the snapshot and check for credential leakage
     let status_json = serde_json::json!({
-        "version": "0.1.0",
+        "version": "1.0.1",
         "generation": snap.generation,
     });
     let status_str = status_json.to_string();

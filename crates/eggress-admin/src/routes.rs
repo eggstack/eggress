@@ -65,7 +65,7 @@ pub async fn handle_request(
                 })
                 .collect();
             let status = serde_json::json!({
-                "version": "0.1.0",
+                "version": env!("CARGO_PKG_VERSION"),
                 "generation": snap.generation,
                 "uptime_seconds": uptime,
                 "active_connections": active,

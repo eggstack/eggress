@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eggress-pproxy-compat"
-version = "0.1.0"
+version = "1.0.1"
 description = "Certified-subset import compatibility package providing the pproxy namespace via eggress"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT OR Apache-2.0"}
 authors = [{name = "eggstack"}]
 dependencies = [
-    "eggress==0.1.0",
+    "eggress==1.0.1",
     "cryptography>=42,<47",
 ]
 classifiers = [
