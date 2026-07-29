@@ -2,9 +2,12 @@
 
 This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROADMAP.md).
 
-## Current Phase
+## Current Status
 
-Phase 42: pproxy parity corrective consistency pass (complete)
+Milestones A–C are under corrective review. Local closure gates pass but hosted evidence is pending.
+Two capabilities (`cli.get`, `process.reload.routing`) remain honest `gap` records.
+Unsupported transports (SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks) are intentional non-parity.
+See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 
 ## Completed Milestones
 
@@ -161,6 +164,8 @@ Phase 42: pproxy parity corrective consistency pass (complete)
 
 Phases 43+ are defined in `plans/pproxy_parity_python_dropin_roadmap.md` and cover advanced transport hardening, Python async API, CI integration, and release automation. These are post-release scope.
 
+Post-Phase 54 milestones (Track B/C) completed structural and behavioral evidence collection. The current state is corrective review of Milestones A–C.
+
 ## Next Phase
 
-Phase 43: (post-release scope — see roadmap)
+Post-release scope — see `plans/pproxy_parity_python_dropin_roadmap.md`.

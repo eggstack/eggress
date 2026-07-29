@@ -327,7 +327,7 @@ upstream pproxy differential suite as passing when its dependency is absent.
 
 ## pproxy compatibility harness (Phase 18)
 
-Compatibility evidence is tracked in `tests/compat/pproxy_manifest.toml`. Each feature
+Compatibility evidence is tracked in `docs/parity/pproxy_capability_manifest.toml` (canonical) and the historical `tests/compat/pproxy_manifest.toml`. Each feature
 has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_differential`,
 `implemented_interop`, `compatible`, or `intentional_non_parity`.
 

@@ -4,7 +4,7 @@
 Use when implementing new proxy protocols, transport wrappers, or modifying core relay/chain behavior.
 
 ## Key conventions
-- Edition 2021, MSRV 1.75, `unsafe_code = "forbid"` everywhere
+- Edition 2021, MSRV 1.75, `unsafe_code = "deny"` everywhere
 - Async runtime: Tokio. Errors: `thiserror`. CLI: `clap` derive.
 - Streams are boxed at protocol/transport boundaries (`BoxStream`) — never propagate generic stream types
 - No C deps, no OpenSSL, no `build.rs` files

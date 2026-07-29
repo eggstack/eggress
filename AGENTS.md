@@ -21,6 +21,54 @@ Use these current documents before relying on historical phase or completion rec
 
 Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.
 
+## Architecture index
+
+Quick reference to per-subsystem architecture documents under `docs/architecture/`:
+
+| Subsystem | Document | Description |
+|-----------|----------|-------------|
+| System overview | `docs/architecture/overview.md` | Entry points, crate dependency graph, design principles |
+| Core types | `docs/architecture/core.md` | `BoxStream`, `TargetAddr`, `ProtocolId`, relay, chain, detection |
+| Routing | `docs/architecture/routing.md` | Rule engine, schedulers, health state machine, route explanation |
+| Config | `docs/architecture/config.md` | TOML schema, validation, secret sources, compilation |
+| Runtime | `docs/architecture/runtime.md` | Supervisor, snapshot compilation, reload, shutdown ordering |
+| Server | `docs/architecture/server.md` | Session lifecycle, accept/route/reply/report |
+| Admin | `docs/architecture/admin.md` | Admin API, PAC, static content, route explanation |
+| Metrics | `docs/architecture/metrics.md` | Prometheus counters, bounded cardinality |
+| HTTP protocols | `docs/architecture/protocols-http.md` | HTTP CONNECT, H2 CONNECT, forward proxy |
+| SOCKS protocols | `docs/architecture/protocols-socks.md` | SOCKS4/4a, SOCKS5, UDP ASSOCIATE |
+| Shadowsocks | `docs/architecture/protocols-shadowsocks.md` | AEAD ciphers, SIP003 framing |
+| Trojan | `docs/architecture/protocols-trojan.md` | Trojan client/server, TLS transport |
+| WebSocket | `docs/architecture/protocols-websocket.md` | WS/WSS tunnels, stream-native composition |
+| Raw | `docs/architecture/protocols-raw.md` | Fixed-target TCP forwarding |
+| Reverse | `docs/architecture/protocols-reverse.md` | Control-channel backward proxy |
+| TLS transport | `docs/architecture/transport-tls.md` | rustls client/server, ALPN, certificate handling |
+| UDP | `docs/architecture/udp.md` | Associations, target flows, relay, security |
+| URI parsing | `docs/architecture/uri.md` | Typed AST, redacted Display, pproxy grammar |
+| Embed API | `docs/architecture/embed.md` | `EggressConfig`, `EggressService`, `EggressHandle` |
+| Python bindings | `docs/architecture/python.md` | PyO3 classes, pproxy drop-in API, Connection, Server |
+| pproxy compat | `docs/architecture/pproxy-compat.md` | URI translation, diagnostics, manifest validation |
+| CLI | `docs/architecture/cli.md` | Binary targets, pproxy drop-in, exit codes |
+| System proxy | `docs/architecture/system-proxy.md` | macOS/Windows system proxy configuration |
+| Testkit | `docs/architecture/testkit.md` | Oracle, differential, fixtures, manifest validation |
+| Tools/scripts | `docs/architecture/tools-and-scripts.md` | Helper and validation scripts |
+
+## Skills
+
+Agent skills live in `.skills/` (canonical) and are symlinked from `.agents/skills/`. Each skill provides focused guidance for a subsystem:
+
+| Skill | When to use |
+|-------|-------------|
+| `rust-proxy-dev` | New protocols, transport wrappers, core relay/chain, Python bindings |
+| `config-reload` | Config schema, TOML parsing, hot-reload, supervisor lifecycle |
+| `routing-rules` | Routing rules, matchers, schedulers, route selection |
+| `testing` | Writing tests, test infrastructure, fuzz, differential, oracle |
+| `udp-protocol` | UDP associations, datagram relay, upstream SOCKS5 relay |
+| `advanced-transports` | H2 CONNECT, WebSocket tunnels, raw tunnels, TLS/ALPN |
+| `release` | Version bumps, PyPI/crates.io publication, release verification |
+| `reverse-proxy` | Reverse/backward proxy, NAT traversal, control-channel proxying |
+| `security-dev` | Security features, hardening, fuzz targets, invariant tests |
+
 ## Verification policy
 
 Use focused local tests during iteration. Run the narrowest command that exercises the changed code, for example:
