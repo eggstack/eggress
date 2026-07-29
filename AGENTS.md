@@ -50,6 +50,12 @@ python3 -m venv .venv
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
 
+For faster iteration during Python development, use `maturin develop` instead of the full build-install cycle:
+
+```bash
+(cd crates/eggress-python && ../../.venv/bin/maturin develop)
+```
+
 Do not automatically run security audits, operating-system matrices, ignored interoperability suites, benchmarks, fuzzing, soak tests, parity-report generation, or release-evidence scripts for an unrelated change. Run specialized checks only when the affected subsystem or compatibility claim requires them.
 
 Dependency and advisory checks are expected for dependency changes and release preparation:
@@ -70,6 +76,23 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
 
 ./scripts/run_pproxy_certification.sh
 ```
+
+Fuzz targets live in the standalone `fuzz/` workspace (separate `Cargo.toml`). Compile-check or run only targets relevant to the changed parser:
+
+```bash
+cargo check --manifest-path fuzz/Cargo.toml --bins
+cargo fuzz run uri_parse -- -runs=1000
+```
+
+Test-gating environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` | Enable pproxy differential tests |
+| `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1` | Enable Shadowsocks wire-format interop |
+| `EGRESS_REQUIRE_REVERSE_INTEROP=1` | Enable reverse proxy pproxy interop |
+| `EGRESS_REQUIRE_SOAK=1` | Enable soak/performance tests |
+| `EGRESS_RUN_PPROXY_DIFFERENTIAL=1` | Enable differential parity harness |
 
 Ordinary changes do not require generated evidence bundles, uploaded artifacts, screenshots, copied command transcripts, or new completion documents. Record the relevant tests in the commit or pull-request summary when useful.
 
@@ -116,6 +139,8 @@ The principal crates are:
 - `python-pproxy-compat`: separate package providing the top-level `pproxy` namespace.
 - `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
 
+Note: the root `Cargo.toml` also defines a `eggress-bench` package (not a workspace member) with Criterion benchmarks. Run `cargo bench` from the workspace root.
+
 ## Architectural invariants
 
 Preserve these invariants unless a focused design change explicitly replaces them:
@@ -143,14 +168,16 @@ The canonical `eggress` Python package must not silently install or alias the to
 
 ## Code conventions
 
-- Rust edition 2021; MSRV is declared in the workspace manifest.
-- Tokio is the async runtime.
+- Rust edition 2021; MSRV 1.75 (see `workspace.package.rust-version` in root `Cargo.toml`).
+- `unsafe_code = "deny"` at workspace level; do not add unsafe without explicit justification.
+- Tokio is the async runtime; `tokio::main` and `tokio::test` are used throughout.
 - Use `thiserror` for structured errors and `tracing` for logging.
 - Keep protocol parsing bounded and defensive.
 - Prefer deterministic tests over fixed sleeps; use retry loops or readiness signals for process/network startup.
 - Preserve stable diagnostic and exit-code semantics where they are part of the compatibility surface.
 - Add dependencies only when the maintenance and binary-size cost is justified.
 - Do not add OpenSSL, C dependencies, or build scripts without an explicit architectural reason.
+- `deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, and `cmake` from the dependency graph.
 
 ## Change discipline
 
