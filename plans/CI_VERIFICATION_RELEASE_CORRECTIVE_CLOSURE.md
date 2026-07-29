@@ -2,11 +2,13 @@
 
 ## Status
 
-**REOPENED — FINAL EVIDENCE CLOSURE REQUIRED**
+**SUPERSEDED — FINAL EVIDENCE CLOSED BY `plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`**
 
-- Closure was reopened because: certification environments were not isolated; successful logs were retained; the Structural profile and old gates remained; the only final Python hosted proof run failed; trusted-publisher state was not inspected.
-- Superseded by: `plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`
-- Previous "final" implementation commit: `c645b717d90db0c26512b1fa354b926e2e1055d3`
+Closure of this line of work is owned by the final evidence closure plan. The corrective pass it recorded is itself a historical step on the way to closure; the FE0–FE9 workstreams of the final plan supersede the corrective matrix in this document.
+
+- Superseded by: [`plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`](./CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md)
+- Corrective "final" implementation commit recorded below: `c645b717d90db0c26512b1fa354b926e2e1055d3`
+- True final implementation commit: `56071d3ec8734bb0cd54d71de6b5b5bc8cd3a56d` (FE5 fix + final smoke green)
 - Parent plan superseded: `plans/CI_VERIFICATION_RELEASE_REDUCTIVE_FOLLOW_UP.md`
 
 ## Baseline
