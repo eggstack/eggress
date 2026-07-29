@@ -3,11 +3,11 @@
 //! Uses the oracle harness from `eggress_testkit::oracle` to run equivalent
 //! scenarios against both pproxy and eggress, comparing normalized outputs.
 //!
-//! All tests are `#[ignore]` and gated on `EGGRESS_ORACLE=1`.
+//! All tests are `#[ignore]` and gated on `EGRESS_PPROXY_CERTIFY=1`.
 //!
 //! Run with:
 //! ```bash
-//! EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+//! EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle -- --ignored
 //! ```
 
 #![allow(dead_code)]
@@ -744,7 +744,7 @@ async fn oracle_generate_report() {
     );
 
     // Write report if env var is set
-    if let Ok(path) = std::env::var("EGRESS_ORACLE_REPORT") {
+    if let Ok(path) = std::env::var("EGRESS_ORACLE_REPORT_PATH") {
         let report_path = std::path::Path::new(&path);
         report
             .write_json(report_path)

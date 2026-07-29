@@ -2,9 +2,11 @@
 
 ## Status
 
-**COMPLETE**
+**REOPENED — FINAL EVIDENCE CLOSURE REQUIRED**
 
-- Final implementation commit: `c645b717d90db0c26512b1fa354b926e2e1055d3`
+- Closure was reopened because: certification environments were not isolated; successful logs were retained; the Structural profile and old gates remained; the only final Python hosted proof run failed; trusted-publisher state was not inspected.
+- Superseded by: `plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`
+- Previous "final" implementation commit: `c645b717d90db0c26512b1fa354b926e2e1055d3`
 - Parent plan superseded: `plans/CI_VERIFICATION_RELEASE_REDUCTIVE_FOLLOW_UP.md`
 
 ## Baseline

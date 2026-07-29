@@ -126,7 +126,7 @@ Protocol-specific tests live alongside the implementation:
 - `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (28 scenarios, `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
 - `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (18 scenarios, `EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
 - `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
-- `crates/eggress-cli/tests/oracle.rs` — scenario-driven oracle harness (31 scenarios, `EGRESS_ORACLE=1`)
+- `crates/eggress-cli/tests/oracle.rs` — scenario-driven oracle harness (31 scenarios, `EGRESS_PPROXY_CERTIFY=1`)
 
 Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.
 
@@ -164,20 +164,20 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - Fixture servers (`fixtures` module) — TCP/UDP echo, HTTP origin, HTTP CONNECT upstream, SOCKS4/5 upstream, TLS echo
 - Differential case model (`case_model` module) — `PproxyCase`, `CaseOutcome`, comparison helpers
 - Parity report generator (`report` module) — JSON and markdown reports from manifest + test results
-- Oracle harness (`oracle` module) — scenario registry, JSON report generation, gate functions (`EGRESS_ORACLE`)
+- Oracle harness (`oracle` module) — scenario registry, JSON report generation, gate functions (`EGRESS_PPROXY_CERTIFY`)
 
 ### Oracle infrastructure (Phase A3)
 
 The oracle harness under `eggress-testkit/src/oracle/` provides:
 
-- **`mod.rs`** — Module root, gate checks (`EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`), timeout constants
+- **`mod.rs`** — Module root, gate checks (`EGRESS_PPROXY_CERTIFY`), timeout constants
 - **`scenario.rs`** — 31 hardcoded scenarios (backward compat, no TOML files needed)
 - **`schema.rs`** — TOML scenario schema (version 1), loader, validator. Maps scenarios to A2 composition IDs
 - **`observations.rs`** — `ProxyObservation` semantic capture model: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status. `compare_observations()` produces structured comparison results
 - **`probes.rs`** — Reusable protocol client probes: `socks5_tcp_connect`, `socks5_tcp_connect_auth`, `socks5_connect_refused`, `socks5_auth_failure`, `http_connect`, `http_connect_refused`, `http_forward_get`, `http_forward_post`, `socks4_connect`, `socks4a_connect`. Each returns `ProbeResult`
 - **`supervisor.rs`** — `SupervisedProcess` with process-group ownership (Unix), bounded stdout/stderr capture, artifact retention (logs saved on drop), `ReadinessProbe` enum (TcpPort, StdoutPattern, FixedDelay, FileExists), structured `ProcessExit`
-- **`ci.rs`** (renamed to `profile.rs`): 3-profile scenario filtering: Structural (no pproxy needed), Differential (requires pproxy), Platform (OS-specific or privileged). Gate env vars: `EGRESS_ORACLE`, `EGRESS_ORACLE_EXTENDED`, `EGRESS_ORACLE_PLATFORM`
-- **`report.rs`** — JSON and Markdown report generation with manifest consistency checks and CI tier filtering
+- **`profile.rs`**: 2-profile scenario filtering: Differential (requires pproxy), Platform (OS-specific or privileged). Structural scenarios are unprofiled. Gate env vars: `EGRESS_PPROXY_CERTIFY`, `EGRESS_PPROXY_PLATFORM`
+- **`report.rs`** — JSON and Markdown report generation with manifest consistency checks and profile filtering
 
 TOML scenario files live under `crates/eggress-testkit/tests/oracle/scenarios/`. Schema validation tests run without pproxy:
 
@@ -218,7 +218,7 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interopera
 EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
 
 # Scenario-driven oracle harness (gated, requires pproxy==2.7.9)
-EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle -- --ignored
 
 # Python tests
 python -m pytest python/tests/test_pproxy_dropin.py -v
@@ -487,10 +487,10 @@ python3.11 -m venv .venv-oracle
 
 ## pproxy behavioral certification
 
-The pproxy behavioral certification runs only pproxy-specific checks:
+The pproxy behavioral certification runs isolated oracle and candidate environments with only pproxy-specific checks:
 
 ```bash
 ./scripts/run_pproxy_certification.sh
 ```
 
-Runs: strict manifest tests, paired API runner, differential tests, interop tests, cipher KAT, plugin probes, process lifecycle, and resource cleanup. Produces a compact JSON summary. Does not run formatting, linting, workspace tests, dependency audits, or wheel builds.
+Runs: pproxy differential tests, paired API runner, strict Python differential tests, interop tests, cipher KAT, plugin probes, and process lifecycle. Produces a compact JSON summary. Does not run formatting, linting, workspace tests, dependency audits, or wheel builds.

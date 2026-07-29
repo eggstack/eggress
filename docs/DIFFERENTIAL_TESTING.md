@@ -81,17 +81,17 @@ EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differe
 
 ### Scenario-Driven Oracle Harness
 
-Gate: `EGRESS_ORACLE=1`
+Gate: `EGRESS_PPROXY_CERTIFY=1`
 
 ```bash
 # All oracle scenarios (31 scenarios across 5 categories)
-EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle -- --ignored
 
 # Specific scenario
-EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_tcp_socks5_connect -- --ignored
+EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle oracle_tcp_socks5_connect -- --ignored
 
 # Generate JSON report
-EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle oracle_generate_report -- --ignored
+EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle oracle_generate_report -- --ignored
 ```
 
 ### Oracle Harness (Phase A3)
@@ -122,9 +122,11 @@ The oracle harness has been expanded with:
   - Structured `ProcessExit` with exit code, signal, lifetime
 
 #### Certification Profiles
-- **Structural**: Schema validation, startup, port binding (gate: `EGRESS_ORACLE=1`)
-- **Differential**: HTTP, SOCKS, CLI, UDP with pinned pproxy (gate: `EGRESS_ORACLE_EXTENDED=1`)
-- **Platform**: OS-specific or privileged checks, explicitly selected (gate: `EGRESS_ORACLE_PLATFORM=1`)
+
+Structural scenarios run as ordinary ungated tests. Differential and platform profiles are explicitly gated:
+
+- **Differential**: HTTP, SOCKS, CLI, UDP with pinned pproxy (gate: `EGRESS_PPROXY_CERTIFY=1`)
+- **Platform**: OS-specific or privileged checks, explicitly selected (gate: `EGRESS_PPROXY_PLATFORM=1`)
 
 #### Report Generation
 - JSON reports with observation data, timing tolerances, divergence tracking
@@ -136,7 +138,7 @@ The oracle harness has been expanded with:
 
 ```bash
 # Run all oracle scenarios (requires pproxy==2.7.9)
-EGRESS_ORACLE=1 cargo test -p eggress-cli --test oracle -- --ignored
+EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle -- --ignored
 
 # Run schema validation tests (no pproxy needed)
 cargo test -p eggress-testkit --test oracle_scenario_files

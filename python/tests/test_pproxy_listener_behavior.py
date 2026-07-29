@@ -211,9 +211,7 @@ def make_stream_handler(events):
 
             t1 = asyncio.ensure_future(relay(reader, remote_writer))
             t2 = asyncio.ensure_future(relay(remote_reader, writer))
-            await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
-            t1.cancel()
-            t2.cancel()
+            await asyncio.wait([t1, t2], return_when=asyncio.ALL_COMPLETED)
 
             events.append({"kind": "relay_end"})
         except asyncio.CancelledError:
@@ -328,9 +326,7 @@ async def handle(reader, writer):
 
         t1 = asyncio.ensure_future(relay(reader, remote_writer))
         t2 = asyncio.ensure_future(relay(remote_reader, writer))
-        await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
-        t1.cancel()
-        t2.cancel()
+        await asyncio.wait([t1, t2], return_when=asyncio.ALL_COMPLETED)
         events.append({{"kind": "relay_end"}})
     except asyncio.CancelledError:
         raise

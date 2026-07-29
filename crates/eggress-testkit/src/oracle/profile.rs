@@ -1,47 +1,37 @@
 use super::report::CertificationProfile;
 use super::scenario::{OracleScenario, ScenarioCategory};
 
-pub const STRUCTURAL_GATE: &str = "EGRESS_ORACLE";
-pub const DIFFERENTIAL_GATE: &str = "EGRESS_ORACLE_EXTENDED";
-pub const PLATFORM_GATE: &str = "EGRESS_ORACLE_PLATFORM";
+pub const DIFFERENTIAL_GATE: &str = "EGRESS_PPROXY_CERTIFY";
+pub const PLATFORM_GATE: &str = "EGRESS_PPROXY_PLATFORM";
 
 pub fn profile_enabled(profile: CertificationProfile) -> bool {
     let var = match profile {
-        CertificationProfile::Structural => STRUCTURAL_GATE,
         CertificationProfile::Differential => DIFFERENTIAL_GATE,
         CertificationProfile::Platform => PLATFORM_GATE,
     };
     std::env::var(var).map(|v| v == "1").unwrap_or(false)
 }
 
-pub fn default_profile(scenario: &OracleScenario) -> CertificationProfile {
+pub fn certification_profile(scenario: &OracleScenario) -> Option<CertificationProfile> {
+    if scenario.platform.requires_root || scenario.platform.required_os.is_some() {
+        return Some(CertificationProfile::Platform);
+    }
+
     match scenario.category {
-        ScenarioCategory::CliDefaults => CertificationProfile::Structural,
-        ScenarioCategory::HttpSocksTcp => CertificationProfile::Differential,
-        ScenarioCategory::Chains => CertificationProfile::Differential,
-        ScenarioCategory::Rules => CertificationProfile::Differential,
-        ScenarioCategory::Udp => CertificationProfile::Differential,
+        ScenarioCategory::CliDefaults => None,
+        ScenarioCategory::HttpSocksTcp
+        | ScenarioCategory::Chains
+        | ScenarioCategory::Rules
+        | ScenarioCategory::Udp => Some(CertificationProfile::Differential),
     }
 }
 
 pub fn assign_profiles(
     scenarios: &[OracleScenario],
-) -> Vec<(CertificationProfile, &OracleScenario)> {
+) -> Vec<(Option<CertificationProfile>, &OracleScenario)> {
     scenarios
         .iter()
-        .map(|s| {
-            let mut profile = default_profile(s);
-
-            if s.platform.requires_root || s.platform.required_os.is_some() {
-                profile = CertificationProfile::Platform;
-            }
-
-            if profile == CertificationProfile::Structural && s.id.starts_with("ext.") {
-                profile = CertificationProfile::Differential;
-            }
-
-            (profile, s)
-        })
+        .map(|s| (certification_profile(s), s))
         .collect()
 }
 
@@ -51,12 +41,7 @@ pub fn scenarios_for_profile(
 ) -> Vec<&OracleScenario> {
     scenarios
         .iter()
-        .filter(|s| {
-            let assigned = default_profile(s);
-            assigned == profile
-                || (profile == CertificationProfile::Differential
-                    && assigned == CertificationProfile::Structural)
-        })
+        .filter(|s| certification_profile(s) == Some(profile))
         .collect()
 }
 
@@ -70,12 +55,6 @@ pub struct CertificationProfileConfig {
 
 pub fn all_profile_configs() -> Vec<CertificationProfileConfig> {
     vec![
-        CertificationProfileConfig {
-            profile: CertificationProfile::Structural,
-            gate_var: STRUCTURAL_GATE,
-            description: "Structural: schema validation, startup, port binding",
-            required: true,
-        },
         CertificationProfileConfig {
             profile: CertificationProfile::Differential,
             gate_var: DIFFERENTIAL_GATE,
@@ -95,10 +74,16 @@ pub fn generate_profile_summary(scenarios: &[OracleScenario]) -> String {
     let profiles = assign_profiles(scenarios);
     let mut summary = String::new();
 
+    let structural_count = profiles.iter().filter(|(p, _)| p.is_none()).count();
+    summary.push_str(&format!(
+        "Structural (ungated): {} scenarios\n",
+        structural_count
+    ));
+
     for config in all_profile_configs() {
         let count = profiles
             .iter()
-            .filter(|(p, _)| *p == config.profile)
+            .filter(|(p, _)| *p == Some(config.profile))
             .count();
         summary.push_str(&format!(
             "{}: {} scenarios (gate: {})\n",
@@ -114,88 +99,90 @@ mod tests {
     use super::*;
 
     #[test]
-    fn profile_assignment_cli_defaults() {
+    fn profile_classification_cli_defaults() {
         let scenarios =
             super::super::scenario::scenarios_for_category(ScenarioCategory::CliDefaults);
         for s in &scenarios {
-            let profile = default_profile(s);
+            let profile = certification_profile(s);
             assert_eq!(
-                profile,
-                CertificationProfile::Structural,
-                "CLI scenario {} should be Structural",
+                profile, None,
+                "CLI scenario {} should be unprofiled (structural)",
                 s.id
             );
         }
     }
 
     #[test]
-    fn profile_assignment_http_socks() {
+    fn profile_classification_http_socks() {
         let scenarios =
             super::super::scenario::scenarios_for_category(ScenarioCategory::HttpSocksTcp);
         for s in &scenarios {
-            let profile = default_profile(s);
-            assert_eq!(
-                profile,
-                CertificationProfile::Differential,
-                "HTTP/SOCKS scenario {} should be Differential",
-                s.id
+            let profile = certification_profile(s);
+            assert!(
+                profile == Some(CertificationProfile::Differential),
+                "HTTP/SOCKS scenario {} should be Differential, got {:?}",
+                s.id,
+                profile
             );
         }
     }
 
     #[test]
-    fn profile_assignment_chains() {
+    fn profile_classification_chains() {
         let scenarios = super::super::scenario::scenarios_for_category(ScenarioCategory::Chains);
         for s in &scenarios {
-            let profile = default_profile(s);
-            assert_eq!(
-                profile,
-                CertificationProfile::Differential,
-                "Chain scenario {} should be Differential",
-                s.id
+            let profile = certification_profile(s);
+            assert!(
+                profile == Some(CertificationProfile::Differential),
+                "Chain scenario {} should be Differential, got {:?}",
+                s.id,
+                profile
             );
         }
     }
 
     #[test]
-    fn profile_assignment_udp() {
+    fn profile_classification_udp() {
         let scenarios = super::super::scenario::scenarios_for_category(ScenarioCategory::Udp);
         for s in &scenarios {
-            let profile = default_profile(s);
-            assert_eq!(
-                profile,
-                CertificationProfile::Differential,
-                "UDP scenario {} should be Differential",
-                s.id
+            let profile = certification_profile(s);
+            assert!(
+                profile == Some(CertificationProfile::Differential),
+                "UDP scenario {} should be Differential, got {:?}",
+                s.id,
+                profile
             );
         }
     }
 
     #[test]
     fn profile_gate_defaults() {
-        std::env::remove_var(STRUCTURAL_GATE);
         std::env::remove_var(DIFFERENTIAL_GATE);
-        assert!(!profile_enabled(CertificationProfile::Structural));
+        std::env::remove_var(PLATFORM_GATE);
         assert!(!profile_enabled(CertificationProfile::Differential));
+        assert!(!profile_enabled(CertificationProfile::Platform));
     }
 
     #[test]
     fn all_profile_configs_complete() {
         let configs = all_profile_configs();
-        assert_eq!(configs.len(), 3);
+        assert_eq!(configs.len(), 2);
         let mut profiles: Vec<_> = configs.iter().map(|c| c.profile).collect();
         profiles.sort_by_key(|p| format!("{:?}", p));
         profiles.dedup();
-        assert_eq!(profiles.len(), 3);
+        assert_eq!(profiles.len(), 2);
     }
 
     #[test]
     fn scenarios_for_profile_filtering() {
         let all = super::super::scenario::all_scenarios();
-        let structural = scenarios_for_profile(&all, CertificationProfile::Structural);
-        assert!(!structural.is_empty());
-        for s in &structural {
-            assert_eq!(default_profile(s), CertificationProfile::Structural);
+        let differential = scenarios_for_profile(&all, CertificationProfile::Differential);
+        assert!(!differential.is_empty());
+        for s in &differential {
+            assert_eq!(
+                certification_profile(s),
+                Some(CertificationProfile::Differential)
+            );
         }
     }
 

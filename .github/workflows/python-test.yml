@@ -1,16 +1,6 @@
 name: Python smoke
 
 on:
-  pull_request:
-    paths:
-      - 'crates/eggress-embed/**'
-      - 'crates/eggress-python/**'
-      - 'python/**'
-      - 'python-pproxy-compat/**'
-      - 'tests/compat/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/python-test.yml'
   push:
     branches: [main]
     paths:
@@ -56,6 +46,6 @@ jobs:
         run: maturin develop
         working-directory: crates/eggress-python
       - name: Install compat package
-        run: pip wheel --no-deps --wheel-dir /tmp/compat-wheels ./python-pproxy-compat && pip install /tmp/compat-wheels/eggress_pproxy_compat-*.whl
+        run: pip install --no-deps ./python-pproxy-compat
       - name: Run Python smoke suite
         run: python -m pytest python/tests tests/compat -q

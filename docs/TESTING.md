@@ -80,13 +80,13 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
 Run these when changing pproxy behavior, URI translation, compatibility manifests, process behavior, or the top-level `pproxy` namespace. See `docs/DIFFERENTIAL_TESTING.md` for the full harness.
 
-The pproxy behavioral certification is reserved for explicit compatibility-certification work:
+The pproxy behavioral certification uses isolated oracle and candidate environments and is reserved for explicit compatibility-certification work:
 
 ```bash
 ./scripts/run_pproxy_certification.sh
 ```
 
-It performs only pproxy-specific behavioral validation: manifest checks, paired oracle/candidate observations, differential tests, interoperability tests, and process lifecycle probes. It does not run formatting, linting, workspace tests, dependency audits, or release packaging. Its output is a compact JSON summary.
+It performs only pproxy-specific behavioral validation: paired oracle/candidate observations, differential tests, interoperability tests, cipher KAT, plugin probes, and process lifecycle probes. It does not run formatting, linting, workspace tests, dependency audits, or release packaging. Its output is a compact JSON summary.
 
 ## Protocol interoperability
 

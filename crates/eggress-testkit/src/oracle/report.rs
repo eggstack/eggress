@@ -17,8 +17,6 @@ use super::scenario::ScenarioCategory;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CertificationProfile {
-    /// No external process required; runs without pproxy.
-    Structural,
     /// Requires pproxy oracle and external interoperability.
     Differential,
     /// Platform-specific or privileged checks; explicitly selected.
@@ -589,7 +587,7 @@ mod tests {
         let mut report = OracleReport::new();
         report.add_scenario(
             ScenarioResult::new("fast", ScenarioCategory::CliDefaults, "fast")
-                .with_certification_profile(CertificationProfile::Structural),
+                .with_certification_profile(CertificationProfile::Differential),
         );
         report.add_scenario(
             ScenarioResult::new("core", ScenarioCategory::HttpSocksTcp, "core")
@@ -601,13 +599,8 @@ mod tests {
             "no profile",
         ));
 
-        let structural = report.scenarios_for_profile(CertificationProfile::Structural);
-        assert_eq!(structural.len(), 1);
-        assert_eq!(structural[0].id, "fast");
-
         let differential = report.scenarios_for_profile(CertificationProfile::Differential);
-        assert_eq!(differential.len(), 1);
-        assert_eq!(differential[0].id, "core");
+        assert_eq!(differential.len(), 2);
 
         let platform = report.scenarios_for_profile(CertificationProfile::Platform);
         assert!(platform.is_empty());
@@ -643,9 +636,9 @@ mod tests {
 
     #[test]
     fn certification_profile_serde() {
-        let profile = CertificationProfile::Structural;
+        let profile = CertificationProfile::Differential;
         let json = serde_json::to_string(&profile).unwrap();
-        assert_eq!(json, "\"structural\"");
+        assert_eq!(json, "\"differential\"");
         let parsed: CertificationProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, profile);
     }

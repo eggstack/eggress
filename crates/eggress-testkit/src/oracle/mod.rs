@@ -6,9 +6,9 @@
 //!
 //! # Gating
 //!
-//! All oracle tests are gated on `EGGRESS_ORACLE=1` and require Python 3
-//! with pproxy==2.7.9 installed. The non-gated test suite must never
-//! require pproxy or internet access.
+//! Oracle differential tests are gated on `EGRESS_PPROXY_CERTIFY=1`
+//! and require Python 3 with pproxy==2.7.9 installed. Structural tests
+//! that need no pproxy run without any gate variable.
 
 pub mod observations;
 pub mod probes;
@@ -20,8 +20,8 @@ pub mod supervisor;
 
 use std::time::Duration;
 
-/// Environment variable that gates oracle tests.
-pub const ORACLE_GATE_VAR: &str = "EGRESS_ORACLE";
+/// Environment variable that gates oracle differential tests.
+pub const ORACLE_GATE_VAR: &str = "EGRESS_PPROXY_CERTIFY";
 
 /// Check if the oracle test gate is enabled.
 pub fn oracle_gate_enabled() -> bool {

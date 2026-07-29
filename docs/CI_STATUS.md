@@ -8,10 +8,10 @@ Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for o
 
 The repository has two automatic workflows:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite. Triggers on push to main, pull requests to main, and manual dispatch.
-- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages. Triggers on push to main, pull requests to main (path-scoped), and manual dispatch.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite. Triggers on push to `main` and manual dispatch.
+- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages. Triggers on Python-relevant pushes to `main` and manual dispatch.
 
-There are no tag-triggered release workflows, artifact assembly workflows, publishing workflows, cross-platform release matrices, or mandatory compatibility-evidence uploads. Both workflows use read-only permissions (`permissions: contents: read`). No workflow has access to publishing secrets or environments.
+Pull requests do not automatically trigger duplicate smoke runs. There are no tag-triggered release workflows, artifact assembly workflows, publishing workflows, cross-platform release matrices, or mandatory compatibility-evidence uploads. Both workflows use read-only permissions (`permissions: contents: read`). No workflow has access to publishing secrets or environments.
 
 ## Routine development
 
