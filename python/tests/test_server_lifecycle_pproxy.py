@@ -12,6 +12,8 @@ import time
 
 import pytest
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 # ---------------------------------------------------------------------------
 # Helpers

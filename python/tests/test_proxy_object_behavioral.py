@@ -10,6 +10,8 @@ import asyncio
 
 import pytest
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 # ---------------------------------------------------------------------------
 # ProxyDirect.bind

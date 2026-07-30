@@ -358,6 +358,7 @@ class TestNamespaceSmoke(unittest.TestCase):
 
     def test_pproxy_server_importable(self):
         """pproxy.server can be imported without errors."""
+        pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
         from pproxy import server
         self.assertTrue(hasattr(server, "proxies_by_uri"))
         self.assertTrue(hasattr(server, "compile_rule"))
@@ -365,6 +366,7 @@ class TestNamespaceSmoke(unittest.TestCase):
 
     def test_pproxy_proto_importable(self):
         """pproxy.proto can be imported without errors."""
+        pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
         from pproxy import proto
         self.assertTrue(hasattr(proto, "Socks5"))
         self.assertTrue(hasattr(proto, "HTTP"))
