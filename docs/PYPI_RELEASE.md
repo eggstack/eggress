@@ -1,6 +1,6 @@
 # Python Release Procedure
 
-Build, test, and publish the `eggress` Python packages locally. Python
+Build, test, and publish the `eggress` Python package locally. Python
 publication is separate from crates.io and must not be coupled to the Rust
 release workflow.
 
@@ -9,9 +9,6 @@ release workflow.
 | Package | Source | Purpose |
 |---------|--------|---------|
 | `eggress` | `crates/eggress-python/` | Core Python bindings (PyO3 + native extension) |
-| `eggress-pproxy-compat` | `python-pproxy-compat/` | Separate `import pproxy` compatibility layer |
-
-The canonical `eggress` wheel never aliases `pproxy` through `sys.modules`.
 
 ## Prerequisites
 
@@ -30,9 +27,6 @@ mkdir -p dist
 # Build the core wheel
 (cd crates/eggress-python && maturin build --release --out ../../dist)
 
-# Build the compat wheel
-python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
-
 # Build source distribution
 (cd crates/eggress-python && maturin sdist --out ../../dist)
 ```
@@ -40,62 +34,28 @@ python3 -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
 ## Test in a clean venv
 
 ```bash
-rm -rf .venv-release-test
-python3 -m venv .venv-release-test
-.venv-release-test/bin/pip install --upgrade pip
-.venv-release-test/bin/pip install dist/eggress-*.whl
-.venv-release-test/bin/pip install dist/eggress_pproxy_compat-*.whl
-.venv-release-test/bin/pip install pytest pytest-asyncio
-.venv-release-test/bin/python -m pytest python/tests tests/compat -q
-.venv-release-test/bin/python -c "import eggress; print(eggress.__version__)"
-.venv-release-test/bin/python -c "import pproxy; print('pproxy import OK')"
-rm -rf .venv-release-test
+python3 -m venv /tmp/test-eggress
+/tmp/test-eggress/bin/python -m pip install dist/eggress-*.whl
+/tmp/test-eggress/bin/python -c "import eggress; print(eggress.__version__)"
+/tmp/test-eggress/bin/python -m pytest python/tests -q
+rm -rf /tmp/test-eggress
 ```
 
-## Check metadata
+## Publish
 
 ```bash
-python3 -m twine check dist/*
-```
-
-## Upload
-
-```bash
-# Optional: TestPyPI first
+# Upload to TestPyPI first
 twine upload --repository testpypi dist/*
 
-# Production
+# Upload to PyPI
 twine upload dist/*
 ```
 
-## Broken release repair
-
-If a published version is broken:
-
-1. Yank the defective version via the PyPI web interface or supported registry API.
-2. Correct the repository source.
-3. Increment the package version.
-4. Remove stale build outputs (`rm -rf dist`).
-5. Rebuild both packages from a clean output directory.
-6. Test both packages together in a clean environment.
-7. Upload the new version.
-
-Do not attempt to overwrite or replace an existing published version.
-Published package versions are immutable; repair is always a roll-forward.
-
-## Version alignment
-
-Python package version is aligned with the Rust workspace version. See
-`crates/eggress-python/pyproject.toml` for the authoritative source.
-
-## Supply chain checks
-
-Before upload, verify wheel contents:
+## Post-publish verification
 
 ```bash
-python -m zipfile -l dist/eggress-*.whl
+python3 -m venv /tmp/verify-eggress
+/tmp/verify-eggress/bin/python -m pip install eggress
+/tmp/verify-eggress/bin/python -c "import eggress; print(eggress.__version__)"
+rm -rf /tmp/verify-eggress
 ```
-
-Confirm that `eggress/_eggress.*.so` (or `.dylib`/`.pyd`), `eggress/__init__.py`,
-`eggress/py.typed`, `METADATA`, and `RECORD` are present. Confirm that no
-`.env`, keys, certs, or test-only configs are included.

@@ -30,17 +30,6 @@ native module loads.
 
 ### Certified top-level `pproxy` subset
 
-Build and test the separate compatibility distribution with a matching
-canonical wheel. The canonical wheel alone must not provide `import pproxy`.
-
-```bash
-python3 -m pip wheel --no-deps --wheel-dir /tmp/eggress-pproxy-compat-wheel ./python-pproxy-compat
-python3 -m venv /tmp/eggress-pproxy-compat-test
-/tmp/eggress-pproxy-compat-test/bin/pip install dist/eggress-*.whl /tmp/eggress-pproxy-compat-wheel/eggress_pproxy_compat-*.whl
-/tmp/eggress-pproxy-compat-test/bin/python -c "import eggress, pproxy; from pproxy import Connection, Server"
-/tmp/eggress-pproxy-compat-test/bin/python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
-```
-
 ## 4. Source distribution smoke test
 
 ```bash

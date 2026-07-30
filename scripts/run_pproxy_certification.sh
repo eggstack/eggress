@@ -100,9 +100,6 @@ echo "Building eggress native extension..."
         --manifest-path crates/eggress-python/Cargo.toml
 )
 
-# Install local compatibility package
-fatal_step "install compat package" "$CANDIDATE_VENV/bin/python" -m pip install --no-deps ./python-pproxy-compat
-
 # Verify candidate imports
 fatal_step "verify candidate imports" "$CANDIDATE_VENV/bin/python" - <<'PY'
 import importlib.metadata

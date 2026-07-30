@@ -94,7 +94,6 @@ python3 -m venv .venv
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
 (cd crates/eggress-python && ../../.venv/bin/maturin build --release --out ../../target/wheels)
 .venv/bin/python -m pip install target/wheels/eggress-*.whl
-.venv/bin/python -m pip install --no-deps ./python-pproxy-compat
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
 
@@ -184,7 +183,6 @@ The principal crates are:
 - `eggress-embed`: stable in-process Rust API.
 - `eggress-python`: PyO3 binding crate.
 - `python/eggress`: canonical Python package.
-- `python-pproxy-compat`: separate package providing the top-level `pproxy` namespace.
 - `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
 
 Note: the root `Cargo.toml` also defines a `eggress-bench` package (not a workspace member) with Criterion benchmarks. Run `cargo bench` from the workspace root.
@@ -212,7 +210,7 @@ When a compatibility claim changes, update the applicable manifest and run the c
 
 Unsupported transports or roles should fail with structured, actionable diagnostics rather than silent fallback.
 
-The canonical `eggress` Python package must not silently install or alias the top-level `pproxy` namespace. That namespace belongs to the separate `eggress-pproxy-compat` distribution.
+The canonical `eggress` Python package owns the `eggress.*` namespace. Users who need `import pproxy` change their imports to `from eggress import pproxy`.
 
 ## Code conventions
 

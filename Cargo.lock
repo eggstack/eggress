@@ -486,7 +486,7 @@ checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
 
 [[package]]
 name = "eggress-admin"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -508,7 +508,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-bench"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "criterion",
  "eggress-core",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-cli"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-config"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-admin",
  "eggress-core",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-core"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-uri",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-embed"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-config",
  "eggress-core",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-metrics"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-protocol-http",
  "eggress-protocol-shadowsocks",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-pproxy-compat"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "assert_cmd",
  "eggress-config",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-http"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-raw"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-core",
  "thiserror",
@@ -675,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-reverse"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-shadowsocks"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "aes-gcm",
  "bytes",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-socks"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -722,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-trojan"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-websocket"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -753,7 +753,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-python"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-config",
  "eggress-core",
@@ -769,7 +769,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-routing"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "arc-swap",
  "eggress-core",
@@ -788,7 +788,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-runtime"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -825,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-server"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-core",
  "eggress-protocol-http",
@@ -849,7 +849,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-system-proxy"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-testkit"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "eggress-config",
  "eggress-runtime",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-tls"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -894,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-udp"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -914,7 +914,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-uri"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "proptest",
  "serde",

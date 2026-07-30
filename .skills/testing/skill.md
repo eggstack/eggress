@@ -317,13 +317,8 @@ packaging errors:
 
 ```bash
 python -m pytest --import-mode=importlib python/tests -q
-python -m pip wheel --no-deps --wheel-dir /tmp/eggress-pproxy-compat-wheel ./python-pproxy-compat
 python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
 ```
-
-The separate compatibility wheel must also be smoke-tested in an isolated
-environment with `import eggress` and `import pproxy`; do not report an
-upstream pproxy differential suite as passing when its dependency is absent.
 
 ## pproxy compatibility harness (Phase 18)
 

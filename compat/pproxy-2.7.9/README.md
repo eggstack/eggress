@@ -9,7 +9,7 @@ compatibility testing.
 The oracle provides a reproducible reference implementation against which
 eggress's pproxy compatibility is measured. Every differential test runs
 the same scenario against both the oracle (pproxy 2.7.9) and the candidate
-(eggress + eggress-pproxy-compat) and compares structured observations.
+(eggress) and compares structured observations.
 
 ## Bootstrap
 

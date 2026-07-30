@@ -144,7 +144,6 @@ Protocols are implemented as independent crates, each providing detection, serve
 eggress/
 ├── crates/                    # 24 Rust crates (see below)
 ├── python/                    # Python package (eggress/)
-├── python-pproxy-compat/      # Separate pproxy namespace package
 ├── fuzz/                      # Standalone fuzz workspace
 ├── benches/                   # Criterion benchmarks
 ├── scripts/                   # Interoperability and testing scripts

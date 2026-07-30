@@ -1,7 +1,7 @@
 """pproxy compatibility layer tests for Milestone C.
 
 Tests the pproxy namespace, server utilities, proto helpers,
-and cipher registry from the eggress-pproxy-compat distribution.
+and cipher registry from the eggress.pproxy compatibility layer.
 """
 
 from __future__ import annotations

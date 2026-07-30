@@ -7,7 +7,6 @@ on:
       - 'crates/eggress-embed/**'
       - 'crates/eggress-python/**'
       - 'python/**'
-      - 'python-pproxy-compat/**'
       - 'tests/compat/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -45,7 +44,5 @@ jobs:
       - name: Build and install
         run: maturin develop
         working-directory: crates/eggress-python
-      - name: Install compat package
-        run: pip install --no-deps ./python-pproxy-compat
       - name: Run Python smoke suite
         run: python -m pytest python/tests tests/compat -q

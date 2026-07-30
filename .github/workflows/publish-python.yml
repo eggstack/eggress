@@ -43,9 +43,6 @@ jobs:
       - name: Build eggress wheel
         run: maturin build --release --out dist -m crates/eggress-python/Cargo.toml
 
-      - name: Build compat wheel
-        run: python -m pip wheel --no-deps --wheel-dir dist ./python-pproxy-compat
-
       - name: List built artifacts
         run: ls -la dist/
 

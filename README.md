@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python source-compatibility surface (`eggress-pproxy-compat`) is experimental. Strict full drop-in parity with pproxy is not yet achieved — unsupported transports (SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks) are intentional non-parity, and two capabilities (`cli.get`, `process.reload.routing`) remain gaps. See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy and `docs/parity/pproxy_capability_manifest.toml` for the canonical capability manifest.
+> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface (`eggress.pproxy`) is experimental. Strict full drop-in parity with pproxy is not yet achieved — unsupported transports (SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks) are intentional non-parity, and two capabilities (`cli.get`, `process.reload.routing`) remain gaps. See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy and `docs/parity/pproxy_capability_manifest.toml` for the canonical capability manifest.
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -43,12 +43,11 @@ eggress-embed = { path = "crates/eggress-embed" }
 ```bash
 pip install eggress
 
-# For AEAD cipher support (required by eggress-pproxy-compat):
+# For AEAD cipher support:
 pip install "eggress[cipher-api]"
-
-# For unchanged `import pproxy` programs:
-pip install eggress-pproxy-compat
 ```
+
+For programs that use `import pproxy`, change to `from eggress import pproxy`.
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 
@@ -284,7 +283,7 @@ See `docs/PYTHON_BINDINGS.md` for the full Python API reference.
 
 ## pproxy compatibility
 
-eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The `eggress-pproxy-compat` crate and the separate Python compatibility distribution provide:
+eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The `eggress-pproxy-compat` Rust crate provides:
 
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
 - CLI flag translation with structured warnings for unsupported features

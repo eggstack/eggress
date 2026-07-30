@@ -42,7 +42,6 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
 (cd crates/eggress-python && ../../.venv/bin/maturin develop)
-.venv/bin/python -m pip install --no-deps ./python-pproxy-compat
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
 

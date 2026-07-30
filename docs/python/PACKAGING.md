@@ -27,22 +27,6 @@ Rust toolchain to compile. The sdist includes:
 
 No pre-compiled artifacts are included in the sdist.
 
-## Separate pproxy compatibility wheel
-
-`python-pproxy-compat/` is a pure-Python setuptools project published as
-`eggress-pproxy-compat`. It installs the top-level `pproxy` namespace only when
-the user explicitly asks for the compatibility distribution:
-
-```bash
-python -m pip wheel --no-deps --wheel-dir dist/pproxy-compat ./python-pproxy-compat
-python -m pip install dist/eggress-*.whl dist/pproxy-compat/eggress_pproxy_compat-*.whl
-```
-
-The package pins `eggress==0.1.0` and declares `cryptography>=42,<47` so cipher
-behavior is deterministic. The canonical `eggress` wheel never installs or
-aliases `pproxy`; validate the compatibility wheel in a clean environment and
-do not combine it with the unrelated upstream `pproxy` distribution.
-
 ## `py.typed` marker
 
 The `eggress/py.typed` marker file is included in all wheel builds, declaring
