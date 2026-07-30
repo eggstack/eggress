@@ -15,6 +15,10 @@ import os
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
