@@ -28,6 +28,8 @@ from eggress import (
 )
 from eggress.pproxy import compatibility_version
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 VALID_TOML = """
 version = 1

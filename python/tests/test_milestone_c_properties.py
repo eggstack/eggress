@@ -28,6 +28,8 @@ from eggress.cipher import (
 
 _cryptography = pytest.importorskip("cryptography")
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

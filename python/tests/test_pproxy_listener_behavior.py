@@ -15,6 +15,8 @@ import sys
 
 import pytest
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 _ECHO_SCRIPT = """\
 import asyncio

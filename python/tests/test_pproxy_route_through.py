@@ -16,6 +16,8 @@ import sys
 
 import pytest
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 _SCRIPT = """\
 import asyncio
 import json

@@ -16,6 +16,8 @@ import pytest
 
 from .conftest import compare_observations
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 def load_observation(obs_dir, rid, side):
     """Load an observation JSON file."""

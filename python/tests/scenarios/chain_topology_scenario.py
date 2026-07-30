@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 _OBSERVATIONS_PATH = (
     Path(__file__).resolve().parents[3]
     / "compat"
