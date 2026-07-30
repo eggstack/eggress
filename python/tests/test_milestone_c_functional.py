@@ -19,6 +19,8 @@ from typing import Any
 
 import pytest
 
+pproxy = pytest.importorskip("pproxy", reason="requires upstream pproxy package")
+
 
 # ---------------------------------------------------------------------------
 # C9/C10: Stream cipher round-trip tests
