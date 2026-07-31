@@ -201,7 +201,16 @@ fn format_host_for_uri(host: &str) -> String {
 /// - `redir://:12345`
 /// - `redir://127.0.0.1:12345`
 pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
-    let (without_fragment, auth_fragment) = split_top_level(uri, '#');
+    // The Python compatibility helpers historically accepted a listener URI
+    // followed by a legacy `;` or `__` remote suffix. The typed single-URI
+    // parser describes the listener portion; callers that need every hop use
+    // `parse_pproxy_chain`.
+    let parse_uri = if uri.contains("__") {
+        split_chain_hops(uri).into_iter().next().unwrap_or(uri)
+    } else {
+        uri.split_once(';').map_or(uri, |(head, _)| head)
+    };
+    let (without_fragment, auth_fragment) = split_top_level(parse_uri, '#');
     let (before_query, query) = split_top_level(without_fragment, '?');
 
     // Extract scheme

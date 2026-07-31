@@ -129,7 +129,7 @@ class TestPPProxyServiceFromArgsPreservesFlags:
         assert "pproxy-block-0" in report.toml
 
     def test_pac_flag_preserved_in_config(self):
-        args = ["-l", "socks5://127.0.0.1:0", "--pac"]
+        args = ["-l", "socks5://127.0.0.1:0", "--pac", "/proxy.pac"]
         PPProxyService.from_args(args)
         report = check_pproxy_args(args)
         # PAC section is enabled in the admin block
