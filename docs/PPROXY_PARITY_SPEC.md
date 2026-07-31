@@ -170,21 +170,21 @@ URI-level chain parsing and translation tests live in
 
 | Feature | pproxy | Eggress |
 |---------|--------|---------|
-| Round-robin | Default for multiple `-r` args | Supported (`RoundRobin` scheduler) |
-| Rule-based routing | `--rulefile` (regex rules) | Simple reject/block subset only; use TOML rules with matchers for complete semantics |
+| Scheduler default | First eligible remote (`fa`) in declaration order | Compatibility translator emits `first-available`; native TOML defaults are unchanged |
+| Rule-based routing | Per-remote URI query rules plus `-b`/rule-file block rules | Ordered per-remote predicates match hostname or decimal destination port; unmatched traffic falls direct |
 | Fallback | `-F` flag | `RouteActionSpec::Fallback` with group members |
 | Connection reuse | `--reuse` | Not implemented; intentional non-parity because pproxy pools upstream connections across sessions while Eggress uses one upstream connection per proxy session |
 | Random | Not default | Supported (`Random` scheduler) |
 | Least-connections | Not available | Supported (`LeastConnections` scheduler) |
 | First-available | Not available | Supported (`FirstAvailable` scheduler) |
 
-### Scheduler Behavior Audit (Phase 12)
+### Scheduler Behavior Audit (Phase 2)
 
 Detailed behavior comparison for scheduler implementations:
 
 | Behavior | pproxy | Eggress | Notes |
 |----------|--------|---------|-------|
-| Round-robin default | Yes (`-s rr`) | Yes (default for groups) | Compat layer now correctly defaults to round-robin for multiple remotes; first-available for single remote |
+| First-available default | Yes (`-s fa`, and by default) | Yes for compatibility-generated groups | Declaration order is retained; native TOML group defaults remain independent |
 | Round-robin state persistence | Per-connection | Global atomic cursor | Eggress cursor persists across connections (correct behavior) |
 | Round-robin skips unhealthy | Implicit | Explicit health filtering | Eggress filters by health state |
 | First-available | `-s fa` | `FirstAvailable` scheduler | Returns first eligible candidate |
@@ -195,13 +195,13 @@ Detailed behavior comparison for scheduler implementations:
 | Retry within group | Not documented | Not implemented (single attempt) | Eggress makes one selection per request |
 | Active lease tracking | Not documented | PendingLease/ActiveLease two-phase | Precise connection accounting |
 
-pproxy's `--rulefile` uses a line-based format (`pattern -> action`) with regex
-patterns and destination actions. Eggress uses a TOML-based rule engine with
-structured matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`).
-The compat translator loads rulefiles via `PproxyRuleFile::load()`, which validates
-regex patterns using the dual backend (`fast regex` + `fancy_regex` for lookahead
-and backreferences) and enforces `MAX_RULE_ENTRIES = 10_000`. Simple `reject`/`block`
-actions are auto-translated to `[[rules]]` entries; complex actions emit diagnostics.
+pproxy's rule files are plain non-comment regex lines; pproxy joins them into a
+single hostname matcher. Eggress uses a TOML-based rule engine with structured
+matchers (`all`, `any_of`, `not`, `cidr`, `regex`, `domain`, `port`). The compat
+translator loads rulefiles via `PproxyRuleFile::load()`, enforces
+`MAX_RULE_ENTRIES = 10_000`, and emits a high-priority hostname block rule.
+URI-attached remote rules are lowered to ordered route predicates. Native-
+incompatible fancy regex features fail with a precise diagnostic.
 See `eggress-pproxy-compat::regex_compat`.
 
 ### Regex Compatibility Boundaries
@@ -726,7 +726,7 @@ The following items need further investigation or testing to confirm behavior:
 | pproxy HTTP forward proxy (non-CONNECT) | resolved | pproxy supports plain HTTP forwarding with persistent connections; eggress now matches (Phase 19) |
 | pproxy multi-hop chain behavior | `needs-probe` | Behavior for chains longer than 2 hops (error handling, protocol negotiation) |
 | pproxy connection reuse semantics | `needs-probe` | How `--reuse` interacts with chained upstreams and health state |
-| pproxy `--rulefile` format details | resolved | `pattern -> reject|block` format; eggress loads and validates via `PproxyRuleFile::load()` (Phase A.03) |
+| pproxy `--rulefile` format details | resolved | Plain non-comment regex lines; Eggress loads and validates via `PproxyRuleFile::load()` (Phase 2) |
 | pproxy SOCKS4a domain resolution | resolved | pproxy resolves domains at the SOCKS4a server; eggress matches (Phase 19) |
 
 ## 16. pproxy Compatibility CLI Layer
@@ -864,8 +864,8 @@ pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
 | `-a` | Health probe config | Mapped |
 | `--daemon` | rejected | Intentional non-parity |
 | `--ssl` | TLS config in TOML | Native equivalent — generates TLS listener TOML (Phase 38) |
-| `-b` | rejected | Native equivalent — validates regex via `CompatRegex`, generates `[[rules]] reject` entries (Phase 38, A.03) |
-| `--rulefile` | rejected | Compatible — loads and validates rulefile via `PproxyRuleFile`, translates `reject`/`block` rules (Phase 38, A.03) |
+| `-b` | rejected | Native equivalent — braced inline regex or pproxy rule-file path becomes a high-priority hostname reject (Phase 2) |
+| `--rulefile` | rejected | Compatible — loads pproxy plain regex lines and lowers them to a high-priority hostname block (Phase 2) |
 | `--reuse` | rejected | Intentional non-parity — emits structured diagnostic |
 | `--log` | rejected | Intentional non-parity — emits structured diagnostic |
 | `--sys` | rejected | Compatible — auto-invokes `eggress system-proxy inspect` (Phase 38) |

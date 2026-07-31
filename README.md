@@ -296,6 +296,9 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - CLI flag translation with structured warnings for unsupported features
 - Phase 1 URI grammar and CLI ownership coverage, including mixed listeners,
   redaction, fixed-target metadata, and value-taking options
+- Phase 2 compatibility routing: first-available declaration order, explicit
+  `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, pproxy
+  rule files, high-priority block expressions, and direct unmatched fallback
 - Structured diagnostics for unsupported protocols (SSH, Unix upstream)
 - Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
 - Python compatibility helpers (`PPProxyService`, `Server`, `Connection`, `start_pproxy`); these are not drop-in replacements for pproxy's object contracts

@@ -230,9 +230,13 @@ impl PproxyRuleFile {
     /// Rule file format:
     /// - Lines starting with `#` are comments (ignored).
     /// - Empty lines are ignored.
-    /// - Lines matching `pattern -> reject` or `pattern -> block` are block rules.
-    /// - Other `pattern -> action` lines produce a partial-compatibility warning.
-    /// - Lines without `->` produce a parse warning.
+    /// - Every other line is a regular-expression alternative.
+    ///
+    /// This matches pproxy 2.7.9's `compile_rule`: it joins non-comment,
+    /// non-empty lines into one expression. The `pattern -> action` syntax is
+    /// accepted as an extension for older Eggress files, but is not a pproxy
+    /// rule-file format and therefore remains a diagnostic rather than a
+    /// routing action.
     pub fn load(path: &Path) -> Result<Self, RegexCompileError> {
         let content =
             std::fs::read_to_string(path).map_err(|e| RegexCompileError::CompileError {
@@ -264,61 +268,51 @@ impl PproxyRuleFile {
                 break;
             }
 
-            if let Some((pattern, action)) = line.split_once("->") {
-                let pattern = pattern.trim().to_string();
-                let action = action.trim();
-
-                if action == "reject" || action == "block" {
-                    match CompatRegex::compile(&pattern) {
-                        Ok(regex) => {
-                            let uses_fancy = regex.is_fancy();
-                            if uses_fancy {
-                                diagnostics.push(RuleDiagnostic {
-                                    line_number: Some(line_number),
-                                    severity: RuleSeverity::Info,
-                                    message: format!(
-                                        "pattern '{}' compiled with fancy_regex backend (Python-like features enabled)",
-                                        pattern
-                                    ),
-                                });
-                            }
-                            entries.push(PproxyRuleEntry {
-                                line_number,
-                                raw: pattern,
-                                regex,
-                                uses_fancy,
-                            });
-                        }
-                        Err(e) => {
-                            diagnostics.push(RuleDiagnostic {
-                                line_number: Some(line_number),
-                                severity: RuleSeverity::Error,
-                                message: format!(
-                                    "line {}: failed to compile regex '{}': {}",
-                                    line_number, pattern, e
-                                ),
-                            });
-                        }
-                    }
-                } else {
-                    diagnostics.push(RuleDiagnostic {
-                        line_number: Some(line_number),
-                        severity: RuleSeverity::Warning,
-                        message: format!(
-                            "line {}: complex rule '{}' -> '{}' cannot be auto-translated; use eggress TOML [[rules]] with structured matchers",
-                            line_number, pattern, action
-                        ),
-                    });
-                }
-            } else {
+            let pattern = if let Some((pattern, action)) = line.split_once("->") {
                 diagnostics.push(RuleDiagnostic {
                     line_number: Some(line_number),
                     severity: RuleSeverity::Warning,
                     message: format!(
-                        "line {}: unrecognized format '{}'; expected 'pattern -> action'",
-                        line_number, line
+                        "line {}: action suffix '{}' is not part of pproxy's regex-line format; using pattern only",
+                        line_number,
+                        action.trim()
                     ),
                 });
+                pattern.trim().to_string()
+            } else {
+                line.to_string()
+            };
+
+            match CompatRegex::compile(&pattern) {
+                Ok(regex) => {
+                    let uses_fancy = regex.is_fancy();
+                    if uses_fancy {
+                        diagnostics.push(RuleDiagnostic {
+                            line_number: Some(line_number),
+                            severity: RuleSeverity::Info,
+                            message: format!(
+                                "pattern '{}' compiled with fancy_regex backend (Python-like features enabled)",
+                                pattern
+                            ),
+                        });
+                    }
+                    entries.push(PproxyRuleEntry {
+                        line_number,
+                        raw: pattern,
+                        regex,
+                        uses_fancy,
+                    });
+                }
+                Err(e) => {
+                    diagnostics.push(RuleDiagnostic {
+                        line_number: Some(line_number),
+                        severity: RuleSeverity::Error,
+                        message: format!(
+                            "line {}: failed to compile regex '{}': {}",
+                            line_number, pattern, e
+                        ),
+                    });
+                }
             }
         }
 
@@ -494,7 +488,7 @@ mod tests {
         writeln!(f, ".*\\.com -> allow").unwrap();
 
         let file = PproxyRuleFile::load(f.path()).unwrap();
-        assert!(file.entries.is_empty());
+        assert_eq!(file.entries.len(), 1);
         assert!(file
             .diagnostics
             .iter()
@@ -507,11 +501,8 @@ mod tests {
         writeln!(f, "just a plain line").unwrap();
 
         let file = PproxyRuleFile::load(f.path()).unwrap();
-        assert!(file.entries.is_empty());
-        assert!(file
-            .diagnostics
-            .iter()
-            .any(|d| d.severity == RuleSeverity::Warning));
+        assert_eq!(file.entries.len(), 1);
+        assert!(file.diagnostics.is_empty());
     }
 
     #[test]

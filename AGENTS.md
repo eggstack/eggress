@@ -20,6 +20,12 @@ distribution. Use `from eggress import pproxy` for the bundled compatibility
 helpers. Treat the native runtime and the compatibility translator as separate
 surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
 
+Phase 2 compatibility routing is implemented in the translator: generated
+pproxy routes use first-available declaration order by default, preserve
+per-remote URI predicates, load pproxy plain regex-line rule files, apply
+high-priority block expressions, and fall through directly when no remote
+matches. Native TOML group schedulers and routing semantics remain unchanged.
+
 ## Source-of-truth documents
 
 Use these current documents before relying on historical phase or completion records:

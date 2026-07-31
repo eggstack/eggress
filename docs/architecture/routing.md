@@ -36,7 +36,7 @@ all = [
 
 Supported matchers:
 - `host_exact`, `host_suffix`, `host_regex` — destination hostname matching
-- `destination_port`, `source_port` — port matching (range or set)
+- `destination_port`, `destination_port_regex`, `source_port` — port matching (exact, regex, range, or set)
 - `source_cidr` — source IP CIDR matching
 - `protocol` — inbound protocol (http, socks4, socks5, etc.)
 - `identity` — client identity (username)
@@ -75,6 +75,12 @@ Unknown → Healthy ↔ Suspect → Unhealthy → Recovering → Healthy
 ## Route Explanation
 
 `Router.explain()` returns a `RouteExplanation` showing which rule matched, why, and what the fallback path was. Used by the admin API and CLI `route-explain` command.
+
+The pproxy compatibility translator lowers remote URI rules into ordered
+first-match routes. Rule IDs include the compatibility declaration index,
+source (`inline` or `file`), and the translated pattern, so route explanations
+expose the matched predicate, ordering, and selected remote group without
+adding a second routing engine.
 
 ## Dependencies
 

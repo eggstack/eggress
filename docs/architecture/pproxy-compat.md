@@ -56,8 +56,19 @@ The translator parses combined protocols, fragment auth, local binding, fixed
 targets, plugins, and canonical raw rule suffixes without discarding them.
 Unsupported fields are reported after parsing. The translator currently supports common HTTP/SOCKS and AEAD Shadowsocks
 flows. H2, WS/WSS, raw, and tunnel remain native-runtime features rather than
-complete compatibility-translator paths. Per-remote rule routing is not yet
-complete; `--rulefile` only translates the supported simple rule subset.
+complete compatibility-translator paths.
+
+Compatibility routing follows pproxy 2.7.9's ordered `fa` model. A remote URI
+query (`?rule=...` or a raw query suffix) becomes a route predicate matching
+the requested hostname or decimal destination port. Ruled remotes are lowered
+to deterministic one-member groups in declaration order; unruled remotes share
+a final first-available group. When no predicate matches, the translator emits
+a direct fallback. `-b {regex}` is a high-priority hostname block, while a
+non-braced `-b PATH` and `--rulefile PATH` load pproxy's plain regex-line file
+format. Missing or malformed rule files fail translation. Generated
+compatibility rule IDs include the declaration index, source, and pattern for
+`route explain`. Explicit `-s fa`, `rr`, `rc`, and `lc` values map to the native scheduler names; native TOML
+groups retain their own configured defaults.
 
 `--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking
 options. PAC and static content use the existing admin server, while test mode

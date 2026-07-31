@@ -31,7 +31,7 @@ impl fmt::Display for UnsupportedFeature {
 }
 
 /// Result of translating pproxy-compatible input.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TranslationOutput {
     /// Generated Eggress TOML configuration.
     pub toml: String,

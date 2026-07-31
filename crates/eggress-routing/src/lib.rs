@@ -114,6 +114,10 @@ pub enum MatchExpr {
     HostRegex(regex::Regex),
     DestinationCidr(ipnet::IpNet),
     DestinationPort(PortMatcher),
+    /// Match the decimal destination port against a compatibility regex.
+    /// This is used by pproxy URI rules, which test both the hostname and
+    /// `str(port)` rather than limiting rules to hostnames.
+    DestinationPortRegex(regex::Regex),
     SourceCidr(ipnet::IpNet),
     SourcePort(PortMatcher),
     Listener(Arc<str>),
@@ -172,6 +176,7 @@ impl MatchExpr {
                 }
             }
             MatchExpr::DestinationPort(matcher) => matcher.matches(request.target.port),
+            MatchExpr::DestinationPortRegex(re) => re.is_match(&request.target.port.to_string()),
             MatchExpr::SourceCidr(cidr) => {
                 if let Some(addr) = request.source {
                     cidr.contains(&addr.ip())

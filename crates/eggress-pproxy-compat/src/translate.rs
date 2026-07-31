@@ -93,40 +93,8 @@ pub fn translate_from_uris(
             udp_remotes.push(remote.to_string());
         }
         if let Some(rulefile_path) = flag.strip_prefix("rulefile=") {
-            let path = std::path::Path::new(rulefile_path);
-            match crate::regex_compat::PproxyRuleFile::load(path) {
-                Ok(rule_file) => {
-                    // Emit diagnostics from rulefile loading
-                    for diag in &rule_file.diagnostics {
-                        match diag.severity {
-                            crate::regex_compat::RuleSeverity::Error => {
-                                output = output.with_warning("rulefile-read", diag.message.clone());
-                            }
-                            crate::regex_compat::RuleSeverity::Warning => {
-                                output =
-                                    output.with_warning("rulefile-partial", diag.message.clone());
-                            }
-                            crate::regex_compat::RuleSeverity::Info => {
-                                output = output
-                                    .with_warning("rulefile-fancy-regex", diag.message.clone());
-                            }
-                        }
-                    }
-                    // Collect reject/block patterns from compiled entries
-                    for entry in &rule_file.entries {
-                        block_rules.push(entry.raw.clone());
-                    }
-                }
-                Err(e) => {
-                    output = output.with_warning(
-                        "rulefile-read",
-                        format!(
-                            "failed to load rulefile '{}': {}; configure rules in eggress TOML instead",
-                            rulefile_path, e
-                        ),
-                    );
-                }
-            }
+            let patterns = load_pproxy_rule_file(rulefile_path, &mut output)?;
+            block_rules.push(combine_pproxy_patterns(&patterns));
         }
         if flag == "verbose" {
             output = output.with_warning(
@@ -138,7 +106,7 @@ pub fn translate_from_uris(
             let mapped = match scheduler_value {
                 "fa" | "first_available" => Some("first-available".to_string()),
                 "rr" | "round_robin" => Some("round-robin".to_string()),
-                "rc" | "random_choice" => Some("random-choice".to_string()),
+                "rc" | "random_choice" => Some("random".to_string()),
                 "lc" | "least_connection" => Some("least-connections".to_string()),
                 _ => None,
             };
@@ -175,16 +143,17 @@ pub fn translate_from_uris(
             ssl_config = Some(TlsToml { cert, key });
         }
         if let Some(block_value) = flag.strip_prefix("block=") {
-            match crate::regex_compat::compile_block_pattern(block_value) {
-                Ok(_) => {
-                    block_rules.push(block_value.to_string());
+            if block_value.starts_with('{') && block_value.ends_with('}') {
+                let pattern = inline_pproxy_pattern(block_value);
+                if let Err(error) = crate::regex_compat::compile_block_pattern(&pattern) {
+                    return Err(CompatError::ConfigValidation {
+                        message: format!("block regex is invalid: {}", error),
+                    });
                 }
-                Err(e) => {
-                    output = output.with_warning(
-                        "rulefile-read",
-                        format!("block regex '{}' is invalid: {}", block_value, e),
-                    );
-                }
+                block_rules.push(pattern);
+            } else {
+                let patterns = load_pproxy_rule_file(block_value, &mut output)?;
+                block_rules.push(combine_pproxy_patterns(&patterns));
             }
         }
         if let Some(value) = flag.strip_prefix("pac=") {
@@ -582,7 +551,10 @@ pub fn translate_from_uris(
         }
     }
 
-    // Process remote upstreams (chains)
+    // Process remote upstreams (chains). Keep this separate from the native
+    // group so URI declaration order and each remote's predicate survive
+    // lowering.
+    let mut tcp_routes: Vec<TcpCompatRoute> = Vec::new();
     for (idx, chain) in remote_chains.iter().enumerate() {
         // Single-hop backward/upstream URIs with +in modifier → reverse_clients
         if chain.hops.len() == 1 {
@@ -734,10 +706,27 @@ pub fn translate_from_uris(
                 interval: interval.clone(),
             }),
         });
+
+        let remote = chain.hops.first().expect("validated chain has a hop");
+        let predicate = if let Some(rule) = remote.rule.as_deref().or(remote.rule_suffix.as_deref())
+        {
+            Some((inline_pproxy_pattern(rule), format!("inline:{idx}")))
+        } else if let Some(path) = remote.rules_file.as_deref() {
+            let patterns = load_pproxy_rule_file(path, &mut output)?;
+            Some((combine_pproxy_patterns(&patterns), format!("file:{path}")))
+        } else {
+            None
+        };
+        tcp_routes.push(TcpCompatRoute {
+            declaration_index: idx,
+            upstream_id,
+            predicate,
+        });
     }
 
     // Process UDP remote upstreams
     let mut udp_upstream_ids = Vec::new();
+    let mut udp_routes: Vec<TcpCompatRoute> = Vec::new();
     for (idx, remote_str) in udp_remotes.iter().enumerate() {
         let remote_uri =
             crate::uri::parse_pproxy_uri(remote_str).map_err(|e| CompatError::InvalidArgs {
@@ -810,44 +799,89 @@ pub fn translate_from_uris(
             }),
         });
         udp_upstream_ids.push(upstream_id);
+        let predicate = if let Some(rule) = remote_uri
+            .rule
+            .as_deref()
+            .or(remote_uri.rule_suffix.as_deref())
+        {
+            Some((inline_pproxy_pattern(rule), format!("inline:{idx}")))
+        } else if let Some(path) = remote_uri.rules_file.as_deref() {
+            let patterns = load_pproxy_rule_file(path, &mut output)?;
+            Some((combine_pproxy_patterns(&patterns), format!("file:{path}")))
+        } else {
+            None
+        };
+        udp_routes.push(TcpCompatRoute {
+            declaration_index: idx,
+            upstream_id: format!("pproxy-udp-upstream-{idx}"),
+            predicate,
+        });
     }
 
-    // Build upstream groups and rules for TCP
-    if !upstreams.is_empty()
-        && upstreams
-            .iter()
-            .any(|u| u.id.starts_with("pproxy-upstream-"))
-    {
-        let group_id = "pproxy-chain".to_string();
-        let member_ids: Vec<String> = upstreams
-            .iter()
-            .filter(|u| u.id.starts_with("pproxy-upstream-"))
-            .map(|u| u.id.clone())
-            .collect();
-        let scheduler = scheduler_override.unwrap_or_else(|| {
-            if member_ids.len() > 1 {
-                "round-robin".to_string()
-            } else {
-                "first-available".to_string()
+    // Build ordered TCP routes. Unruled remotes form one final catch-all
+    // group, while ruled remotes get one-member groups so their predicates
+    // cannot accidentally become global reject rules.
+    if !tcp_routes.is_empty() {
+        let mut unruled = Vec::new();
+        for route in &tcp_routes {
+            if route.predicate.is_none() {
+                unruled.push(route.upstream_id.clone());
+                continue;
             }
-        });
-
-        upstream_groups.push(UpstreamGroupToml {
-            id: group_id.clone(),
-            scheduler,
-            members: member_ids,
-            fallback: "reject".to_string(),
-        });
-
-        rules.push(RuleToml {
-            id: "pproxy-default".to_string(),
-            any: true,
-            upstream_group: group_id,
-            direct: None,
-            r#match: None,
-            host_regex: None,
-            reject: None,
-        });
+            let group_id = format!("pproxy-route-{}", route.declaration_index);
+            upstream_groups.push(UpstreamGroupToml {
+                id: group_id.clone(),
+                scheduler: "first-available".to_string(),
+                members: vec![route.upstream_id.clone()],
+                fallback: "reject".to_string(),
+            });
+            let (pattern, source) = route.predicate.as_ref().expect("checked above");
+            rules.push(RuleToml {
+                id: format!(
+                    "pproxy-route-{}-{}-pattern={}",
+                    route.declaration_index, source, pattern
+                ),
+                any: false,
+                upstream_group: group_id,
+                direct: None,
+                r#match: Some(pproxy_rule_match(pattern, "tcp")),
+                host_regex: None,
+                reject: None,
+            });
+        }
+        if !unruled.is_empty() {
+            let group_id = "pproxy-chain".to_string();
+            let scheduler = scheduler_override
+                .clone()
+                .unwrap_or_else(|| "first-available".to_string());
+            upstream_groups.push(UpstreamGroupToml {
+                id: group_id.clone(),
+                scheduler,
+                members: unruled,
+                fallback: "reject".to_string(),
+            });
+            rules.push(RuleToml {
+                id: "pproxy-default".to_string(),
+                any: true,
+                upstream_group: group_id,
+                direct: None,
+                r#match: None,
+                host_regex: None,
+                reject: None,
+            });
+        } else {
+            // pproxy falls back to DIRECT when every remote has a predicate
+            // and none matches.
+            rules.push(RuleToml {
+                id: "pproxy-direct-fallback".to_string(),
+                any: true,
+                upstream_group: String::new(),
+                direct: Some(true),
+                r#match: None,
+                host_regex: None,
+                reject: None,
+            });
+        }
     } else if !listeners.is_empty() {
         // No upstream specified: emit a default direct rule so pproxy's
         // "no -r means direct passthrough" behavior is preserved. A warning
@@ -865,31 +899,85 @@ pub fn translate_from_uris(
 
     // Build upstream groups and rules for UDP
     if !udp_upstream_ids.is_empty() {
-        let group_id = "pproxy-udp-chain".to_string();
-        let scheduler = if udp_upstream_ids.len() > 1 {
-            "round-robin".to_string()
+        let has_predicates = udp_routes.iter().any(|route| route.predicate.is_some());
+        if has_predicates {
+            let mut unruled = Vec::new();
+            for route in &udp_routes {
+                if route.predicate.is_none() {
+                    unruled.push(route.upstream_id.clone());
+                    continue;
+                }
+                let group_id = format!("pproxy-udp-route-{}", route.declaration_index);
+                upstream_groups.push(UpstreamGroupToml {
+                    id: group_id.clone(),
+                    scheduler: "first-available".to_string(),
+                    members: vec![route.upstream_id.clone()],
+                    fallback: "reject".to_string(),
+                });
+                let (pattern, source) = route.predicate.as_ref().expect("checked above");
+                rules.push(RuleToml {
+                    id: format!(
+                        "pproxy-udp-route-{}-{}-pattern={}",
+                        route.declaration_index, source, pattern
+                    ),
+                    any: false,
+                    upstream_group: group_id,
+                    direct: None,
+                    r#match: Some(pproxy_rule_match(pattern, "udp")),
+                    host_regex: None,
+                    reject: None,
+                });
+            }
+            if !unruled.is_empty() {
+                let group_id = "pproxy-udp-chain".to_string();
+                upstream_groups.push(UpstreamGroupToml {
+                    id: group_id.clone(),
+                    scheduler: scheduler_override
+                        .clone()
+                        .unwrap_or_else(|| "first-available".to_string()),
+                    members: unruled,
+                    fallback: "reject".to_string(),
+                });
+                rules.push(RuleToml {
+                    id: "pproxy-udp-default".to_string(),
+                    any: false,
+                    upstream_group: group_id,
+                    direct: None,
+                    r#match: Some(MatchToml {
+                        transport: Some("udp".to_string()),
+                        host_regex: None,
+                        destination_port_regex: None,
+                        any_of: Vec::new(),
+                    }),
+                    host_regex: None,
+                    reject: None,
+                });
+            }
         } else {
-            "first-available".to_string()
-        };
-
-        upstream_groups.push(UpstreamGroupToml {
-            id: group_id.clone(),
-            scheduler,
-            members: udp_upstream_ids,
-            fallback: "reject".to_string(),
-        });
-
-        rules.push(RuleToml {
-            id: "pproxy-udp-default".to_string(),
-            any: false,
-            upstream_group: group_id,
-            direct: None,
-            r#match: Some(MatchToml {
-                transport: "udp".to_string(),
-            }),
-            host_regex: None,
-            reject: None,
-        });
+            let group_id = "pproxy-udp-chain".to_string();
+            upstream_groups.push(UpstreamGroupToml {
+                id: group_id.clone(),
+                scheduler: scheduler_override
+                    .clone()
+                    .unwrap_or_else(|| "first-available".to_string()),
+                members: udp_upstream_ids,
+                fallback: "reject".to_string(),
+            });
+            rules.push(RuleToml {
+                id: "pproxy-udp-default".to_string(),
+                any: false,
+                upstream_group: group_id,
+                direct: None,
+                r#match: Some(MatchToml {
+                    transport: Some("udp".to_string()),
+                    host_regex: None,
+                    destination_port_regex: None,
+                    any_of: Vec::new(),
+                }),
+                host_regex: None,
+                reject: None,
+            });
+        }
     }
 
     // Prepend block rules (first-match-wins: block rules before default rules)
@@ -897,7 +985,7 @@ pub fn translate_from_uris(
         let mut all_rules = Vec::new();
         for (idx, pattern) in block_rules.iter().enumerate() {
             all_rules.push(RuleToml {
-                id: format!("pproxy-block-{}", idx),
+                id: format!("pproxy-block-{}-pattern={}", idx, pattern),
                 any: false,
                 upstream_group: String::new(),
                 direct: None,
@@ -926,6 +1014,102 @@ pub fn translate_from_uris(
     Ok(TranslationOutput::new(toml_str)
         .with_warnings(output.warnings)
         .with_unsupported_features(output.unsupported))
+}
+
+#[derive(Debug, Clone)]
+struct TcpCompatRoute {
+    declaration_index: usize,
+    upstream_id: String,
+    predicate: Option<(String, String)>,
+}
+
+fn inline_pproxy_pattern(pattern: &str) -> String {
+    let pattern = pattern
+        .strip_prefix('{')
+        .and_then(|p| p.strip_suffix('}'))
+        .unwrap_or(pattern);
+    format!("^(?:{pattern})")
+}
+
+fn combine_pproxy_patterns(patterns: &[String]) -> String {
+    if patterns.len() == 1 {
+        return inline_pproxy_pattern(&patterns[0]);
+    }
+    let joined = patterns
+        .iter()
+        .map(|pattern| format!("(?:{pattern})"))
+        .collect::<Vec<_>>()
+        .join("|");
+    format!("^(?:{joined})$")
+}
+
+fn load_pproxy_rule_file(
+    path: &str,
+    output: &mut TranslationOutput,
+) -> Result<Vec<String>, CompatError> {
+    let rule_file =
+        crate::regex_compat::PproxyRuleFile::load(std::path::Path::new(path)).map_err(|error| {
+            CompatError::ConfigValidation {
+                message: format!("failed to load pproxy rule file '{}': {}", path, error),
+            }
+        })?;
+    for diagnostic in &rule_file.diagnostics {
+        match diagnostic.severity {
+            crate::regex_compat::RuleSeverity::Error => {
+                return Err(CompatError::ConfigValidation {
+                    message: format!(
+                        "pproxy rule file '{}' is invalid: {}",
+                        path, diagnostic.message
+                    ),
+                });
+            }
+            crate::regex_compat::RuleSeverity::Warning => {
+                *output = output
+                    .clone()
+                    .with_warning("rulefile-partial", diagnostic.message.clone());
+            }
+            crate::regex_compat::RuleSeverity::Info => {
+                *output = output
+                    .clone()
+                    .with_warning("rulefile-fancy-regex", diagnostic.message.clone());
+            }
+        }
+    }
+    if rule_file.entries.iter().any(|entry| entry.uses_fancy) {
+        return Err(CompatError::ConfigValidation {
+            message: format!(
+                "pproxy rule file '{}' uses regex features unavailable in native routing",
+                path
+            ),
+        });
+    }
+    Ok(rule_file
+        .entries
+        .iter()
+        .map(|entry| entry.raw.clone())
+        .collect())
+}
+
+fn pproxy_rule_match(pattern: &str, transport: &str) -> MatchToml {
+    MatchToml {
+        transport: None,
+        host_regex: None,
+        destination_port_regex: None,
+        any_of: vec![
+            MatchToml {
+                transport: Some(transport.to_string()),
+                host_regex: Some(pattern.to_string()),
+                destination_port_regex: None,
+                any_of: Vec::new(),
+            },
+            MatchToml {
+                transport: Some(transport.to_string()),
+                host_regex: None,
+                destination_port_regex: Some(pattern.to_string()),
+                any_of: Vec::new(),
+            },
+        ],
+    }
 }
 
 /// Parse a `-ul` address value into a bind address.
@@ -1124,7 +1308,14 @@ struct RuleToml {
 
 #[derive(serde::Serialize, Clone)]
 struct MatchToml {
-    transport: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transport: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host_regex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    destination_port_regex: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    any_of: Vec<MatchToml>,
 }
 
 #[derive(serde::Serialize)]
@@ -1331,7 +1522,7 @@ mod tests {
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.toml.contains("pproxy-upstream-0"));
         assert!(output.toml.contains("pproxy-upstream-1"));
-        assert!(output.toml.contains("round-robin"));
+        assert!(output.toml.contains("first-available"));
     }
 
     #[test]
@@ -1430,8 +1621,8 @@ mod tests {
             ("first_available", "first-available"),
             ("rr", "round-robin"),
             ("round_robin", "round-robin"),
-            ("rc", "random-choice"),
-            ("random_choice", "random-choice"),
+            ("rc", "random"),
+            ("random_choice", "random"),
             ("lc", "least-connections"),
             ("least_connection", "least-connections"),
         ] {
@@ -1533,7 +1724,7 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "-b".into(),
-            ".*\\.example\\.com".into(),
+            "{.*\\.example\\.com}".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
@@ -1549,7 +1740,7 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "-b".into(),
-            ".*\\.blocked\\.com".into(),
+            "{.*\\.blocked\\.com}".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
@@ -1557,17 +1748,21 @@ mod tests {
         let rules = parsed["rules"].as_array().unwrap();
         let block_rule = rules
             .iter()
-            .find(|r| r["id"].as_str() == Some("pproxy-block-0"))
+            .find(|r| {
+                r["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("pproxy-block-0-pattern="))
+            })
             .unwrap();
         assert_eq!(
             block_rule["host_regex"].as_str(),
-            Some(".*\\.blocked\\.com")
+            Some("^(?:.*\\.blocked\\.com)")
         );
         assert_eq!(block_rule["reject"].as_str(), Some("blocked"));
     }
 
     #[test]
-    fn test_rulefile_missing_file_emits_warning() {
+    fn test_rulefile_missing_file_fails_translation() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -1575,11 +1770,10 @@ mod tests {
             "/nonexistent/rules.txt".into(),
         ])
         .unwrap();
-        let output = translate_pproxy_args(&args).unwrap();
-        assert!(output
-            .warnings
-            .iter()
-            .any(|w| w.category == "rulefile-read"));
+        let error = translate_pproxy_args(&args).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("failed to load pproxy rule file"));
     }
 
     #[test]
@@ -1683,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scheduler_default_round_robin_for_multiple_remotes() {
+    fn test_scheduler_default_first_available_for_multiple_remotes() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -1694,7 +1888,7 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.toml.contains("round-robin"));
+        assert!(output.toml.contains("first-available"));
     }
 
     #[test]
@@ -2184,9 +2378,64 @@ mod tests {
         // Two separate upstreams, not a chain
         assert!(!upstreams[0]["uri"].as_str().unwrap().contains("__"));
         assert!(!upstreams[1]["uri"].as_str().unwrap().contains("__"));
-        // Group should be round-robin (2 upstreams)
+        // Group should preserve pproxy's first-available declaration order.
         let groups = parsed["upstream_groups"].as_array().unwrap();
-        assert_eq!(groups[0]["scheduler"].as_str(), Some("round-robin"));
+        assert_eq!(groups[0]["scheduler"].as_str(), Some("first-available"));
+    }
+
+    #[test]
+    fn test_per_remote_rules_preserve_order_and_direct_fallback() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://a:80?rule=alpha".into(),
+            "-r".into(),
+            "socks5://b:1080?rule=beta".into(),
+            "-r".into(),
+            "http://c:80".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        let groups = parsed["upstream_groups"].as_array().unwrap();
+        assert_eq!(groups[0]["id"].as_str(), Some("pproxy-route-0"));
+        assert_eq!(groups[1]["id"].as_str(), Some("pproxy-route-1"));
+        assert_eq!(groups[2]["id"].as_str(), Some("pproxy-chain"));
+        assert_eq!(groups[2]["members"][0].as_str(), Some("pproxy-upstream-2"));
+
+        let rules = parsed["rules"].as_array().unwrap();
+        assert!(rules[0]["id"]
+            .as_str()
+            .unwrap()
+            .starts_with("pproxy-route-0-inline:0-pattern="));
+        assert!(rules[1]["id"]
+            .as_str()
+            .unwrap()
+            .starts_with("pproxy-route-1-inline:1-pattern="));
+        assert_eq!(rules[2]["id"].as_str(), Some("pproxy-default"));
+        assert!(rules[0]["match"]["any_of"].as_array().unwrap().len() == 2);
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), &output.toml).unwrap();
+        eggress_config::load_and_validate(file.path().to_str().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn test_explicit_round_robin_only_changes_unruled_group() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "http://a:80".into(),
+            "-r".into(),
+            "http://b:80".into(),
+            "-s".into(),
+            "rr".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("scheduler = \"round-robin\""));
     }
 
     #[test]

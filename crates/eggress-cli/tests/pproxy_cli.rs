@@ -130,7 +130,7 @@ fn translate_block_generates_reject_rule() {
             "-l",
             "socks5://127.0.0.1:1080",
             "-b",
-            ".*\\.example\\.com",
+            "{.*\\.example\\.com}",
         ])
         .output()
         .expect("failed to run eggress");
@@ -224,5 +224,5 @@ fn translate_chain_of_two_upstreams() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("pproxy-upstream-0"));
     assert!(stdout.contains("pproxy-upstream-1"));
-    assert!(stdout.contains("round-robin"));
+    assert!(stdout.contains("first-available"));
 }

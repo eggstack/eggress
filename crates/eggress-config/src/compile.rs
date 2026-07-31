@@ -317,6 +317,22 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
             return Ok(eggress_routing::MatchExpr::HostRegex(re));
         }
     }
+    if let Some(ref regex_str) = rule.destination_port_regex {
+        let re = regex::Regex::new(regex_str).map_err(|e| {
+            ConfigError::validation(
+                "destination_port_regex",
+                &format!("invalid regex '{}': {}", regex_str, e),
+            )
+        })?;
+        if rule.host_exact.is_none()
+            && rule.host_suffix.is_none()
+            && rule.host_regex.is_none()
+            && rule.destination_port.is_none()
+            && !rule.any.unwrap_or(false)
+        {
+            return Ok(eggress_routing::MatchExpr::DestinationPortRegex(re));
+        }
+    }
     if let Some(port) = rule.destination_port {
         if rule.host_exact.is_none()
             && rule.host_suffix.is_none()
@@ -427,6 +443,15 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
             )
         })?;
         matchers.push(eggress_routing::MatchExpr::HostRegex(re));
+    }
+    if let Some(ref regex_str) = leaf.destination_port_regex {
+        let re = regex::Regex::new(regex_str).map_err(|e| {
+            ConfigError::validation(
+                "destination_port_regex",
+                &format!("invalid regex '{}': {}", regex_str, e),
+            )
+        })?;
+        matchers.push(eggress_routing::MatchExpr::DestinationPortRegex(re));
     }
     if let Some(port) = leaf.destination_port {
         matchers.push(eggress_routing::MatchExpr::DestinationPort(

@@ -24,6 +24,7 @@ pub struct LeafMatcher {
     pub host_exact: Option<String>,
     pub host_suffix: Option<String>,
     pub host_regex: Option<String>,
+    pub destination_port_regex: Option<String>,
     pub destination_port: Option<u16>,
     pub destination_port_range: Option<Vec<u16>>,
     pub destination_port_set: Option<Vec<u16>>,
@@ -224,6 +225,7 @@ pub struct RuleConfig {
     pub host_exact: Option<String>,
     pub host_suffix: Option<String>,
     pub host_regex: Option<String>,
+    pub destination_port_regex: Option<String>,
     pub destination_port: Option<u16>,
     #[serde(default)]
     pub any: Option<bool>,
