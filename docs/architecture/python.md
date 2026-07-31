@@ -2,7 +2,9 @@
 
 `crates/eggress-python/` and `python/eggress/`
 
-Python bindings via PyO3 wrapping `eggress-embed`. Published as `eggress` on PyPI.
+Python bindings via PyO3 wrapping `eggress-embed`. Published as one `eggress`
+distribution on PyPI; no separate compatibility wheel or top-level `pproxy`
+namespace is installed.
 
 ## Key Types
 
@@ -32,7 +34,8 @@ Python bindings via PyO3 wrapping `eggress-embed`. Published as `eggress` on PyP
 
 ## pproxy-Compatible Server
 
-`PPProxyService` provides pproxy-compatible service builder:
+`PPProxyService` provides a pproxy-shaped Eggress service builder, not a strict
+drop-in implementation of pproxy's `Server` contract:
 - `from_args()` — from pproxy CLI arguments
 - `from_uri()` — from pproxy URI
 - `from_toml()` — from TOML string

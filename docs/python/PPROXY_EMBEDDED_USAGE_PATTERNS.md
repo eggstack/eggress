@@ -2,6 +2,10 @@
 
 Comparison of pproxy's Python API patterns and their eggress equivalents.
 
+The pproxy snippets below describe the frozen `pproxy==2.7.9` oracle. They are
+not import instructions for the Eggress wheel, which exposes the migration
+surface as `eggress.pproxy` and does not install top-level `pproxy`.
+
 ## 1. pproxy Usage Patterns
 
 ### Pattern 1: Create Proxy from URI

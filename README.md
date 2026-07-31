@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface (`eggress.pproxy`) is experimental. Strict full drop-in parity with pproxy is not yet achieved — unsupported transports (SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks) are intentional non-parity, and two capabilities (`cli.get`, `process.reload.routing`) remain gaps. See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy and `docs/parity/pproxy_capability_manifest.toml` for the canonical capability manifest.
+> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface (`eggress.pproxy`) is experimental. Strict full drop-in parity with `pproxy==2.7.9` is not yet achieved. Eggress ships one Python distribution, `eggress`; `import pproxy` is not currently provided by its wheel. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while the compatibility bridge still has gaps in URI grammar, CLI arity/semantics, routing defaults and rules, and Python public API behavior. SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks, plugin replication, daemonization, and cross-session reuse are intentional exclusions. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -47,7 +47,7 @@ pip install eggress
 pip install "eggress[cipher-api]"
 ```
 
-For programs that use `import pproxy`, change to `from eggress import pproxy`.
+For programs that use `import pproxy`, change to `from eggress import pproxy`; the Eggress wheel does not currently provide the top-level namespace.
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 
@@ -247,7 +247,7 @@ conn = Connection("socks5://:1080", "http://proxy:8080")
 conn.close()
 ```
 
-### pproxy drop-in API
+### pproxy compatibility API
 
 ```python
 from eggress.pproxy import PPProxyService, Server
@@ -283,14 +283,14 @@ See `docs/PYTHON_BINDINGS.md` for the full Python API reference.
 
 ## pproxy compatibility
 
-eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The `eggress-pproxy-compat` Rust crate provides:
+eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The Rust crate `eggress-pproxy-compat` is an internal translation library used by the CLI and Python bindings; it is not a separate Python distribution. The bundled `eggress.pproxy` module provides:
 
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
 - CLI flag translation with structured warnings for unsupported features
 - Structured diagnostics for unsupported protocols (SSH, Unix upstream)
 - Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
-- Python pproxy drop-in API (`PPProxyService`, `Server`, `Connection`, `start_pproxy`)
-- Protocol, cipher, and plugin objects matching pproxy's public API
+- Python compatibility helpers (`PPProxyService`, `Server`, `Connection`, `start_pproxy`); these are not drop-in replacements for pproxy's object contracts
+- Structural protocol, cipher, and plugin facades where documented; construction or importability does not imply wire compatibility
 - Native outbound API (`OutboundConnector.connect_tcp()`) with GIL-releasing sync and asyncio wrappers
 - `.pyi` type stubs for all public modules
 
@@ -302,6 +302,8 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - **SOCKS4/SOCKS5 BIND** — returns `REP_COMMAND_NOT_SUPPORTED`
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
 - **Certificate reload** — requires restart
+- **Top-level Python namespace** — `import pproxy` is not installed by the `eggress` wheel; use `from eggress import pproxy`
+- **Advanced compatibility transports** — H2, WS/WSS, raw, and tunnel are native-runtime features but are not complete through the pproxy translator
 
 ### Compatibility manifests
 

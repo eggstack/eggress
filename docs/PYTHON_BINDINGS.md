@@ -907,7 +907,7 @@ and comprehensive API inventory documents under `docs/python/`.
 
 ## Relationship to pproxy compatibility
 
-The Python bindings now expose the `eggress-pproxy-compat` translation layer
+The Python bindings bundle the internal `eggress-pproxy-compat` translation layer
 directly via `translate_pproxy_args`, `translate_pproxy_uri`, and
 `check_pproxy_args`. See the [pproxy compatibility](#pproxy-compatibility)
 section above. For CLI-based translation, you can still use:
@@ -916,7 +916,7 @@ section above. For CLI-based translation, you can still use:
 python -m eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
 ```
 
-### Native outbound streams and `import pproxy`
+### Native outbound streams and Python imports
 
 `OutboundConnector` opens a TCP stream through the configured upstream chain
 without starting a local listener. The blocking methods release the GIL while
@@ -940,18 +940,8 @@ use this native path and never create a temporary local listener. UDP remains
 listener-based.
 
 The canonical `eggress` wheel intentionally installs only the `eggress`
-namespace and never aliases `pproxy` through `sys.modules`. For the certified
-drop-in subset, install the separate distribution in a clean environment:
-
-```bash
-pip install eggress-pproxy-compat
-```
-
-That distribution installs `import pproxy`, pins the matching `eggress` wheel,
-and declares `cryptography` for the supported AEAD cipher API. It is an
-explicit compatibility distribution, not a claim of strict full pproxy API or
-behavioral parity. Do not install it alongside the unrelated upstream `pproxy`
-distribution; pip has no portable `Conflicts-Dist` mechanism.
+namespace and never aliases `pproxy` through `sys.modules`. It does not provide
+a separate compatibility distribution or top-level `import pproxy`.
 
 **Bundled helper approach:** use the `eggress.pproxy` subpackage for
 translation and service helpers:
@@ -961,12 +951,13 @@ from eggress.pproxy import compatibility_version
 from eggress import translate_pproxy_args, check_pproxy_args, start_pproxy
 ```
 
-## Phase 40: pproxy drop-in API
+## Phase 40: pproxy-shaped migration API
 
 ### PPProxyService
 
-`PPProxyService` is a pproxy-compatible service builder that accepts
-pproxy-style arguments and manages the full service lifecycle.
+`PPProxyService` is a pproxy-shaped migration service builder that accepts
+pproxy-style arguments and manages the service lifecycle. Its object, stream,
+and async contracts are not strict pproxy drop-in contracts.
 
 ```python
 from eggress import PPProxyService

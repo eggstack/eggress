@@ -1,5 +1,20 @@
 # pproxy Parity Manifest
 
+## Current compatibility boundary
+
+The frozen compatibility target is `pproxy==2.7.9`. Eggress currently ships
+one Python distribution, named `eggress`; it does not install a separate
+`eggress-pproxy-compat` distribution or a top-level `pproxy` namespace. Until
+Phase 4 restores that namespace, Python users should import the bundled
+compatibility helpers with `from eggress import pproxy`.
+
+The native Rust runtime is broader than the current pproxy translator. H2,
+WebSocket/WSS, raw, and reverse/tunnel components may be usable through
+native Eggress configuration while remaining compatibility-bridge gaps.
+Practical parity is the active target. SSH, QUIC/HTTP/3, SSR, legacy
+Shadowsocks ciphers, plugin replication, daemonization, and cross-session
+connection reuse are intentionally outside the active roadmap.
+
 This directory contains the **authoritative compatibility contract** for
 eggress's pproxy parity. The manifest and validator replace the ad-hoc
 capability claims previously spread across README tables, CLI inventory

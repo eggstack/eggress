@@ -119,9 +119,9 @@ For Python embedding, use the `eggress-python` crate and `python/eggress` packag
 - `handle.shutdown()` — graceful shutdown (idempotent)
 - `with handle:` — context manager shuts down on exit
 
-### pproxy drop-in API (Phase 40)
+### pproxy compatibility API
 
-- `PPProxyService.from_args(args)` / `from_uri(local, remotes)` / `from_toml(toml)` / `from_file(path)` — pproxy-compatible service builder
+- `PPProxyService.from_args(args)` / `from_uri(local, remotes)` / `from_toml(toml)` / `from_file(path)` — pproxy-shaped migration service builder, not a strict drop-in contract
 - `service.start()` / `with service:` — start and manage lifecycle
 - `check_pproxy_args(args)` → `CompatibilityReport` — tier classification, diagnostics, TOML output
 - `start_pproxy(args=, local=, remote=, config=, config_path=)` — multi-mode convenience function
@@ -145,13 +145,13 @@ When adding features to Connection, follow the pattern: Rust handles networking,
 
 `eggress.protocol` provides pproxy-compatible protocol objects (`Socks5`, `HTTP`, `SS`, etc.) with `MAPPINGS` dict and `get_protos()` parser. `eggress.cipher` provides AEAD cipher objects (`AES_256_GCM_Cipher`, etc.) that delegate to Rust. `eggress.plugin` provides a bounded callback bridge (`PluginBridge`) between Rust async tasks and Python callbacks. Tests: `python/tests/test_protocol_cipher.py`.
 
-### pproxy drop-in binary
+### pproxy-style binary
 
-- `pproxy` binary target in `eggress-cli` — direct drop-in replacement for the original pproxy command
+- `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; strict CLI parity is not claimed
 - Source: `crates/eggress-cli/src/pproxy_main.rs` — raw arg parsing (not clap), delegates to `PproxyArgs::parse()` → `translate_pproxy_args()`
 - Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `--ssl`, `--pac`, `--test`, `--sys`, `--daemon/-d`, `--reuse`, `--get`, `--log`, `--rulefile`, `--version`, `-h/--help`
 - `--help` prints comprehensive flag reference; `--version` prints `eggress-pproxy-compat {VERSION}`
-- `--test` spawns `eggress upstream test -c <config>` and exits with its status
+- `--pac` is currently treated as a boolean; pproxy 2.7.9 expects a path. `--test` and `--get` similarly do not yet consume their pproxy URL arguments.
 - `--sys` calls `inspect_system_proxy()` and prints results before starting
 - `-v/-vv/-vvv` maps to RUST_LOG levels: 0→info, 1-2→debug, 3+→trace
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
@@ -243,14 +243,15 @@ To test the wheel in a clean environment:
 
 The canonical PyPI package is `eggress`. The import path is `eggress`, and the
 canonical wheel never aliases the top-level `pproxy` namespace. `eggress.pproxy`
-provides bundled translation/service helpers. Users who need `import pproxy`
-change their import to `from eggress import pproxy`.
+provides bundled translation/service helpers. Users who need the bundled
+compatibility surface use `from eggress import pproxy`; this is not the real
+top-level pproxy package.
 
 `OutboundConnector` is exposed through `eggress.OutboundConnector` and returns
 native `OutboundStream`/`AsyncOutboundStream` wrappers. `ProxyConnection` uses
 that path directly; do not implement client connections by starting a
-temporary local listener. The `eggress[cipher-api]` extra and compatibility
-wheel dependency keep the supported AEAD API deterministic.
+temporary local listener. The `eggress[cipher-api]` extra keeps the supported
+AEAD API deterministic.
 
 Key metadata:
 - `py.typed` PEP 561 marker included

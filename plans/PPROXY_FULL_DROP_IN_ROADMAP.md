@@ -4,6 +4,10 @@
 
 Proposed implementation roadmap.
 
+> Historical/maximal roadmap. Current execution is governed by
+> `plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md`; this document is not an
+> acceptance gate for the bounded parity line.
+
 ## Target
 
 Make Eggress a true, full drop-in replacement for `pproxy==2.7.9` across:

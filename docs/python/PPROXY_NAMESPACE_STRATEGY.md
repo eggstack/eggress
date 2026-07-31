@@ -204,20 +204,13 @@ the version against which eggress compatibility is tested, not a dependency.
 - `docs/python/INSTALLATION.md` — installation methods
 - `crates/eggress-cli/src/pproxy_main.rs` — CLI pproxy compatibility binary
 
-## Track B/C amendment: explicit compatibility distribution
+## Historical amendment: explicit compatibility distribution
 
 The canonical wheel keeps the namespace-safety rule: `import eggress` is the
 only import it owns, and it never uses `sys.modules` or `sys.path` mutation to
-impersonate upstream `pproxy`. Users who intentionally target the certified
-subset may install the separate `eggress-pproxy-compat` distribution:
+impersonate upstream `pproxy`. The proposed separate compatibility
+distribution described by this historical amendment was not shipped.
 
-```bash
-pip install eggress-pproxy-compat
-```
-
-That pure-Python wheel owns the top-level `pproxy` package, pins the matching
-`eggress` release, and declares the `cryptography` dependency. It is tested in
-a clean environment and must not be installed alongside the unrelated upstream
-`pproxy` distribution. The package makes a certified-subset claim only; the
-canonical parity manifest remains the source of truth for tier and limitation
-details.
+The current release bundles the Rust compatibility crate inside `eggress`; use
+`from eggress import pproxy`. The top-level `pproxy` package remains owned by
+the upstream distribution when installed.

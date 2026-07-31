@@ -129,11 +129,11 @@ for the authoritative 148-capability manifest with per-layer evidence tracking.
 | `-b` bind | supported | supported (generates TOML) | drop_in | cli_tests | none | Phase 38: generates `[[rules]] reject` entries |
 | `--ssl` TLS listener | supported | supported (generates TOML) | native_equivalent | cli_tests, pproxy_compat_manifest, pproxy_compat_report | none | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
 | `-a` alive/health | supported | supported (generates TOML) | native_equivalent | cli_tests | none | Phase 38: generates `[health] interval = "Ns"` |
-| `--pac` PAC serving | supported | supported (generates TOML) | native_equivalent | cli_tests | none | Phase 38: generates `[admin.pac] enabled = true` |
-| `--test` test-and-exit | supported | supported | native_equivalent | cli_tests | none | Phase 38: translates config and runs `eggress upstream test` |
+| `--pac` PAC serving | path argument; serves that path | boolean flag; fixed `/proxy.pac` admin endpoint | compatible_with_warning | cli_tests | none | Argument arity differs |
+| `--test` test-and-exit | URL argument; tests that URL | boolean flag; diagnostic/subcommand guidance | compatible_with_warning | cli_tests | none | Argument arity and execution differ |
 | `--sys` system proxy | supported | supported | native_equivalent | cli_tests | none | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
 | `--log` logging | supported | diagnostic only | native_equivalent | cli_tests | none | Phase 38: emits structured diagnostic |
-| `--get` connection reuse | supported | diagnostic only | unsupported | cli_tests | none | Phase 38: emits structured diagnostic |
+| `--get` URL fetch | repeatable URL argument | diagnostic only; use curl | unsupported | cli_tests | none | Argument value is not consumed |
 | `--reuse` | supported | diagnostic only | intentional_non_parity | cli_tests | none | Phase 38: emits structured diagnostic |
 | pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | drop_in | cli_tests | none | Translates pproxy CLI args to TOML config |
 | pproxy URI translation | N/A | `eggress pproxy translate` | drop_in | cli_tests | none | Converts pproxy listen/remote URIs to TOML |
@@ -186,9 +186,9 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **drop_in** | All three AEAD methods supported; standard TCP framing |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **intentional_non_parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
 | ShadowsocksR (SSR) | Supported in some forks | Rejected | **intentional_non_parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
-| HTTP/2 CONNECT | Supported | Runtime-integrated upstream (upstream only) | **drop_in** | Runtime-integrated; upstream chain position only, no listener support. |
-| WebSocket tunnels | Supported | Runtime-integrated upstream (upstream only) | **drop_in** | Runtime-integrated; upstream chain position only, no listener support. |
-| Raw fixed-target tunnels | Supported | Runtime-integrated upstream (upstream only) | **drop_in** | Runtime-integrated; upstream chain position only, no listener support. |
+| HTTP/2 CONNECT | Supported | Native runtime upstream; compatibility translator gap | **compatible_with_warning** | Runtime-integrated; not exposed through pproxy translation. |
+| WebSocket tunnels | Supported | Native runtime upstream; compatibility translator gap | **compatible_with_warning** | Runtime-integrated; not exposed through pproxy translation. |
+| Raw fixed-target tunnels | Supported | Native runtime upstream; compatibility translator gap | **compatible_with_warning** | Runtime-integrated; not exposed through pproxy translation. |
 | TLS ALPN negotiation | Supported | Supported | **compatible_with_warning** | Phase 26, synthetic |
 | QUIC transport | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
 | HTTP/3 | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
@@ -256,8 +256,8 @@ All diagnostic messages redact credentials.
 | Feature | pproxy behavior | Eggress behavior | Tier | Runtime test | Differential test | Notes |
 |---|---|---|---|---|---|---|
 | Python library | `pproxy.Server()` API | `eggress` package (PyO3) | compatible_with_warning | `test_pproxy_compat.py`, `test_pproxy_redaction.py`, `test_pproxy_concurrency.py`, `test_server_lifecycle.py`, `test_pproxy_oracle.py` | none | `EggressService`, `EggressHandle`, `Server`, `start_pproxy`, translation helpers |
-| pproxy drop-in API | `pproxy.Server(listen, remote)` | `PPProxyService.from_args()`, `from_uri()`, `from_toml()`, `from_file()` | compatible_with_warning | `test_pproxy_dropin.py` | none | Phase 40: `PPProxyService`, `CompatibilityReport`, `FeatureInfo`, `check_pproxy_args`, `.pyi` stubs |
-| PyPI package | `pip install pproxy` | `pip install eggress` | compatible_with_warning | wheel tests | none | Wheels for Linux/macOS/Windows; `py.typed` included |
+| pproxy Python API | `pproxy.Server(listen, remote)` | `eggress.pproxy` migration helpers with different contracts | compatible_with_warning | `test_pproxy_dropin.py` | none | The bundled classes are not drop-in aliases |
+| PyPI package | `pip install pproxy` | `pip install eggress` | compatible_with_warning | wheel tests | none | One Eggress wheel; `import pproxy` is not installed |
 
 #### Phase 29 Python API Inventory (114 entries)
 

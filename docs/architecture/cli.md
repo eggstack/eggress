@@ -2,7 +2,8 @@
 
 `crates/eggress-cli/`
 
-CLI binary providing `eggress` and `pproxy` executables.
+CLI binary providing `eggress` and a pproxy-style `pproxy` executable. The
+binary is a compatibility translator, not proof of full Python or CLI parity.
 
 ## Binaries
 
@@ -60,6 +61,10 @@ pproxy -l http://0.0.0.0:8080 -r socks5://127.0.0.1:1080
 ```
 
 Accepts pproxy-style arguments and translates them internally to eggress configuration.
+
+`--pac` is a flag with no argument and enables the Eggress admin PAC endpoint;
+`--test` is recognized but delegates connectivity testing to `eggress upstream
+test`; `--get` is recognized only to emit a diagnostic recommending curl.
 
 ## Key Arguments
 

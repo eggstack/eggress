@@ -665,7 +665,7 @@ The Track B/C operational certification (2026-07-17) confirmed:
 - Security invariant, lifecycle invariant, and observability suites passing
 - Manifest, composition matrix, and generated-report consistency validated
 - Clean-environment wheel installation verified (eggress + eggress-pproxy-compat)
-- pproxy drop-in API tests (46/46), compat tests (12/12), and composition matrix (33/33) passing
+- pproxy compatibility API tests (46/46), compat tests (12/12), and composition matrix (33/33) passing; these validate the bundled migration surface, not strict full drop-in parity
 - 148-capability audit complete with no unreferenced or over-classified entries
 
 This is a **certified modern pproxy compatibility subset**, not strict full parity. See `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the decision record.

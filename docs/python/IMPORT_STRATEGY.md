@@ -30,7 +30,7 @@ from eggress.pproxy import Server
 from eggress import start_pproxy
 ```
 
-## Optional `import pproxy` compatibility distribution
+## Top-level `import pproxy` is not installed
 
 The canonical `eggress` wheel does **not** install a `pproxy` module or register
 a top-level namespace. This remains deliberate:
@@ -42,18 +42,10 @@ a top-level namespace. This remains deliberate:
 - It prevents accidental dependency on eggress when code expects upstream
   pproxy behavior.
 
-If an application intentionally targets the certified drop-in subset, install
-the separate `eggress-pproxy-compat` distribution:
-
-```bash
-pip install eggress-pproxy-compat
-```
-
-That wheel owns the `pproxy` package and does not rely on `sys.modules` or
-`sys.path` mutation. It should be installed in a clean environment rather than
-alongside the unrelated upstream `pproxy` distribution. See the ADR at
-`docs/adr/ADR_python_import_and_distribution_strategy.md` for the full
-rationale.
+There is no separate `eggress-pproxy-compat` Python distribution. Applications
+that need the bundled helpers must change imports to `from eggress import
+pproxy`; applications that require the real upstream package should install
+`pproxy` itself.
 
 ## Coexistence with upstream pproxy
 
@@ -63,7 +55,7 @@ Both packages can coexist in the same environment:
 import eggress       # canonical bindings
 from eggress import pproxy as eggress_pproxy  # bundled translation helpers
 
-# In a clean environment with eggress-pproxy-compat installed:
+# In an environment with the upstream pproxy package installed:
 import pproxy
 ```
 
@@ -79,8 +71,7 @@ The `eggress.pproxy` namespace does not depend on or interact with the upstream
   functions from `eggress._eggress`. It does not import or depend on the
   upstream `pproxy` package.
 - The canonical `eggress` wheel never shadows an existing `pproxy` package.
-- `eggress-pproxy-compat` is an explicit alternative owner of the top-level
-  `pproxy` namespace; do not combine it with upstream `pproxy`.
+- Eggress never owns or shadows the top-level `pproxy` namespace.
 
 ## Import examples
 

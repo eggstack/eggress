@@ -129,7 +129,10 @@ See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 - [x] Default port inference (`default_port_for_scheme()`)
 - [x] `parse_endpoint` relaxed for bare hosts
 
-### Phase 40: Python pproxy drop-in API — complete
+### Phase 40: Python pproxy-shaped migration API — historical complete
+
+This phase delivered the bundled helper API, not strict pproxy drop-in parity.
+Current acceptance is governed by the practical parity roadmap and manifest.
 
 - [x] `PPProxyService` class — `from_args`, `from_uri`, `from_toml`, `from_file`, `start`, context manager
 - [x] `CompatibilityReport` dataclass — tier, ok, warnings, unsupported, diagnostics, features, toml, parsed_uris, raw_args

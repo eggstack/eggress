@@ -12,21 +12,27 @@ QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`
 - Each transport produces/accepts `BoxStream` — the universal stream type
 - TLS/ALPN configured via `[listeners.tls]` alpn field, wired through `eggress-transport-tls`
 
-## Tier classification (Phase 25-28 H5/H6/H7)
+## Tier classification
 
-WebSocket and Raw transports were promoted to runtime-integrated upstream protocols in Phase B3. H2 CONNECT was promoted in Phase B4. The CLI `parse_listener_uri` still rejects `h2://`, `ws://`, `wss://`, `raw://` as listener protocols (upstream-only).
+WebSocket, Raw, and H2 CONNECT are native runtime upstream protocols. They
+remain outside the current pproxy compatibility translator, so native runtime
+support must not be described as pproxy drop-in support.
 
 - The CLI `parse_listener_uri` rejects `h2://`, `ws://`, `wss://`, `raw://`,
   `tunnel://` as listener URIs.
-- `compile_protocol()` in `crates/eggress-config/src/compile.rs` refuses
-  these as listener/upstream protocols with a structured validation error.
-- Tests: `cargo test -p eggress-config` covers the refuse paths.
+- The compatibility translator rejects these paths with structured
+  diagnostics; native TOML configuration may support the corresponding
+  upstream compositions.
+- Tests: `cargo test -p eggress-config` and the protocol/runtime tests cover
+  the native paths and refusal boundaries.
 
 ## Chain composition behavior (stream-native, Track B hard closure)
 
 WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supplied by the chain executor instead of opening independent connections. This means:
 
-- All intermediate-hop chains (socks5→ws, http→ws, socks5→raw, http→raw, socks5→h2, http→h2) are classified as `drop_in` in the composition matrix.
+- Native intermediate-hop chains (socks5→ws, http→ws, socks5→raw, http→raw,
+  socks5→h2, http→h2) are runtime-supported; they are not automatically
+  pproxy-compatible translator paths.
 - `RawHopHandler` passes through the stream directly (raw passthrough).
 - `WebSocketHopHandler` performs the WebSocket handshake over the prior-hop stream via `connect_over_stream()`.
 - `H2HopHandler` performs the H2 CONNECT handshake over the prior-hop stream; TLS ALPN is handled by the chain executor.

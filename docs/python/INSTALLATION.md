@@ -10,16 +10,8 @@ The package is published on PyPI as `eggress`.
 pip install eggress
 ```
 
-For the separate top-level compatibility namespace:
-
-```bash
-pip install eggress-pproxy-compat
-```
-
-The compatibility distribution depends on the matching `eggress` release and
-installs `import pproxy` for the certified subset. Use a clean virtual
-environment; it is not intended to coexist with the unrelated upstream
-`pproxy` distribution.
+The `eggress` wheel provides the bundled `eggress.pproxy` helpers. It does not
+install a separate compatibility distribution or top-level `import pproxy`.
 
 ## Install from a wheel file
 

@@ -1,17 +1,12 @@
 # Migrating from pproxy
 
-## Preserving the top-level import
+## Updating the top-level import
 
-Applications that intentionally use the certified subset of the pproxy module
-can install the explicit compatibility distribution in a clean environment:
-
-```bash
-pip install eggress-pproxy-compat
-```
-
-This provides `import pproxy` without making the canonical `eggress` wheel
-shadow or alias the upstream namespace. It is not strict full pproxy parity;
-the canonical manifest documents warning and unsupported features.
+The `eggress` wheel does not provide `import pproxy`. Change compatibility
+imports to `from eggress import pproxy`; install the upstream `pproxy` package
+separately when the real upstream namespace is required. Eggress's bundled
+helpers are not strict full pproxy parity; the canonical manifest documents
+warning and unsupported features.
 
 ## Quick migration with `start_pproxy()`
 
@@ -145,8 +140,8 @@ path has no listener bind to discover or clean up; UDP remains listener-based.
 | Legacy stream ciphers | Not supported — rejected with diagnostic (see ADR) |
 | SSR (`ssr://`) | Not supported — rejected with diagnostic (see ADR) |
 | `--sys` (system proxy) | Not supported |
-| `--get` (PAC file serving) | Not supported |
-| `--pac` (PAC file path) | Not supported |
+| `--get URL` (repeatable URL fetch) | Recognized but URL argument is not consumed; use curl |
+| `--pac PATH` (PAC file path) | Recognized as a boolean; path argument is not consumed; serves `/proxy.pac` |
 | `--reuse` (SO_REUSEADDR) | Not supported |
 
 ## See also

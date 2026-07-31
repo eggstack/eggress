@@ -1,6 +1,10 @@
 # Migrating from pproxy to Eggress
 
-Eggress provides a pproxy compatibility layer that translates common pproxy invocations and URI shapes into native Eggress configuration.
+Eggress provides a pproxy compatibility layer that translates common pproxy invocations and URI shapes into native Eggress configuration. It is a migration surface, not strict full drop-in parity.
+
+Install the single `eggress` distribution. The wheel does not install
+`import pproxy`; use `from eggress import pproxy` or the top-level Eggress
+helpers instead.
 
 ## Quick Start
 
@@ -34,11 +38,11 @@ eggress pproxy run -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 | `trojan://` | No (upstream-only) | Yes |
 | `shadowsocks://` | Yes (AEAD methods only) | Yes (AEAD methods only) |
 | `direct://` | No | Yes (direct connection) |
-| `h2://` | Yes | Yes (H2 CONNECT tunnel) |
-| `ws://` | Yes | Yes (WebSocket tunnel) |
-| `wss://` | Yes | Yes (WebSocket tunnel over TLS) |
-| `raw://` | Yes | Yes (raw fixed-target tunnel) |
-| `tunnel://` | Yes | Yes (alias for raw) |
+| `h2://` | No | Native runtime only; compatibility translator gap |
+| `ws://` | No | Native runtime only; compatibility translator gap |
+| `wss://` | No | Native runtime only; compatibility translator gap |
+| `raw://` | No | Native runtime only; compatibility translator gap |
+| `tunnel://` | No | Native runtime only; compatibility translator gap |
 
 ### URI Format
 
@@ -134,7 +138,7 @@ The following pproxy features are explicitly unsupported:
 - **`--daemon` mode** -- Use systemd or a process manager instead
 - **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
 - **`-b` block regex rules** -- Use eggress TOML routing rules
-- **`--rulefile`** -- Use eggress TOML routing rules
+- **`--rulefile`** -- simple reject/block entries are translated; use Eggress TOML routing rules for complete semantics
 - **`--reuse`** -- Connection pooling not implemented
 - **`--log`** -- Use `RUST_LOG=debug` environment variable
 - **`--sys`** -- System proxy configuration not supported
@@ -216,7 +220,12 @@ Example diagnostic codes:
 | `external_dependency_missing` | Required external tool not found |
 
 Diagnostics are produced by the `StructuredDiagnostic` type in
-`eggress-pproxy-compat` and are serializable to JSON.
+The internal `eggress-pproxy-compat` crate powers these diagnostics and they
+are serializable to JSON. It is not a separate Python distribution.
+
+The pproxy 2.7.9 CLI argument shapes are not all reproduced yet: `--pac`
+takes a path, `--test` takes a URL, and repeatable `--get` takes URLs. The
+current translator recognizes these flags but does not consume their values.
 
 ## Parity Tiers
 

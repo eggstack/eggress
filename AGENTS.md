@@ -6,6 +6,13 @@ Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It 
 
 Compatibility claims must remain explicit and evidence-backed. Strict full drop-in parity is not assumed merely because a symbol, protocol name, or structural wrapper exists.
 
+The active compatibility target is practical parity with `pproxy==2.7.9`. The
+repository currently publishes one Python distribution, `eggress`; its wheel
+does not provide `import pproxy` or a separate `eggress-pproxy-compat`
+distribution. Use `from eggress import pproxy` for the bundled compatibility
+helpers. Treat the native runtime and the compatibility translator as separate
+surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
+
 ## Source-of-truth documents
 
 Use these current documents before relying on historical phase or completion records:
@@ -20,6 +27,10 @@ Use these current documents before relying on historical phase or completion rec
 - `docs/PPROXY_PARITY_SPEC.md`: compatibility vocabulary and tier definitions.
 
 Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.
+
+`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md` governs current parity work.
+`plans/PPROXY_FULL_DROP_IN_ROADMAP.md` and older milestone plans are historical
+and are not acceptance gates for the bounded roadmap.
 
 ## Architecture index
 
@@ -46,9 +57,9 @@ Quick reference to per-subsystem architecture documents under `docs/architecture
 | UDP | `docs/architecture/udp.md` | Associations, target flows, relay, security |
 | URI parsing | `docs/architecture/uri.md` | Typed AST, redacted Display, pproxy grammar |
 | Embed API | `docs/architecture/embed.md` | `EggressConfig`, `EggressService`, `EggressHandle` |
-| Python bindings | `docs/architecture/python.md` | PyO3 classes, pproxy drop-in API, Connection, Server |
+| Python bindings | `docs/architecture/python.md` | PyO3 classes, pproxy-shaped migration API, Connection, Server |
 | pproxy compat | `docs/architecture/pproxy-compat.md` | URI translation, diagnostics, manifest validation |
-| CLI | `docs/architecture/cli.md` | Binary targets, pproxy drop-in, exit codes |
+| CLI | `docs/architecture/cli.md` | Binary targets, pproxy-style translator, exit codes |
 | System proxy | `docs/architecture/system-proxy.md` | macOS/Windows system proxy configuration |
 | Testkit | `docs/architecture/testkit.md` | Oracle, differential, fixtures, manifest validation |
 | Tools/scripts | `docs/architecture/tools-and-scripts.md` | Helper and validation scripts |

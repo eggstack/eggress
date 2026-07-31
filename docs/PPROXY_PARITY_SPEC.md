@@ -171,7 +171,7 @@ URI-level chain parsing and translation tests live in
 | Feature | pproxy | Eggress |
 |---------|--------|---------|
 | Round-robin | Default for multiple `-r` args | Supported (`RoundRobin` scheduler) |
-| Rule-based routing | `--rulefile` (regex rules) | Not translated; use TOML rules with matchers |
+| Rule-based routing | `--rulefile` (regex rules) | Simple reject/block subset only; use TOML rules with matchers for complete semantics |
 | Fallback | `-F` flag | `RouteActionSpec::Fallback` with group members |
 | Connection reuse | `--reuse` | Not implemented; intentional non-parity because pproxy pools upstream connections across sessions while Eggress uses one upstream connection per proxy session |
 | Random | Not default | Supported (`Random` scheduler) |
@@ -364,16 +364,16 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `--ssl` | TLS cert/key file (`certfile[,keyfile]`) | TLS config in eggress TOML |
 | `--daemon` | Run as daemon | Not supported (use systemd/supervisord) |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
-| `--pac` | PAC file path | PAC serving via admin API |
+| `--pac` | PAC file path argument | Boolean flag enabling `/proxy.pac`; path is not consumed |
 | `--sys` | Set system proxy (mac/windows) | Not supported |
-| `--test` | Test all remote proxies and exit | `eggress route test` command |
+| `--test` | URL argument; test and exit | Boolean flag with diagnostic guidance; URL is not consumed |
 
 ## 11. Python Library Usage
 
 pproxy can be used as a Python library:
 
 ```python
-import pproxy
+from eggress import pproxy
 
 # Create server from URI
 server = pproxy.Server('socks5://:1080')
@@ -921,8 +921,9 @@ RUST_LOG=info eggress --config config.toml > access.log 2>&1
 
 ### Round-Robin
 
-pproxy uses round-robin as the default scheduler when multiple `-r` arguments are
-provided. The scheduler cycles through upstreams in order.
+pproxy uses first-available by default for a single remote and round-robin when
+multiple `-r` arguments are provided. The scheduler cycles through upstreams
+in order in the multi-remote case.
 
 Eggress implements round-robin with a global atomic cursor that persists across
 connections. Each `select()` call advances the cursor and returns the next eligible

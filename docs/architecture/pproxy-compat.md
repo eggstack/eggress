@@ -4,6 +4,10 @@
 
 pproxy 2.7.9 compatibility layer for CLI argument translation, URI parsing, and parity classification.
 
+This is an internal Rust crate, not a separately published Python package.
+The Python compatibility surface is bundled in the `eggress` distribution as
+`eggress.pproxy`; the wheel does not install top-level `pproxy`.
+
 ## Key Types
 
 | Type | Description |
@@ -27,8 +31,8 @@ pproxy 2.7.9 compatibility layer for CLI argument translation, URI parsing, and 
 ## Parity Classification
 
 `ManifestTier` classifies features:
-- `compatible` — full behavioral match
-- `supported` — works with minor differences
+- `compatible` — matched for the defined scenario
+- `supported` — usable with documented differences
 - `partial` — partially implemented
 - `intentional_non_parity` — deliberate divergence
 - `experimental` — unstable
@@ -45,8 +49,13 @@ pproxy 2.7.9 compatibility layer for CLI argument translation, URI parsing, and 
 | `--ssl` | TLS configuration |
 | `-b addr` | Bind address |
 | `--rulefile path` | Rule file parsing |
-| `--pac` | PAC configuration |
+| `--pac` | PAC serving configuration; pproxy's flag takes no path argument |
 | `--sys` | System proxy inspection |
+
+The translator currently supports common HTTP/SOCKS and AEAD Shadowsocks
+flows. H2, WS/WSS, raw, and tunnel remain native-runtime features rather than
+complete compatibility-translator paths. Per-remote rule routing is not yet
+complete; `--rulefile` only translates the supported simple rule subset.
 
 ## Diagnostics
 
