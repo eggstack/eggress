@@ -77,6 +77,8 @@ pub fn translate_from_uris(
     let mut block_rules: Vec<String> = Vec::new();
     let mut health_interval: Option<String> = None;
     let mut pac_enabled = false;
+    let mut pac_path: Option<String> = None;
+    let mut static_content: Vec<StaticContentToml> = Vec::new();
     for flag in flags {
         if flag == "daemon" {
             output = output.with_unsupported(
@@ -185,17 +187,22 @@ pub fn translate_from_uris(
                 }
             }
         }
-        if flag == "pac" {
+        if let Some(value) = flag.strip_prefix("pac=") {
             pac_enabled = true;
+            pac_path = Some(if value.starts_with('/') {
+                value.to_string()
+            } else {
+                format!("/{value}")
+            });
             output = output.with_warning(
                 "pac-serving",
-                "pproxy --pac flag detected; configure PAC serving in eggress TOML admin.pac block",
+                format!("pproxy --pac {value} maps to the Eggress admin PAC path"),
             );
         }
-        if flag == "test" {
+        if let Some(value) = flag.strip_prefix("test=") {
             output = output.with_warning(
                 "test-mode",
-                "pproxy --test flag detected; use 'eggress upstream test -c <config>' to test upstream connectivity",
+                format!("pproxy --test {value} will run an upstream request and exit"),
             );
         }
         if flag == "sys" {
@@ -216,10 +223,36 @@ pub fn translate_from_uris(
                 "pproxy --reuse (connection pooling) is not implemented by design; eggress uses one upstream connection per session (intentional non-parity)",
             );
         }
-        if flag == "get" {
+        if let Some(value) = flag.strip_prefix("get=") {
+            match value.split_once(',') {
+                Some((path, filename))
+                    if path.starts_with('/') && !path.contains("..") && !filename.is_empty() =>
+                {
+                    match std::fs::read_to_string(filename) {
+                        Ok(body) => static_content.push(StaticContentToml {
+                            path: path.to_string(),
+                            body,
+                        }),
+                        Err(error) => {
+                            output = output.with_unsupported(
+                                "get-file",
+                                format!("--get file '{filename}' could not be read: {error}"),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    output = output.with_unsupported(
+                        "get-file",
+                        format!(
+                            "--get value '{value}' must be PATH,FILE with an absolute safe PATH"
+                        ),
+                    )
+                }
+            }
             output = output.with_warning(
                 "get-url",
-                "pproxy --get flag detected; use 'curl --proxy <proxy-uri> <url>' instead",
+                format!("pproxy --get {value} is served as admin static content"),
             );
         }
     }
@@ -251,91 +284,126 @@ pub fn translate_from_uris(
         }
 
         // Check for unsupported local protocols
-        match local.scheme.as_str() {
-            "ss" | "shadowsocks" => {
-                // Shadowsocks listener is supported (requires explicit protocol mode)
-                tracing::debug!(
-                    "shadowsocks listener '{}' accepted (explicit protocol mode)",
-                    local.redacted_display()
-                );
-            }
-            "ssr" => {
-                output = output.with_unsupported(
+        let mut reject_listener = false;
+        for protocol in &local.protocol_chain {
+            match protocol.as_str() {
+                "ss" | "shadowsocks" => {
+                    // Shadowsocks listener is supported (requires explicit protocol mode)
+                    tracing::debug!(
+                        "shadowsocks listener '{}' accepted (explicit protocol mode)",
+                        local.redacted_display()
+                    );
+                }
+                "ssr" => {
+                    output = output.with_unsupported(
                     "ssr-listener",
                     format!(
                         "ShadowsocksR (SSR) listener '{}': SSR protocol, obfs, and legacy features are not supported",
                         local.redacted_display()
                     ),
                 );
-                continue;
-            }
-            "trojan" => {
-                tracing::debug!(
-                    "Trojan listener '{}' accepted (TLS required)",
-                    local.redacted_display()
-                );
-            }
-            "ssh" => {
-                output = output.with_unsupported(
-                    "ssh-listener",
-                    format!(
-                        "SSH listener '{}': SSH transport is not supported",
+                    reject_listener = true;
+                }
+                "trojan" => {
+                    tracing::debug!(
+                        "Trojan listener '{}' accepted (TLS required)",
                         local.redacted_display()
-                    ),
-                );
-                continue;
-            }
-            "unix" => {
-                // Translate unix:// listener to TOML with unix socket config
-                tracing::debug!(
-                    "unix socket listener '{}' accepted (unix socket mode)",
-                    local.redacted_display()
-                );
-            }
-            "redir" => {
-                // Translate redir:// listener to TOML with transparent proxy config
-                tracing::debug!(
-                    "redir listener '{}' accepted (transparent proxy mode)",
-                    local.redacted_display()
-                );
-            }
-            "direct" => {
-                output = output.with_unsupported(
-                    "direct-listener",
-                    format!(
-                        "Direct listener '{}': 'direct' is not a valid listener protocol",
+                    );
+                }
+                "ssh" => {
+                    output = output.with_unsupported(
+                        "ssh-listener",
+                        format!(
+                            "SSH listener '{}': SSH transport is not supported",
+                            local.redacted_display()
+                        ),
+                    );
+                    reject_listener = true;
+                }
+                "unix" => {
+                    // Translate unix:// listener to TOML with unix socket config
+                    tracing::debug!(
+                        "unix socket listener '{}' accepted (unix socket mode)",
                         local.redacted_display()
-                    ),
-                );
-                continue;
+                    );
+                }
+                "redir" => {
+                    // Translate redir:// listener to TOML with transparent proxy config
+                    tracing::debug!(
+                        "redir listener '{}' accepted (transparent proxy mode)",
+                        local.redacted_display()
+                    );
+                }
+                "direct" => {
+                    output = output.with_unsupported(
+                        "direct-listener",
+                        format!(
+                            "Direct listener '{}': 'direct' is not a valid listener protocol",
+                            local.redacted_display()
+                        ),
+                    );
+                    reject_listener = true;
+                }
+                "http" | "https" | "socks4" | "socks4a" | "socks5" | "httponly" => {}
+                other => {
+                    output = output.with_unsupported(
+                        "scheme",
+                        format!("unknown scheme '{}' in listener URI", other),
+                    );
+                    reject_listener = true;
+                }
             }
-            "http" | "https" | "socks4" | "socks4a" | "socks5" => {}
-            other => {
-                output = output.with_unsupported(
-                    "scheme",
-                    format!("unknown scheme '{}' in listener URI", other),
-                );
-                continue;
-            }
+        }
+        if reject_listener {
+            continue;
+        }
+
+        let protocols = local
+            .protocol_chain
+            .iter()
+            .map(|protocol| {
+                match protocol.as_str() {
+                    "https" | "httponly" => "http",
+                    "socks4a" => "socks4",
+                    "ss" | "shadowsocks" => "shadowsocks",
+                    "redir" => "http",
+                    "unix" => "socks5",
+                    other => other,
+                }
+                .to_string()
+            })
+            .collect::<Vec<_>>();
+        let has_non_sniffable = protocols
+            .iter()
+            .any(|p| matches!(p.as_str(), "shadowsocks" | "trojan"));
+        if protocols.len() > 1 && has_non_sniffable {
+            output = output.with_unsupported("mixed-listener", format!("mixed listener '{}' includes a non-sniffable protocol; use only http+socks4+socks5", local.redacted_display()));
+            continue;
+        }
+        if local.local_bind.is_some() {
+            output = output.with_unsupported("local-bind", format!("local outbound bind in '{}' is parsed but not supported by the generated listener config", local.redacted_display()));
+        }
+        if local.fixed_target.is_some() {
+            output = output.with_unsupported(
+                "fixed-target",
+                format!(
+                    "fixed target in '{}' is parsed but not supported by this listener translator",
+                    local.redacted_display()
+                ),
+            );
+        }
+        if !local.plugins.is_empty() {
+            output = output.with_unsupported(
+                "plugin",
+                format!(
+                    "plugins in '{}' are parsed but plugin execution is not supported",
+                    local.redacted_display()
+                ),
+            );
         }
 
         let listener_name = format!("pproxy-local-{}", idx);
         let bind = local.bind_display();
-
-        let protocols = match local.scheme.as_str() {
-            "http" | "https" => vec!["http".to_string()],
-            "socks4" | "socks4a" => vec!["socks4".to_string()],
-            "socks5" => vec!["socks5".to_string()],
-            "ss" | "shadowsocks" => vec!["shadowsocks".to_string()],
-            "trojan" => vec!["trojan".to_string()],
-            "redir" => vec!["http".to_string()],
-            "unix" => vec!["socks5".to_string()],
-            other => {
-                return Err(CompatError::InvalidArgs {
-                    message: format!("unsupported scheme: {other}"),
-                })
-            }
-        };
 
         let mut listener_entry = ListenerToml {
             name: listener_name.clone(),
@@ -572,6 +640,33 @@ pub fn translate_from_uris(
         // Check for unsupported upstream protocols across all hops
         let mut hop_unsupported = false;
         for hop in &chain.hops {
+            if hop.local_bind.is_some() {
+                output = output.with_unsupported(
+                    "local-bind",
+                    format!("outbound local bind in '{}' is parsed but not supported by upstream translation", hop.redacted_display()),
+                );
+                hop_unsupported = true;
+            }
+            if hop.fixed_target.is_some() {
+                output = output.with_unsupported(
+                    "fixed-target",
+                    format!(
+                        "fixed target in '{}' is parsed but not supported by upstream translation",
+                        hop.redacted_display()
+                    ),
+                );
+                hop_unsupported = true;
+            }
+            if !hop.plugins.is_empty() {
+                output = output.with_unsupported(
+                    "plugin",
+                    format!(
+                        "plugins in '{}' are parsed but plugin execution is not supported",
+                        hop.redacted_display()
+                    ),
+                );
+                hop_unsupported = true;
+            }
             match hop.scheme.as_str() {
                 "ss" | "shadowsocks" => {}
                 "ssr" => {
@@ -704,7 +799,6 @@ pub fn translate_from_uris(
                 continue;
             }
         }
-
         let upstream_id = format!("pproxy-udp-upstream-{}", idx);
         let config_uri = build_config_uri(&remote_uri);
 
@@ -825,6 +919,8 @@ pub fn translate_from_uris(
         reverse_servers: &reverse_servers,
         reverse_clients: &reverse_clients,
         pac_enabled,
+        pac_path,
+        static_content: &static_content,
     });
 
     Ok(TranslationOutput::new(toml_str)
@@ -1090,6 +1186,14 @@ struct PacToml {
 #[derive(serde::Serialize, Clone)]
 struct AdminToml {
     pac: PacToml,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    static_content: Vec<StaticContentToml>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct StaticContentToml {
+    path: String,
+    body: String,
 }
 
 struct TomlInput<'a> {
@@ -1100,16 +1204,19 @@ struct TomlInput<'a> {
     reverse_servers: &'a [ReverseServerToml],
     reverse_clients: &'a [ReverseClientToml],
     pac_enabled: bool,
+    pac_path: Option<String>,
+    static_content: &'a [StaticContentToml],
 }
 
 fn generate_toml(input: TomlInput<'_>) -> String {
-    let admin = if input.pac_enabled {
+    let admin = if input.pac_enabled || !input.static_content.is_empty() {
         Some(AdminToml {
             pac: PacToml {
-                path: Some("/proxy.pac".to_string()),
+                path: input.pac_path.or_else(|| Some("/proxy.pac".to_string())),
                 proxy: Some("PROXY {}".to_string()),
                 direct_fallback: Some(true),
             },
+            static_content: input.static_content.to_vec(),
         })
     } else {
         None
@@ -1922,6 +2029,7 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--pac".into(),
+            "/proxy.pac".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
@@ -1934,6 +2042,7 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--test".into(),
+            "http://example.com".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
@@ -2004,6 +2113,7 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--get".into(),
+            "/index.html,body.txt".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
@@ -2200,6 +2310,7 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--pac".into(),
+            "/proxy.pac".into(),
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();

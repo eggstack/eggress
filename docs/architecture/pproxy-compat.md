@@ -49,13 +49,19 @@ The Python compatibility surface is bundled in the `eggress` distribution as
 | `--ssl` | TLS configuration |
 | `-b addr` | Bind address |
 | `--rulefile path` | Rule file parsing |
-| `--pac` | PAC serving configuration; pproxy's flag takes no path argument |
+| `--pac path` | PAC serving configuration at the supplied admin path |
 | `--sys` | System proxy inspection |
 
-The translator currently supports common HTTP/SOCKS and AEAD Shadowsocks
+The translator parses combined protocols, fragment auth, local binding, fixed
+targets, plugins, and canonical raw rule suffixes without discarding them.
+Unsupported fields are reported after parsing. The translator currently supports common HTTP/SOCKS and AEAD Shadowsocks
 flows. H2, WS/WSS, raw, and tunnel remain native-runtime features rather than
 complete compatibility-translator paths. Per-remote rule routing is not yet
 complete; `--rulefile` only translates the supported simple rule subset.
+
+`--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking
+options. PAC and static content use the existing admin server, while test mode
+passes the target to the existing upstream test command.
 
 ## Diagnostics
 

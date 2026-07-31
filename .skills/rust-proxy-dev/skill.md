@@ -149,9 +149,14 @@ When adding features to Connection, follow the pattern: Rust handles networking,
 
 - `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; strict CLI parity is not claimed
 - Source: `crates/eggress-cli/src/pproxy_main.rs` — raw arg parsing (not clap), delegates to `PproxyArgs::parse()` → `translate_pproxy_args()`
-- Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `--ssl`, `--pac`, `--test`, `--sys`, `--daemon/-d`, `--reuse`, `--get`, `--log`, `--rulefile`, `--version`, `-h/--help`
+- Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `--ssl`, `--pac <path>`, `--test <target>`, `--sys`, `--daemon/-d`, `--reuse`, `--get <path,file>`, `--log`, `--rulefile`, `--version`, `-h/--help`
 - `--help` prints comprehensive flag reference; `--version` prints `eggress-pproxy-compat {VERSION}`
-- `--pac` is currently treated as a boolean; pproxy 2.7.9 expects a path. `--test` and `--get` similarly do not yet consume their pproxy URL arguments.
+- The compatibility URI AST preserves combined protocol tokens, modifiers,
+  fragment auth, local binding, fixed targets, plugins, raw rules, and the
+  original URI. Translation must diagnose fields that are parsed but not
+  runtime-supported, and must redact credentials in all diagnostics.
+- `--pac`, `--test`, and `--get` consume exactly one value. Their values must
+  not become positional listeners or remotes.
 - `--sys` calls `inspect_system_proxy()` and prints results before starting
 - `-v/-vv/-vvv` maps to RUST_LOG levels: 0→info, 1-2→debug, 3+→trace
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr

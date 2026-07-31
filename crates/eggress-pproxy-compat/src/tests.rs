@@ -465,11 +465,8 @@ fn test_redir_and_socks5_combined() {
 
 // --- PAC/get/test boundary tests (28.9) ---
 //
-// pproxy --pac, --get, and --test flags are not in the known-flag list.
-// The args parser treats unknown `-` prefixed flags as raw flags, but their
-// values become positional arguments (interpreted as URIs). These tests use
-// the flags at the end of the argument list (after all locals/remotes are
-// already parsed) or without values to avoid URI parse errors.
+// pproxy --pac, --get, and --test are value-taking options. Their values must
+// remain owned by the option rather than becoming positional URIs.
 
 #[test]
 fn test_pac_flag_generates_unknown_warning() {
@@ -482,9 +479,8 @@ fn test_pac_flag_generates_unknown_warning() {
         "/path/to/proxy.pac".into(),
     ])
     .unwrap();
-    // --pac is now a known flag; its value "/path/to/proxy.pac" becomes a positional remote
     assert!(
-        args.raw_flags.iter().any(|f| f == "pac"),
+        args.raw_flags.iter().any(|f| f == "pac=/path/to/proxy.pac"),
         "pac should be captured as raw flag"
     );
     // Should NOT produce an unknown-flag warning for --pac
@@ -507,9 +503,8 @@ fn test_get_flag_generates_unknown_warning() {
         "http://example.com".into(),
     ])
     .unwrap();
-    // --get is now a known flag; its value "http://example.com" becomes a positional remote
     assert!(
-        args.raw_flags.iter().any(|f| f == "get"),
+        args.raw_flags.iter().any(|f| f == "get=http://example.com"),
         "get should be captured as raw flag"
     );
     // Should NOT produce an unknown-flag warning for --get
@@ -529,6 +524,7 @@ fn test_test_flag_generates_unknown_warning() {
         "-r".into(),
         "http://proxy:8080".into(),
         "--test".into(),
+        "http://example.com".into(),
     ])
     .unwrap();
     // --test is now a known flag; should NOT produce unknown-flag warning
@@ -545,15 +541,13 @@ fn test_test_flag_generates_unknown_warning() {
 
 #[test]
 fn test_pac_get_test_flags_do_not_produce_unsupported_features() {
-    // Use --test alone (no value) to avoid positional URI parse issues.
-    // --pac and --get take values that become positional URIs, so we only
-    // test --test here for translation success.
     let args = PproxyArgs::parse(&[
         "-l".into(),
         "socks5://127.0.0.1:1080".into(),
         "-r".into(),
         "http://proxy:8080".into(),
         "--test".into(),
+        "http://example.com".into(),
     ])
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();

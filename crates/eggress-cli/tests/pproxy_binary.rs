@@ -134,6 +134,7 @@ fn startup_banner_shows_pac() {
             "-r",
             "socks5://127.0.0.1:1080",
             "--pac",
+            "/proxy.pac",
         ]),
         3000,
     );

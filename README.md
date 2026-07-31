@@ -73,6 +73,13 @@ pproxy translate -- -l http://:8080 -r socks5://proxy:1080
 pproxy check -- -l socks5://:1080 -r http://proxy:8080
 ```
 
+The compatibility binary follows pproxy's no-argument default:
+`http+socks4+socks5://:8080` with direct routing. Compatibility URIs preserve
+combined protocols, fragment authentication, local outbound binding, plugins,
+fixed targets, and raw rule suffixes for translation diagnostics. `--pac
+<path>`, `--get <path,file>`, and `--test <target>` each consume their value;
+they are not positional proxy URIs.
+
 ## Rust library
 
 Use `eggress-embed` to embed the proxy in another Rust application.
@@ -287,6 +294,8 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
 - CLI flag translation with structured warnings for unsupported features
+- Phase 1 URI grammar and CLI ownership coverage, including mixed listeners,
+  redaction, fixed-target metadata, and value-taking options
 - Structured diagnostics for unsupported protocols (SSH, Unix upstream)
 - Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
 - Python compatibility helpers (`PPProxyService`, `Server`, `Connection`, `start_pproxy`); these are not drop-in replacements for pproxy's object contracts

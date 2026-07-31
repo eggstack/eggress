@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Implemented and verified locally.
 
 ## Parent roadmap
 
@@ -257,6 +257,23 @@ cargo test -p eggress-pproxy-compat uri
 cargo test -p eggress-pproxy-compat args
 cargo test -p eggress-pproxy-compat translate
 cargo test -p eggress-cli --test cli_tests pproxy
+```
+
+## Implementation record
+
+The phase is implemented in the compatibility crate and `pproxy` binary. The
+parser now preserves combined protocol tokens, transport modifiers, fragment
+auth, local binding, fixed targets, plugins, raw rule suffixes, and raw input.
+The CLI consumes all value-taking options with deterministic ownership and
+uses the existing admin and upstream-test components for PAC, static content,
+and test mode. Unsupported runtime fields remain explicit diagnostics.
+
+Verification completed locally:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --locked --no-fail-fast
 ```
 
 Add a small optional oracle test command for the canonical fixture table. It should skip cleanly when pproxy is unavailable and must not become a routine CI requirement.

@@ -62,9 +62,10 @@ pproxy -l http://0.0.0.0:8080 -r socks5://127.0.0.1:1080
 
 Accepts pproxy-style arguments and translates them internally to eggress configuration.
 
-`--pac` is a flag with no argument and enables the Eggress admin PAC endpoint;
-`--test` is recognized but delegates connectivity testing to `eggress upstream
-test`; `--get` is recognized only to emit a diagnostic recommending curl.
+`--pac <PATH>`, `--get <PATH,FILE>`, and `--test <TARGET>` consume one required
+value each. Values remain owned by the option rather than becoming positional
+listener or remote URIs. PAC and static files use the existing admin server;
+`--test` delegates the supplied target to `eggress upstream test`.
 
 ## Key Arguments
 
@@ -74,6 +75,11 @@ test`; `--get` is recognized only to emit a diagnostic recommending curl.
 | `-r, --remote` | Upstream proxy URIs (chains with `__`) |
 | `--config` | TOML configuration file |
 | `--admin` | Admin endpoint address |
+
+The compatibility `pproxy` binary defaults, with no arguments, to
+`http+socks4+socks5://:8080` and direct routing. Repeated `-l`, `-r`, `-ul`, and
+`-ur` options retain input order. Unsupported daemonization, reuse-port, and
+plugin execution remain explicit diagnostics.
 
 ## Dependencies
 

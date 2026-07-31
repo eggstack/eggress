@@ -6,6 +6,13 @@ Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It 
 
 Compatibility claims must remain explicit and evidence-backed. Strict full drop-in parity is not assumed merely because a symbol, protocol name, or structural wrapper exists.
 
+The Phase 1 compatibility parser preserves pproxy syntax before translation:
+combined protocol chains, `+tls`/`+ssl`/repeated `+in` modifiers, fragment auth,
+local binding, fixed targets, plugin metadata, raw rule suffixes, and the raw
+URI. `--pac`, `--get`, and `--test` are value-taking options; their values must
+not be reclassified as positional listeners or remotes. Parsed-but-unsupported
+fields require precise diagnostics and redacted output.
+
 The active compatibility target is practical parity with `pproxy==2.7.9`. The
 repository currently publishes one Python distribution, `eggress`; its wheel
 does not provide `import pproxy` or a separate `eggress-pproxy-compat`

@@ -129,11 +129,11 @@ for the authoritative 148-capability manifest with per-layer evidence tracking.
 | `-b` bind | supported | supported (generates TOML) | drop_in | cli_tests | none | Phase 38: generates `[[rules]] reject` entries |
 | `--ssl` TLS listener | supported | supported (generates TOML) | native_equivalent | cli_tests, pproxy_compat_manifest, pproxy_compat_report | none | Phase 38: generates TLS listener TOML config; Phase 42: TLS now applied to all listeners (matches pproxy, which loads cert chain into every ssl context) |
 | `-a` alive/health | supported | supported (generates TOML) | native_equivalent | cli_tests | none | Phase 38: generates `[health] interval = "Ns"` |
-| `--pac` PAC serving | path argument; serves that path | boolean flag; fixed `/proxy.pac` admin endpoint | compatible_with_warning | cli_tests | none | Argument arity differs |
-| `--test` test-and-exit | URL argument; tests that URL | boolean flag; diagnostic/subcommand guidance | compatible_with_warning | cli_tests | none | Argument arity and execution differ |
+| `--pac` PAC serving | path argument; serves that path | path argument mapped to the existing admin PAC endpoint | compatible_with_warning | cli_tests | none | Path is consumed and preserved |
+| `--test` test-and-exit | URL argument; tests that URL | URL argument passed to the existing upstream test command | compatible_with_warning | cli_tests | none | Functional test-and-exit path |
 | `--sys` system proxy | supported | supported | native_equivalent | cli_tests | none | Phase 38: auto-invokes `eggress system-proxy inspect` before starting |
 | `--log` logging | supported | diagnostic only | native_equivalent | cli_tests | none | Phase 38: emits structured diagnostic |
-| `--get` URL fetch | repeatable URL argument | diagnostic only; use curl | unsupported | cli_tests | none | Argument value is not consumed |
+| `--get` static content | repeatable `PATH,FILE` argument | validated static content through the existing admin server | compatible_with_warning | cli_tests | none | File serving is bounded to safe absolute paths |
 | `--reuse` | supported | diagnostic only | intentional_non_parity | cli_tests | none | Phase 38: emits structured diagnostic |
 | pproxy compat CLI | `pproxy translate/check/run` | `eggress pproxy translate/check/run` | drop_in | cli_tests | none | Translates pproxy CLI args to TOML config |
 | pproxy URI translation | N/A | `eggress pproxy translate` | drop_in | cli_tests | none | Converts pproxy listen/remote URIs to TOML |

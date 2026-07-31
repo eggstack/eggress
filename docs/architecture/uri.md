@@ -2,7 +2,9 @@
 
 `crates/eggress-uri/`
 
-URI parser for proxy chain specifications. Parses pproxy-compatible URI syntax into typed AST nodes.
+URI parser for native proxy chains. The pproxy compatibility crate has its own
+typed AST because pproxy's grammar deliberately differs from native URI
+configuration.
 
 ## Key Types
 
@@ -15,7 +17,7 @@ URI parser for proxy chain specifications. Parses pproxy-compatible URI syntax i
 | `CredentialSpec` | `user:password` credentials (may be absent) |
 | `RedactedUri` | Wrapper that redacts credentials in `Display` output |
 
-## URI Grammar
+## Native URI Grammar
 
 ```
 protocol+protocol://user:password@host:port?rule#local
@@ -26,6 +28,19 @@ protocol+protocol://user:password@host:port?rule#local
 - `__` separates proxy hops in a chain
 - `?` introduces route rule expressions
 - `#` introduces local bind address
+
+## pproxy compatibility grammar
+
+```text
+scheme[+scheme...][+tls|+ssl|+in...]://[cipher-or-userinfo@]netloc[/@localbind][,plugin...][?rules][#auth]
+```
+
+The compatibility parser retains protocol tokens, modifiers, raw input,
+fragment authentication, local binding, brace-delimited fixed targets, plugin
+metadata, and raw rule suffixes. Combined
+`http+socks4+socks5://:8080` listeners translate to one listener with three
+protocol detectors. Unsupported fields produce explicit diagnostics after
+parsing.
 
 ## Key Functions
 

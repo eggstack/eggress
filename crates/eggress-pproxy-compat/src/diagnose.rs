@@ -127,7 +127,15 @@ mod tests {
             backward_num: 0,
             rule: None,
             rules_file: None,
+            rule_suffix: None,
             path: None,
+            protocol_chain: vec!["redir".to_string()],
+            transport_modifiers: vec![],
+            local_bind: None,
+            fixed_target: None,
+            plugins: vec![],
+            auth_fragment: None,
+            raw: "redir://:0".to_string(),
         };
         let diag = diagnostic_transparent_proxy_unsupported(&uri);
         assert!(diag.contains("127.0.0.1:12345"));
@@ -185,7 +193,15 @@ mod tests {
             backward_num: 0,
             rule: None,
             rules_file: None,
+            rule_suffix: None,
             path: None,
+            protocol_chain: vec!["redir".to_string()],
+            transport_modifiers: vec![],
+            local_bind: None,
+            fixed_target: None,
+            plugins: vec![],
+            auth_fragment: None,
+            raw: "redir://:0".to_string(),
         };
         let diagnostics = validate_redir_listener(&uri);
         assert!(diagnostics.iter().any(|d| d.contains("port 0")));
@@ -205,7 +221,15 @@ mod tests {
             backward_num: 0,
             rule: None,
             rules_file: None,
+            rule_suffix: None,
             path: None,
+            protocol_chain: vec!["unix".to_string()],
+            transport_modifiers: vec![],
+            local_bind: None,
+            fixed_target: None,
+            plugins: vec![],
+            auth_fragment: None,
+            raw: "unix://".to_string(),
         };
         let diagnostics = validate_unix_listener(&uri);
         assert!(diagnostics.iter().any(|d| d.contains("no path")));

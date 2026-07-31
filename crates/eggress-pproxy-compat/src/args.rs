@@ -19,6 +19,7 @@ const KNOWN_RAW_FLAG_KEYS: &[&str] = &[
     "sys",
     "reuse",
     "get",
+    "auth",
 ];
 
 fn take_required_value(
@@ -54,12 +55,10 @@ impl PproxyArgs {
     /// Create default pproxy args equivalent to running `pproxy` with no arguments.
     ///
     /// Real pproxy defaults to a mixed HTTP/SOCKS4/SOCKS5 listener on `:8080`
-    /// with direct routing. Since eggress doesn't support mixed-protocol
-    /// listeners, we synthesize the local arg `socks5://:8080` with no remote,
-    /// which creates a SOCKS5 listener on :8080 with direct routing.
+    /// with direct routing.
     pub fn default_args() -> Self {
         Self {
-            local: vec!["socks5://:8080".to_string()],
+            local: vec!["http+socks4+socks5://:8080".to_string()],
             remotes: vec![],
             raw_flags: vec![],
             verbose_level: 0,
@@ -124,10 +123,12 @@ impl PproxyArgs {
                     raw_flags.push(format!("block={value}"));
                 }
                 "--pac" => {
-                    raw_flags.push("pac".to_string());
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("pac={value}"));
                 }
                 "--test" => {
-                    raw_flags.push("test".to_string());
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("test={value}"));
                 }
                 "--sys" => {
                     raw_flags.push("sys".to_string());
@@ -136,7 +137,12 @@ impl PproxyArgs {
                     raw_flags.push("reuse".to_string());
                 }
                 "--get" => {
-                    raw_flags.push("get".to_string());
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("get={value}"));
+                }
+                "--auth" => {
+                    let value = take_required_value(raw, &mut i, arg)?;
+                    raw_flags.push(format!("auth={value}"));
                 }
                 other if other.starts_with('-') => {
                     raw_flags.push(other.to_string());
@@ -488,10 +494,13 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--pac".into(),
+            "/proxy.pac".into(),
             "--test".into(),
+            "http://example.com".into(),
             "--sys".into(),
             "--reuse".into(),
             "--get".into(),
+            "/index.html,body.txt".into(),
         ])
         .unwrap();
         let warnings = args.unknown_flag_warnings();
@@ -550,7 +559,7 @@ mod tests {
     #[test]
     fn test_default_args() {
         let args = PproxyArgs::default_args();
-        assert_eq!(args.local, vec!["socks5://:8080"]);
+        assert_eq!(args.local, vec!["http+socks4+socks5://:8080"]);
         assert!(args.remotes.is_empty());
         assert!(args.raw_flags.is_empty());
         assert_eq!(args.verbose_level, 0);

@@ -1,0 +1,111 @@
+# Compact Phase 1 parser/CLI contract cases.
+
+[[cases]]
+id = "default_mixed_listener"
+raw = "http+socks4+socks5://:8080"
+protocols = ["http", "socks4", "socks5"]
+port = 8080
+
+[[cases]]
+id = "ipv6_listener"
+raw = "socks5://[::1]:1080"
+host = "::1"
+port = 1080
+
+[[cases]]
+id = "fragment_auth"
+raw = "http://proxy:8080#user:secret"
+auth_fragment = "user:secret"
+redacted = true
+
+[[cases]]
+id = "shadowsocks_credentials"
+raw = "ss://aes-256-gcm:secret@proxy:8388"
+username = "aes-256-gcm"
+password = "secret"
+
+[[cases]]
+id = "trojan_password_only"
+raw = "trojan://secret@proxy:443"
+password = "secret"
+
+[[cases]]
+id = "local_bind_and_plugins"
+raw = "http://proxy:8080/@192.0.2.10,obfs,auth=secret"
+local_bind = "192.0.2.10"
+plugin_names = ["obfs", "auth"]
+
+[[cases]]
+id = "fixed_target_and_rule"
+raw = "tunnel://{example.com:443}?example\\.com$"
+fixed_target = "example.com:443"
+rule_suffix = "example\\.com$"
+
+[[cases]]
+id = "two_hop_chain"
+raw = "http://one:8080__socks5://two:1080"
+hop_count = 2
+
+[[cases]]
+id = "repeated_in"
+raw = "socks5+in+in://server:1080"
+backward_num = 2
+
+[[cases]]
+id = "cli_value_ownership"
+args = ["--pac", "/proxy.pac", "--get", "/index.html,index.html", "--test", "https://example.com/"]
+values_are_positional = false
+
+[[cases]]
+id = "cli_repeated_options"
+args = ["-l", "http://:8080", "-l", "socks5://:1080", "-r", "direct://", "-r", "http://proxy:8080"]
+listener_count = 2
+remote_count = 2
+
+[[cases]]
+id = "malformed_empty_modifier"
+raw = "http++socks5://:8080"
+error = "invalid_uri"
+
+[[cases]]
+id = "malformed_chain_separator"
+raw = "http://one:8080____socks5://two:1080"
+error = "invalid_uri"
+
+[[cases]]
+id = "unix_endpoint"
+raw = "unix:///tmp/eggress.sock"
+path = "/tmp/eggress.sock"
+
+[[cases]]
+id = "empty_listener_host"
+raw = "http://:8080"
+host = ""
+port = 8080
+
+[[cases]]
+id = "ssl_modifier"
+raw = "http+ssl://:8443"
+tls = true
+ssl = true
+
+[[cases]]
+id = "named_rule_query"
+raw = "socks5://proxy:1080?rule=example.com"
+rule = "example.com"
+
+[[cases]]
+id = "rule_file_query"
+raw = "socks5://proxy:1080?rules_file=/etc/pproxy.rules"
+rules_file = "/etc/pproxy.rules"
+
+[[cases]]
+id = "password_with_at"
+raw = "trojan://p@ss@proxy:443"
+password = "p@ss"
+redacted = true
+
+[[cases]]
+id = "cli_missing_value"
+args = ["--test"]
+error = "missing_argument"

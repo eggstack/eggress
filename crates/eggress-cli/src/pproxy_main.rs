@@ -25,11 +25,11 @@ OPTIONS:
     --ssl <CERT,KEY>       Enable TLS on listeners
     --rulefile <PATH>      Load routing rules from file
     --log <PATH>           Log file path (ignored; stderr used)
-    --pac                  Enable PAC file serving
-    --test                 Test upstream connectivity and exit
+    --pac <PATH>           Serve PAC content at PATH
+    --test <URL>           Test the supplied target and exit
     --sys                  Inspect system proxy settings before starting
     --reuse                Connection pooling (intentional non-parity)
-    --get                  Fetch URL via proxy (use curl instead)
+    --get <PATH,FILE>      Serve FILE at PATH through the admin server
     --daemon, -d           Daemon mode (not supported; use systemd)
     --version              Print version and exit
     -h, --help             Print this help and exit
@@ -38,7 +38,7 @@ EXAMPLES:
     pproxy -l http://:8080 -r socks5://127.0.0.1:1080
     pproxy -l socks5://:1080 -r http://proxy:8080 -r socks5://backup:1080
     pproxy -l http://:8080 -r socks5://127.0.0.1:1080 --ssl cert.pem,key.pem
-    pproxy -l http://:8080 -r socks5://127.0.0.1:1080 --test
+    pproxy -l http://:8080 -r socks5://127.0.0.1:1080 --test http://example.com
 
 NOTE:
     This is an eggress compatibility wrapper, not the original pproxy.
@@ -127,7 +127,7 @@ fn main() -> ExitCode {
         print_system_proxy_inspection(&result);
     }
 
-    let has_test = pproxy_args.raw_flags.iter().any(|f| f == "test");
+    let has_test = pproxy_args.raw_flags.iter().any(|f| f.starts_with("test="));
 
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,
@@ -149,14 +149,21 @@ fn main() -> ExitCode {
         // next to the current executable (pproxy). This avoids the recursion
         // problem where current_exe() resolves to the pproxy binary itself.
         let eggress_bin = resolve_eggress_binary();
-        let status = std::process::Command::new(&eggress_bin)
-            .args([
-                "upstream",
-                "test",
-                "-c",
-                config_path.to_str().unwrap_or_default(),
-            ])
-            .status();
+        let mut test_command = std::process::Command::new(&eggress_bin);
+        test_command.args([
+            "upstream",
+            "test",
+            "-c",
+            config_path.to_str().unwrap_or_default(),
+        ]);
+        if let Some(target) = pproxy_args
+            .raw_flags
+            .iter()
+            .find_map(|f| f.strip_prefix("test="))
+        {
+            test_command.args(["-t", target]);
+        }
+        let status = test_command.status();
         match status {
             Ok(s) => std::process::exit(s.code().unwrap_or(1)),
             Err(e) => {
@@ -233,7 +240,7 @@ fn print_startup_banner(
         eprintln!("  tls:      enabled");
     }
 
-    let has_pac = pproxy_args.raw_flags.iter().any(|f| f == "pac");
+    let has_pac = pproxy_args.raw_flags.iter().any(|f| f.starts_with("pac="));
     if has_pac {
         eprintln!("  pac:      enabled");
     }

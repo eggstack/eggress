@@ -223,9 +223,9 @@ Diagnostics are produced by the `StructuredDiagnostic` type in
 The internal `eggress-pproxy-compat` crate powers these diagnostics and they
 are serializable to JSON. It is not a separate Python distribution.
 
-The pproxy 2.7.9 CLI argument shapes are not all reproduced yet: `--pac`
-takes a path, `--test` takes a URL, and repeatable `--get` takes URLs. The
-current translator recognizes these flags but does not consume their values.
+The pproxy 2.7.9 CLI argument shapes are preserved: `--pac` takes a path,
+`--test` takes a URL, and repeatable `--get` takes `PATH,FILE` values. The
+translator consumes these values before processing positional arguments.
 
 ## Parity Tiers
 

@@ -25,8 +25,30 @@ pub struct PproxyUri {
     pub rule: Option<String>,
     /// Optional rules_file parameter from query string (pproxy URI-attached rule file).
     pub rules_file: Option<String>,
+    /// Canonical pproxy rule suffix when the query is not `rule=`/`rules_file=`.
+    pub rule_suffix: Option<String>,
     /// Optional path (used for unix:// scheme).
     pub path: Option<String>,
+    /// Protocol tokens in the original `scheme`, excluding transport modifiers.
+    pub protocol_chain: Vec<String>,
+    /// Non-protocol scheme modifiers, in source order (`tls`, `ssl`, `in`, ...).
+    pub transport_modifiers: Vec<String>,
+    /// pproxy's optional outbound source binding (`/@localbind`).
+    pub local_bind: Option<String>,
+    /// Fixed destination used by tunnel-style protocols.
+    pub fixed_target: Option<String>,
+    /// Comma-delimited plugin metadata. Plugins are parsed but not executed here.
+    pub plugins: Vec<PproxyPluginSpec>,
+    /// Fragment authentication, kept separately from URL userinfo.
+    pub auth_fragment: Option<String>,
+    /// The raw URI, retained for diagnostics.
+    pub raw: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PproxyPluginSpec {
+    pub name: String,
+    pub options: Option<String>,
 }
 
 impl PproxyUri {
@@ -74,25 +96,64 @@ impl PproxyUri {
             Some(rf) => format!("?rules_file={}", rf),
             None => String::new(),
         };
+        let suffix = self
+            .rule_suffix
+            .as_deref()
+            .map(|r| format!("?{r}"))
+            .unwrap_or_default();
+        let bind = self
+            .local_bind
+            .as_deref()
+            .map(|b| format!("/@{}", b))
+            .unwrap_or_default();
+        let plugins = if self.plugins.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ",{}",
+                self.plugins
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        };
+        let target = self
+            .fixed_target
+            .as_deref()
+            .map(|t| format!("{{{t}}}"))
+            .unwrap_or_else(|| self.endpoint_display());
         format!(
-            "{}://{}{}{}{}",
+            "{}://{}{}{}{}{}{}{}",
             self.scheme_with_tls(),
             cred_str,
-            self.endpoint_display(),
+            target,
             rule_str,
             rules_file_str,
+            suffix,
+            bind,
+            plugins,
         )
     }
 
     pub(crate) fn scheme_with_tls(&self) -> String {
-        let mut s = self.scheme.clone();
-        if self.tls {
-            s.push_str("+tls");
+        let mut parts = if self.protocol_chain.is_empty() {
+            vec![self.scheme.clone()]
+        } else {
+            self.protocol_chain.clone()
+        };
+        if self.tls && !parts.iter().any(|p| p == "tls") {
+            parts.push("tls".to_string());
+        }
+        if self.ssl && !parts.iter().any(|p| p == "ssl") {
+            parts.push("ssl".to_string());
         }
         if self.inbound {
-            s.push_str("+in");
+            for _ in 0..self.backward_num.max(1) {
+                parts.push("in".to_string());
+            }
         }
-        s
+        parts.join("+")
     }
 
     pub(crate) fn endpoint_display(&self) -> String {
@@ -140,16 +201,8 @@ fn format_host_for_uri(host: &str) -> String {
 /// - `redir://:12345`
 /// - `redir://127.0.0.1:12345`
 pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
-    let mut remaining = uri;
-
-    // Split off query string
-    let (before_query, query) = if let Some(q_pos) = remaining.find('?') {
-        let q = &remaining[q_pos + 1..];
-        remaining = &remaining[..q_pos];
-        (remaining, Some(q))
-    } else {
-        (remaining, None)
-    };
+    let (without_fragment, auth_fragment) = split_top_level(uri, '#');
+    let (before_query, query) = split_top_level(without_fragment, '?');
 
     // Extract scheme
     let (scheme_part, after_scheme) = if let Some(colon_pos) = before_query.find("://") {
@@ -162,40 +215,54 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         });
     };
 
-    // Parse +tls suffix and +in modifier (supports multiple occurrences)
+    // Parse protocol tokens and transport modifiers. Keeping both lists avoids
+    // treating a combined listener as one protocol during translation.
     let mut tls = false;
     let mut ssl = false;
     let mut inbound = false;
     let mut backward_num: u32 = 0;
-    let mut scheme = scheme_part;
-    loop {
-        if scheme.ends_with("+tls") {
-            tls = true;
-            scheme = scheme[..scheme.len() - 4].to_string();
-            continue;
+    let mut protocol_chain = Vec::new();
+    let mut transport_modifiers = Vec::new();
+    for token in scheme_part.split('+') {
+        match token {
+            "tls" => {
+                tls = true;
+                transport_modifiers.push(token.to_string());
+            }
+            "ssl" | "secure" => {
+                ssl = true;
+                tls = true;
+                transport_modifiers.push(token.to_string());
+            }
+            "in" => {
+                inbound = true;
+                backward_num += 1;
+                transport_modifiers.push(token.to_string());
+            }
+            "" => {
+                return Err(CompatError::InvalidUri {
+                    message: "empty protocol or modifier in scheme".to_string(),
+                })
+            }
+            token => protocol_chain.push(token.to_string()),
         }
-        if scheme.ends_with("+ssl") {
-            ssl = true;
-            tls = true;
-            scheme = scheme[..scheme.len() - 4].to_string();
-            continue;
-        }
-        if scheme.ends_with("+in") {
-            inbound = true;
-            backward_num += 1;
-            scheme = scheme[..scheme.len() - 3].to_string();
-            continue;
-        }
-        break;
     }
+    if protocol_chain.is_empty() {
+        return Err(CompatError::InvalidUri {
+            message: "URI scheme has no protocol".to_string(),
+        });
+    }
+    let scheme = protocol_chain.join("+");
 
     // Validate known schemes
-    match scheme.as_str() {
-        "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss" | "shadowsocks"
-        | "ssr" | "direct" | "ssh" | "unix" | "redir" | "h2" | "ws" | "wss" | "raw" | "tunnel"
-        | "bind" | "listen" | "backward" | "rebind" => {}
-        other => {
-            return Err(CompatError::UnsupportedProtocol(other.to_string()));
+    for protocol in &protocol_chain {
+        match protocol.as_str() {
+            "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss"
+            | "shadowsocks" | "ssr" | "direct" | "ssh" | "unix" | "redir" | "h2" | "ws" | "wss"
+            | "raw" | "tunnel" | "bind" | "listen" | "backward" | "rebind" | "httponly" => {}
+            other => {
+                return Err(CompatError::UnsupportedProtocol(other.to_string()));
+            }
         }
     }
 
@@ -211,7 +278,9 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             // Treat bare content as a relative path
             format!("/{}", after_scheme)
         };
-        let (rule, rules_file) = query.map(extract_query_params).unwrap_or((None, None));
+        let (rule, rules_file, rule_suffix) = query
+            .map(extract_query_params)
+            .unwrap_or((None, None, None));
         return Ok(PproxyUri {
             scheme,
             username: None,
@@ -224,62 +293,49 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             backward_num,
             rule,
             rules_file,
+            rule_suffix,
             path: Some(path),
+            protocol_chain,
+            transport_modifiers,
+            local_bind: None,
+            fixed_target: None,
+            plugins: Vec::new(),
+            auth_fragment: auth_fragment.map(str::to_string),
+            raw: uri.to_string(),
         });
     }
 
-    // Handle redir:// scheme — supports host:port or just :port
-    if scheme == "redir" {
-        let (credentials, endpoint_str) =
-            if let Some(at_pos) = find_last_at_outside_brackets(after_scheme) {
-                let userinfo = &after_scheme[..at_pos];
-                let ep = &after_scheme[at_pos + 1..];
-                let (user, pass) = parse_userinfo(userinfo)?;
-                (Some((user, pass)), ep)
-            } else {
-                (None, after_scheme)
-            };
-
-        // redir://:12345 means empty host (bind all), redir://127.0.0.1:12345 means specific
-        let (host, port, _) = parse_endpoint(endpoint_str)?;
-        let (rule, rules_file) = query.map(extract_query_params).unwrap_or((None, None));
-        return Ok(PproxyUri {
-            scheme,
-            username: credentials.as_ref().map(|c| c.0.clone()),
-            password: credentials.as_ref().map(|c| c.1.clone()),
-            host,
-            port,
-            tls,
-            ssl,
-            inbound,
-            backward_num,
-            rule,
-            rules_file,
-            path: None,
-        });
-    }
-
-    // Extract credentials
+    let (endpoint_part, path_part) = split_top_level(after_scheme, '/');
     let (credentials, endpoint_str) =
-        if let Some(at_pos) = find_last_at_outside_brackets(after_scheme) {
-            let userinfo = &after_scheme[..at_pos];
-            let ep = &after_scheme[at_pos + 1..];
-            let (user, pass) = parse_userinfo(userinfo)?;
-            (Some((user, pass)), ep)
+        if let Some(at_pos) = find_last_at_outside_brackets(endpoint_part) {
+            let (user, pass) = parse_userinfo(&endpoint_part[..at_pos])?;
+            (Some((user, pass)), &endpoint_part[at_pos + 1..])
         } else {
-            (None, after_scheme)
+            (None, endpoint_part)
         };
-
-    // Parse host:port
-    let (host, mut port, port_specified) = parse_endpoint(endpoint_str)?;
+    let fixed_target = if endpoint_str.starts_with('{') && endpoint_str.ends_with('}') {
+        Some(endpoint_str[1..endpoint_str.len() - 1].to_string())
+    } else {
+        None
+    };
+    let endpoint_for_parse = fixed_target.as_deref().unwrap_or(endpoint_str);
+    let (host, mut port, port_specified) = parse_endpoint(endpoint_for_parse)?;
     if !port_specified && !host.is_empty() {
         if let Some(default) = default_port_for_scheme(&scheme) {
             port = default;
         }
     }
 
-    // Parse query parameters
-    let (rule, rules_file) = query.map(extract_query_params).unwrap_or((None, None));
+    let (local_bind, plugins) = parse_path_metadata(path_part);
+    let (rule, rules_file, rule_suffix) = query
+        .map(extract_query_params)
+        .unwrap_or((None, None, None));
+    let (fragment_user, fragment_password) = auth_fragment
+        .filter(|a| !a.is_empty())
+        .map(parse_userinfo)
+        .transpose()?
+        .map_or((None, None), |(u, p)| (Some(u), Some(p)));
+    let credentials = credentials.or_else(|| fragment_user.zip(fragment_password));
 
     Ok(PproxyUri {
         scheme,
@@ -294,7 +350,69 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         rule,
         rules_file,
         path: None,
+        rule_suffix,
+        protocol_chain,
+        transport_modifiers,
+        local_bind,
+        fixed_target,
+        plugins,
+        auth_fragment: auth_fragment.map(str::to_string),
+        raw: uri.to_string(),
     })
+}
+
+fn split_top_level(input: &str, delimiter: char) -> (&str, Option<&str>) {
+    let mut bracket = 0u32;
+    let mut brace = 0u32;
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '[' => bracket += 1,
+            ']' => bracket = bracket.saturating_sub(1),
+            '{' => brace += 1,
+            '}' => brace = brace.saturating_sub(1),
+            _ => {}
+        }
+        if ch == delimiter && bracket == 0 && brace == 0 {
+            return (&input[..idx], Some(&input[idx + 1..]));
+        }
+    }
+    (input, None)
+}
+
+fn parse_path_metadata(path: Option<&str>) -> (Option<String>, Vec<PproxyPluginSpec>) {
+    let Some(path) = path else {
+        return (None, Vec::new());
+    };
+    let (bind, plugin_text) = if let Some(rest) = path.strip_prefix("@") {
+        (Some(rest), None)
+    } else if let Some(pos) = path.find("/@") {
+        (Some(&path[pos + 2..]), None)
+    } else {
+        (None, Some(path.trim_start_matches('/')))
+    };
+    let (bind, plugin_text) = if let Some(bind) = bind {
+        let (b, p) = bind
+            .split_once(',')
+            .map_or((bind, None), |(b, p)| (b, Some(p)));
+        (Some(b.to_string()), p)
+    } else {
+        (bind.map(str::to_string), plugin_text)
+    };
+    let plugins = plugin_text
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|spec| {
+            let (name, options) = spec
+                .split_once('=')
+                .map_or((spec, None), |(n, o)| (n, Some(o.to_string())));
+            PproxyPluginSpec {
+                name: name.to_string(),
+                options,
+            }
+        })
+        .collect();
+    (bind, plugins)
 }
 
 /// Find the position of the LAST unbracketed `@` in `s`. The userinfo
@@ -373,16 +491,16 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16, bool), CompatError> {
 
 fn default_port_for_scheme(scheme: &str) -> Option<u16> {
     match scheme {
-        "http" | "h2" => Some(80),
-        "https" | "ws" | "wss" | "trojan" => Some(443),
-        "socks4" | "socks4a" | "socks5" => Some(1080),
-        "ss" | "shadowsocks" => Some(8388),
+        // pproxy's proxy_by_uri() uses 8080 for every non-SSH endpoint when
+        // the port is omitted. Keep conventional native defaults out of this
+        // compatibility parser.
         "ssh" => Some(22),
-        _ => None,
+        "unix" | "direct" => None,
+        _ => Some(8080),
     }
 }
 
-fn extract_query_params(query: &str) -> (Option<String>, Option<String>) {
+fn extract_query_params(query: &str) -> (Option<String>, Option<String>, Option<String>) {
     let mut rule = None;
     let mut rules_file = None;
     for param in query.split('&') {
@@ -398,7 +516,12 @@ fn extract_query_params(query: &str) -> (Option<String>, Option<String>) {
             }
         }
     }
-    (rule, rules_file)
+    let suffix = if rule.is_none() && rules_file.is_none() && !query.is_empty() {
+        Some(query.to_string())
+    } else {
+        None
+    };
+    (rule, rules_file, suffix)
 }
 
 /// A parsed pproxy chain (one or more hops separated by `__`).
@@ -429,8 +552,9 @@ impl PproxyChain {
 /// - Empty hop segments
 /// - Semicolon or comma separators (not supported in pproxy)
 pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
-    // Detect semicolon or comma separators with structured error
-    if uri.contains(';') || uri.contains(',') {
+    // Semicolons are never pproxy chain separators. Commas belong to plugin
+    // metadata and must remain inside their hop.
+    if uri.contains(';') {
         return Err(CompatError::InvalidUri {
             message: format!(
                 "semicolon and comma are not chain separators in pproxy; use '__' (double underscore) to separate hops: {}",
@@ -454,7 +578,7 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
     }
 
     let mut hops = Vec::new();
-    for segment in uri.split("__") {
+    for segment in split_chain_hops(uri) {
         if segment.is_empty() {
             return Err(CompatError::InvalidUri {
                 message: format!("chain URI has empty hop segment: {}", uri),
@@ -468,6 +592,32 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
         raw: uri.to_string(),
         hops,
     })
+}
+
+fn split_chain_hops(uri: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut start = 0;
+    let mut bracket = 0u32;
+    let mut brace = 0u32;
+    let bytes = uri.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] as char {
+            '[' => bracket += 1,
+            ']' => bracket = bracket.saturating_sub(1),
+            '{' => brace += 1,
+            '}' => brace = brace.saturating_sub(1),
+            '_' if i + 1 < bytes.len() && bytes[i + 1] == b'_' && bracket == 0 && brace == 0 => {
+                result.push(&uri[start..i]);
+                i += 1;
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    result.push(&uri[start..]);
+    result
 }
 
 /// Check if any hop in a chain uses an unsupported protocol for chaining.
@@ -851,14 +1001,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_chain_comma_rejected() {
-        let err = parse_pproxy_chain("http://h1:80,socks5://h2:1080").unwrap_err();
-        match err {
-            CompatError::InvalidUri { message } => {
-                assert!(message.contains("comma"));
-            }
-            _ => panic!("expected InvalidUri for comma"),
-        }
+    fn test_parse_chain_plugin_comma_preserved() {
+        let chain = parse_pproxy_chain("http://h1:80/,plugin").unwrap();
+        assert_eq!(chain.hops[0].plugins[0].name, "plugin");
     }
 
     #[test]
@@ -930,35 +1075,35 @@ mod tests {
     fn test_default_port_socks5() {
         let uri = parse_pproxy_uri("socks5://host").unwrap();
         assert_eq!(uri.host, "host");
-        assert_eq!(uri.port, 1080);
+        assert_eq!(uri.port, 8080);
     }
 
     #[test]
     fn test_default_port_http() {
         let uri = parse_pproxy_uri("http://host").unwrap();
         assert_eq!(uri.host, "host");
-        assert_eq!(uri.port, 80);
+        assert_eq!(uri.port, 8080);
     }
 
     #[test]
     fn test_default_port_https() {
         let uri = parse_pproxy_uri("https://host").unwrap();
         assert_eq!(uri.host, "host");
-        assert_eq!(uri.port, 443);
+        assert_eq!(uri.port, 8080);
     }
 
     #[test]
     fn test_default_port_trojan() {
         let uri = parse_pproxy_uri("trojan://password@host").unwrap();
         assert_eq!(uri.host, "host");
-        assert_eq!(uri.port, 443);
+        assert_eq!(uri.port, 8080);
     }
 
     #[test]
     fn test_default_port_shadowsocks() {
         let uri = parse_pproxy_uri("ss://method:pass@host").unwrap();
         assert_eq!(uri.host, "host");
-        assert_eq!(uri.port, 8388);
+        assert_eq!(uri.port, 8080);
     }
 
     #[test]
@@ -978,8 +1123,8 @@ mod tests {
     #[test]
     fn test_chain_default_ports() {
         let chain = parse_pproxy_chain("socks5://h1__http://h2").unwrap();
-        assert_eq!(chain.hops[0].port, 1080);
-        assert_eq!(chain.hops[1].port, 80);
+        assert_eq!(chain.hops[0].port, 8080);
+        assert_eq!(chain.hops[1].port, 8080);
     }
 
     #[test]
@@ -1096,5 +1241,44 @@ mod tests {
                 .unwrap();
         assert_eq!(uri.rule.as_deref(), Some(".*\\.com"));
         assert_eq!(uri.rules_file.as_deref(), Some("/path/to/rules.txt"));
+    }
+
+    #[test]
+    fn test_combined_listener_tokens_and_modifiers() {
+        let uri = parse_pproxy_uri("http+socks4+socks5+tls+in+in://:8080").unwrap();
+        assert_eq!(uri.protocol_chain, ["http", "socks4", "socks5"]);
+        assert_eq!(uri.backward_num(), 2);
+        assert!(uri.tls);
+        assert_eq!(uri.scheme, "http+socks4+socks5");
+    }
+
+    #[test]
+    fn test_fragment_auth_local_bind_and_plugins() {
+        let uri =
+            parse_pproxy_uri("http://proxy:8080/@192.0.2.1,obfs=secret,plain#user:pass").unwrap();
+        assert_eq!(uri.local_bind.as_deref(), Some("192.0.2.1"));
+        assert_eq!(uri.plugins.len(), 2);
+        assert_eq!(uri.plugins[0].name, "obfs");
+        assert_eq!(uri.auth_fragment.as_deref(), Some("user:pass"));
+        assert_eq!(uri.username.as_deref(), Some("user"));
+        assert!(!uri.redacted_display().contains("secret"));
+        assert!(!uri.redacted_display().contains("pass"));
+    }
+
+    #[test]
+    fn test_fixed_target_and_raw_rule_suffix() {
+        let uri = parse_pproxy_uri("tunnel://{example.com:443}?example\\.com$").unwrap();
+        assert_eq!(uri.fixed_target.as_deref(), Some("example.com:443"));
+        assert_eq!(uri.rule_suffix.as_deref(), Some("example\\.com$"));
+    }
+
+    #[test]
+    fn test_chain_split_does_not_split_fixed_target() {
+        let chain = parse_pproxy_chain("tunnel://{example.com:443}__socks5://proxy:1080").unwrap();
+        assert_eq!(chain.hops.len(), 2);
+        assert_eq!(
+            chain.hops[0].fixed_target.as_deref(),
+            Some("example.com:443")
+        );
     }
 }

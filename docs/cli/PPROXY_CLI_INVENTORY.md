@@ -150,8 +150,8 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Fetch a URL through the configured proxy (utility for testing). |
-| Eggress handling | **Partial** — emits diagnostic pointing to `curl --proxy`. The `--get` flag is acknowledged with a message directing users to use curl with the `--proxy` flag for equivalent functionality. |
-| Example | `pproxy -l http://:8080 --get http://example.com` |
+| Eggress handling | **Partial** — validates `PATH,FILE` and serves it through the existing admin server. |
+| Example | `pproxy -l http://:8080 --get /index.html,index.html` |
 
 ### Testing
 
@@ -161,7 +161,7 @@ with eggress handling status and migration notes.
 |----------|-------|
 | pproxy behavior | Test all remote proxies and exit. Verifies upstream connectivity. |
 | Eggress handling | **Supported** — translates the pproxy args to TOML config, writes to a temp file, runs `eggress upstream test -c <config>`, and exits with the result. Does not start the service. |
-| Example | `pproxy -l http://:8080 -r http://proxy:8080 --test` |
+| Example | `pproxy -l http://:8080 -r http://proxy:8080 --test https://example.com/` |
 
 ### Config and Help
 
@@ -216,10 +216,10 @@ with eggress handling status and migration notes.
 | `-v` | (none) | Verbose logging | Partial | Set `RUST_LOG=debug` |
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | Connection reuse | Intentional non-parity | Connection pooling not implemented |
-| `--pac` | (none) | PAC file serving | Supported | Generates `[admin.pac] enabled = true` TOML |
+| `--pac` | (path) | PAC file serving | Supported | Consumes path and maps it to the admin PAC route |
 | `--sys` | (none) | System proxy | Supported | Auto-invokes eggress system-proxy inspect |
-| `--get` | (none) | URL fetch | Partial | Use curl --proxy |
-| `--test` | (none) | Test upstreams | Supported | Runs eggress upstream test and exits |
+| `--get` | (PATH,FILE) | Static content | Partial | Validates and serves through the admin server |
+| `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the supplied target and exits |
 | `-f` | `--config` | Config file | Supported | Different schema |
 | `--version` | (none) | Version | Supported | — |
 | `--help` | (none) | Help | Supported | — |
