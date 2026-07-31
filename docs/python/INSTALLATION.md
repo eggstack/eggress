@@ -10,8 +10,9 @@ The package is published on PyPI as `eggress`.
 pip install eggress
 ```
 
-The `eggress` wheel provides the bundled `eggress.pproxy` helpers. It does not
-install a separate compatibility distribution or top-level `import pproxy`.
+The `eggress` wheel also provides a bounded top-level `pproxy` package. There
+is no separate compatibility distribution. Uninstall upstream `pproxy` before
+installing Eggress because both distributions provide the same namespace.
 
 ## Install from a wheel file
 
@@ -51,6 +52,7 @@ Requires Python >= 3.9.
 import eggress
 
 from eggress import pproxy
+import pproxy
 
 from eggress.pproxy import Server
 ```
@@ -59,7 +61,7 @@ from eggress.pproxy import Server
 
 The `eggress.pproxy` namespace provides compatibility helpers for translating
 pproxy-style arguments and URIs into eggress TOML configuration. It is **not**
-a drop-in replacement for `import pproxy`.
+the bounded public replacement for `import pproxy`.
 
 The pproxy compatibility layer exposes:
 

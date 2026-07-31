@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Implemented in the bounded public subset. The wheel now ships a real
+top-level `pproxy` package alongside `eggress`; remaining private pproxy
+internals and excluded protocol families stay explicitly out of scope.
 
 ## Parent roadmap
 

@@ -1,5 +1,9 @@
 # ADR: pproxy Namespace and Packaging Strategy
 
+> Current decision (Phase 4): the `eggress` wheel installs a bounded real
+> `pproxy` package. The older no-shim decision below is retained as historical
+> context only and is superseded by this Phase 4 implementation.
+
 | Field | Value |
 |-------|-------|
 | Status | Accepted |
@@ -33,17 +37,15 @@ Key constraints:
 
 ## Decision
 
-### 1. No `import pproxy` shim from the Eggress wheel
+### 1. Bounded `import pproxy` package
 
-`import pproxy` does **not** resolve to eggress code. Eggress does not install
-a top-level `pproxy` module, package, or namespace package. The compatibility
-namespace is `eggress.pproxy` exclusively.
+`import pproxy` resolves to Eggress's bounded compatibility package when the
+Eggress wheel is installed. It re-exports the public `proto`, `server`, and
+`cipher` adapters and factory aliases without cloning pproxy private internals.
 
-**Rationale**: Installing a `pproxy` shim would shadow the upstream package,
-making it impossible to `import pproxy` and get the real pproxy. This is
-unacceptable during migration and for users who depend on upstream pproxy
-behavior for specific features (custom ciphers, `proxy.open_connection()`,
-etc.). The explicit `eggress.pproxy` path communicates origin honestly.
+**Rationale**: The requested drop-in surface requires the import namespace.
+Because namespace collision is unavoidable, installing upstream pproxy beside
+Eggress is explicitly unsupported and replacement installation is documented.
 
 ### 2. No separate `pproxy-compat` distribution package
 
@@ -77,7 +79,7 @@ two binaries: `eggress` and `pproxy` (`crates/eggress-cli/src/pproxy_main.rs`).
 
 | Scenario | Resolution |
 |----------|-----------|
-| Both `pip install pproxy` and `pip install eggress` | The Rust binary (`pproxy`) is installed by `cargo build` or the release tarball, not by pip. The Python `pproxy` package does not install a CLI binary. No pip-level collision. |
+| Both `pip install pproxy` and `pip install eggress` | Unsupported because both wheels provide the `pproxy` import namespace. Uninstall upstream pproxy before installing Eggress. |
 | Both `pproxy` Rust binary and upstream `pproxy` Python CLI on `$PATH` | The last-installed or first-on-`$PATH` wins. The eggress `pproxy` binary prints `eggress-pproxy-compat <version>` on `--version`, making identification unambiguous. |
 | Virtual environment with both | The `pproxy` binary in `bin/` will be eggress's (installed by cargo). The upstream pproxy Python package is importable but has no CLI entry point. |
 
@@ -89,7 +91,7 @@ no pip-level `console_scripts` collision.
 
 **When upstream pproxy is installed alongside eggress:**
 
-- `import pproxy` → upstream pproxy (always, because eggress does not install a `pproxy` module).
+- `import pproxy` → Eggress's bounded compatibility package after installing the Eggress wheel.
 - `import eggress` → eggress bindings (always).
 - `from eggress import pproxy` → eggress pproxy compat layer (always).
 - `pproxy` CLI on `$PATH` → eggress binary (if installed via cargo/release tarball), or absent.
@@ -129,11 +131,11 @@ the version against which eggress compatibility is tested, not a dependency.
 
 | Question | Answer |
 |----------|--------|
-| Does `import pproxy` work from Eggress wheel? | **No.** No shim installed. |
+| Does `import pproxy` work from Eggress wheel? | **Yes, bounded public subset.** |
 | Separate `pproxy` shim package? | **No.** Deferred until evidence of need. |
 | Separate `eggress-pproxy-compat` distribution? | **No.** Bundled in main `eggress` package. |
 | CLI `pproxy` binary ownership? | **Eggress owns it.** Upstream pproxy has no CLI entry point. |
-| Coexistence with upstream pproxy? | **Full.** Disjoint namespaces, no import interference. |
+| Coexistence with upstream pproxy? | **Unsupported.** Uninstall upstream first. |
 | Import order sensitivity? | **None.** Different top-level names. |
 | Version metadata? | **Static compatibility version + runtime feature introspection.** |
 
@@ -212,5 +214,5 @@ impersonate upstream `pproxy`. The proposed separate compatibility
 distribution described by this historical amendment was not shipped.
 
 The current release bundles the Rust compatibility crate inside `eggress`; use
-`from eggress import pproxy`. The top-level `pproxy` package remains owned by
-the upstream distribution when installed.
+`from eggress import pproxy` remains the migration-helper path. The top-level
+`pproxy` package is owned by Eggress when its wheel is installed.

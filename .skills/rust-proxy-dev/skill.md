@@ -246,11 +246,11 @@ To test the wheel in a clean environment:
 
 ### Import strategy and distribution
 
-The canonical PyPI package is `eggress`. The import path is `eggress`, and the
-canonical wheel never aliases the top-level `pproxy` namespace. `eggress.pproxy`
-provides bundled translation/service helpers. Users who need the bundled
-compatibility surface use `from eggress import pproxy`; this is not the real
-top-level pproxy package.
+The canonical PyPI package is `eggress`. Its wheel also installs a bounded
+top-level `pproxy` namespace with public factory, protocol, and cipher adapters.
+`eggress.pproxy` remains the migration-oriented translation/service helper
+module. The upstream `pproxy` distribution must be uninstalled before
+installing Eggress because both distributions provide the same namespace.
 
 `OutboundConnector` is exposed through `eggress.OutboundConnector` and returns
 native `OutboundStream`/`AsyncOutboundStream` wrappers. `ProxyConnection` uses

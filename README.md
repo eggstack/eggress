@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface (`eggress.pproxy`) is experimental. Strict full drop-in parity with `pproxy==2.7.9` is not yet achieved. Eggress ships one Python distribution, `eggress`; `import pproxy` is not currently provided by its wheel. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while the compatibility bridge still has gaps in URI grammar, CLI arity/semantics, routing defaults and rules, and Python public API behavior. SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks, plugin replication, daemonization, and cross-session reuse are intentional exclusions. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
+> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks, plugin replication, daemonization, and cross-session reuse remain intentional exclusions. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -47,7 +47,11 @@ pip install eggress
 pip install "eggress[cipher-api]"
 ```
 
-For programs that use `import pproxy`, change to `from eggress import pproxy`; the Eggress wheel does not currently provide the top-level namespace.
+Programs using the bounded public `pproxy` API can keep `import pproxy` after
+installing Eggress. The distribution is still named `eggress`; uninstall the
+upstream `pproxy` distribution first because both wheels provide the same import
+namespace. The explicit `from eggress import pproxy` translation helpers remain
+available for migration-oriented code.
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 
@@ -301,7 +305,8 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
   rule files, high-priority block expressions, and direct unmatched fallback
 - Structured diagnostics for unsupported protocols (SSH, Unix upstream)
 - Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
-- Python compatibility helpers (`PPProxyService`, `Server`, `Connection`, `start_pproxy`); these are not drop-in replacements for pproxy's object contracts
+- A bounded top-level `pproxy` package (`Connection`, `Server`, `Rule`, `DIRECT`, `proto`, `cipher`, and `server`) backed by Eggress adapters
+- Python migration helpers (`PPProxyService`, `start_pproxy`, translation and diagnostics APIs) under `eggress.pproxy`
 - Structural protocol, cipher, and plugin facades where documented; construction or importability does not imply wire compatibility
 - Native outbound API (`OutboundConnector.connect_tcp()`) with GIL-releasing sync and asyncio wrappers
 - `.pyi` type stubs for all public modules
@@ -314,7 +319,7 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - **SOCKS4/SOCKS5 BIND** — returns `REP_COMMAND_NOT_SUPPORTED`
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
 - **Certificate reload** — requires restart
-- **Top-level Python namespace** — `import pproxy` is not installed by the `eggress` wheel; use `from eggress import pproxy`
+- **Private pproxy internals** — only the documented bounded public surface is supported; private implementation details and unsupported protocol families fail explicitly
 - **Advanced compatibility transports** — H2, WS/WSS, raw, and tunnel are supported as upstreams through the pproxy translator; listener roles and UDP remain unsupported
 
 ### Compatibility manifests

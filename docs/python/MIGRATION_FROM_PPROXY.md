@@ -1,11 +1,11 @@
 # Migrating from pproxy
 
-## Updating the top-level import
+## Installing the replacement
 
-The `eggress` wheel does not provide `import pproxy`. Change compatibility
-imports to `from eggress import pproxy`; install the upstream `pproxy` package
-separately when the real upstream namespace is required. Eggress's bundled
-helpers are not strict full pproxy parity; the canonical manifest documents
+Eggress keeps the distribution name `eggress` but installs a bounded top-level
+`pproxy` package. Uninstall upstream `pproxy` first; both packages provide the
+same import namespace. Eggress's adapter covers documented public workflows,
+not private internals or every protocol family. The canonical manifest records
 warning and unsupported features.
 
 ## Quick migration with `start_pproxy()`

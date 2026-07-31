@@ -66,6 +66,21 @@ def test_import_eggress_pproxy():
     assert hasattr(pproxy, "Server")
 
 
+def test_import_top_level_pproxy_package():
+    """The Eggress wheel owns the bounded public pproxy namespace."""
+    import pproxy as top_level
+    import pproxy.cipher as cipher
+    import pproxy.proto as proto
+    import pproxy.server as server
+
+    assert top_level.Connection is server.proxies_by_uri
+    assert top_level.Server is server.proxies_by_uri
+    assert top_level.Rule is server.compile_rule
+    assert top_level.DIRECT is server.DIRECT
+    assert hasattr(proto, "Socks5")
+    assert hasattr(cipher, "AES_256_GCM_Cipher")
+
+
 def test_pproxy_check_uri():
     info = pproxy.check_pproxy_uri("socks5://127.0.0.1:1080")
     assert isinstance(info, pproxy.UriInfo)

@@ -54,4 +54,4 @@ markers = [
 features = ["pyo3/extension-module"]
 python-source = "eggress"
 module-name = "eggress._eggress"
-include = ["eggress/**/*.py", "eggress/py.typed"]
+include = ["eggress/**/*.py", "pproxy/**/*.py", "eggress/py.typed"]

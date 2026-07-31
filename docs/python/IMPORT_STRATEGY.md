@@ -30,38 +30,32 @@ from eggress.pproxy import Server
 from eggress import start_pproxy
 ```
 
-## Top-level `import pproxy` is not installed
+## Top-level `import pproxy`
 
-The canonical `eggress` wheel does **not** install a `pproxy` module or register
-a top-level namespace. This remains deliberate:
+The `eggress` wheel installs a real, bounded `pproxy` package. It provides the
+documented public factories and the `proto`, `server`, and `cipher` modules.
+The distribution name remains `eggress`, and there is no separate compatibility
+distribution.
 
-- It avoids shadowing or conflicting with the upstream `pproxy` package if
-  both are installed.
-- It makes the import path explicit — users see `eggress.pproxy`, not a
-  fake `pproxy`.
-- It prevents accidental dependency on eggress when code expects upstream
-  pproxy behavior.
+- It is a replacement namespace, not a private-internals clone.
+- It keeps the published distribution name `eggress`.
 
-There is no separate `eggress-pproxy-compat` Python distribution. Applications
-that need the bundled helpers must change imports to `from eggress import
-pproxy`; applications that require the real upstream package should install
-`pproxy` itself.
+Installing upstream `pproxy` and Eggress together is unsupported because both
+distributions provide the same namespace. Uninstall upstream pproxy first.
+Code using only translation helpers may continue using `from eggress import
+pproxy`.
 
-## Coexistence with upstream pproxy
+## Replacement behavior
 
-Both packages can coexist in the same environment:
+In a clean Eggress environment:
 
 ```python
-import eggress       # canonical bindings
-from eggress import pproxy as eggress_pproxy  # bundled translation helpers
-
-# In an environment with the upstream pproxy package installed:
 import pproxy
+proxy = pproxy.Connection("socks5://proxy:1080")
 ```
 
-The `eggress.pproxy` namespace does not depend on or interact with the upstream
-`pproxy` package. Translation is implemented entirely in Rust via
-`eggress-pproxy-compat`.
+The top-level adapter uses Eggress's Rust-owned transport and does not copy
+pproxy's private networking implementation.
 
 ## Import collision safety
 
@@ -70,8 +64,8 @@ The `eggress.pproxy` namespace does not depend on or interact with the upstream
 - The `eggress.pproxy` submodule is a pure Python module that re-exports
   functions from `eggress._eggress`. It does not import or depend on the
   upstream `pproxy` package.
-- The canonical `eggress` wheel never shadows an existing `pproxy` package.
-- Eggress never owns or shadows the top-level `pproxy` namespace.
+- Eggress owns the top-level `pproxy` namespace when installed.
+- Upstream pproxy and Eggress must not be installed together.
 
 ## Import examples
 

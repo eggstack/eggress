@@ -125,9 +125,12 @@ python3.11 python/compat/behavioral_probes.py
 
 ### Namespace strategy
 
-Eggress does **not** install a top-level `pproxy` module. The pproxy
-compatibility layer is provided through `eggress.pproxy` and `eggress.start_pproxy()`.
-See `docs/python/PPROXY_NAMESPACE_STRATEGY.md` for the full decision record.
+The `eggress` wheel installs one bounded top-level `pproxy` package containing
+the documented connection/server factories and protocol/cipher submodules. It
+also retains `eggress.pproxy` and `eggress.start_pproxy()` for translation and
+managed-service workflows. Do not install the upstream `pproxy` wheel in the
+same environment; uninstall it before replacing it with Eggress.
+See `docs/python/PPROXY_NAMESPACE_STRATEGY.md` for the compatibility boundary.
 
 ## Migrating from pproxy
 

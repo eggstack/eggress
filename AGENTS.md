@@ -2,7 +2,7 @@
 
 ## Repository purpose
 
-Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It targets practical and behavioral compatibility with Python `pproxy`, including a Rust CLI, an embed API, PyO3 bindings, and a separate opt-in Python compatibility distribution.
+Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It targets practical and behavioral compatibility with Python `pproxy`, including a Rust CLI, an embed API, PyO3 bindings, and a bounded Python drop-in namespace bundled in the main distribution.
 
 Compatibility claims must remain explicit and evidence-backed. Strict full drop-in parity is not assumed merely because a symbol, protocol name, or structural wrapper exists.
 
@@ -14,10 +14,11 @@ not be reclassified as positional listeners or remotes. Parsed-but-unsupported
 fields require precise diagnostics and redacted output.
 
 The active compatibility target is practical parity with `pproxy==2.7.9`. The
-repository currently publishes one Python distribution, `eggress`; its wheel
-does not provide `import pproxy` or a separate `eggress-pproxy-compat`
-distribution. Use `from eggress import pproxy` for the bundled compatibility
-helpers. Treat the native runtime and the compatibility translator as separate
+repository publishes one Python distribution, `eggress`; its wheel provides a
+bounded top-level `pproxy` package and does not provide a separate
+`eggress-pproxy-compat` distribution. The legacy `from eggress import pproxy`
+translation helpers remain supported. Treat the native runtime and the
+compatibility translator as separate
 surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
 
 Phase 2 compatibility routing is implemented in the translator: generated
@@ -241,7 +242,9 @@ When a compatibility claim changes, update the applicable manifest and run the c
 
 Unsupported transports or roles should fail with structured, actionable diagnostics rather than silent fallback.
 
-The canonical `eggress` Python package owns the `eggress.*` namespace. Users who need `import pproxy` change their imports to `from eggress import pproxy`.
+The canonical `eggress` distribution owns both the `eggress.*` namespace and
+the bounded `pproxy.*` compatibility namespace. Installing upstream `pproxy`
+alongside Eggress is unsupported; uninstall it before replacing it with Eggress.
 
 ## Code conventions
 

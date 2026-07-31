@@ -3,8 +3,8 @@
 `crates/eggress-python/` and `python/eggress/`
 
 Python bindings via PyO3 wrapping `eggress-embed`. Published as one `eggress`
-distribution on PyPI; no separate compatibility wheel or top-level `pproxy`
-namespace is installed.
+distribution on PyPI; the wheel also installs a bounded `pproxy` compatibility
+namespace (there is no separate compatibility distribution).
 
 ## Key Types
 
@@ -16,6 +16,13 @@ namespace is installed.
 | `Connection` | PyO3 custom | pproxy-compatible connection lifecycle |
 | `OutboundConnector` | `OutboundConnector` | Native Rust outbound connections |
 | `OutboundStream` | `PyOutboundStream` | Read/write/half-close on outbound streams |
+
+The top-level `pproxy` package re-exports the bounded adapters in
+`python/pproxy/`. `Connection` and `Server` are aliases for the URI proxy
+factory, `Rule` compiles public regex rule inputs, and `DIRECT` is the direct
+proxy sentinel. TCP connection methods return asyncio reader/writer-compatible
+objects. Unsupported listener roles, multi-hop UDP, and excluded protocol
+families fail with explicit compatibility errors.
 
 ## Convenience Functions
 

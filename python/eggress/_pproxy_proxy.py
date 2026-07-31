@@ -818,6 +818,9 @@ class ProxySSH(ProxySimple):
     ) -> None:
         """Patch a stream for SSH tunneling."""
 
+    async def tcp_connect(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("SSH is not supported by eggress")
+
     async def start_server(
         self,
         args: Any = None,
@@ -878,6 +881,9 @@ class ProxyQUIC(ProxySimple):
     def patch_writer(self, writer: Any) -> Any:
         """Patch a writer for QUIC transport."""
         return writer
+
+    async def tcp_connect(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("QUIC is not supported by eggress")
 
     async def start_server(
         self,
