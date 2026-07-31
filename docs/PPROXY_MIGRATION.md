@@ -38,11 +38,11 @@ eggress pproxy run -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 | `trojan://` | No (upstream-only) | Yes |
 | `shadowsocks://` | Yes (AEAD methods only) | Yes (AEAD methods only) |
 | `direct://` | No | Yes (direct connection) |
-| `h2://` | No | Native runtime only; compatibility translator gap |
-| `ws://` | No | Native runtime only; compatibility translator gap |
-| `wss://` | No | Native runtime only; compatibility translator gap |
-| `raw://` | No | Native runtime only; compatibility translator gap |
-| `tunnel://` | No | Native runtime only; compatibility translator gap |
+| `h2://` | No | Yes, upstream only; TLS/ALPN is implied |
+| `ws://` | No | Yes, upstream only |
+| `wss://` | No | Yes, upstream only; lowered to `ws+tls://` |
+| `raw://` | No | Yes, upstream only; endpoint is the fixed target |
+| `tunnel://` | No | Yes, upstream-only alias for raw |
 
 ### URI Format
 

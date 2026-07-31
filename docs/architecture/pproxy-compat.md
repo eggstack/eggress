@@ -54,9 +54,12 @@ The Python compatibility surface is bundled in the `eggress` distribution as
 
 The translator parses combined protocols, fragment auth, local binding, fixed
 targets, plugins, and canonical raw rule suffixes without discarding them.
-Unsupported fields are reported after parsing. The translator currently supports common HTTP/SOCKS and AEAD Shadowsocks
-flows. H2, WS/WSS, raw, and tunnel remain native-runtime features rather than
-complete compatibility-translator paths.
+Unsupported fields are reported after parsing. Common HTTP/SOCKS, AEAD
+Shadowsocks, H2, WS/WSS, raw, and tunnel upstream flows all lower through the
+same native URI/config path. H2 and WSS normalize to the native `+tls` form;
+raw/tunnel brace-delimited targets become the native raw endpoint. These
+transports are upstream-only and TCP-only in the compatibility surface, so
+listener and UDP uses receive `unsupported_role` diagnostics.
 
 Compatibility routing follows pproxy 2.7.9's ordered `fa` model. A remote URI
 query (`?rule=...` or a raw query suffix) becomes a route predicate matching

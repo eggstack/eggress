@@ -32,6 +32,104 @@ fn test_translate_all_supported_upstream_protocols() {
 }
 
 #[test]
+fn test_translate_advanced_upstream_protocols_to_native_uris() {
+    for (scheme, expected) in [
+        ("h2", "h2+tls://proxy:443"),
+        ("ws", "ws://proxy:80"),
+        ("wss", "ws+tls://proxy:443"),
+        ("raw", "raw://target:9000"),
+        ("tunnel", "tunnel://target:9000"),
+    ] {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            format!(
+                "{}://{}",
+                scheme,
+                if scheme == "h2" || scheme == "wss" {
+                    "proxy:443"
+                } else if scheme == "ws" {
+                    "proxy:80"
+                } else {
+                    "target:9000"
+                }
+            ),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(
+            !output.has_unsupported(),
+            "{}: {:?}",
+            scheme,
+            output.unsupported
+        );
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert_eq!(parsed["upstreams"][0]["uri"].as_str(), Some(expected));
+
+        let config: eggress_config::model::ConfigFile = toml::from_str(&output.toml).unwrap();
+        let validation = eggress_config::validate::validate_config(&config);
+        assert!(
+            validation.is_ok(),
+            "{} config rejected: {:?}",
+            scheme,
+            validation
+        );
+        eggress_config::compile::compile_config(&config).unwrap();
+    }
+}
+
+#[test]
+fn test_raw_fixed_target_is_lowered_to_native_endpoint() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "raw://{127.0.0.1:9000}".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(!output.has_unsupported());
+    assert!(output.toml.contains("uri = \"raw://127.0.0.1:9000\""));
+}
+
+#[test]
+fn test_advanced_transport_listener_is_role_specific_unsupported() {
+    for scheme in ["h2", "ws", "wss", "raw", "tunnel"] {
+        let args = PproxyArgs::parse(&["-l".into(), format!("{}://:1080", scheme)]).unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "unsupported-role"));
+        assert!(!output
+            .unsupported
+            .iter()
+            .any(|u| u.detail.contains("unknown scheme")));
+    }
+}
+
+#[test]
+fn test_advanced_transport_udp_is_rejected_as_tcp_only() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-ul".into(),
+        ":1081".into(),
+        "-ur".into(),
+        "h2://proxy:443".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "unsupported-role"));
+    assert!(!output.toml.contains("pproxy-udp-upstream-0"));
+}
+
+#[test]
 fn test_credentials_never_in_warnings_display() {
     let args = PproxyArgs::parse(&[
         "-l".into(),

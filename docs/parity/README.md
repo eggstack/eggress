@@ -190,9 +190,9 @@ python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PP
 3. **Layer honesty**: A feature is only `drop_in` if the *entire stack*
    is complete — parser, translator, config, runtime, CLI, and docs.
 
-4. **Protocol-crate-only**: Features implemented only in protocol crates
-   (H2, WebSocket, raw) and explicitly refused by the runtime/config
-   compiler cannot be `drop_in`.
+4. **Runtime-path evidence**: A protocol is not `drop_in` merely because its
+   crate exists. The native runtime, compatibility lowering, role validation,
+   and focused behavior tests must all cover the claimed surface.
 
 5. **No aspirational entries**: If it is not implemented, mark it
    `unsupported` with `evidence = "none"`.

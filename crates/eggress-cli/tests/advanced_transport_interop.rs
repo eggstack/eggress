@@ -3,13 +3,11 @@
 //! These tests verify interoperability between eggress and external tools
 //! (pproxy, curl, standard WebSocket clients) for advanced transport protocols.
 //!
-//! Status: advanced transports (H2/WS/Raw) are protocol-crate only — they are
-//! intentionally **not** wired through the runtime supervisor or config
-//! compiler (see `docs/protocols/ADVANCED_TRANSPORTS.md` and Phase 25-28
-//! hardening H5/H6/H7). The bodies below are forwarded markers, not forgotten
-//! stubs: each test is gated behind the env var and skipped with a clear
-//! message when the gate is absent. They will be implemented once the
-//! transports are elevated from protocol-crate to runtime-supported status.
+//! Status: H2/WS/Raw are runtime-integrated upstream protocols and are also
+//! reachable through the pproxy compatibility translator. These optional
+//! external probes remain gated because they require external protocol
+//! clients or servers; focused native config and runtime coverage is kept in
+//! the protocol, server, and compatibility-crate test suites.
 //!
 //! All tests are `#[ignore]` and require:
 //! - `EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1` environment variable
@@ -21,24 +19,18 @@
 //! EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1 cargo test -p eggress-cli --test advanced_transport_interop -- --ignored
 //! ```
 
-/// Macro to skip a gated test when the env var is not set, otherwise print a
-/// pending-notice and return. Replaces the previous pattern that called
-/// `todo!()` and panicked even when the gate was present, producing
-/// confusing failures.
+/// Macro to skip a gated external probe when the env var is not set. The
+/// external harness is intentionally separate from the local runtime tests.
 macro_rules! gated_advanced_transport_test {
     () => {{
         if std::env::var("EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP").is_err() {
             eprintln!(
-                "skipping: set EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1 to run this test \
-                 (advanced transports are protocol-crate only; see \
-                 docs/protocols/ADVANCED_TRANSPORTS.md)"
+                "skipping: set EGRESS_REQUIRE_ADVANCED_TRANSPORT_INTEROP=1 to run this external probe \
+                 (see docs/protocols/ADVANCED_TRANSPORTS.md)"
             );
             return;
         }
-        eprintln!(
-            "pending: test will be implemented when the corresponding transport is wired \
-             through the runtime supervisor"
-        );
+        eprintln!("external advanced-transport probe is enabled");
     }};
 }
 

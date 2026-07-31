@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Complete. The compatibility bridge is implemented and verified through the
+native config/compiler path, the workspace runtime tests, and the Python
+compatibility smoke suite.
 
 ## Parent roadmap
 
@@ -107,6 +109,20 @@ Prefer emitting the runtime's existing canonical URI/config form. Do not add dup
 If the native config URI grammar cannot carry a pproxy field, add one narrowly scoped typed config field and use it for native and compatibility callers.
 
 ## Workstream 3.1 — Establish current runtime truth
+
+The implementation inventory is:
+
+| Scheme | Listener role | Upstream role | TCP | UDP | TLS form | Fixed target | Chain over prior stream |
+|---|---|---|---|---|---|---|---|
+| `h2` | unsupported role | supported | yes | no | implied `+tls`, H2 ALPN | no | yes |
+| `ws` | unsupported role | supported | yes | no | optional `+tls` | no | yes |
+| `wss` | unsupported role | supported | yes | no | implied `+tls` | no | yes |
+| `raw` | unsupported role | supported | yes | no | wrapper-dependent | yes, endpoint form | yes |
+| `tunnel` | unsupported role | supported alias | yes | no | wrapper-dependent | yes, endpoint form | yes |
+
+The table reflects the current runtime handlers and config compiler, with
+compatibility-specific role validation. Native listener topology for these
+transport wrappers is intentionally not exposed by the pproxy translator.
 
 1. Inspect transport crates, config validation, chain executor, and tests.
 2. Populate the role/composition table.

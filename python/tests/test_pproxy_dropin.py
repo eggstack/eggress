@@ -120,7 +120,7 @@ class TestPPProxyServiceFromArgsPreservesFlags:
     def test_block_flag_preserved_in_config(self):
         args = [
             "-l", "socks5://127.0.0.1:0",
-            "-b", r".*\.example\.com",
+            "-b", r"{.*\.example\.com}",
         ]
         PPProxyService.from_args(args)
         # Reject rule for the block pattern should be in the config
@@ -181,7 +181,7 @@ class TestPPProxyServiceFromArgsPreservesFlags:
         args = [
             "-l", "socks5://127.0.0.1:0",
             "-r", "http://proxy:8080",
-            "-b", r".*\.blocked\.com",
+            "-b", r"{.*\.blocked\.com}",
         ]
         PPProxyService.from_args(args)
         report = check_pproxy_args(args)

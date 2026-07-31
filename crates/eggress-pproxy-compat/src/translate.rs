@@ -314,6 +314,17 @@ pub fn translate_from_uris(
                     reject_listener = true;
                 }
                 "http" | "https" | "socks4" | "socks4a" | "socks5" | "httponly" => {}
+                "h2" | "ws" | "wss" | "raw" | "tunnel" => {
+                    output = output.with_unsupported(
+                        "unsupported-role",
+                        format!(
+                            "{} listener '{}' is recognized but Eggress supports it only as an upstream",
+                            protocol,
+                            local.redacted_display()
+                        ),
+                    );
+                    reject_listener = true;
+                }
                 other => {
                     output = output.with_unsupported(
                         "scheme",
@@ -619,16 +630,10 @@ pub fn translate_from_uris(
                 );
                 hop_unsupported = true;
             }
-            if hop.fixed_target.is_some() {
-                output = output.with_unsupported(
-                    "fixed-target",
-                    format!(
-                        "fixed target in '{}' is parsed but not supported by upstream translation",
-                        hop.redacted_display()
-                    ),
-                );
-                hop_unsupported = true;
-            }
+            // raw/tunnel endpoints are the native fixed-target form. The
+            // compatibility parser keeps the brace-delimited target in
+            // `fixed_target`; build_config_uri lowers it back to the same
+            // endpoint URI consumed by the native raw handler.
             if !hop.plugins.is_empty() {
                 output = output.with_unsupported(
                     "plugin",
@@ -651,7 +656,8 @@ pub fn translate_from_uris(
                     );
                     hop_unsupported = true;
                 }
-                "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" => {}
+                "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" | "h2"
+                | "ws" | "wss" | "raw" | "tunnel" => {}
                 "ssh" => {
                     output = output.with_unsupported(
                         "ssh-upstream",
@@ -775,6 +781,17 @@ pub fn translate_from_uris(
                     "udp-trojan-transport",
                     format!(
                         "Trojan UDP upstream '{}': Trojan does not support UDP relay; use direct://, socks5://, or ss://",
+                        remote_uri.redacted_display()
+                    ),
+                );
+                continue;
+            }
+            "h2" | "ws" | "wss" | "raw" | "tunnel" => {
+                output = output.with_unsupported(
+                    "unsupported-role",
+                    format!(
+                        "{} UDP upstream '{}' is recognized but only supports TCP",
+                        remote_uri.scheme,
                         remote_uri.redacted_display()
                     ),
                 );
@@ -1172,7 +1189,13 @@ fn build_config_uri(remote: &PproxyUri) -> String {
     } else {
         remote.scheme.clone()
     };
-    if remote.tls || remote.scheme == "https" {
+    // pproxy's wss and h2 schemes imply their native TLS transport. The
+    // native URI grammar spells both as ws+tls and h2+tls so the shared
+    // ChainExecutor applies the TLS wrapper and H2 ALPN consistently.
+    if remote.tls || remote.scheme == "https" || remote.scheme == "wss" || remote.scheme == "h2" {
+        if remote.scheme == "wss" {
+            scheme = "ws".to_string();
+        }
         scheme.push_str("+tls");
     }
     let cred_str = match (&remote.username, &remote.password) {
@@ -1191,17 +1214,15 @@ fn build_config_uri(remote: &PproxyUri) -> String {
         }
         _ => String::new(),
     };
+    let endpoint = remote
+        .fixed_target
+        .clone()
+        .unwrap_or_else(|| remote.endpoint_display());
     let rule_str = match &remote.rule {
         Some(r) => format!("?rule={}", r),
         None => String::new(),
     };
-    format!(
-        "{}://{}{}{}",
-        scheme,
-        cred_str,
-        remote.endpoint_display(),
-        rule_str,
-    )
+    format!("{}://{}{}{}", scheme, cred_str, endpoint, rule_str,)
 }
 
 #[derive(serde::Serialize, Clone)]

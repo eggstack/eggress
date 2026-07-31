@@ -186,9 +186,9 @@ This section classifies every remaining pproxy protocol/scheme for Phase 11.
 | Shadowsocks AEAD ciphers | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported | **drop_in** | All three AEAD methods supported; standard TCP framing |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | Rejected | **intentional_non_parity** | Rejected with `LegacyMethodUnsupported` error; recognized legacy methods include aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf |
 | ShadowsocksR (SSR) | Supported in some forks | Rejected | **intentional_non_parity** | Rejected with `SsrUnsupported` error; SSR URIs (`ssr://`) parsed and rejected in pproxy compat layer |
-| HTTP/2 CONNECT | Supported | Native runtime upstream; compatibility translator gap | **compatible_with_warning** | Runtime-integrated; not exposed through pproxy translation. |
-| WebSocket tunnels | Supported | Native runtime upstream; compatibility translator gap | **compatible_with_warning** | Runtime-integrated; not exposed through pproxy translation. |
-| Raw fixed-target tunnels | Supported | Native runtime upstream; compatibility translator gap | **compatible_with_warning** | Runtime-integrated; not exposed through pproxy translation. |
+| HTTP/2 CONNECT | Supported | Compatibility upstream bridge | **compatible_with_warning** | Lowers to `h2+tls://`; H2/ALPN is upstream-only. |
+| WebSocket tunnels | Supported | Compatibility upstream bridge | **compatible_with_warning** | `ws://` and `wss://` lower to native WebSocket upstreams. |
+| Raw fixed-target tunnels | Supported | Compatibility upstream bridge | **compatible_with_warning** | `raw://` and `tunnel://` lower to native raw upstreams; listener/UDP roles are rejected. |
 | TLS ALPN negotiation | Supported | Supported | **compatible_with_warning** | Phase 26, synthetic |
 | QUIC transport | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |
 | HTTP/3 | Deferred | Deferred | **intentional_non_parity** | ADR: docs/adr/ADR_quic_h3_pproxy_parity.md |

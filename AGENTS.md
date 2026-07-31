@@ -26,6 +26,13 @@ per-remote URI predicates, load pproxy plain regex-line rule files, apply
 high-priority block expressions, and fall through directly when no remote
 matches. Native TOML group schedulers and routing semantics remain unchanged.
 
+Phase 3 compatibility transport bridging is implemented for H2, WS/WSS,
+raw, and tunnel upstream URIs. The bridge lowers these schemes through the
+same native upstream URI/config path, normalizes implied TLS (`h2` and
+`wss`), preserves raw fixed targets, and reports recognized listener or UDP
+uses as role-specific unsupported diagnostics. These transports remain
+upstream-only; QUIC/HTTP/3 remains intentionally deferred.
+
 ## Source-of-truth documents
 
 Use these current documents before relying on historical phase or completion records:

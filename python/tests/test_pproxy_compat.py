@@ -135,14 +135,14 @@ def test_socks5_through_socks5_upstream():
 
 
 def test_multiple_remotes_round_robin():
-    """6. Multiple remotes → round-robin scheduler in generated TOML."""
+    """6. Multiple remotes → first-available declaration order by default."""
     result = translate_pproxy_args([
         "-l", "socks5://127.0.0.1:0",
         "-r", "http://proxy1:8080",
         "-r", "http://proxy2:8080",
     ])
     assert result.ok
-    assert "round-robin" in result.toml
+    assert "first-available" in result.toml
     assert "pproxy-upstream-0" in result.toml
     assert "pproxy-upstream-1" in result.toml
 

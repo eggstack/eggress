@@ -315,7 +315,7 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
 - **Certificate reload** — requires restart
 - **Top-level Python namespace** — `import pproxy` is not installed by the `eggress` wheel; use `from eggress import pproxy`
-- **Advanced compatibility transports** — H2, WS/WSS, raw, and tunnel are native-runtime features but are not complete through the pproxy translator
+- **Advanced compatibility transports** — H2, WS/WSS, raw, and tunnel are supported as upstreams through the pproxy translator; listener roles and UDP remain unsupported
 
 ### Compatibility manifests
 
