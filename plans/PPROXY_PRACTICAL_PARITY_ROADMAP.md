@@ -2,7 +2,11 @@
 
 ## Status
 
-Proposed for execution.
+Reopened — narrow corrective pass required before closure.
+
+Phases 0 through 6 were implemented, but a post-closure source audit found bounded parser, translator, runtime, and Python orchestration defects. Active handoff plan:
+
+`plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md`
 
 This roadmap supersedes `plans/PPROXY_FULL_DROP_IN_ROADMAP.md` for the current line of work. The older roadmap remains useful as a record of the maximal compatibility target, but its certification machinery, exhaustive internal-API replication, and requirement to reproduce every legacy transport are disproportionate to the present project.
 
@@ -108,6 +112,14 @@ Run a small representative oracle comparison, resolve documentation drift, remov
 
 Detailed plan: `plans/PPROXY_PARITY_PHASE_6_CLOSURE.md`
 
+### Narrow corrective pass — Parser/runtime wiring closure
+
+Repair only the post-closure defects confirmed in canonical fixed-target syntax, echo parser reachability, fixed-target TCP/UDP separation, local-bind translation, `httponly` role classification, and Python upstream handshake orchestration.
+
+This pass does not reopen excluded transports or authorize broader compatibility work.
+
+Detailed plan: `plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md`
+
 ## Dependency order
 
 ```text
@@ -118,6 +130,8 @@ Phase 0
        └─ Phase 4
             └─ Phase 5
                  └─ Phase 6
+                      └─ Narrow corrective pass
+                           └─ Phase 6 closure re-review
 ```
 
 Phase 2 and Phase 3 may proceed in parallel after the Phase 1 grammar representation is stable. Phase 4 should consume the stable parser and translator rather than implement its own URI handling.
@@ -156,13 +170,19 @@ Run wider workspace tests only when shared runtime code changes. Do not add mand
 This roadmap is complete when:
 
 - documented common pproxy URIs parse and translate correctly;
+- canonical fixed-target and echo forms reach their intended runtime paths;
+- fixed-target TCP and UDP roles retain independent configuration;
+- outbound local binding reaches the native socket path;
+- `httponly` is accepted only in its supported compatibility role;
+- Python compatibility servers perform each upstream handshake once;
 - no CLI option consumes the wrong number of arguments;
 - default remote selection and rule routing match pproxy;
 - already-supported native transports are reachable through compatibility entry points;
 - normal `import pproxy` applications using the documented public server and connection APIs run against Eggress without source edits;
 - the bounded Phase 5 runtime gaps are either implemented or explicitly retained as intentional non-parity with accurate diagnostics;
 - current documentation contains no stale top-level-package, protocol, or drop-in claims;
-- a concise final matrix clearly distinguishes matched behavior from deliberate exclusions.
+- a concise final matrix clearly distinguishes matched behavior from deliberate exclusions;
+- Phase 6 has been re-reviewed after the narrow corrective pass.
 
 Completion does not authorize the claim that Eggress reproduces every legacy cipher, plugin, optional transport, or private pproxy implementation detail. The appropriate public claim is:
 
