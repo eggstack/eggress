@@ -2,9 +2,10 @@
 
 Eggress provides a pproxy compatibility layer that translates common pproxy invocations and URI shapes into native Eggress configuration. It is a migration surface, not strict full drop-in parity.
 
-Install the single `eggress` distribution. The wheel does not install
-`import pproxy`; use `from eggress import pproxy` or the top-level Eggress
-helpers instead.
+Install the single `eggress` distribution. Its wheel includes the bounded
+top-level `pproxy` package; `from eggress import pproxy` remains the explicit
+migration-helper path. Uninstall upstream `pproxy` first because both wheels
+own the same import namespace.
 
 ## Quick Start
 

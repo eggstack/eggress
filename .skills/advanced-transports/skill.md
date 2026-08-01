@@ -14,9 +14,10 @@ QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`
 
 ## Tier classification
 
-WebSocket, Raw, and H2 CONNECT are native runtime upstream protocols. They
-remain outside the current pproxy compatibility translator, so native runtime
-support must not be described as pproxy drop-in support.
+WebSocket, Raw, and H2 CONNECT are native runtime upstream protocols. The
+compatibility translator bridges bounded upstream forms through the native
+URI/config path; this does not make their upstream-only boundaries or fixed
+target restrictions disappear.
 
 - The CLI `parse_listener_uri` rejects `h2://`, `ws://`, and `wss://` as
   listener URIs. Phase 5 admits bounded `raw://`/`tunnel://` listener forms

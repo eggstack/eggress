@@ -215,11 +215,12 @@ release the GIL around native blocking work, and do not bind a temporary local
 listener. `ProxyConnection` delegates to this path. UDP remains listener-based;
 `associate_udp()` is intentionally not advertised as a completed Python API.
 
-The canonical `eggress` wheel owns only the `eggress` namespace. The separate
-`eggress-pproxy-compat` distribution installs the top-level `pproxy` package for
-the certified subset, pins the matching `eggress` version, and declares the
-`cryptography` dependency used by the supported AEAD cipher objects. It does
-not use `sys.modules` aliasing or import-time namespace mutation.
+The canonical `eggress` wheel owns the `eggress` namespace and the bounded
+top-level `pproxy` compatibility package. The Rust `eggress-pproxy-compat`
+crate is internal; there is no separately published compatibility distribution.
+The upstream `pproxy` distribution must not be installed beside Eggress because
+both distributions own the same import namespace. The wheel does not use
+`sys.modules` aliasing or import-time namespace mutation.
 
 ### eggress-python
 Python bindings via PyO3 wrapping `eggress-embed`:
@@ -647,25 +648,16 @@ reconnect_max = "30s"
 16. **Single generation source** — `CompiledRuntimeSnapshot.generation` is the only authoritative externally visible generation
 17. **Live admin reads** — admin handlers read PAC, static content, router, and listeners from the current snapshot per request via `AdminSnapshotProvider`
 18. **Fallible supervisor** — startup errors return `RuntimeError` instead of panicking
-19. **Manifest-driven evidence discipline** (Phase 36) — the parity contract is encoded in `tests/compat/pproxy_manifest.toml` and mechanically validated by `eggress-testkit::manifest::validate_manifest`. The validator enforces six tier statuses (`compatible`, `supported`, `partial`, `intentional_non_parity`, `experimental`, `unsupported`), category enumeration, evidence-level semantics, test-reference hygiene (no bare file paths or CI workflow references), and platform-constraint documentation. Adding or changing a feature requires editing the manifest; CI gates on `cargo test -p eggress-testkit --lib manifest`.
-20. **Release artifact separation** (Phase 36) — the parity release contract is documented in `docs/release/`: frozen targets (`PARITY_TARGET_FREEZE.md`), final report (`FINAL_PPROXY_PARITY_REPORT.md`), platform matrix (`PLATFORM_SUPPORT_MATRIX.md`), migration guide (`MIGRATION_FROM_PPROXY_FINAL.md`), release notes (`RELEASE_NOTES_PARITY_RC.md`), and go/no-go (`PARITY_RELEASE_GO_NO_GO.md`). These are read-only contracts; behavior changes must be reflected here as well as in code.
+19. **Manifest-driven compatibility discipline** — detailed capability inventories live in `docs/parity/`; the maintained public claim is the practical matrix, not an aggregate report. Changes that alter a compatibility claim update the matrix and applicable manifest/tests.
+20. **Lean optional oracle verification** — representative pproxy comparisons are gated locally and are not a routine hosted-CI requirement. A skipped external run is incomplete evidence, not a pass.
 21. **DNS rebinding protection** (Phase 50) — `DirectConnector` rejects DNS resolutions pointing to private/reserved IP ranges (loopback, link-local, RFC 1918, unique-local IPv6) to prevent DNS rebinding attacks. Applied to domain resolution only, not to explicit IP targets.
 22. **Auth failure observability** (Phase 50) — all inbound authentication failures (SOCKS5 username/password, HTTP Proxy-Authorization, reverse proxy auth) increment `eggress_auth_failures_total` counter.
 23. **Standalone UDP security** (Phase 50) — standalone UDP relay validates targets against private/reserved IP ranges via `validate_standalone_target()`, preventing DNS rebinding-style attacks over UDP.
 
-### Track B/C operational certification status
+### Current compatibility boundary
 
-The Track B/C operational certification (2026-07-17) confirmed:
-
-- 34+ targeted Rust test suites passing (~1,663 tests, 0 failures)
-- Full Python source-tree suite passing (1,763 tests, 127 skipped, 0 failures)
-- 40 native outbound stream lifecycle tests passing
-- AEAD KAT tests passing for AES-256-GCM, AES-128-GCM (NIST SP 800-38D)
-- 12 in-tree fuzz smoke tests across 5 crates passing
-- Security invariant, lifecycle invariant, and observability suites passing
-- Manifest, composition matrix, and generated-report consistency validated
-- Clean-environment wheel installation verified (eggress + eggress-pproxy-compat)
-- pproxy compatibility API tests (46/46), compat tests (12/12), and composition matrix (33/33) passing; these validate the bundled migration surface, not strict full drop-in parity
-- 148-capability audit complete with no unreferenced or over-classified entries
-
-This is a **certified modern pproxy compatibility subset**, not strict full parity. See `docs/release/PARITY_RELEASE_GO_NO_GO.md` for the decision record.
+Eggress provides practical pproxy 2.7.9 compatibility for documented HTTP,
+SOCKS, modern encrypted-proxy, routing, CLI, and public Python-library
+workflows, with explicit exclusions for legacy and high-cost transports. See
+`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`; this is not a claim of
+universal full pproxy parity or compatibility with private internals.

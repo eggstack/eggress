@@ -82,7 +82,7 @@ Run these when changing pproxy behavior, URI translation, compatibility manifest
 The pproxy behavioral certification uses isolated oracle and candidate environments and is reserved for explicit compatibility-certification work:
 
 ```bash
-./scripts/run_pproxy_certification.sh
+EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored --test-threads=1
 ```
 
 It performs only pproxy-specific behavioral validation: paired oracle/candidate observations, differential tests, interoperability tests, cipher KAT, plugin probes, and process lifecycle probes. It does not run formatting, linting, workspace tests, dependency audits, or release packaging. Its output is a compact JSON summary.

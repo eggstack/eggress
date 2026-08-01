@@ -16,7 +16,7 @@ Interoperability tests, certification probes, smoke clients, and development uti
 
 | Script | Description |
 |---|---|
-| `run_pproxy_certification.sh` | Run full pproxy certification suite |
+| `run_pproxy_certification.sh` | Historical/full oracle helper; optional and not a routine CI gate |
 | `run_strict_pproxy_api.sh` | Run strict API comparison |
 | `run_strict_pproxy_interop.sh` | Run strict interoperability tests |
 | `validate_pproxy_parity_manifest.py` | Validate parity manifest |

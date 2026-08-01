@@ -21,6 +21,13 @@ translation helpers remain supported. Treat the native runtime and the
 compatibility translator as separate
 surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
 
+Phase 6 is the current closure and documentation phase. The maintained public
+matrix is `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, and the
+optional representative scenario index is
+`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. These replace aggregate parity
+percentages and historical certification claims; routine CI remains focused
+and does not require the external pproxy oracle.
+
 Phase 2 compatibility routing is implemented in the translator: generated
 pproxy routes use first-available declaration order by default, preserve
 per-remote URI predicates, load pproxy plain regex-line rule files, apply
@@ -51,6 +58,8 @@ Use these current documents before relying on historical phase or completion rec
 - `docs/DIFFERENTIAL_TESTING.md`: pproxy oracle and differential harness.
 - `docs/parity/pproxy_capability_manifest.toml`: canonical capability contract.
 - `docs/parity/pproxy_2_7_9_strict_manifest.toml`: strict behavioral contract.
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`: maintained public matrix.
+- `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`: optional closure scenario index.
 - `docs/PPROXY_PARITY_SPEC.md`: compatibility vocabulary and tier definitions.
 
 Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.

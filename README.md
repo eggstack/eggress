@@ -327,9 +327,11 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 
 ### Compatibility manifests
 
+- [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) — maintained observable compatibility matrix and exclusions
+- [`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`](docs/parity/PPROXY_CLOSURE_SCENARIOS.md) — optional representative oracle and public smoke scenarios
 - [`docs/parity/pproxy_capability_manifest.toml`](docs/parity/pproxy_capability_manifest.toml) — 148 capabilities across 5 categories with tier classification
 - [`docs/parity/pproxy_2_7_9_strict_manifest.toml`](docs/parity/pproxy_2_7_9_strict_manifest.toml) — 194 behavioral capability records
-- [`docs/parity/PPROXY_COMPATIBILITY_POLICY.md`](docs/parity/PPROXY_COMPATIBILITY_POLICY.md) — vocabulary, governance rules, certification process
+- [`docs/parity/PPROXY_COMPATIBILITY_POLICY.md`](docs/parity/PPROXY_COMPATIBILITY_POLICY.md) — historical strict-manifest policy and provenance
 
 ## Capability status
 

@@ -99,10 +99,11 @@ cargo audit
 
 ## Closure audit
 
-Run the pproxy behavioral certification to verify all gates pass:
+Run the optional representative pproxy differential checks when a security
+change affects the compatibility surface:
 
 ```bash
-./scripts/run_pproxy_certification.sh
+EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored --test-threads=1
 ```
 
 ## Security documentation

@@ -278,9 +278,14 @@ Key metadata:
 python -m pytest python/tests/test_wheel_import_smoke.py -v
 ```
 
-For the compatibility wheel, build it separately and import-test it in a clean
-environment with both the matching `eggress` wheel and the compat wheel
-installed. Never validate it by mutating `sys.modules` in the test process.
+Build the authoritative `eggress` wheel and import-test it in a clean
+environment. It contains both the `eggress` namespace and the bounded top-level
+`pproxy` package; there is no separate compatibility wheel. Never validate it
+by mutating `sys.modules` in the test process.
+
+Use `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` for current claims
+and `docs/parity/PPROXY_CLOSURE_SCENARIOS.md` for the optional paired oracle
+surface. Do not report aggregate parity percentages.
 
 See `docs/adr/ADR_python_import_and_distribution_strategy.md` for the ADR.
 See `docs/python/PACKAGING.md` and `docs/python/INSTALLATION.md` for packaging and installation details.

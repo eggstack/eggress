@@ -237,11 +237,9 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 
-# Regenerate the parity report from the manifest (Phase 42+, frozen Phase 51)
-python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
-
-# Verify the parity report is consistent with the manifest (Phase 42+, CI runs this)
-python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
+# The maintained public matrix is reviewed manually; no aggregate report is a
+# current compatibility claim. Validate the detailed manifest when it changes.
+python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
 
 # Composition matrix validation (Phase A2)
 cargo test -p eggress-testkit composition
@@ -395,11 +393,16 @@ python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 ```
 
-Regenerate / verify the parity report from the manifest (Phase 42+, frozen Phase 51):
+The maintained public matrix is reviewed manually; no aggregate report is a
+current compatibility claim. Validate the detailed manifest when it changes:
 ```bash
-python3 scripts/validate_pproxy_parity_manifest.py --write-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
-python3 scripts/validate_pproxy_parity_manifest.py --check-report docs/parity/PPROXY_PARITY_REPORT.md docs/parity/pproxy_capability_manifest.toml
+python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
 ```
+
+Phase 6 closure references are maintained in
+`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` and
+`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. The external pproxy oracle is
+optional and is not a hosted-CI gate.
 
 ## Phase C1: Python API Contract Tests
 
@@ -479,13 +482,3 @@ python3.11 -m venv .venv-oracle
 4. Every `drop_in` has non-empty evidence or test refs
 5. No `drop_in` without oracle_probe
 6. No unresolved progress states at or below current milestone
-
-## pproxy behavioral certification
-
-The pproxy behavioral certification runs isolated oracle and candidate environments with only pproxy-specific checks:
-
-```bash
-./scripts/run_pproxy_certification.sh
-```
-
-Runs: pproxy differential tests, paired API runner, strict Python differential tests, interop tests, cipher KAT, plugin probes, and process lifecycle. Produces a compact JSON summary. Does not run formatting, linting, workspace tests, dependency audits, or wheel builds.

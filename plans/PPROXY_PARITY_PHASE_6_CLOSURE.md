@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposed.
+Completed.
+
+Closure completed 2026-08-01. The maintained public matrix and compact
+optional closure scenario index now live under `docs/parity/`; stale separate
+compatibility-distribution and aggregate-certification claims were removed or
+marked historical. Focused Rust/Python checks pass locally, and the existing
+external differential harness remains optional.
 
 ## Parent roadmap
 
