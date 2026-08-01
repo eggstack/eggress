@@ -21,7 +21,8 @@ translation helpers remain supported. Treat the native runtime and the
 compatibility translator as separate
 surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
 
-Phase 6 is the current closure and documentation phase. The maintained public
+Phase 6 is complete after the narrow corrective pass and documentation
+re-review. The maintained public
 matrix is `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, and the
 optional representative scenario index is
 `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. These replace aggregate parity
@@ -41,7 +42,8 @@ same native upstream URI/config path, normalizes implied TLS (`h2` and
 bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains
 intentionally deferred.
 
-Phase 5 runtime gaps cover `httponly` upstream request rewriting, explicit
+Phase 5 runtime coverage, including the corrective wiring pass, covers
+`httponly` upstream request rewriting, explicit
 TCP/UDP echo listeners, bounded fixed-target TCP/UDP raw/tunnel forms, Unix
 domain TCP upstreams on Unix, and per-connection outbound local binds. These
 bounded forms do not establish general multi-hop UDP, macOS PF transparent

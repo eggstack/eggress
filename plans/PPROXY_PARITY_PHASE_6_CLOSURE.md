@@ -2,15 +2,18 @@
 
 ## Status
 
-Reopened — narrow corrective pass required.
+Completed — narrow corrective pass verified.
 
-The documentation consolidation from 2026-08-01 remains useful, but technical closure was premature. A post-closure source audit found bounded defects in canonical fixed-target parsing, echo parser reachability, fixed-target TCP/UDP translation, local-bind wiring, `httponly` role classification, and Python upstream handshake orchestration.
+The narrow corrective pass repaired canonical fixed-target parsing, echo parser
+reachability, independent fixed-target TCP/UDP translation, local-bind wiring,
+`httponly` role classification, and Python upstream handshake orchestration.
 
-Active corrective handoff:
+Completed corrective handoff:
 
 `plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md`
 
-Do not return this phase to `Completed` until that plan's final acceptance criteria pass and the maintained practical matrix has been re-reviewed.
+The maintained practical matrix has been re-reviewed against the focused parser,
+translation, runtime, and Python tests listed in the handoff summary.
 
 ## Parent roadmap
 

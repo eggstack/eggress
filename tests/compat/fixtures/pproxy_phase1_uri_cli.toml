@@ -37,9 +37,13 @@ plugin_names = ["obfs", "auth"]
 
 [[cases]]
 id = "fixed_target_and_rule"
-raw = "tunnel://{example.com:443}?example\\.com$"
+raw = "tunnel{example.com:443}://:8080?example\\.com$"
 fixed_target = "example.com:443"
 rule_suffix = "example\\.com$"
+
+[[cases]]
+id = "echo_listener"
+raw = "echo://127.0.0.1:0"
 
 [[cases]]
 id = "two_hop_chain"

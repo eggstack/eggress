@@ -24,6 +24,12 @@ proxy sentinel. TCP connection methods return asyncio reader/writer-compatible
 objects. Unsupported listener roles, multi-hop UDP, and excluded protocol
 families fail with explicit compatibility errors.
 
+The compatibility server path follows pproxy's connection lifecycle by opening
+the raw direct or upstream transport first and invoking `prepare_connection()`
+exactly once. Public `Connection.tcp_connect()` retains its destination-ready
+reader/writer contract and performs that same preparation once; nested supported
+chain hops are prepared in declaration order.
+
 ## Convenience Functions
 
 | Function | Description |

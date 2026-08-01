@@ -54,14 +54,20 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 | `--pac path` | PAC serving configuration at the supplied admin path |
 | `--sys` | System proxy inspection |
 
-The translator parses combined protocols, fragment auth, local binding, fixed
-targets, plugins, and canonical raw rule suffixes without discarding them.
+The translator parses combined protocols, fragment auth, local binding, canonical
+`tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target
+extension, plugins, and canonical raw rule suffixes without discarding them.
 Unsupported fields are reported after parsing. Common HTTP/SOCKS, HTTP-only,
 AEAD Shadowsocks, H2, WS/WSS, raw, tunnel, and Unix-domain TCP upstream flows lower through the
 same native URI/config path. H2 and WSS normalize to the native `+tls` form;
 raw/tunnel brace-delimited targets become the native raw endpoint. Bounded
 listener forms include TCP/UDP echo and fixed-target forwarding; Unix upstreams
 are TCP-only and platform-gated.
+
+TCP fixed-target configuration remains on the listener's TCP field. UDP echo or
+fixed-target mode is added only for an explicit `-ul` URI, so enabling one role
+cannot erase the other. `httponly` is intentionally upstream-only and receives a
+role-specific diagnostic when supplied as a listener.
 
 Outbound local binds are carried into native per-connection socket options for
 direct routes and the first supported upstream hop. Family mismatches fail

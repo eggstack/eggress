@@ -2,9 +2,10 @@
 
 ## Status
 
-Reopened — narrow corrective pass required before closure.
+Completed — narrow corrective pass verified.
 
-Phases 0 through 6 were implemented, but a post-closure source audit found bounded parser, translator, runtime, and Python orchestration defects. Active handoff plan:
+Phases 0 through 6 and the bounded corrective pass are implemented and verified.
+The corrective handoff plan was:
 
 `plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md`
 

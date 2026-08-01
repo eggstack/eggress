@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed for execution. Required before Phase 6 may return to `Completed`.
+Completed and verified on 2026-08-01. Required before Phase 6 returned to
+`Completed`.
 
 ## Parent roadmap
 
@@ -406,7 +407,7 @@ Return Phase 6 to `Completed` only after the affected observable paths pass focu
 
 ### Tasks
 
-1. Keep Phase 6 marked reopened while this plan is active.
+1. Keep Phase 6 marked reopened during implementation; restore `Completed` only after the affected observable paths pass focused tests.
 2. Update only matrix rows affected by this pass:
    - canonical fixed-target grammar;
    - echo;
@@ -521,3 +522,17 @@ The highest-risk mistake is to add more parser or TOML tests without exercising 
 The second highest-risk mistake is scope expansion. This plan does not authorize work on SSH, QUIC/H3, SSR, legacy crypto, plugins, daemonization, reuse, PF, reverse TLS, or general multi-hop UDP.
 
 The implementation model should treat the existing runtime primitives as authoritative and repair the adapter boundaries around them.
+
+## Verification record
+
+Focused verification completed:
+
+- `cargo fmt --all -- --check`
+- `cargo test -p eggress-uri`
+- `cargo test -p eggress-pproxy-compat`
+- `cargo test -p eggress-core local_bind`
+- `python3 -m pytest python/tests/test_pproxy_public_namespace.py python/tests/test_server_lifecycle_pproxy.py python/tests/test_pproxy_route_through.py -q`
+
+The route-through fixtures assert exactly one HTTP CONNECT and exactly one
+SOCKS5 connect per supported hop. The optional external differential suite was
+not used as a required gate.

@@ -9,7 +9,7 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | URI grammar | HTTP/HTTPS, SOCKS4/4a, SOCKS5, direct | yes | yes | yes | compat tests; differential harness | `matched` | Common listener/upstream forms. |
 | URI grammar | Combined protocols and `__` chains | yes | yes | yes | URI/translation tests | `matched` | Native chain validation still applies. |
 | URI grammar | `+tls`, `+ssl`, repeated `+in` | yes | yes | yes | URI regression tests | `matched` | Modifiers are preserved before lowering. |
-| URI grammar | Fragment auth, local bind, fixed target, plugin/rule metadata | yes | yes | partial | parser/redaction tests | `supported_difference` | Parsed metadata is diagnosed when unusable. |
+| URI grammar | Fragment auth, local bind, canonical fixed target, plugin/rule metadata | yes | yes | yes | parser/translation/config tests | `supported_difference` | `tunnel{host:port}://listener` is canonical; legacy `raw://{host:port}` remains an extension. Unusable metadata is diagnosed. |
 | URI grammar | H2, WS/WSS, raw, tunnel upstreams | yes | yes | yes | advanced transport tests | `supported_difference` | H2/WS/WSS are upstream-only; raw/tunnel forms are bounded. |
 | URI grammar | Unix-domain TCP upstream | yes | yes | platform-dependent | URI/config tests | `platform_limited` | Unix only; Windows reports a platform diagnostic. |
 | CLI | No-argument mixed-listener default | yes | n/a | yes | `pproxy_binary`, CLI tests | `matched` | Uses the documented HTTP/SOCKS default. |
@@ -23,14 +23,14 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | Inbound | SOCKS5 CONNECT and username/password auth | yes | yes | yes | runtime/differential tests | `matched` | BIND is explicitly rejected. |
 | Inbound | SOCKS5 UDP ASSOCIATE | yes | bounded | yes | UDP runtime/differential tests | `supported_difference` | Public API and framing boundaries are documented. |
 | Inbound | Shadowsocks AEAD and Trojan | yes | bounded | yes | protocol/runtime tests | `supported_difference` | Native implementations; no strict private-API claim. |
-| Inbound | echo and fixed-target raw/tunnel | yes | bounded | yes | Phase 5 runtime tests | `native_extension` | Bounded utility/fixed-target modes. |
+| Inbound | TCP/UDP echo and fixed-target raw/tunnel | yes | bounded | yes | corrective parser/config/runtime tests | `supported_difference` | TCP is retained independently; UDP requires explicit `-ul` configuration. |
 | Inbound | Unix socket | yes | bounded | yes | Unix listener tests | `platform_limited` | Unix filesystem listener. |
 | Inbound | transparent `redir` | yes | bounded | platform-dependent | transparent tests | `platform_limited` | Linux original-destination facilities required. |
 | Upstream | direct, HTTP/HTTPS, SOCKS5 | yes | yes | yes | runtime/differential tests | `matched` | Core TCP workflows. |
 | Upstream | SOCKS4/4a | yes | yes | yes | upstream protocol tests | `supported_difference` | Supported with narrower exercised coverage. |
 | Upstream | Shadowsocks AEAD and Trojan | yes | bounded | yes | protocol tests | `supported_difference` | Native wire implementations. |
 | Upstream | H2 and WS/WSS | yes | bounded | yes | advanced transport tests | `supported_difference` | Upstream-only compatibility bridge. |
-| Upstream | raw/tunnel fixed target | yes | bounded | yes | raw/tunnel tests | `supported_difference` | Arbitrary multi-hop tunnel semantics are excluded. |
+| Upstream | raw/tunnel fixed target and local source bind | yes | bounded | yes | raw/tunnel/local-bind tests | `supported_difference` | Bind applies to the first physical outbound socket; arbitrary multi-hop tunnel semantics are excluded. |
 | Upstream | SSH, QUIC/H3, SSR | recognized | diagnosed | no | parser/diagnostic tests | `intentional_non_parity` | Known syntax receives a specific explanation. |
 | TCP chains | One-hop HTTP/SOCKS | yes | yes | yes | differential/integration tests | `matched` | Representative echo and forward workflows. |
 | TCP chains | Multi-hop TCP | yes | yes | yes | chain translation/runtime tests | `supported_difference` | Compatible chains, not every Cartesian combination. |
@@ -52,7 +52,7 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | Python package | `eggress` wheel plus top-level `pproxy` | yes | yes | yes | clean-wheel smoke tests | `matched` | One distribution; no separate compat wheel. |
 | Python package | `pproxy.Connection` TCP echo | n/a | yes | yes | public namespace/connection tests | `supported_difference` | Native Eggress stream adapter. |
 | Python package | Public UDP callback | n/a | yes | yes | public namespace tests | `supported_difference` | Not all private pproxy internals. |
-| Python package | `pproxy.Server` start/close | n/a | yes | yes | server lifecycle tests | `supported_difference` | Native-backed lifecycle/observability. |
+| Python package | `pproxy.Server` start/close and HTTP/SOCKS upstream routing | n/a | yes | yes | lifecycle/handshake-counting tests | `supported_difference` | Native-backed lifecycle; each supported upstream handshake occurs once. |
 | Python package | `Rule` and `DIRECT` | n/a | yes | yes | public namespace tests | `matched` | Public factory and rule behavior. |
 | Python package | `proto`, `cipher`, plugin facades | n/a | bounded | bounded | protocol/cipher/plugin tests | `supported_difference` | Importability does not imply wire parity. |
 | Ciphers | AES-GCM and ChaCha20-Poly1305 AEAD | yes | yes | yes | KAT/protocol tests | `matched` | Modern methods are supported. |

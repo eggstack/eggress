@@ -313,7 +313,17 @@ pub fn translate_from_uris(
                     );
                     reject_listener = true;
                 }
-                "http" | "https" | "socks4" | "socks4a" | "socks5" | "httponly" | "echo" => {}
+                "http" | "https" | "socks4" | "socks4a" | "socks5" | "echo" => {}
+                "httponly" => {
+                    output = output.with_unsupported(
+                        "unsupported-role",
+                        format!(
+                            "httponly listener '{}' is unsupported: httponly is an upstream request adapter only",
+                            local.redacted_display()
+                        ),
+                    );
+                    reject_listener = true;
+                }
                 "raw" | "tunnel" if local.fixed_target.is_some() => {}
                 "h2" | "ws" | "wss" => {
                     output = output.with_unsupported(
@@ -493,22 +503,6 @@ pub fn translate_from_uris(
                 unlink_existing: false,
             });
         }
-        if local.scheme == "echo" {
-            listener_entry.udp = Some(UdpToml {
-                mode: Some("echo".to_string()),
-                bind: None,
-                fixed_target: None,
-            });
-        }
-        if matches!(local.scheme.as_str(), "raw" | "tunnel") && local.fixed_target.is_some() {
-            listener_entry.udp = Some(UdpToml {
-                mode: Some("fixed_target".to_string()),
-                bind: None,
-                fixed_target: local.fixed_target.clone(),
-            });
-            listener_entry.fixed_target = None;
-        }
-
         listeners.push(listener_entry);
 
         // If no remotes and no UDP remotes, create a direct rule
@@ -541,12 +535,37 @@ pub fn translate_from_uris(
 
     // If -ul is specified, add standalone UDP config to the first listener
     if let Some(ref addr) = udp_listen_addr {
+        let udp_uri = addr
+            .contains("://")
+            .then(|| crate::uri::parse_pproxy_uri(addr))
+            .transpose()?;
         let bind = parse_udp_listen_addr(addr);
         if let Some(listener) = listeners.first_mut() {
-            listener.udp = Some(UdpToml {
-                mode: Some("standalone_pproxy_udp".to_string()),
-                bind: Some(bind),
-                fixed_target: None,
+            listener.udp = Some(match udp_uri {
+                Some(ref uri) if uri.scheme == "echo" => UdpToml {
+                    mode: Some("echo".to_string()),
+                    bind: Some(bind),
+                    fixed_target: None,
+                },
+                Some(ref uri) if matches!(uri.scheme.as_str(), "raw" | "tunnel") => {
+                    let target =
+                        uri.fixed_target
+                            .clone()
+                            .ok_or_else(|| CompatError::InvalidUri {
+                                message: "UDP fixed-target listener requires a brace target"
+                                    .to_string(),
+                            })?;
+                    UdpToml {
+                        mode: Some("fixed_target".to_string()),
+                        bind: Some(bind),
+                        fixed_target: Some(target),
+                    }
+                }
+                _ => UdpToml {
+                    mode: Some("standalone_pproxy_udp".to_string()),
+                    bind: Some(bind),
+                    fixed_target: None,
+                },
             });
         } else {
             // No listener created (all were unsupported schemes); add a default SOCKS5 listener
@@ -637,11 +656,28 @@ pub fn translate_from_uris(
         let mut hop_unsupported = false;
         for hop in &chain.hops {
             if hop.local_bind.is_some() {
-                output = output.with_unsupported(
-                    "local-bind",
-                    format!("outbound local bind in '{}' is parsed but not supported by upstream translation", hop.redacted_display()),
-                );
-                hop_unsupported = true;
+                let bind = hop.local_bind.as_deref().unwrap_or_default();
+                if hop.scheme == "unix" {
+                    output = output.with_unsupported(
+                        "local-bind",
+                        format!(
+                            "local bind '{}' cannot be applied to Unix upstream '{}'",
+                            bind,
+                            hop.redacted_display()
+                        ),
+                    );
+                    hop_unsupported = true;
+                } else if bind.parse::<std::net::IpAddr>().is_err() {
+                    output = output.with_unsupported(
+                        "local-bind",
+                        format!(
+                            "local bind '{}' must be an IP address for upstream '{}'",
+                            bind,
+                            hop.redacted_display()
+                        ),
+                    );
+                    hop_unsupported = true;
+                }
             }
             // raw/tunnel endpoints are the native fixed-target form. The
             // compatibility parser keeps the brace-delimited target in

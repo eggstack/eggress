@@ -235,8 +235,30 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
     let local_bind = if let Some(at_pos) = find_last_at_outside_scheme(remaining) {
         let after_at = &remaining[at_pos + 1..];
         let before_at = &remaining[..at_pos];
-        if before_at.contains("://") || after_at.contains('/') || after_at.contains('?') {
-            // Has scheme prefix, slash, or query after — not a bind
+        let scheme_end = before_at.find("://").unwrap_or(0);
+        let before_endpoint = &before_at[scheme_end + 3..];
+        let base_endpoint = before_endpoint
+            .split_once('?')
+            .map_or(before_endpoint, |(endpoint, _)| endpoint);
+        let has_earlier_userinfo = before_endpoint.contains('@');
+        let base_is_endpoint = parse_endpoint(base_endpoint).is_ok();
+        let trailing_bind_has_endpoint = before_endpoint
+            .rsplit_once('@')
+            .map(|(_, candidate)| {
+                parse_endpoint(candidate.split_once('?').map_or(candidate, |(ep, _)| ep)).is_ok()
+            })
+            .unwrap_or(false);
+        let is_trailing_bind = if has_earlier_userinfo {
+            trailing_bind_has_endpoint
+        } else {
+            base_is_endpoint
+        };
+        let has_userinfo = !is_trailing_bind;
+        let bind_is_address = after_at.parse::<std::net::IpAddr>().is_ok()
+            || after_at.parse::<std::net::SocketAddr>().is_ok();
+        if has_userinfo || after_at.contains('/') || after_at.contains('?') || !bind_is_address {
+            // A credential separator, path/query suffix, or non-address @ is
+            // not the native trailing local-bind modifier.
             None
         } else {
             let bind = after_at.to_string();

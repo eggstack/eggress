@@ -3,7 +3,15 @@ use std::collections::HashSet;
 use crate::error::{ConfigError, ConfigWarning};
 use crate::model::{ConfigFile, LeafMatcher, MatchExprConfig};
 
-const VALID_PROTOCOLS: &[&str] = &["http", "socks4", "socks5", "shadowsocks", "trojan"];
+const VALID_PROTOCOLS: &[&str] = &[
+    "http",
+    "socks4",
+    "socks5",
+    "shadowsocks",
+    "trojan",
+    "raw",
+    "echo",
+];
 
 const VALID_SCHEDULERS: &[&str] = &[
     "first-available",

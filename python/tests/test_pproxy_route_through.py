@@ -301,7 +301,7 @@ async def run_test(test_name):
                 p.tcp_connect('route-through.invalid', 443), timeout=5.0,
             )
             connect_events = [e for e in proxy.events if e['kind'] == 'connect']
-            assert len(connect_events) >= 1
+            assert len(connect_events) == 1
             assert connect_events[0]['host'] == 'route-through.invalid'
             assert connect_events[0]['port'] == 443
             writer.close()
@@ -325,8 +325,8 @@ async def run_test(test_name):
             )
             socks5_events = [e for e in socks5_proxy.events if e['kind'] == 'connect']
             http_events = [e for e in http_proxy.events if e['kind'] == 'connect']
-            assert len(socks5_events) >= 1, 'SOCKS5 proxy should have received a connect'
-            assert len(http_events) >= 1, 'HTTP proxy should have received a connect'
+            assert len(socks5_events) == 1, 'SOCKS5 proxy should receive one connect'
+            assert len(http_events) == 1, 'HTTP proxy should receive one CONNECT'
             assert socks5_events[0]['host'] == '127.0.0.1'
             assert socks5_events[0]['port'] == http_proxy.port
             assert http_events[0]['host'] == 'chain-target.invalid'
@@ -415,8 +415,8 @@ async def run_test(test_name):
             )
             http_events = [e for e in http_proxy.events if e['kind'] == 'connect']
             socks5_events = [e for e in socks5_proxy.events if e['kind'] == 'connect']
-            assert len(http_events) >= 1, 'HTTP proxy should have received a connect'
-            assert len(socks5_events) >= 1, 'SOCKS5 proxy should have received a connect'
+            assert len(http_events) == 1, 'HTTP proxy should receive one CONNECT'
+            assert len(socks5_events) == 1, 'SOCKS5 proxy should receive one connect'
             assert http_events[0]['host'] == '127.0.0.1'
             assert http_events[0]['port'] == socks5_proxy.port
             assert socks5_events[0]['host'] == 'chain-target.invalid'

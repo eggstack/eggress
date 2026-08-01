@@ -232,7 +232,23 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     let mut backward_num: u32 = 0;
     let mut protocol_chain = Vec::new();
     let mut transport_modifiers = Vec::new();
-    for token in scheme_part.split('+') {
+    let mut fixed_target = None;
+    for token in split_scheme_tokens(&scheme_part)? {
+        let (token, token_target) = parse_protocol_token(token)?;
+        if let Some(target) = token_target {
+            if token != "tunnel" {
+                return Err(CompatError::InvalidUri {
+                    message: format!(
+                        "fixed target is only supported on tunnel protocol, not '{token}'"
+                    ),
+                });
+            }
+            if fixed_target.replace(target).is_some() {
+                return Err(CompatError::InvalidUri {
+                    message: "URI contains more than one fixed-target protocol token".to_string(),
+                });
+            }
+        }
         match token {
             "tls" => {
                 tls = true;
@@ -268,7 +284,8 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         match protocol.as_str() {
             "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss"
             | "shadowsocks" | "ssr" | "direct" | "ssh" | "unix" | "redir" | "h2" | "ws" | "wss"
-            | "raw" | "tunnel" | "bind" | "listen" | "backward" | "rebind" | "httponly" => {}
+            | "raw" | "tunnel" | "bind" | "listen" | "backward" | "rebind" | "httponly"
+            | "echo" => {}
             other => {
                 return Err(CompatError::UnsupportedProtocol(other.to_string()));
             }
@@ -322,12 +339,41 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         } else {
             (None, endpoint_part)
         };
-    let fixed_target = if endpoint_str.starts_with('{') && endpoint_str.ends_with('}') {
+    let endpoint_fixed_target = if endpoint_str.starts_with('{') {
+        if !endpoint_str.ends_with('}') || endpoint_str.len() <= 2 {
+            return Err(CompatError::InvalidUri {
+                message: "fixed target braces are malformed or empty".to_string(),
+            });
+        }
         Some(endpoint_str[1..endpoint_str.len() - 1].to_string())
+    } else if endpoint_str.contains('{') || endpoint_str.contains('}') {
+        return Err(CompatError::InvalidUri {
+            message: "fixed target braces are malformed".to_string(),
+        });
     } else {
         None
     };
-    let endpoint_for_parse = fixed_target.as_deref().unwrap_or(endpoint_str);
+    if let Some(ref target) = endpoint_fixed_target {
+        if fixed_target.is_some() {
+            return Err(CompatError::InvalidUri {
+                message: "fixed target is specified both in the protocol and endpoint".to_string(),
+            });
+        }
+        fixed_target = Some(target.clone());
+    }
+    if let Some(target) = fixed_target.as_deref() {
+        let (target_host, _, target_port_specified) = parse_endpoint(target)?;
+        if target_host.is_empty() || !target_port_specified {
+            return Err(CompatError::InvalidUri {
+                message: "fixed target must contain a non-empty host and port".to_string(),
+            });
+        }
+    }
+    // A canonical token target and the URI endpoint have independent roles:
+    // `tunnel{target}://listener` binds the listener endpoint while fixing the
+    // relay destination. The legacy `raw://{target}` form uses the endpoint
+    // extension itself as the fixed target.
+    let endpoint_for_parse = endpoint_fixed_target.as_deref().unwrap_or(endpoint_str);
     let (host, mut port, port_specified) = parse_endpoint(endpoint_for_parse)?;
     if !port_specified && !host.is_empty() {
         if let Some(default) = default_port_for_scheme(&scheme) {
@@ -386,6 +432,69 @@ fn split_top_level(input: &str, delimiter: char) -> (&str, Option<&str>) {
         }
     }
     (input, None)
+}
+
+/// Split a protocol expression without treating a brace-delimited tunnel
+/// target as a protocol separator.
+fn split_scheme_tokens(scheme: &str) -> Result<Vec<&str>, CompatError> {
+    let mut tokens = Vec::new();
+    let mut start = 0;
+    let mut brace_depth = 0u32;
+    for (idx, ch) in scheme.char_indices() {
+        match ch {
+            '{' => {
+                if brace_depth != 0 {
+                    return Err(CompatError::InvalidUri {
+                        message: "nested fixed-target braces are not valid".to_string(),
+                    });
+                }
+                brace_depth = 1;
+            }
+            '}' => {
+                if brace_depth == 0 {
+                    return Err(CompatError::InvalidUri {
+                        message: "unmatched fixed-target brace".to_string(),
+                    });
+                }
+                brace_depth = 0;
+            }
+            '+' if brace_depth == 0 => {
+                tokens.push(&scheme[start..idx]);
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    if brace_depth != 0 {
+        return Err(CompatError::InvalidUri {
+            message: "unterminated fixed-target brace".to_string(),
+        });
+    }
+    tokens.push(&scheme[start..]);
+    Ok(tokens)
+}
+
+fn parse_protocol_token(token: &str) -> Result<(&str, Option<String>), CompatError> {
+    let Some(open) = token.find('{') else {
+        if token.contains('}') {
+            return Err(CompatError::InvalidUri {
+                message: "unmatched fixed-target brace".to_string(),
+            });
+        }
+        return Ok((token, None));
+    };
+    if open == 0 || !token.ends_with('}') {
+        return Err(CompatError::InvalidUri {
+            message: "malformed fixed-target protocol token".to_string(),
+        });
+    }
+    let target = &token[open + 1..token.len() - 1];
+    if target.is_empty() || target.contains('{') || target.contains('}') {
+        return Err(CompatError::InvalidUri {
+            message: "fixed-target protocol token has an empty or malformed target".to_string(),
+        });
+    }
+    Ok((&token[..open], Some(target.to_string())))
 }
 
 fn parse_path_metadata(path: Option<&str>) -> (Option<String>, Vec<PproxyPluginSpec>) {

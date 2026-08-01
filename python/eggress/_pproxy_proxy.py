@@ -206,8 +206,13 @@ class ProxyDirect:
         lbind: str | None,
         timeout: float = 60,
     ) -> Any:
-        """Open a TCP connection through this proxy."""
-        return await self.tcp_connect(host, port, local_addr=local_addr, lbind=lbind)
+        """Open the raw transport; the caller performs preparation once."""
+        import asyncio
+        resolved = lbind or local_addr
+        bind = (resolved, 0) if isinstance(resolved, str) else resolved
+        return await asyncio.wait_for(
+            asyncio.open_connection(host, port, local_addr=bind), timeout=timeout
+        )
 
     async def prepare_connection(
         self,
@@ -233,8 +238,8 @@ class ProxyDirect:
     ) -> Any:
         """Open a direct TCP connection."""
         import asyncio
-        reader, writer = await asyncio.open_connection(host, port, local_addr=local_addr)
-        return reader, writer
+        reader, writer = await self.open_connection(host, port, local_addr, lbind)
+        return await self.prepare_connection(reader, writer, host, port)
 
     async def udp_open_connection(
         self,
@@ -474,6 +479,29 @@ class ProxySimple(ProxyDirect):
             return True
         return self._rule(host) or self._rule(str(port))
 
+    async def open_connection(
+        self,
+        host: str,
+        port: int,
+        local_addr: Any,
+        lbind: str | None,
+        timeout: float = 60,
+    ) -> Any:
+        """Open the proxy endpoint without performing its protocol handshake."""
+        import asyncio
+        if self.unix:
+            return await asyncio.wait_for(
+                asyncio.open_unix_connection(self.bind), timeout=timeout
+            )
+        resolved = lbind or local_addr
+        bind = (resolved, 0) if isinstance(resolved, str) else resolved
+        return await asyncio.wait_for(
+            asyncio.open_connection(
+                self.host_name, self.port, local_addr=bind
+            ),
+            timeout=timeout,
+        )
+
     async def tcp_connect(
         self,
         host: str,
@@ -491,21 +519,10 @@ class ProxySimple(ProxyDirect):
         """
         import asyncio
 
-        proxy_host = self.host_name
-        proxy_port = self.port
-        if not proxy_host or not proxy_port:
+        if not self.host_name or not self.port:
             raise ValueError("ProxySimple endpoint is incomplete")
 
-        # Resolve local address for binding
-        if local_addr or lbind:
-            resolved = lbind or local_addr
-            local = (resolved, 0)
-        else:
-            local = None
-
-        reader, writer = await asyncio.open_connection(
-            proxy_host, proxy_port, local_addr=local,
-        )
+        reader, writer = await self.open_connection(host, port, local_addr, lbind)
         try:
             reader, writer = await self.prepare_connection(
                 reader, writer, host, port,
@@ -1014,6 +1031,8 @@ async def _eggress_stream_handler(
             )
         except Exception:
             writer_remote.close()
+            if hasattr(writer_remote, "wait_closed"):
+                await writer_remote.wait_closed()
             raise
 
         use_http = (await client_connected(writer_remote)) if client_connected else None

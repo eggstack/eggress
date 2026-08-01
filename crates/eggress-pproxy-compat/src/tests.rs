@@ -94,6 +94,105 @@ fn test_raw_fixed_target_is_lowered_to_native_endpoint() {
 }
 
 #[test]
+fn test_canonical_fixed_target_and_echo_grammar() {
+    let cases = [
+        ("tunnel{127.0.0.1:9000}://:1080", "tunnel", "127.0.0.1:9000"),
+        ("tunnel{[::1]:9000}://:1080", "tunnel", "[::1]:9000"),
+    ];
+    for (raw, protocol, target) in cases {
+        let uri = crate::uri::parse_pproxy_uri(raw).unwrap();
+        assert_eq!(uri.protocol_chain, vec![protocol]);
+        assert_eq!(uri.fixed_target.as_deref(), Some(target));
+        assert_eq!(uri.host, "");
+        assert_eq!(uri.port, 1080);
+    }
+    let composed = crate::uri::parse_pproxy_uri(
+        "trojan+tunnel{127.0.0.1:9000}+ssl://password@proxy.example:443",
+    )
+    .unwrap();
+    assert_eq!(composed.protocol_chain, vec!["trojan", "tunnel"]);
+    assert!(composed.ssl && composed.tls);
+    assert_eq!(composed.fixed_target.as_deref(), Some("127.0.0.1:9000"));
+    assert!(crate::uri::parse_pproxy_uri("echo://127.0.0.1:0").is_ok());
+    for malformed in [
+        "tunnel{}://:1080",
+        "tunnel{127.0.0.1:9000://:1080",
+        "tunnel{a}:tunnel{b}://:1080",
+        "http{127.0.0.1:9000}://proxy:8080",
+    ] {
+        assert!(
+            crate::uri::parse_pproxy_uri(malformed).is_err(),
+            "{malformed}"
+        );
+    }
+}
+
+#[test]
+fn test_canonical_fixed_target_listener_keeps_tcp_target() {
+    let args = PproxyArgs::parse(&["-l".into(), "tunnel{127.0.0.1:9000}://:1080".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    assert_eq!(
+        parsed["listeners"][0]["fixed_target"].as_str(),
+        Some("127.0.0.1:9000")
+    );
+    assert!(parsed["listeners"][0].get("udp").is_none());
+    let config: eggress_config::model::ConfigFile = toml::from_str(&output.toml).unwrap();
+    let compiled = eggress_config::compile::compile_config(&config).unwrap();
+    assert_eq!(
+        compiled.listeners[0].fixed_target.as_ref().unwrap().port,
+        9000
+    );
+    assert!(compiled.listeners[0].udp.is_none());
+}
+
+#[test]
+fn test_fixed_target_udp_is_explicit_and_separate() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "tunnel{127.0.0.1:9000}://:1080".into(),
+        "-ul".into(),
+        "tunnel{127.0.0.1:9000}://:1081".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    assert_eq!(
+        parsed["listeners"][0]["fixed_target"].as_str(),
+        Some("127.0.0.1:9000")
+    );
+    assert_eq!(
+        parsed["listeners"][0]["udp"]["fixed_target"].as_str(),
+        Some("127.0.0.1:9000")
+    );
+}
+
+#[test]
+fn test_local_bind_reaches_native_chain_and_httponly_listener_is_rejected() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "-r".into(),
+        "http://user:pass@proxy:8080?rule=example/@127.0.0.1".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(!output.has_unsupported(), "{:?}", output.unsupported);
+    let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+    let uri = parsed["upstreams"][0]["uri"].as_str().unwrap();
+    let chain = eggress_uri::parse_proxy_chain(uri).unwrap();
+    assert_eq!(chain.hops[0].local_bind.as_deref(), Some("127.0.0.1"));
+
+    let args = PproxyArgs::parse(&["-l".into(), "httponly://:1080".into()]).unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output
+        .unsupported
+        .iter()
+        .any(|item| item.feature == "unsupported-role"
+            && item.detail.contains("upstream request adapter")));
+}
+
+#[test]
 fn test_advanced_transport_listener_is_role_specific_unsupported() {
     for scheme in ["h2", "ws", "wss"] {
         let args = PproxyArgs::parse(&["-l".into(), format!("{}://:1080", scheme)]).unwrap();

@@ -82,7 +82,10 @@ The compatibility binary follows pproxy's no-argument default:
 combined protocols, fragment authentication, local outbound binding, plugins,
 fixed targets, and raw rule suffixes for translation diagnostics. `--pac
 <path>`, `--get <path,file>`, and `--test <target>` each consume their value;
-they are not positional proxy URIs.
+they are not positional proxy URIs. Canonical fixed-target listeners use
+`tunnel{host:port}://:listen-port`; the legacy `raw://{host:port}` extension
+remains accepted. UDP fixed-target and echo listeners require an explicit
+`-ul` URI, keeping TCP and UDP listener roles independent.
 
 ## Rust library
 
@@ -304,7 +307,8 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
   `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, pproxy
   rule files, high-priority block expressions, and direct unmatched fallback
 - Structured diagnostics for unsupported protocols (SSH and deferred transports)
-- Phase 5 runtime coverage for `httponly` upstreams, TCP/UDP `echo`, fixed-target
+- Phase 5 and corrective-pass runtime coverage for `httponly` upstreams,
+  TCP/UDP `echo`, canonical fixed-target
   TCP/UDP tunnels, Unix-domain TCP upstreams on Unix, and per-connection local
   source binding
 - Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
