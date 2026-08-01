@@ -2,13 +2,15 @@
 
 ## Status
 
-Completed.
+Reopened — narrow corrective pass required.
 
-Closure completed 2026-08-01. The maintained public matrix and compact
-optional closure scenario index now live under `docs/parity/`; stale separate
-compatibility-distribution and aggregate-certification claims were removed or
-marked historical. Focused Rust/Python checks pass locally, and the existing
-external differential harness remains optional.
+The documentation consolidation from 2026-08-01 remains useful, but technical closure was premature. A post-closure source audit found bounded defects in canonical fixed-target parsing, echo parser reachability, fixed-target TCP/UDP translation, local-bind wiring, `httponly` role classification, and Python upstream handshake orchestration.
+
+Active corrective handoff:
+
+`plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md`
+
+Do not return this phase to `Completed` until that plan's final acceptance criteria pass and the maintained practical matrix has been re-reviewed.
 
 ## Parent roadmap
 
@@ -16,7 +18,7 @@ external differential harness remains optional.
 
 ## Depends on
 
-Phases 0 through 5.
+Phases 0 through 5 and the narrow corrective pass linked above.
 
 ## Objective
 
@@ -35,7 +37,8 @@ This phase is not a release-certification project. It must verify the behaviors 
 - deletion or archival marking of stale compatibility-package references;
 - consolidation of active documentation;
 - proportional test cleanup;
-- final claim language.
+- final claim language;
+- re-review of the narrow corrective pass's affected matrix rows.
 
 ## Out of scope
 
@@ -56,15 +59,29 @@ This phase is not a release-certification project. It must verify the behaviors 
 4. Current source and focused tests outrank historical completion records.
 5. Every public compatibility claim must name its boundary.
 6. Remaining exclusions should be explicit and stable, not hidden behind generic unsupported errors.
+7. A parser or generated-TOML assertion does not close a runtime path by itself.
+
+## Corrective re-entry gate
+
+Before continuing the original closure sequence, complete and verify:
+
+- canonical pproxy fixed-target syntax;
+- `echo://` parser-to-runtime reachability;
+- independent fixed-target TCP and UDP configuration;
+- compatibility local-bind propagation into native chains;
+- upstream-only `httponly` role enforcement;
+- exactly one HTTP/SOCKS upstream handshake in the Python server path.
+
+The detailed tasks, tests, stop conditions, and scope limits are in `plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md`.
 
 ## Workstream 6.1 — Build the final compatibility matrix
 
-Create one maintained matrix under `docs/parity/` that lists capabilities by observable user surface rather than internal crate count.
+Maintain one matrix under `docs/parity/` that lists capabilities by observable user surface rather than internal crate count.
 
 Suggested columns:
 
 | Surface | Capability | CLI | Python | Runtime | Evidence | Status | Notes |
-|---|---|---|---|---|---|---|---|
+|---|---|---:|---:|---:|---|---|---|
 
 Required sections:
 
@@ -81,7 +98,7 @@ Required sections:
 - modern cipher support;
 - intentional non-parity.
 
-Use these final labels:
+Use these labels:
 
 - `matched` — representative oracle comparison or direct interoperability confirms the defined behavior;
 - `supported_difference` — usable but a documented difference remains;
@@ -91,9 +108,11 @@ Use these final labels:
 
 Do not publish aggregate parity percentages.
 
+For the corrective pass, re-review only rows concerning fixed-target grammar, echo, fixed-target TCP/UDP, local bind, `httponly`, and Python server routing through upstream proxies.
+
 ## Workstream 6.2 — Representative oracle scenarios
 
-Create or consolidate a small optional closure suite covering the highest-value workflows. Keep the suite to roughly 15 to 25 scenarios.
+Keep a small optional closure suite covering the highest-value workflows. The suite should remain roughly 15 to 25 scenarios and must not become a routine hosted-CI gate.
 
 Minimum scenarios:
 
@@ -108,7 +127,10 @@ Minimum scenarios:
 - `--get` value ownership and static response;
 - `--test` value ownership and exit behavior;
 - first-available default with two remotes;
-- per-remote rule selection.
+- per-remote rule selection;
+- canonical fixed-target form;
+- `echo://` recognition;
+- `httponly` listener role rejection.
 
 ### Runtime
 
@@ -120,8 +142,10 @@ Minimum scenarios:
 - one-hop SOCKS5 UDP;
 - one modern Shadowsocks or Trojan path;
 - one promoted H2/WS/raw path;
-- one fixed-target path;
-- one Unix upstream on Unix.
+- fixed-target TCP;
+- bounded fixed-target UDP;
+- local source bind;
+- Unix upstream on Unix.
 
 ### Python
 
@@ -129,7 +153,9 @@ Minimum scenarios:
 - `await Connection.tcp_connect()` echo;
 - supported UDP public API;
 - `Server` start/close;
-- `Rule`/`DIRECT` public behavior.
+- `Rule`/`DIRECT` public behavior;
+- server through HTTP upstream with one handshake;
+- server through SOCKS5 upstream with one greeting/connect sequence.
 
 Each scenario should produce a compact pass/fail result. Do not retain large stdout, network traces, or environment archives unless a failure requires diagnosis.
 
@@ -150,13 +176,14 @@ Run this locally or manually before release. Do not add a broad wheel matrix bey
 
 ## Workstream 6.4 — Documentation consolidation
 
-Define current authoritative documents:
+Current authoritative documents are:
 
 - `README.md` — user overview and concise support boundary;
 - `docs/parity/README.md` — compatibility policy and document index;
-- one final practical compatibility matrix;
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — maintained practical matrix;
+- `docs/parity/PPROXY_CLOSURE_SCENARIOS.md` — optional representative scenario index;
 - `docs/PYTHON_BINDINGS.md` — native and pproxy-compatible Python use;
-- the active roadmap and phase plans as historical execution guidance after completion.
+- the active roadmap and corrective plan.
 
 For competing documents:
 
@@ -169,7 +196,7 @@ Do not delete historical documents solely to reduce file count if they are clear
 
 ## Workstream 6.5 — Test-suite reduction and alignment
 
-Review compatibility tests added across the phases and remove redundant layers.
+Review compatibility tests and keep only tests that protect distinct behavior.
 
 Keep:
 
@@ -177,7 +204,8 @@ Keep:
 - translator-to-config cases;
 - one runtime test per distinct execution mechanism;
 - public Python workflow tests;
-- optional oracle closure scenarios.
+- optional oracle closure scenarios;
+- handshake-counting fixtures for the corrected Python server path.
 
 Remove or merge:
 
@@ -185,7 +213,8 @@ Remove or merge:
 - structural-only import tests superseded by functional tests;
 - stale tests for the deleted compatibility distribution;
 - tests whose only purpose is proving a documentation count;
-- broad scenario generators that reproduce focused cases without additional failure coverage.
+- broad scenario generators that reproduce focused cases without additional failure coverage;
+- noncanonical fixed-target examples presented as proof of pproxy syntax.
 
 Do not make the full optional oracle suite a required hosted CI job.
 
@@ -202,7 +231,9 @@ Confirm stable diagnostics for:
 - cross-session reuse;
 - unsupported reverse compositions;
 - multi-hop UDP combinations still outside scope;
-- platform-specific transparent modes not implemented.
+- platform-specific transparent modes not implemented;
+- `httponly` listener role;
+- local bind on incompatible connection types.
 
 Each diagnostic should state:
 
@@ -217,7 +248,7 @@ Avoid generic `unknown scheme` when syntax is known.
 
 Use qualified language consistent with actual completion.
 
-Permitted claim when all roadmap acceptance criteria pass:
+Permitted claim when all roadmap and corrective acceptance criteria pass:
 
 > Eggress provides practical pproxy 2.7.9 compatibility for documented HTTP, SOCKS, modern encrypted-proxy, routing, CLI, and public Python-library workflows, with explicit exclusions for legacy and high-cost transports.
 
@@ -233,13 +264,15 @@ Do not claim:
 
 The line of work may be closed when:
 
-- the final compatibility matrix is generated from current implementation knowledge and manually reviewed;
-- all Phase 1 parser/CLI acceptance cases pass;
+- all acceptance criteria in `plans/PPROXY_PARITY_NARROW_CORRECTIVE_PASS.md` pass;
+- the final compatibility matrix is reviewed against current source and focused runtime tests;
+- all Phase 1 parser/CLI acceptance cases pass, including canonical fixed-target and echo syntax;
 - scheduler and per-remote rule behavior matches the oracle in representative cases;
 - promoted native transports are reachable through compatibility entry points;
 - a clean wheel provides functional top-level `pproxy` imports;
 - public `Connection` and `Server` workflows pass local end-to-end tests;
-- mandatory Phase 5 runtime gaps are implemented;
+- HTTP and SOCKS upstream server paths perform one handshake each;
+- mandatory Phase 5 runtime gaps are implemented or accurately downgraded;
 - conditional Phase 5 items have explicit implemented or non-parity decisions;
 - intentional exclusions produce specific diagnostics;
 - stale package and capability claims are removed from current docs;
@@ -259,36 +292,37 @@ cargo test -p eggress-runtime --test integration
 python -m pytest python/tests/test_wheel_import_smoke.py
 python -m pytest python/tests/test_proxy_connection.py
 python -m pytest python/tests/test_server_lifecycle.py
+python -m pytest python/tests/test_pproxy_public_namespace.py
+python -m pytest python/tests/test_pproxy_route_through.py
 ```
 
-If shared runtime code changed across Phase 5, run once:
+If shared runtime code changed across the corrective pass, run once:
 
 ```bash
 cargo test --workspace --locked
 ```
 
-Run the optional pproxy 2.7.9 closure scenarios from a clean local environment and record only a concise summary in the final compatibility document.
+Run the optional pproxy 2.7.9 closure scenarios from a clean local environment and record only a concise summary in the final compatibility document. A skipped external run is not a pass.
 
 ## Failure handling
 
 If closure discovers a mismatch:
 
-- fix it within the phase that owns the behavior when the repair is local;
+- fix it within the owning parser, translator, runtime, or Python adapter when the repair is local;
 - downgrade the matrix entry to `supported_difference` when the difference is acceptable and documented;
 - record intentional non-parity when repair violates the scope guardrails;
-- do not create a new broad corrective roadmap for a small defect;
-- create a narrow follow-up plan only if multiple unresolved defects share an architectural cause.
+- do not create a new broad roadmap for a small defect;
+- do not mark the phase complete from parser-only or construction-only tests.
 
 ## Handoff guidance
 
-Implement closure in this order:
+Complete the narrow corrective plan before resuming closure documentation. Then proceed in this order:
 
-1. final matrix draft from current source;
-2. representative oracle scenarios;
+1. affected runtime and Python behavior tests;
+2. focused optional oracle comparisons where available;
 3. clean-wheel smoke;
-4. documentation consolidation;
-5. test reduction;
-6. unsupported diagnostic audit;
-7. final matrix and claim review.
+4. practical matrix correction;
+5. unsupported diagnostic review;
+6. final closure status and claim review.
 
-The desired closure result is a smaller, clearer repository with more accurate compatibility—not another certification apparatus.
+The desired result remains a smaller, clearer repository with accurate compatibility—not another certification apparatus.
