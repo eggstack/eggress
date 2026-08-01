@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyHopSpec};
 
-use crate::connector::{Connector, DirectConnector};
+use crate::connector::{ConnectOptions, DirectConnector};
 use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 
 /// A boxed future that resolves to a handshake result.
@@ -200,15 +200,44 @@ impl ChainExecutor {
         let first_hop = &chain[0];
         let first_hop_addr = endpoint_to_target_addr(&first_hop.endpoint)?;
 
-        let mut current_stream = self
-            .direct_connector
-            .connect(&first_hop_addr)
-            .await
-            .map_err(|e| ChainError::ConnectFailed {
-                hop_index: 0,
-                endpoint: first_hop_addr.to_string(),
-                source: e,
-            })?;
+        let mut current_stream: BoxStream = if first_hop.protocols.contains(&ProtocolSpec::Unix) {
+            #[cfg(unix)]
+            {
+                Box::new(
+                    tokio::net::UnixStream::connect(&first_hop.endpoint.host)
+                        .await
+                        .map_err(|e| ChainError::ConnectFailed {
+                            hop_index: 0,
+                            endpoint: first_hop.endpoint.host.clone(),
+                            source: crate::ConnectError::Io(e),
+                        })?,
+                ) as BoxStream
+            }
+            #[cfg(not(unix))]
+            {
+                return Err(ChainError::InvalidChain {
+                    reason: "unix upstreams are unsupported on this platform".to_string(),
+                });
+            }
+        } else {
+            let local_bind = first_hop
+                .local_bind
+                .as_deref()
+                .map(|value| {
+                    value.parse().map_err(|e| ChainError::InvalidChain {
+                        reason: format!("hop 0: invalid local bind '{}': {}", value, e),
+                    })
+                })
+                .transpose()?;
+            self.direct_connector
+                .connect_with_options(&first_hop_addr, &ConnectOptions { local_bind })
+                .await
+                .map_err(|e| ChainError::ConnectFailed {
+                    hop_index: 0,
+                    endpoint: first_hop_addr.to_string(),
+                    source: e,
+                })?
+        };
 
         // Step 2: For each hop, perform the protocol handshake
         for (i, hop) in chain.iter().enumerate() {
@@ -272,7 +301,7 @@ impl ChainExecutor {
                     reason: format!("hop {i}: empty endpoint host"),
                 });
             }
-            if hop.endpoint.port == 0 {
+            if hop.endpoint.port == 0 && !hop.protocols.contains(&ProtocolSpec::Unix) {
                 return Err(ChainError::InvalidChain {
                     reason: format!("hop {i}: port cannot be 0"),
                 });

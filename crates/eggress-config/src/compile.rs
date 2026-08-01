@@ -127,6 +127,7 @@ pub struct CompiledListenerUdpConfig {
     pub client_pin: bool,
     pub allow_private_egress: bool,
     pub max_associations_global: usize,
+    pub fixed_target: Option<eggress_core::TargetAddr>,
 }
 
 impl Default for CompiledListenerUdpConfig {
@@ -144,6 +145,7 @@ impl Default for CompiledListenerUdpConfig {
             client_pin: true,
             allow_private_egress: true,
             max_associations_global: 1024,
+            fixed_target: None,
         }
     }
 }
@@ -161,6 +163,8 @@ pub struct ListenerConfig {
     pub trojan: Option<crate::model::ListenerTrojanConfig>,
     pub transparent: Option<CompiledTransparentConfig>,
     pub unix: Option<CompiledUnixListenerConfig>,
+    pub fixed_target: Option<eggress_core::TargetAddr>,
+    pub local_bind: Option<String>,
 }
 
 /// Compiled TLS configuration for a listener.
@@ -249,6 +253,7 @@ fn compile_reject_reason(s: &str) -> Result<RejectReason, ConfigError> {
 fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
     match s {
         "http" => Ok(ProtocolId::Http),
+        "httponly" => Ok(ProtocolId::Http),
         "socks4" => Ok(ProtocolId::Socks4),
         "socks5" => Ok(ProtocolId::Socks5),
         "shadowsocks" => Ok(ProtocolId::Shadowsocks),
@@ -256,6 +261,7 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "h2" => Ok(ProtocolId::Http2),
         "websocket" | "ws" | "wss" => Ok(ProtocolId::WebSocket),
         "raw" | "tunnel" => Ok(ProtocolId::Raw),
+        "echo" => Ok(ProtocolId::Echo),
         _ => Err(ConfigError::validation(
             "protocols",
             &format!("unknown protocol: {}", s),
@@ -748,6 +754,7 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
             let transparent = compile_transparent_config(l.transparent.as_ref())?;
 
             let unix = compile_unix_listener_config(l.unix.as_ref())?;
+            let fixed_target = l.fixed_target.as_deref().map(|value| value.parse().map_err(|e: String| ConfigError::validation(&format!("{}.fixed_target", path), &e))).transpose()?;
 
             let auth = l.auth.as_ref().map(|a| -> Result<_, ConfigError> {
                 let resolved_password = resolve_password(
@@ -776,6 +783,8 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 trojan: l.trojan.clone(),
                 transparent,
                 unix,
+                fixed_target,
+                local_bind: l.local_bind.clone(),
             })
         })
         .collect()
@@ -809,6 +818,8 @@ fn compile_listener_udp_config(
             eggress_udp::UdpMode::StandalonePproxyUdp
         }
         Some("shadowsocks_udp") | Some("shadowsocks") => eggress_udp::UdpMode::ShadowsocksUdp,
+        Some("echo") => eggress_udp::UdpMode::Echo,
+        Some("fixed_target") | Some("fixed-target") => eggress_udp::UdpMode::FixedTarget,
         Some("socks5_udp_associate") | Some("socks5") | None => {
             eggress_udp::UdpMode::Socks5UdpAssociate
         }
@@ -816,7 +827,7 @@ fn compile_listener_udp_config(
             return Err(ConfigError::validation(
                 &format!("{}.mode", udp_path),
                 &format!(
-                    "unknown UDP mode '{}'; expected 'socks5_udp_associate', 'standalone_pproxy_udp', or 'shadowsocks_udp'",
+                    "unknown UDP mode '{}'; expected 'socks5_udp_associate', 'standalone_pproxy_udp', 'shadowsocks_udp', or 'echo'",
                     other
                 ),
             ));
@@ -828,6 +839,29 @@ fn compile_listener_udp_config(
         return Err(ConfigError::validation(
             path,
             "UDP config requires socks5 protocol",
+        ));
+    }
+
+    if mode == eggress_udp::UdpMode::Echo && !protocols.contains(&ProtocolId::Echo) {
+        return Err(ConfigError::validation(
+            path,
+            "echo UDP mode requires echo protocol",
+        ));
+    }
+
+    let fixed_target = udp
+        .fixed_target
+        .as_deref()
+        .map(|value| {
+            value.parse().map_err(|e: String| {
+                ConfigError::validation(&format!("{}.udp.fixed_target", path), &e)
+            })
+        })
+        .transpose()?;
+    if mode == eggress_udp::UdpMode::FixedTarget && fixed_target.is_none() {
+        return Err(ConfigError::validation(
+            &format!("{}.udp.fixed_target", path),
+            "fixed_target UDP mode requires a target",
         ));
     }
 
@@ -951,6 +985,7 @@ fn compile_listener_udp_config(
         client_pin,
         allow_private_egress,
         max_associations_global,
+        fixed_target,
     })
 }
 

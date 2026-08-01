@@ -53,6 +53,7 @@ pub enum AcceptedSession {
     Tunnel(PendingTunnel),
     HttpForward(PendingHttpForward),
     UdpAssociate(PendingUdpAssociate),
+    Echo(BoxStream),
 }
 
 /// A pending tunnel connection (HTTP CONNECT, SOCKS4, SOCKS5).
@@ -89,6 +90,7 @@ pub enum TunnelProtocol {
     Socks5,
     Shadowsocks,
     Trojan,
+    Raw,
 }
 
 /// Information needed to send a protocol-specific reply later.
@@ -98,6 +100,7 @@ pub enum ReplyContext {
     Socks5,
     Shadowsocks,
     Trojan,
+    Raw,
 }
 
 /// Configuration for Shadowsocks inbound listener.
@@ -180,6 +183,27 @@ pub async fn accept(
     shadowsocks_metrics: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
     trojan_config: Option<&InboundTrojanConfig>,
 ) -> Result<AcceptedSession, AcceptError> {
+    accept_with_fixed_target(
+        client,
+        protocols,
+        auth,
+        shadowsocks_config,
+        shadowsocks_metrics,
+        trojan_config,
+        None,
+    )
+    .await
+}
+
+pub async fn accept_with_fixed_target(
+    client: BoxStream,
+    protocols: &[ProtocolId],
+    auth: &InboundAuthentication,
+    shadowsocks_config: Option<&InboundShadowsocksConfig>,
+    shadowsocks_metrics: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+    trojan_config: Option<&InboundTrojanConfig>,
+    fixed_target: Option<&TargetAddr>,
+) -> Result<AcceptedSession, AcceptError> {
     #[inline]
     fn shadows_metrics(
         m: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
@@ -187,6 +211,21 @@ pub async fn accept(
         m.cloned()
     }
     let mut stream = client;
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::Echo) {
+        return Ok(AcceptedSession::Echo(stream));
+    }
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::Raw) {
+        let target = fixed_target
+            .cloned()
+            .ok_or_else(|| AcceptError::Protocol("raw listener requires fixed_target".into()))?;
+        return Ok(AcceptedSession::Tunnel(PendingTunnel {
+            target,
+            client: stream,
+            protocol: TunnelProtocol::Raw,
+            reply_context: ReplyContext::Raw,
+            identity: ClientIdentity::Anonymous,
+        }));
+    }
     let mut first_byte = [0u8; 1];
     stream
         .read_exact(&mut first_byte)

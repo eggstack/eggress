@@ -95,7 +95,7 @@ fn test_raw_fixed_target_is_lowered_to_native_endpoint() {
 
 #[test]
 fn test_advanced_transport_listener_is_role_specific_unsupported() {
-    for scheme in ["h2", "ws", "wss", "raw", "tunnel"] {
+    for scheme in ["h2", "ws", "wss"] {
         let args = PproxyArgs::parse(&["-l".into(), format!("{}://:1080", scheme)]).unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         assert!(output.has_unsupported());
@@ -251,15 +251,16 @@ fn test_unix_upstream_unsupported() {
         "-l".into(),
         "socks5://127.0.0.1:1080".into(),
         "-r".into(),
-        "unix://host:1080".into(),
+        "unix:///tmp/eggress-phase5.sock".into(),
     ])
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(output.has_unsupported());
-    assert!(output
-        .unsupported
-        .iter()
-        .any(|u| u.feature == "unix-upstream"));
+    assert!(
+        !output.has_unsupported(),
+        "unexpected diagnostics: {:?}",
+        output.unsupported
+    );
+    assert!(output.toml.contains("unix:///tmp/eggress-phase5.sock"));
 }
 
 #[test]
@@ -497,20 +498,16 @@ fn test_redir_upstream_still_unsupported() {
 }
 
 #[test]
-fn test_unix_upstream_still_unsupported() {
+fn test_unix_upstream_supported() {
     let args = PproxyArgs::parse(&[
         "-l".into(),
         "socks5://127.0.0.1:1080".into(),
         "-r".into(),
-        "unix://host:1080".into(),
+        "unix:///tmp/eggress-phase5.sock".into(),
     ])
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(output.has_unsupported());
-    assert!(output
-        .unsupported
-        .iter()
-        .any(|u| u.feature == "unix-upstream"));
+    assert!(!output.has_unsupported());
 }
 
 #[test]

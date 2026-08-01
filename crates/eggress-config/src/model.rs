@@ -87,6 +87,8 @@ pub struct ListenerUdpConfig {
     pub client_pin: Option<bool>,
     pub allow_private_egress: Option<bool>,
     pub max_associations_global: Option<usize>,
+    #[serde(default)]
+    pub fixed_target: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +113,10 @@ pub struct ListenerConfig {
     pub transparent: Option<TransparentConfig>,
     #[serde(default)]
     pub unix: Option<UnixListenerConfig>,
+    #[serde(default)]
+    pub fixed_target: Option<String>,
+    #[serde(default)]
+    pub local_bind: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

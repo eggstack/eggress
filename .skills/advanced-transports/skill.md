@@ -18,11 +18,13 @@ WebSocket, Raw, and H2 CONNECT are native runtime upstream protocols. They
 remain outside the current pproxy compatibility translator, so native runtime
 support must not be described as pproxy drop-in support.
 
-- The CLI `parse_listener_uri` rejects `h2://`, `ws://`, `wss://`, `raw://`,
-  `tunnel://` as listener URIs.
-- The compatibility translator rejects these paths with structured
-  diagnostics; native TOML configuration may support the corresponding
-  upstream compositions.
+- The CLI `parse_listener_uri` rejects `h2://`, `ws://`, and `wss://` as
+  listener URIs. Phase 5 admits bounded `raw://`/`tunnel://` listener forms
+  only when a brace-delimited fixed target is present.
+- The compatibility translator rejects H2/WS/WSS listener roles with
+  structured diagnostics; native TOML configuration may support the
+  corresponding upstream compositions. `echo` is an explicit compatibility
+  listener utility, including a bounded UDP echo mode.
 - Tests: `cargo test -p eggress-config` and the protocol/runtime tests cover
   the native paths and refusal boundaries.
 

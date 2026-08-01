@@ -79,7 +79,7 @@ pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
 
 fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
     match protocol {
-        ProtocolSpec::Http => UpstreamCapabilities {
+        ProtocolSpec::Http | ProtocolSpec::HttpOnly => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::UnsupportedProtocol {
                 protocol: "Http".to_string(),
@@ -117,7 +117,7 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
                 protocol: "WebSocket".to_string(),
             },
         },
-        ProtocolSpec::Raw => UpstreamCapabilities {
+        ProtocolSpec::Raw | ProtocolSpec::Unix => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::UnsupportedProtocol {
                 protocol: "Raw".to_string(),

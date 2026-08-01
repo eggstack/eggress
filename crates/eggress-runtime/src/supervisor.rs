@@ -276,6 +276,8 @@ struct PreparedListener {
     tls: Option<eggress_config::compile::CompiledListenerTlsConfig>,
     shadowsocks: Option<eggress_config::model::ShadowsocksListenerConfig>,
     trojan: Option<eggress_config::model::ListenerTrojanConfig>,
+    fixed_target: Option<eggress_core::TargetAddr>,
+    local_bind: Option<String>,
 }
 
 type PreparedShadowsocksUdpRelay = (
@@ -980,6 +982,8 @@ impl ServiceSupervisor {
                     tls: lcfg.tls.clone(),
                     shadowsocks: lcfg.shadowsocks.clone(),
                     trojan: lcfg.trojan.clone(),
+                    fixed_target: lcfg.fixed_target.clone(),
+                    local_bind: lcfg.local_bind.clone(),
                 });
             }
 
@@ -1030,6 +1034,7 @@ impl ServiceSupervisor {
             }
 
             let mut shadowsocks_udp_relays = Vec::new();
+            let mut echo_udp_relays = Vec::new();
 
             for prepared_listener in &prepared {
                 if let Some(ref udp_cfg) = prepared_listener.udp {
@@ -1043,6 +1048,28 @@ impl ServiceSupervisor {
                             )
                             .await?,
                         );
+                    } else if udp_cfg.mode == eggress_udp::UdpMode::Echo {
+                        let socket =
+                            Arc::new(tokio::net::UdpSocket::bind(udp_cfg.bind).await.map_err(
+                                |e| RuntimeError::ListenerBind {
+                                    addr: udp_cfg.bind.to_string(),
+                                    source: e,
+                                },
+                            )?);
+                        echo_udp_relays.push((prepared_listener.name.clone(), socket, None));
+                    } else if udp_cfg.mode == eggress_udp::UdpMode::FixedTarget {
+                        let socket =
+                            Arc::new(tokio::net::UdpSocket::bind(udp_cfg.bind).await.map_err(
+                                |e| RuntimeError::ListenerBind {
+                                    addr: udp_cfg.bind.to_string(),
+                                    source: e,
+                                },
+                            )?);
+                        echo_udp_relays.push((
+                            prepared_listener.name.clone(),
+                            socket,
+                            udp_cfg.fixed_target.clone(),
+                        ));
                     }
                 }
             }
@@ -1062,6 +1089,50 @@ impl ServiceSupervisor {
                             %error,
                             "Shadowsocks UDP relay ended with error"
                         );
+                    }
+                });
+            }
+
+            for (listener_name, socket, fixed_target) in echo_udp_relays {
+                let relay_cancel = cancel.clone();
+                let max_size = listener_configs
+                    .iter()
+                    .find(|l| l.name == listener_name)
+                    .and_then(|l| l.udp.as_ref())
+                    .map(|u| u.max_datagram_size)
+                    .unwrap_or(65535);
+                tasks.spawn(async move {
+                    let mut buf = vec![0u8; max_size];
+                    let target_socket = if let Some(target) = fixed_target {
+                        let addr = match target.host {
+                            eggress_core::TargetHost::Ip(ip) => std::net::SocketAddr::new(ip, target.port),
+                            eggress_core::TargetHost::Domain(domain) => match tokio::net::lookup_host((domain.as_str(), target.port)).await {
+                                Ok(mut addrs) => match addrs.next() { Some(addr) => addr, None => return },
+                                Err(_) => return,
+                            },
+                        };
+                        let target_socket = match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
+                            Ok(s) => s,
+                            Err(_) => return,
+                        };
+                        if target_socket.connect(addr).await.is_err() { return; }
+                        Some(target_socket)
+                    } else { None };
+                    let mut response = vec![0u8; max_size];
+                    loop {
+                        tokio::select! {
+                            result = socket.recv_from(&mut buf) => match result {
+                                Ok((n, peer)) => {
+                                    if let Some(ref target_socket) = target_socket {
+                                        if target_socket.send(&buf[..n]).await.is_ok() {
+                                            if let Ok(m) = target_socket.recv(&mut response).await { let _ = socket.send_to(&response[..m], peer).await; }
+                                        }
+                                    } else { let _ = socket.send_to(&buf[..n], peer).await; }
+                                }
+                                Err(_) => break,
+                            },
+                            _ = relay_cancel.cancelled() => break,
+                        }
                     }
                 });
             }
@@ -1254,6 +1325,8 @@ impl ServiceSupervisor {
                                         fallback: t.fallback,
                                     },
                                 ),
+                                fixed_target: None,
+                                local_bind: None,
                             };
 
                             let report = tokio::select! {
@@ -1459,6 +1532,8 @@ impl ServiceSupervisor {
                                         fallback: t.fallback,
                                     },
                                 ),
+                                fixed_target: None,
+                                local_bind: None,
                             };
 
                             let report = tokio::select! {
@@ -1545,6 +1620,8 @@ impl ServiceSupervisor {
                         let tls_config = prepared_listener.tls.clone();
                         let ss_config = prepared_listener.shadowsocks.clone();
                         let trojan_config = prepared_listener.trojan.clone();
+                        let fixed_target = prepared_listener.fixed_target.clone();
+                        let local_bind = prepared_listener.local_bind.clone();
 
                         let udp_svc = if let Some(ref udp_config) = prepared_listener.udp {
                             Some(Arc::new(RuntimeUdpService {
@@ -1629,6 +1706,8 @@ impl ServiceSupervisor {
                                         fallback: t.fallback,
                                     }
                                 }),
+                                fixed_target,
+                                local_bind,
                             };
 
                             let report = tokio::select! {

@@ -60,6 +60,8 @@ for the authoritative 148-capability manifest with per-layer evidence tracking.
 | Standalone UDP relay | `-ul` mode (no TCP control) | `mode = "standalone_pproxy_udp"` | drop_in | `udp.rs` | `differential_standalone_udp_direct_echo, differential_standalone_udp_domain_target` | pproxy-compatible standalone UDP mode; differential tests verify behavioral parity with pproxy -ul |
 | Shadowsocks UDP | supported | standard AEAD format | compatible_with_warning | `shadowsocks_udp.rs` | none | Standard AEAD format; interoperable with standard Shadowsocks. Not pproxy-differential tested. |
 | Direct UDP forwarding | via `-ul` flag | via SOCKS5 UDP ASSOCIATE or standalone mode | compatible_with_warning | `udp.rs` | none | Both entry points supported |
+| Echo endpoint | `echo://` TCP/UDP loopback utility | explicit `echo` listener and UDP mode | supported | runtime echo tests | none | Bounded test utility; not a default listener |
+| Fixed-target UDP tunnel | `tunnel{host:port}` | fixed-target UDP listener mode | supported | runtime UDP tests | none | One configured target; no multi-hop UDP claim |
 
 ### Upstream TCP Protocols
 
@@ -220,7 +222,7 @@ When an unsupported protocol or feature is encountered in pproxy compat mode, eg
 |-------|----------------|---------------|
 | `ssh://...` as upstream | `UnsupportedFeature` | "SSH is not a proxy protocol; use OpenSSH dynamic forwarding (ssh -D) or an external SOCKS proxy" |
 | `redir://...` as upstream listener | N/A | Now supported as transparent TCP proxy (Linux only) |
-| `unix://...` as upstream | `UnsupportedFeature` | "Unix domain sockets are not supported as upstream" |
+| `unix://...` as upstream | `UnsupportedFeature` | Unix-domain TCP upstream on Unix; clear unsupported-platform error on Windows |
 | `unix://...` as listener | N/A | Now supported as Unix domain socket listener (Unix only) |
 | `ss://...` as listener | N/A | Now supported as explicit protocol mode |
 | `trojan://...` as listener | N/A | Now supported as inbound Trojan listener with TLS + SHA224 password auth |

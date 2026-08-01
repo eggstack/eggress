@@ -66,7 +66,7 @@ Three ways to run eggress, all converging on the same runtime:
 |---|---|---|
 | `BoxStream` | [`eggress-core`](core.md) | `Pin<Box<dyn AsyncRead + AsyncWrite + Send>>` — the universal stream type |
 | `TargetAddr` | [`eggress-core`](core.md) | Typed destination preserving domain names until resolution |
-| `ProtocolId` | [`eggress-core`](core.md) | Enum identifying detected inbound protocol (Http, Socks4, Socks5, etc.) |
+| `ProtocolId` | [`eggress-core`](core.md) | Enum identifying detected inbound protocol (Http, Socks4, Socks5, Raw, Echo, etc.) |
 | `RouteAction` | [`eggress-core`](core.md) | What to do with a connection: direct, upstream, or reject |
 | `ProxyChainSpec` | [`eggress-uri`](uri.md) | Parsed multi-hop proxy chain from URI syntax |
 | `MatchExpr` | [`eggress-routing`](routing.md) | Composite matcher: host, port, CIDR, protocol, identity, transport |

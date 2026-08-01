@@ -3,11 +3,13 @@ use crate::error::SessionOpenError;
 use crate::reply;
 use crate::ConnectionConfig;
 use eggress_core::chain::{ChainExecutor, HopHandler};
-use eggress_core::connector::{Connector, DirectConnector};
+use eggress_core::connector::DirectConnector;
 use eggress_core::relay::relay;
 use eggress_core::BoxStream;
 use eggress_core::{TargetAddr, TargetHost};
 use eggress_routing::{RouteRequest, SelectedRoute};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct SessionReport {
@@ -169,6 +171,7 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
                 crate::accept::TunnelProtocol::Socks5 => "socks5".to_string(),
                 crate::accept::TunnelProtocol::Shadowsocks => "shadowsocks".to_string(),
                 crate::accept::TunnelProtocol::Trojan => "trojan".to_string(),
+                crate::accept::TunnelProtocol::Raw => "raw".to_string(),
             });
             let target = Some(pending.target.to_string());
             execute_tunnel(pending, config, protocol, target).await
@@ -178,7 +181,32 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
             execute_http_forward(pending, config, target).await
         }
         AcceptedSession::UdpAssociate(pending) => execute_udp_associate(pending, config).await,
+        AcceptedSession::Echo(stream) => execute_echo(stream).await,
     }
+}
+
+async fn execute_echo(mut stream: BoxStream) -> SessionReport {
+    let mut buf = [0u8; 16 * 1024];
+    let mut bytes = 0u64;
+    loop {
+        match stream.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                bytes += n as u64;
+                if stream.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    SessionReport::completed(
+        Some("echo".to_string()),
+        None,
+        "echo".to_string(),
+        bytes,
+        bytes,
+    )
 }
 
 fn route_description(selected: &SelectedRoute) -> String {
@@ -254,6 +282,7 @@ fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str 
         .and_then(|h| h.protocols.first())
         .map(|p| match p {
             eggress_uri::ProtocolSpec::Http => "http",
+            eggress_uri::ProtocolSpec::HttpOnly => "httponly",
             eggress_uri::ProtocolSpec::Socks4 => "socks4",
             eggress_uri::ProtocolSpec::Socks5 => "socks5",
             eggress_uri::ProtocolSpec::Shadowsocks => "shadowsocks",
@@ -261,6 +290,7 @@ fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str 
             eggress_uri::ProtocolSpec::Http2 => "h2",
             eggress_uri::ProtocolSpec::WebSocket => "websocket",
             eggress_uri::ProtocolSpec::Raw => "raw",
+            eggress_uri::ProtocolSpec::Unix => "unix",
         })
         .unwrap_or("unknown")
 }
@@ -311,7 +341,21 @@ async fn open_route(
     let result = tokio::time::timeout(config.connect_timeout, async {
         match selected {
             SelectedRoute::Direct { .. } => {
-                let stream = DirectConnector.connect(request.target).await?;
+                let bind = config
+                    .local_bind
+                    .as_deref()
+                    .map(|v| {
+                        v.parse().map_err(|e| {
+                            SessionOpenError::Other(format!("invalid local bind '{}': {}", v, e))
+                        })
+                    })
+                    .transpose()?;
+                let stream = DirectConnector
+                    .connect_with_options(
+                        request.target,
+                        &eggress_core::connector::ConnectOptions { local_bind: bind },
+                    )
+                    .await?;
                 Ok::<_, SessionOpenError>((stream, None))
             }
             SelectedRoute::Upstream {
@@ -380,6 +424,7 @@ async fn execute_tunnel(
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
             crate::accept::TunnelProtocol::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
             crate::accept::TunnelProtocol::Trojan => eggress_core::ProtocolId::Trojan,
+            crate::accept::TunnelProtocol::Raw => eggress_core::ProtocolId::Raw,
         },
         identity: &pending.identity,
         transport: eggress_routing::TransportKind::Tcp,
@@ -886,6 +931,7 @@ pub fn build_chain_executor(
 
     let handlers: Vec<Box<dyn HopHandler>> = vec![
         Box::new(HttpHopHandler),
+        Box::new(HttpOnlyHopHandler),
         Box::new(Socks5HopHandler),
         Box::new(Socks4HopHandler),
         Box::new(ShadowsocksHopHandler {
@@ -929,6 +975,112 @@ pub fn build_chain_executor(
     ChainExecutor::new(handlers)
         .with_tls_wrapper(tls_wrapper)
         .with_shared_tls_config(shared_tls_config)
+}
+
+/// Adapts an origin-form request into the absolute-form request expected by
+/// pproxy's `httponly` upstream mode. The adapter is deliberately limited to
+/// the request headers; bodies are passed through unchanged.
+struct HttpOnlyStream {
+    inner: BoxStream,
+    target: TargetAddr,
+    pending: Vec<u8>,
+}
+
+impl tokio::io::AsyncRead for HttpOnlyStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl tokio::io::AsyncWrite for HttpOnlyStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        data: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        self.pending.extend_from_slice(data);
+        Poll::Ready(Ok(data.len()))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        if !self.pending.is_empty() {
+            let end = match self.pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                Some(pos) => pos + 4,
+                None => return Poll::Ready(Ok(())),
+            };
+            let head = &self.pending[..end];
+            let mut lines = head.split(|b| *b == b'\n');
+            let first = lines.next().unwrap_or_default();
+            let first = first.strip_suffix(b"\r").unwrap_or(first);
+            let mut rewritten = Vec::with_capacity(head.len() + 32);
+            if let Some(space) = first.iter().position(|b| *b == b' ') {
+                if let Some(second) = first[space + 1..].iter().position(|b| *b == b' ') {
+                    let method = &first[..space];
+                    let path = &first[space + 1..space + 1 + second];
+                    if path.starts_with(b"/") {
+                        rewritten.extend_from_slice(method);
+                        rewritten.extend_from_slice(b" http://");
+                        rewritten.extend_from_slice(self.target.to_string().as_bytes());
+                        rewritten.extend_from_slice(path);
+                        rewritten.extend_from_slice(&first[space + 1 + second..]);
+                        rewritten.extend_from_slice(b"\r\n");
+                        for line in lines {
+                            rewritten.extend_from_slice(line);
+                        }
+                        let body = self.pending[end..].to_vec();
+                        rewritten.extend_from_slice(&body);
+                        self.pending = rewritten;
+                    }
+                }
+            }
+        }
+        let pending = self.pending.clone();
+        match Pin::new(&mut self.inner).poll_write(cx, &pending) {
+            Poll::Ready(Ok(n)) => {
+                self.pending.drain(..n);
+                if self.pending.is_empty() {
+                    Pin::new(&mut self.inner).poll_flush(cx)
+                } else {
+                    Poll::Ready(Ok(()))
+                }
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        let _ = self.as_mut().poll_flush(cx);
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+struct HttpOnlyHopHandler;
+
+impl HopHandler for HttpOnlyHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::HttpOnly
+    }
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        target: &'a TargetAddr,
+        _hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
+    ) -> HandshakeFuture<'a> {
+        let target = target.clone();
+        Box::pin(async move {
+            Ok(Box::new(HttpOnlyStream {
+                inner: stream,
+                target,
+                pending: Vec::new(),
+            }) as BoxStream)
+        })
+    }
 }
 
 struct HttpHopHandler;

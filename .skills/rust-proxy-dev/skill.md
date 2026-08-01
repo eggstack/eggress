@@ -162,6 +162,15 @@ When adding features to Connection, follow the pattern: Rust handles networking,
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
 - Tests: `cargo test -p eggress-cli --test pproxy_binary`
 
+Phase 5 compatibility runtime notes:
+- `httponly` is an upstream HTTP request adapter, not a listener protocol.
+- `echo` is an explicit TCP/UDP listener mode and is not enabled by unrelated
+  native listener defaults.
+- Brace-delimited raw/tunnel fixed targets are bounded listener/upstream forms;
+  they do not imply general multi-hop UDP support.
+- Unix upstreams are TCP-only and compile to a stable unsupported-platform error
+  on Windows. Local source binds are per-connection socket options.
+
 ### Building
 
 ```bash

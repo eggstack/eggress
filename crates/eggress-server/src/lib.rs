@@ -77,6 +77,8 @@ pub struct ConnectionConfig {
     pub shadowsocks: Option<accept::InboundShadowsocksConfig>,
     /// Optional Trojan inbound configuration for password verification on Trojan listeners.
     pub trojan: Option<accept::InboundTrojanConfig>,
+    pub fixed_target: Option<eggress_core::TargetAddr>,
+    pub local_bind: Option<String>,
     /// Optional Shadowsocks-specific metrics for observability. When provided,
     /// Shadowsocks TCP/UDP paths emit protocol-specific counters and gauges.
     pub shadowsocks_metrics: Option<Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
@@ -93,13 +95,14 @@ pub async fn serve_connection(
 
     let accepted = tokio::time::timeout(
         config.handshake_timeout,
-        accept::accept(
+        accept::accept_with_fixed_target(
             client,
             &config.protocols,
             &config.authentication,
             config.shadowsocks.as_ref(),
             config.shadowsocks_metrics.as_ref(),
             config.trojan.as_ref(),
+            config.fixed_target.as_ref(),
         ),
     )
     .await;
@@ -231,6 +234,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -296,6 +301,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -468,6 +475,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -522,6 +531,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -581,6 +592,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -629,6 +642,8 @@ mod tests {
             shadowsocks: None,
             shadowsocks_metrics: None,
             trojan: None,
+            fixed_target: None,
+            local_bind: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -659,6 +674,8 @@ mod tests {
             shadowsocks: None,
             shadowsocks_metrics: None,
             trojan: None,
+            fixed_target: None,
+            local_bind: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -690,6 +707,8 @@ mod tests {
             shadowsocks: None,
             shadowsocks_metrics: None,
             trojan: None,
+            fixed_target: None,
+            local_bind: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -727,6 +746,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -792,6 +813,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -846,6 +869,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -902,6 +927,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -962,6 +989,8 @@ mod tests {
             shadowsocks: None,
             shadowsocks_metrics: None,
             trojan: None,
+            fixed_target: None,
+            local_bind: None,
         };
 
         let task = tokio::spawn(serve_connection(boxed, config));
@@ -1127,6 +1156,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1188,6 +1219,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });
@@ -1240,6 +1273,8 @@ mod tests {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             serve_connection(boxed, config).await
         });

@@ -37,6 +37,7 @@ pub struct ProxyHopSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProtocolSpec {
     Http,
+    HttpOnly,
     Socks4,
     Socks5,
     Shadowsocks,
@@ -44,6 +45,7 @@ pub enum ProtocolSpec {
     Http2,
     WebSocket,
     Raw,
+    Unix,
 }
 
 /// Endpoint address specification.
@@ -103,6 +105,7 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                     .iter()
                     .map(|p| match p {
                         ProtocolSpec::Http => "http",
+                        ProtocolSpec::HttpOnly => "httponly",
                         ProtocolSpec::Socks4 => "socks4",
                         ProtocolSpec::Socks5 => "socks5",
                         ProtocolSpec::Shadowsocks => "shadowsocks",
@@ -110,6 +113,7 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::Http2 => "h2",
                         ProtocolSpec::WebSocket => "ws",
                         ProtocolSpec::Raw => "raw",
+                        ProtocolSpec::Unix => "unix",
                     })
                     .collect();
                 if hop.tls {
@@ -261,6 +265,21 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         return Err(UriParseError::MissingHost);
     }
 
+    if protocols == [ProtocolSpec::Unix] {
+        return Ok(ProxyHopSpec {
+            protocols,
+            endpoint: EndpointSpec {
+                host: after_scheme.to_string(),
+                port: 0,
+            },
+            credentials: None,
+            rule: None,
+            local_bind,
+            tls,
+            server_name: None,
+        });
+    }
+
     // Split credentials and endpoint+query
     let (credentials, endpoint_and_query) =
         if let Some(at_pos) = find_at_outside_brackets(after_scheme) {
@@ -318,6 +337,7 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
     for p in &parts {
         match *p {
             "http" => protocols.push(ProtocolSpec::Http),
+            "httponly" => protocols.push(ProtocolSpec::HttpOnly),
             "socks4" | "socks4a" => protocols.push(ProtocolSpec::Socks4),
             "socks5" => protocols.push(ProtocolSpec::Socks5),
             "shadowsocks" | "ss" => protocols.push(ProtocolSpec::Shadowsocks),
@@ -325,6 +345,7 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
             "h2" => protocols.push(ProtocolSpec::Http2),
             "ws" | "wss" => protocols.push(ProtocolSpec::WebSocket),
             "raw" | "tunnel" => protocols.push(ProtocolSpec::Raw),
+            "unix" => protocols.push(ProtocolSpec::Unix),
             "tls" => tls = true,
             _ => return Err(UriParseError::UnsupportedProtocol(p.to_string())),
         }

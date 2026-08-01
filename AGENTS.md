@@ -30,9 +30,15 @@ matches. Native TOML group schedulers and routing semantics remain unchanged.
 Phase 3 compatibility transport bridging is implemented for H2, WS/WSS,
 raw, and tunnel upstream URIs. The bridge lowers these schemes through the
 same native upstream URI/config path, normalizes implied TLS (`h2` and
-`wss`), preserves raw fixed targets, and reports recognized listener or UDP
-uses as role-specific unsupported diagnostics. These transports remain
-upstream-only; QUIC/HTTP/3 remains intentionally deferred.
+`wss`), and preserves raw fixed targets. H2/WS/WSS remain upstream-only;
+bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains
+intentionally deferred.
+
+Phase 5 runtime gaps cover `httponly` upstream request rewriting, explicit
+TCP/UDP echo listeners, bounded fixed-target TCP/UDP raw/tunnel forms, Unix
+domain TCP upstreams on Unix, and per-connection outbound local binds. These
+bounded forms do not establish general multi-hop UDP, macOS PF transparent
+recovery, backward TLS, daemonization, or connection-reuse parity.
 
 ## Source-of-truth documents
 

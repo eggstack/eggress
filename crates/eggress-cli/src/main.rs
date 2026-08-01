@@ -1257,6 +1257,7 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
     for p in &first_hop.protocols {
         let id = match p {
             eggress_uri::ProtocolSpec::Http => eggress_core::ProtocolId::Http,
+            eggress_uri::ProtocolSpec::HttpOnly => eggress_core::ProtocolId::Http,
             eggress_uri::ProtocolSpec::Socks4 => eggress_core::ProtocolId::Socks4,
             eggress_uri::ProtocolSpec::Socks5 => eggress_core::ProtocolId::Socks5,
             eggress_uri::ProtocolSpec::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
@@ -1264,6 +1265,7 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
             eggress_uri::ProtocolSpec::Http2 => eggress_core::ProtocolId::Http2,
             eggress_uri::ProtocolSpec::WebSocket => eggress_core::ProtocolId::WebSocket,
             eggress_uri::ProtocolSpec::Raw => eggress_core::ProtocolId::Raw,
+            eggress_uri::ProtocolSpec::Unix => eggress_core::ProtocolId::Raw,
         };
         protocols.push(id);
     }
@@ -1647,6 +1649,8 @@ async fn run_listener(
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
 
             let report = eggress_server::serve_connection(conn.stream, config)

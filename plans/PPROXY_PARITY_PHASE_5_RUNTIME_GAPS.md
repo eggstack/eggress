@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Implemented (bounded mandatory workstreams; conditional gates recorded below).
 
 ## Parent roadmap
 
@@ -161,6 +161,11 @@ Honor pproxy's local/source bind URI component for direct and supported upstream
 
 ## Conditional workstream 5.6 — macOS PF transparent destination recovery
 
+Decision: retain intentional non-parity. pproxy uses a privileged `/dev/pf`
+ioctl lookup; the current listener abstraction has no safe stable-Rust wrapper
+or disposable CI test for that privileged operation. Linux redirection is
+unchanged.
+
 ### Decision gate
 
 Implement only if current listener/platform abstractions allow original-destination recovery in a small macOS-specific module comparable to the Linux redir implementation.
@@ -195,6 +200,11 @@ Before coding, produce a short technical note answering:
 - the feature is platform-gated and absent from routine CI.
 
 ## Conditional workstream 5.7 — Reverse/backward TLS and chain composition
+
+Decision: retain explicit partial compatibility. Existing reverse control
+connections are not exposed as a normal `BoxStream` chain hop, so TLS around
+reverse framing would require changing the reverse protocol rather than adding
+a local wrapper. Backward TLS and mixed reverse chains remain rejected.
 
 ### Decision gate
 

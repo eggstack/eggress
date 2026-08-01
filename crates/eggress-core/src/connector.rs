@@ -124,29 +124,58 @@ pub trait LocalConnector {
 /// Connector that makes direct TCP connections.
 pub struct DirectConnector;
 
+/// Connect options for one outbound socket.
+#[derive(Debug, Clone, Default)]
+pub struct ConnectOptions {
+    pub local_bind: Option<SocketAddr>,
+}
+
+impl DirectConnector {
+    pub async fn connect_with_options(
+        &self,
+        target: &TargetAddr,
+        options: &ConnectOptions,
+    ) -> Result<BoxStream, ConnectError> {
+        let addr = resolve_target(target).await?;
+        let stream = if let Some(local) = options.local_bind {
+            let socket = if local.is_ipv4() {
+                tokio::net::TcpSocket::new_v4()
+            } else {
+                tokio::net::TcpSocket::new_v6()
+            }
+            .map_err(ConnectError::Io)?;
+            socket.bind(local).map_err(ConnectError::Io)?;
+            socket.connect(addr).await.map_err(ConnectError::Io)?
+        } else {
+            TcpStream::connect(addr).await?
+        };
+        Ok(Box::new(stream))
+    }
+}
+
+async fn resolve_target(target: &TargetAddr) -> Result<SocketAddr, ConnectError> {
+    match &target.host {
+        TargetHost::Ip(ip) => Ok(SocketAddr::new(*ip, target.port)),
+        TargetHost::Domain(domain) => {
+            let lookup = format!("{}:{}", domain, target.port);
+            let mut addrs = tokio::net::lookup_host(&lookup)
+                .await
+                .map_err(|e| ConnectError::DnsResolution(e.to_string()))?;
+            let resolved = addrs
+                .next()
+                .ok_or_else(|| ConnectError::DnsResolution("no addresses found".to_string()))?;
+            if is_dns_rebinding_risk(&resolved.ip()) {
+                return Err(ConnectError::ReservedTarget(resolved.ip()));
+            }
+            Ok(resolved)
+        }
+    }
+}
+
 impl Connector for DirectConnector {
     async fn connect(&self, target: &TargetAddr) -> Result<BoxStream, ConnectError> {
-        let addr: SocketAddr = match &target.host {
-            TargetHost::Ip(ip) => SocketAddr::new(*ip, target.port),
-            TargetHost::Domain(domain) => {
-                let lookup = format!("{}:{}", domain, target.port);
-                let mut addrs = tokio::net::lookup_host(&lookup)
-                    .await
-                    .map_err(|e| ConnectError::DnsResolution(e.to_string()))?;
-                let resolved = addrs
-                    .next()
-                    .ok_or_else(|| ConnectError::DnsResolution("no addresses found".to_string()))?;
-
-                if is_dns_rebinding_risk(&resolved.ip()) {
-                    return Err(ConnectError::ReservedTarget(resolved.ip()));
-                }
-
-                resolved
-            }
-        };
-
-        let stream = TcpStream::connect(addr).await?;
-        Ok(Box::new(stream))
+        self.connect_with_options(target, &ConnectOptions::default())
+            .await
     }
 }
 

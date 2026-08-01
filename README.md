@@ -303,7 +303,10 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - Phase 2 compatibility routing: first-available declaration order, explicit
   `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, pproxy
   rule files, high-priority block expressions, and direct unmatched fallback
-- Structured diagnostics for unsupported protocols (SSH, Unix upstream)
+- Structured diagnostics for unsupported protocols (SSH and deferred transports)
+- Phase 5 runtime coverage for `httponly` upstreams, TCP/UDP `echo`, fixed-target
+  TCP/UDP tunnels, Unix-domain TCP upstreams on Unix, and per-connection local
+  source binding
 - Differential tests verifying behavioral parity with Python `pproxy` (HTTP, SOCKS4/4a, SOCKS5, standalone UDP)
 - A bounded top-level `pproxy` package (`Connection`, `Server`, `Rule`, `DIRECT`, `proto`, `cipher`, and `server`) backed by Eggress adapters
 - Python migration helpers (`PPProxyService`, `start_pproxy`, translation and diagnostics APIs) under `eggress.pproxy`
@@ -320,7 +323,7 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
 - **Certificate reload** — requires restart
 - **Private pproxy internals** — only the documented bounded public surface is supported; private implementation details and unsupported protocol families fail explicitly
-- **Advanced compatibility transports** — H2, WS/WSS, raw, and tunnel are supported as upstreams through the pproxy translator; listener roles and UDP remain unsupported
+- **Advanced compatibility transports** — H2 and WS/WSS remain upstream-only; bounded raw/tunnel fixed-target TCP/UDP and `echo` listener forms are supported
 
 ### Compatibility manifests
 

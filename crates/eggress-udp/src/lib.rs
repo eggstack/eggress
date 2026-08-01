@@ -23,4 +23,6 @@ pub enum UdpMode {
     Socks5UdpAssociate,
     StandalonePproxyUdp,
     ShadowsocksUdp,
+    Echo,
+    FixedTarget,
 }

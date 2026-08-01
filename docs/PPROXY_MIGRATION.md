@@ -127,6 +127,10 @@ upstream_group = "chain"
 | HTTP/2 CONNECT | Supported | Synthetic tests; H2 CONNECT server and client implemented (Phase 26) |
 | WebSocket tunnel | Supported | Synthetic tests; WS/WSS tunnel server and client implemented (Phase 26) |
 | Raw fixed-target tunnel | Supported | Synthetic tests; raw TCP tunnel with no protocol negotiation (Phase 26) |
+| HTTP-only upstream (`httponly://`) | Supported | Existing HTTP forward path rewrites origin-form requests to absolute-form |
+| Unix-domain TCP upstream | Supported on Unix | Tokio UnixStream; UDP and Windows are rejected |
+| Echo endpoint | Supported | Explicit TCP/UDP loopback utility |
+| Fixed-target UDP tunnel | Supported | One configured target with bounded packet relay; no multi-hop UDP claim |
 | TLS ALPN | Supported | Configurable ALPN values for H2 and HTTP/1.1 (Phase 26) |
 | Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
 
@@ -143,6 +147,8 @@ The following pproxy features are explicitly unsupported:
 - **`--log`** -- Use `RUST_LOG=debug` environment variable
 - **`--sys`** -- System proxy configuration not supported
 - **Multi-hop UDP** -- Not supported
+- **macOS PF transparent destination recovery** -- Intentional non-parity; requires privileged `/dev/pf` ioctl access
+- **Backward TLS/mixed reverse chains** -- Intentional partial compatibility; reverse framing is not a normal chain stream
 - **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
 - **H3/QUIC transport** -- Deferred; pproxy H3 behavior is experimental and unstable. See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`.
 - **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.

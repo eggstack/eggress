@@ -56,12 +56,16 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 
 The translator parses combined protocols, fragment auth, local binding, fixed
 targets, plugins, and canonical raw rule suffixes without discarding them.
-Unsupported fields are reported after parsing. Common HTTP/SOCKS, AEAD
-Shadowsocks, H2, WS/WSS, raw, and tunnel upstream flows all lower through the
+Unsupported fields are reported after parsing. Common HTTP/SOCKS, HTTP-only,
+AEAD Shadowsocks, H2, WS/WSS, raw, tunnel, and Unix-domain TCP upstream flows lower through the
 same native URI/config path. H2 and WSS normalize to the native `+tls` form;
-raw/tunnel brace-delimited targets become the native raw endpoint. These
-transports are upstream-only and TCP-only in the compatibility surface, so
-listener and UDP uses receive `unsupported_role` diagnostics.
+raw/tunnel brace-delimited targets become the native raw endpoint. Bounded
+listener forms include TCP/UDP echo and fixed-target forwarding; Unix upstreams
+are TCP-only and platform-gated.
+
+Outbound local binds are carried into native per-connection socket options for
+direct routes and the first supported upstream hop. Family mismatches fail
+before connect, and Unix paths remain redacted in compatibility displays.
 
 Compatibility routing follows pproxy 2.7.9's ordered `fa` model. A remote URI
 query (`?rule=...` or a raw query suffix) becomes a route predicate matching
@@ -78,6 +82,13 @@ groups retain their own configured defaults.
 `--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking
 options. PAC and static content use the existing admin server, while test mode
 passes the target to the existing upstream test command.
+
+## Phase 5 boundary decisions
+
+macOS PF transparent-destination recovery remains intentional non-parity: it
+requires privileged `/dev/pf` ioctl access and has no disposable test in the
+current platform abstraction. Backward TLS and mixed reverse chains likewise
+remain unsupported because they require composing TLS around reverse framing.
 
 ## Diagnostics
 

@@ -313,8 +313,9 @@ pub fn translate_from_uris(
                     );
                     reject_listener = true;
                 }
-                "http" | "https" | "socks4" | "socks4a" | "socks5" | "httponly" => {}
-                "h2" | "ws" | "wss" | "raw" | "tunnel" => {
+                "http" | "https" | "socks4" | "socks4a" | "socks5" | "httponly" | "echo" => {}
+                "raw" | "tunnel" if local.fixed_target.is_some() => {}
+                "h2" | "ws" | "wss" => {
                     output = output.with_unsupported(
                         "unsupported-role",
                         format!(
@@ -343,11 +344,14 @@ pub fn translate_from_uris(
             .iter()
             .map(|protocol| {
                 match protocol.as_str() {
-                    "https" | "httponly" => "http",
+                    "https" => "http",
+                    "httponly" => "httponly",
                     "socks4a" => "socks4",
                     "ss" | "shadowsocks" => "shadowsocks",
                     "redir" => "http",
                     "unix" => "socks5",
+                    "echo" => "echo",
+                    "raw" | "tunnel" => "raw",
                     other => other,
                 }
                 .to_string()
@@ -359,18 +363,6 @@ pub fn translate_from_uris(
         if protocols.len() > 1 && has_non_sniffable {
             output = output.with_unsupported("mixed-listener", format!("mixed listener '{}' includes a non-sniffable protocol; use only http+socks4+socks5", local.redacted_display()));
             continue;
-        }
-        if local.local_bind.is_some() {
-            output = output.with_unsupported("local-bind", format!("local outbound bind in '{}' is parsed but not supported by the generated listener config", local.redacted_display()));
-        }
-        if local.fixed_target.is_some() {
-            output = output.with_unsupported(
-                "fixed-target",
-                format!(
-                    "fixed target in '{}' is parsed but not supported by this listener translator",
-                    local.redacted_display()
-                ),
-            );
         }
         if !local.plugins.is_empty() {
             output = output.with_unsupported(
@@ -396,6 +388,8 @@ pub fn translate_from_uris(
             transparent: None,
             unix: None,
             tls: None,
+            fixed_target: local.fixed_target.clone(),
+            local_bind: local.local_bind.clone(),
         };
 
         // Handle auth on listener
@@ -499,6 +493,21 @@ pub fn translate_from_uris(
                 unlink_existing: false,
             });
         }
+        if local.scheme == "echo" {
+            listener_entry.udp = Some(UdpToml {
+                mode: Some("echo".to_string()),
+                bind: None,
+                fixed_target: None,
+            });
+        }
+        if matches!(local.scheme.as_str(), "raw" | "tunnel") && local.fixed_target.is_some() {
+            listener_entry.udp = Some(UdpToml {
+                mode: Some("fixed_target".to_string()),
+                bind: None,
+                fixed_target: local.fixed_target.clone(),
+            });
+            listener_entry.fixed_target = None;
+        }
 
         listeners.push(listener_entry);
 
@@ -537,6 +546,7 @@ pub fn translate_from_uris(
             listener.udp = Some(UdpToml {
                 mode: Some("standalone_pproxy_udp".to_string()),
                 bind: Some(bind),
+                fixed_target: None,
             });
         } else {
             // No listener created (all were unsupported schemes); add a default SOCKS5 listener
@@ -548,12 +558,15 @@ pub fn translate_from_uris(
                 udp: Some(UdpToml {
                     mode: Some("standalone_pproxy_udp".to_string()),
                     bind: Some(parse_udp_listen_addr(addr)),
+                    fixed_target: None,
                 }),
                 shadowsocks: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
                 tls: None,
+                fixed_target: None,
+                local_bind: None,
             });
             output = output.with_warning(
                 "ul-no-listener",
@@ -656,8 +669,8 @@ pub fn translate_from_uris(
                     );
                     hop_unsupported = true;
                 }
-                "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "direct" | "h2"
-                | "ws" | "wss" | "raw" | "tunnel" => {}
+                "http" | "https" | "httponly" | "socks4" | "socks4a" | "socks5" | "trojan"
+                | "direct" | "h2" | "ws" | "wss" | "raw" | "tunnel" => {}
                 "ssh" => {
                     output = output.with_unsupported(
                         "ssh-upstream",
@@ -668,16 +681,7 @@ pub fn translate_from_uris(
                     );
                     hop_unsupported = true;
                 }
-                "unix" => {
-                    output = output.with_unsupported(
-                        "unix-upstream",
-                        format!(
-                            "Unix socket upstream '{}': Unix domain sockets are not supported",
-                            hop.redacted_display()
-                        ),
-                    );
-                    hop_unsupported = true;
-                }
+                "unix" => {}
                 "redir" => {
                     output = output.with_unsupported(
                         "redir-upstream",
@@ -1182,6 +1186,12 @@ fn build_chain_config_uri(chain: &PproxyChain) -> String {
 }
 
 fn build_config_uri(remote: &PproxyUri) -> String {
+    if remote.scheme == "unix" {
+        return format!(
+            "unix://{}",
+            remote.path.as_deref().unwrap_or("/tmp/eggress.sock")
+        );
+    }
     let mut scheme = if remote.scheme == "https" {
         "http".to_string()
     } else if remote.scheme == "socks4a" {
@@ -1222,7 +1232,12 @@ fn build_config_uri(remote: &PproxyUri) -> String {
         Some(r) => format!("?rule={}", r),
         None => String::new(),
     };
-    format!("{}://{}{}{}", scheme, cred_str, endpoint, rule_str,)
+    let bind = remote
+        .local_bind
+        .as_deref()
+        .map(|v| format!("@{v}"))
+        .unwrap_or_default();
+    format!("{}://{}{}{}{}", scheme, cred_str, endpoint, rule_str, bind)
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -1251,6 +1266,10 @@ struct ListenerToml {
     unix: Option<UnixToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tls: Option<TlsToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fixed_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    local_bind: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -1282,6 +1301,8 @@ struct UdpToml {
     mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     bind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fixed_target: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
