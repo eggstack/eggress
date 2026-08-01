@@ -1734,6 +1734,8 @@ mod tests {
                     shadowsocks: None,
                     shadowsocks_metrics: None,
                     trojan: None,
+                    fixed_target: None,
+                    local_bind: None,
                 };
                 tokio::spawn(async move {
                     let _ = eggress_server::serve_connection(conn.stream, config).await;
