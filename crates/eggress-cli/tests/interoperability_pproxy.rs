@@ -309,6 +309,8 @@ async fn test_eggress_server_pproxy_socks5_client() {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;
@@ -398,6 +400,8 @@ async fn test_eggress_server_pproxy_http_client() {
                 shadowsocks: None,
                 shadowsocks_metrics: None,
                 trojan: None,
+                fixed_target: None,
+                local_bind: None,
             };
             tokio::spawn(async move {
                 let _ = eggress_server::serve_connection(conn.stream, config).await;
