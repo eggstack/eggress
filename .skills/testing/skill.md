@@ -123,8 +123,8 @@ Protocol-specific tests live alongside the implementation:
 - `crates/eggress-cli/tests/interoperability_pproxy.rs` — pproxy-based
 
 ### Differential tests
-- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (28 scenarios, `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
-- `crates/eggress-cli/tests/pproxy_differential.rs` — Phase 41 reusable differential parity harness (18 scenarios, `EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
+- `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
+- `crates/eggress-cli/tests/pproxy_differential.rs` — optional reusable differential parity harness (`EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
 - `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
 - `crates/eggress-cli/tests/oracle.rs` — scenario-driven oracle harness (31 scenarios, `EGRESS_PPROXY_CERTIFY=1`)
 
@@ -163,7 +163,7 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - eggress runner (`eggress_runner` module) — start eggress from TOML or CLI args
 - Fixture servers (`fixtures` module) — TCP/UDP echo, HTTP origin, HTTP CONNECT upstream, SOCKS4/5 upstream, TLS echo
 - Differential case model (`case_model` module) — `PproxyCase`, `CaseOutcome`, comparison helpers
-- Parity report generator (`report` module) — JSON and markdown reports from manifest + test results
+- Optional parity report generator (`report` module) — diagnostic JSON and markdown from manifest + test results; generated reports are not current public claims
 - Oracle harness (`oracle` module) — scenario registry, JSON report generation, gate functions (`EGRESS_PPROXY_CERTIFY`)
 
 ### Oracle infrastructure (Phase A3)
@@ -171,7 +171,7 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 The oracle harness under `eggress-testkit/src/oracle/` provides:
 
 - **`mod.rs`** — Module root, gate checks (`EGRESS_PPROXY_CERTIFY`), timeout constants
-- **`scenario.rs`** — 31 hardcoded scenarios (backward compat, no TOML files needed)
+- **`scenario.rs`** — hardcoded oracle scenarios (backward compatibility; no TOML files needed)
 - **`schema.rs`** — TOML scenario schema (version 1), loader, validator. Maps scenarios to A2 composition IDs
 - **`observations.rs`** — `ProxyObservation` semantic capture model: bound addresses, exit codes, connection results, protocol replies, bytes transferred, auth results, timing, cleanup status. `compare_observations()` produces structured comparison results
 - **`probes.rs`** — Reusable protocol client probes: `socks5_tcp_connect`, `socks5_tcp_connect_auth`, `socks5_connect_refused`, `socks5_auth_failure`, `http_connect`, `http_connect_refused`, `http_forward_get`, `http_forward_post`, `socks4_connect`, `socks4a_connect`. Each returns `ProbeResult`
@@ -230,7 +230,7 @@ python -m pytest python/tests/test_performance_smoke.py -v
 python -m pytest python/tests/test_protocol_cipher.py -v
 python -m pytest python/tests -v  # all Python tests
 
-# pproxy oracle tests (Phase 18, requires pproxy==2.7.9)
+# Optional pproxy oracle tests (requires pproxy==2.7.9)
 cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
 # Parity manifest validation (Phase 37)
@@ -288,7 +288,7 @@ Tests use local TCP echo servers (no public internet required).
 Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 
 - `python/tests/test_pproxy_dropin.py` — Phase 40 PPProxyService, CompatibilityReport, start_pproxy tests
-- `python/tests/test_pproxy_differential.py` — Phase 41 differential parity structural tests (gated)
+- `python/tests/test_pproxy_differential.py` — optional differential parity structural tests (gated)
 - `python/tests/test_pproxy_compat.py` — pproxy translation helpers
 - `python/tests/test_pproxy_redaction.py` — credential redaction in repr/diagnostics
 - `python/tests/test_pproxy_concurrency.py` — concurrent start/shutdown safety
@@ -297,9 +297,9 @@ Python tests exercise the PyO3 bindings and pproxy compatibility layer:
 - `python/tests/test_proxy_connection.py` — native sync/async outbound stream behavior and no temporary listener regression
 - `python/tests/test_connection.py` — Connection contract and lifecycle tests (signatures, attributes, state machine, close semantics, resource ownership, context manager, GIL release)
 - `python/tests/test_connection_behavioral.py` — Connection behavioral tests (SOCKS5 proxy echo, multiple protocols, failure scenarios, concurrent lifecycle, resource cleanup, GIL release)
-- `python/tests/test_server_lifecycle.py` — Server lifecycle tests (Phase C3: 84 tests covering construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence, TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, pproxy examples)
+- `python/tests/test_server_lifecycle.py` — Server lifecycle tests covering construction, start/stop, async, context managers, observability, reload, error tracking, resource management, concurrent sessions, thread safety, multi-server coexistence, TLS, auth, chains, UDP, IPv6, loop affinity, GIL release, FD leak detection, and pproxy examples
 - `python/tests/test_protocol_cipher.py` — Phase C4 protocol objects, cipher objects, and plugin bridge tests
-- `python/tests/test_asyncio_semantic.py` — Phase C5 asyncio semantic compatibility (107 tests: loop affinity including cross-loop detection, bridge lifecycle, cancellation (cancel_wait_closed, cancel during aclose, concurrent bridge.cancel, plugin callback cancellation), close ordering, contextvars, exception chaining, asyncio debug mode with real async operations, interpreter safety (repeated asyncio.run cycles, GC, context managers), version compat, stress/race (AsyncConnection, Server, CloseWaiter, PluginBridge), representative pproxy async patterns, manifest/doc agreement)
+- `python/tests/test_asyncio_semantic.py` — asyncio semantic compatibility covering loop affinity, bridge lifecycle, cancellation, close ordering, contextvars, exception chaining, debug mode, interpreter safety, version compatibility, stress/race behavior, representative pproxy async patterns, and manifest/doc agreement
 
 The development dependency set includes `pytest-asyncio`; install it before
 running the async plugin and asyncio-semantic tests.
@@ -318,7 +318,7 @@ python -m pytest --import-mode=importlib python/tests -q
 python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py python/tests/test_wheel_import_smoke.py -q
 ```
 
-## pproxy compatibility harness (Phase 18)
+## pproxy compatibility harness
 
 Compatibility evidence is tracked in `docs/parity/pproxy_capability_manifest.toml` (canonical) and the historical `tests/compat/pproxy_manifest.toml`. Each feature
 has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_differential`,
@@ -450,7 +450,9 @@ python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
 
 ### Strict Manifest
 
-The strict manifest (`docs/parity/pproxy_2_7_9_strict_manifest.toml`) defines 194 behavioral capabilities that must be validated through paired oracle/candidate testing.
+The strict manifest (`docs/parity/pproxy_2_7_9_strict_manifest.toml`) is a
+diagnostic behavioral contract for paired oracle/candidate testing. It is not a
+routine hosted-CI or release-certification gate.
 
 ### Validation Commands
 

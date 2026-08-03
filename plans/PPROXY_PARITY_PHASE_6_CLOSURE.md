@@ -170,7 +170,10 @@ From a clean virtual environment:
 2. Confirm only the intended distribution is installed.
 3. Confirm `eggress` and `pproxy` namespaces import.
 4. Run the public Python closure scenarios.
-5. Confirm the `eggress` and compatibility `pproxy` executables are installed as intended.
+5. Confirm the Rust `eggress` and compatibility `pproxy` executables remain
+   Cargo-installed binaries. The Python wheel intentionally contains the
+   `eggress` and top-level `pproxy` namespaces but does not add pip console
+   scripts; verify that boundary rather than introducing a second CLI package.
 6. Confirm help/version output identifies Eggress without falsely claiming upstream pproxy ownership.
 7. Confirm unsupported families return accurate diagnostics.
 8. Uninstall and verify package files are removed cleanly.
@@ -306,6 +309,21 @@ cargo test --workspace --locked
 ```
 
 Run the optional pproxy 2.7.9 closure scenarios from a clean local environment and record only a concise summary in the final compatibility document. A skipped external run is not a pass.
+
+## Local verification record — 2026-08-03
+
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test -p eggress-pproxy-compat` passed (288 tests).
+- `cargo test --workspace --locked` passed (2,390 passed, 146 ignored).
+- `maturin develop` completed, then `python/tests` and `tests/compat` passed
+  (2,169 passed, 114 skipped, 5 existing warnings).
+- Clean-wheel smoke passed for the bundled `eggress` and `pproxy` namespaces,
+  absence of pip console scripts, Cargo binary version output, and manifest
+  validation (148 capabilities).
+- The optional external pproxy oracle suite was not executed because no local
+  `pproxy==2.7.9` oracle environment was available; it remains outside routine
+  hosted CI.
 
 ## Failure handling
 

@@ -42,6 +42,11 @@ tests rather than repeated in the oracle harness:
 - `test_pproxy_route_through.py` and `test_pproxy_listener_behavior.py`:
   compatibility routing and listener workflows.
 
+The Python wheel intentionally installs namespaces and library adapters only;
+the `eggress` and compatibility `pproxy` executables remain Rust binaries
+installed through Cargo. Clean-wheel smoke checks that boundary and verifies
+the Cargo binaries separately.
+
 Suggested local command:
 
 ```bash

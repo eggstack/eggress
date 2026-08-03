@@ -8,6 +8,10 @@ Raw TCP tunnel protocol — direct stream passthrough with no protocol overhead.
 
 Raw/tunnel (`raw://`, `tunnel://`) serves as a pass-through hop in proxy chains. It performs no handshake — the prior-hop stream is returned directly.
 
+This crate is TCP-only. The bounded pproxy-compatible UDP fixed-target mode is
+implemented by [`eggress-udp`](udp.md) and is selected explicitly by the
+compatibility translator; it is not a raw stream hop or general UDP tunnel.
+
 ## Usage in Chains
 
 `RawHopHandler` is a no-op handler in the chain executor:

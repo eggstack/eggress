@@ -76,4 +76,7 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
 - H2 flow control: must use `reserve_capacity`/`poll_capacity` before sending DATA
 - WebSocket binary frames only — text frames are logged and skipped
 - Raw tunnels have no protocol detection — must be explicitly configured
+- Raw/tunnel fixed-target listeners are TCP stream forwarding; the bounded
+  pproxy-compatible UDP fixed-target mode belongs to `eggress-udp` and must be
+  configured explicitly as a UDP listener
 - ALPN values must be valid ASCII strings

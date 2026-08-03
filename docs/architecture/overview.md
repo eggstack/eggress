@@ -115,7 +115,7 @@ Protocols are implemented as independent crates, each providing detection, serve
 | Transport | Crate | Role |
 |---|---|---|
 | TLS (rustls) | [`eggress-transport-tls`](transport-tls.md) | Client/server TLS config, PEM loading, system roots |
-| UDP | [`eggress-udp`](udp.md) | SOCKS5 UDP ASSOCIATE, standalone UDP, per-target flow model |
+| UDP | [`eggress-udp`](udp.md) | SOCKS5 UDP ASSOCIATE, standalone/echo/fixed-target UDP, per-target flow model |
 
 ## Infrastructure Crates
 

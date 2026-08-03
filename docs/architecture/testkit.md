@@ -53,7 +53,7 @@ Validates the parity contract encoded in `tests/compat/pproxy_manifest.toml`.
 
 | Module | Description |
 |---|---|
-| `report` | Test result reporting |
+| `report` | Optional diagnostic result reporting; not a routine compatibility claim |
 
 ## Dependencies
 

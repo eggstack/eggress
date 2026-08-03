@@ -476,7 +476,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Fixed-target TCP forwarding
 - [x] Raw tunnel client and server
 - [x] Stream-native composition — raw passthrough over prior-hop stream
-- [ ] Fixed-target UDP forwarding
+- [x] Bounded fixed-target UDP forwarding (explicit compatibility listener mode)
 
 ### HTTP/2
 

@@ -89,7 +89,7 @@ Quick reference to per-subsystem architecture documents under `docs/architecture
 | Shadowsocks | `docs/architecture/protocols-shadowsocks.md` | AEAD ciphers, SIP003 framing |
 | Trojan | `docs/architecture/protocols-trojan.md` | Trojan client/server, TLS transport |
 | WebSocket | `docs/architecture/protocols-websocket.md` | WS/WSS tunnels, stream-native composition |
-| Raw | `docs/architecture/protocols-raw.md` | Fixed-target TCP forwarding |
+| Raw | `docs/architecture/protocols-raw.md` | Fixed-target TCP forwarding; bounded UDP mode is documented under `udp.md` |
 | Reverse | `docs/architecture/protocols-reverse.md` | Control-channel backward proxy |
 | TLS transport | `docs/architecture/transport-tls.md` | rustls client/server, ALPN, certificate handling |
 | UDP | `docs/architecture/udp.md` | Associations, target flows, relay, security |

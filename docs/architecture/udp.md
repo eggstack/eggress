@@ -11,6 +11,8 @@ UDP association management, relay, and upstream forwarding.
 | `Socks5UdpAssociate` | SOCKS5 UDP ASSOCIATE from inbound SOCKS5 clients |
 | `StandalonePproxyUdp` | Standalone pproxy-compatible UDP relay |
 | `ShadowsocksUdp` | Shadowsocks UDP packet relay |
+| `Echo` | Explicit UDP echo listener |
+| `FixedTarget` | Explicit fixed-target UDP listener |
 
 ## Key Types
 
@@ -42,6 +44,15 @@ One-hop SOCKS5 upstream support:
 4. Encode/decode SOCKS5 UDP datagrams
 
 HTTP, SOCKS4, and multi-hop chains are rejected for UDP (no silent fallback).
+
+## Bounded compatibility listener modes
+
+The compatibility translator can configure `Echo` and `FixedTarget` as
+standalone listener modes. A fixed-target listener always sends datagrams to
+the configured target; it does not accept a destination from the client and it
+does not add general multi-hop UDP support. These modes are configured
+independently from the TCP listener field, so an explicit UDP listener cannot
+erase or replace a TCP fixed target.
 
 ## Security
 
