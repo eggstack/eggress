@@ -2,52 +2,16 @@
 
 ## Repository purpose
 
-Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It targets practical and behavioral compatibility with Python `pproxy`, including a Rust CLI, an embed API, PyO3 bindings, and a bounded Python drop-in namespace bundled in the main distribution.
+Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It targets practical and behavioral compatibility with Python `pproxy==2.7.9`, including a Rust CLI, an embed API, PyO3 bindings, and a bounded Python drop-in namespace bundled in the main distribution.
 
-Compatibility claims must remain explicit and evidence-backed. Strict full drop-in parity is not assumed merely because a symbol, protocol name, or structural wrapper exists.
+Compatibility claims must remain explicit and evidence-backed. Strict full drop-in parity is not assumed merely because a symbol, protocol name, or structural wrapper exists. The active compatibility target is practical parity with `pproxy==2.7.9`. The repository publishes one Python distribution, `eggress`; its wheel provides a bounded top-level `pproxy` package and does not provide a separate `eggress-pproxy-compat` distribution. Treat the native runtime and the compatibility translator as separate surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
 
-The Phase 1 compatibility parser preserves pproxy syntax before translation:
-combined protocol chains, `+tls`/`+ssl`/repeated `+in` modifiers, fragment auth,
-local binding, fixed targets, plugin metadata, raw rule suffixes, and the raw
-URI. `--pac`, `--get`, and `--test` are value-taking options; their values must
-not be reclassified as positional listeners or remotes. Parsed-but-unsupported
-fields require precise diagnostics and redacted output.
+The maintained public matrix is `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, and the optional representative scenario index is `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. These replace aggregate parity percentages and historical certification claims; routine CI remains focused and does not require the external pproxy oracle.
 
-The active compatibility target is practical parity with `pproxy==2.7.9`. The
-repository publishes one Python distribution, `eggress`; its wheel provides a
-bounded top-level `pproxy` package and does not provide a separate
-`eggress-pproxy-compat` distribution. The legacy `from eggress import pproxy`
-translation helpers remain supported. Treat the native runtime and the
-compatibility translator as separate
-surfaces, especially for H2, WS/WSS, raw, and tunnel transports.
-
-Phase 6 is complete after the narrow corrective pass and documentation
-re-review. The maintained public
-matrix is `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, and the
-optional representative scenario index is
-`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. These replace aggregate parity
-percentages and historical certification claims; routine CI remains focused
-and does not require the external pproxy oracle.
-
-Phase 2 compatibility routing is implemented in the translator: generated
-pproxy routes use first-available declaration order by default, preserve
-per-remote URI predicates, load pproxy plain regex-line rule files, apply
-high-priority block expressions, and fall through directly when no remote
-matches. Native TOML group schedulers and routing semantics remain unchanged.
-
-Phase 3 compatibility transport bridging is implemented for H2, WS/WSS,
-raw, and tunnel upstream URIs. The bridge lowers these schemes through the
-same native upstream URI/config path, normalizes implied TLS (`h2` and
-`wss`), and preserves raw fixed targets. H2/WS/WSS remain upstream-only;
-bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains
-intentionally deferred.
-
-Phase 5 runtime coverage, including the corrective wiring pass, covers
-`httponly` upstream request rewriting, explicit
-TCP/UDP echo listeners, bounded fixed-target TCP/UDP raw/tunnel forms, Unix
-domain TCP upstreams on Unix, and per-connection outbound local binds. These
-bounded forms do not establish general multi-hop UDP, macOS PF transparent
-recovery, backward TLS, daemonization, or connection-reuse parity.
+Key compatibility surface notes:
+- `--pac`, `--get`, and `--test` are value-taking options; their values must not be reclassified as positional listeners or remotes. Parsed-but-unsupported fields require precise diagnostics and redacted output.
+- H2/WS/WSS remain upstream-only; bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains intentionally deferred.
+- Bounded fixed-target TCP/UDP raw/tunnel forms, Unix domain TCP upstreams on Unix, and per-connection outbound local binds are supported. These do not establish general multi-hop UDP, macOS PF transparent recovery, backward TLS, daemonization, or connection-reuse parity.
 
 ## Source-of-truth documents
 
@@ -232,6 +196,7 @@ The principal crates are:
 - `eggress-embed`: stable in-process Rust API.
 - `eggress-python`: PyO3 binding crate.
 - `python/eggress`: canonical Python package.
+- `python/pproxy`: bounded top-level `pproxy` compatibility namespace bundled in the wheel.
 - `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
 
 Note: the root `Cargo.toml` also defines a `eggress-bench` package (not a workspace member) with Criterion benchmarks. Run `cargo bench` from the workspace root.
@@ -265,7 +230,7 @@ alongside Eggress is unsupported; uninstall it before replacing it with Eggress.
 
 ## Code conventions
 
-- Rust edition 2021; MSRV 1.75 (see `workspace.package.rust-version` in root `Cargo.toml`).
+- Rust edition 2021; MSRV 1.75 (see `workspace.package.rust-version` in root `Cargo.toml`). `rust-toolchain.toml` pins stable channel with `clippy` and `rustfmt` components.
 - `unsafe_code = "deny"` at workspace level; do not add unsafe without explicit justification.
 - Tokio is the async runtime; `tokio::main` and `tokio::test` are used throughout.
 - Use `thiserror` for structured errors and `tracing` for logging.
@@ -275,6 +240,7 @@ alongside Eggress is unsupported; uninstall it before replacing it with Eggress.
 - Add dependencies only when the maintenance and binary-size cost is justified.
 - Do not add OpenSSL, C dependencies, or build scripts without an explicit architectural reason.
 - `deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, and `cmake` from the dependency graph.
+- `cargo check` is not a separate required gate (Clippy and test builds already compile the workspace) but is useful interactively for faster compile-only feedback.
 
 ## Change discipline
 
