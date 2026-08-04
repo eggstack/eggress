@@ -6,11 +6,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["full"]
+full = ["extended"]
+common = []
+extended = ["dep:eggress-protocol-shadowsocks"]
+
 [dependencies]
 prometheus-client.workspace = true
 eggress-server.workspace = true
 eggress-udp.workspace = true
-eggress-protocol-shadowsocks.workspace = true
+eggress-protocol-shadowsocks = { workspace = true, optional = true }
 eggress-protocol-http.workspace = true
 thiserror.workspace = true
 

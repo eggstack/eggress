@@ -79,9 +79,11 @@ pub struct ConnectionConfig {
     pub trojan: Option<accept::InboundTrojanConfig>,
     pub fixed_target: Option<eggress_core::TargetAddr>,
     pub local_bind: Option<String>,
-    /// Optional Shadowsocks-specific metrics for observability. When provided,
-    /// Shadowsocks TCP/UDP paths emit protocol-specific counters and gauges.
+    /// Optional Shadowsocks-specific metrics for observability.
+    #[cfg(feature = "extended")]
     pub shadowsocks_metrics: Option<Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+    #[cfg(not(feature = "extended"))]
+    pub shadowsocks_metrics: Option<()>,
 }
 
 /// Handle a single inbound connection.
@@ -165,6 +167,7 @@ pub async fn serve_connection(
         metrics.record_session(&report);
     }
 
+    #[cfg(feature = "extended")]
     if let Some(ss_metrics) = &config.shadowsocks_metrics {
         if report.protocol.as_deref() == Some("shadowsocks") {
             ss_metrics.record_tcp_session_closed();
@@ -211,6 +214,25 @@ mod tests {
         Arc::new(Router::new(vec![], RouteActionSpec::Direct))
     }
 
+    fn test_config(routing: Arc<dyn RouteService>) -> ConnectionConfig {
+        ConnectionConfig {
+            routing,
+            context: ConnectionContext::default(),
+            handshake_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(10),
+            protocols: all_protocols(),
+            authentication: accept::InboundAuthentication::None,
+            metrics: None,
+            udp: None,
+            tls_client_config: None,
+            shadowsocks: None,
+            shadowsocks_metrics: None,
+            trojan: None,
+            fixed_target: None,
+            local_bind: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_serve_connection_socks5_direct() {
         let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
@@ -221,22 +243,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -288,22 +295,7 @@ mod tests {
         let _proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -462,22 +454,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -518,22 +495,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -579,22 +541,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -629,22 +576,7 @@ mod tests {
     async fn test_handshake_timeout_no_bytes() {
         let (_client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
-        let config = ConnectionConfig {
-            routing: direct_routing(),
-            context: ConnectionContext::default(),
-            handshake_timeout: Duration::from_secs(5),
-            connect_timeout: Duration::from_secs(10),
-            protocols: all_protocols(),
-            authentication: accept::InboundAuthentication::None,
-            metrics: None,
-            udp: None,
-            tls_client_config: None,
-            shadowsocks: None,
-            shadowsocks_metrics: None,
-            trojan: None,
-            fixed_target: None,
-            local_bind: None,
-        };
+        let config = test_config(direct_routing());
 
         let task = tokio::spawn(serve_connection(boxed, config));
 
@@ -661,22 +593,7 @@ mod tests {
     async fn test_handshake_timeout_partial_http() {
         let (mut client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
-        let config = ConnectionConfig {
-            routing: direct_routing(),
-            context: ConnectionContext::default(),
-            handshake_timeout: Duration::from_secs(5),
-            connect_timeout: Duration::from_secs(10),
-            protocols: all_protocols(),
-            authentication: accept::InboundAuthentication::None,
-            metrics: None,
-            udp: None,
-            tls_client_config: None,
-            shadowsocks: None,
-            shadowsocks_metrics: None,
-            trojan: None,
-            fixed_target: None,
-            local_bind: None,
-        };
+        let config = test_config(direct_routing());
 
         let task = tokio::spawn(serve_connection(boxed, config));
 
@@ -694,22 +611,7 @@ mod tests {
     async fn test_handshake_timeout_partial_socks5() {
         let (mut client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
-        let config = ConnectionConfig {
-            routing: direct_routing(),
-            context: ConnectionContext::default(),
-            handshake_timeout: Duration::from_secs(5),
-            connect_timeout: Duration::from_secs(10),
-            protocols: all_protocols(),
-            authentication: accept::InboundAuthentication::None,
-            metrics: None,
-            udp: None,
-            tls_client_config: None,
-            shadowsocks: None,
-            shadowsocks_metrics: None,
-            trojan: None,
-            fixed_target: None,
-            local_bind: None,
-        };
+        let config = test_config(direct_routing());
 
         let task = tokio::spawn(serve_connection(boxed, config));
 
@@ -733,22 +635,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -800,22 +687,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -856,22 +728,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -914,22 +771,7 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(direct_routing());
             serve_connection(boxed, config).await
         });
 
@@ -976,22 +818,7 @@ mod tests {
     async fn test_handshake_timeout_maps_to_failure_category() {
         let (_client_stream, server_stream) = tokio::io::duplex(1024);
         let boxed: eggress_core::BoxStream = Box::new(server_stream);
-        let config = ConnectionConfig {
-            routing: direct_routing(),
-            context: ConnectionContext::default(),
-            handshake_timeout: Duration::from_secs(5),
-            connect_timeout: Duration::from_secs(10),
-            protocols: all_protocols(),
-            authentication: accept::InboundAuthentication::None,
-            metrics: None,
-            udp: None,
-            tls_client_config: None,
-            shadowsocks: None,
-            shadowsocks_metrics: None,
-            trojan: None,
-            fixed_target: None,
-            local_bind: None,
-        };
+        let config = test_config(direct_routing());
 
         let task = tokio::spawn(serve_connection(boxed, config));
 
@@ -1143,22 +970,9 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: direct_routing(),
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: auth,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let mut cfg = test_config(direct_routing());
+            cfg.authentication = auth;
+            let config = cfg;
             serve_connection(boxed, config).await
         });
 
@@ -1206,22 +1020,7 @@ mod tests {
         let _proxy_jh = tokio::spawn(async move {
             let (stream, _) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing,
-                context: ConnectionContext::default(),
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
-            };
+            let config = test_config(routing);
             serve_connection(boxed, config).await
         });
 
@@ -1256,26 +1055,13 @@ mod tests {
         let proxy_jh = tokio::spawn(async move {
             let (stream, peer) = proxy_listener.accept().await.unwrap();
             let boxed: eggress_core::BoxStream = Box::new(stream);
-            let config = ConnectionConfig {
-                routing: routing.clone(),
-                context: ConnectionContext {
-                    source: Some(peer),
-                    listener: "test-listener".to_string(),
-                    generation: 0,
-                },
-                handshake_timeout: Duration::from_secs(5),
-                connect_timeout: Duration::from_secs(10),
-                protocols: all_protocols(),
-                authentication: accept::InboundAuthentication::None,
-                metrics: None,
-                udp: None,
-                tls_client_config: None,
-                shadowsocks: None,
-                shadowsocks_metrics: None,
-                trojan: None,
-                fixed_target: None,
-                local_bind: None,
+            let mut cfg = test_config(routing.clone());
+            cfg.context = ConnectionContext {
+                source: Some(peer),
+                listener: "test-listener".to_string(),
+                generation: 0,
             };
+            let config = cfg;
             serve_connection(boxed, config).await
         });
 

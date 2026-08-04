@@ -1,5 +1,6 @@
 pub mod error;
 pub mod platform;
+#[cfg(feature = "reverse")]
 pub mod reverse;
 pub mod snapshot;
 pub mod supervisor;

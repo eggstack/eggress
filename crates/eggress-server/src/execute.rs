@@ -363,8 +363,11 @@ async fn open_route(
                 pending_lease,
                 ..
             } => {
+                #[cfg(feature = "extended")]
                 let executor =
                     build_chain_executor(tls_override, config.shadowsocks_metrics.clone());
+                #[cfg(not(feature = "extended"))]
+                let executor = build_chain_executor(tls_override);
                 let stream = executor.execute(&chain.hops, request.target).await?;
                 let active_lease = pending_lease.established();
                 Ok::<_, SessionOpenError>((stream, Some(active_lease)))
@@ -910,7 +913,9 @@ async fn execute_udp_associate(
 
 pub fn build_chain_executor(
     tls_override: Option<&std::sync::Arc<rustls::ClientConfig>>,
-    shadowsocks_metrics: Option<std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+    #[cfg(feature = "extended")] shadowsocks_metrics: Option<
+        std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
+    >,
 ) -> ChainExecutor {
     // Build shared TLS client config for upstream hops
     let shared_tls_config = match tls_override {
@@ -927,23 +932,31 @@ pub fn build_chain_executor(
         }
     };
 
+    #[cfg(feature = "extended")]
     let shared_tls_config_arc = shared_tls_config.clone();
+    #[cfg(not(feature = "extended"))]
+    let _shared_tls_config_arc = shared_tls_config.clone();
 
-    let handlers: Vec<Box<dyn HopHandler>> = vec![
+    let mut handlers: Vec<Box<dyn HopHandler>> = vec![
         Box::new(HttpHopHandler),
         Box::new(HttpOnlyHopHandler),
         Box::new(Socks5HopHandler),
         Box::new(Socks4HopHandler),
-        Box::new(ShadowsocksHopHandler {
-            metrics: shadowsocks_metrics,
-        }),
-        Box::new(TrojanHopHandler {
-            tls_config: shared_tls_config_arc,
-        }),
-        Box::new(WebSocketHopHandler),
-        Box::new(RawHopHandler),
-        Box::new(H2HopHandler),
     ];
+
+    #[cfg(feature = "extended")]
+    {
+        handlers.push(Box::new(ShadowsocksHopHandler {
+            metrics: shadowsocks_metrics,
+        }));
+        handlers.push(Box::new(TrojanHopHandler {
+            tls_config: shared_tls_config_arc,
+        }));
+        handlers.push(Box::new(WebSocketHopHandler));
+    }
+
+    handlers.push(Box::new(RawHopHandler));
+    handlers.push(Box::new(H2HopHandler));
 
     // Set up TLS wrapper using system roots by default, or the override if provided
     let tls_wrapper_override = tls_override.cloned();
@@ -1159,10 +1172,12 @@ impl HopHandler for Socks4HopHandler {
     }
 }
 
+#[cfg(feature = "extended")]
 struct ShadowsocksHopHandler {
     metrics: Option<std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
 }
 
+#[cfg(feature = "extended")]
 impl HopHandler for ShadowsocksHopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
         eggress_uri::ProtocolSpec::Shadowsocks
@@ -1204,10 +1219,12 @@ impl HopHandler for ShadowsocksHopHandler {
     }
 }
 
+#[cfg(feature = "extended")]
 struct TrojanHopHandler {
     tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
 }
 
+#[cfg(feature = "extended")]
 impl HopHandler for TrojanHopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
         eggress_uri::ProtocolSpec::Trojan
@@ -1246,8 +1263,10 @@ impl HopHandler for TrojanHopHandler {
     }
 }
 
+#[cfg(feature = "extended")]
 struct WebSocketHopHandler;
 
+#[cfg(feature = "extended")]
 impl HopHandler for WebSocketHopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
         eggress_uri::ProtocolSpec::WebSocket

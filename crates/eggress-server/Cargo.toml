@@ -6,9 +6,19 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["full"]
+full = ["extended"]
+common = []
+extended = [
+    "dep:eggress-protocol-shadowsocks",
+    "dep:eggress-protocol-trojan",
+    "dep:eggress-protocol-websocket",
+]
+
 [dev-dependencies]
 eggress-testkit.workspace = true
-tokio = { version = "1", features = ["full", "test-util"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "test-util"] }
 
 [dependencies]
 eggress-core.workspace = true
@@ -16,9 +26,9 @@ eggress-uri.workspace = true
 eggress-routing.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
-eggress-protocol-shadowsocks.workspace = true
-eggress-protocol-trojan.workspace = true
-eggress-protocol-websocket.workspace = true
+eggress-protocol-shadowsocks = { workspace = true, optional = true }
+eggress-protocol-trojan = { workspace = true, optional = true }
+eggress-protocol-websocket = { workspace = true, optional = true }
 eggress-transport-tls.workspace = true
 eggress-udp.workspace = true
 rustls.workspace = true

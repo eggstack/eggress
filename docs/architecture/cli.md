@@ -30,6 +30,18 @@ eggress -l http://0.0.0.0:8080 -r socks5://127.0.0.1:1080
 
 Direct CLI arguments for quick proxy setup.
 
+### Build Variants
+
+The CLI supports feature-gated builds:
+
+| Build | Command | Produces |
+|---|---|---|
+| Full (default) | `cargo install --path crates/eggress-cli` | `eggress` + `pproxy` binaries |
+| Lean HTTP/SOCKS | `cargo build -p eggress-cli --release --no-default-features --features common` | `eggress` only |
+| Smallest | `cargo build -p eggress-cli --profile release-small --no-default-features --features common` | `eggress` only |
+
+The `pproxy` binary requires the `pproxy-compat` feature. Default builds include it.
+
 ### Route Explain
 
 ```bash

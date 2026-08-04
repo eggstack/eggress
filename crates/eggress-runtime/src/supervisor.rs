@@ -285,6 +285,7 @@ type PreparedShadowsocksUdpRelay = (
     eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig,
 );
 
+#[cfg(feature = "extended")]
 async fn prepare_shadowsocks_udp_relay(
     prepared_listener: &PreparedListener,
     udp_cfg: &eggress_config::compile::CompiledListenerUdpConfig,
@@ -502,11 +503,14 @@ pub struct RuntimeState {
     pub listener_addrs: Arc<Mutex<Vec<Option<std::net::SocketAddr>>>>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
+    #[cfg(feature = "extended")]
     pub shadowsocks_metrics: Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
     pub udp_tasks: TaskTracker,
     pub transparent_accepted_total: Arc<AtomicU64>,
     pub transparent_original_dst_failed_total: Arc<AtomicU64>,
+    #[cfg(feature = "reverse")]
     pub reverse_registry: Arc<eggress_admin::ReverseRegistry>,
+    #[cfg(feature = "reverse")]
     pub reverse_metrics: Arc<eggress_protocol_reverse::metrics::ReverseMetrics>,
 }
 
@@ -581,11 +585,14 @@ impl ServiceSupervisor {
         ));
 
         let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
+        #[cfg(feature = "extended")]
         let shadowsocks_metrics = Arc::new(eggress_protocol_shadowsocks::ShadowsocksMetrics::new());
+        #[cfg(feature = "reverse")]
         let reverse_metrics = Arc::new(eggress_protocol_reverse::metrics::ReverseMetrics::new());
         let udp_tasks = TaskTracker::new();
 
         metrics.set_udp_metrics(udp_metrics.clone());
+        #[cfg(feature = "extended")]
         metrics.set_shadowsocks_metrics(shadowsocks_metrics.clone());
 
         let state = Arc::new(RuntimeState {
@@ -600,11 +607,14 @@ impl ServiceSupervisor {
             listener_addrs: Arc::new(Mutex::new(Vec::new())),
             udp_registry,
             udp_metrics,
+            #[cfg(feature = "extended")]
             shadowsocks_metrics,
             udp_tasks: udp_tasks.clone(),
             transparent_accepted_total: Arc::new(AtomicU64::new(0)),
             transparent_original_dst_failed_total: Arc::new(AtomicU64::new(0)),
+            #[cfg(feature = "reverse")]
             reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
+            #[cfg(feature = "reverse")]
             reverse_metrics,
         });
 
@@ -1033,11 +1043,13 @@ impl ServiceSupervisor {
                     .unwrap_or_else(|e| e.into_inner()) = addrs;
             }
 
+            #[cfg(feature = "extended")]
             let mut shadowsocks_udp_relays = Vec::new();
             let mut echo_udp_relays = Vec::new();
 
             for prepared_listener in &prepared {
                 if let Some(ref udp_cfg) = prepared_listener.udp {
+                    #[cfg(feature = "extended")]
                     if udp_cfg.mode == eggress_udp::UdpMode::ShadowsocksUdp {
                         shadowsocks_udp_relays.push(
                             prepare_shadowsocks_udp_relay(
@@ -1048,7 +1060,8 @@ impl ServiceSupervisor {
                             )
                             .await?,
                         );
-                    } else if udp_cfg.mode == eggress_udp::UdpMode::Echo {
+                    }
+                    if udp_cfg.mode == eggress_udp::UdpMode::Echo {
                         let socket =
                             Arc::new(tokio::net::UdpSocket::bind(udp_cfg.bind).await.map_err(
                                 |e| RuntimeError::ListenerBind {
@@ -1074,6 +1087,7 @@ impl ServiceSupervisor {
                 }
             }
 
+            #[cfg(feature = "extended")]
             for (socket, relay_config) in shadowsocks_udp_relays {
                 let relay_cancel = cancel.clone();
                 tasks.spawn(async move {
@@ -1244,6 +1258,7 @@ impl ServiceSupervisor {
                         let conn_protocols = proto_slice.clone();
                         let conn_auth = auth.clone();
                         let conn_metrics = state.metrics.clone();
+                        #[cfg(feature = "extended")]
                         let conn_ss_metrics = state.shadowsocks_metrics.clone();
                         let active = state.active_connections.clone();
                         let conn_cancel = conn_cancel.child_token();
@@ -1318,7 +1333,10 @@ impl ServiceSupervisor {
                                         password: ss.password,
                                     },
                                 ),
+                                #[cfg(feature = "extended")]
                                 shadowsocks_metrics: Some(conn_ss_metrics),
+                                #[cfg(not(feature = "extended"))]
+                                shadowsocks_metrics: None,
                                 trojan: trojan_config.map(
                                     |t| eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
@@ -1443,6 +1461,7 @@ impl ServiceSupervisor {
                         let conn_protocols = proto_slice.clone();
                         let conn_auth = auth.clone();
                         let conn_metrics = state.metrics.clone();
+                        #[cfg(feature = "extended")]
                         let conn_ss_metrics = state.shadowsocks_metrics.clone();
                         let active = state.active_connections.clone();
                         let conn_cancel = conn_cancel.child_token();
@@ -1525,7 +1544,10 @@ impl ServiceSupervisor {
                                         password: ss.password,
                                     },
                                 ),
+                                #[cfg(feature = "extended")]
                                 shadowsocks_metrics: Some(conn_ss_metrics),
+                                #[cfg(not(feature = "extended"))]
+                                shadowsocks_metrics: None,
                                 trojan: trojan_config.map(
                                     |t| eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
@@ -1610,6 +1632,7 @@ impl ServiceSupervisor {
                         let conn_protocols = proto_slice.clone();
                         let conn_auth = prepared_listener.auth.clone();
                         let conn_metrics = state.metrics.clone();
+                        #[cfg(feature = "extended")]
                         let conn_ss_metrics = state.shadowsocks_metrics.clone();
                         let active = state.active_connections.clone();
                         let conn_cancel = conn_cancel.child_token();
@@ -1699,7 +1722,10 @@ impl ServiceSupervisor {
                                         password: ss.password,
                                     }
                                 }),
+                                #[cfg(feature = "extended")]
                                 shadowsocks_metrics: Some(conn_ss_metrics),
+                                #[cfg(not(feature = "extended"))]
+                                shadowsocks_metrics: None,
                                 trojan: trojan_config.map(|t| {
                                     eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
@@ -1746,6 +1772,7 @@ impl ServiceSupervisor {
             }
 
             // Spawn reverse servers and clients
+            #[cfg(feature = "reverse")]
             {
                 let current_snapshot = snapshot.load();
                 let reverse_servers = current_snapshot.reverse_servers.clone();
@@ -1906,7 +1933,10 @@ impl ServiceSupervisor {
                         active_connections: Some(state_ref.active_connections.clone()),
                         provider,
                         udp_registry: state_ref.udp_registry.clone(),
+                        #[cfg(feature = "reverse")]
                         reverse_registry: state_ref.reverse_registry.clone(),
+                        #[cfg(not(feature = "reverse"))]
+                        reverse_registry: std::sync::Arc::new(eggress_admin::ReverseRegistry::new()),
                         metrics_enabled,
                     };
                     if let Err(e) = server.run(admin_state).await {

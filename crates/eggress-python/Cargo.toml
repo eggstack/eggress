@@ -12,7 +12,7 @@ name = "_eggress"
 crate-type = ["cdylib"]
 
 [dependencies]
-eggress-embed = { workspace = true }
+eggress-embed = { workspace = true, features = ["full"] }
 eggress-pproxy-compat = { workspace = true }
 eggress-config = { workspace = true }
 eggress-routing = { workspace = true }

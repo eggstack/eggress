@@ -7,6 +7,7 @@ use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::Registry;
 
+#[cfg(feature = "extended")]
 use eggress_protocol_shadowsocks::ShadowsocksMetrics;
 use eggress_server::execute::{SessionOutcome, SessionReport};
 use eggress_udp::metrics::UdpMetrics;
@@ -165,6 +166,7 @@ pub struct MetricsRegistry {
     transparent_prev_accepted: Mutex<u64>,
     transparent_prev_dst_failed: Mutex<u64>,
     bridged_udp_metrics: Mutex<Option<(Arc<UdpMetrics>, BridgedUdpSnapshot)>>,
+    #[cfg(feature = "extended")]
     bridged_shadowsocks_metrics:
         Mutex<Option<(Arc<ShadowsocksMetrics>, BridgedShadowsocksSnapshot)>>,
     h2_prev_connections_opened: Mutex<u64>,
@@ -207,6 +209,7 @@ struct BridgedUdpSnapshot {
     standalone_flow_reaps: u64,
 }
 
+#[cfg(feature = "extended")]
 #[derive(Default)]
 struct BridgedShadowsocksSnapshot {
     tcp_sessions_total: u64,
@@ -817,6 +820,7 @@ impl MetricsRegistry {
             transparent_prev_accepted: Mutex::new(0),
             transparent_prev_dst_failed: Mutex::new(0),
             bridged_udp_metrics: Mutex::new(None),
+            #[cfg(feature = "extended")]
             bridged_shadowsocks_metrics: Mutex::new(None),
             h2_prev_connections_opened: Mutex::new(0),
             h2_prev_connections_closed: Mutex::new(0),
@@ -911,6 +915,7 @@ impl MetricsRegistry {
 
     /// Bridge a shared `ShadowsocksMetrics` instance so that `render_prometheus()`
     /// exposes live Shadowsocks protocol-specific counters and gauges.
+    #[cfg(feature = "extended")]
     pub fn set_shadowsocks_metrics(&self, metrics: Arc<ShadowsocksMetrics>) {
         let snapshot = BridgedShadowsocksSnapshot {
             tcp_sessions_total: metrics
@@ -1223,6 +1228,7 @@ impl MetricsRegistry {
         }
 
         // Sync live Shadowsocks protocol counters/gauges from bridged metrics
+        #[cfg(feature = "extended")]
         if let Some((metrics, prev)) = self.bridged_shadowsocks_metrics.lock().unwrap().as_mut() {
             self.ss_tcp_sessions_active.set(
                 metrics

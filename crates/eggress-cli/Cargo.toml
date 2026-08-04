@@ -5,6 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["full"]
+full = ["common", "extended", "operations", "reverse", "pproxy-compat"]
+common = []
+extended = ["eggress-runtime/extended"]
+operations = ["dep:eggress-system-proxy", "eggress-runtime/operations"]
+reverse = ["eggress-runtime/reverse"]
+pproxy-compat = ["dep:eggress-pproxy-compat"]
+
 [[bin]]
 name = "eggress"
 path = "src/main.rs"
@@ -12,6 +21,7 @@ path = "src/main.rs"
 [[bin]]
 name = "pproxy"
 path = "src/pproxy_main.rs"
+required-features = ["pproxy-compat"]
 
 [dependencies]
 eggress-core.workspace = true
@@ -23,8 +33,8 @@ eggress-runtime.workspace = true
 eggress-metrics.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
-eggress-pproxy-compat.workspace = true
-eggress-system-proxy.workspace = true
+eggress-pproxy-compat = { workspace = true, optional = true }
+eggress-system-proxy = { workspace = true, optional = true }
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

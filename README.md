@@ -29,6 +29,18 @@ cargo install --path crates/eggress-cli
 
 This installs both the `eggress` and `pproxy` binaries.
 
+### Lean local build
+
+For a smaller binary without extended protocol support (Shadowsocks, Trojan, WebSocket), admin, metrics, reverse proxy, or compatibility layers:
+
+```bash
+# Lean HTTP/SOCKS local proxy
+cargo build -p eggress-cli --release --no-default-features --features common
+
+# Optional smallest optimization profile
+cargo build -p eggress-cli --profile release-small --no-default-features --features common
+```
+
 ### Rust library
 
 Add `eggress-embed` to your `Cargo.toml`:

@@ -4,7 +4,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use eggress_pproxy_compat::exit_codes::*;
+const EXIT_SUCCESS: i32 = 0;
+const EXIT_CLI_PARSE_ERROR: i32 = 2;
+const EXIT_CONFIG_VALIDATION: i32 = 3;
+const EXIT_RUNTIME_FAILURE: i32 = 1;
+const EXIT_UNSUPPORTED_FEATURE: i32 = 5;
+const EXIT_SIGINT: i32 = 130;
+const EXIT_SIGTERM: i32 = 143;
 
 use clap::{Parser, Subcommand};
 use eggress_core::chain::{ChainExecutor, HopHandler};
@@ -44,22 +50,27 @@ struct Cli {
 enum SubCommand {
     Route(RouteExplain),
     Upstream(UpstreamCommand),
+    #[cfg(feature = "pproxy-compat")]
     Pproxy(PproxyCommand),
+    #[cfg(feature = "operations")]
     SystemProxy(SystemProxyCommand),
 }
 
+#[cfg(feature = "operations")]
 #[derive(Parser, Debug)]
 struct SystemProxyCommand {
     #[command(subcommand)]
     action: SystemProxyAction,
 }
 
+#[cfg(feature = "operations")]
 #[derive(Subcommand, Debug)]
 enum SystemProxyAction {
     /// Inspect current system proxy settings (read-only)
     Inspect(SystemProxyInspect),
 }
 
+#[cfg(feature = "operations")]
 #[derive(Parser, Debug)]
 struct SystemProxyInspect {
     /// Output as JSON
@@ -119,12 +130,14 @@ struct RouteExplain {
     admin: Option<String>,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(Parser, Debug)]
 struct PproxyCommand {
     #[command(subcommand)]
     action: PproxyAction,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(Subcommand, Debug)]
 enum PproxyAction {
     /// Translate pproxy arguments to Eggress TOML
@@ -135,6 +148,7 @@ enum PproxyAction {
     Run(PproxyRun),
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(Parser, Debug)]
 struct PproxyTranslate {
     /// pproxy-style arguments (after --)
@@ -146,6 +160,7 @@ struct PproxyTranslate {
     annotate: bool,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(Parser, Debug)]
 struct PproxyCheck {
     /// pproxy-style arguments (after --)
@@ -157,6 +172,7 @@ struct PproxyCheck {
     json: bool,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(Parser, Debug)]
 struct PproxyRun {
     /// pproxy-style arguments (after --)
@@ -531,6 +547,7 @@ fn handle_upstream_test(args: &UpstreamTest) {
     }
 }
 
+#[cfg(feature = "pproxy-compat")]
 fn handle_pproxy_translate(args: &PproxyTranslate) {
     let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args.args) {
         Ok(a) => a,
@@ -581,6 +598,7 @@ fn handle_pproxy_translate(args: &PproxyTranslate) {
     }
 }
 
+#[cfg(feature = "pproxy-compat")]
 fn handle_pproxy_check(args: &PproxyCheck) {
     let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args.args) {
         Ok(a) => a,
@@ -751,6 +769,7 @@ fn handle_pproxy_check(args: &PproxyCheck) {
     }
 }
 
+#[cfg(feature = "pproxy-compat")]
 fn handle_pproxy_run(args: &PproxyRun) {
     let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args.args) {
         Ok(a) => a,
@@ -838,6 +857,7 @@ fn handle_pproxy_run(args: &PproxyRun) {
     }
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(serde::Serialize)]
 struct PproxyCheckOutput {
     tier: String,
@@ -847,6 +867,7 @@ struct PproxyCheckOutput {
     parsed_uris: ParsedUris,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(serde::Serialize)]
 struct FeatureInfo {
     name: String,
@@ -855,6 +876,7 @@ struct FeatureInfo {
     diagnostic_code: Option<eggress_pproxy_compat::DiagnosticCode>,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(serde::Serialize)]
 struct ParsedUris {
     listeners: Vec<String>,
@@ -862,6 +884,7 @@ struct ParsedUris {
     chain_info: Vec<ChainInfo>,
 }
 
+#[cfg(feature = "pproxy-compat")]
 #[derive(serde::Serialize)]
 struct ChainInfo {
     raw: String,
@@ -884,6 +907,7 @@ struct UpstreamTestResult {
     failed_hop: Option<usize>,
 }
 
+#[cfg(feature = "pproxy-compat")]
 fn tier_label(tier: &eggress_pproxy_compat::ManifestTier) -> &'static str {
     match tier {
         eggress_pproxy_compat::ManifestTier::DropIn => "Drop-in",
@@ -1097,6 +1121,7 @@ fn print_upstream_test_result(result: &UpstreamTestResult) {
     );
 }
 
+#[cfg(feature = "operations")]
 fn handle_system_proxy_inspect(args: &SystemProxyInspect) {
     let result = eggress_system_proxy::inspect_system_proxy();
 
@@ -1113,6 +1138,7 @@ fn handle_system_proxy_inspect(args: &SystemProxyInspect) {
     }
 }
 
+#[cfg(feature = "operations")]
 fn print_inspection_result(result: &eggress_system_proxy::InspectionResult) {
     println!("System Proxy Inspection");
     println!("=======================");
@@ -1308,6 +1334,7 @@ async fn run() -> i32 {
         }
     }
 
+    #[cfg(feature = "pproxy-compat")]
     if let Some(SubCommand::Pproxy(pproxy_cmd)) = args.command {
         match pproxy_cmd.action {
             PproxyAction::Translate(translate_args) => {
@@ -1326,6 +1353,7 @@ async fn run() -> i32 {
         }
     }
 
+    #[cfg(feature = "operations")]
     if let Some(SubCommand::SystemProxy(sysproxy_cmd)) = args.command {
         match sysproxy_cmd.action {
             SystemProxyAction::Inspect(inspect_args) => {

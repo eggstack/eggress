@@ -2,7 +2,73 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Implementation
+
+Commits: Single combined commit implementing all phase 1 changes.
+
+### Retained feature groups
+
+| Group | Scope | Contents |
+|-------|-------|----------|
+| `common` | runtime, cli, embed | HTTP/SOCKS core, TLS transport, UDP, raw |
+| `extended` | runtime, server, metrics, cli, embed | Shadowsocks, Trojan, WebSocket (server-level feature gates) |
+| `operations` | runtime, cli | System proxy (admin and metrics kept as required for snapshot invariant) |
+| `reverse` | runtime, cli | Reverse/backward proxy control-channel |
+| `pproxy-compat` | cli, embed | Rust compatibility translator and binary |
+| `full` | all | Union of all features; `default = ["full"]` preserved |
+
+### Full/lean artifact sizes
+
+| Artifact | Full | Lean | Reduction |
+|----------|------|------|-----------|
+| `eggress` binary | 9.3M | 8.8M | ~5.4% |
+| Dependency count | 492 | 478 | ~2.8% |
+| `pproxy` binary | 8.2M | not built | N/A |
+
+### Feature gate locations
+
+- **Server crate**: `extended` feature gates Shadowsocks/Trojan/WebSocket accept, chain executor handlers, and `shadowsocks_metrics` field type
+- **Runtime crate**: `extended` gates shadowsocks metrics initialization and UDP relay; `reverse` gates reverse server/client spawning; `operations` gates system-proxy dep
+- **CLI crate**: `pproxy-compat` gates pproxy binary and translate/check/run subcommands; `operations` gates system-proxy subcommand
+- **Metrics crate**: `extended` gates shadowsocks metrics bridging
+
+### Tokio features
+
+Reduced from `features = ["full"]` to:
+```
+rt, rt-multi-thread, macros, net, io-util, sync, time, signal, fs
+```
+
+### Release profiles
+
+```toml
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.release-small]
+inherits = "release"
+opt-level = "z"
+lto = true
+```
+
+### Commands run
+
+```bash
+cargo fmt --all -- --check          # pass
+cargo clippy --workspace --all-targets -- -D warnings  # pass
+cargo test --workspace              # 2390 passed, 146 ignored
+cargo check -p eggress-cli --no-default-features --features common  # pass
+CARGO_TARGET_DIR=target/full cargo build -p eggress-cli --release  # 9.3M
+CARGO_TARGET_DIR=target/lean cargo build -p eggress-cli --release --no-default-features --features common  # 8.8M
+```
+
+### Feature gate deliberately rejected
+
+Admin and metrics remain as required runtime dependencies because they are tightly coupled to the runtime snapshot invariant. Making them optional would require duplicating runtime state or creating alternate snapshot types, which the plan's stop conditions prohibit.
 
 ## Parent roadmap
 

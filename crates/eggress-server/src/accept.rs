@@ -180,7 +180,10 @@ pub async fn accept(
     protocols: &[ProtocolId],
     auth: &InboundAuthentication,
     shadowsocks_config: Option<&InboundShadowsocksConfig>,
-    shadowsocks_metrics: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+    #[cfg(feature = "extended")] shadowsocks_metrics: Option<
+        &std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
+    >,
+    #[cfg(not(feature = "extended"))] shadowsocks_metrics: Option<&()>,
     trojan_config: Option<&InboundTrojanConfig>,
 ) -> Result<AcceptedSession, AcceptError> {
     accept_with_fixed_target(
@@ -200,10 +203,14 @@ pub async fn accept_with_fixed_target(
     protocols: &[ProtocolId],
     auth: &InboundAuthentication,
     shadowsocks_config: Option<&InboundShadowsocksConfig>,
-    shadowsocks_metrics: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
+    #[cfg(feature = "extended")] shadowsocks_metrics: Option<
+        &std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
+    >,
+    #[cfg(not(feature = "extended"))] shadowsocks_metrics: Option<&()>,
     trojan_config: Option<&InboundTrojanConfig>,
     fixed_target: Option<&TargetAddr>,
 ) -> Result<AcceptedSession, AcceptError> {
+    #[cfg(feature = "extended")]
     #[inline]
     fn shadows_metrics(
         m: Option<&std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,
@@ -314,6 +321,7 @@ pub async fn accept_with_fixed_target(
     }
 
     // Check if Shadowsocks is the only protocol (auto-detection not possible)
+    #[cfg(feature = "extended")]
     if protocols.len() == 1 && protocols.contains(&ProtocolId::Shadowsocks) {
         if let Some(ss_config) = shadowsocks_config {
             let method =
@@ -347,8 +355,15 @@ pub async fn accept_with_fixed_target(
             "shadowsocks listener requires shadowsocks config".into(),
         ));
     }
+    #[cfg(not(feature = "extended"))]
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::Shadowsocks) {
+        return Err(AcceptError::Protocol(
+            "shadowsocks support not included in this build".into(),
+        ));
+    }
 
     // Check if Trojan is the only protocol (TLS termination already happened upstream)
+    #[cfg(feature = "extended")]
     if protocols.len() == 1 && protocols.contains(&ProtocolId::Trojan) {
         if let Some(trojan_cfg) = trojan_config {
             use tokio::io::AsyncReadExt;
@@ -404,6 +419,12 @@ pub async fn accept_with_fixed_target(
         }
         return Err(AcceptError::Protocol(
             "trojan listener requires trojan config".into(),
+        ));
+    }
+    #[cfg(not(feature = "extended"))]
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::Trojan) {
+        return Err(AcceptError::Protocol(
+            "trojan support not included in this build".into(),
         ));
     }
 
