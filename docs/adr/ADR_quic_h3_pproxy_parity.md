@@ -184,7 +184,7 @@ makes the code optional to compile. The dependency concerns remain.
 - `docs/protocols/H2_H3_QUIC.md` — H3/QUIC investigation findings
 - `docs/protocols/ADVANCED_TRANSPORTS.md` — Transport summary with deferred H3/QUIC
 - `docs/PPROXY_PARITY_SPEC.md` — Intentional non-parity decisions
-- `docs/PARITY_MATRIX.md` — Feature parity tracking
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — Feature parity tracking
 - [RFC 9114 — HTTP/3](https://www.rfc-editor.org/rfc/rfc9114)
 - [RFC 9298 — CONNECT-UDP](https://www.rfc-editor.org/rfc/rfc9298)
 - [quinn crate](https://crates.io/crates/quinn)

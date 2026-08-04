@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | Phase 27 |
 | Decision makers | Eggress maintainers |
-| Related | `docs/PPROXY_PARITY_SPEC.md`, `docs/PARITY_MATRIX.md` |
+| Related | `docs/PPROXY_PARITY_SPEC.md`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` |
 
 ## Context
 
@@ -179,6 +179,6 @@ multiplexing.
 
 - `docs/protocols/REVERSE_PROXYING.md` — Wire format and behavior details
 - `docs/PPROXY_PARITY_SPEC.md` — Tier taxonomy and parity decisions
-- `docs/PARITY_MATRIX.md` — Feature parity tracking
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — Feature parity tracking
 - `crates/eggress-protocol-reverse/` — Implementation
 - [pproxy reverse proxy documentation](https://github.com/windprophet/pproxy)

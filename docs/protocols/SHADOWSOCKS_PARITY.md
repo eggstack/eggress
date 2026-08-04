@@ -637,7 +637,7 @@ cargo test -p eggress-protocol-shadowsocks test_encrypt_decrypt_roundtrip_aes256
 - [SIP022 — AEAD Padding](https://shadowsocks.org/en/spec/SIP022-AEAD-Padding.html)
 - [RFC 5869 — HKDF](https://datatracker.ietf.org/doc/html/rfc5869)
 - [pproxy GitHub repository](https://github.com/nimlang/pproxy)
-- [Eggress Parity Matrix](../PARITY_MATRIX.md)
+- [Eggress Parity Matrix](../parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 - [Eggress Shadowsocks Protocol](./SHADOWSOCKS.md)
 - [Eggress pproxy Parity Spec](../PPROXY_PARITY_SPEC.md)
 - [Eggress Differential Tests](../../crates/eggress-cli/tests/differential_pproxy.rs)

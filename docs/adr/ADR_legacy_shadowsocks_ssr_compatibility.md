@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | Phase 22 |
 | Decision makers | Eggress maintainers |
-| Related | `docs/PPROXY_PARITY_SPEC.md`, `docs/PARITY_MATRIX.md`, `docs/protocols/SHADOWSOCKS.md` |
+| Related | `docs/PPROXY_PARITY_SPEC.md`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, `docs/protocols/SHADOWSOCKS.md` |
 
 ## Context
 
@@ -158,7 +158,7 @@ eggress's security posture remains:
 ## References
 
 - `docs/PPROXY_PARITY_SPEC.md` — Section 14: Behaviors Eggress Will Intentionally Reject
-- `docs/PARITY_MATRIX.md` — Remaining Protocol Audit
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — Remaining Protocol Audit
 - `docs/protocols/SHADOWSOCKS.md` — Supported cipher methods
 - `docs/protocols/SHADOWSOCKS_LEGACY.md` — Legacy stream cipher behavior documentation
 - `docs/protocols/SHADOWSOCKSR.md` — SSR behavior documentation

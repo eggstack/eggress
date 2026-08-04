@@ -161,7 +161,7 @@ Current acceptance is governed by the practical parity roadmap and manifest.
 - [x] Manifest stale wording fixed for `cli.alive`, `cli.ssl_listener`, `cli.block`, `cli.rulefile`, `cli.reuse`, `cli.get`, `cli.pac`, `cli.test`, `cli.sys`
 - [x] `--ssl` applies TLS to all compatible listeners (matches pproxy, which loads the cert chain into every ssl context); new unit test
 - [x] Parity report is now generated from the manifest (`--write-report`) and CI verifies consistency (`--check-report`)
-- [x] Stale tier/notes fields harmonized in `docs/PARITY_MATRIX.md`, `README.md`, `AGENTS.md`, `.skills/testing/skill.md`, `docs/parity/README.md`
+- [x] Stale tier/notes fields harmonized in `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, `README.md`, `AGENTS.md`, `.skills/testing/skill.md`, `docs/parity/README.md`
 
 ## Remaining Work
 

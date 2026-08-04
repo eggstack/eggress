@@ -5,7 +5,7 @@ candidate. Every claim here must be backed by either a passing differential
 test, a unit test, or an explicit `intentional_non_parity` rationale in the
 manifest.
 
-**Source of truth:** `tests/compat/pproxy_manifest.toml`.
+**Source of truth:** `docs/parity/pproxy_capability_manifest.toml`.
 **Frozen targets:** `docs/release/PARITY_TARGET_FREEZE.md`.
 
 ## Legend
@@ -109,4 +109,4 @@ When adding a platform-specific feature:
 2. Update the matching row in this matrix.
 3. Run `cargo test -p eggress-testkit --lib manifest` to confirm the validator
    passes.
-4. Reference this file from `PARITY_MATRIX.md` if the feature is user-facing.
+4. Reference this file from `parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` if the feature is user-facing.

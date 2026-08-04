@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | Phase 47 |
 | Decision makers | Eggress maintainers |
-| Related | `docs/parity/pproxy_capability_manifest.toml`, `docs/PARITY_MATRIX.md`, `docs/PPROXY_PARITY_SPEC.md`, `plans/phase_47_ssh_upstream_parity_decision.md` |
+| Related | `docs/parity/pproxy_capability_manifest.toml`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, `docs/PPROXY_PARITY_SPEC.md`, `plans/phase_47_ssh_upstream_parity_decision.md` |
 
 ## Context
 
@@ -117,7 +117,7 @@ Adding `russh` would:
 
 - **Manifest tier change**: `unsupported` → `intentional_non_parity` (metadata only)
 - **Diagnostic suggestion added**: SSH diagnostics now recommend OpenSSH dynamic forwarding
-- **PARITY_MATRIX.md**: Already classified SSH as "Intentional non-parity" — no change needed
+- **PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md**: Already classified SSH as "Intentional non-parity" — no change needed
 
 ## Alternatives Considered
 
@@ -155,6 +155,6 @@ transport design.
 
 - `plans/phase_47_ssh_upstream_parity_decision.md` — Phase 47 plan
 - `docs/parity/pproxy_capability_manifest.toml` — Capability manifest (updated in Phase 47)
-- `docs/PARITY_MATRIX.md` — Feature parity tracking
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — Feature parity tracking
 - `docs/PPROXY_PARITY_SPEC.md` — Tier taxonomy
 - `docs/adr/ADR_quic_h3_pproxy_parity.md` — Similar deferral precedent for QUIC/H3

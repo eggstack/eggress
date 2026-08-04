@@ -162,8 +162,8 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_
 
 ## Manifest
 
-The source of truth is [`tests/compat/pproxy_manifest.toml`](../tests/compat/pproxy_manifest.toml).
-All compatibility claims in this document and in [PARITY_MATRIX.md](PARITY_MATRIX.md) must have
+The source of truth is [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml).
+All compatibility claims in this document must have
 a corresponding manifest entry with an appropriate evidence level.
 
 After running differential tests, a machine-readable parity report is generated at

@@ -81,7 +81,9 @@ The snapshot is the single source of truth shared by router, health manager, adm
 - `eggress-metrics` — metrics recording
 - `eggress-admin` — admin HTTP server
 - `eggress-udp` — UDP association management
+- `eggress-transport-tls` — TLS transport
+- `eggress-protocol-shadowsocks` — Shadowsocks AEAD relay
 - `eggress-protocol-reverse` — reverse proxy
-- `eggress-system-proxy` — system proxy inspection
+- `eggress-uri` — URI parsing
 
 See [overview.md](overview.md) for context.

@@ -5,7 +5,7 @@ This is the comprehensive migration guide for users moving from Python
 covers direct CLI migration, TOML translation, protocol-by-protocol
 notes, platform caveats, and verification steps.
 
-**Source of truth:** `tests/compat/pproxy_manifest.toml`
+**Source of truth:** `docs/parity/pproxy_capability_manifest.toml`
 **Frozen targets:** [PARITY_TARGET_FREEZE.md](PARITY_TARGET_FREEZE.md)
 **Platform matrix:** [PLATFORM_SUPPORT_MATRIX.md](PLATFORM_SUPPORT_MATRIX.md)
 
@@ -906,7 +906,7 @@ If eggress does not meet your needs after migration:
 - [CONFIG_REFERENCE.md](../../CONFIG_REFERENCE.md) -- Full TOML configuration reference
 - [PPROXY_MIGRATION.md](../../PPROXY_MIGRATION.md) -- Original migration guide
 - [PPROXY_PARITY_SPEC.md](../../PPROXY_PARITY_SPEC.md) -- Formal parity specification
-- [PARITY_MATRIX.md](../../PARITY_MATRIX.md) -- Feature-by-feature comparison matrix
+- [PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md](../parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) -- Feature-by-feature comparison matrix
 - [COMPATIBILITY_EVIDENCE.md](../../COMPATIBILITY_EVIDENCE.md) -- Evidence table with test commands
 - [PYTHON_BINDINGS.md](../../PYTHON_BINDINGS.md) -- Python API reference
 - [EMBED_API.md](../../EMBED_API.md) -- Rust embed API reference

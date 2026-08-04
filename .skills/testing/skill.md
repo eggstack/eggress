@@ -320,7 +320,7 @@ python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py p
 
 ## pproxy compatibility harness
 
-Compatibility evidence is tracked in `docs/parity/pproxy_capability_manifest.toml` (canonical) and the historical `tests/compat/pproxy_manifest.toml`. Each feature
+Compatibility evidence is tracked in `docs/parity/pproxy_capability_manifest.toml` (canonical) and `docs/parity/pproxy_2_7_9_strict_manifest.toml` (strict behavioral contract). Each feature
 has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_differential`,
 `implemented_interop`, `compatible`, or `intentional_non_parity`.
 

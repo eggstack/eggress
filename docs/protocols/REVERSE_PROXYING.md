@@ -488,7 +488,7 @@ pproxy -l http://:9090 \
 - pproxy source: `server.py` — `ProxyBackward` class
 - Phase 27 plan: `plans/PHASE_27_REVERSE_BACKWARD_AND_JUMP_PROXYING.md`
 - Parity spec: `docs/PPROXY_PARITY_SPEC.md`
-- Parity matrix: `docs/PARITY_MATRIX.md`
+- Parity matrix: `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`
 
 ## 13. Heartbeat and Keepalive
 

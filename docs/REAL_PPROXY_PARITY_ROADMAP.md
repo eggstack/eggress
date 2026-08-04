@@ -513,7 +513,7 @@ A reasonable milestone structure is:
 
 Each phase must update the following artifacts when applicable:
 
-- `docs/PARITY_MATRIX.md`
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`
 - `docs/PPROXY_PARITY_SPEC.md`
 - `docs/PPROXY_MIGRATION.md`
 - `docs/PYTHON_BINDINGS.md`

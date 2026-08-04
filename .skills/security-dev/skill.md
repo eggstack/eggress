@@ -41,16 +41,19 @@ Uses `allow_private_egress = true` (pproxy compat default) to allow private targ
 ### Security invariant tests
 `crates/eggress-runtime/tests/security_invariants.rs` — runtime security constraints and invariants.
 
-### Fuzz targets (8 total)
+### Fuzz targets (11 total)
 All in `fuzz/fuzz_targets/`:
 - `uri_parse` — URI parser
 - `socks5_handshake` — SOCKS5 method negotiation + CONNECT/UDP_ASSOCIATE
 - `socks5_udp_datagram` — SOCKS5 UDP datagram codec
 - `http_connect_response` — HTTP CONNECT status/headers
 - `trojan_request` — Trojan password + request
+- `trojan_accept` — Trojan server-side accept parser
 - `route_match` — Route matcher evaluation
 - `shadowsocks_frame` — Shadowsocks frame parser
 - `toml_config` — TOML config parser
+- `websocket_handshake` — WebSocket handshake parser
+- `h2_connect_authority` — H2 CONNECT authority parser
 
 ### Soak tests (all `#[ignore]`)
 In `crates/eggress-runtime/tests/load.rs`:

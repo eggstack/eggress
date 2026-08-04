@@ -5,7 +5,7 @@
 | Status | Partially Superseded |
 | Date | Phase 46 |
 | Decision makers | Eggress maintainers |
-| Related | `docs/protocols/ADVANCED_TRANSPORTS.md`, `docs/parity/pproxy_capability_manifest.toml`, `docs/PARITY_MATRIX.md`, `docs/PHASE_25_28_HARDENING_COMPLETION.md` |
+| Related | `docs/protocols/ADVANCED_TRANSPORTS.md`, `docs/parity/pproxy_capability_manifest.toml`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, `docs/PHASE_25_28_HARDENING_COMPLETION.md` |
 
 ## Superseded
 
@@ -150,5 +150,5 @@ that are deliberately not wired through the user-facing pipeline.
 - `docs/protocols/ADVANCED_TRANSPORTS.md` — Transport wrapper architecture
 - `docs/PHASE_25_28_HARDENING_COMPLETION.md` — H5/H6/H7 refusal enforcement
 - `docs/parity/pproxy_capability_manifest.toml` — Capability manifest (updated in Phase 46)
-- `docs/PARITY_MATRIX.md` — Feature parity tracking (updated in Phase 46)
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — Feature parity tracking (updated in Phase 46)
 - `docs/PPROXY_PARITY_SPEC.md` — Tier taxonomy

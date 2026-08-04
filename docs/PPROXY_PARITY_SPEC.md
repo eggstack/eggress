@@ -579,7 +579,7 @@ mode = 0o660
 
 ## 14.5 Remaining Protocol Audit
 
-Phase 11 classified every remaining pproxy protocol/scheme. The complete audit is in `docs/PARITY_MATRIX.md` under "Remaining Protocol Audit".
+Phase 11 classified every remaining pproxy protocol/scheme. The complete audit is in `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`.
 
 ### Summary
 
@@ -594,7 +594,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 
 ### Diagnostic behavior
 
-When an unsupported protocol or feature is encountered in pproxy compat mode, eggress produces structured `UnsupportedFeature` or `CompatError` diagnostics. See `PARITY_MATRIX.md` for the complete diagnostic table.
+When an unsupported protocol or feature is encountered in pproxy compat mode, eggress produces structured `UnsupportedFeature` or `CompatError` diagnostics. See `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` for the complete diagnostic table.
 
 ## 14.6 Reverse/Backward Proxying (Phase 27)
 
@@ -913,7 +913,7 @@ RUST_LOG=info eggress --config config.toml > access.log 2>&1
 - [RFC 7231 — HTTP/1.1 Semantics (CONNECT)](https://datatracker.ietf.org/doc/html/rfc7231)
 - [Shadowsocks AEAD Ciphers](https://shadowsocks.org/en/spec/AEAD-Ciphers.html)
 - [Trojan Protocol](https://trojan-gfw.github.io/trojan/)
-- [Eggress Parity Matrix](./PARITY_MATRIX.md)
+- [Eggress Parity Matrix](./parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 - [Eggress Differential Tests](../crates/eggress-cli/tests/differential_pproxy.rs)
 - [pproxy Migration Guide](./PPROXY_MIGRATION.md)
 
