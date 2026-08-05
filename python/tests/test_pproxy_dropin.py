@@ -385,13 +385,13 @@ class TestCompatibilityReport:
             d.tier == "native_equivalent" for d in report.diagnostics
         )
 
-    def test_intentional_non_parity_for_reuse(self):
+    def test_reuse_is_native_equivalent_for_reuse_port(self):
         report = check_pproxy_args(
             ["-l", "socks5://127.0.0.1:0", "--reuse"]
         )
-        assert report.tier == "intentional_non_parity"
+        assert report.tier == "native_equivalent"
         assert any(
-            d.tier == "intentional_non_parity" for d in report.diagnostics
+            d.tier == "native_equivalent" for d in report.diagnostics
         )
 
     def test_parsed_uris_populated(self):
