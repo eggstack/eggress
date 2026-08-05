@@ -111,6 +111,12 @@ pub fn translate_from_uris(
             "pproxy -v flag detected; set RUST_LOG=debug environment variable for equivalent behavior",
         );
     }
+    if args.reuse_port {
+        output = output.with_warning(
+            "reuse-port",
+            "pproxy --reuse enables SO_REUSEPORT on listener sockets (platform-dependent)",
+        );
+    }
 
     // Process known-but-unsupported flags
     for flag in &args.known_unsupported {
