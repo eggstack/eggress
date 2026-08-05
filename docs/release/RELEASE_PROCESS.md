@@ -109,9 +109,9 @@ These commands are optional and must remain manual. Pushing a tag must not start
 
 ## Python distribution
 
-When the Python packages are ready for a separate release, build and publish them locally with maturin and the chosen Python package repository credentials. Verify canonical `eggress` and `eggress-pproxy-compat` packages together in a clean environment before upload.
+Python publication to PyPI is automated through `.github/workflows/publish-python.yml`. Pushing a `v*` tag triggers production publication after version coherence validation. Manual dispatch targets TestPyPI by default. The workflow builds prebuilt wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64), plus one source distribution, using the Python stable ABI (`abi3-py39`).
 
-Python publishing is intentionally outside the crates.io release procedure. Removing GitHub publishing workflows does not imply that Python packaging is abandoned; it means packaging cadence and credentials remain under explicit operator control.
+Crates.io publication remains manual and is not coupled to the Python release workflow.
 
 ## Roll-forward policy
 
@@ -129,8 +129,7 @@ Do not delete or retag an existing version to simulate replacement.
 
 The following must not be added back without an explicit project-level decision:
 
-- publishing on a tag or branch push;
-- crates.io tokens or trusted-publishing configuration in GitHub Actions;
+- crates.io token storage or trusted-publishing configuration in GitHub Actions;
 - automated GitHub Release creation;
 - mandatory release artifact, checksum, SBOM, signature, or container jobs;
 - a release workflow that repeats the ordinary CI suite;

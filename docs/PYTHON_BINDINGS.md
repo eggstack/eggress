@@ -14,6 +14,14 @@ distributed as a platform-specific wheel.
 
 ## Installation
 
+### From PyPI (recommended)
+
+```bash
+pip install eggress
+```
+
+Prebuilt wheels are available for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64. The wheel uses the Python stable ABI (`abi3-py39`), so one wheel per platform supports all declared Python versions (3.9–3.13).
+
 ### Local development
 
 ```bash
@@ -23,19 +31,19 @@ maturin build --release --target x86_64-apple-darwin   # adjust target
 pip install --force-reinstall target/wheels/eggress-*.whl
 ```
 
-### From PyPI (recommended)
-
-```bash
-pip install eggress
-```
-
 ### From a wheel file
 
 ```bash
 pip install dist/eggress-*.whl
 ```
 
-No Rust toolchain is required when installing from a pre-built wheel.
+### From source distribution
+
+```bash
+pip install eggress --no-binary eggress
+```
+
+Requires a Rust toolchain. The source distribution builds the native extension locally.
 
 ### Requirements
 

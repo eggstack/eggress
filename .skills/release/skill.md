@@ -79,7 +79,7 @@ git tag -a v<new_version> -m "Release v<new_version>"
 git push origin v<new_version>
 ```
 
-The workflow builds `eggress` via maturin and publishes to PyPI via OIDC trusted publishers.
+The workflow builds prebuilt wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64), plus one source distribution, then publishes to PyPI via OIDC trusted publishers. Production publication enforces version coherence and fails on existing versions rather than skipping.
 
 Verify publication:
 - Check the workflow run: `gh run list --workflow=publish-python.yml --limit=1`

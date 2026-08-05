@@ -67,6 +67,13 @@ available for migration-oriented code.
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 
+Prebuilt wheels are available for:
+- Linux x86_64 and aarch64 (manylinux)
+- macOS x86_64 and arm64
+- Windows x86_64
+
+Other platforms (e.g. ARM, musllinux, FreeBSD) can build from the source distribution. The wheel uses the Python stable ABI (abi3-py39) so one wheel per platform supports all declared Python versions.
+
 ## CLI usage
 
 ```text

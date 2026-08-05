@@ -24,10 +24,84 @@ permissions:
   id-token: write
 
 jobs:
-  build:
-    name: Build wheels
+  validate:
+    name: Validate version coherence
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract versions and verify coherence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Determine expected version
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            EXPECTED_VERSION="${TAG#v}"
+          else
+            EXPECTED_VERSION=""
+          fi
+
+          # Read workspace version from root Cargo.toml
+          WORKSPACE_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+
+          # Read binding crate version
+          CRATE_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/eggress-python/Cargo.toml | head -1)
+
+          # Read pyproject version
+          PYPROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/eggress-python/pyproject.toml | head -1)
+
+          echo "Workspace version:   ${WORKSPACE_VERSION}"
+          echo "Binding crate version: ${CRATE_VERSION}"
+          echo "pyproject version:   ${PYPROJECT_VERSION}"
+
+          if [[ "${WORKSPACE_VERSION}" != "${CRATE_VERSION}" ]]; then
+            echo "::error::Workspace version (${WORKSPACE_VERSION}) != binding crate version (${CRATE_VERSION})"
+            exit 1
+          fi
+          if [[ "${WORKSPACE_VERSION}" != "${PYPROJECT_VERSION}" ]]; then
+            echo "::error::Workspace version (${WORKSPACE_VERSION}) != pyproject version (${PYPROJECT_VERSION})"
+            exit 1
+          fi
+
+          if [[ -n "${EXPECTED_VERSION}" ]]; then
+            # Normalize: strip leading zeros for comparison
+            NORMALIZED_TAG=$(echo "${EXPECTED_VERSION}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3}')
+            NORMALIZED_WS=$(echo "${WORKSPACE_VERSION}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3}')
+            if [[ "${NORMALIZED_TAG}" != "${NORMALIZED_WS}" ]]; then
+              echo "::error::Tag version (${EXPECTED_VERSION}) does not match workspace version (${WORKSPACE_VERSION})"
+              exit 1
+            fi
+            echo "Tag version ${EXPECTED_VERSION} matches workspace version ${WORKSPACE_VERSION}"
+          else
+            echo "No tag push — verifying internal coherence only"
+          fi
+
+          echo "All version checks passed"
+
+  build-wheels:
+    name: "Build wheel (${{ matrix.os }}, ${{ matrix.target }})"
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+          - os: ubuntu-latest
+            target: aarch64
+            manylinux: auto
+          - os: macos-13
+            target: x86_64
+          - os: macos-14
+            target: aarch64
+          - os: windows-latest
+            target: x64
     steps:
       - uses: actions/checkout@v4
 
@@ -37,23 +111,281 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install build tools
-        run: python -m pip install --upgrade pip "maturin>=1.0,<2.0"
+      - name: Setup QEMU
+        if: matrix.target == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
-      - name: Build eggress wheel
-        run: maturin build --release --out dist -m crates/eggress-python/Cargo.toml
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist -m crates/eggress-python/Cargo.toml
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
 
-      - name: List built artifacts
+      - name: List artifacts
+        shell: bash
         run: ls -la dist/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: python-wheels
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
           path: dist/*.whl
+
+  build-sdist:
+    name: Build source distribution
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip "maturin>=1.0,<2.0"
+
+      - name: Build sdist
+        run: maturin sdist --out dist -m crates/eggress-python/Cargo.toml
+
+      - name: Verify sdist contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDIST=$(ls dist/*.tar.gz)
+          echo "Built sdist: ${SDIST}"
+          tar tzf "${SDIST}" | head -30
+
+          # Verify key contents
+          tar tzf "${SDIST}" | grep -q "Cargo.toml" || { echo "::error::sdist missing Cargo.toml"; exit 1; }
+          tar tzf "${SDIST}" | grep -q "pyproject.toml" || { echo "::error::sdist missing pyproject.toml"; exit 1; }
+          tar tzf "${SDIST}" | grep -q "eggress/__init__.py" || { echo "::error::sdist missing eggress/__init__.py"; exit 1; }
+          tar tzf "${SDIST}" | grep -q "pproxy/__init__.py" || { echo "::error::sdist missing pproxy/__init__.py"; exit 1; }
+          echo "sdist contents verified"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  collect-artifacts:
+    name: Collect and validate artifacts
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist/
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+
+      - name: Validate artifact set
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== All artifacts ==="
+          ls -la dist/
+
+          # Count wheels and sdist
+          WHEEL_COUNT=$(ls dist/*.whl 2>/dev/null | wc -l)
+          SDIST_COUNT=$(ls dist/*.tar.gz 2>/dev/null | wc -l)
+
+          echo "Wheel count: ${WHEEL_COUNT}"
+          echo "Sdist count: ${SDIST_COUNT}"
+
+          if [[ "${SDIST_COUNT}" -ne 1 ]]; then
+            echo "::error::Expected exactly 1 sdist, found ${SDIST_COUNT}"
+            exit 1
+          fi
+
+          # Verify wheel names contain expected platform tags
+          echo "=== Wheel tags ==="
+          for whl in dist/*.whl; do
+            basename "${whl}"
+          done
+
+          # Check for abi3 tag
+          ABI3_WHEELS=$(ls dist/*.whl | xargs -I{} basename {} | grep -c "abi3" || true)
+          echo "Wheels with abi3 tag: ${ABI3_WHEELS}"
+
+          if [[ "${ABI3_WHEELS}" -lt 1 ]]; then
+            echo "::warning::No abi3-tagged wheels found — stable ABI may not be active"
+          fi
+
+          # Verify no debug artifacts or duplicates
+          if ls dist/*-debug* 2>/dev/null; then
+            echo "::error::Debug artifacts found in dist/"
+            exit 1
+          fi
+
+          echo "Artifact validation passed"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+
+  smoke-test:
+    name: "Smoke test (${{ matrix.os }})"
+    needs: collect-artifacts
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-14
+          - os: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Find matching wheel
+        id: find-wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM=$(python -c "import sys, platform; print(platform.system().lower())")
+          ARCH=$(python -c "import platform; print(platform.machine().lower())")
+          echo "Platform: ${PLATFORM} ${ARCH}"
+
+          WHEEL=""
+          for whl in dist/*.whl; do
+            NAME=$(basename "${whl}")
+            case "${PLATFORM}" in
+              linux)
+                if echo "${NAME}" | grep -q "manylinux" && echo "${NAME}" | grep -q "${ARCH}"; then
+                  WHEEL="${whl}"
+                  break
+                fi
+                ;;
+              darwin)
+                if echo "${NAME}" | grep -q "macosx"; then
+                  if [[ "${ARCH}" == "arm64" ]] && echo "${NAME}" | grep -q "arm64"; then
+                    WHEEL="${whl}"
+                    break
+                  elif [[ "${ARCH}" == "x86_64" ]] && echo "${NAME}" | grep -q "x86_64"; then
+                    WHEEL="${whl}"
+                    break
+                  fi
+                fi
+                ;;
+              windows)
+                if echo "${NAME}" | grep -q "win"; then
+                  WHEEL="${whl}"
+                  break
+                fi
+                ;;
+            esac
+          done
+
+          if [[ -z "${WHEEL}" ]]; then
+            echo "::error::No matching wheel found for ${PLATFORM} ${ARCH}"
+            ls dist/*.whl
+            exit 1
+          fi
+
+          echo "Found wheel: $(basename ${WHEEL})"
+          echo "wheel_path=${WHEEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Install and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv-test
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            .venv-test/Scripts/python.exe -m pip install --upgrade pip
+            .venv-test/Scripts/python.exe -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+            .venv-test/Scripts/python.exe -c "
+          import eggress
+          from eggress import pproxy
+          print(f'eggress {eggress.__version__}')
+          print(f'pproxy module: {pproxy}')
+          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
+          print(f'Server created: {srv}')
+          "
+          else
+            .venv-test/bin/python -m pip install --upgrade pip
+            .venv-test/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+            .venv-test/bin/python -c "
+          import eggress
+          from eggress import pproxy
+          print(f'eggress {eggress.__version__}')
+          print(f'pproxy module: {pproxy}')
+          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
+          print(f'Server created: {srv}')
+          "
+          fi
+          echo "Smoke test passed"
+
+  compat-smoke:
+    name: "Compatibility smoke (Python ${{ matrix.python-version }})"
+    needs: collect-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Find manylinux wheel
+        id: find-wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          WHEEL=$(ls dist/*manylinux*x86_64*.whl | head -1)
+          if [[ -z "${WHEEL}" ]]; then
+            echo "::error::No manylinux x86_64 wheel found"
+            exit 1
+          fi
+          echo "Found wheel: $(basename ${WHEEL})"
+          echo "wheel_path=${WHEEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Install and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv-compat
+          .venv-compat/bin/python -m pip install --upgrade pip
+          .venv-compat/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+          .venv-compat/bin/python -c "
+          import eggress
+          from eggress import pproxy
+          print(f'eggress {eggress.__version__} on Python $(python -c \"import sys; print(sys.version)\")')
+          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
+          print(f'Server created: {srv}')
+          "
+          echo "Python ${{ matrix.python-version }} compat smoke passed"
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [smoke-test, compat-smoke]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'pypi')
@@ -65,17 +397,20 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: python-wheels
+          name: release-artifacts
           path: dist/
+
+      - name: List artifacts to publish
+        run: ls -la dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-          skip-existing: true
+          # Production publication must fail on existing version, not skip
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: build
+    needs: [smoke-test, compat-smoke]
     if: >-
       github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi'
     runs-on: ubuntu-latest
@@ -86,10 +421,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: python-wheels
+          name: release-artifacts
           path: dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true

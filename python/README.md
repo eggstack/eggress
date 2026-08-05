@@ -15,6 +15,17 @@ pip install --force-reinstall target/wheels/eggress-*.whl
 > path (`_eggress/_eggress.so` instead of `eggress/_eggress.so`). Use
 > `maturin build` + `pip install` instead.
 
+## Prebuilt wheels
+
+Prebuilt wheels are published to PyPI for:
+- Linux x86_64 and aarch64 (manylinux)
+- macOS x86_64 and arm64
+- Windows x86_64
+
+The wheel uses the Python stable ABI (`abi3-py39`), so one wheel per platform supports all declared Python versions (3.9–3.13). Other platforms can install from the source distribution (requires Rust toolchain).
+
+Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
+
 ## Quick start
 
 ```python

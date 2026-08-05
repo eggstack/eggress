@@ -16,7 +16,6 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",
-    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.9",
@@ -39,7 +38,7 @@ dev = ["pytest>=7.0", "pytest-asyncio>=0.23,<1"]
 cipher-api = ["cryptography>=42,<47"]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "pyo3/abi3-py39"]
 python-source = "../../python"
 module-name = "eggress._eggress"
 include = ["eggress/**/*.py", "pproxy/**/*.py", "eggress/py.typed"]

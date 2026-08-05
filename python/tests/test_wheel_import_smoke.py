@@ -173,3 +173,24 @@ def test_py_typed_marker_exists():
         import pathlib
         pkg_dir = pathlib.Path(__file__).resolve().parents[1] / "eggress"
         assert (pkg_dir / "py.typed").exists(), "py.typed marker file not found"
+
+
+def test_public_api_startup_shutdown():
+    """Start a port-0 SOCKS listener via the public EggressService API,
+    verify it is ready and bound, then shut it down cleanly."""
+    from eggress import EggressService
+
+    toml = """
+version = 1
+
+[[listeners]]
+name = "smoke"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"""
+    with EggressService.from_toml(toml).start() as handle:
+        addrs = handle.bound_addresses
+        assert "smoke" in addrs
+        assert addrs["smoke"] != ""
+        status = handle.status()
+        assert status["readiness"] is True

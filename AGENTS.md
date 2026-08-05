@@ -162,7 +162,7 @@ The repository has two automatic smoke workflows and one manual publish workflow
 
 - `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, and workspace tests.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job.
-- `.github/workflows/publish-python.yml`: Python package publication to PyPI/TestPyPI using OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch.
+- `.github/workflows/publish-python.yml`: multi-platform wheel and sdist build, smoke tests, and publication to PyPI/TestPyPI via OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch. Builds wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64) using the Python stable ABI.
 
 Do not recreate release artifact matrices, automated GitHub Releases, container publishing, continuous parity evidence generation, or mandatory external interoperability workflows without an explicit project-level decision.
 
@@ -170,7 +170,7 @@ Hosted CI is a smoke signal. It is not the release mechanism and is not a reason
 
 ## Release policy
 
-Python publication to PyPI uses OIDC trusted publishers via `.github/workflows/publish-python.yml`. Push a `v*` tag or use manual dispatch to trigger publication. The workflow requires repository environments `pypi` and `testpypi`.
+Python publication to PyPI uses OIDC trusted publishers via `.github/workflows/publish-python.yml`. Push a `v*` tag or use manual dispatch to trigger publication. The workflow requires repository environments `pypi` and `testpypi`. Production publication enforces version coherence among the tag, workspace, binding crate, and pyproject, builds wheels for the approved platform set, runs native and compatibility smoke tests, and fails rather than silently skipping an existing version.
 
 Rust crate publication to crates.io is manual. The release operator performs local verification, package dry runs, and `cargo publish` directly to crates.io.
 
