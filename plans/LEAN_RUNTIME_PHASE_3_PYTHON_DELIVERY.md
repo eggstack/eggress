@@ -2,7 +2,24 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+Implemented in commit `b650ab6` on main.
+
+### Artifact set
+
+- `eggress-1.0.1-cp39-abi3-manylinux_2_34_x86_64.whl` (Linux x86_64)
+- `eggress-1.0.1-cp39-abi3-manylinux_2_34_aarch64.whl` (Linux aarch64)
+- `eggress-1.0.1-cp39-abi3-macosx_11_0_x86_64.whl` (macOS x86_64)
+- `eggress-1.0.1-cp39-abi3-macosx_11_0_arm64.whl` (macOS arm64)
+- `eggress-1.0.1-cp39-abi3-win_amd64.whl` (Windows x86_64)
+- `eggress-1.0.1.tar.gz` (source distribution)
+
+### Verification
+
+- Rust workspace gate: 2423 passed, 146 ignored
+- Python test suite: 2170 passed, 114 skipped, 5 warnings
+- CI: both `ci.yml` and `python-test.yml` passed on main
 
 ## Parent roadmap
 
