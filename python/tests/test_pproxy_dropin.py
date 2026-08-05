@@ -387,7 +387,7 @@ class TestCompatibilityReport:
 
     def test_reuse_is_native_equivalent_for_reuse_port(self):
         report = check_pproxy_args(
-            ["-l", "socks5://127.0.0.1:0", "--reuse"]
+            ["-l", "socks5://127.0.0.1:0", "-r", "http://proxy:8080", "--reuse"]
         )
         assert report.tier == "native_equivalent"
         assert any(
