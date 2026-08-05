@@ -54,6 +54,7 @@ fn reap_idle_flows(
                 UdpFlowKind::Socks5Upstream(ref u) => {
                     u.control_cancel.cancel();
                 }
+                #[cfg(feature = "shadowsocks")]
                 UdpFlowKind::ShadowsocksUpstream(_) => {}
                 UdpFlowKind::Direct(_) => {}
             }
@@ -239,6 +240,7 @@ async fn handle_client_datagram(
                     .record_packet_up(request.payload.len() as u64);
                 return Ok(());
             }
+            #[cfg(feature = "shadowsocks")]
             UdpRelayCapability::SupportedShadowsocks { method, password } => {
                 let key = UdpFlowKey::ShadowsocksUpstream {
                     target: request.target.clone(),
@@ -524,6 +526,7 @@ pub async fn udp_relay_loop(
             UdpFlowKind::Socks5Upstream(ref u) => {
                 u.control_cancel.cancel();
             }
+            #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(_) => {}
             UdpFlowKind::Direct(_) => {}
         }
@@ -585,6 +588,7 @@ fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
     }
 }
 
+#[cfg(feature = "shadowsocks")]
 fn target_to_socks_addr(target: &TargetAddr) -> SocksAddr {
     match &target.host {
         TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),
@@ -1547,6 +1551,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "shadowsocks")]
     async fn relay_shadowsocks_upstream_encrypts_and_relay() {
         use crate::udp_capability::udp_capability;
         use eggress_protocol_shadowsocks::udp::{decode_udp_packet, encode_udp_packet};

@@ -33,53 +33,43 @@ jobs:
 
       - name: Extract versions and verify coherence
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
 
-          # Determine expected version
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            EXPECTED_VERSION="${TAG#v}"
-          else
-            EXPECTED_VERSION=""
-          fi
+          def field(path: str, *keys: str) -> str:
+              value = tomllib.loads(Path(path).read_text())
+              for key in keys:
+                  value = value[key]
+              if not isinstance(value, str) or not value:
+                  raise SystemExit(f"::error::{path} has no string field {'/'.join(keys)}")
+              return value
 
-          # Read workspace version from root Cargo.toml
-          WORKSPACE_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          workspace = field("Cargo.toml", "workspace", "package", "version")
+          binding = field("crates/eggress-python/Cargo.toml", "package", "version")
+          project = field("crates/eggress-python/pyproject.toml", "project", "version")
+          versions = {"workspace": workspace, "binding": binding, "pyproject": project}
+          print(*[f"{name} version: {value}" for name, value in versions.items()], sep="\n")
+          if len(set(versions.values())) != 1:
+              raise SystemExit(f"::error::version mismatch: {versions}")
 
-          # Read binding crate version
-          CRATE_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/eggress-python/Cargo.toml | head -1)
-
-          # Read pyproject version
-          PYPROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/eggress-python/pyproject.toml | head -1)
-
-          echo "Workspace version:   ${WORKSPACE_VERSION}"
-          echo "Binding crate version: ${CRATE_VERSION}"
-          echo "pyproject version:   ${PYPROJECT_VERSION}"
-
-          if [[ "${WORKSPACE_VERSION}" != "${CRATE_VERSION}" ]]; then
-            echo "::error::Workspace version (${WORKSPACE_VERSION}) != binding crate version (${CRATE_VERSION})"
-            exit 1
-          fi
-          if [[ "${WORKSPACE_VERSION}" != "${PYPROJECT_VERSION}" ]]; then
-            echo "::error::Workspace version (${WORKSPACE_VERSION}) != pyproject version (${PYPROJECT_VERSION})"
-            exit 1
-          fi
-
-          if [[ -n "${EXPECTED_VERSION}" ]]; then
-            # Normalize: strip leading zeros for comparison
-            NORMALIZED_TAG=$(echo "${EXPECTED_VERSION}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3}')
-            NORMALIZED_WS=$(echo "${WORKSPACE_VERSION}" | awk -F. '{printf "%d.%d.%d", $1, $2, $3}')
-            if [[ "${NORMALIZED_TAG}" != "${NORMALIZED_WS}" ]]; then
-              echo "::error::Tag version (${EXPECTED_VERSION}) does not match workspace version (${WORKSPACE_VERSION})"
-              exit 1
-            fi
-            echo "Tag version ${EXPECTED_VERSION} matches workspace version ${WORKSPACE_VERSION}"
-          else
-            echo "No tag push — verifying internal coherence only"
-          fi
-
-          echo "All version checks passed"
+          tag = os.environ.get("RELEASE_TAG", "")
+          if tag:
+              if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+                  raise SystemExit(f"::error::production tag must be vMAJOR.MINOR.PATCH: {tag}")
+              expected = tag[1:]
+              if expected != workspace:
+                  raise SystemExit(f"::error::tag version {expected} != workspace version {workspace}")
+              print(f"tag version matches: {tag}")
+          else:
+              print("manual dispatch: internal version coherence verified")
+          PY
 
   build-wheels:
     name: "Build wheel (${{ matrix.os }}, ${{ matrix.target }})"
@@ -92,10 +82,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64
-            manylinux: auto
+            manylinux: 2014
           - os: ubuntu-latest
             target: aarch64
-            manylinux: auto
+            manylinux: 2014
           - os: macos-13
             target: x86_64
           - os: macos-14
@@ -112,7 +102,7 @@ jobs:
           python-version: "3.12"
 
       - name: Setup QEMU
-        if: matrix.target == 'aarch64'
+        if: runner.os == 'Linux' && matrix.target == 'aarch64'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -195,40 +185,63 @@ jobs:
           set -euo pipefail
           echo "=== All artifacts ==="
           ls -la dist/
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
 
-          # Count wheels and sdist
-          WHEEL_COUNT=$(ls dist/*.whl 2>/dev/null | wc -l)
-          SDIST_COUNT=$(ls dist/*.tar.gz 2>/dev/null | wc -l)
+          wheels = sorted(Path("dist").glob("*.whl"))
+          sdists = sorted(Path("dist").glob("*.tar.gz"))
+          if len(wheels) != 5:
+              raise SystemExit(f"::error::expected exactly five wheels, found {len(wheels)}")
+          if len(sdists) != 1:
+              raise SystemExit(f"::error::expected exactly one sdist, found {len(sdists)}")
 
-          echo "Wheel count: ${WHEEL_COUNT}"
-          echo "Sdist count: ${SDIST_COUNT}"
+          version = None
+          targets = {}
+          for wheel in wheels:
+              name = wheel.name[:-4]
+              parts = name.split("-")
+              if len(parts) != 5 or parts[0] != "eggress":
+                  raise SystemExit(f"::error::unexpected wheel filename: {wheel.name}")
+              _, wheel_version, python_tag, abi_tag, platform_tag = parts
+              if version is None:
+                  version = wheel_version
+              if wheel_version != version:
+                  raise SystemExit(f"::error::wheel version mismatch: {wheel.name}")
+              if python_tag != "cp39" or abi_tag != "abi3":
+                  raise SystemExit(f"::error::wheel is not cp39-abi3: {wheel.name}")
 
-          if [[ "${SDIST_COUNT}" -ne 1 ]]; then
-            echo "::error::Expected exactly 1 sdist, found ${SDIST_COUNT}"
-            exit 1
-          fi
+              if "manylinux" in platform_tag and platform_tag.endswith("x86_64"):
+                  target = "linux-x86_64"
+              elif "manylinux" in platform_tag and platform_tag.endswith("aarch64"):
+                  target = "linux-aarch64"
+              elif platform_tag.startswith("macosx_") and platform_tag.endswith("x86_64"):
+                  target = "macos-x86_64"
+              elif platform_tag.startswith("macosx_") and platform_tag.endswith("arm64"):
+                  target = "macos-arm64"
+              elif re.search(r"(?:^|_)win_amd64$", platform_tag):
+                  target = "windows-x86_64"
+              else:
+                  raise SystemExit(f"::error::unapproved wheel platform: {wheel.name}")
+              if target in targets:
+                  raise SystemExit(f"::error::duplicate wheel target {target}: {wheel.name}")
+              targets[target] = wheel.name
 
-          # Verify wheel names contain expected platform tags
-          echo "=== Wheel tags ==="
-          for whl in dist/*.whl; do
-            basename "${whl}"
-          done
+          expected = {"linux-x86_64", "linux-aarch64", "macos-x86_64", "macos-arm64", "windows-x86_64"}
+          if set(targets) != expected:
+              raise SystemExit(f"::error::wheel target set mismatch: {set(targets)}")
+          if not re.fullmatch(r"eggress-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz", sdists[0].name):
+              raise SystemExit(f"::error::unexpected sdist filename: {sdists[0].name}")
+          if version is None or sdists[0].name != f"eggress-{version}.tar.gz":
+              raise SystemExit(f"::error::sdist version does not match wheels: {sdists[0].name}")
+          if any("debug" in path.name.lower() for path in [*wheels, *sdists]):
+              raise SystemExit("::error::debug artifact found")
 
-          # Check for abi3 tag
-          ABI3_WHEELS=$(ls dist/*.whl | xargs -I{} basename {} | grep -c "abi3" || true)
-          echo "Wheels with abi3 tag: ${ABI3_WHEELS}"
-
-          if [[ "${ABI3_WHEELS}" -lt 1 ]]; then
-            echo "::warning::No abi3-tagged wheels found — stable ABI may not be active"
-          fi
-
-          # Verify no debug artifacts or duplicates
-          if ls dist/*-debug* 2>/dev/null; then
-            echo "::error::Debug artifacts found in dist/"
-            exit 1
-          fi
-
-          echo "Artifact validation passed"
+          print("approved artifact set:")
+          for target, filename in sorted(targets.items()):
+              print(f"  {target}: {filename}")
+          print(f"  sdist: {sdists[0].name}")
+          PY
 
       - uses: actions/upload-artifact@v4
         with:
@@ -248,6 +261,8 @@ jobs:
           - os: macos-14
           - os: windows-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: release-artifacts
@@ -313,25 +328,11 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             .venv-test/Scripts/python.exe -m pip install --upgrade pip
             .venv-test/Scripts/python.exe -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
-            .venv-test/Scripts/python.exe -c "
-          import eggress
-          from eggress import pproxy
-          print(f'eggress {eggress.__version__}')
-          print(f'pproxy module: {pproxy}')
-          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
-          print(f'Server created: {srv}')
-          "
+            .venv-test/Scripts/python.exe scripts/release_artifact_smoke.py
           else
             .venv-test/bin/python -m pip install --upgrade pip
             .venv-test/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
-            .venv-test/bin/python -c "
-          import eggress
-          from eggress import pproxy
-          print(f'eggress {eggress.__version__}')
-          print(f'pproxy module: {pproxy}')
-          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
-          print(f'Server created: {srv}')
-          "
+            .venv-test/bin/python scripts/release_artifact_smoke.py
           fi
           echo "Smoke test passed"
 
@@ -345,6 +346,8 @@ jobs:
       matrix:
         python-version: ["3.9", "3.13"]
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: release-artifacts
@@ -374,13 +377,7 @@ jobs:
           python -m venv .venv-compat
           .venv-compat/bin/python -m pip install --upgrade pip
           .venv-compat/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
-          .venv-compat/bin/python -c "
-          import eggress
-          from eggress import pproxy
-          print(f'eggress {eggress.__version__} on Python $(python -c \"import sys; print(sys.version)\")')
-          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
-          print(f'Server created: {srv}')
-          "
+          .venv-compat/bin/python scripts/release_artifact_smoke.py
           echo "Python ${{ matrix.python-version }} compat smoke passed"
 
   sdist-smoke:
@@ -389,6 +386,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: release-artifacts
@@ -420,13 +419,7 @@ jobs:
           python -m venv .venv-sdist
           .venv-sdist/bin/python -m pip install --upgrade pip
           .venv-sdist/bin/python -m pip install "${{ steps.find-sdist.outputs.sdist_path }}"
-          .venv-sdist/bin/python -c "
-          import eggress
-          from eggress import pproxy
-          print(f'eggress {eggress.__version__} installed from sdist')
-          srv = pproxy.Server(listen=['socks5://127.0.0.1:0'])
-          print(f'Server created: {srv}')
-          "
+          .venv-sdist/bin/python scripts/release_artifact_smoke.py
           echo "Sdist clean-install smoke passed"
 
   publish-pypi:

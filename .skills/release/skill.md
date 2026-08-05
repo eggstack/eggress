@@ -70,7 +70,26 @@ git commit -m "release: bump version to v<new_version>"
 git push origin main
 ```
 
-### 5. Publish Python package (trusted publisher)
+### 5. Verify the release-only Python workflow
+
+The authoritative workflow is `.github/workflows/publish-python.yml`. It is
+release-only and bounded to five `cp39-abi3` wheels (Linux x86_64/aarch64,
+macOS x86_64/arm64, Windows x86_64) plus one sdist. Linux wheels use the
+manylinux2014/glibc 2.17 floor. The collector parses wheel filenames and fails
+on missing targets, duplicate targets, non-abi3 wheels, debug artifacts, or an
+unexpected sdist. Its installed-artifact smoke is
+`scripts/release_artifact_smoke.py`, which imports both `eggress` and top-level
+`pproxy`, starts a port-0 service, checks readiness/bound addresses, shuts it
+down, and checks readiness is false.
+
+Manually dispatch the workflow with `publish_target=testpypi` using a version
+that is safe for TestPyPI. Confirm every build, collection, wheel smoke,
+compatibility-range smoke, sdist smoke, and publish job succeeds. Install one
+published artifact from TestPyPI in a clean environment and run the same smoke
+script. Record the run URL and artifact filenames in the corrective plan before
+production use. Do not push a production tag solely to test the workflow.
+
+### 6. Publish Python package (trusted publisher)
 
 Push a version tag to trigger the `publish-python.yml` workflow:
 
@@ -85,7 +104,7 @@ Verify publication:
 - Check the workflow run: `gh run list --workflow=publish-python.yml --limit=1`
 - Verify on PyPI: `curl -s https://pypi.org/pypi/eggress/<new_version>/json | python -m json.tool | head -5`
 
-### 6. Publish Rust crates to crates.io (manual)
+### 7. Publish Rust crates to crates.io (manual)
 
 Crates.io publication is manual and currently blocked until crate boundaries are restructured. When ready:
 
@@ -103,7 +122,7 @@ cargo install eggress-cli --version <new_version> --locked --root /tmp/eggress-r
 /tmp/eggress-release-check/bin/eggress --version
 ```
 
-### 7. Optional: create GitHub Release
+### 8. Optional: create GitHub Release
 
 ```bash
 gh release create v<new_version> \

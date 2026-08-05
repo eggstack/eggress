@@ -31,7 +31,9 @@ This installs both the `eggress` and `pproxy` binaries.
 
 ### Lean local build
 
-For a smaller binary without extended protocol support (Shadowsocks, Trojan, WebSocket), admin, metrics, reverse proxy, or compatibility layers:
+For a smaller binary without the extended protocol families (Shadowsocks, Trojan,
+WebSocket), reverse runtime, system-proxy integration, or compatibility layers:
+admin and metrics remain compiled because they share the runtime snapshot.
 
 ```bash
 # Lean HTTP/SOCKS local proxy
@@ -68,7 +70,7 @@ available for migration-oriented code.
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 
 Prebuilt wheels are available for:
-- Linux x86_64 and aarch64 (manylinux)
+- Linux x86_64 and aarch64 (manylinux2014 / glibc 2.17 floor)
 - macOS x86_64 and arm64
 - Windows x86_64
 

@@ -9,10 +9,14 @@ use tokio_util::sync::CancellationToken;
 use crate::codec::{decode_packet, encode_socks5_udp_datagram};
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
+#[cfg(feature = "shadowsocks")]
+use crate::flow::resolve_endpoint;
+#[cfg(feature = "shadowsocks")]
+use crate::flow::target_to_socks_addr;
 use crate::flow::{
-    can_use_flow, close_all_flows, local_udp_bind_addr, reap_idle_flows, resolve_endpoint,
-    socks_addr_equivalent, socks_to_target_addr, target_to_socks_addr, total_target_flows,
-    ClientFlowState, TargetFlowEntry, UdpFlowKey, UdpFlowKind,
+    can_use_flow, close_all_flows, local_udp_bind_addr, reap_idle_flows, socks_addr_equivalent,
+    socks_to_target_addr, total_target_flows, ClientFlowState, TargetFlowEntry, UdpFlowKey,
+    UdpFlowKind,
 };
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
@@ -293,6 +297,7 @@ pub async fn standalone_udp_relay(
                                 }
                             }
                         }
+                        #[cfg(feature = "shadowsocks")]
                         UdpRelayCapability::SupportedShadowsocks { method, password } => {
                             let key = UdpFlowKey::ShadowsocksUpstream {
                                 target: request.target.clone(),

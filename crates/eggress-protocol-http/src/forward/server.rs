@@ -341,6 +341,10 @@ const MAX_HEAD_SIZE: usize = 32 * 1024;
 /// Maximum size for the HTTP response head.
 const MAX_RESPONSE_HEAD_SIZE: usize = 32 * 1024;
 
+/// Bound informational responses so an upstream cannot keep the proxy in a
+/// response-head loop indefinitely.
+const MAX_INFORMATIONAL_RESPONSES: usize = 8;
+
 /// Maximum number of header lines.
 const MAX_HEADER_LINES: usize = 128;
 
@@ -394,6 +398,18 @@ pub fn filter_hop_by_hop(headers: &[(String, String)]) -> Vec<(String, String)> 
         })
         .cloned()
         .collect()
+}
+
+/// Return whether the request contains an expectation this forwarder cannot
+/// negotiate. Expectation values are collected case-insensitively and comma-
+/// separated values are treated independently.
+pub fn has_unsupported_expectation(headers: &[(String, String)]) -> bool {
+    headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("Expect")
+            && value
+                .split(',')
+                .any(|expectation| !expectation.trim().is_empty())
+    })
 }
 
 /// Build an origin-form HTTP request to send to the upstream server.
@@ -536,6 +552,26 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
     })
 }
 
+fn format_response_head(response: &ForwardResponse, force_close: bool) -> String {
+    let filtered = filter_hop_by_hop(&response.headers);
+    let mut head = format!("HTTP/1.1 {} {}\r\n", response.status, response.reason);
+
+    for (name, value) in &filtered {
+        head.push_str(&format!("{}: {}\r\n", name, value));
+    }
+
+    if force_close
+        && !filtered
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("Connection"))
+    {
+        head.push_str("Connection: close\r\n");
+    }
+
+    head.push_str("\r\n");
+    head
+}
+
 /// Result of forwarding a response, including upstream connection state.
 pub struct ForwardResult {
     pub report: ForwardResponseReport,
@@ -555,26 +591,26 @@ pub async fn forward_response(
     upstream: &mut BoxStream,
     client: &mut BoxStream,
 ) -> Result<ForwardResult, HttpError> {
-    let response = read_response_head(upstream).await?;
+    let mut informational_responses = 0;
     let mut bytes_forwarded: u64 = 0;
-
-    // Build response head with filtered headers
-    let filtered = filter_hop_by_hop(&response.headers);
-    let mut head = format!("HTTP/1.1 {} {}\r\n", response.status, response.reason);
-
-    for (name, value) in &filtered {
-        head.push_str(&format!("{}: {}\r\n", name, value));
-    }
-
-    // Ensure Connection: close
-    if !filtered
-        .iter()
-        .any(|(n, _)| n.eq_ignore_ascii_case("Connection"))
-    {
-        head.push_str("Connection: close\r\n");
-    }
-
-    head.push_str("\r\n");
+    let response = loop {
+        let response = read_response_head(upstream).await?;
+        if response.status == 101 {
+            return Err(HttpError::UpgradeUnsupported);
+        }
+        if (100..200).contains(&response.status) {
+            informational_responses += 1;
+            if informational_responses > MAX_INFORMATIONAL_RESPONSES {
+                return Err(HttpError::TooManyInformationalResponses);
+            }
+            let head = format_response_head(&response, false);
+            client.write_all(head.as_bytes()).await?;
+            bytes_forwarded += head.len() as u64;
+            continue;
+        }
+        break response;
+    };
+    let head = format_response_head(&response, true);
     client.write_all(head.as_bytes()).await?;
     bytes_forwarded += head.len() as u64;
 
@@ -1726,40 +1762,89 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_forward_response_informational_100_continue() {
-        use tokio::io::AsyncWriteExt;
+    #[test]
+    fn test_expectation_detection_is_case_insensitive_and_comma_aware() {
+        assert!(has_unsupported_expectation(&[(
+            "eXpEcT".into(),
+            "foo, 100-continue".into()
+        ),]));
+        assert!(!has_unsupported_expectation(&[(
+            "Expect".into(),
+            "  ,  ".into()
+        )]));
+    }
 
-        let response = b"HTTP/1.1 100 Continue\r\n\r\n";
+    #[tokio::test]
+    async fn test_forward_response_forwards_informational_responses_before_final() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let response = b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>\r\n\r\nHTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
         let (upstream_read, mut upstream_write) = tokio::io::duplex(4096);
         tokio::spawn(async move {
             upstream_write.write_all(response).await.unwrap();
-            upstream_write.shutdown().await.ok();
         });
         let (mut client_read, client_write) = tokio::io::duplex(4096);
 
         let mut upstream: BoxStream = Box::new(upstream_read);
         let mut client: BoxStream = Box::new(client_write);
 
-        let result = forward_response(&mut upstream, &mut client).await;
-        assert!(result.is_ok());
-        let fwd = result.unwrap();
-        assert_eq!(fwd.status, 100, "response should be 100 Continue");
+        let result = forward_response(&mut upstream, &mut client).await.unwrap();
+        assert_eq!(result.status, 200);
+        client.shutdown().await.unwrap();
 
         let mut buf = Vec::new();
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            client_read.read_to_end(&mut buf),
-        )
-        .await;
+        client_read.read_to_end(&mut buf).await.unwrap();
         let resp = String::from_utf8_lossy(&buf);
         assert!(
-            resp.contains("100 Continue"),
-            "client should receive 100 Continue: {resp}"
+            resp.starts_with("HTTP/1.1 103 Early"),
+            "unexpected forwarded response: {resp:?}"
         );
-        assert!(
-            resp.contains("Connection: close"),
-            "proxy should add Connection: close to informational response: {resp}"
-        );
+        assert!(resp.contains("HTTP/1.1 100 Continue"));
+        assert!(resp.contains("HTTP/1.1 200 OK"));
+        assert!(resp.ends_with("hello"));
+        assert!(resp.find("103").unwrap() < resp.find("100").unwrap());
+        assert!(resp.find("100").unwrap() < resp.find("200").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_rejects_switching_protocols() {
+        use tokio::io::AsyncWriteExt;
+
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            upstream_write
+                .write_all(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n")
+                .await
+                .unwrap();
+        });
+        let (_client_read, client_write) = tokio::io::duplex(1024);
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        assert!(matches!(
+            forward_response(&mut upstream, &mut client).await,
+            Err(HttpError::UpgradeUnsupported)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_bounds_informational_responses() {
+        use tokio::io::AsyncWriteExt;
+
+        let response = b"HTTP/1.1 103 Early Hints\r\n\r\n";
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            for _ in 0..=MAX_INFORMATIONAL_RESPONSES {
+                upstream_write.write_all(response).await.unwrap();
+            }
+        });
+        let (_client_read, client_write) = tokio::io::duplex(4096);
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        assert!(matches!(
+            forward_response(&mut upstream, &mut client).await,
+            Err(HttpError::TooManyInformationalResponses)
+        ));
     }
 }

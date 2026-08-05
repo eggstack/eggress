@@ -98,4 +98,10 @@ Admin and metrics remain required dependencies because they are tightly coupled 
 
 Under a lean build (`--no-default-features --features common`), the runtime provides only HTTP/SOCKS core proxying with direct TCP/UDP and TLS transport. Extended protocol URIs, reverse proxy configs, and system proxy commands fail with structured diagnostics.
 
+The `extended` group also enables the internal `eggress-udp/shadowsocks`
+feature. Without it, UDP route selection returns the existing unsupported
+capability path; it does not fall back to direct UDP. Admin and metrics remain
+compiled in both groups because they participate in the shared runtime
+snapshot.
+
 See [overview.md](overview.md) for context.

@@ -9,6 +9,7 @@ pub mod registry;
 pub mod relay;
 pub mod security;
 pub mod standalone;
+#[cfg(feature = "shadowsocks")]
 pub mod standalone_shadowsocks;
 pub mod testkit;
 pub mod udp_capability;

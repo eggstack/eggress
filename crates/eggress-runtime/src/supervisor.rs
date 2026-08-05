@@ -280,6 +280,7 @@ struct PreparedListener {
     local_bind: Option<String>,
 }
 
+#[cfg(feature = "extended")]
 type PreparedShadowsocksUdpRelay = (
     Arc<tokio::net::UdpSocket>,
     eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig,
@@ -545,6 +546,13 @@ impl ServiceSupervisor {
 
         for warning in &warnings {
             tracing::warn!("config security warning: {warning}");
+        }
+
+        #[cfg(not(feature = "reverse"))]
+        if !rt_config.reverse_servers.is_empty() || !rt_config.reverse_clients.is_empty() {
+            return Err(RuntimeError::Other(
+                "reverse proxy support not included in this build".to_string(),
+            ));
         }
 
         for lcfg in &rt_config.listeners {

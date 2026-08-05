@@ -14,6 +14,7 @@ extended = [
     "dep:eggress-protocol-shadowsocks",
     "dep:eggress-protocol-trojan",
     "dep:eggress-protocol-websocket",
+    "eggress-udp/shadowsocks",
 ]
 
 [dev-dependencies]

@@ -6,10 +6,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["shadowsocks"]
+shadowsocks = ["dep:eggress-protocol-shadowsocks"]
+
 [dependencies]
 eggress-core.workspace = true
 eggress-protocol-socks.workspace = true
-eggress-protocol-shadowsocks.workspace = true
+eggress-protocol-shadowsocks = { workspace = true, optional = true }
 eggress-routing.workspace = true
 eggress-uri.workspace = true
 bytes.workspace = true

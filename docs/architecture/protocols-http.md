@@ -41,6 +41,22 @@ HTTP/1.1 and H2 proxy protocol implementation.
 - `Transfer-Encoding: chunked` with CRLF validation and extension support
 - Hop-by-hop header filtering
 
+## Forwarding safety policy
+
+The HTTP/1.1 forwarder is deliberately half-duplex. It rejects any non-empty
+`Expect` value, including `100-continue`, with `417 Expectation Failed` and
+closes the client connection before opening an origin route. Request-body
+upload and the final upstream flush use the configured connect timeout; a
+timeout or write failure drops both streams and cannot reuse buffered bytes as
+another request.
+
+Informational responses (`1xx`, except `101`) are forwarded in order and are
+bounded to eight heads before one final response is processed. `101 Switching
+Protocols` is explicitly rejected with `501 Not Implemented`; ordinary
+forward-proxy upgrade tunneling is not implemented. An early final response
+while a request body is uploading terminates the session within the upload
+timeout rather than attempting a general full-duplex pump.
+
 ## Dependencies
 
 - `eggress-core` — `BoxStream`, `ProtocolId`

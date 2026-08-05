@@ -186,6 +186,8 @@ pub async fn accept(
     #[cfg(not(feature = "extended"))] shadowsocks_metrics: Option<&()>,
     trojan_config: Option<&InboundTrojanConfig>,
 ) -> Result<AcceptedSession, AcceptError> {
+    #[cfg(not(feature = "extended"))]
+    let _ = (shadowsocks_config, shadowsocks_metrics, trojan_config);
     accept_with_fixed_target(
         client,
         protocols,
@@ -210,6 +212,8 @@ pub async fn accept_with_fixed_target(
     trojan_config: Option<&InboundTrojanConfig>,
     fixed_target: Option<&TargetAddr>,
 ) -> Result<AcceptedSession, AcceptError> {
+    #[cfg(not(feature = "extended"))]
+    let _ = (shadowsocks_config, shadowsocks_metrics, trojan_config);
     #[cfg(feature = "extended")]
     #[inline]
     fn shadows_metrics(

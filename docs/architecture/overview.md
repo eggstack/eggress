@@ -277,14 +277,19 @@ The workspace defines bounded feature groups that control which protocol familie
 
 | Group | Scope | Contents |
 |-------|-------|----------|
-| `common` | runtime, cli, embed | HTTP/SOCKS core, TLS transport, UDP, raw |
+| `common` | runtime, cli, embed | HTTP/SOCKS core, TLS transport, UDP, raw; admin and metrics remain required |
 | `extended` | runtime, server, metrics, cli, embed | Shadowsocks, Trojan, WebSocket |
 | `operations` | runtime, cli | System proxy |
 | `reverse` | runtime, cli | Reverse/backward proxy control-channel |
 | `pproxy-compat` | cli, embed | pproxy compatibility translator and binary |
 | `full` | all | Union of all (default) |
 
-Admin and metrics remain required dependencies for the snapshot invariant. The `extended` feature gates protocol accept paths, chain executor handlers, and metrics bridging at composition boundaries. A disabled feature fails with a structured diagnostic, never silently degrading.
+Admin and metrics remain required dependencies for the snapshot invariant. The
+`extended` feature gates protocol accept paths, chain executor handlers, and
+metrics bridging at composition boundaries, and forwards the internal
+`eggress-udp/shadowsocks` gate. Internal workspace edges disable dependency
+defaults so `common` cannot reactivate `runtime/full`; a disabled feature fails
+with a structured diagnostic, never silently degrading.
 
 Lean builds exclude optional protocol families:
 

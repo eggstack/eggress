@@ -8,6 +8,7 @@ const EXIT_SUCCESS: i32 = 0;
 const EXIT_CLI_PARSE_ERROR: i32 = 2;
 const EXIT_CONFIG_VALIDATION: i32 = 3;
 const EXIT_RUNTIME_FAILURE: i32 = 1;
+#[cfg(feature = "pproxy-compat")]
 const EXIT_UNSUPPORTED_FEATURE: i32 = 5;
 const EXIT_SIGINT: i32 = 130;
 const EXIT_SIGTERM: i32 = 143;

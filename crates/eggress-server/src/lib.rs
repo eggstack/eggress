@@ -1102,6 +1102,83 @@ mod tests {
 
         echo_jh.abort();
     }
+
+    #[tokio::test]
+    async fn test_http_expectation_is_rejected_with_417_and_connection_close() {
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let config = test_config(direct_routing());
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream
+            .write_all(
+                b"POST http://127.0.0.1:1/ HTTP/1.1\r\nHost: 127.0.0.1:1\r\nExpect: 100-continue\r\nContent-Length: 1048576\r\n\r\n",
+            )
+            .await
+            .unwrap();
+
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut response))
+            .await
+            .expect("expectation rejection must be bounded")
+            .unwrap();
+        assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 417 Expectation Failed"));
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::ClientProtocolError
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_http_body_upload_timeout_closes_session() {
+        let origin_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin_addr = origin_listener.local_addr().unwrap();
+        let origin_jh = tokio::spawn(async move {
+            let (_stream, _) = origin_listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let mut config = test_config(direct_routing());
+            config.connect_timeout = Duration::from_millis(50);
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        let request = format!(
+            "POST http://{}:{}/ HTTP/1.1\r\nHost: {}:{}\r\nContent-Length: 16\r\n\r\n",
+            origin_addr.ip(),
+            origin_addr.port(),
+            origin_addr.ip(),
+            origin_addr.port()
+        );
+        stream.write_all(request.as_bytes()).await.unwrap();
+
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut response))
+            .await
+            .expect("body upload timeout must close the client")
+            .unwrap();
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::RelayFailed
+        ));
+
+        origin_jh.abort();
+    }
 }
 
 /// Negative tests for lean (common-only) build.
@@ -1201,6 +1278,40 @@ mod lean_negative_tests {
             "trojan should fail in lean build, got: {:?}",
             report.outcome
         );
+    }
+
+    #[tokio::test]
+    async fn lean_rejects_websocket_accept() {
+        use eggress_routing::{RouteActionSpec, Router};
+
+        let routing: Arc<dyn eggress_routing::RouteService> =
+            Arc::new(Router::new(vec![], RouteActionSpec::Direct));
+        let protocols: Arc<[ProtocolId]> = Arc::from([ProtocolId::WebSocket]);
+        let (mut client, server) = tokio::io::duplex(1024);
+        let boxed: eggress_core::BoxStream = Box::new(server);
+        let config = ConnectionConfig {
+            routing,
+            context: ConnectionContext::default(),
+            handshake_timeout: Duration::from_secs(2),
+            connect_timeout: Duration::from_secs(5),
+            protocols,
+            authentication: accept::InboundAuthentication::None,
+            metrics: None,
+            udp: None,
+            tls_client_config: None,
+            shadowsocks: None,
+            shadowsocks_metrics: None,
+            trojan: None,
+            fixed_target: None,
+            local_bind: None,
+        };
+        client.write_all(&[0xff]).await.unwrap();
+
+        let report = serve_connection(boxed, config).await;
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::ClientProtocolError
+        ));
     }
 
     #[tokio::test]

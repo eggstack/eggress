@@ -26,6 +26,7 @@ pub enum UdpFlowKey {
         target: SocksAddr,
         upstream_id: UpstreamId,
     },
+    #[cfg(feature = "shadowsocks")]
     ShadowsocksUpstream {
         target: SocksAddr,
         upstream_id: UpstreamId,
@@ -37,6 +38,7 @@ impl UdpFlowKey {
         match self {
             UdpFlowKey::Direct { target } => target,
             UdpFlowKey::Socks5Upstream { target, .. } => target,
+            #[cfg(feature = "shadowsocks")]
             UdpFlowKey::ShadowsocksUpstream { target, .. } => target,
         }
     }
@@ -45,6 +47,7 @@ impl UdpFlowKey {
 pub enum UdpFlowKind {
     Direct(UdpTargetFlow),
     Socks5Upstream(Socks5UdpTargetFlow),
+    #[cfg(feature = "shadowsocks")]
     ShadowsocksUpstream(ShadowsocksUdpTargetFlow),
 }
 
@@ -79,6 +82,7 @@ impl Socks5UdpTargetFlow {
     }
 }
 
+#[cfg(feature = "shadowsocks")]
 pub struct ShadowsocksUdpTargetFlow {
     pub target: SocksAddr,
     pub upstream_id: UpstreamId,
@@ -90,6 +94,7 @@ pub struct ShadowsocksUdpTargetFlow {
     pub last_activity: Instant,
 }
 
+#[cfg(feature = "shadowsocks")]
 impl ShadowsocksUdpTargetFlow {
     pub fn touch(&mut self) {
         self.last_activity = Instant::now();
@@ -139,6 +144,7 @@ impl TargetFlowEntry {
         match &mut self.flow {
             UdpFlowKind::Direct(f) => f.touch(),
             UdpFlowKind::Socks5Upstream(f) => f.touch(),
+            #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(f) => f.touch(),
         }
     }
@@ -147,6 +153,7 @@ impl TargetFlowEntry {
         match &self.flow {
             UdpFlowKind::Direct(f) => f.last_activity,
             UdpFlowKind::Socks5Upstream(f) => f.last_activity(),
+            #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(f) => f.last_activity(),
         }
     }

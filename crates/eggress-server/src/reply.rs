@@ -103,6 +103,30 @@ pub async fn send_http_forward_failure(
     Ok(())
 }
 
+/// Reject request expectations because the forwarder does not implement the
+/// 100-continue negotiation or a concurrent request/response pump.
+pub async fn send_http_expectation_failed(
+    client: &mut eggress_core::BoxStream,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    client
+        .write_all(b"HTTP/1.1 417 Expectation Failed\r\nConnection: close\r\n\r\n")
+        .await?;
+    client.shutdown().await?;
+    Ok(())
+}
+
+/// Reject an upstream protocol upgrade rather than accidentally turning the
+/// forward-proxy session into an unframed tunnel.
+pub async fn send_http_upgrade_unsupported(
+    client: &mut eggress_core::BoxStream,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    client
+        .write_all(b"HTTP/1.1 501 Not Implemented\r\nConnection: close\r\n\r\n")
+        .await?;
+    client.shutdown().await?;
+    Ok(())
+}
+
 fn http_failure_status(error: &SessionOpenError) -> &'static [u8] {
     match error {
         SessionOpenError::Timeout => b"HTTP/1.1 504 Gateway Timeout\r\nConnection: close\r\n\r\n",

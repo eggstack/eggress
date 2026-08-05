@@ -6,6 +6,7 @@ use eggress_uri::ProxyChainSpec;
 #[derive(Debug)]
 pub enum UdpRelayCapability {
     SupportedSocks5,
+    #[cfg(feature = "shadowsocks")]
     SupportedShadowsocks {
         method: eggress_protocol_shadowsocks::CipherMethod,
         password: String,
@@ -16,6 +17,7 @@ pub enum UdpRelayCapability {
     UnsupportedMultiHop,
 }
 
+#[cfg(feature = "shadowsocks")]
 fn extract_shadowsocks_creds(
     hop: &eggress_uri::ProxyHopSpec,
 ) -> Option<(eggress_protocol_shadowsocks::CipherMethod, String)> {
@@ -42,6 +44,7 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
             if hop.protocols.len() == 1 {
                 match &hop.protocols[0] {
                     ProtocolSpec::Socks5 => UdpRelayCapability::SupportedSocks5,
+                    #[cfg(feature = "shadowsocks")]
                     ProtocolSpec::Shadowsocks => {
                         if let Some((method, password)) = extract_shadowsocks_creds(hop) {
                             UdpRelayCapability::SupportedShadowsocks { method, password }
@@ -51,6 +54,10 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
                             }
                         }
                     }
+                    #[cfg(not(feature = "shadowsocks"))]
+                    ProtocolSpec::Shadowsocks => UdpRelayCapability::UnsupportedProtocol {
+                        protocol: "Shadowsocks".to_string(),
+                    },
                     other => UdpRelayCapability::UnsupportedProtocol {
                         protocol: format!("{:?}", other),
                     },
@@ -72,6 +79,7 @@ pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
             if chain.hops.len() == 1 && chain.hops[0].protocols.len() == 1 {
                 match &chain.hops[0].protocols[0] {
                     ProtocolSpec::Socks5 => UdpRelayCapability::SupportedSocks5,
+                    #[cfg(feature = "shadowsocks")]
                     ProtocolSpec::Shadowsocks => {
                         if let Some((method, password)) = extract_shadowsocks_creds(&chain.hops[0])
                         {
@@ -82,6 +90,10 @@ pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
                             }
                         }
                     }
+                    #[cfg(not(feature = "shadowsocks"))]
+                    ProtocolSpec::Shadowsocks => UdpRelayCapability::UnsupportedProtocol {
+                        protocol: "Shadowsocks".to_string(),
+                    },
                     _ => UdpRelayCapability::SupportedSocks5,
                 }
             } else {
@@ -149,6 +161,16 @@ mod tests {
             tls: false,
             server_name: None,
         }
+    }
+
+    #[cfg(not(feature = "shadowsocks"))]
+    #[test]
+    fn common_build_reports_shadowsocks_udp_as_unsupported() {
+        let chain = chain(vec![hop(vec![ProtocolSpec::Shadowsocks])]);
+        assert!(matches!(
+            udp_capability(&chain),
+            UdpRelayCapability::UnsupportedProtocol { .. }
+        ));
     }
 
     #[test]

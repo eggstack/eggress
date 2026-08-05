@@ -13,6 +13,19 @@ Key compatibility surface notes:
 - H2/WS/WSS remain upstream-only; bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains intentionally deferred.
 - Bounded fixed-target TCP/UDP raw/tunnel forms, Unix domain TCP upstreams on Unix, and per-connection outbound local binds are supported. These do not establish general multi-hop UDP, macOS PF transparent recovery, backward TLS, daemonization, or connection-reuse parity.
 
+Lean feature builds are truthful: internal workspace edges for `eggress-runtime`,
+`eggress-embed`, `eggress-udp`, `eggress-server`, and `eggress-metrics` disable
+dependency defaults, while `eggress-cli/common` explicitly forwards
+`eggress-runtime/common`. The internal `eggress-udp/shadowsocks` gate is
+enabled by `extended`; common UDP routing reports Shadowsocks as unsupported
+instead of falling back to direct UDP. Admin and metrics remain required in
+both groups.
+
+The HTTP forwarder rejects non-empty `Expect` headers with a bounded 417/close
+exchange, follows at most eight informational responses, rejects 101 upgrades,
+and bounds body upload with the configured connect timeout. It is intentionally
+not a general full-duplex request/response pump.
+
 ## Source-of-truth documents
 
 Use these current documents before relying on historical phase or completion records:
@@ -163,6 +176,12 @@ The repository has two automatic smoke workflows and one manual publish workflow
 - `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, and workspace tests.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job.
 - `.github/workflows/publish-python.yml`: multi-platform wheel and sdist build, smoke tests, and publication to PyPI/TestPyPI via OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch. Builds wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64) using the Python stable ABI.
+
+The release-only workflow uses a manylinux2014/glibc 2.17 floor, structurally
+parses exact TOML version fields, hard-rejects any artifact set other than the
+five approved `cp39-abi3` wheels plus one sdist, and runs
+`scripts/release_artifact_smoke.py` against installed artifacts. A successful
+manual TestPyPI run is required before production tagging.
 
 Do not recreate release artifact matrices, automated GitHub Releases, container publishing, continuous parity evidence generation, or mandatory external interoperability workflows without an explicit project-level decision.
 

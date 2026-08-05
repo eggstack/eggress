@@ -9,11 +9,12 @@ license.workspace = true
 [features]
 default = ["full"]
 full = ["common", "extended", "operations", "reverse"]
-common = []
+common = ["eggress-server/common", "eggress-metrics/common"]
 extended = [
     "dep:eggress-protocol-shadowsocks",
     "eggress-server/extended",
     "eggress-metrics/extended",
+    "eggress-udp/shadowsocks",
 ]
 operations = [
     "dep:eggress-system-proxy",

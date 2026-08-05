@@ -16,8 +16,9 @@ pub use detect::HttpDetector;
 pub use error::HttpError;
 pub use forward::{
     build_origin_request, copy_request_body, determine_request_body_kind, filter_hop_by_hop,
-    forward_request, forward_request_stream, forward_response, BodyCopyLimits, BodyCopyReport,
-    ForwardRequest, ForwardResponse, ForwardResponseReport, ForwardResult, RequestBodyKind,
+    forward_request, forward_request_stream, forward_response, has_unsupported_expectation,
+    BodyCopyLimits, BodyCopyReport, ForwardRequest, ForwardResponse, ForwardResponseReport,
+    ForwardResult, RequestBodyKind,
 };
 pub use h2_connect::{
     h2_connect_client, h2_connect_client_pooled, h2_connect_relay, handle_h2_connect,

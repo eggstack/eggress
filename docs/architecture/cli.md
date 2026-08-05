@@ -41,6 +41,11 @@ The CLI supports feature-gated builds:
 | Smallest | `cargo build -p eggress-cli --profile release-small --no-default-features --features common` | `eggress` only |
 
 The `pproxy` binary requires the `pproxy-compat` feature. Default builds include it.
+The `common` feature explicitly forwards `eggress-runtime/common`; internal
+workspace edges disable dependency defaults so a common build does not
+reactivate `runtime/full`. Admin and metrics remain required runtime
+dependencies, while the UDP crate's Shadowsocks flow types are enabled only
+through the internal `eggress-udp/shadowsocks` gate used by `extended`.
 
 ### Route Explain
 

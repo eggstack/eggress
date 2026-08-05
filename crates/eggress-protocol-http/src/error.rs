@@ -66,6 +66,15 @@ pub enum HttpError {
 
     #[error("invalid credentials: control characters not allowed")]
     InvalidCredentials,
+
+    #[error("HTTP expectation is not supported")]
+    ExpectationFailed,
+
+    #[error("HTTP protocol upgrade is not supported")]
+    UpgradeUnsupported,
+
+    #[error("too many informational responses")]
+    TooManyInformationalResponses,
 }
 
 impl HttpError {
@@ -86,6 +95,9 @@ impl HttpError {
             HttpError::UnsupportedTransferEncoding(_) => 400,
             HttpError::ChunkedNotFinal => 400,
             HttpError::InvalidCredentials => 400,
+            HttpError::ExpectationFailed => 417,
+            HttpError::UpgradeUnsupported => 501,
+            HttpError::TooManyInformationalResponses => 502,
             _ => 500,
         }
     }

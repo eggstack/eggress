@@ -257,6 +257,14 @@ cargo fuzz run route_match
 cargo test --workspace -- --nocapture
 ```
 
+For HTTP forward-proxy changes, also run `cargo test -p
+eggress-protocol-http` and `cargo test -p eggress-server`. The focused safety
+coverage rejects `Expect`, forwards bounded informational responses, rejects
+`101`, and bounds body upload. For an installed Python artifact, run
+`python scripts/release_artifact_smoke.py` from a clean environment; it must
+exercise both the `eggress` and top-level `pproxy` imports and a port-0
+start/readiness/shutdown cycle.
+
 ## Writing new tests
 - Use `#[tokio::test]` for async tests
 - Use the testkit for server/client fixtures

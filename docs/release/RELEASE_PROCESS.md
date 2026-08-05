@@ -1,6 +1,9 @@
 # Manual Release Process
 
-Egress releases are operator-driven. GitHub Actions does not publish crates, build release bundles, create GitHub Releases, push container images, publish Python packages, or react to version tags.
+Egress releases are operator-driven. GitHub Actions publishes the Python
+distribution only through the bounded release workflow; Rust crates remain
+manual. GitHub Actions does not build native archives, create GitHub Releases,
+push container images, or publish Rust crates.
 
 No release cadence is encoded in the repository. A maintainer releases when the code and version are ready.
 
@@ -10,7 +13,8 @@ The primary release channel is crates.io using local `cargo publish` commands. G
 
 **Current publication status:** Crates.io publication is blocked. The CLI (`eggress-cli`) is the only intended public product, but it depends on ~20 internal crates by workspace path. All internal crates are marked `publish = false`. Publishing the CLI requires either publishing the internal dependency closure or restructuring crate boundaries. This is a deliberate architectural decision, not an oversight. Publication will resume when a crate-boundary consolidation plan is completed.
 
-Python/PyPI distribution is a separate manual operation and must not be coupled to the Rust release workflow.
+Python/PyPI distribution is a separate release-only operation. It is not part
+of routine CI and is not coupled to crates.io publication.
 
 ## Prerequisites
 
@@ -105,11 +109,26 @@ gh release create v<version> \
   --notes-file <release-notes-file>
 ```
 
-These commands are optional and must remain manual. Pushing a tag must not start publishing, artifact construction, signing, container pushes, or release creation in GitHub Actions.
+These commands are optional and must remain manual. Pushing a tag may trigger
+the bounded Python publication workflow, but must not publish Rust crates,
+build native archives, sign artifacts, push containers, or create a GitHub
+Release.
 
 ## Python distribution
 
-Python publication to PyPI is automated through `.github/workflows/publish-python.yml`. Pushing a `v*` tag triggers production publication after version coherence validation. Manual dispatch targets TestPyPI by default. The workflow builds prebuilt wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64), plus one source distribution, using the Python stable ABI (`abi3-py39`).
+Python publication to PyPI is automated through `.github/workflows/publish-python.yml`. Pushing a `v*` tag triggers production publication after exact TOML-field version coherence validation. Manual dispatch targets TestPyPI by default. Linux builds use manylinux2014 (glibc 2.17); the workflow requires exactly five `cp39-abi3` wheels for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64, plus one sdist. The collector is a hard gate, not a warning-only check.
+
+Every installed wheel and the sdist are smoke-tested with
+`scripts/release_artifact_smoke.py`. The smoke imports `eggress` and the
+separately resolved top-level `pproxy` package, starts an `EggressService`
+listener on `127.0.0.1:0`, verifies readiness and a bound address, shuts down
+cleanly, and verifies readiness is false.
+
+Before production use, manually dispatch TestPyPI with a safe version, confirm
+all build, collection, smoke, and publish jobs succeed, install one artifact
+from TestPyPI in a clean environment, and run the same smoke script. Record
+the run URL and filenames in `plans/LEAN_RUNTIME_CORRECTIVE_PASS.md`. Do not
+push a production tag solely to test the workflow.
 
 Crates.io publication remains manual and is not coupled to the Python release workflow.
 

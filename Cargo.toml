@@ -99,11 +99,11 @@ eggress-transport-tls = { path = "crates/eggress-transport-tls" }
 eggress-testkit = { path = "crates/eggress-testkit" }
 eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server", default-features = false }
-eggress-udp = { path = "crates/eggress-udp" }
+eggress-udp = { path = "crates/eggress-udp", default-features = false }
 eggress-cli = { path = "crates/eggress-cli" }
-eggress-runtime = { path = "crates/eggress-runtime" }
+eggress-runtime = { path = "crates/eggress-runtime", default-features = false }
 eggress-pproxy-compat = { path = "crates/eggress-pproxy-compat" }
-eggress-embed = { path = "crates/eggress-embed" }
+eggress-embed = { path = "crates/eggress-embed", default-features = false }
 eggress-protocol-websocket = { path = "crates/eggress-protocol-websocket" }
 eggress-protocol-reverse = { path = "crates/eggress-protocol-reverse" }
 eggress-system-proxy = { path = "crates/eggress-system-proxy" }

@@ -363,8 +363,11 @@ async fn open_route(
                 pending_lease,
                 ..
             } => {
-                let executor =
-                    build_chain_executor(tls_override, config.shadowsocks_metrics.clone());
+                #[cfg(feature = "extended")]
+                let shadowsocks_metrics = config.shadowsocks_metrics.clone();
+                #[cfg(not(feature = "extended"))]
+                let shadowsocks_metrics = config.shadowsocks_metrics;
+                let executor = build_chain_executor(tls_override, shadowsocks_metrics);
                 let stream = executor.execute(&chain.hops, request.target).await?;
                 let active_lease = pending_lease.established();
                 Ok::<_, SessionOpenError>((stream, Some(active_lease)))
@@ -533,6 +536,23 @@ async fn execute_http_forward(
         let target_addr = request.target.clone();
         last_target = Some(target_addr.to_string());
 
+        if eggress_protocol_http::has_unsupported_expectation(&request.headers) {
+            let _ = reply::send_http_expectation_failed(&mut client).await;
+            return SessionReport {
+                protocol: None,
+                target: last_target,
+                route: last_route,
+                bytes_upstream: total_bytes_upstream,
+                bytes_downstream: total_bytes_downstream,
+                outcome: SessionOutcome::ClientProtocolError,
+                failure: Some(FailureCategory::Protocol),
+                rule_id: last_rule_id,
+                upstream_group: last_upstream_group,
+                upstream_id: last_upstream_id,
+                selection_reason: last_selection_reason,
+            };
+        }
+
         let route_request = RouteRequest {
             target: &target_addr,
             source: config.context.source,
@@ -595,16 +615,23 @@ async fn execute_http_forward(
                     };
                 }
 
-                let body_report = match eggress_protocol_http::copy_request_body(
-                    &mut client,
-                    &mut opened.stream,
-                    request.body_kind(),
-                    &eggress_protocol_http::BodyCopyLimits::default(),
-                )
-                .await
-                {
-                    Ok(report) => report,
-                    Err(_e) => {
+                let body_result = tokio::time::timeout(config.connect_timeout, async {
+                    let report = eggress_protocol_http::copy_request_body(
+                        &mut client,
+                        &mut opened.stream,
+                        request.body_kind(),
+                        &eggress_protocol_http::BodyCopyLimits::default(),
+                    )
+                    .await?;
+                    opened.stream.flush().await?;
+                    Ok::<_, eggress_protocol_http::HttpError>(report)
+                })
+                .await;
+                let body_report = match body_result {
+                    Ok(Ok(report)) => report,
+                    Ok(Err(_)) => {
+                        let _ = opened.stream.shutdown().await;
+                        let _ = client.shutdown().await;
                         return SessionReport {
                             protocol: None,
                             target: last_target,
@@ -613,6 +640,23 @@ async fn execute_http_forward(
                             bytes_downstream: total_bytes_downstream,
                             outcome: SessionOutcome::ClientProtocolError,
                             failure: Some(FailureCategory::Protocol),
+                            rule_id: last_rule_id,
+                            upstream_group: last_upstream_group,
+                            upstream_id: last_upstream_id,
+                            selection_reason: last_selection_reason,
+                        };
+                    }
+                    Err(_) => {
+                        let _ = opened.stream.shutdown().await;
+                        let _ = client.shutdown().await;
+                        return SessionReport {
+                            protocol: None,
+                            target: last_target,
+                            route: last_route,
+                            bytes_upstream: total_bytes_upstream + head_bytes,
+                            bytes_downstream: total_bytes_downstream,
+                            outcome: SessionOutcome::RelayFailed,
+                            failure: Some(FailureCategory::Relay),
                             rule_id: last_rule_id,
                             upstream_group: last_upstream_group,
                             upstream_id: last_upstream_id,
@@ -628,7 +672,24 @@ async fn execute_http_forward(
                         .await
                     {
                         Ok(result) => result,
+                        Err(eggress_protocol_http::HttpError::UpgradeUnsupported) => {
+                            let _ = reply::send_http_upgrade_unsupported(&mut client).await;
+                            return SessionReport {
+                                protocol: None,
+                                target: last_target,
+                                route: last_route,
+                                bytes_upstream: total_bytes_upstream,
+                                bytes_downstream: total_bytes_downstream,
+                                outcome: SessionOutcome::RelayFailed,
+                                failure: Some(FailureCategory::Protocol),
+                                rule_id: last_rule_id,
+                                upstream_group: last_upstream_group,
+                                upstream_id: last_upstream_id,
+                                selection_reason: last_selection_reason,
+                            };
+                        }
                         Err(_e) => {
+                            let _ = client.shutdown().await;
                             return SessionReport {
                                 protocol: None,
                                 target: last_target,

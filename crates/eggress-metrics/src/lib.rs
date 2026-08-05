@@ -86,6 +86,7 @@ pub struct H2StreamLabels {
     pub outcome: String,
 }
 
+#[allow(dead_code)]
 pub struct MetricsRegistry {
     registry: Registry,
     connections_active: Gauge,

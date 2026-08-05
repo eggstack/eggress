@@ -76,6 +76,13 @@ All blocking Rust calls release the GIL via `py.detach()`.
 - `py.typed` PEP 561 marker
 - Type stubs (`.pyi`) for all public modules
 
+Release artifacts are validated against an exact five-wheel/one-sdist
+contract: Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64. Every
+wheel must use `cp39-abi3`, and the release-only workflow uses
+`scripts/release_artifact_smoke.py` to import both `eggress` and top-level
+`pproxy`, start a `127.0.0.1:0` listener, verify readiness and its bound
+address, then shut it down and verify readiness is false.
+
 ## Dependencies
 
 - `eggress-embed` — Rust embed API

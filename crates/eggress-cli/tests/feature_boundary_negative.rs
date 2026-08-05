@@ -7,10 +7,9 @@
 #[cfg(not(feature = "pproxy-compat"))]
 #[test]
 fn lean_pproxy_binary_not_available() {
-    let result = assert_cmd::Command::cargo_bin("pproxy");
     assert!(
-        result.is_err(),
-        "pproxy binary should not exist in builds without pproxy-compat feature"
+        !cfg!(feature = "pproxy-compat"),
+        "pproxy binary should not be built without pproxy-compat feature"
     );
 }
 

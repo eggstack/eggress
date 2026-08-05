@@ -8,7 +8,7 @@ license.workspace = true
 [features]
 default = ["full"]
 full = ["common", "extended", "operations", "reverse", "pproxy-compat"]
-common = []
+common = ["eggress-runtime/common"]
 extended = ["eggress-runtime/extended"]
 operations = ["dep:eggress-system-proxy", "eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
