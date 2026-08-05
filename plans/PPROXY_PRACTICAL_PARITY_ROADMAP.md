@@ -11,6 +11,21 @@ The corrective handoff plan was:
 
 This roadmap supersedes `plans/PPROXY_FULL_DROP_IN_ROADMAP.md` for the current line of work. The older roadmap remains useful as a record of the maximal compatibility target, but its certification machinery, exhaustive internal-API replication, and requirement to reproduce every legacy transport are disproportionate to the present project.
 
+## Follow-on corrective and reductive work
+
+The original practical-parity scope remains completed. A post-audit corrective and reductive pass is now governed by:
+
+[`PPROXY_CORRECTIVE_REDUCTION_ROADMAP.md`](PPROXY_CORRECTIVE_REDUCTION_ROADMAP.md)
+
+That follow-on addresses confirmed CLI semantic defects, fail-closed compatibility execution, silent Python facade behavior, truthful lean feature topology, binary-size measurement, source-of-truth consolidation, and Python CI path coverage. It does not reopen SSH, QUIC/HTTP/3, ShadowsocksR, legacy cipher/plugin, daemonization, exhaustive private Python API, or strict full-parity scope.
+
+Its complete execution set is:
+
+1. [`PPROXY_CORRECTIVE_PHASE_1_CLI_SEMANTICS.md`](PPROXY_CORRECTIVE_PHASE_1_CLI_SEMANTICS.md)
+2. [`PPROXY_CORRECTIVE_PHASE_2_PYTHON_BEHAVIOR.md`](PPROXY_CORRECTIVE_PHASE_2_PYTHON_BEHAVIOR.md)
+3. [`PPROXY_CORRECTIVE_PHASE_3_FEATURE_TOPOLOGY_AND_SIZE.md`](PPROXY_CORRECTIVE_PHASE_3_FEATURE_TOPOLOGY_AND_SIZE.md)
+4. [`PPROXY_CORRECTIVE_PHASE_4_CONTRACT_CI_CLOSURE.md`](PPROXY_CORRECTIVE_PHASE_4_CONTRACT_CI_CLOSURE.md)
+
 ## Goal
 
 Make Eggress a reliable replacement for documented, commonly used `pproxy==2.7.9` configurations while preserving Eggress as a focused Rust proxy rather than rebuilding all of pproxy's historical implementation details.
