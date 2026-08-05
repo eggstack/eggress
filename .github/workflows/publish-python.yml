@@ -148,13 +148,14 @@ jobs:
           set -euo pipefail
           SDIST=$(ls dist/*.tar.gz)
           echo "Built sdist: ${SDIST}"
-          tar tzf "${SDIST}" | head -30
+          tar tzf "${SDIST}" > sdist-contents.txt
+          sed -n '1,30p' sdist-contents.txt
 
           # Verify key contents
-          tar tzf "${SDIST}" | grep -q "Cargo.toml" || { echo "::error::sdist missing Cargo.toml"; exit 1; }
-          tar tzf "${SDIST}" | grep -q "pyproject.toml" || { echo "::error::sdist missing pyproject.toml"; exit 1; }
-          tar tzf "${SDIST}" | grep -q "eggress/__init__.py" || { echo "::error::sdist missing eggress/__init__.py"; exit 1; }
-          tar tzf "${SDIST}" | grep -q "pproxy/__init__.py" || { echo "::error::sdist missing pproxy/__init__.py"; exit 1; }
+          grep -q "Cargo.toml" sdist-contents.txt || { echo "::error::sdist missing Cargo.toml"; exit 1; }
+          grep -q "pyproject.toml" sdist-contents.txt || { echo "::error::sdist missing pyproject.toml"; exit 1; }
+          grep -q "eggress/__init__.py" sdist-contents.txt || { echo "::error::sdist missing eggress/__init__.py"; exit 1; }
+          grep -q "pproxy/__init__.py" sdist-contents.txt || { echo "::error::sdist missing pproxy/__init__.py"; exit 1; }
           echo "sdist contents verified"
 
       - uses: actions/upload-artifact@v4
