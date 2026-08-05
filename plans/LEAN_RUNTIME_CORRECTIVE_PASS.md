@@ -2,7 +2,13 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTATION COMPLETE; RELEASE GATE BLOCKED**
+
+The Rust, HTTP, artifact, and installed-package work is complete. Production
+release approval remains blocked because the repository's TestPyPI trusted
+publisher is not configured for the `testpypi` environment. The proof run
+completed every build, collection, and smoke job, then TestPyPI rejected the
+OIDC exchange with `invalid-publisher`.
 
 ## Parent roadmap
 
@@ -532,16 +538,76 @@ Combining adjacent commits is acceptable. Do not commit per crate, per platform,
 
 # Closure record
 
-At completion, update this file in place with:
+Implementation commits: `265dd26..e9ba98e` on `main`.
 
-- implementation commit range;
-- final feature forwarding map;
-- full/common exact byte sizes and dependency counts;
-- excluded crates confirmed absent from common;
-- HTTP policy and tests added;
-- final artifact filenames and manylinux floor;
-- successful TestPyPI workflow run URL;
-- commands run;
-- any stop condition invoked and the resulting documented limitation.
+Feature forwarding and boundary evidence:
 
-Then update the parent roadmap in place. Do not create a separate corrective-pass completion file.
+- Workspace edges for `eggress-runtime`, `eggress-embed`, `eggress-server`,
+  `eggress-metrics`, and `eggress-udp` are default-free where internal feature
+  selection controls the graph.
+- `eggress-cli/common` forwards `eggress-runtime/common`; `extended` forwards
+  the server/runtime UDP Shadowsocks gate; `full` remains the existing union.
+- `eggress-python` explicitly requests `eggress-embed/full`.
+- The common normal/build tree contains 133 unique package names versus 170
+  for full. It contains no `eggress-protocol-shadowsocks`,
+  `eggress-protocol-trojan`, `eggress-protocol-websocket`,
+  `eggress-system-proxy`, or `eggress-pproxy-compat`. Reverse remains as an
+  unavoidable core dependency of required `eggress-admin`; common runtime
+  startup rejects reverse configuration explicitly. The `cargo tree -e
+  features` view also shows test-only dev-dependency edges, so the closure
+  count uses `--edges normal,build` for the runtime boundary.
+- Isolated release artifacts: full `eggress` 9,731,464 bytes, full `pproxy`
+  8,626,880 bytes, common-only `eggress` 8,403,784 bytes, and no common-only
+  `pproxy` binary.
+
+HTTP policy and tests:
+
+- Unsupported non-empty `Expect` values are rejected before forwarding with
+  `417 Expectation Failed` and connection close.
+- Up to eight informational responses are forwarded before one final response;
+  `101 Switching Protocols` and excessive informational responses fail safely.
+- Request-body forwarding and the final upstream flush use the existing
+  connect timeout; failed exchanges close both sides.
+- Focused coverage includes expectation rejection, multiple informational
+  responses, `101`, the informational limit, body-upload timeout, pipelined
+  safety, ordinary body framing, and lean WebSocket/UDP capability rejection.
+
+Release artifact evidence from run
+[`31011421460`](https://github.com/eggstack/eggress/actions/runs/31011421460):
+
+```text
+eggress-1.0.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+eggress-1.0.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+eggress-1.0.1-cp39-abi3-macosx_10_12_x86_64.whl
+eggress-1.0.1-cp39-abi3-macosx_11_0_arm64.whl
+eggress-1.0.1-cp39-abi3-win_amd64.whl
+eggress-1.0.1.tar.gz
+```
+
+The workflow uses a manylinux2014/glibc 2.17 floor, QEMU only for Linux
+aarch64, `macos-15-intel` for current Intel macOS, exact TOML version fields,
+and a hard five-wheel/one-sdist artifact gate. All build, collection, wheel
+smoke, Python 3.9/3.13 ABI smoke, and clean sdist smoke jobs passed.
+
+TestPyPI publication was attempted by the same run but failed only at the
+registry publish job:
+
+```text
+sub: repo:eggstack/eggress:environment:testpypi
+invalid-publisher: no matching TestPyPI trusted publisher
+```
+
+No artifact was published to TestPyPI and no clean TestPyPI install can be
+recorded until the repository owner adds the matching TestPyPI trusted
+publisher (or an approved TestPyPI token). The routine Rust CI passed in
+[run 31011419320](https://github.com/eggstack/eggress/actions/runs/31011419320).
+
+Commands run included `cargo fmt --all -- --check`, workspace Clippy with
+`-D warnings`, `cargo test --workspace --locked`, focused HTTP/server/UDP and
+lean-feature tests, common/full isolated release builds and dependency trees,
+`cargo deny check`, `cargo audit --ignore RUSTSEC-2025-0134`, local maturin
+wheel/sdist builds, installed Python tests, and the release workflow above.
+
+No implementation stop condition was invoked. The sole deferred item is the
+external TestPyPI publisher configuration; production PyPI tagging remains
+blocked until a complete publish-and-install proof succeeds.

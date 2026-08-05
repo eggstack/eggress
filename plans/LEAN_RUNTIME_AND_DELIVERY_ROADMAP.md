@@ -2,9 +2,14 @@
 
 ## Status
 
-**CORRECTIVE PASS PLANNED**
+**CORRECTIVE PASS IMPLEMENTED; TESTPYPI GATE BLOCKED**
 
-The original three phases were implemented through `d54b744`, but post-implementation review found defects in Cargo feature propagation, HTTP early-response handling, and the release-only Python workflow. The roadmap is reopened until [`LEAN_RUNTIME_CORRECTIVE_PASS.md`](LEAN_RUNTIME_CORRECTIVE_PASS.md) is implemented and verified.
+The original three phases were implemented through `d54b744`. The corrective
+implementation is complete through `e9ba98e`: feature propagation, bounded UDP
+Shadowsocks gating, HTTP early-response safety, exact release validation, and
+installed artifact smokes are verified. Production release remains blocked
+until the repository owner configures the TestPyPI trusted publisher and a
+complete publish/install proof succeeds.
 
 Production PyPI tagging is blocked while this roadmap remains open.
 
@@ -126,7 +131,7 @@ The release-only workflow must correct:
 | 1 | [`LEAN_RUNTIME_PHASE_1_FEATURE_BOUNDARIES.md`](LEAN_RUNTIME_PHASE_1_FEATURE_BOUNDARIES.md) | Implemented, measurements provisional | Original bounded feature and size pass. |
 | 2 | [`LEAN_RUNTIME_PHASE_2_FOCUSED_RELIABILITY.md`](LEAN_RUNTIME_PHASE_2_FOCUSED_RELIABILITY.md) | Implemented with HTTP follow-up required | Original focused reliability pass. |
 | 3 | [`LEAN_RUNTIME_PHASE_3_PYTHON_DELIVERY.md`](LEAN_RUNTIME_PHASE_3_PYTHON_DELIVERY.md) | Implemented but release proof incomplete | Original Python ABI and release matrix pass. |
-| 4 | [`LEAN_RUNTIME_CORRECTIVE_PASS.md`](LEAN_RUNTIME_CORRECTIVE_PASS.md) | Planned | Correct feature propagation, safe HTTP early-response policy, and release workflow validation. |
+| 4 | [`LEAN_RUNTIME_CORRECTIVE_PASS.md`](LEAN_RUNTIME_CORRECTIVE_PASS.md) | Implemented; TestPyPI gate blocked | Correct feature propagation, safe HTTP early-response policy, and release workflow validation. |
 
 The corrective pass is the only additional implementation plan authorized for this line of work. Do not split it into per-crate, per-test, or per-platform plans.
 
@@ -224,7 +229,7 @@ This roadmap may return to `IMPLEMENTED` only when all are true:
 10. Exact versions are read structurally from the intended TOML fields.
 11. Exactly five stable-ABI wheels and one sdist are required before publication.
 12. Installed wheel and sdist smoke tests import top-level `pproxy`, start a port-0 service, verify readiness/bound addresses, and shut down cleanly.
-13. A complete manual TestPyPI workflow run succeeds and is recorded in the corrective plan.
+13. A complete manual TestPyPI workflow run succeeds and is recorded in the corrective plan. This is the only remaining release gate; the current run reached publication but was rejected by missing external trusted-publisher configuration.
 14. Routine CI remains one Rust smoke workflow and one path-scoped Python smoke workflow.
 15. Crates.io remains manual.
 16. No additional protocol, generalized framework, routine matrix, or completion document is introduced.
@@ -234,8 +239,8 @@ This roadmap may return to `IMPLEMENTED` only when all are true:
 At completion:
 
 - update [`LEAN_RUNTIME_CORRECTIVE_PASS.md`](LEAN_RUNTIME_CORRECTIVE_PASS.md) in place with commit range, measurements, tests, artifact names, and TestPyPI run URL;
-- replace `CORRECTIVE PASS PLANNED` here with `IMPLEMENTED`;
+- replace `CORRECTIVE PASS PLANNED` here with `IMPLEMENTED` only after the external TestPyPI gate succeeds;
 - summarize the final corrected feature graph, HTTP policy, and release proof;
-- record any deliberately retained limitation and why.
+- record the deliberately retained reverse/admin dependency and why.
 
 Do not create another roadmap or separate completion document.
