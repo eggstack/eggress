@@ -24,6 +24,8 @@ from eggress.pproxy import (
     compatibility_version as compatibility_version,
     AlreadyStartedError as AlreadyStartedError,
     Server as Server,
+    PProxyCompatibilityError as PProxyCompatibilityError,
+    UnsupportedPProxyFeature as UnsupportedPProxyFeature,
     explain_config_toml as explain_config_toml,
     explain_pproxy_args as explain_pproxy_args,
     explain_pproxy_uri as explain_pproxy_uri,

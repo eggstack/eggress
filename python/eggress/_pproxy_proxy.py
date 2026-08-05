@@ -6,12 +6,14 @@ handler hierarchy used by pproxy's server runtime.
 
 These classes carry typed metadata for composition resolution without
 reimplementing wire-level protocol handling.  Async methods that require
-runtime integration raise :class:`NotImplementedError` at this layer.
+runtime integration raise :class:`UnsupportedPProxyFeature` at this layer.
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable, Optional, Sequence, Tuple
+
+from eggress.pproxy import PProxyCompatibilityError, UnsupportedPProxyFeature
 
 # Reverse mapping from protocol class to pproxy scheme name.
 # Used by start_server to build listen URIs from stored protocol classes.
@@ -714,11 +716,26 @@ class ProxyBackward(ProxySimple):
         return self._backward
 
     def close(self) -> None:
-        """Close the backward connection."""
+        """Close the backward connection.
+
+        Raises :class:`UnsupportedPProxyFeature` because backward
+        lifecycle management requires the Eggress runtime.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyBackward.close",
+            alternative="use EggressService shutdown via EggressHandle.shutdown()",
+        )
 
     def start_backward_client(self, args: Any) -> Any:
-        """Start a backward client."""
-        return None
+        """Start a backward client.
+
+        Raises :class:`UnsupportedPProxyFeature` because backward
+        client lifecycle requires the Eggress runtime.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyBackward.start_backward_client",
+            alternative="use Eggress reverse client configuration in TOML",
+        )
 
     async def start_server(
         self,
@@ -732,15 +749,30 @@ class ProxyBackward(ProxySimple):
         return await super().start_server(args, stream_handler)
 
     async def start_server_run(self, handler: Any) -> None:
-        """Run the backward server handler.  Requires runtime integration."""
-        raise NotImplementedError("start_server_run requires runtime integration")
+        """Run the backward server handler.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyBackward.start_server_run",
+            alternative="use EggressService for server lifecycle",
+        )
 
     async def udp_start_server(self, args: Any) -> None:
-        """Start the backward UDP server.  Requires runtime integration."""
-        raise NotImplementedError("udp_start_server requires runtime integration")
+        """Start the backward UDP server.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyBackward.udp_start_server",
+            alternative="use EggressService for UDP server lifecycle",
+        )
 
     async def wait_open_connection(self, *args: Any) -> Any:
-        return None
+        raise UnsupportedPProxyFeature(
+            "ProxyBackward.wait_open_connection",
+            alternative="connection pooling is not supported by eggress",
+        )
 
     def __repr__(self) -> str:
         return (
@@ -766,7 +798,10 @@ class ProxyH2(ProxySimple):
         super().__init__(sslserver=sslserver, sslclient=sslclient, **kw)
 
     def get_stream(self, conn: Any, writer: Any, stream_id: int) -> Any:
-        """Get an H2 stream from a connection."""
+        """Get an H2 stream from a connection.
+
+        Structural-only; H2 is not supported by eggress for Python-level use.
+        """
         return None
 
     async def handler(
@@ -777,8 +812,14 @@ class ProxyH2(ProxySimple):
         stream_handler: Callable[..., Any] | None = None,
         **kw: Any,
     ) -> None:
-        """Handle an H2 connection.  Requires runtime integration."""
-        raise NotImplementedError("handler requires runtime integration")
+        """Handle an H2 connection.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyH2.handler",
+            alternative="H2 transport is owned by Eggress Rust runtime",
+        )
 
     async def start_server(
         self,
@@ -792,14 +833,26 @@ class ProxyH2(ProxySimple):
         return await super().start_server(args, stream_handler)
 
     async def udp_start_server(self, args: Any) -> None:
-        raise NotImplementedError("udp_start_server requires runtime integration")
+        raise UnsupportedPProxyFeature(
+            "ProxyH2.udp_start_server",
+            alternative="H2 UDP is not supported; use EggressService",
+        )
 
     async def wait_h2_connection(self, local_addr: Any, family: int) -> Any:
-        """Wait for an H2 connection.  Requires runtime integration."""
-        raise NotImplementedError("wait_h2_connection requires runtime integration")
+        """Wait for an H2 connection.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyH2.wait_h2_connection",
+            alternative="H2 connection management is owned by Eggress Rust runtime",
+        )
 
     async def wait_open_connection(self, *args: Any) -> Any:
-        return None
+        raise UnsupportedPProxyFeature(
+            "ProxyH2.wait_open_connection",
+            alternative="H2 connection pooling is not supported by eggress",
+        )
 
     def __repr__(self) -> str:
         return (
@@ -816,8 +869,10 @@ class ProxyH2(ProxySimple):
 class ProxySSH(ProxySimple):
     """pproxy-compatible SSH proxy handler.
 
-    SSH is intentionally unsupported by eggress.  This class exists for
-    API compatibility with pproxy 2.7.9's class hierarchy.
+    **Structural-only.** SSH is not supported by eggress.  This class
+    exists for API compatibility with pproxy 2.7.9's class hierarchy.
+    Construction is allowed for parsing compatibility, but network and
+    lifecycle methods raise :class:`UnsupportedPProxyFeature`.
 
     Args:
         **kw: Forwarded to :class:`ProxySimple`.
@@ -833,10 +888,16 @@ class ProxySSH(ProxySimple):
         host: str,
         port: int,
     ) -> None:
-        """Patch a stream for SSH tunneling."""
+        """Patch a stream for SSH tunneling.
+
+        Structural-only; SSH is not supported by eggress.
+        """
 
     async def tcp_connect(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("SSH is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxySSH.tcp_connect",
+            alternative="SSH tunnels are not supported by eggress",
+        )
 
     async def start_server(
         self,
@@ -844,10 +905,16 @@ class ProxySSH(ProxySimple):
         stream_handler: Callable[..., Any] | None = None,
         tunnel: Any = None,
     ) -> None:
-        raise NotImplementedError("SSH is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxySSH.start_server",
+            alternative="SSH listeners are not supported by eggress",
+        )
 
     async def udp_start_server(self, args: Any) -> None:
-        raise NotImplementedError("SSH is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxySSH.udp_start_server",
+            alternative="SSH UDP is not supported by eggress",
+        )
 
     async def wait_open_connection(
         self,
@@ -857,7 +924,10 @@ class ProxySSH(ProxySimple):
         family: int,
         tunnel: Any = None,
     ) -> Any:
-        return None
+        raise UnsupportedPProxyFeature(
+            "ProxySSH.wait_open_connection",
+            alternative="SSH connection pooling is not supported by eggress",
+        )
 
     async def wait_ssh_connection(
         self,
@@ -865,8 +935,14 @@ class ProxySSH(ProxySimple):
         family: int = 0,
         tunnel: Any = None,
     ) -> Any:
-        """Wait for an SSH connection.  Requires runtime integration."""
-        raise NotImplementedError("SSH is not supported by eggress")
+        """Wait for an SSH connection.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxySSH.wait_ssh_connection",
+            alternative="SSH connections are not supported by eggress",
+        )
 
     def __repr__(self) -> str:
         return (
@@ -882,6 +958,11 @@ class ProxySSH(ProxySimple):
 class ProxyQUIC(ProxySimple):
     """pproxy-compatible QUIC proxy handler.
 
+    **Structural-only.** QUIC is not supported by eggress.  This class
+    exists for API compatibility with pproxy 2.7.9's class hierarchy.
+    Construction is allowed for parsing compatibility, but network and
+    lifecycle methods raise :class:`UnsupportedPProxyFeature`.
+
     Args:
         quicserver: QUIC server configuration.
         quicclient: QUIC client configuration.
@@ -896,28 +977,49 @@ class ProxyQUIC(ProxySimple):
         self._quicclient = quicclient
 
     def patch_writer(self, writer: Any) -> Any:
-        """Patch a writer for QUIC transport."""
+        """Patch a writer for QUIC transport.
+
+        Structural-only; QUIC is not supported by eggress.
+        """
         return writer
 
     async def tcp_connect(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("QUIC is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxyQUIC.tcp_connect",
+            alternative="QUIC is not supported by eggress",
+        )
 
     async def start_server(
         self,
         args: Any = None,
         stream_handler: Callable[..., Any] | None = None,
     ) -> None:
-        raise NotImplementedError("QUIC is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxyQUIC.start_server",
+            alternative="QUIC listeners are not supported by eggress",
+        )
 
     async def udp_start_server(self, args: Any) -> None:
-        raise NotImplementedError("QUIC is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxyQUIC.udp_start_server",
+            alternative="QUIC UDP is not supported by eggress",
+        )
 
     async def wait_open_connection(self, *args: Any) -> Any:
-        return None
+        raise UnsupportedPProxyFeature(
+            "ProxyQUIC.wait_open_connection",
+            alternative="QUIC connection pooling is not supported by eggress",
+        )
 
     async def wait_quic_connection(self) -> Any:
-        """Wait for a QUIC connection.  Requires runtime integration."""
-        raise NotImplementedError("QUIC is not supported by eggress")
+        """Wait for a QUIC connection.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyQUIC.wait_quic_connection",
+            alternative="QUIC connections are not supported by eggress",
+        )
 
     def __repr__(self) -> str:
         return (
@@ -933,6 +1035,11 @@ class ProxyQUIC(ProxySimple):
 class ProxyH3(ProxyQUIC):
     """pproxy-compatible HTTP/3 proxy handler.
 
+    **Structural-only.** H3 is not supported by eggress.  This class
+    exists for API compatibility with pproxy 2.7.9's class hierarchy.
+    Construction is allowed for parsing compatibility, but network and
+    lifecycle methods raise :class:`UnsupportedPProxyFeature`.
+
     Args:
         quicserver: QUIC server configuration.
         quicclient: QUIC client configuration.
@@ -947,25 +1054,46 @@ class ProxyH3(ProxyQUIC):
     def get_protocol(
         self, server_side: bool = False, handler: Any = None
     ) -> Any:
-        """Get the H3 protocol factory."""
+        """Get the H3 protocol factory.
+
+        Structural-only; H3 is not supported by eggress.
+        """
         return None
 
     def get_stream(self, conn: Any, stream_id: int) -> Any:
-        """Get an H3 stream from a connection."""
+        """Get an H3 stream from a connection.
+
+        Structural-only; H3 is not supported by eggress.
+        """
         return None
 
     async def udp_start_server(self, args: Any) -> None:
-        raise NotImplementedError("H3 is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxyH3.udp_start_server",
+            alternative="H3 is not supported by eggress",
+        )
 
     async def wait_h3_connection(self) -> Any:
-        """Wait for an H3 connection.  Requires runtime integration."""
-        raise NotImplementedError("H3 is not supported by eggress")
+        """Wait for an H3 connection.
+
+        Requires runtime integration; raises the stable compatibility exception.
+        """
+        raise UnsupportedPProxyFeature(
+            "ProxyH3.wait_h3_connection",
+            alternative="H3 connections are not supported by eggress",
+        )
 
     async def wait_open_connection(self, *args: Any) -> Any:
-        return None
+        raise UnsupportedPProxyFeature(
+            "ProxyH3.wait_open_connection",
+            alternative="H3 connection pooling is not supported by eggress",
+        )
 
     async def wait_quic_connection(self) -> Any:
-        raise NotImplementedError("H3 is not supported by eggress")
+        raise UnsupportedPProxyFeature(
+            "ProxyH3.wait_quic_connection",
+            alternative="H3/QUIC connections are not supported by eggress",
+        )
 
     def __repr__(self) -> str:
         return (

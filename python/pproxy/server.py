@@ -11,6 +11,7 @@ from eggress._pproxy_proxy import (
     ProxyQUIC, ProxySSH, ProxySimple,
 )
 from eggress.cipher import get_cipher
+from eggress.pproxy import PProxyCompatibilityError, UnsupportedPProxyFeature
 from eggress.protocol import get_protos, netloc_split
 
 SOCKET_TIMEOUT = 60
@@ -114,14 +115,25 @@ def proxies_by_uri(uri_jumps):
 
 
 Connection = proxies_by_uri
+"""pproxy-shaped URI factory.  Builds a proxy chain from ``__``-separated
+URIs.  This is the upstream pproxy contract preserved for migration
+compatibility; it is NOT the native ``eggress.pproxy.Server`` lifecycle
+class."""
+
 Server = proxies_by_uri
+"""pproxy-shaped URI factory (alias for ``Connection``).
+Preserved for upstream pproxy migration compatibility; it is NOT
+the native ``eggress.pproxy.Server`` lifecycle class.  To manage a
+Rust-backed service lifecycle, use ``eggress.pproxy.Server`` instead."""
+
 Rule = compile_rule
 
 
 async def check_server_alive(interval, rserver, verbose):
-    import asyncio
-    while True:
-        await asyncio.sleep(interval)
+    raise UnsupportedPProxyFeature(
+        "check_server_alive",
+        alternative="use Eggress runtime health checks via EggressHandle.status()",
+    )
 
 
 async def prepare_ciphers(cipher, reader, writer, bind=None, server_side=True):
@@ -132,21 +144,46 @@ async def prepare_ciphers(cipher, reader, writer, bind=None, server_side=True):
 
 async def datagram_handler(writer, data, addr, protos, urserver, block, cipher, salgorithm,
                            verbose=lambda *args: None, **kwargs):
-    raise NotImplementedError("UDP listener handling is owned by Eggress")
+    raise UnsupportedPProxyFeature(
+        "datagram_handler",
+        alternative="UDP listener handling is owned by Eggress runtime",
+    )
 
 
 async def stream_handler(reader, writer, unix, lbind, protos, rserver, cipher, sslserver,
                          debug=0, authtime=2592000, block=None, salgorithm="fa",
                          verbose=lambda *args: None, modstat=lambda *args: None, **kwargs):
-    raise NotImplementedError("server stream handling is owned by Eggress")
+    raise UnsupportedPProxyFeature(
+        "stream_handler",
+        alternative="server stream handling is owned by Eggress runtime",
+    )
 
 
 def print_server_started(*args, **kwargs):
-    return None
+    """Format and return a startup message.
+
+    Matches pproxy oracle: formats a startup message with listener
+    addresses.  Returns the formatted string rather than printing to stdout,
+    allowing callers to control output.
+    """
+    parts = []
+    for arg in args:
+        if isinstance(arg, str):
+            parts.append(arg)
+        elif hasattr(arg, "bind"):
+            parts.append(str(arg.bind))
+    if kwargs:
+        for k, v in kwargs.items():
+            if k in ("host", "port", "bind", "verbose"):
+                parts.append(f"{k}={v}")
+    return " ".join(parts) if parts else None
 
 
 def test_url(*args, **kwargs):
-    raise NotImplementedError("URL testing is not exposed by the Eggress adapter")
+    raise UnsupportedPProxyFeature(
+        "test_url",
+        alternative="use check_upstream() from eggress.pproxy or the CLI 'eggress pproxy check' command",
+    )
 
 sslcontexts = []
 compile_rule.__module__ = __name__

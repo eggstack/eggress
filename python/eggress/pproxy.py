@@ -24,6 +24,32 @@ from eggress._eggress import (
 _PPROXY_COMPATIBILITY_VERSION = "2.7.9"
 
 
+class PProxyCompatibilityError(RuntimeError):
+    """Stable exception for unsupported pproxy compatibility operations.
+
+    All known unsupported pproxy operations raise this exception (or a
+    subclass) before side effects.  Catch this type to distinguish
+    intentional compatibility failures from unexpected runtime errors.
+    """
+
+
+class UnsupportedPProxyFeature(PProxyCompatibilityError):
+    """Raised when a pproxy API method is not supported by eggress.
+
+    Attributes:
+        feature: The unsupported feature or method name.
+        alternative: A supported eggress alternative when one exists.
+    """
+
+    def __init__(self, feature: str, alternative: str | None = None) -> None:
+        self.feature = feature
+        self.alternative = alternative
+        msg = f"unsupported pproxy feature: {feature}"
+        if alternative:
+            msg += f" — use {alternative} instead"
+        super().__init__(msg)
+
+
 def _redact_config_toml(toml_str: str) -> str:
     """Redact credentials from TOML config for safe display."""
     import re

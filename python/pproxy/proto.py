@@ -50,4 +50,8 @@ def socks_address_stream(reader):
     return _read()
 
 def sslwrap(reader, writer, sslcontext=None, server_side=False):
-    raise NotImplementedError("TLS stream wrapping is owned by the Rust transport")
+    from eggress.pproxy import UnsupportedPProxyFeature
+    raise UnsupportedPProxyFeature(
+        "sslwrap",
+        alternative="TLS stream wrapping is owned by the Eggress Rust transport",
+    )

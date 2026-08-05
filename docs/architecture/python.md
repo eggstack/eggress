@@ -19,10 +19,12 @@ namespace (there is no separate compatibility distribution).
 
 The top-level `pproxy` package re-exports the bounded adapters in
 `python/pproxy/`. `Connection` and `Server` are aliases for the URI proxy
-factory, `Rule` compiles public regex rule inputs, and `DIRECT` is the direct
-proxy sentinel. TCP connection methods return asyncio reader/writer-compatible
-objects. Unsupported listener roles, multi-hop UDP, and excluded protocol
-families fail with explicit compatibility errors.
+factory (not the native `eggress.pproxy.Server` lifecycle class), `Rule`
+compiles public regex rule inputs, and `DIRECT` is the direct proxy sentinel.
+TCP connection methods return asyncio reader/writer-compatible objects.
+Unsupported listener roles, multi-hop UDP, and excluded protocol
+families fail with explicit ``UnsupportedPProxyFeature`` exceptions
+(a subclass of ``PProxyCompatibilityError(RuntimeError)``).
 
 The compatibility server path follows pproxy's connection lifecycle by opening
 the raw direct or upstream transport first and invoking `prepare_connection()`

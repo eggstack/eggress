@@ -3,6 +3,13 @@
 The distribution remains named ``eggress``.  This package intentionally owns
 the import namespace when Eggress is installed; do not install it alongside
 the upstream ``pproxy`` distribution in one environment.
+
+.. note::
+
+   ``pproxy.Connection`` and ``pproxy.Server`` are pproxy-shaped URI
+   factories (aliases for ``proxies_by_uri``).  They are NOT the native
+   ``eggress.pproxy.Server`` lifecycle class.  For a Rust-backed managed
+   server, use ``eggress.pproxy.Server`` or ``eggress.start_pproxy()``.
 """
 
 from eggress import __version__

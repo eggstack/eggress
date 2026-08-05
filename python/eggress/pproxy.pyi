@@ -117,6 +117,14 @@ def supported_features() -> list[str]: ...
 
 class AlreadyStartedError(Exception): ...
 
+class PProxyCompatibilityError(RuntimeError):
+    """Stable exception for unsupported pproxy compatibility operations."""
+
+class UnsupportedPProxyFeature(PProxyCompatibilityError):
+    feature: str
+    alternative: str | None
+    def __init__(self, feature: str, alternative: str | None = None) -> None: ...
+
 class Server:
     def __init__(
         self,

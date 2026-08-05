@@ -6,8 +6,10 @@ pproxy 2.7.9 compatibility layer for CLI argument translation, URI parsing, and 
 
 This is an internal Rust crate, not a separately published Python package.
 The Python compatibility surface is bundled in the `eggress` distribution as
-`eggress.pproxy` for translation helpers and a bounded top-level `pproxy`
-package for the documented public factory/protocol/cipher surface. The
+`eggress.pproxy` for translation helpers, a bounded top-level `pproxy`
+package for the documented public factory/protocol/cipher surface, and
+a stable exception hierarchy (`PProxyCompatibilityError`,
+`UnsupportedPProxyFeature`) for unsupported operations. The
 upstream `pproxy` distribution must not be installed alongside Eggress.
 
 ## Key Types

@@ -247,36 +247,39 @@ def test_h2_start_server_returns_compatible_handle():
 
 
 def test_ssh_start_server_raises():
-    """ProxySSH.start_server() raises NotImplementedError."""
+    """ProxySSH.start_server() raises UnsupportedPProxyFeature."""
     from eggress._pproxy_proxy import ProxySSH
+    from eggress.pproxy import UnsupportedPProxyFeature
     proxy = ProxySSH()
 
     async def _run():
-        with pytest.raises(NotImplementedError, match="SSH"):
+        with pytest.raises(UnsupportedPProxyFeature, match="SSH"):
             await proxy.start_server(args={})
 
     asyncio.run(_run())
 
 
 def test_quic_start_server_raises():
-    """ProxyQUIC.start_server() raises NotImplementedError."""
+    """ProxyQUIC.start_server() raises UnsupportedPProxyFeature."""
     from eggress._pproxy_proxy import ProxyQUIC
+    from eggress.pproxy import UnsupportedPProxyFeature
     proxy = ProxyQUIC()
 
     async def _run():
-        with pytest.raises(NotImplementedError, match="QUIC"):
+        with pytest.raises(UnsupportedPProxyFeature, match="QUIC"):
             await proxy.start_server(args={})
 
     asyncio.run(_run())
 
 
 def test_h3_start_server_raises():
-    """ProxyH3.start_server() raises NotImplementedError (QUIC)."""
+    """ProxyH3.start_server() raises UnsupportedPProxyFeature (QUIC)."""
     from eggress._pproxy_proxy import ProxyH3
+    from eggress.pproxy import UnsupportedPProxyFeature
     proxy = ProxyH3()
 
     async def _run():
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(UnsupportedPProxyFeature):
             await proxy.start_server(args={})
 
     asyncio.run(_run())

@@ -2,7 +2,59 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+### Implementation summary
+
+**Exceptions introduced:**
+- `PProxyCompatibilityError(RuntimeError)` — base for all known unsupported operations
+- `UnsupportedPProxyFeature(PProxyCompatibilityError)` — raised with feature name and alternative
+
+**Methods changed from silent no-ops / generic `NotImplementedError`:**
+
+| Method | Before | After |
+|--------|--------|-------|
+| `server.check_server_alive` | infinite sleep loop | raises `UnsupportedPProxyFeature` |
+| `server.stream_handler` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `server.datagram_handler` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `server.print_server_started` | `return None` | formats and returns startup message |
+| `server.test_url` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `proto.sslwrap` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `plugin.get_plugin` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyBackward.close` | empty body | raises `UnsupportedPProxyFeature` |
+| `ProxyBackward.start_backward_client` | `return None` | raises `UnsupportedPProxyFeature` |
+| `ProxyBackward.start_server_run` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyBackward.udp_start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyBackward.wait_open_connection` | `return None` | raises `UnsupportedPProxyFeature` |
+| `ProxyH2.handler` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyH2.udp_start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyH2.wait_h2_connection` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyH2.wait_open_connection` | `return None` | raises `UnsupportedPProxyFeature` |
+| `ProxySSH.tcp_connect` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxySSH.start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxySSH.udp_start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxySSH.wait_open_connection` | `return None` | raises `UnsupportedPProxyFeature` |
+| `ProxySSH.wait_ssh_connection` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyQUIC.tcp_connect` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyQUIC.start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyQUIC.udp_start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyQUIC.wait_open_connection` | `return None` | raises `UnsupportedPProxyFeature` |
+| `ProxyQUIC.wait_quic_connection` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyH3.udp_start_server` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyH3.wait_h3_connection` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+| `ProxyH3.wait_open_connection` | `return None` | raises `UnsupportedPProxyFeature` |
+| `ProxyH3.wait_quic_connection` | `NotImplementedError` | `UnsupportedPProxyFeature` |
+
+**Structural-only classes documented:**
+- `ProxySSH`, `ProxyQUIC`, `ProxyH3` docstrings updated to say "Structural-only"
+
+**Documentation added:**
+- `pproxy.Connection` / `pproxy.Server` docstrings clarify they are URI factories, NOT the native `eggress.pproxy.Server`
+- `pproxy.__init__` docstring adds note distinguishing factory aliases from lifecycle class
+
+**Type stubs updated:**
+- `pproxy.pyi`: `PProxyCompatibilityError`, `UnsupportedPProxyFeature` added
+- `__init__.pyi`: re-exports added
 
 ## Parent roadmap
 
