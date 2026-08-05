@@ -271,6 +271,45 @@ eggress/
 - No OpenSSL, no C dependencies (`deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, `cmake`)
 - TLS via rustls only
 
+## Feature Groups and Lean Builds
+
+The workspace defines bounded feature groups that control which protocol families and operational integrations are compiled:
+
+| Group | Scope | Contents |
+|-------|-------|----------|
+| `common` | runtime, cli, embed | HTTP/SOCKS core, TLS transport, UDP, raw |
+| `extended` | runtime, server, metrics, cli, embed | Shadowsocks, Trojan, WebSocket |
+| `operations` | runtime, cli | System proxy |
+| `reverse` | runtime, cli | Reverse/backward proxy control-channel |
+| `pproxy-compat` | cli, embed | pproxy compatibility translator and binary |
+| `full` | all | Union of all (default) |
+
+Admin and metrics remain required dependencies for the snapshot invariant. The `extended` feature gates protocol accept paths, chain executor handlers, and metrics bridging at composition boundaries. A disabled feature fails with a structured diagnostic, never silently degrading.
+
+Lean builds exclude optional protocol families:
+
+```bash
+# Lean local HTTP/SOCKS build
+cargo build -p eggress-cli --release --no-default-features --features common
+
+# Optional smallest optimization profile
+cargo build -p eggress-cli --profile release-small --no-default-features --features common
+```
+
+Release profiles are defined at the workspace root:
+
+```toml
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.release-small]
+inherits = "release"
+opt-level = "z"
+lto = true
+```
+
 ---
 
 ## Deep Dive Index

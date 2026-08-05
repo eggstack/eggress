@@ -82,8 +82,20 @@ The snapshot is the single source of truth shared by router, health manager, adm
 - `eggress-admin` — admin HTTP server
 - `eggress-udp` — UDP association management
 - `eggress-transport-tls` — TLS transport
-- `eggress-protocol-shadowsocks` — Shadowsocks AEAD relay
-- `eggress-protocol-reverse` — reverse proxy
+- `eggress-protocol-shadowsocks` — Shadowsocks AEAD relay (optional, `extended` feature)
+- `eggress-protocol-reverse` — reverse proxy (optional, `reverse` feature)
 - `eggress-uri` — URI parsing
+
+## Feature Gates
+
+The runtime crate uses feature flags to conditionally compile optional protocol and operational integrations:
+
+- **`extended`**: Enables Shadowsocks metrics initialization, UDP relay, and chain executor handler registration. Gates `eggress-protocol-shadowsocks` and forwards to `eggress-server/extended` and `eggress-metrics/extended`.
+- **`reverse`**: Enables reverse server/client spawning in the supervisor. Gates `eggress-protocol-reverse`.
+- **`operations`**: Enables system proxy inspection. Gates `eggress-system-proxy`.
+
+Admin and metrics remain required dependencies because they are tightly coupled to the runtime snapshot invariant. The `RuntimeState` struct conditionally includes `shadowsocks_metrics` and `reverse_registry`/`reverse_metrics` fields based on these features.
+
+Under a lean build (`--no-default-features --features common`), the runtime provides only HTTP/SOCKS core proxying with direct TCP/UDP and TLS transport. Extended protocol URIs, reverse proxy configs, and system proxy commands fail with structured diagnostics.
 
 See [overview.md](overview.md) for context.

@@ -245,6 +245,28 @@ Use `error.category()` to get a short label for programmatic matching.
   No special embed API changes needed — the supervisor handles reverse
   spawning internally, just like forward proxy listeners.
 
+## Feature groups
+
+The embed crate supports the same feature groups as the CLI and runtime:
+
+| Feature | Contents |
+|---------|----------|
+| `common` | HTTP/SOCKS core, TLS transport, UDP, raw |
+| `extended` | Shadowsocks, Trojan, WebSocket (upstream-only) |
+| `operations` | System proxy inspection |
+| `reverse` | Reverse/backward proxy control-channel |
+| `pproxy-compat` | pproxy URI translation and compatibility binary |
+| `full` | Union of all (default) |
+
+A lean build excludes optional protocol families and operational integrations:
+
+```toml
+[dependencies]
+eggress-embed = { path = "crates/eggress-embed", default-features = false, features = ["common"] }
+```
+
+The `from_pproxy_uri` method requires the `pproxy-compat` feature.
+
 ## Python-binding readiness
 
 This API is designed for thin PyO3 wrappers:

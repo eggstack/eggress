@@ -99,13 +99,15 @@ impl OutboundConnector {
     }
 
     /// Create a connector from a pproxy-style URI (e.g., "socks5://127.0.0.1:1080").
+    #[cfg(feature = "pproxy-compat")]
     pub fn from_pproxy_uri(uri: &str) -> Result<Self, EggressError> {
         let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
             .map_err(|e| EggressError::Config(e.to_string()))?;
         if parsed.scheme == "direct" {
+            let executor = eggress_server::build_chain_executor(None, None);
             return Ok(Self {
                 runtime_config: None,
-                chain_executor: eggress_server::build_chain_executor(None, None),
+                chain_executor: executor,
                 direct: true,
             });
         }

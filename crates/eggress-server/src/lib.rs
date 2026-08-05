@@ -1103,3 +1103,172 @@ mod tests {
         echo_jh.abort();
     }
 }
+
+/// Negative tests for lean (common-only) build.
+///
+/// These tests verify that excluded protocol capabilities fail clearly
+/// at the accept boundary, never silently degrading. They run only when
+/// the `extended` feature is disabled (lean build).
+#[cfg(all(test, not(feature = "extended")))]
+mod lean_negative_tests {
+    use super::*;
+    use eggress_core::ProtocolId;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn lean_rejects_shadowsocks_accept() {
+        use eggress_routing::{RouteActionSpec, Router};
+
+        let routing: Arc<dyn eggress_routing::RouteService> =
+            Arc::new(Router::new(vec![], RouteActionSpec::Direct));
+        let protocols: Arc<[ProtocolId]> = Arc::from([ProtocolId::Shadowsocks]);
+        let (_client, server) = tokio::io::duplex(1024);
+        let boxed: eggress_core::BoxStream = Box::new(server);
+
+        let config = ConnectionConfig {
+            routing,
+            context: ConnectionContext::default(),
+            handshake_timeout: Duration::from_secs(2),
+            connect_timeout: Duration::from_secs(5),
+            protocols,
+            authentication: accept::InboundAuthentication::None,
+            metrics: None,
+            udp: None,
+            tls_client_config: None,
+            shadowsocks: Some(accept::InboundShadowsocksConfig {
+                method: "aes-256-gcm".to_string(),
+                password: "test-password".to_string(),
+            }),
+            shadowsocks_metrics: None,
+            trojan: None,
+            fixed_target: None,
+            local_bind: None,
+        };
+
+        let report = serve_connection(boxed, config).await;
+        // In lean build, shadowsocks accept should fail with a protocol error
+        // because the feature is not included.
+        assert!(
+            matches!(
+                report.outcome,
+                execute::SessionOutcome::ClientProtocolError
+                    | execute::SessionOutcome::HandshakeTimedOut
+            ),
+            "shadowsocks should fail in lean build, got: {:?}",
+            report.outcome
+        );
+    }
+
+    #[tokio::test]
+    async fn lean_rejects_trojan_accept() {
+        use eggress_routing::{RouteActionSpec, Router};
+
+        let routing: Arc<dyn eggress_routing::RouteService> =
+            Arc::new(Router::new(vec![], RouteActionSpec::Direct));
+        let protocols: Arc<[ProtocolId]> = Arc::from([ProtocolId::Trojan]);
+        let (_client, server) = tokio::io::duplex(1024);
+        let boxed: eggress_core::BoxStream = Box::new(server);
+
+        let config = ConnectionConfig {
+            routing,
+            context: ConnectionContext::default(),
+            handshake_timeout: Duration::from_secs(2),
+            connect_timeout: Duration::from_secs(5),
+            protocols,
+            authentication: accept::InboundAuthentication::None,
+            metrics: None,
+            udp: None,
+            tls_client_config: None,
+            shadowsocks: None,
+            shadowsocks_metrics: None,
+            trojan: Some(accept::InboundTrojanConfig {
+                password: "test-password".to_string(),
+                fallback: None,
+            }),
+            fixed_target: None,
+            local_bind: None,
+        };
+
+        let report = serve_connection(boxed, config).await;
+        // In lean build, trojan accept should fail with a protocol error
+        // because the feature is not included.
+        assert!(
+            matches!(
+                report.outcome,
+                execute::SessionOutcome::ClientProtocolError
+                    | execute::SessionOutcome::HandshakeTimedOut
+            ),
+            "trojan should fail in lean build, got: {:?}",
+            report.outcome
+        );
+    }
+
+    #[tokio::test]
+    async fn lean_serves_http_and_socks_normally() {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let routing: Arc<dyn eggress_routing::RouteService> = Arc::new(
+                eggress_routing::Router::new(vec![], eggress_routing::RouteActionSpec::Direct),
+            );
+            let config = ConnectionConfig {
+                routing,
+                context: ConnectionContext::default(),
+                handshake_timeout: Duration::from_secs(5),
+                connect_timeout: Duration::from_secs(10),
+                protocols: Arc::from([ProtocolId::Http, ProtocolId::Socks4, ProtocolId::Socks5]),
+                authentication: accept::InboundAuthentication::None,
+                metrics: None,
+                udp: None,
+                tls_client_config: None,
+                shadowsocks: None,
+                shadowsocks_metrics: None,
+                trojan: None,
+                fixed_target: None,
+                local_bind: None,
+            };
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+        match echo_addr.ip() {
+            std::net::IpAddr::V4(ip) => {
+                stream.write_all(&ip.octets()).await.unwrap();
+            }
+            std::net::IpAddr::V6(ip) => {
+                stream.write_all(&ip.octets()).await.unwrap();
+            }
+        }
+        stream
+            .write_all(&echo_addr.port().to_be_bytes())
+            .await
+            .unwrap();
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[0], 0x05);
+        assert_eq!(reply[1], 0x00);
+
+        stream.write_all(b"hello").await.unwrap();
+        stream.shutdown().await.unwrap();
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"hello");
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
+
+        echo_jh.abort();
+    }
+}

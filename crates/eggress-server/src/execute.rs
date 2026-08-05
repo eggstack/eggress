@@ -363,11 +363,8 @@ async fn open_route(
                 pending_lease,
                 ..
             } => {
-                #[cfg(feature = "extended")]
                 let executor =
                     build_chain_executor(tls_override, config.shadowsocks_metrics.clone());
-                #[cfg(not(feature = "extended"))]
-                let executor = build_chain_executor(tls_override);
                 let stream = executor.execute(&chain.hops, request.target).await?;
                 let active_lease = pending_lease.established();
                 Ok::<_, SessionOpenError>((stream, Some(active_lease)))
@@ -916,6 +913,7 @@ pub fn build_chain_executor(
     #[cfg(feature = "extended")] shadowsocks_metrics: Option<
         std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
     >,
+    #[cfg(not(feature = "extended"))] _shadowsocks_metrics: Option<()>,
 ) -> ChainExecutor {
     // Build shared TLS client config for upstream hops
     let shared_tls_config = match tls_override {
