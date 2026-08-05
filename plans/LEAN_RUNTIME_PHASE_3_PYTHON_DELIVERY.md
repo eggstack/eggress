@@ -21,6 +21,21 @@ Implemented in commit `b650ab6` on main.
 - Python test suite: 2170 passed, 114 skipped, 5 warnings
 - CI: both `ci.yml` and `python-test.yml` passed on main
 
+### Rejected targets and optionalization
+
+| Target | Decision | Reason |
+|--------|----------|--------|
+| musllinux wheels | Rejected | Not in approved artifact contract; source-build is the fallback path |
+| universal2 macOS wheel | Rejected | Would require verified cross-compilation; two arch-specific wheels are reliable and simpler |
+| 32-bit Linux/Windows wheels | Rejected | Not in approved artifact contract; no stated use case |
+| FreeBSD, Android, iOS, WebAssembly wheels | Rejected | Not in approved artifact contract |
+| Pure-Python fallback | Rejected | Would create a second distribution surface with different performance characteristics |
+| Split `eggress` / `pproxy` distributions | Rejected | Single distribution owns both namespaces; splitting would create migration and dependency confusion |
+| Routine Python-version matrix in CI | Rejected | Would recreate ceremony this roadmap eliminates; abi3-py39 validates range via release-only compat-smoke |
+| GitHub Releases, native binary archives | Rejected | Explicitly out of scope per governing constraint |
+| Containers, signatures, checksums, SBOMs, provenance | Rejected | Explicitly out of scope per governing constraint |
+| Auto crates.io publication | Rejected | Manual publication preserved per governing constraint |
+
 ## Parent roadmap
 
 [`LEAN_RUNTIME_AND_DELIVERY_ROADMAP.md`](LEAN_RUNTIME_AND_DELIVERY_ROADMAP.md)

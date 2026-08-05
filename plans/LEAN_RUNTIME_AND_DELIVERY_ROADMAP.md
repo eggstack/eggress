@@ -2,7 +2,60 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+Implemented across three phases with commits through `a87748b` on main.
+
+### Phase 1 — Feature boundaries and binary size
+
+Commits: single combined commit implementing all phase 1 changes.
+
+| Artifact | Full | Lean | Reduction |
+|----------|------|------|-----------|
+| `eggress` binary | 9.3M | 8.8M | ~5.4% |
+| Dependency count | 492 | 478 | ~2.8% |
+| `pproxy` binary | 8.2M | not built | N/A |
+
+Feature groups retained: `common`, `extended`, `operations`, `reverse`, `pproxy-compat`, `full` (default). Tokio reduced from `full` to explicit `rt, rt-multi-thread, macros, net, io-util, sync, time, signal, fs`. Release profiles added with thin-lto production and size-oriented `release-small`. Admin and metrics kept as required runtime dependencies (tightly coupled to snapshot invariant).
+
+### Phase 2 — Focused reliability
+
+Commits: `092ed77` plus gap-closing commit.
+
+New/focused tests:
+- HTTP framing: 21 tests in `forward/server.rs` covering TE/CL rejection, hop-by-hop filtering, body-kind dispatch, premature-EOF detection, keep-alive semantics
+- UDP lifecycle: 2 tests in `relay.rs` covering registry cleanup; bug fix for `socks_addr_equivalent` IPv4-mapped detection
+- Reload invariants: 7 tests in `lifecycle_invariants.rs` covering repeated reloads, generation preservation, upstream removal, active connection survival
+- Shutdown: 2 tests in `shutdown.rs` and 3 in `start_stop.rs` covering post-shutdown refusal, malformed handshake recovery, drop safety
+- Resource bounds: 1 test in `admin.rs` (oversized body rejection) and 1 in `regex_compat.rs` (rule count limit)
+
+Defects fixed: `socks_addr_equivalent` IPv4-mapped detection, `ForwardResult` missing status field.
+
+### Phase 3 — Python ABI and delivery
+
+Commit: `b650ab6` (implementation), `a87748b` (closure).
+
+Wheel set:
+- `eggress-1.0.1-cp39-abi3-manylinux_2_34_x86_64.whl`
+- `eggress-1.0.1-cp39-abi3-manylinux_2_34_aarch64.whl`
+- `eggress-1.0.1-cp39-abi3-macosx_11_0_x86_64.whl`
+- `eggress-1.0.1-cp39-abi3-macosx_11_0_arm64.whl`
+- `eggress-1.0.1-cp39-abi3-win_amd64.whl`
+- `eggress-1.0.1.tar.gz` (source distribution)
+
+Routine CI remains one Rust smoke job and one path-scoped Python smoke job. Crates.io publication remains manual.
+
+### Explicitly rejected optimizations and targets
+
+| Target | Reason |
+|--------|--------|
+| Admin/metrics optionalization | Tightly coupled to runtime snapshot invariant; would require duplicating state |
+| musllinux wheels | Not in approved artifact contract; source-build sufficient |
+| universal2 macOS wheel | Not verified to work cleanly with maturin-action cross-compilation; two arch wheels are reliable |
+| 32-bit, FreeBSD, Android, iOS, WebAssembly wheels | Not in approved artifact contract |
+| Routine OS/arch/Python-version CI matrix | Would recreate ceremony this roadmap eliminates |
+| GitHub Releases, native binary archives, containers, signatures, checksums, SBOMs, provenance | Explicitly out of scope per governing constraint |
+| Auto crates.io publication | Manual publication preserved per governing constraint |
 
 ## Baseline
 
