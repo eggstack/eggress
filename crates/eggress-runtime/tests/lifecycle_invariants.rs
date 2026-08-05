@@ -1029,10 +1029,10 @@ upstream_group = "udp-upstream"
 
 // ---------------------------------------------------------------------------
 // Test 13: Removing an upstream via reload removes it from the snapshot
-    // ---------------------------------------------------------------------------
-    #[test]
-    fn upstream_removal_on_reload_removes_from_snapshot() {
-        let config_with_upstream = r#"
+// ---------------------------------------------------------------------------
+#[test]
+fn upstream_removal_on_reload_removes_from_snapshot() {
+    let config_with_upstream = r#"
 version = 1
 
 [[listeners]]
@@ -1054,21 +1054,21 @@ fallback = "reject"
 id = "route-all"
 upstream_group = "main"
 "#;
-        let f = write_config(config_with_upstream);
-        let path = f.path().to_str().unwrap();
-        let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let f = write_config(config_with_upstream);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
 
-        // Verify upstream is present in snapshot
-        {
-            let snap = sup.state().snapshot.load();
-            assert!(
-                snap.upstreams.contains_key("upstream1"),
-                "upstream1 should be present initially"
-            );
-        }
+    // Verify upstream is present in snapshot
+    {
+        let snap = sup.state().snapshot.load();
+        assert!(
+            snap.upstreams.contains_key("upstream1"),
+            "upstream1 should be present initially"
+        );
+    }
 
-        // Reload with config that removes the upstream
-        let config_without_upstream = r#"
+    // Reload with config that removes the upstream
+    let config_without_upstream = r#"
 version = 1
 
 [[listeners]]
@@ -1081,42 +1081,42 @@ id = "route-all"
 any = true
 direct = true
 "#;
-        {
-            let mut f = std::fs::OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .open(path)
-                .unwrap();
-            f.write_all(config_without_upstream.as_bytes()).unwrap();
-            f.flush().unwrap();
-        }
-
-        let result = sup.reload_config();
-        match result {
-            eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
-                assert_eq!(generation, 1);
-            }
-            other => panic!("expected Applied, got {other:?}"),
-        }
-
-        // Verify upstream is no longer in snapshot
-        {
-            let snap = sup.state().snapshot.load();
-            assert!(
-                !snap.upstreams.contains_key("upstream1"),
-                "upstream1 should be removed after reload"
-            );
-        }
-
-        sup.shutdown_token().cancel();
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        f.write_all(config_without_upstream.as_bytes()).unwrap();
+        f.flush().unwrap();
     }
 
-    // ---------------------------------------------------------------------------
-    // Test 14: Repeated reloads with upstreams present do not grow the upstream set
-    // ---------------------------------------------------------------------------
-    #[test]
-    fn repeated_reloads_with_upstreams_do_not_leak() {
-        let config = r#"
+    let result = sup.reload_config();
+    match result {
+        eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
+            assert_eq!(generation, 1);
+        }
+        other => panic!("expected Applied, got {other:?}"),
+    }
+
+    // Verify upstream is no longer in snapshot
+    {
+        let snap = sup.state().snapshot.load();
+        assert!(
+            !snap.upstreams.contains_key("upstream1"),
+            "upstream1 should be removed after reload"
+        );
+    }
+
+    sup.shutdown_token().cancel();
+}
+
+// ---------------------------------------------------------------------------
+// Test 14: Repeated reloads with upstreams present do not grow the upstream set
+// ---------------------------------------------------------------------------
+#[test]
+fn repeated_reloads_with_upstreams_do_not_leak() {
+    let config = r#"
 version = 1
 
 [[listeners]]
@@ -1138,47 +1138,47 @@ fallback = "reject"
 id = "route-all"
 upstream_group = "main"
 "#;
-        let f = write_config(config);
-        let path = f.path().to_str().unwrap();
-        let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
 
-        // Perform 10 reloads with the same config containing one upstream
-        for i in 0..10 {
-            let result = sup.reload_config();
-            match result {
-                eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
-                    assert_eq!(generation, (i + 1) as u64);
-                }
-                other => panic!("reload {i} failed: {other:?}"),
+    // Perform 10 reloads with the same config containing one upstream
+    for i in 0..10 {
+        let result = sup.reload_config();
+        match result {
+            eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
+                assert_eq!(generation, (i + 1) as u64);
             }
+            other => panic!("reload {i} failed: {other:?}"),
         }
-
-        assert_eq!(sup.state().generation(), 10);
-
-        // The snapshot should only have the single configured upstream
-        let snap = sup.state().snapshot.load();
-        assert_eq!(
-            snap.upstreams.len(),
-            1,
-            "exactly one upstream should be present after 10 identical reloads"
-        );
-        assert!(
-            snap.upstreams.contains_key("upstream1"),
-            "upstream1 should be present"
-        );
-        drop(snap);
-
-        sup.shutdown_token().cancel();
     }
 
-    // ---------------------------------------------------------------------------
-    // Test 15: Active connection continues working after reload — the shared
-    //         routing service atomically swaps, so existing connections see the
-    //         updated routing without disruption
-    // ---------------------------------------------------------------------------
-    #[tokio::test]
-    async fn active_connection_survives_reload() {
-        let echo_addr = start_tcp_echo().await;
+    assert_eq!(sup.state().generation(), 10);
+
+    // The snapshot should only have the single configured upstream
+    let snap = sup.state().snapshot.load();
+    assert_eq!(
+        snap.upstreams.len(),
+        1,
+        "exactly one upstream should be present after 10 identical reloads"
+    );
+    assert!(
+        snap.upstreams.contains_key("upstream1"),
+        "upstream1 should be present"
+    );
+    drop(snap);
+
+    sup.shutdown_token().cancel();
+}
+
+// ---------------------------------------------------------------------------
+// Test 15: Active connection continues working after reload — the shared
+//         routing service atomically swaps, so existing connections see the
+//         updated routing without disruption
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn active_connection_survives_reload() {
+    let echo_addr = start_tcp_echo().await;
 
     let config = r#"
 version = 1
@@ -1194,71 +1194,71 @@ any = true
 direct = true
 "#;
     let f = write_config(config);
-        let path = f.path().to_str().unwrap();
-        let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
 
-        let state = sup.state().clone();
-        let token = sup.shutdown_token();
-        let jh = tokio::task::spawn_blocking(move || sup.run());
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
 
-        // Wait for readiness
-        wait_ready(&state).await;
+    // Wait for readiness
+    wait_ready(&state).await;
 
-        let listener_addr = state.listener_addrs.lock().unwrap()[0].unwrap();
+    let listener_addr = state.listener_addrs.lock().unwrap()[0].unwrap();
 
-        // Connect through SOCKS5
-        let mut stream = tokio::net::TcpStream::connect(listener_addr)
-            .await
-            .expect("connect to listener");
+    // Connect through SOCKS5
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect to listener");
 
-        // SOCKS5 handshake
-        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
-        let mut resp = [0u8; 2];
-        stream.read_exact(&mut resp).await.unwrap();
-        assert_eq!(resp, [0x05, 0x00]);
+    // SOCKS5 handshake
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await.unwrap();
+    assert_eq!(resp, [0x05, 0x00]);
 
-        // SOCKS5 CONNECT
-        let octets = match echo_addr.ip() {
-            std::net::IpAddr::V4(v4) => v4.octets(),
-            _ => panic!("echo server must be IPv4"),
-        };
-        let port = echo_addr.port().to_be_bytes();
-        stream
-            .write_all(&[
-                0x05, 0x01, 0x00, 0x01, octets[0], octets[1], octets[2], octets[3],
-            ])
-            .await
-            .unwrap();
-        stream.write_all(&port).await.unwrap();
-        let mut reply = [0u8; 10];
-        stream.read_exact(&mut reply).await.unwrap();
-        assert_eq!(reply[1], 0x00, "SOCKS5 connect must succeed");
+    // SOCKS5 CONNECT
+    let octets = match echo_addr.ip() {
+        std::net::IpAddr::V4(v4) => v4.octets(),
+        _ => panic!("echo server must be IPv4"),
+    };
+    let port = echo_addr.port().to_be_bytes();
+    stream
+        .write_all(&[
+            0x05, 0x01, 0x00, 0x01, octets[0], octets[1], octets[2], octets[3],
+        ])
+        .await
+        .unwrap();
+    stream.write_all(&port).await.unwrap();
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00, "SOCKS5 connect must succeed");
 
-        // Verify data flows before reload
-        stream.write_all(b"before-reload").await.unwrap();
-        let mut buf = [0u8; 32];
-        let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
-            .await
-            .expect("read timeout")
-            .expect("read error");
-        assert_eq!(&buf[..n], b"before-reload");
+    // Verify data flows before reload
+    stream.write_all(b"before-reload").await.unwrap();
+    let mut buf = [0u8; 32];
+    let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+        .await
+        .expect("read timeout")
+        .expect("read error");
+    assert_eq!(&buf[..n], b"before-reload");
 
-        // Verify connection tracking is consistent
-        assert!(state.readiness.load(Ordering::Relaxed));
-        assert_eq!(state.active_connections.load(Ordering::Relaxed), 1);
+    // Verify connection tracking is consistent
+    assert!(state.readiness.load(Ordering::Relaxed));
+    assert_eq!(state.active_connections.load(Ordering::Relaxed), 1);
 
-        // Verify data still flows on the established connection
-        stream.write_all(b"still-working").await.unwrap();
-        let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
-            .await
-            .expect("read timeout")
-            .expect("read error");
-        assert_eq!(&buf[..n], b"still-working");
+    // Verify data still flows on the established connection
+    stream.write_all(b"still-working").await.unwrap();
+    let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+        .await
+        .expect("read timeout")
+        .expect("read error");
+    assert_eq!(&buf[..n], b"still-working");
 
-        drop(stream);
-        token.cancel();
-        jh.await.ok();
-    }
+    drop(stream);
+    token.cancel();
+    jh.await.ok();
+}
 
 #[tokio::test]
 async fn trojan_upstream_with_udp_rejected_not_direct_routed() {
