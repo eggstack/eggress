@@ -803,3 +803,19 @@ async fn udp_endpoint_no_client_or_target_address() {
     assert!(json["listeners"].is_array());
     assert!(json["associations_active"].is_number());
 }
+
+// Phase 2: Admin POST body exceeding MAX_ADMIN_BODY (16KB) is rejected
+#[tokio::test]
+async fn admin_rejects_oversized_post_body() {
+    let state = test_state_with_listeners();
+    let addr = start_server(state).await;
+
+    // Send a POST with body exceeding 16KB to the route-explain endpoint
+    let oversized_body = "x".repeat(17 * 1024);
+    let (status, _body) = http_post(&addr, "/-/route-explain", &oversized_body).await;
+    // Should get 413 Payload Too Large from collect_limited
+    assert!(
+        status == 413,
+        "oversized POST body should be rejected with 413, got status {status}"
+    );
+}

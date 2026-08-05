@@ -281,16 +281,20 @@ pub fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
             a_addr == b_addr && a_port == b_port
         }
         (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
-            matches!(
-                std::net::IpAddr::from(*b_addr),
-                std::net::IpAddr::V4(v4) if v4.octets() == *a_addr && a_port == b_port
-            )
+            let v6 = std::net::Ipv6Addr::from(*b_addr);
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                v4.octets() == *a_addr && a_port == b_port
+            } else {
+                false
+            }
         }
         (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
-            matches!(
-                std::net::IpAddr::from(*a_addr),
-                std::net::IpAddr::V4(v4) if v4.octets() == *b_addr && a_port == b_port
-            )
+            let v6 = std::net::Ipv6Addr::from(*a_addr);
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                v4.octets() == *b_addr && a_port == b_port
+            } else {
+                false
+            }
         }
         (SocksAddr::Domain(a_dom, a_port), SocksAddr::Domain(b_dom, b_port)) => {
             a_dom == b_dom && a_port == b_port

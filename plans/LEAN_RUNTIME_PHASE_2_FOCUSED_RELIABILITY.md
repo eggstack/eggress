@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Parent roadmap
 
@@ -337,3 +337,77 @@ Update this plan in place with:
 - verification commands run.
 
 Do not add a separate reliability completion or evidence document.
+
+## Closure update
+
+### Implementation commit range
+
+Single implementation commit covering all workstreams.
+
+### Tests added
+
+**Workstream A — HTTP framing and connection-state integrity:**
+- `forward/server.rs` — 17 new unit/integration tests:
+  - `test_te_plus_cl_rejected_not_forwarded` — TE+CL must be rejected
+  - `test_conflicting_cl_values_rejected` — conflicting CL values must be rejected
+  - `test_equal_duplicate_cl_deterministic` — equal duplicate CL handled deterministically
+  - `test_connection_nominated_headers_removed` — Connection-nominated headers removed
+  - `test_ipv6_literal_authority_roundtrip` — IPv6 bracket notation parsed correctly
+  - `test_ipv6_literal_no_port` — IPv6 without explicit port uses default
+  - `test_chunked_not_final_rejected` — chunked not final with unsupported coding rejected
+  - `test_unsupported_transfer_encoding_rejected` — unsupported TE rejected
+  - `test_upstream_connection_close_detected` — Connection: close detected via forward_response
+  - `test_upstream_http11_keepalive_default` — HTTP/1.1 keep-alive default via forward_response
+  - `test_filter_hop_by_hop_removes_upgrade` — Upgrade header stripped
+  - `test_filter_hop_by_hop_removes_proxy_connection` — Proxy-Connection stripped
+  - `test_request_body_kind_none_has_no_body` — None body kind has no body
+  - `test_forward_request_body_kind_dispatches_correctly` — ForwardRequest.body_kind() dispatches
+- Existing tests identified as sufficient: TE+CL rejection, conflicting CL, equal duplicate CL, Connection hop-by-hop, IPv6 authority, body copy invariants
+
+**Workstream B — UDP association lifecycle and isolation:**
+- `relay.rs` — 1 new test + 1 bug fix:
+  - `socks_addr_equivalent_works` extended with IPv4-mapped IPv6 roundtrip test
+  - Fixed `socks_addr_equivalent` in `relay.rs` and `flow.rs` to use `Ipv6Addr::to_ipv4_mapped()` instead of broken `IpAddr::from()` pattern match
+- Existing tests identified as sufficient: TCP control close cleanup, setup failure cleanup, shutdown with active associations, client source pinning, idle expiry, malformed datagram isolation, IPv4/IPv6 target encoding
+
+**Workstream C — Reload generation ownership:**
+- `lifecycle_invariants.rs` — 4 new tests:
+  - `repeated_reloads_do_not_leak_observable_state` — 10 reloads with identical config, verify snapshot has no leaked upstreams
+  - `shutdown_after_multiple_reloads_completes` — reload 3x then shutdown, verify completes within timeout
+  - `rejected_topology_reload_preserves_snapshot_identity` — rejected reload preserves generation and router Arc identity
+  - `failed_toml_reload_preserves_generation_and_readiness` — corrupt TOML fails, preserves generation, recovers
+- Existing tests identified as sufficient: generation increment, Arc reuse, atomic swap, health preservation
+
+**Workstream D — Shutdown, cancellation, and failure isolation:**
+- `start_stop.rs` — 3 new tests:
+  - `drop_handle_without_explicit_shutdown_does_not_panic` — Drop without shutdown doesn't panic
+  - `double_shutdown_does_not_panic` — documents type-system enforced single shutdown
+  - `reload_then_shutdown_completes` — reload then shutdown completes cleanly
+- Existing tests identified as sufficient: readiness false, drain, force-cancel, admin during drain, active connections zero
+
+**Workstream E — Resource-bound confirmation:**
+- `admin.rs` — 1 new test:
+  - `admin_rejects_oversized_post_body` — POST body > 16KB rejected with 413
+- Existing limits verified by inspection: connection limit (semaphore), handshake timeout, HTTP header size/count, UDP limits, admin body/identity limits, metrics label cardinality
+
+### Defects fixed
+
+1. **`socks_addr_equivalent` IPv4-mapped IPv6 detection** (`relay.rs`, `flow.rs`): The previous implementation used `IpAddr::from([u8; 16])` which never matches the `IpAddr::V4` arm for v4-mapped addresses. Fixed to use `Ipv6Addr::to_ipv4_mapped()`.
+
+### Workstreams closed without changes
+
+None. All workstreams had either new tests or bug fixes.
+
+### Verification commands run
+
+```bash
+cargo test -p eggress-protocol-http --lib -- forward::server::tests
+cargo test -p eggress-udp --lib -- relay::tests::socks_addr_equivalent_works
+cargo test -p eggress-runtime --test lifecycle_invariants
+cargo test -p eggress-runtime --test admin
+cargo test -p eggress-embed --test start_stop
+cargo test -p eggress-embed --test reload
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --locked
+```

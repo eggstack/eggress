@@ -563,16 +563,20 @@ fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
         }
         (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
             // Check for IPv4-mapped IPv6: ::ffff:x.x.x.x
-            matches!(
-                std::net::IpAddr::from(*b_addr),
-                std::net::IpAddr::V4(v4) if v4.octets() == *a_addr && a_port == b_port
-            )
+            let v6 = std::net::Ipv6Addr::from(*b_addr);
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                v4.octets() == *a_addr && a_port == b_port
+            } else {
+                false
+            }
         }
         (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
-            matches!(
-                std::net::IpAddr::from(*a_addr),
-                std::net::IpAddr::V4(v4) if v4.octets() == *b_addr && a_port == b_port
-            )
+            let v6 = std::net::Ipv6Addr::from(*a_addr);
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                v4.octets() == *b_addr && a_port == b_port
+            } else {
+                false
+            }
         }
         (SocksAddr::Domain(a_dom, a_port), SocksAddr::Domain(b_dom, b_port)) => {
             a_dom == b_dom && a_port == b_port
@@ -1521,6 +1525,25 @@ mod tests {
             &SocksAddr::IPv4([127, 0, 0, 1], 80),
             &SocksAddr::Domain("example.com".to_string(), 80)
         ));
+        // IPv4-mapped IPv6 should match plain IPv4 (RFC 4291 §2.5.5.2)
+        // 192.168.1.1 = [192, 168, 1, 1] = [0xc0, 0xa8, 0x01, 0x01]
+        // ::ffff:192.168.1.1 = [0,0,0,0, 0,0,0,0, 0,0, 0xff,0xff, 0xc0,0xa8, 0x01,0x01]
+        let mapped_v6 = std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc0a8, 0x0101);
+        let plain_v4 = std::net::Ipv4Addr::new(192, 168, 1, 1);
+        assert!(
+            socks_addr_equivalent(
+                &SocksAddr::IPv6(mapped_v6.octets(), 80),
+                &SocksAddr::IPv4(plain_v4.octets(), 80)
+            ),
+            "IPv4-mapped IPv6 must match plain IPv4"
+        );
+        assert!(
+            socks_addr_equivalent(
+                &SocksAddr::IPv4(plain_v4.octets(), 80),
+                &SocksAddr::IPv6(mapped_v6.octets(), 80)
+            ),
+            "plain IPv4 must match IPv4-mapped IPv6"
+        );
     }
 
     #[tokio::test]

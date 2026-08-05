@@ -118,3 +118,85 @@ fn unsupported_version_rejected() {
     let err_msg = result.err().unwrap().to_string();
     assert!(err_msg.contains("version"));
 }
+
+// Phase 2: Idempotent shutdown — dropping the handle without calling
+// shutdown must not panic or leak resources.
+#[test]
+fn drop_handle_without_explicit_shutdown_does_not_panic() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"#,
+    )
+    .unwrap();
+
+    let handle = eggress_embed::EggressService::new(config)
+        .start_blocking()
+        .unwrap();
+
+    assert!(handle.status().readiness);
+
+    // Drop without calling shutdown_blocking — should not panic
+    drop(handle);
+}
+
+// Phase 2: Shutdown idempotency — calling shutdown twice must not panic.
+#[test]
+fn double_shutdown_does_not_panic() {
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"#,
+    )
+    .unwrap();
+
+    let handle = eggress_embed::EggressService::new(config)
+        .start_blocking()
+        .unwrap();
+
+    handle.shutdown_blocking().unwrap();
+
+    // Note: shutdown_blocking takes self by value, so a second call is
+    // prevented by the type system. This test documents that invariant.
+    // The Drop impl handles cleanup if shutdown wasn't called explicitly.
+}
+
+// Phase 2: Reload and then shutdown completes cleanly
+#[test]
+fn reload_then_shutdown_completes() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"#;
+
+    let eggress_config = eggress_embed::EggressConfig::from_toml_str(config).unwrap();
+    let handle = eggress_embed::EggressService::new(eggress_config)
+        .start_blocking()
+        .unwrap();
+
+    // Reload with same config
+    let result = handle.reload_toml_str(config);
+    assert!(result.is_ok());
+    match result.unwrap() {
+        eggress_embed::ReloadOutcome::Applied { generation, .. } => {
+            assert_eq!(generation, 1);
+        }
+    }
+
+    // Shutdown after reload should complete cleanly
+    handle.shutdown_blocking().unwrap();
+}

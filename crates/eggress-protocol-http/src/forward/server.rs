@@ -1396,4 +1396,240 @@ mod tests {
             msg
         );
     }
+
+    // ===== Phase 2: HTTP framing and connection-state invariants =====
+
+    #[test]
+    fn test_te_plus_cl_rejected_not_forwarded() {
+        let headers = vec![
+            ("Transfer-Encoding".into(), "chunked".into()),
+            ("Content-Length".into(), "0".into()),
+        ];
+        let result = determine_request_body_kind(&headers);
+        assert!(
+            matches!(result, Err(HttpError::TransferEncodingWithContentLength)),
+            "TE+CL must be rejected to prevent ambiguous framing: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_conflicting_cl_values_rejected() {
+        let headers = vec![
+            ("Content-Length".into(), "10".into()),
+            ("Content-Length".into(), "20".into()),
+        ];
+        let result = determine_request_body_kind(&headers);
+        assert!(
+            matches!(result, Err(HttpError::ConflictingContentLength)),
+            "conflicting CL values must be rejected: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_equal_duplicate_cl_deterministic() {
+        let headers = vec![
+            ("Content-Length".into(), "42".into()),
+            ("Content-Length".into(), "42".into()),
+        ];
+        let kind = determine_request_body_kind(&headers).unwrap();
+        assert_eq!(kind, RequestBodyKind::ContentLength(42));
+    }
+
+    #[test]
+    fn test_connection_nominated_headers_removed() {
+        let headers = vec![
+            ("Connection".into(), "X-Foo, X-Bar".into()),
+            ("X-Foo".into(), "a".into()),
+            ("X-Bar".into(), "b".into()),
+            ("Content-Type".into(), "text/html".into()),
+        ];
+        let filtered = filter_hop_by_hop(&headers);
+        let names: Vec<_> = filtered.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["Content-Type"]);
+    }
+
+    #[test]
+    fn test_ipv6_literal_authority_roundtrip() {
+        let (target, path) = parse_absolute_uri("http://[::1]:8080/api").unwrap();
+        assert_eq!(
+            target,
+            TargetAddr {
+                host: TargetHost::Ip("::1".parse().unwrap()),
+                port: 8080,
+            }
+        );
+        assert_eq!(path, "/api");
+    }
+
+    #[test]
+    fn test_ipv6_literal_no_port() {
+        let (target, _path) = parse_absolute_uri("http://[::1]/path").unwrap();
+        assert_eq!(target.port, 80);
+        assert_eq!(target.host, TargetHost::Ip("::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_chunked_not_final_rejected() {
+        // When chunked is not the final coding and a non-chunked coding is present,
+        // the unsupported encoding is rejected first (since only chunked is supported).
+        let headers = vec![("Transfer-Encoding".into(), "gzip, chunked".into())];
+        let result = determine_request_body_kind(&headers);
+        assert!(
+            matches!(
+                result,
+                Err(HttpError::UnsupportedTransferEncoding(_)) | Err(HttpError::ChunkedNotFinal)
+            ),
+            "chunked not final with unsupported coding must be rejected: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_unsupported_transfer_encoding_rejected() {
+        let headers = vec![("Transfer-Encoding".into(), "deflate".into())];
+        let result = determine_request_body_kind(&headers);
+        assert!(
+            matches!(result, Err(HttpError::UnsupportedTransferEncoding(_))),
+            "unsupported TE must be rejected: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn test_upstream_connection_close_detected() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello";
+        // Upstream: server writes response into duplex, forward_response reads from the other end
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            upstream_write.write_all(response).await.unwrap();
+            upstream_write.shutdown().await.ok();
+        });
+        // Client: forward_response writes to client_write, we read from client_read
+        let (mut client_read, client_write) = tokio::io::duplex(4096);
+
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+        let result = forward_response(&mut upstream, &mut client).await;
+        assert!(result.is_ok());
+        let fwd = result.unwrap();
+        assert!(
+            !fwd.upstream_alive,
+            "Connection: close should make upstream not alive"
+        );
+        assert!(
+            fwd.client_should_close,
+            "client should close when upstream says close"
+        );
+        // Verify the client received the forwarded response
+        let mut buf = Vec::new();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client_read.read_to_end(&mut buf),
+        )
+        .await;
+        let resp = String::from_utf8_lossy(&buf);
+        assert!(
+            resp.contains("200 OK"),
+            "client should receive response: {resp}"
+        );
+        assert!(resp.contains("hello"), "client should receive body: {resp}");
+    }
+
+    #[tokio::test]
+    async fn test_upstream_http11_keepalive_default() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            upstream_write.write_all(response).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        });
+        let (mut client_read, client_write) = tokio::io::duplex(4096);
+
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+        let result = forward_response(&mut upstream, &mut client).await;
+        assert!(result.is_ok());
+        let fwd = result.unwrap();
+        assert!(
+            fwd.upstream_alive,
+            "HTTP/1.1 without Connection: close should be alive"
+        );
+        assert!(!fwd.client_should_close);
+        let mut buf = Vec::new();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client_read.read_to_end(&mut buf),
+        )
+        .await;
+        let resp = String::from_utf8_lossy(&buf);
+        assert!(
+            resp.contains("200 OK"),
+            "client should receive response: {resp}"
+        );
+    }
+
+    #[test]
+    fn test_filter_hop_by_hop_removes_upgrade() {
+        let headers = vec![
+            ("Upgrade".into(), "websocket".into()),
+            ("Content-Type".into(), "text/html".into()),
+        ];
+        let filtered = filter_hop_by_hop(&headers);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "Content-Type");
+    }
+
+    #[test]
+    fn test_filter_hop_by_hop_removes_proxy_connection() {
+        let headers = vec![
+            ("Proxy-Connection".into(), "keep-alive".into()),
+            ("Content-Type".into(), "text/html".into()),
+        ];
+        let filtered = filter_hop_by_hop(&headers);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "Content-Type");
+    }
+
+    #[tokio::test]
+    async fn test_request_body_kind_none_has_no_body() {
+        let headers = vec![("Host".into(), "example.com".into())];
+        let kind = determine_request_body_kind(&headers).unwrap();
+        assert_eq!(kind, RequestBodyKind::None);
+        assert!(!matches!(kind, RequestBodyKind::ContentLength(0)));
+    }
+
+    #[test]
+    fn test_forward_request_body_kind_dispatches_correctly() {
+        let req_none = ForwardRequest {
+            method: "GET".into(),
+            path: "/".into(),
+            version: "HTTP/1.1".into(),
+            headers: vec![],
+            target: TargetAddr {
+                host: TargetHost::Domain("example.com".into()),
+                port: 80,
+            },
+            has_body: false,
+            content_length: None,
+            is_chunked: false,
+            connection_close: false,
+        };
+        assert_eq!(req_none.body_kind(), RequestBodyKind::None);
+
+        let req_cl = ForwardRequest {
+            content_length: Some(100),
+            has_body: true,
+            ..req_none.clone()
+        };
+        assert_eq!(req_cl.body_kind(), RequestBodyKind::ContentLength(100));
+
+        let req_chunked = ForwardRequest {
+            is_chunked: true,
+            has_body: true,
+            ..req_none.clone()
+        };
+        assert_eq!(req_chunked.body_kind(), RequestBodyKind::Chunked);
+    }
 }

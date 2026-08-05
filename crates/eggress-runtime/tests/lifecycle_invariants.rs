@@ -1060,3 +1060,263 @@ upstream_group = "udp-upstream"
         "Trojan upstream with UDP listener should be rejected at config validation, not silently direct-routed"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test 9: Repeated bounded reloads do not grow the observable upstream set
+// ---------------------------------------------------------------------------
+#[test]
+fn repeated_reloads_do_not_leak_observable_state() {
+    let base_config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+
+    let f = write_config(base_config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    // Perform 10 reloads with identical config
+    for i in 0..10 {
+        let result = sup.reload_config();
+        match result {
+            eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
+                assert_eq!(generation, (i + 1) as u64);
+            }
+            other => panic!("reload {i} failed: {other:?}"),
+        }
+    }
+
+    // Generation should be exactly 10
+    assert_eq!(sup.state().generation(), 10);
+
+    // The snapshot should only have the expected upstreams (none configured)
+    let snap = sup.state().snapshot.load();
+    assert!(
+        snap.upstreams.is_empty(),
+        "no upstreams should be present after reloads with identical config"
+    );
+    drop(snap);
+
+    sup.shutdown_token().cancel();
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: Shutdown after multiple reloads completes without hang
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn shutdown_after_multiple_reloads_completes() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    // Perform a few reloads before starting
+    for _ in 0..3 {
+        let result = sup.reload_config();
+        assert!(matches!(
+            result,
+            eggress_runtime::supervisor::ReloadResult::Applied { .. }
+        ));
+    }
+    assert_eq!(sup.state().generation(), 3);
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..100 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    // Shutdown should complete without hang
+    let start = std::time::Instant::now();
+    token.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(5), jh).await;
+    let elapsed = start.elapsed();
+
+    assert!(result.is_ok(), "shutdown after reloads should not hang");
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "shutdown took too long: {elapsed:?}"
+    );
+    assert!(!state.readiness.load(Ordering::Relaxed));
+}
+
+// ---------------------------------------------------------------------------
+// Test 11: Topology-rejected reload leaves previous generation and snapshot
+//         unchanged (atomicity check via Arc pointer)
+// ---------------------------------------------------------------------------
+#[test]
+fn rejected_topology_reload_preserves_snapshot_identity() {
+    let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config1);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    assert_eq!(sup.state().generation(), 0);
+
+    // Capture snapshot identity before rejected reload
+    let old_snap = sup.state().snapshot.load();
+    let old_gen = old_snap.generation;
+    let old_router = old_snap.router.clone();
+    drop(old_snap);
+
+    // Try to change topology (should be rejected)
+    let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        f.write_all(config2.as_bytes()).unwrap();
+        f.flush().unwrap();
+    }
+
+    let result = sup.reload_config();
+    match result {
+        eggress_runtime::supervisor::ReloadResult::Rejected { reason } => {
+            assert!(
+                reason.contains("listener") || reason.contains("topology"),
+                "rejection reason should mention topology: {reason}"
+            );
+        }
+        other => panic!("expected Rejected for topology change, got {other:?}"),
+    }
+
+    // Generation should be unchanged
+    assert_eq!(sup.state().generation(), 0);
+
+    // The snapshot/router should be the same objects (no partial mutation)
+    let new_snap = sup.state().snapshot.load();
+    assert_eq!(new_snap.generation, old_gen);
+    assert!(
+        std::sync::Arc::ptr_eq(&old_router, &new_snap.router),
+        "rejected reload must not replace the router"
+    );
+    drop(new_snap);
+
+    sup.shutdown_token().cancel();
+}
+
+// ---------------------------------------------------------------------------
+// Test 12: Failed config reload (bad TOML) leaves generation unchanged
+// ---------------------------------------------------------------------------
+#[test]
+fn failed_toml_reload_preserves_generation_and_readiness() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let gen_before = sup.state().generation();
+    assert_eq!(gen_before, 0);
+
+    // Corrupt the config
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        f.write_all(b"this is not valid toml {{{").unwrap();
+        f.flush().unwrap();
+    }
+
+    let result = sup.reload_config();
+    assert!(matches!(
+        result,
+        eggress_runtime::supervisor::ReloadResult::Failed { .. }
+    ));
+
+    // Generation must be unchanged
+    assert_eq!(sup.state().generation(), gen_before);
+
+    // Restore valid config and verify recovery
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        f.write_all(config.as_bytes()).unwrap();
+        f.flush().unwrap();
+    }
+
+    let result = sup.reload_config();
+    match result {
+        eggress_runtime::supervisor::ReloadResult::Applied { generation, .. } => {
+            assert_eq!(generation, 1);
+        }
+        other => panic!("expected Applied after recovery, got {other:?}"),
+    }
+
+    sup.shutdown_token().cancel();
+}
