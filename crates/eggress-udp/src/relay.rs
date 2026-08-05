@@ -1672,4 +1672,42 @@ mod tests {
         cancel.cancel();
         relay_handle.await.unwrap().unwrap();
     }
+
+    #[tokio::test]
+    async fn relay_exit_cleans_up_registry() {
+        let registry = Arc::new(UdpAssociationRegistry::new(UdpLimits::default()));
+        let assoc = registry
+            .create_association("test", test_addr(), ClientIdentity::Anonymous, 1)
+            .await
+            .unwrap();
+        assert_eq!(registry.active_count().await, 1);
+
+        let registry_ref = registry.clone();
+        let relay_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let config = RelayConfig {
+            routing: direct_router(),
+            udp_metrics: Arc::new(UdpMetrics::new()),
+            limits: UdpLimits::default(),
+            listener: "test".to_string(),
+            generation: 1,
+            identity: ClientIdentity::Anonymous,
+            client_tcp_peer: test_addr(),
+            registry,
+        };
+        let cancel = CancellationToken::new();
+
+        let relay_cancel = cancel.clone();
+        let relay_assoc = assoc.clone();
+        let relay_sock = relay_socket.clone();
+        let relay_handle = tokio::spawn(async move {
+            udp_relay_loop(relay_sock, relay_assoc, config, relay_cancel).await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        cancel.cancel();
+        relay_handle.await.unwrap().unwrap();
+
+        let final_count = registry_ref.active_count().await;
+        assert_eq!(final_count, 0, "registry must be empty after relay exit");
+    }
 }

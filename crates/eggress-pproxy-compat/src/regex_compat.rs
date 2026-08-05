@@ -640,4 +640,30 @@ mod tests {
         assert!(!re.is_match("user@example.org").unwrap());
         assert_eq!(re.backend(), RegexBackend::Fancy);
     }
+
+    #[test]
+    fn rulefile_max_entries_enforced() {
+        let mut f = NamedTempFile::new().unwrap();
+        // Write MAX_RULE_ENTRIES valid patterns plus one extra
+        for i in 0..=MAX_RULE_ENTRIES {
+            writeln!(f, "pattern_{i}").unwrap();
+        }
+        f.flush().unwrap();
+
+        let file = PproxyRuleFile::load(f.path()).unwrap();
+        // Should have loaded exactly MAX_RULE_ENTRIES entries (the extra one is dropped)
+        assert_eq!(file.entries.len(), MAX_RULE_ENTRIES);
+        // Should have an error diagnostic about exceeding the limit
+        assert!(file.has_errors());
+        let err_diag = file
+            .diagnostics
+            .iter()
+            .find(|d| d.severity == RuleSeverity::Error)
+            .expect("should have an error diagnostic");
+        assert!(
+            err_diag.message.contains("exceeds maximum"),
+            "diagnostic should mention exceeding max: {}",
+            err_diag.message
+        );
+    }
 }

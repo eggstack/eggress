@@ -342,12 +342,14 @@ Do not add a separate reliability completion or evidence document.
 
 ### Implementation commit range
 
-Single implementation commit covering all workstreams.
+Two implementation commits covering all workstreams:
+1. `092ed77` — initial Phase 2 tests and `socks_addr_equivalent` bug fix
+2. Gap-closing commit — additional invariant coverage for all workstreams
 
 ### Tests added
 
 **Workstream A — HTTP framing and connection-state integrity:**
-- `forward/server.rs` — 17 new unit/integration tests:
+- `forward/server.rs` — 21 unit/integration tests (17 initial + 4 gap-closing):
   - `test_te_plus_cl_rejected_not_forwarded` — TE+CL must be rejected
   - `test_conflicting_cl_values_rejected` — conflicting CL values must be rejected
   - `test_equal_duplicate_cl_deterministic` — equal duplicate CL handled deterministically
@@ -362,37 +364,49 @@ Single implementation commit covering all workstreams.
   - `test_filter_hop_by_hop_removes_proxy_connection` — Proxy-Connection stripped
   - `test_request_body_kind_none_has_no_body` — None body kind has no body
   - `test_forward_request_body_kind_dispatches_correctly` — ForwardRequest.body_kind() dispatches
-- Existing tests identified as sufficient: TE+CL rejection, conflicting CL, equal duplicate CL, Connection hop-by-hop, IPv6 authority, body copy invariants
+  - `test_copy_request_body_premature_eof` — Content-Length body with premature EOF fails (invariant 6)
+  - `test_forward_request_stream_after_failure` — failed request doesn't corrupt stream for next request (invariant 7)
+  - `test_build_origin_request_strips_upgrade` — Upgrade/Connection headers stripped from forwarded request (invariant 8)
+  - `test_forward_response_informational_100_continue` — 100 Continue forwarded explicitly, documents no special 1xx body handling (invariant 9)
+- Added `status` field to `ForwardResult` struct to expose HTTP status code from forwarded responses
 
 **Workstream B — UDP association lifecycle and isolation:**
-- `relay.rs` — 1 new test + 1 bug fix:
+- `relay.rs` — 2 new tests + 1 bug fix:
   - `socks_addr_equivalent_works` extended with IPv4-mapped IPv6 roundtrip test
+  - `relay_exit_cleans_up_registry` — registry is empty after relay loop exits (invariant 2)
   - Fixed `socks_addr_equivalent` in `relay.rs` and `flow.rs` to use `Ipv6Addr::to_ipv4_mapped()` instead of broken `IpAddr::from()` pattern match
-- Existing tests identified as sufficient: TCP control close cleanup, setup failure cleanup, shutdown with active associations, client source pinning, idle expiry, malformed datagram isolation, IPv4/IPv6 target encoding
+- IPv6 relay integration (invariant 7) covered by existing `codec_decode_encode_roundtrip_ipv6` test; end-to-end IPv6 relay test deferred (requires IPv6-bound relay socket)
 
 **Workstream C — Reload generation ownership:**
-- `lifecycle_invariants.rs` — 4 new tests:
+- `lifecycle_invariants.rs` — 7 new tests (4 initial + 3 gap-closing):
   - `repeated_reloads_do_not_leak_observable_state` — 10 reloads with identical config, verify snapshot has no leaked upstreams
   - `shutdown_after_multiple_reloads_completes` — reload 3x then shutdown, verify completes within timeout
   - `rejected_topology_reload_preserves_snapshot_identity` — rejected reload preserves generation and router Arc identity
   - `failed_toml_reload_preserves_generation_and_readiness` — corrupt TOML fails, preserves generation, recovers
-- Existing tests identified as sufficient: generation increment, Arc reuse, atomic swap, health preservation
+  - `upstream_removal_on_reload_removes_from_snapshot` — removed upstream no longer in snapshot after reload (invariant 3)
+  - `repeated_reloads_with_upstreams_do_not_leak` — 10 reloads with upstream present, count stays at 1 (invariant 4)
+  - `active_connection_survives_reload` — active SOCKS5 connection continues working after reload, connection tracking consistent (invariant 5)
 
 **Workstream D — Shutdown, cancellation, and failure isolation:**
-- `start_stop.rs` — 3 new tests:
+- `shutdown.rs` — 2 new tests:
+  - `new_connections_refused_after_shutdown_begins` — connect after token.cancel() fails or readiness is false (invariant 2)
+  - `malformed_handshake_does_not_corrupt_listener` — garbage bytes to SOCKS5 listener, then valid handshake succeeds (invariant 4)
+- `start_stop.rs` — 3 initial tests:
   - `drop_handle_without_explicit_shutdown_does_not_panic` — Drop without shutdown doesn't panic
   - `double_shutdown_does_not_panic` — documents type-system enforced single shutdown
   - `reload_then_shutdown_completes` — reload then shutdown completes cleanly
-- Existing tests identified as sufficient: readiness false, drain, force-cancel, admin during drain, active connections zero
 
 **Workstream E — Resource-bound confirmation:**
-- `admin.rs` — 1 new test:
+- `admin.rs` — 1 initial test:
   - `admin_rejects_oversized_post_body` — POST body > 16KB rejected with 413
+- `regex_compat.rs` — 1 new test:
+  - `rulefile_max_entries_enforced` — rule file with >10,000 entries triggers error diagnostic and truncation (invariant: regex rule count limit)
 - Existing limits verified by inspection: connection limit (semaphore), handshake timeout, HTTP header size/count, UDP limits, admin body/identity limits, metrics label cardinality
 
 ### Defects fixed
 
 1. **`socks_addr_equivalent` IPv4-mapped IPv6 detection** (`relay.rs`, `flow.rs`): The previous implementation used `IpAddr::from([u8; 16])` which never matches the `IpAddr::V4` arm for v4-mapped addresses. Fixed to use `Ipv6Addr::to_ipv4_mapped()`.
+2. **`ForwardResult` missing status field** (`forward/server.rs`): Added `status: u16` field to expose the HTTP status code of forwarded responses.
 
 ### Workstreams closed without changes
 
@@ -402,11 +416,11 @@ None. All workstreams had either new tests or bug fixes.
 
 ```bash
 cargo test -p eggress-protocol-http --lib -- forward::server::tests
-cargo test -p eggress-udp --lib -- relay::tests::socks_addr_equivalent_works
+cargo test -p eggress-udp --lib -- relay::tests
 cargo test -p eggress-runtime --test lifecycle_invariants
-cargo test -p eggress-runtime --test admin
+cargo test -p eggress-runtime --test shutdown
+cargo test -p eggress-pproxy-compat --lib -- regex_compat::tests::rulefile_max_entries_enforced
 cargo test -p eggress-embed --test start_stop
-cargo test -p eggress-embed --test reload
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked

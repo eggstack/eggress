@@ -584,3 +584,130 @@ enabled = true
     drop(client);
     jh.await.ok();
 }
+
+#[tokio::test]
+async fn new_connections_refused_after_shutdown_begins() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let listener_addr = state.listener_addrs.lock().unwrap()[0].unwrap();
+
+    // Trigger shutdown
+    token.cancel();
+
+    // Wait briefly for shutdown to propagate
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Attempting to connect after shutdown should fail or be refused
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::net::TcpStream::connect(listener_addr).await
+    })
+    .await;
+
+    match result {
+        Ok(Ok(_)) => {
+            // If the connection succeeds, readiness must be false (server is shutting down)
+            assert!(
+                !state.readiness.load(Ordering::Relaxed),
+                "if connect succeeds during shutdown, readiness must be false"
+            );
+        }
+        Ok(Err(_)) => {
+            // Connection refused — expected during shutdown
+        }
+        Err(_) => {
+            // Timeout — listener is no longer accepting
+        }
+    }
+
+    jh.await.ok();
+}
+
+#[tokio::test]
+async fn malformed_handshake_does_not_corrupt_listener() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+"#;
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    // Wait for readiness
+    for _ in 0..50 {
+        if state.readiness.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    let listener_addr = state.listener_addrs.lock().unwrap()[0].unwrap();
+
+    // Send garbage bytes to trigger a handshake error
+    {
+        let mut bad_stream = tokio::net::TcpStream::connect(listener_addr)
+            .await
+            .expect("connect for malformed handshake");
+        let _ = bad_stream.write_all(b"NOT_A_SOCKS5_PROTOCOL").await;
+        // The server should close this connection after detecting the error
+        drop(bad_stream);
+    }
+
+    // Wait briefly for the bad connection to be cleaned up
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Now send a valid SOCKS5 handshake — listener must still accept it
+    {
+        let mut good_stream = tokio::net::TcpStream::connect(listener_addr)
+            .await
+            .expect("connect for valid handshake after malformed");
+        good_stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut resp = [0u8; 2];
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), good_stream.read_exact(&mut resp)).await;
+        assert!(result.is_ok(), "valid handshake must get a response");
+        assert_eq!(resp, [0x05, 0x00], "server must accept valid SOCKS5");
+    }
+
+    // Verify the service is still operational
+    assert!(state.readiness.load(Ordering::Relaxed));
+
+    token.cancel();
+    jh.await.ok();
+}

@@ -539,6 +539,8 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
 /// Result of forwarding a response, including upstream connection state.
 pub struct ForwardResult {
     pub report: ForwardResponseReport,
+    /// HTTP status code of the forwarded response.
+    pub status: u16,
     /// True if the upstream connection is still usable (no `Connection: close`).
     pub upstream_alive: bool,
     /// True if the response status indicates the client should not retry.
@@ -635,6 +637,7 @@ pub async fn forward_response(
                     if n == 0 {
                         return Ok(ForwardResult {
                             report: ForwardResponseReport { bytes_forwarded },
+                            status: response.status,
                             upstream_alive: false,
                             client_should_close: true,
                         });
@@ -676,6 +679,7 @@ pub async fn forward_response(
 
     Ok(ForwardResult {
         report: ForwardResponseReport { bytes_forwarded },
+        status: response.status,
         upstream_alive,
         client_should_close,
     })
@@ -1631,5 +1635,131 @@ mod tests {
             ..req_none.clone()
         };
         assert_eq!(req_chunked.body_kind(), RequestBodyKind::Chunked);
+    }
+
+    // ===== Phase 2 gap coverage: invariants 6–9 =====
+
+    #[tokio::test]
+    async fn test_copy_request_body_premature_eof() {
+        let input = b"short";
+        let mut reader = &input[..];
+        let mut writer = Vec::new();
+        let limits = BodyCopyLimits::default();
+
+        let result = copy_request_body(
+            &mut reader,
+            &mut writer,
+            RequestBodyKind::ContentLength(100),
+            &limits,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "Content-Length body with premature EOF must fail"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("unexpected EOF"),
+            "error should mention unexpected EOF: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_forward_request_stream_after_failure() {
+        use tokio::io::AsyncWriteExt;
+
+        let (client_read, mut client_write) = tokio::io::duplex(4096);
+        let mut stream: BoxStream = Box::new(client_read);
+
+        let bad_request = b"INVALID\r\n\r\n";
+        client_write.write_all(bad_request).await.unwrap();
+
+        let result = forward_request_stream(&mut stream).await;
+        assert!(result.is_err(), "malformed request must fail");
+
+        let good_request = b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        client_write.write_all(good_request).await.unwrap();
+
+        let result2 = forward_request_stream(&mut stream).await;
+        assert!(
+            result2.is_ok(),
+            "valid request after failure must succeed: {:?}",
+            result2.err()
+        );
+        let req = result2.unwrap();
+        assert_eq!(req.method, "GET");
+        assert_eq!(req.path, "/");
+    }
+
+    #[test]
+    fn test_build_origin_request_strips_upgrade() {
+        let req = ForwardRequest {
+            method: "GET".into(),
+            path: "/".into(),
+            version: "HTTP/1.1".into(),
+            headers: vec![
+                ("Host".into(), "example.com".into()),
+                ("Upgrade".into(), "websocket".into()),
+                ("Connection".into(), "Upgrade".into()),
+            ],
+            target: TargetAddr {
+                host: TargetHost::Domain("example.com".into()),
+                port: 80,
+            },
+            has_body: false,
+            content_length: None,
+            is_chunked: false,
+            connection_close: false,
+        };
+        let origin = build_origin_request(&req);
+        assert!(
+            !origin.to_lowercase().contains("upgrade"),
+            "Upgrade header must be stripped from forwarded request: {origin}"
+        );
+        assert!(
+            !origin.to_lowercase().contains("connection: upgrade"),
+            "Connection: Upgrade must be stripped: {origin}"
+        );
+        assert!(
+            origin.contains("Connection: close"),
+            "proxy must add Connection: close: {origin}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_informational_100_continue() {
+        use tokio::io::AsyncWriteExt;
+
+        let response = b"HTTP/1.1 100 Continue\r\n\r\n";
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            upstream_write.write_all(response).await.unwrap();
+            upstream_write.shutdown().await.ok();
+        });
+        let (mut client_read, client_write) = tokio::io::duplex(4096);
+
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        let result = forward_response(&mut upstream, &mut client).await;
+        assert!(result.is_ok());
+        let fwd = result.unwrap();
+        assert_eq!(fwd.status, 100, "response should be 100 Continue");
+
+        let mut buf = Vec::new();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client_read.read_to_end(&mut buf),
+        )
+        .await;
+        let resp = String::from_utf8_lossy(&buf);
+        assert!(
+            resp.contains("100 Continue"),
+            "client should receive 100 Continue: {resp}"
+        );
+        assert!(
+            resp.contains("Connection: close"),
+            "proxy should add Connection: close to informational response: {resp}"
+        );
     }
 }
