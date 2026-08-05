@@ -52,7 +52,7 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 | `-b addr` | Bind address |
 | `--rulefile path` | Rule file parsing |
 | `--pac path` | PAC serving configuration at the supplied admin path |
-| `--sys` | System proxy inspection |
+| `--sys` | Unsupported (no system proxy apply via pproxy compat) |
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target
@@ -103,7 +103,7 @@ All translation produces structured diagnostics with stable codes:
 {
   "code": "UNSUPPORTED_FEATURE",
   "message": "Feature X is not supported",
-  "severity": "warning"
+  "severity": "error"
 }
 ```
 

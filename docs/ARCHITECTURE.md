@@ -183,7 +183,10 @@ pproxy compatibility layer:
 - `pproxy check` — validates translated configuration
 - `pproxy run` — runs eggress with pproxy-style arguments (translated internally)
 - URI translation from pproxy listen/remote format to eggress TOML
-- Flag mapping: `-l`, `-r`, `-s`, `-v`, `-a`, `--ssl`, `-b`, `--rulefile`, `-a`, `--pac`, `--test`, `--sys`
+- Typed flag model: `-l`, `-r`, `-s`, `-v`, `-d`, `-a`, `--ssl`, `-b`, `--rulefile`, `--pac`, `--test`, `--sys`, `--reuse`, `--auth`, `--daemon`, `--get`, `--log`
+- Fatal startup gating: unknown flags (exit code 2), unsupported features (exit code 5) prevent service start
+- `-d` enables debug/traceback diagnostics; `--daemon`, `--sys`, `--auth` are unsupported and fatal
+- `--reuse` maps to listener SO_REUSEPORT on supported platforms (not connection pooling)
 - Default port inference for pproxy URI schemes (`default_port_for_scheme()`)
 - `__` chain separator parsing
 - Structured diagnostics with stable `DiagnosticCode` enum and `StructuredDiagnostic` JSON output

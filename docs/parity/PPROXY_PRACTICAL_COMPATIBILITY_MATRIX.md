@@ -16,8 +16,12 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | CLI | `-l`, `-r`, `-ul`, `-ur` | yes | yes | yes | CLI translation tests | `matched` | Values remain associated with their flags. |
 | CLI | `--pac`, `--get`, `--test` ownership | yes | yes | yes | parser/CLI regression tests | `matched` | Values are not positional URIs. |
 | CLI | `-s`, `-a`, `-b`, `--rulefile`, `--ssl` | yes | yes | yes | translation/config tests | `supported_difference` | Lowered to native routing, health, TLS, and rules. |
-| CLI | `--sys`, `--log`, JSON checks | yes | yes | yes | CLI diagnostic tests | `native_extension` | Native inspection and structured diagnostics. |
-| CLI | `--daemon` and `--reuse` | yes | yes | no | unsupported diagnostic tests | `intentional_non_parity` | Use a process manager; pooling is excluded. |
+| CLI | `--sys` | yes | n/a | no | unsupported diagnostic tests | `intentional_non_parity` | Unsupported (no system proxy apply via pproxy compat). |
+| CLI | `-d` debug/traceback diagnostics | yes | n/a | yes | CLI diagnostic tests | `native_equivalent` | Debug/traceback diagnostics enabled by `-d`. |
+| CLI | `--daemon` | yes | n/a | no | unsupported fatal tests | `intentional_non_parity` | Fatal (exit code 5) before startup. Use a process manager. |
+| CLI | `--reuse` (SO_REUSEPORT) | yes | n/a | yes | listener socket tests | `supported_difference` | Configures SO_REUSEPORT on listener sockets; not connection pooling. |
+| CLI | `--auth` | yes | n/a | no | unsupported fatal tests | `intentional_non_parity` | Validated and classified as unsupported (per-client auth reuse). |
+| CLI | Unknown flags | yes | n/a | no | fatal diagnostic tests | `intentional_non_parity` | Fatal with exit code 2. |
 | Inbound | HTTP/HTTPS CONNECT and forward proxy | yes | yes | yes | runtime/differential tests | `matched` | HTTPS is TLS-wrapped HTTP tunneling. |
 | Inbound | SOCKS4/4a | yes | yes | yes | runtime/differential tests | `matched` | SOCKS4a domain targets are covered. |
 | Inbound | SOCKS5 CONNECT and username/password auth | yes | yes | yes | runtime/differential tests | `matched` | BIND is explicitly rejected. |
@@ -61,7 +65,9 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 ## Stable intentional exclusions
 
 SSH, QUIC/HTTP/3, SSR, legacy Shadowsocks ciphers/OTA, unsupported plugins,
-daemonization, cross-session connection reuse, unsupported reverse compositions,
-general multi-hop UDP, and unavailable platform transparent facilities remain
-explicit exclusions. Known syntax is diagnosed with an alternative, boundary,
-or platform reason rather than silently selecting another protocol.
+daemonization (`--daemon`), per-client auth reuse (`--auth`), system proxy apply
+via pproxy compat (`--sys`), unsupported reverse compositions, general multi-hop
+UDP, and unavailable platform transparent facilities remain explicit exclusions.
+Unknown flags and unsupported options are fatal (exit code 2 or 5) rather than
+warnings. Known syntax is diagnosed with an alternative, boundary, or platform
+reason rather than silently selecting another protocol.

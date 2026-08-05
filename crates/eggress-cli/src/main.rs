@@ -801,13 +801,16 @@ fn handle_pproxy_run(args: &PproxyRun) {
         eprintln!("warning: {w}");
     }
 
-    let has_sys = pproxy_args.raw_flags.iter().any(|f| f == "sys");
+    let has_sys = pproxy_args.system_proxy;
     if has_sys {
         let result = eggress_system_proxy::inspect_system_proxy();
         print_inspection_result(&result);
     }
 
-    let has_test = pproxy_args.raw_flags.iter().any(|f| f == "test");
+    let has_test = pproxy_args
+        .known_unsupported
+        .iter()
+        .any(|f| f.starts_with("test="));
 
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,

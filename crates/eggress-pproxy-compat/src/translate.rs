@@ -36,7 +36,10 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
     }
 
     // Allow empty local_uris when -ul is present (standalone UDP mode)
-    let has_udp_listen = args.raw_flags.iter().any(|f| f.starts_with("udp-listen="));
+    let has_udp_listen = args
+        .known_unsupported
+        .iter()
+        .any(|f| f.starts_with("udp-listen="));
 
     if local_uris.is_empty() && !has_udp_listen {
         return Err(CompatError::InvalidArgs {
@@ -44,13 +47,13 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
         });
     }
 
-    let mut output = translate_from_uris(&local_uris, &remote_chains, &args.raw_flags)?;
+    let mut output = translate_from_uris(args, &local_uris, &remote_chains)?;
 
     // Merge chain validation warnings
     output = output.with_unsupported_features(chain_warnings.unsupported);
 
-    // Merge unknown-flag warnings
-    let unknown_warnings = args.unknown_flag_warnings();
+    // Merge unknown-flag diagnostics
+    let unknown_warnings = args.unknown_flag_diagnostics();
     output = output.with_warnings(unknown_warnings);
 
     Ok(output)
@@ -58,9 +61,9 @@ pub fn translate_pproxy_args(args: &PproxyArgs) -> Result<TranslationOutput, Com
 
 /// Translate pproxy-style local and remote URIs into Eggress TOML.
 pub fn translate_from_uris(
+    args: &PproxyArgs,
     local_uris: &[PproxyUri],
     remote_chains: &[PproxyChain],
-    flags: &[String],
 ) -> Result<TranslationOutput, CompatError> {
     let mut output = TranslationOutput::new(String::new());
     let mut listeners = Vec::new();
@@ -79,13 +82,38 @@ pub fn translate_from_uris(
     let mut pac_enabled = false;
     let mut pac_path: Option<String> = None;
     let mut static_content: Vec<StaticContentToml> = Vec::new();
-    for flag in flags {
-        if flag == "daemon" {
-            output = output.with_unsupported(
-                "daemon",
-                "--daemon mode is not supported; use systemd or process manager",
-            );
-        }
+
+    // Handle typed fields first
+    if args.daemon {
+        output = output.with_unsupported(
+            "daemon",
+            "--daemon mode is not supported; use systemd or process manager",
+        );
+    }
+    if args.system_proxy {
+        output = output.with_unsupported(
+            "system-proxy",
+            "--sys requests system proxy apply; eggress does not apply system proxy settings via pproxy compatibility",
+        );
+    }
+    if let Some(auth) = args.auth_timeout {
+        output = output.with_unsupported(
+            "auth-timeout",
+            format!(
+                "--auth {}s requests per-client authentication reuse; eggress authenticates per-connection and cannot apply this option",
+                auth.as_secs()
+            ),
+        );
+    }
+    if args.verbose_level > 0 {
+        output = output.with_warning(
+            "verbose-mode",
+            "pproxy -v flag detected; set RUST_LOG=debug environment variable for equivalent behavior",
+        );
+    }
+
+    // Process known-but-unsupported flags
+    for flag in &args.known_unsupported {
         if let Some(addr) = flag.strip_prefix("udp-listen=") {
             udp_listen_addr = Some(addr.to_string());
         }
@@ -95,12 +123,6 @@ pub fn translate_from_uris(
         if let Some(rulefile_path) = flag.strip_prefix("rulefile=") {
             let patterns = load_pproxy_rule_file(rulefile_path, &mut output)?;
             block_rules.push(combine_pproxy_patterns(&patterns));
-        }
-        if flag == "verbose" {
-            output = output.with_warning(
-                "verbose-mode",
-                "pproxy -v flag detected; set RUST_LOG=debug environment variable for equivalent behavior",
-            );
         }
         if let Some(scheduler_value) = flag.strip_prefix("scheduler=") {
             let mapped = match scheduler_value {
@@ -175,10 +197,7 @@ pub fn translate_from_uris(
             );
         }
         if flag == "sys" {
-            output = output.with_warning(
-                "system-proxy",
-                "pproxy --sys flag detected; use 'eggress system-proxy inspect' to view system proxy settings",
-            );
+            // Handled via args.system_proxy above
         }
         if flag.starts_with("log=") {
             output = output.with_warning(
@@ -187,10 +206,7 @@ pub fn translate_from_uris(
             );
         }
         if flag == "reuse" {
-            output = output.with_warning(
-                "reuse-connection",
-                "pproxy --reuse (connection pooling) is not implemented by design; eggress uses one upstream connection per session (intentional non-parity)",
-            );
+            // Handled via args.reuse_port below
         }
         if let Some(value) = flag.strip_prefix("get=") {
             match value.split_once(',') {
@@ -391,6 +407,7 @@ pub fn translate_from_uris(
             name: listener_name.clone(),
             bind,
             protocols,
+            reuse_port: if args.reuse_port { Some(true) } else { None },
             auth: None,
             udp: None,
             shadowsocks: None,
@@ -573,6 +590,7 @@ pub fn translate_from_uris(
                 name: "pproxy-local-0".to_string(),
                 bind: "0.0.0.0:1080".to_string(),
                 protocols: vec!["socks5".to_string()],
+                reuse_port: if args.reuse_port { Some(true) } else { None },
                 auth: None,
                 udp: Some(UdpToml {
                     mode: Some("standalone_pproxy_udp".to_string()),
@@ -1288,6 +1306,8 @@ struct ListenerToml {
     name: String,
     bind: String,
     protocols: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reuse_port: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     auth: Option<AuthToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2322,7 +2342,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sys_flag_emits_warning() {
+    fn test_sys_flag_emits_unsupported() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -2330,7 +2350,11 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.warnings.iter().any(|w| w.category == "system-proxy"));
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "system-proxy"));
     }
 
     #[test]
@@ -2347,7 +2371,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reuse_flag_emits_warning() {
+    fn test_reuse_flag_sets_reuse_port() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -2355,10 +2379,7 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output
-            .warnings
-            .iter()
-            .any(|w| w.category == "reuse-connection"));
+        assert!(output.toml.contains("reuse_port = true"));
     }
 
     #[test]

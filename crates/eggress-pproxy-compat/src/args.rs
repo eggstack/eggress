@@ -1,26 +1,11 @@
+use std::time::Duration;
+
 use crate::error::CompatError;
 use crate::uri::{PproxyChain, PproxyUri};
 use crate::warnings::{CompatWarning, TranslationOutput};
 
-/// Normalized raw flag keys that the compat layer explicitly handles.
-const KNOWN_RAW_FLAG_KEYS: &[&str] = &[
-    "daemon",
-    "log",
-    "udp-listen",
-    "udp-remote",
-    "rulefile",
-    "verbose",
-    "scheduler",
-    "alive",
-    "ssl",
-    "block",
-    "pac",
-    "test",
-    "sys",
-    "reuse",
-    "get",
-    "auth",
-];
+/// Max supported --auth value (30 days in seconds).
+const AUTH_MAX_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 fn take_required_value(
     raw: &[String],
@@ -33,6 +18,30 @@ fn take_required_value(
         .ok_or_else(|| CompatError::MissingArgument(format!("{flag} requires a value")))
 }
 
+fn parse_auth_duration(value: &str) -> Result<Duration, CompatError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(CompatError::InvalidArgs {
+            message: "--auth requires a non-empty numeric value".to_string(),
+        });
+    }
+    let seconds: u64 = trimmed.parse().map_err(|_| CompatError::InvalidArgs {
+        message: format!(
+            "--auth value '{}' is not a valid non-negative integer",
+            trimmed
+        ),
+    })?;
+    if seconds > AUTH_MAX_SECONDS {
+        return Err(CompatError::InvalidArgs {
+            message: format!(
+                "--auth value {} exceeds maximum supported value of {} seconds (30 days)",
+                seconds, AUTH_MAX_SECONDS
+            ),
+        });
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
 /// Parsed pproxy-compatible CLI arguments.
 #[derive(Debug, Clone)]
 pub struct PproxyArgs {
@@ -40,10 +49,22 @@ pub struct PproxyArgs {
     pub local: Vec<String>,
     /// Remote/upstream URIs (from `-r` flags or positional args).
     pub remotes: Vec<String>,
-    /// Raw flags that are not recognized.
-    pub raw_flags: Vec<String>,
     /// Verbosity level derived from `-v`/`-vv`/`-vvv` flags.
     pub verbose_level: u8,
+    /// `-d` flag: debug/traceback diagnostics native equivalent.
+    pub debug: bool,
+    /// `--daemon` flag: daemon mode request (unsupported).
+    pub daemon: bool,
+    /// `--reuse` flag: listener SO_REUSEPORT.
+    pub reuse_port: bool,
+    /// `--auth <seconds>`: per-client authentication reuse interval.
+    pub auth_timeout: Option<Duration>,
+    /// `--sys` flag: system proxy settings apply (unsupported).
+    pub system_proxy: bool,
+    /// Known-but-unsupported flags that require a translation decision.
+    pub known_unsupported: Vec<String>,
+    /// Unknown flags that are not recognized.
+    pub unknown_flags: Vec<String>,
 }
 
 impl PproxyArgs {
@@ -60,8 +81,14 @@ impl PproxyArgs {
         Self {
             local: vec!["http+socks4+socks5://:8080".to_string()],
             remotes: vec![],
-            raw_flags: vec![],
             verbose_level: 0,
+            debug: false,
+            daemon: false,
+            reuse_port: false,
+            auth_timeout: None,
+            system_proxy: false,
+            known_unsupported: vec![],
+            unknown_flags: vec![],
         }
     }
 
@@ -69,8 +96,14 @@ impl PproxyArgs {
     pub fn parse(raw: &[String]) -> Result<Self, CompatError> {
         let mut local = Vec::new();
         let mut remotes = Vec::new();
-        let mut raw_flags = Vec::new();
         let mut verbose_level: u8 = 0;
+        let mut debug = false;
+        let mut daemon = false;
+        let mut reuse_port = false;
+        let mut auth_timeout: Option<Duration> = None;
+        let mut system_proxy = false;
+        let mut known_unsupported = Vec::new();
+        let mut unknown_flags = Vec::new();
         let mut i = 0;
 
         while i < raw.len() {
@@ -82,70 +115,71 @@ impl PproxyArgs {
                 "-r" | "--remote" => {
                     remotes.push(take_required_value(raw, &mut i, arg)?);
                 }
-                "--daemon" | "-d" => {
-                    raw_flags.push("daemon".to_string());
+                "--daemon" => {
+                    daemon = true;
+                }
+                "-d" => {
+                    debug = true;
                 }
                 "--log" | "-log" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("log={value}"));
+                    known_unsupported.push(format!("log={value}"));
                 }
                 "-ul" | "--udp-listen" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("udp-listen={value}"));
+                    known_unsupported.push(format!("udp-listen={value}"));
                 }
                 "-ur" | "--udp-remote" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("udp-remote={value}"));
+                    known_unsupported.push(format!("udp-remote={value}"));
                 }
                 "--rulefile" | "-rulefile" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("rulefile={value}"));
+                    known_unsupported.push(format!("rulefile={value}"));
                 }
                 "-v" | "-vv" | "-vvv" => {
-                    // Normalize verbosity levels: -v, -vv, -vvv all map to "verbose"
-                    raw_flags.push("verbose".to_string());
                     verbose_level = verbose_level.max(arg.len() as u8 - 1);
                 }
                 "-s" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("scheduler={value}"));
+                    known_unsupported.push(format!("scheduler={value}"));
                 }
                 "-a" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("alive={value}"));
+                    known_unsupported.push(format!("alive={value}"));
                 }
                 "--ssl" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("ssl={value}"));
+                    known_unsupported.push(format!("ssl={value}"));
                 }
                 "-b" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("block={value}"));
+                    known_unsupported.push(format!("block={value}"));
                 }
                 "--pac" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("pac={value}"));
+                    known_unsupported.push(format!("pac={value}"));
                 }
                 "--test" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("test={value}"));
+                    known_unsupported.push(format!("test={value}"));
                 }
                 "--sys" => {
-                    raw_flags.push("sys".to_string());
+                    system_proxy = true;
                 }
                 "--reuse" => {
-                    raw_flags.push("reuse".to_string());
+                    reuse_port = true;
                 }
                 "--get" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("get={value}"));
+                    known_unsupported.push(format!("get={value}"));
                 }
                 "--auth" => {
                     let value = take_required_value(raw, &mut i, arg)?;
-                    raw_flags.push(format!("auth={value}"));
+                    auth_timeout = Some(parse_auth_duration(&value)?);
                 }
                 other if other.starts_with('-') => {
-                    raw_flags.push(other.to_string());
+                    unknown_flags.push(other.to_string());
                 }
                 other => {
                     // Positional: treat as local if no locals yet, else remote
@@ -162,35 +196,42 @@ impl PproxyArgs {
         Ok(PproxyArgs {
             local,
             remotes,
-            raw_flags,
             verbose_level,
+            debug,
+            daemon,
+            reuse_port,
+            auth_timeout,
+            system_proxy,
+            known_unsupported,
+            unknown_flags,
         })
     }
 
-    /// Identify unrecognized flags and return warnings for them.
-    pub fn unknown_flag_warnings(&self) -> Vec<CompatWarning> {
+    /// Identify unrecognized flags and return diagnostics for them.
+    pub fn unknown_flag_diagnostics(&self) -> Vec<CompatWarning> {
         let mut warnings = Vec::new();
-        for flag in &self.raw_flags {
-            // Check if this is a known structured flag (key=value form)
-            let base_flag = flag.split('=').next().unwrap_or(flag);
-            let is_known = KNOWN_RAW_FLAG_KEYS.contains(&base_flag);
-            if !is_known {
-                warnings.push(CompatWarning {
-                    category: "unknown-flag",
-                    message: format!(
-                        "unrecognized flag '{}'; it will be ignored in translation",
-                        flag
-                    ),
-                });
-            }
+        for flag in &self.unknown_flags {
+            warnings.push(CompatWarning {
+                category: "unknown-flag",
+                message: format!("unrecognized option '{}'", flag),
+            });
         }
         warnings
     }
 
-    /// Return a TranslationOutput containing just the unknown-flag warnings.
+    /// Return a TranslationOutput containing the unknown-flag diagnostics.
     pub fn unknown_flag_translation_output(&self) -> TranslationOutput {
-        let warnings = self.unknown_flag_warnings();
+        let warnings = self.unknown_flag_diagnostics();
         TranslationOutput::new(String::new()).with_warnings(warnings)
+    }
+
+    /// Check if there are any unknown or unsupported flags.
+    pub fn has_unknown_or_unsupported(&self) -> bool {
+        !self.unknown_flags.is_empty()
+            || !self.known_unsupported.is_empty()
+            || self.daemon
+            || self.system_proxy
+            || self.auth_timeout.is_some()
     }
 
     /// Parse all local URIs into typed representations.
@@ -274,14 +315,51 @@ mod tests {
             "--daemon".into(),
         ])
         .unwrap();
-        assert!(args.raw_flags.contains(&"daemon".to_string()));
+        assert!(args.daemon);
+        assert!(!args.debug);
+    }
+
+    #[test]
+    fn test_parse_debug_flag() {
+        let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-d".into()])
+            .unwrap();
+        assert!(args.debug);
+        assert!(!args.daemon);
+    }
+
+    #[test]
+    fn test_d_and_daemon_independent() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-d".into(),
+            "--daemon".into(),
+        ])
+        .unwrap();
+        assert!(args.debug);
+        assert!(args.daemon);
+    }
+
+    #[test]
+    fn test_d_never_sets_daemon() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-d".into()]).unwrap();
+        assert!(args.debug);
+        assert!(!args.daemon);
+    }
+
+    #[test]
+    fn test_daemon_never_sets_debug() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "--daemon".into()]).unwrap();
+        assert!(!args.debug);
+        assert!(args.daemon);
     }
 
     #[test]
     fn test_parse_verbose_flag() {
         let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-v".into()])
             .unwrap();
-        assert!(args.raw_flags.contains(&"verbose".to_string()));
+        assert_eq!(args.verbose_level, 1);
     }
 
     #[test]
@@ -293,7 +371,7 @@ mod tests {
             "rr".into(),
         ])
         .unwrap();
-        assert!(args.raw_flags.contains(&"scheduler=rr".to_string()));
+        assert!(args.known_unsupported.contains(&"scheduler=rr".to_string()));
     }
 
     #[test]
@@ -305,7 +383,7 @@ mod tests {
             "10".into(),
         ])
         .unwrap();
-        assert!(args.raw_flags.contains(&"alive=10".to_string()));
+        assert!(args.known_unsupported.contains(&"alive=10".to_string()));
     }
 
     #[test]
@@ -317,7 +395,9 @@ mod tests {
             "cert.pem,key.pem".into(),
         ])
         .unwrap();
-        assert!(args.raw_flags.contains(&"ssl=cert.pem,key.pem".to_string()));
+        assert!(args
+            .known_unsupported
+            .contains(&"ssl=cert.pem,key.pem".to_string()));
     }
 
     #[test]
@@ -330,7 +410,7 @@ mod tests {
         ])
         .unwrap();
         assert!(args
-            .raw_flags
+            .known_unsupported
             .contains(&"block=.*\\.example\\.com".to_string()));
     }
 
@@ -343,7 +423,9 @@ mod tests {
             "access.log".into(),
         ])
         .unwrap();
-        assert!(args.raw_flags.contains(&"log=access.log".to_string()));
+        assert!(args
+            .known_unsupported
+            .contains(&"log=access.log".to_string()));
     }
 
     #[test]
@@ -358,10 +440,10 @@ mod tests {
         ])
         .unwrap();
         assert!(args
-            .raw_flags
+            .known_unsupported
             .contains(&"udp-listen=socks5://:1081".to_string()));
         assert!(args
-            .raw_flags
+            .known_unsupported
             .contains(&"udp-remote=socks5://proxy:1080".to_string()));
     }
 
@@ -374,11 +456,13 @@ mod tests {
             "rules.txt".into(),
         ])
         .unwrap();
-        assert!(args.raw_flags.contains(&"rulefile=rules.txt".to_string()));
+        assert!(args
+            .known_unsupported
+            .contains(&"rulefile=rules.txt".to_string()));
     }
 
     #[test]
-    fn test_unknown_flag_warnings() {
+    fn test_unknown_flag_diagnostics() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -386,7 +470,7 @@ mod tests {
             "-x".into(),
         ])
         .unwrap();
-        let warnings = args.unknown_flag_warnings();
+        let warnings = args.unknown_flag_diagnostics();
         assert_eq!(warnings.len(), 2);
         assert!(warnings
             .iter()
@@ -395,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn test_known_flags_no_warnings() {
+    fn test_known_flags_no_unknown_warnings() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -419,7 +503,7 @@ mod tests {
             ".*\\.example\\.com".into(),
         ])
         .unwrap();
-        let warnings = args.unknown_flag_warnings();
+        let warnings = args.unknown_flag_diagnostics();
         assert!(warnings.is_empty());
     }
 
@@ -503,7 +587,9 @@ mod tests {
             "/index.html,body.txt".into(),
         ])
         .unwrap();
-        let warnings = args.unknown_flag_warnings();
+        assert!(args.system_proxy);
+        assert!(args.reuse_port);
+        let warnings = args.unknown_flag_diagnostics();
         assert!(warnings.is_empty(), "unexpected warnings: {:?}", warnings);
     }
 
@@ -511,21 +597,18 @@ mod tests {
     fn test_verbose_level_single() {
         let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-v".into()]).unwrap();
         assert_eq!(args.verbose_level, 1);
-        assert!(args.raw_flags.contains(&"verbose".to_string()));
     }
 
     #[test]
     fn test_verbose_level_double() {
         let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vv".into()]).unwrap();
         assert_eq!(args.verbose_level, 2);
-        assert!(args.raw_flags.contains(&"verbose".to_string()));
     }
 
     #[test]
     fn test_verbose_level_triple() {
         let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vvv".into()]).unwrap();
         assert_eq!(args.verbose_level, 3);
-        assert!(args.raw_flags.contains(&"verbose".to_string()));
     }
 
     #[test]
@@ -561,8 +644,12 @@ mod tests {
         let args = PproxyArgs::default_args();
         assert_eq!(args.local, vec!["http+socks4+socks5://:8080"]);
         assert!(args.remotes.is_empty());
-        assert!(args.raw_flags.is_empty());
         assert_eq!(args.verbose_level, 0);
+        assert!(!args.debug);
+        assert!(!args.daemon);
+        assert!(!args.reuse_port);
+        assert!(args.auth_timeout.is_none());
+        assert!(!args.system_proxy);
     }
 
     #[test]
@@ -572,5 +659,157 @@ mod tests {
         assert!(output.toml.contains("8080"));
         assert!(output.toml.contains("socks5") || output.toml.contains("http"));
         assert!(!output.has_unsupported());
+    }
+
+    #[test]
+    fn test_parse_reuse_flag() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--reuse".into(),
+        ])
+        .unwrap();
+        assert!(args.reuse_port);
+    }
+
+    #[test]
+    fn test_parse_auth_valid() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--auth".into(),
+            "3600".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.auth_timeout, Some(Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn test_parse_auth_zero() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--auth".into(),
+            "0".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.auth_timeout, Some(Duration::from_secs(0)));
+    }
+
+    #[test]
+    fn test_parse_auth_invalid_non_numeric() {
+        let result = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--auth".into(),
+            "abc".into(),
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_auth_overflow() {
+        let result = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--auth".into(),
+            "999999999999".into(),
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_auth_missing_value() {
+        let result = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--auth".into(),
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_sys_flag() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "--sys".into(),
+        ])
+        .unwrap();
+        assert!(args.system_proxy);
+    }
+
+    #[test]
+    fn test_has_unknown_or_unsupported_with_unknown() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "--bogus".into()]).unwrap();
+        assert!(args.has_unknown_or_unsupported());
+    }
+
+    #[test]
+    fn test_has_unknown_or_unsupported_with_daemon() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "--daemon".into()]).unwrap();
+        assert!(args.has_unknown_or_unsupported());
+    }
+
+    #[test]
+    fn test_no_raw_flags_field() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into()]).unwrap();
+        assert!(args.known_unsupported.is_empty());
+        assert!(args.unknown_flags.is_empty());
+    }
+
+    /// Table-driven arity test sourced from the checked-in baseline.
+    /// Ensures that every value-taking option in the baseline correctly
+    /// requires a value and fails when missing.
+    #[test]
+    fn test_baseline_value_arity() {
+        // Each entry: (flag, expects_value)
+        // "value" means the flag requires a following argument.
+        let cases: &[(&[&str], bool)] = &[
+            // Value-taking options (must have next arg)
+            (&["-l", "http://:8080"], true),
+            (&["-r", "http://proxy:8080"], true),
+            (&["-ul", "socks5://:1081"], true),
+            (&["-ur", "socks5://proxy:1080"], true),
+            (&["--ssl", "cert.pem,key.pem"], true),
+            (&["--pac", "/proxy.pac"], true),
+            (&["--test", "http://example.com"], true),
+            (&["--auth", "3600"], true),
+            (&["--get", "/index.html,body.txt"], true),
+            (&["-s", "rr"], true),
+            (&["-a", "10"], true),
+            (&["-b", ".*\\.example\\.com"], true),
+            (&["--rulefile", "rules.txt"], true),
+            (&["--log", "access.log"], true),
+            // Boolean flags (no value needed)
+            (&["-v"], false),
+            (&["-d"], false),
+            (&["--daemon"], false),
+            (&["--sys"], false),
+            (&["--reuse"], false),
+        ];
+
+        for (args_slice, expects_value) in cases {
+            let raw: Vec<String> = args_slice.iter().map(|s| s.to_string()).collect();
+            let result = PproxyArgs::parse(&raw);
+            if *expects_value && raw.len() == 1 {
+                // Single value-taking flag with no value should fail
+                assert!(
+                    result.is_err(),
+                    "expected error for {:?} (missing value), got Ok",
+                    args_slice
+                );
+            } else {
+                // Complete flag+value or boolean flag should succeed
+                assert!(
+                    result.is_ok(),
+                    "expected Ok for {:?}, got Err: {:?}",
+                    args_slice,
+                    result.err()
+                );
+            }
+        }
     }
 }

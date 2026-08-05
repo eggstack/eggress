@@ -95,8 +95,10 @@ listener or remote URIs. PAC and static files use the existing admin server;
 
 The compatibility `pproxy` binary defaults, with no arguments, to
 `http+socks4+socks5://:8080` and direct routing. Repeated `-l`, `-r`, `-ul`, and
-`-ur` options retain input order. Unsupported daemonization, reuse-port, and
-plugin execution remain explicit diagnostics.
+`-ur` options retain input order. Unsupported options (e.g. `--daemon`, `--auth`,
+`--sys`) are fatal with exit code 5 before the service starts. Unknown flags are
+fatal with exit code 2. `-d` enables debug/traceback diagnostics.
+`--reuse` configures SO_REUSEPORT on listener sockets (not connection pooling).
 
 ## Dependencies
 

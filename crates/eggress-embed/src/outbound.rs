@@ -115,7 +115,8 @@ impl OutboundConnector {
             raw: uri.to_string(),
             hops: vec![parsed],
         };
-        let output = eggress_pproxy_compat::translate_from_uris(&[], &[chain], &[])
+        let default_args = eggress_pproxy_compat::PproxyArgs::default_args();
+        let output = eggress_pproxy_compat::translate_from_uris(&default_args, &[], &[chain])
             .map_err(|e| EggressError::Config(e.to_string()))?;
         Self::from_toml(&output.toml)
     }

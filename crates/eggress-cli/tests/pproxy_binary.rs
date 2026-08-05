@@ -49,6 +49,10 @@ fn help_flag() {
     assert!(stdout.contains("--sys"));
     assert!(stdout.contains("--ssl"));
     assert!(stdout.contains("--pac"));
+    assert!(stdout.contains("-d"));
+    assert!(stdout.contains("--reuse"));
+    assert!(stdout.contains("--auth"));
+    assert!(stdout.contains("--daemon"));
 }
 
 #[test]
@@ -164,20 +168,26 @@ fn startup_banner_shows_udp() {
 }
 
 #[test]
-fn unsupported_daemon_flag_warns() {
-    let (_, stderr) = spawn_and_collect(
-        pproxy_bin().args([
+fn unsupported_daemon_flag_fails() {
+    let output = pproxy_bin()
+        .args([
             "-l",
             "http://:19805",
             "-r",
             "socks5://127.0.0.1:1080",
             "--daemon",
-        ]),
-        3000,
-    );
+        ])
+        .output()
+        .expect("failed to run pproxy");
     assert!(
-        stderr.contains("pproxy: warning:") || stderr.contains("daemon"),
-        "expected daemon warning in stderr, got: {stderr}",
+        !output.status.success(),
+        "expected non-zero exit for --daemon, got {:?}",
+        output.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("daemon") || stderr.contains("not supported"),
+        "expected daemon error in stderr, got: {stderr}",
     );
 }
 
@@ -257,20 +267,26 @@ fn missing_value_for_r_fails() {
 }
 
 #[test]
-fn unknown_flag_warns() {
-    let (_, stderr) = spawn_and_collect(
-        pproxy_bin().args([
+fn unknown_flag_fails() {
+    let output = pproxy_bin()
+        .args([
             "-l",
             "http://:19810",
             "-r",
             "socks5://127.0.0.1:1080",
             "--bogus-flag",
-        ]),
-        3000,
-    );
+        ])
+        .output()
+        .expect("failed to run pproxy");
     assert!(
-        stderr.contains("pproxy: note:") || stderr.contains("bogus-flag"),
-        "expected unknown flag warning, got: {stderr}",
+        !output.status.success(),
+        "expected non-zero exit for unknown flag, got {:?}",
+        output.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unknown") || stderr.contains("bogus-flag"),
+        "expected unknown flag error in stderr, got: {stderr}",
     );
 }
 

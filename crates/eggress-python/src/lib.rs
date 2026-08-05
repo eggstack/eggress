@@ -602,7 +602,13 @@ fn diagnostics_for_uri(py: Python<'_>, uri: &str) -> PyResult<Vec<PyDiagnostic>>
     let mut diagnostics: Vec<PyDiagnostic> = Vec::new();
 
     let output = py
-        .detach(|| eggress_pproxy_compat::translate_from_uris(&[parsed], &[], &[]))
+        .detach(|| {
+            eggress_pproxy_compat::translate_from_uris(
+                &eggress_pproxy_compat::PproxyArgs::default_args(),
+                &[parsed],
+                &[],
+            )
+        })
         .map_err(|e| UnsupportedFeatureError::new_err(format!("translation failed: {e}")))?;
 
     for warn in &output.warnings {
@@ -922,7 +928,13 @@ fn explain_pproxy_uri(py: Python<'_>, uri: &str) -> PyResult<Py<PyDict>> {
         .map_err(|e| UnsupportedFeatureError::new_err(format!("invalid pproxy URI: {e}")))?;
 
     let output = py
-        .detach(|| eggress_pproxy_compat::translate_from_uris(&[parsed], &[], &[]))
+        .detach(|| {
+            eggress_pproxy_compat::translate_from_uris(
+                &eggress_pproxy_compat::PproxyArgs::default_args(),
+                &[parsed],
+                &[],
+            )
+        })
         .map_err(|e| UnsupportedFeatureError::new_err(format!("translation failed: {e}")))?;
 
     let dict = parse_toml_config(py, &output.toml)?;
@@ -1231,7 +1243,13 @@ fn translate_pproxy_uri(
     };
 
     let output = py
-        .detach(|| eggress_pproxy_compat::translate_from_uris(&[local_uri], &remote_chains, &[]))
+        .detach(|| {
+            eggress_pproxy_compat::translate_from_uris(
+                &eggress_pproxy_compat::PproxyArgs::default_args(),
+                &[local_uri],
+                &remote_chains,
+            )
+        })
         .map_err(|e| UnsupportedFeatureError::new_err(format!("translation failed: {e}")))?;
 
     Ok(PyTranslationResult { output })

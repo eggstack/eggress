@@ -5,9 +5,12 @@ const VERSION: &str = concat!("eggress-pproxy-compat ", env!("CARGO_PKG_VERSION"
 const HELP_TEXT: &str = "\
 pproxy compatibility binary (eggress-pproxy-compat)
 
-This binary provides drop-in compatibility with pproxy 2.7.9 command-line
+This binary provides compatibility with pproxy 2.7.9 command-line
 interface. It translates pproxy-style arguments to eggress TOML configuration
 and starts the eggress proxy service.
+
+Unsupported options cause startup to fail with a non-zero exit code.
+Run 'eggress pproxy check -- <args>' to inspect all classifications.
 
 USAGE:
     pproxy [OPTIONS] <LISTENER_URI> <UPSTREAM_URI>
@@ -21,16 +24,18 @@ OPTIONS:
     -b <PATTERN>           Block rule pattern (regex)
     -a <SECONDS>           Alive/health check interval
     -s <SCHEDULER>         Scheduler (rr, fa, rc, lc)
+    -d                     Debug/traceback diagnostics (native equivalent)
     -v                     Verbose mode (sets RUST_LOG=debug)
     --ssl <CERT,KEY>       Enable TLS on listeners
     --rulefile <PATH>      Load routing rules from file
-    --log <PATH>           Log file path (ignored; stderr used)
+    --log <PATH>           Log file path (native equivalent: stderr)
     --pac <PATH>           Serve PAC content at PATH
     --test <URL>           Test the supplied target and exit
-    --sys                  Inspect system proxy settings before starting
-    --reuse                Connection pooling (intentional non-parity)
+    --sys                  System proxy apply (unsupported; use 'eggress system-proxy inspect')
+    --reuse                Listener SO_REUSEPORT (Linux only)
+    --auth <SECONDS>       Per-client auth reuse interval (unsupported)
     --get <PATH,FILE>      Serve FILE at PATH through the admin server
-    --daemon, -d           Daemon mode (not supported; use systemd)
+    --daemon               Daemon mode (unsupported; use systemd)
     --version              Print version and exit
     -h, --help             Print this help and exit
 
@@ -106,28 +111,39 @@ fn main() -> ExitCode {
         }
     };
 
-    if output.has_unsupported() {
-        for u in &output.unsupported {
-            eprintln!("pproxy: warning: {u}");
+    // Fatal gating: unknown flags and unsupported features stop startup.
+    if !pproxy_args.unknown_flags.is_empty() {
+        for flag in &pproxy_args.unknown_flags {
+            eprintln!("pproxy: error: unknown option '{flag}'");
         }
         eprintln!();
-        eprintln!(
-            "Some features are not supported by eggress. Service may not behave as expected."
-        );
+        eprintln!("Run 'eggress pproxy check -- <args>' for supported options.");
+        std::process::exit(2); // EXIT_CLI_PARSE_ERROR
+    }
+
+    if output.has_unsupported() {
+        for u in &output.unsupported {
+            eprintln!("pproxy: error: {u}");
+        }
+        eprintln!();
+        eprintln!("These features are not supported by eggress and prevent startup.");
         eprintln!("Run 'eggress pproxy check -- <args>' for detailed compatibility report.");
+        std::process::exit(5); // EXIT_UNSUPPORTED_FEATURE
     }
 
     for w in &output.warnings {
         eprintln!("pproxy: note: {w}");
     }
 
-    let has_sys = pproxy_args.raw_flags.iter().any(|f| f == "sys");
-    if has_sys {
+    if pproxy_args.system_proxy {
         let result = eggress_system_proxy::inspect_system_proxy();
         print_system_proxy_inspection(&result);
     }
 
-    let has_test = pproxy_args.raw_flags.iter().any(|f| f.starts_with("test="));
+    let has_test = pproxy_args
+        .known_unsupported
+        .iter()
+        .any(|f| f.starts_with("test="));
 
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,
@@ -157,7 +173,7 @@ fn main() -> ExitCode {
             config_path.to_str().unwrap_or_default(),
         ]);
         if let Some(target) = pproxy_args
-            .raw_flags
+            .known_unsupported
             .iter()
             .find_map(|f| f.strip_prefix("test="))
         {
@@ -224,25 +240,35 @@ fn print_startup_banner(
     }
 
     let has_udp = pproxy_args
-        .raw_flags
+        .known_unsupported
         .iter()
         .any(|f| f.starts_with("udp-listen="));
     if has_udp {
-        for flag in &pproxy_args.raw_flags {
+        for flag in &pproxy_args.known_unsupported {
             if let Some(addr) = flag.strip_prefix("udp-listen=") {
                 eprintln!("  udp:      {addr}");
             }
         }
     }
 
-    let has_ssl = pproxy_args.raw_flags.iter().any(|f| f.starts_with("ssl="));
+    let has_ssl = pproxy_args
+        .known_unsupported
+        .iter()
+        .any(|f| f.starts_with("ssl="));
     if has_ssl {
         eprintln!("  tls:      enabled");
     }
 
-    let has_pac = pproxy_args.raw_flags.iter().any(|f| f.starts_with("pac="));
+    let has_pac = pproxy_args
+        .known_unsupported
+        .iter()
+        .any(|f| f.starts_with("pac="));
     if has_pac {
         eprintln!("  pac:      enabled");
+    }
+
+    if pproxy_args.reuse_port {
+        eprintln!("  reuse:    SO_REUSEPORT");
     }
 
     eprintln!();
@@ -295,6 +321,10 @@ mod tests {
         assert!(HELP_TEXT.contains("--sys"));
         assert!(HELP_TEXT.contains("--ssl"));
         assert!(HELP_TEXT.contains("--pac"));
+        assert!(HELP_TEXT.contains("-d"));
+        assert!(HELP_TEXT.contains("--reuse"));
+        assert!(HELP_TEXT.contains("--auth"));
+        assert!(HELP_TEXT.contains("--daemon"));
     }
 
     #[test]

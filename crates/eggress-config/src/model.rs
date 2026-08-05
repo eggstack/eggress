@@ -97,6 +97,8 @@ pub struct ListenerConfig {
     pub name: String,
     pub bind: String,
     pub protocols: Vec<String>,
+    #[serde(default)]
+    pub reuse_port: Option<bool>,
     pub connection_limit: Option<u32>,
     pub auth: Option<AuthConfig>,
     #[serde(default)]

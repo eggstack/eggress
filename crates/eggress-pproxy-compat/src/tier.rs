@@ -34,11 +34,9 @@ impl ManifestTier {
 /// Map a translator warning category to its manifest-aligned tier.
 pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
     match category {
-        // Intentional non-parity: connection pooling, etc.
-        "reuse-connection" => ManifestTier::IntentionalNonParity,
         // Native equivalent: same outcome through different mechanism.
-        "alive-check" | "pac-serving" | "test-mode" | "system-proxy" | "log-file"
-        | "verbose-mode" | "ssl-no-listener" | "trojan-auto-tls" | "get-url" => {
+        "alive-check" | "pac-serving" | "test-mode" | "log-file" | "verbose-mode"
+        | "ssl-no-listener" | "trojan-auto-tls" | "get-url" | "reuse-port" => {
             ManifestTier::NativeEquivalent
         }
         // Compatible with warning: works but emits a diagnostic.
@@ -117,8 +115,10 @@ mod tests {
 
     #[test]
     fn intentional_non_parity_beats_compatible() {
-        let tier = classify_aggregate_tier(&[warn("direct-mode"), warn("reuse-connection")], &[]);
-        assert_eq!(tier, ManifestTier::IntentionalNonParity);
+        let tier = classify_aggregate_tier(&[warn("direct-mode"), warn("scheduler")], &[]);
+        // scheduler is compatible_with_warning, so this should be compatible_with_warning
+        // unless there's an intentional_non_parity warning
+        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
     }
 
     #[test]

@@ -256,9 +256,11 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "system-proxy" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("sys".to_string()),
-                tier: Some("native_equivalent".to_string()),
+                tier: Some("unsupported".to_string()),
                 message: warn.message.clone(),
-                suggestion: Some("use 'eggress system-proxy inspect'".to_string()),
+                suggestion: Some(
+                    "use 'eggress system-proxy inspect' for read-only inspection".to_string(),
+                ),
             },
             "log-file" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
@@ -269,12 +271,12 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                     "redirect stderr with shell redirection for file logging".to_string(),
                 ),
             },
-            "reuse-connection" => StructuredDiagnostic {
+            "reuse-port" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("reuse".to_string()),
-                tier: Some("intentional_non_parity".to_string()),
+                tier: Some("native_equivalent".to_string()),
                 message: warn.message.clone(),
-                suggestion: None,
+                suggestion: Some("SO_REUSEPORT applied to listener sockets".to_string()),
             },
             "get-url" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
@@ -364,6 +366,16 @@ fn classify_unsupported_feature(
             "unsupported",
             Some("configure this via eggress TOML"),
         ),
+        "system-proxy" => (
+            DiagnosticCode::UnsupportedFlag,
+            "unsupported",
+            Some("use 'eggress system-proxy inspect' for read-only inspection"),
+        ),
+        "auth-timeout" => (
+            DiagnosticCode::UnsupportedFlag,
+            "unsupported",
+            Some("eggress authenticates per-connection; --auth per-client reuse is not available"),
+        ),
         "chain-unsupported-hop" | "chain-backward-composition" => (
             DiagnosticCode::UnsupportedProtocol,
             "unsupported",
@@ -441,6 +453,7 @@ pub fn classify_unsupported_feature_code(feature: &str) -> DiagnosticCode {
 fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {
     match feature {
         "daemon" | "backward-jump-chain" | "backward-tls" => DiagnosticCode::UnsupportedFlag,
+        "system-proxy" | "auth-timeout" => DiagnosticCode::UnsupportedFlag,
         "chain-unsupported-hop" | "chain-backward-composition" => {
             DiagnosticCode::UnsupportedProtocol
         }

@@ -674,11 +674,13 @@ fn test_pac_flag_generates_unknown_warning() {
     ])
     .unwrap();
     assert!(
-        args.raw_flags.iter().any(|f| f == "pac=/path/to/proxy.pac"),
-        "pac should be captured as raw flag"
+        args.known_unsupported
+            .iter()
+            .any(|f| f == "pac=/path/to/proxy.pac"),
+        "pac should be captured as known_unsupported"
     );
     // Should NOT produce an unknown-flag warning for --pac
-    let warnings = args.unknown_flag_warnings();
+    let warnings = args.unknown_flag_diagnostics();
     assert!(
         !warnings.iter().any(|w| w.message.contains("pac")),
         "pac should not produce unknown-flag warning: {:?}",
@@ -698,11 +700,13 @@ fn test_get_flag_generates_unknown_warning() {
     ])
     .unwrap();
     assert!(
-        args.raw_flags.iter().any(|f| f == "get=http://example.com"),
-        "get should be captured as raw flag"
+        args.known_unsupported
+            .iter()
+            .any(|f| f == "get=http://example.com"),
+        "get should be captured as known_unsupported"
     );
     // Should NOT produce an unknown-flag warning for --get
-    let warnings = args.unknown_flag_warnings();
+    let warnings = args.unknown_flag_diagnostics();
     assert!(
         !warnings.iter().any(|w| w.message.contains("get")),
         "get should not produce unknown-flag warning: {:?}",
@@ -722,7 +726,7 @@ fn test_test_flag_generates_unknown_warning() {
     ])
     .unwrap();
     // --test is now a known flag; should NOT produce unknown-flag warning
-    let warnings = args.unknown_flag_warnings();
+    let warnings = args.unknown_flag_diagnostics();
     assert!(
         !warnings.iter().any(|w| w.message.contains("test")),
         "test should not produce unknown-flag warning: {:?}",
