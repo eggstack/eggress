@@ -21,6 +21,26 @@ pub trait SessionMetrics: Send + Sync {
     fn record_upstream_open(&self, protocol: &str, outcome: &str);
     fn record_upstream_failure(&self, protocol: &str, reason: &str);
     fn record_auth_failure(&self);
+    fn record_platform_capability_check_failure(&self) {}
+    fn record_unix_listener_connection_accepted(&self) {}
+    fn record_reload(&self, _success: bool) {}
+    fn set_config_generation(&self, _generation: u64) {}
+    fn record_udp_association_created(&self) {}
+    fn render_prometheus(&self) -> String {
+        String::new()
+    }
+}
+
+/// No-op implementation of SessionMetrics for builds without operations support.
+pub struct NoopMetrics;
+
+impl SessionMetrics for NoopMetrics {
+    fn record_session_start(&self) {}
+    fn record_session(&self, _report: &SessionReport) {}
+    fn record_route_decision(&self, _rule: &str, _action: &str, _outcome: &str) {}
+    fn record_upstream_open(&self, _protocol: &str, _outcome: &str) {}
+    fn record_upstream_failure(&self, _protocol: &str, _reason: &str) {}
+    fn record_auth_failure(&self) {}
 }
 
 /// Handle returned by UdpService::create_association.

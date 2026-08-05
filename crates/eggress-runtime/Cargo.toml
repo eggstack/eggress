@@ -9,7 +9,7 @@ license.workspace = true
 [features]
 default = ["full"]
 full = ["common", "extended", "operations", "reverse"]
-common = ["eggress-server/common", "eggress-metrics/common"]
+common = ["eggress-server/common"]
 extended = [
     "dep:eggress-protocol-shadowsocks",
     "eggress-server/extended",
@@ -17,16 +17,17 @@ extended = [
     "eggress-udp/shadowsocks",
 ]
 operations = [
+    "dep:eggress-admin",
     "dep:eggress-system-proxy",
 ]
-reverse = ["dep:eggress-protocol-reverse"]
+reverse = ["dep:eggress-protocol-reverse", "operations"]
 
 [dependencies]
 eggress-core.workspace = true
 eggress-config.workspace = true
 eggress-routing.workspace = true
 eggress-server.workspace = true
-eggress-admin.workspace = true
+eggress-admin = { workspace = true, optional = true }
 eggress-metrics.workspace = true
 eggress-uri.workspace = true
 eggress-udp.workspace = true

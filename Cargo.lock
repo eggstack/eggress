@@ -489,6 +489,7 @@ name = "eggress-admin"
 version = "1.0.1"
 dependencies = [
  "bytes",
+ "eggress-config",
  "eggress-core",
  "eggress-metrics",
  "eggress-protocol-reverse",
@@ -562,7 +563,6 @@ dependencies = [
 name = "eggress-config"
 version = "1.0.1"
 dependencies = [
- "eggress-admin",
  "eggress-core",
  "eggress-routing",
  "eggress-transport-tls",

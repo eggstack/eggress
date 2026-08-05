@@ -803,8 +803,15 @@ fn handle_pproxy_run(args: &PproxyRun) {
 
     let has_sys = pproxy_args.system_proxy;
     if has_sys {
-        let result = eggress_system_proxy::inspect_system_proxy();
-        print_inspection_result(&result);
+        #[cfg(feature = "operations")]
+        {
+            let result = eggress_system_proxy::inspect_system_proxy();
+            print_inspection_result(&result);
+        }
+        #[cfg(not(feature = "operations"))]
+        {
+            eprintln!("system proxy inspection requires the 'operations' feature");
+        }
     }
 
     let has_test = pproxy_args

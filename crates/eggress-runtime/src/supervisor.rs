@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+#[cfg(feature = "operations")]
 use eggress_admin::{AdminSnapshot, AdminSnapshotProvider, ListenerInfo};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
 use eggress_core::ProtocolId;
@@ -58,10 +59,12 @@ pub enum ReloadResult {
 /// Implements `AdminSnapshotProvider` so that admin handlers see live data:
 /// each request reads the current `ArcSwap<CompiledRuntimeSnapshot>` rather
 /// than a startup-captured copy. Reloads take effect on the next request.
+#[cfg(feature = "operations")]
 pub struct RuntimeAdminListenerInfos {
     state: Arc<RuntimeState>,
 }
 
+#[cfg(feature = "operations")]
 impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
     fn snapshot(&self) -> AdminSnapshot {
         let snap = self.state.snapshot.load();
@@ -388,7 +391,7 @@ struct RuntimeUdpService {
     _listener_name: String,
     udp_config: eggress_config::compile::CompiledListenerUdpConfig,
     registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
-    metrics: Arc<eggress_metrics::MetricsRegistry>,
+    metrics: Arc<dyn eggress_server::SessionMetrics>,
     udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
     routing: Arc<SharedRoutingService>,
     udp_tasks: TaskTracker,
@@ -495,7 +498,7 @@ impl eggress_server::UdpService for RuntimeUdpService {
 pub struct RuntimeState {
     pub snapshot: Arc<ArcSwap<CompiledRuntimeSnapshot>>,
     pub routing: Arc<SharedRoutingService>,
-    pub metrics: Arc<eggress_metrics::MetricsRegistry>,
+    pub metrics: Arc<dyn eggress_server::SessionMetrics>,
     pub readiness: Arc<AtomicBool>,
     pub start_time: Instant,
     pub active_connections: Arc<AtomicU64>,
@@ -525,6 +528,7 @@ impl RuntimeState {
 pub struct ServiceSupervisor {
     config_path: String,
     state: Arc<RuntimeState>,
+    metrics_registry: Arc<eggress_metrics::MetricsRegistry>,
     cancel: CancellationToken,
     listener_cancel: CancellationToken,
     connection_cancel: CancellationToken,
@@ -565,7 +569,17 @@ impl ServiceSupervisor {
             }
         }
 
-        let metrics = Arc::new(eggress_metrics::MetricsRegistry::new());
+        let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
+        #[cfg(feature = "extended")]
+        let shadowsocks_metrics = Arc::new(eggress_protocol_shadowsocks::ShadowsocksMetrics::new());
+
+        let metrics_registry = Arc::new(eggress_metrics::MetricsRegistry::new());
+        metrics_registry.set_udp_metrics(udp_metrics.clone());
+        #[cfg(feature = "extended")]
+        {
+            metrics_registry.set_shadowsocks_metrics(shadowsocks_metrics.clone());
+        }
+        let metrics: Arc<dyn eggress_server::SessionMetrics> = metrics_registry.clone();
         let readiness = Arc::new(AtomicBool::new(false));
 
         let snapshot = compile_runtime_snapshot(&rt_config, None)
@@ -592,16 +606,9 @@ impl ServiceSupervisor {
             },
         ));
 
-        let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
-        #[cfg(feature = "extended")]
-        let shadowsocks_metrics = Arc::new(eggress_protocol_shadowsocks::ShadowsocksMetrics::new());
         #[cfg(feature = "reverse")]
         let reverse_metrics = Arc::new(eggress_protocol_reverse::metrics::ReverseMetrics::new());
         let udp_tasks = TaskTracker::new();
-
-        metrics.set_udp_metrics(udp_metrics.clone());
-        #[cfg(feature = "extended")]
-        metrics.set_shadowsocks_metrics(shadowsocks_metrics.clone());
 
         let state = Arc::new(RuntimeState {
             snapshot: snapshot.clone(),
@@ -627,7 +634,7 @@ impl ServiceSupervisor {
         });
 
         // Bridge transparent proxy atomics to MetricsRegistry for /metrics
-        metrics.set_transparent_counters(
+        metrics_registry.set_transparent_counters(
             state.transparent_accepted_total.clone(),
             state.transparent_original_dst_failed_total.clone(),
         );
@@ -658,6 +665,7 @@ impl ServiceSupervisor {
         Ok(ServiceSupervisor {
             config_path: config_path.to_string(),
             state,
+            metrics_registry,
             cancel,
             listener_cancel,
             connection_cancel,
@@ -785,12 +793,16 @@ impl ServiceSupervisor {
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
 
+        #[cfg(feature = "operations")]
         let listener_infos_provider: Arc<RuntimeAdminListenerInfos> =
             Arc::new(RuntimeAdminListenerInfos {
                 state: admin_state_ref.clone(),
             });
 
+        let metrics_registry_for_admin = self.metrics_registry.clone();
+
         let run_async = async move {
+            let metrics_registry = metrics_registry_for_admin;
             // Start health probes inside the runtime context
             {
                 let mut guard = health_for_run.lock().unwrap_or_else(|e| e.into_inner());
@@ -895,6 +907,7 @@ impl ServiceSupervisor {
                     if transparent_cfg.enabled {
                         let capability = check_capability(PlatformCapability::LinuxOriginalDstIpv4);
                         if capability != crate::platform::CapabilityStatus::Available {
+                            #[cfg(feature = "operations")]
                             state_ref.metrics.record_platform_capability_check_failure();
                             let _cap_span = tracing::info_span!(
                                 "capability_check_failed",
@@ -1005,22 +1018,25 @@ impl ServiceSupervisor {
                 });
             }
 
-            let listener_infos: Vec<eggress_admin::ListenerInfo> = prepared
-                .iter()
-                .map(|p| eggress_admin::ListenerInfo {
-                    name: p.name.clone(),
-                    bind: p.bind.clone(),
-                    local_addr: p.local_addr.to_string(),
-                    protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
-                    udp_enabled: p.udp.as_ref().is_some_and(|u| u.enabled),
-                    mode: Some("standard".to_string()),
-                    capability_status: None,
-                    original_dst_support: None,
-                    unix_socket_path: None,
-                    unix_socket_unlink_existing: None,
-                })
-                .collect();
-            drop(listener_infos);
+            #[cfg(feature = "operations")]
+            {
+                let listener_infos: Vec<eggress_admin::ListenerInfo> = prepared
+                    .iter()
+                    .map(|p| eggress_admin::ListenerInfo {
+                        name: p.name.clone(),
+                        bind: p.bind.clone(),
+                        local_addr: p.local_addr.to_string(),
+                        protocols: p.protocols.iter().map(|p| p.to_string()).collect(),
+                        udp_enabled: p.udp.as_ref().is_some_and(|u| u.enabled),
+                        mode: Some("standard".to_string()),
+                        capability_status: None,
+                        original_dst_support: None,
+                        unix_socket_path: None,
+                        unix_socket_unlink_existing: None,
+                    })
+                    .collect();
+                drop(listener_infos);
+            }
 
             // Store listener addresses for admin snapshot, indexed by config order.
             // Build a lookup map from all listener types (standard, transparent, unix).
@@ -1417,7 +1433,6 @@ impl ServiceSupervisor {
                 let listener_cancel = listener_cancel.clone();
 
                 let socket_path = unix_listener.path().display().to_string();
-                let unix_metrics = state.metrics.clone();
 
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
@@ -1459,7 +1474,7 @@ impl ServiceSupervisor {
                             }
                         };
 
-                        unix_metrics.record_unix_listener_connection_accepted();
+                        state.metrics.record_unix_listener_connection_accepted();
 
                         let routing = routing.clone();
                         let tls_client_config = tls_client_config.clone();
@@ -1897,6 +1912,7 @@ impl ServiceSupervisor {
 
             // Pre-bind admin listener before marking readiness so bind failures
             // are surfaced as startup errors rather than silent background failures.
+            #[cfg(feature = "operations")]
             let pre_bound_admin = if let Some(ref admin_cfg) = admin_config {
                 if admin_cfg.enabled {
                     let bind = admin_cfg.bind.clone();
@@ -1922,6 +1938,7 @@ impl ServiceSupervisor {
                 None
             };
 
+            #[cfg(feature = "operations")]
             if let Some(server) = pre_bound_admin {
                 let admin_cfg = admin_config.as_ref().unwrap();
                 let metrics_enabled = admin_cfg.metrics;
@@ -1935,7 +1952,7 @@ impl ServiceSupervisor {
                 }
                 admin_tasks.spawn(async move {
                     let admin_state = eggress_admin::AdminState {
-                        metrics: state_ref.metrics.clone(),
+                        metrics: metrics_registry.clone(),
                         start_time: state_ref.start_time,
                         readiness: state_ref.readiness.clone(),
                         active_connections: Some(state_ref.active_connections.clone()),

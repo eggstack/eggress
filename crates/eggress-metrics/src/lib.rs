@@ -36,6 +36,30 @@ impl eggress_server::SessionMetrics for MetricsRegistry {
     fn record_auth_failure(&self) {
         MetricsRegistry::record_auth_failure(self);
     }
+
+    fn record_platform_capability_check_failure(&self) {
+        self.platform_capability_check_failures.inc();
+    }
+
+    fn record_unix_listener_connection_accepted(&self) {
+        self.unix_listener_connections_accepted.inc();
+    }
+
+    fn record_reload(&self, success: bool) {
+        MetricsRegistry::record_reload(self, success);
+    }
+
+    fn set_config_generation(&self, generation: u64) {
+        MetricsRegistry::set_config_generation(self, generation);
+    }
+
+    fn record_udp_association_created(&self) {
+        self.udp_associations_total.inc();
+    }
+
+    fn render_prometheus(&self) -> String {
+        MetricsRegistry::render_prometheus(self)
+    }
 }
 
 #[derive(EncodeLabelSet, Hash, Eq, PartialEq, Clone, Debug)]

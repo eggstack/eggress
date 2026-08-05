@@ -136,8 +136,15 @@ fn main() -> ExitCode {
     }
 
     if pproxy_args.system_proxy {
-        let result = eggress_system_proxy::inspect_system_proxy();
-        print_system_proxy_inspection(&result);
+        #[cfg(feature = "operations")]
+        {
+            let result = eggress_system_proxy::inspect_system_proxy();
+            print_system_proxy_inspection(&result);
+        }
+        #[cfg(not(feature = "operations"))]
+        {
+            eprintln!("pproxy: system proxy inspection requires the 'operations' feature");
+        }
     }
 
     let has_test = pproxy_args
@@ -275,6 +282,7 @@ fn print_startup_banner(
     eprintln!("pproxy started, waiting for connections...");
 }
 
+#[cfg(feature = "operations")]
 fn print_system_proxy_inspection(result: &eggress_system_proxy::InspectionResult) {
     eprintln!();
     eprintln!("System Proxy Inspection");

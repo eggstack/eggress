@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Parent roadmap
 
@@ -431,3 +431,72 @@ Phase 3 is complete only when all are true:
 - Prefer deleting one broad unconditional dependency over scattering many tiny feature flags.
 - Verify default/full behavior after every manifest change because Cargo feature unification can hide mistakes.
 - Update this plan in place with final measurements, retained/rejected changes, and implementation commits. Do not create a binary-size closure plan.
+
+## Implementation summary
+
+### Toolchain and target
+
+- Rust stable (pinned in `rust-toolchain.toml`)
+- Linux x86_64
+
+### Artifact sizes
+
+| Artifact | Baseline | After Phase 3 | Change |
+|----------|----------|---------------|--------|
+| Full `eggress` | 9.3M | 9.3M | 0 |
+| Full `pproxy` | 8.2M | 8.2M | 0 |
+| Common `eggress` | 8.0M | 7.7M | -300KB |
+
+### Dependency graph changes
+
+**Removed from common tree:**
+- `eggress-admin` (admin HTTP server, PAC, static content, reverse registry)
+- `eggress-protocol-reverse` (reverse/backward proxy)
+- `eggress-protocol-shadowsocks` (Shadowsocks)
+- `eggress-protocol-trojan` (Trojan)
+- `eggress-protocol-websocket` (WebSocket/WSS)
+- `eggress-system-proxy` (system proxy inspection)
+
+**Retained in common tree:**
+- `eggress-metrics` (lightweight counters for data plane observability)
+- `prometheus-client` (required by metrics registry)
+
+### Feature group semantics (final)
+
+| Feature | Contains |
+|---------|----------|
+| `common` | HTTP, SOCKS4/4a, SOCKS5, direct routing, TLS, UDP, raw, core config/runtime |
+| `extended` | Shadowsocks, Trojan, WebSocket/WSS |
+| `operations` | Admin server, Prometheus export, system-proxy integration |
+| `reverse` | Reverse/backward control-channel proxy (requires `operations`) |
+| `pproxy-compat` | pproxy compatibility translator and `pproxy` binary |
+| `full` | Union of all above |
+
+### Key changes
+
+1. **`PacConfig` and `StaticRoute` moved to `eggress-config`** — These lightweight config types were moved from `eggress-admin` to `eggress-config` to break the `eggress-config → eggress-admin` dependency edge. Admin re-exports them for backwards compatibility.
+
+2. **`eggress-admin` made optional in `eggress-runtime`** — Gated on `operations` feature. The runtime creates the admin server only when `operations` is enabled.
+
+3. **`SessionMetrics` trait extended** — Added `record_platform_capability_check_failure`, `record_unix_listener_connection_accepted`, `record_reload`, `set_config_generation`, `record_udp_association_created`, and `render_prometheus` with default no-op implementations. This allows the data plane to emit events without linking the full metrics implementation.
+
+4. **`NoopMetrics` added to `eggress-server`** — A zero-sized no-op implementation of `SessionMetrics` for builds without operations support.
+
+5. **`RuntimeState.metrics` changed to `Arc<dyn SessionMetrics>`** — The runtime now uses the trait object instead of the concrete `MetricsRegistry` type, allowing the no-op implementation when operations is disabled.
+
+6. **`reverse` requires `operations`** — Since `ReverseRegistry` lives in `eggress-admin`, the reverse feature now requires operations.
+
+7. **System proxy gated on `operations`** — Both `eggress-cli` and `eggress-pproxy-main` gate system proxy inspection behind the operations feature.
+
+### Retained changes
+
+- `eggress-admin` removed from common dependency graph ✓
+- Admin/metrics server not linked in common builds ✓
+- Default/full behavior unchanged ✓
+- All feature combinations compile ✓
+- 302 tests pass ✓
+
+### Rejected changes
+
+- Making `eggress-metrics` optional: Rejected because the data plane needs the `MetricsRegistry` type for counter tracking even without operations. The `prometheus-client` dependency remains in common builds.
+- Moving `ReverseRegistry` to `eggress-protocol-reverse`: Rejected as unnecessary complexity; making `reverse` require `operations` is simpler and correct.

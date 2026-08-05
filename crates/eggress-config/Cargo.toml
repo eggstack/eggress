@@ -11,7 +11,6 @@ eggress-core.workspace = true
 eggress-udp.workspace = true
 eggress-uri.workspace = true
 eggress-routing.workspace = true
-eggress-admin.workspace = true
 eggress-transport-tls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 toml.workspace = true

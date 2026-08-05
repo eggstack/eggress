@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::reverse::ReverseRegistry;
 use crate::routes::handle_request;
 use crate::AdminError;
+use eggress_config::compile::{PacConfig, StaticRoute};
 
 pub struct AdminServer {
     pub(crate) listener: TcpListener,
@@ -123,22 +124,6 @@ impl AdminState {
 }
 
 pub type AdminResponse = http::Response<Full<Bytes>>;
-
-#[derive(Debug, Clone)]
-pub struct StaticRoute {
-    pub path: String,
-    pub content_type: String,
-    pub body: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct PacConfig {
-    pub path: String,
-    pub proxy_directive: String,
-    pub direct_fallback: bool,
-    pub direct_hosts: Vec<String>,
-    pub direct_suffixes: Vec<String>,
-}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ListenerInfo {

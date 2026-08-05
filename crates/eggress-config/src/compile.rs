@@ -229,12 +229,28 @@ pub enum GroupFallback {
 }
 
 #[derive(Debug, Clone)]
+pub struct PacConfig {
+    pub path: String,
+    pub proxy_directive: String,
+    pub direct_fallback: bool,
+    pub direct_hosts: Vec<String>,
+    pub direct_suffixes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StaticRoute {
+    pub path: String,
+    pub content_type: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AdminConfig {
     pub bind: String,
     pub enabled: bool,
     pub metrics: bool,
-    pub pac: Option<eggress_admin::PacConfig>,
-    pub static_content: Vec<eggress_admin::StaticRoute>,
+    pub pac: Option<PacConfig>,
+    pub static_content: Vec<StaticRoute>,
 }
 
 fn compile_reject_reason(s: &str) -> Result<RejectReason, ConfigError> {
@@ -1324,7 +1340,7 @@ fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
 
     let pac = admin.pac.as_ref().map(|pac_toml| {
         let path = pac_toml.path.clone().unwrap_or_else(|| "/pac".to_string());
-        eggress_admin::PacConfig {
+        PacConfig {
             path,
             proxy_directive: pac_toml.proxy.clone(),
             direct_fallback: pac_toml.direct_fallback.unwrap_or(true),
@@ -1339,7 +1355,7 @@ fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
         .map(|entries| {
             entries
                 .iter()
-                .map(|entry| eggress_admin::StaticRoute {
+                .map(|entry| StaticRoute {
                     path: entry.path.clone(),
                     content_type: entry
                         .content_type

@@ -19,7 +19,7 @@ pproxy-compat = ["dep:eggress-pproxy-compat"]
 [dependencies]
 eggress-config = { workspace = true }
 eggress-core = { workspace = true }
-eggress-metrics = { workspace = true }
+eggress-metrics.workspace = true
 eggress-pproxy-compat = { workspace = true, optional = true }
 eggress-protocol-socks = { workspace = true }
 eggress-runtime = { workspace = true }

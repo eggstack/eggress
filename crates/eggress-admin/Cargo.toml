@@ -19,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 eggress-core = { workspace = true }
+eggress-config = { workspace = true }
 eggress-routing = { workspace = true }
 eggress-metrics = { workspace = true }
 eggress-udp = { workspace = true }

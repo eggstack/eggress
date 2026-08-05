@@ -18,8 +18,11 @@ Lean feature builds are truthful: internal workspace edges for `eggress-runtime`
 dependency defaults, while `eggress-cli/common` explicitly forwards
 `eggress-runtime/common`. The internal `eggress-udp/shadowsocks` gate is
 enabled by `extended`; common UDP routing reports Shadowsocks as unsupported
-instead of falling back to direct UDP. Admin and metrics remain required in
-both groups.
+instead of falling back to direct UDP. The `operations` feature gates the admin
+HTTP server, Prometheus metrics export, and system-proxy integration. The
+`reverse` feature requires `operations`. The data plane retains a lightweight
+metrics registry for counter tracking even in common builds, but the full
+admin/metrics export layer is absent.
 
 The HTTP forwarder rejects non-empty `Expect` headers with a bounded 417/close
 exchange, follows at most eight informational responses, rejects 101 upgrades,

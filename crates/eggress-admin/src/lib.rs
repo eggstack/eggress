@@ -4,10 +4,11 @@ pub mod routes;
 pub mod server;
 pub mod static_content;
 
+pub use eggress_config::compile::{PacConfig, StaticRoute};
 pub use reverse::{ReverseRegistry, ReverseServerEntry, ReverseServerId};
 pub use server::{
-    AdminServer, AdminSnapshot, AdminSnapshotProvider, AdminState, ListenerInfo, PacConfig,
-    StaticAdminSnapshot, StaticRoute,
+    AdminServer, AdminSnapshot, AdminSnapshotProvider, AdminState, ListenerInfo,
+    StaticAdminSnapshot,
 };
 
 #[derive(Debug, thiserror::Error)]
