@@ -274,9 +274,9 @@ These pproxy features are deliberately not replicated in eggress:
 | `--ssl` TLS listeners | Native-equivalent | Generates TLS listener TOML config via `eggress pproxy run --ssl` |
 | `-b` block regex rules | Drop-in | Generates `[[rules]] reject` entries via `eggress pproxy run -b` |
 | `--rulefile` | Compatible with warning | Translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
-| `--reuse` (connection pooling) | Design choice | One upstream connection per session |
+| `--reuse` (SO_REUSEPORT) | Supported with warning | Configures SO_REUSEPORT on listener sockets |
 | `--log` file | Native-equivalent | Emits structured diagnostic |
-| `--sys` (system proxy mutation) | Native-equivalent | Auto-invokes `eggress system-proxy inspect` before starting |
+| `--sys` (system proxy) | Intentional non-parity | Use `eggress system-proxy apply --apply` for mutation; inspection is supported |
 | `--alive` check interval | Design choice | Configure `[upstreams.health]` in TOML |
 | SOCKS4/SOCKS5 BIND | Deferred | Returns `REP_COMMAND_NOT_SUPPORTED` (0x07) |
 | Multi-hop UDP chains | Architecture | Single-hop only |

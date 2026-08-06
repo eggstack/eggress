@@ -2,7 +2,10 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+All four phase plans are implemented. See the commit range and final
+decisions below.
 
 ## Baseline
 
@@ -177,16 +180,47 @@ This roadmap is complete only when all are true:
 - existing Rust smoke and PyPI release boundaries remain proportionate;
 - no new protocol scope, certification framework, completion document, or permanent binary-size gate has been added.
 
-## Closure procedure
+## Closure record
 
-When implementation is complete, update this file in place:
+### Implementation commit range
 
-- change `PLANNED` to `IMPLEMENTED`;
-- record the implementation commit range;
-- summarize final CLI compatibility decisions;
-- list Python methods delegated, explicitly unsupported, or intentionally structural;
-- record full/lean dependency and artifact results;
-- link the final active compatibility matrix and CI workflows;
-- note any proposed optimization rejected for insufficient benefit.
+Phases 1-3: `f08b8d0..6cb43dd`
+Phase 4: current commit
+
+### Final CLI compatibility decisions
+
+- `-d` is debug/tracebacks (separate from `--daemon`)
+- `--daemon` is fatal before startup (exit code 5)
+- `--reuse` configures SO_REUSEPORT on listener sockets (not connection pooling)
+- `--sys` provides inspection only; mutation requires explicit `--apply`
+- `--pac`, `--get`, `--test` are value-taking options; values are not reclassified as positional
+- Unknown flags are fatal (exit code 2)
+- Trojan is supported for both inbound and upstream
+
+### Python methods
+
+- Delegated to native: `Server`, `Connection`, `Rule`, `DIRECT`, lifecycle methods
+- Explicitly unsupported: top-level `import pproxy` before Phase 4 (use `from eggress import pproxy`)
+- Intentionally structural: `proto.*`, `cipher.*` internal classes
+
+### Full/lean results
+
+- Default/full build retains existing feature surface
+- Lean build (`common` feature) omits operations, extended protocols, reverse
+- Feature boundaries documented in `AGENTS.md`
+
+### Active authority
+
+- Matrix: `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`
+- Manifest: `docs/parity/pproxy_capability_manifest.toml`
+- Strict manifest: `docs/parity/pproxy_2_7_9_strict_manifest.toml` (historical/derived)
+- CI: `.github/workflows/ci.yml`, `.github/workflows/python-test.yml`
+- Release: `.github/workflows/publish-python.yml`
+
+### Rejected optimizations
+
+- Per-protocol micro-features: maintenance cost outweighs binary-size benefit
+- Workspace-wide crate merging: not a primary binary-size strategy
+- Routine OS/architecture matrices: disproportionate for a small project
 
 Do not create a separate corrective-closure roadmap or evidence report.

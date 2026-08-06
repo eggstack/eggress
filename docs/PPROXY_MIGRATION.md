@@ -139,14 +139,15 @@ upstream_group = "chain"
 
 The following pproxy features are explicitly unsupported:
 
-- **Trojan listeners** -- Trojan is upstream-only
+- **Trojan listeners** -- Trojan is supported for both inbound and upstream
 - **`--daemon` mode** -- Use systemd or a process manager instead
+- **`-d` debug** -- Enables debug-level diagnostics; equivalent to RUST_LOG=debug
 - **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
 - **`-b` block regex rules** -- Use eggress TOML routing rules
 - **`--rulefile`** -- simple reject/block entries are translated; use Eggress TOML routing rules for complete semantics
-- **`--reuse`** -- Connection pooling not implemented
+- **`--reuse`** -- SO_REUSEPORT on listener sockets (not connection pooling)
 - **`--log`** -- Use `RUST_LOG=debug` environment variable
-- **`--sys`** -- System proxy configuration not supported
+- **`--sys`** -- System proxy inspection supported; use `eggress system-proxy apply --apply` for mutation
 - **Multi-hop UDP** -- Not supported
 - **macOS PF transparent destination recovery** -- Intentional non-parity; requires privileged `/dev/pf` ioctl access
 - **Backward TLS/mixed reverse chains** -- Intentional partial compatibility; reverse framing is not a normal chain stream

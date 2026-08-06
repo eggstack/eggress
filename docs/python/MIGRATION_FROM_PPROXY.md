@@ -139,10 +139,10 @@ path has no listener bind to discover or clean up; UDP remains listener-based.
 | Custom cipher configuration | Not supported — AEAD methods only |
 | Legacy stream ciphers | Not supported — rejected with diagnostic (see ADR) |
 | SSR (`ssr://`) | Not supported — rejected with diagnostic (see ADR) |
-| `--sys` (system proxy) | Not supported |
+| `--sys` (system proxy) | Inspection supported; use `eggress system-proxy apply --apply` for mutation |
 | `--get URL` (repeatable URL fetch) | Recognized but URL argument is not consumed; use curl |
 | `--pac PATH` (PAC file path) | Recognized as a boolean; path argument is not consumed; serves `/proxy.pac` |
-| `--reuse` (SO_REUSEADDR) | Not supported |
+| `--reuse` (SO_REUSEPORT) | Supported with warning — configures SO_REUSEPORT on listener sockets |
 
 ## See also
 

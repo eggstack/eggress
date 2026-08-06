@@ -118,8 +118,8 @@ See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 - [x] `-a N` generates `[health] interval = "Ns"`
 - [x] `--pac` generates `[admin.pac] enabled = true`
 - [x] `--test` translates and runs `eggress upstream test`, then exits
-- [x] `--sys` auto-invokes `eggress system-proxy inspect` before starting
-- [x] `--log`, `--get`, `--reuse` emit structured diagnostics
+- [x] `--sys` provides system proxy inspection; mutation requires `--apply`
+- [x] `--log`, `--get` emit structured diagnostics
 
 ### Phase 39: pproxy URI grammar and chain semantics — complete
 

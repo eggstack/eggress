@@ -103,7 +103,7 @@ Python AEAD compatibility is deterministic by installation profile:
 - `eggress` keeps `cryptography` optional and reports cipher operations as
   unavailable when the extra is not installed.
 - `eggress[cipher-api]` declares the tested `cryptography>=42,<47` range.
-- `eggress-pproxy-compat` depends on `eggress==0.1.0` and that same cipher
+- `eggress-pproxy-compat` depends on `eggress` and that same cipher
   range, so a top-level `pproxy.cipher` import never relies on an undeclared
   optional package.
 

@@ -14,7 +14,7 @@ option. This requires:
    `sockaddr_in6` based on the address family.
 
 Both operations require `unsafe`. The workspace enforces
-`unsafe_code = "forbid"` in every crate's `[lints]` table. This ADR records
+`unsafe_code = "deny"` in every crate's `[lints]` table. This ADR records
 the single, narrow exception for the transparent proxy module and the
 invariants the unsafe code must maintain.
 
@@ -65,7 +65,7 @@ unsafe footprint easy to audit in place.
 
 ## Consequences
 
-- The workspace `unsafe_code = "forbid"` lint remains in force everywhere
+- The workspace `unsafe_code = "deny"` lint remains in force everywhere
   except this single Linux-only module.
 - Any future contributor adding unsafe code in this module must include a
   `// SAFETY:` comment and add a unit test for the new path.

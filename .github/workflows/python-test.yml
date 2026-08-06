@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/eggress-embed/**'
-      - 'crates/eggress-python/**'
+      - 'crates/**'
       - 'python/**'
       - 'tests/compat/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'pyproject.toml'
       - '.github/workflows/python-test.yml'
   workflow_dispatch:
 

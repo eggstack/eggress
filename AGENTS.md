@@ -39,14 +39,19 @@ Use these current documents before relying on historical phase or completion rec
 - `docs/ARCHITECTURE.md`: system architecture.
 - `docs/DIFFERENTIAL_TESTING.md`: pproxy oracle and differential harness.
 - `docs/parity/pproxy_capability_manifest.toml`: canonical capability contract.
-- `docs/parity/pproxy_2_7_9_strict_manifest.toml`: strict behavioral contract.
 - `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`: maintained public matrix.
 - `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`: optional closure scenario index.
-- `docs/PPROXY_PARITY_SPEC.md`: compatibility vocabulary and tier definitions.
 
-Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.
+`docs/parity/pproxy_2_7_9_strict_manifest.toml` is a historical/derived manifest
+and is not an active compatibility contract.
 
-`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md` governs current parity work.
+Files under `plans/` and phase-completion documents are historical implementation
+records. They may explain why code exists, but they do not override current policy
+or current source behavior.
+
+`plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md` governs completed parity work.
+`plans/PPROXY_CORRECTIVE_REDUCTION_ROADMAP.md` governs the corrective and
+reductive pass that closed the remaining compatibility defects.
 `plans/PPROXY_FULL_DROP_IN_ROADMAP.md` and older milestone plans are historical
 and are not acceptance gates for the bounded roadmap.
 

@@ -53,7 +53,7 @@ Eggress support status:
 | SOCKS4a | supported | `eggress-protocol-socks` (alias for SOCKS4) |
 | SOCKS5 | supported | `eggress-protocol-socks` |
 | Shadowsocks | supported | Explicit protocol mode only; no mixed-listener auto-detection |
-| Trojan | **rejected** | No inbound listener; upstream-only |
+| Trojan | **supported** | `eggress-protocol-trojan` for both inbound and upstream |
 | Redir | **supported** | Linux only; transparent TCP proxy via `SO_ORIGINAL_DST` (requires iptables/nftables REDIRECT) |
 | Unix socket | **supported** | Unix only; listen on Unix domain socket path |
 | SSH | **rejected** | Not in scope |
@@ -173,7 +173,7 @@ URI-level chain parsing and translation tests live in
 | Scheduler default | First eligible remote (`fa`) in declaration order | Compatibility translator emits `first-available`; native TOML defaults are unchanged |
 | Rule-based routing | Per-remote URI query rules plus `-b`/rule-file block rules | Ordered per-remote predicates match hostname or decimal destination port; unmatched traffic falls direct |
 | Fallback | `-F` flag | `RouteActionSpec::Fallback` with group members |
-| Connection reuse | `--reuse` | Not implemented; intentional non-parity because pproxy pools upstream connections across sessions while Eggress uses one upstream connection per proxy session |
+| Connection reuse | `--reuse` | SO_REUSEPORT on listener sockets; not connection pooling |
 | Random | Not default | Supported (`Random` scheduler) |
 | Least-connections | Not available | Supported (`LeastConnections` scheduler) |
 | First-available | Not available | Supported (`FirstAvailable` scheduler) |
@@ -362,10 +362,10 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `-a` | Alive check interval (seconds) | Health probe config in TOML |
 | `-v` | Verbose logging | `RUST_LOG=debug` environment variable |
 | `--ssl` | TLS cert/key file (`certfile[,keyfile]`) | TLS config in eggress TOML |
-| `--daemon` | Run as daemon | Not supported (use systemd/supervisord) |
+| `--daemon` | Run as daemon | Fatal (exit code 5); use a process manager |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
 | `--pac` | PAC file path argument | Boolean flag enabling `/proxy.pac`; path is not consumed |
-| `--sys` | Set system proxy (mac/windows) | Not supported |
+| `--sys` | Set system proxy (mac/windows) | Inspection only; use `eggress system-proxy apply --apply` for mutation |
 | `--test` | URL argument; test and exit | Boolean flag with diagnostic guidance; URL is not consumed |
 
 ## 11. Python Library Usage
@@ -589,8 +589,8 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as runtime-integrated upstream (Phase B3)**: WebSocket tunnels (`ws://`, `wss://`), Raw fixed-target tunnels (`raw://`, `tunnel://`)
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
-- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--reuse`, `--log`, `--sys`, multi-hop UDP
-- **Partial**: Trojan inbound listener
+- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, multi-hop UDP
+- **Implemented**: Trojan inbound listener and upstream
 
 ### Diagnostic behavior
 
@@ -725,7 +725,7 @@ The following items need further investigation or testing to confirm behavior:
 | pproxy Trojan password hashing | `needs-probe` | Whether pproxy uses SHA224 (standard Trojan) or a variant |
 | pproxy HTTP forward proxy (non-CONNECT) | resolved | pproxy supports plain HTTP forwarding with persistent connections; eggress now matches (Phase 19) |
 | pproxy multi-hop chain behavior | `needs-probe` | Behavior for chains longer than 2 hops (error handling, protocol negotiation) |
-| pproxy connection reuse semantics | `needs-probe` | How `--reuse` interacts with chained upstreams and health state |
+| pproxy connection reuse semantics | `needs-probe` | How `--reuse` (SO_REUSEPORT) interacts with listener binding on supported platforms |
 | pproxy `--rulefile` format details | resolved | Plain non-comment regex lines; Eggress loads and validates via `PproxyRuleFile::load()` (Phase 2) |
 | pproxy SOCKS4a domain resolution | resolved | pproxy resolves domains at the SOCKS4a server; eggress matches (Phase 19) |
 
@@ -832,7 +832,7 @@ Each code corresponds to a class of translation issue:
 | DiagnosticCode | Meaning | Example triggers |
 |----------------|---------|------------------|
 | `unsupported_protocol` | Protocol/scheme not implemented | `ssh://`, unknown scheme |
-| `unsupported_flag` | Flag not mappable to eggress | `--daemon`, `--reuse`, `-b`, unknown flags |
+| `unsupported_flag` | Flag not mappable to eggress | `--daemon`, `-b`, unknown flags |
 | `unsupported_platform` | OS-specific capability missing | `unix://` on Windows |
 | `unsupported_transport_wrapper` | Transport wrapper not supported | `+tls` in wrong context |
 | `unsupported_security_sensitive_legacy_feature` | Insecure legacy feature | SSR URIs, obfs plugins |
@@ -866,9 +866,9 @@ pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
 | `--ssl` | TLS config in TOML | Native equivalent — generates TLS listener TOML (Phase 38) |
 | `-b` | rejected | Native equivalent — braced inline regex or pproxy rule-file path becomes a high-priority hostname reject (Phase 2) |
 | `--rulefile` | rejected | Compatible — loads pproxy plain regex lines and lowers them to a high-priority hostname block (Phase 2) |
-| `--reuse` | rejected | Intentional non-parity — emits structured diagnostic |
+| `--reuse` | listener SO_REUSEPORT | Supported with warning — configures SO_REUSEPORT on listener sockets |
 | `--log` | rejected | Intentional non-parity — emits structured diagnostic |
-| `--sys` | rejected | Compatible — auto-invokes `eggress system-proxy inspect` (Phase 38) |
+| `--sys` | inspection; use `--apply` for mutation | Inspection supported; mutation is explicit |
 
 For the complete inventory with diagnostic codes, see
 [`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).

@@ -39,7 +39,7 @@ Uses Eggress as an open proxy by connecting to non-loopback listener or admin.
 - Default admin bind is `127.0.0.1:9090`
 - Config validation warns on non-loopback binds without authentication
 - Shadowsocks/TLS listeners provide built-in authentication
-- `unsafe_code = "forbid"` prevents memory safety issues that could be exploited
+- `unsafe_code = "deny"` prevents memory safety issues that could be exploited
 
 ### A2: Malicious Upstream Proxy
 
@@ -107,7 +107,7 @@ Attacker sending malformed protocol data to trigger bugs.
 - Bounded parsing (no unbounded reads)
 - Property tests for all protocol codecs
 - Fuzz harnesses for SOCKS, HTTP, Trojan, URI, Shadowsocks parsers
-- `unsafe_code = "forbid"` in all workspace crates
+- `unsafe_code = "deny"` in all workspace crates
 
 ### A9: Log/Metrics Secret Leaker
 
@@ -133,7 +133,7 @@ Attacker reading logs, metrics, or admin output for credentials.
 
 ## Mitigations Summary
 
-1. `unsafe_code = "forbid"` in all workspace crates
+1. `unsafe_code = "deny"` in all workspace crates
 2. Credential redaction in all display/output paths
 3. Config validation for structural integrity and security warnings
 4. UDP amplification prevention (`validate_target()` rejects multicast/broadcast/unspecified)

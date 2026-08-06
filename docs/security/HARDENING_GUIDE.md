@@ -8,7 +8,7 @@ Eggress defaults to a conservative security posture:
 - Listeners warn if bound to non-loopback without authentication
 - Reverse proxy warns if control channel is bound to non-loopback without auth
 - UDP client pinning enabled by default
-- `unsafe_code = "forbid"` in all workspace crates
+- `unsafe_code = "deny"` in all workspace crates
 - Credentials never logged (redacted display implementations)
 
 ## Hardening Checklist

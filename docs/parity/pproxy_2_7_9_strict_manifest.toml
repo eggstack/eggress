@@ -1,14 +1,13 @@
 # pproxy 2.7.9 Strict Behavioral Compatibility Manifest
 #
+# Historical/derived manifest. This file is not an active compatibility
+# contract. See docs/parity/pproxy_capability_manifest.toml for the
+# canonical capability contract and docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md
+# for the maintained public matrix.
+#
 # Each record represents one discoverable capability that must be validated
 # through paired oracle/candidate testing. The oracle is the reference
 # pproxy 2.7.9 installation; the candidate is the eggress implementation.
-#
-# CORRECTIVE PASS NOTICE: This manifest is under active review as part of
-# the Milestones A-C Corrective Pass (plans/MILESTONES_A_C_CORRECTIVE_PASS.md).
-# Records using `comparator = "module_existence"` with `status = "drop_in"`
-# have namespace evidence only and require behavioral validation before true
-# drop_in status can be claimed. See the corrective pass plan for details.
 #
 # Status vocabulary:
 #   gap               - candidate does not implement this capability
@@ -2258,11 +2257,11 @@ id = "cli.daemon"
 category = "cli_option"
 kind = "flag"
 module = ""
-name = "--daemon / -d"
+name = "--daemon"
 oracle_probe = "cli.daemon_flag"
 candidate_probe = "cli.daemon_flag"
 comparator = "cli_flag_rejection"
-status = "not_applicable"
+status = "intentional_non_parity"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -2270,9 +2269,32 @@ python_versions = []
 depends_on = []
 test_refs = ["test_pproxy_cli_translate.py::test_daemon"]
 evidence_refs = ["pproxy_cli_inventory"]
-notes = "Fork into background. Not applicable; eggress uses systemd/launchd/supervisord for process management instead of built-in daemonization."
+notes = "Fork into background. Intentional non-parity; fatal before startup (exit code 5). Use systemd/launchd/supervisord."
 evidence_level = "none"
 implementation_state = "absent"
+certification_scope = "behavioral"
+closure_required = true
+
+[[record]]
+id = "cli.debug"
+category = "cli_option"
+kind = "flag"
+module = ""
+name = "-d"
+oracle_probe = "cli.debug_flag"
+candidate_probe = "cli.debug_flag"
+comparator = "cli_flag_parse"
+status = "known_upstream_defect"
+owner = "track-a"
+milestone = "B"
+platforms = ["linux", "macos", "windows"]
+python_versions = []
+depends_on = []
+test_refs = ["test_pproxy_cli_translate.py::test_debug"]
+evidence_refs = ["pproxy_cli_inventory"]
+notes = "Enable debug tracebacks. Compatible with warning; equivalent to RUST_LOG=debug. Different mechanism (env var vs flag)."
+evidence_level = "none"
+implementation_state = "functional"
 certification_scope = "behavioral"
 closure_required = true
 
@@ -2339,7 +2361,7 @@ python_versions = []
 depends_on = []
 test_refs = ["test_pproxy_cli_translate.py::test_reuse"]
 evidence_refs = ["pproxy_cli_inventory"]
-notes = "Connection reuse/pooling. Platform-gated to Linux; recognized but behavior differs from pproxy on other platforms."
+notes = "SO_REUSEPORT on listener sockets. Not connection pooling."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "behavioral"
@@ -2377,7 +2399,7 @@ name = "--sys"
 oracle_probe = "cli.sys_flag"
 candidate_probe = "cli.sys_flag"
 comparator = "cli_flag_parse"
-status = "drop_in"
+status = "known_upstream_defect"
 owner = "track-a"
 milestone = "B"
 platforms = ["linux", "macos", "windows"]
@@ -2385,7 +2407,7 @@ python_versions = []
 depends_on = []
 test_refs = ["test_pproxy_cli_translate.py::test_sys"]
 evidence_refs = ["pproxy_cli_inventory"]
-notes = "Auto-configure system proxy settings. Parsed and diagnosed."
+notes = "pproxy --sys mutates global state at startup; eggress separates inspection from mutation. Inspection is supported; mutation requires explicit --apply."
 evidence_level = "paired_oracle"
 implementation_state = "functional"
 certification_scope = "behavioral"

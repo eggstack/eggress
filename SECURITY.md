@@ -23,7 +23,7 @@ Do not disclose vulnerabilities publicly until a fix is available.
 
 ## Security Features
 
-- **`unsafe_code = "forbid"`** in all workspace crates — no memory safety issues possible through Rust code
+- **`unsafe_code = "deny"`** in all workspace crates — no memory safety issues possible through Rust code
 - **No OpenSSL** — uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface
 - **Credential redaction** — `RedactedUri` replaces credentials with `****:****@` in all logs, metrics, admin output, and error messages
 - **UDP amplification prevention** — `validate_target()` rejects multicast, broadcast, and unspecified addresses

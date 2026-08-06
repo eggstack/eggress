@@ -21,9 +21,9 @@ Track B/C closes the following release surfaces:
 
 - Python outbound TCP uses a native Rust stream with sync and asyncio wrappers;
   `ProxyConnection` no longer starts a temporary local listener.
-- `eggress-pproxy-compat` is a separately built pure-Python distribution that
-  installs `import pproxy` only when explicitly requested, pins `eggress`, and
-  declares the supported cipher dependency.
+- `eggress-pproxy-compat` is a Rust crate providing URI translation and
+  compatibility diagnostics. The top-level `pproxy` namespace is bundled
+  in the main `eggress` wheel.
 - Cipher behavior has an explicit `eggress[cipher-api]` extra and a matching
   dependency in the compatibility distribution; legacy ciphers remain
   intentionally unsupported.

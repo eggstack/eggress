@@ -2,7 +2,11 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+Lean feature boundaries, focused reliability tests, and Python delivery
+corrections are implemented. See the corrective roadmap
+(`plans/PPROXY_CORRECTIVE_REDUCTION_ROADMAP.md`) for any follow-up work.
 
 ## Baseline
 

@@ -1,5 +1,9 @@
 # Real pproxy Parity Roadmap
 
+> Historical implementation record. This file is not a current compatibility
+> contract. See `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` and
+> `docs/parity/pproxy_capability_manifest.toml` for the active authority.
+
 > **Phase 36 status.** This roadmap defines the long-term incremental path
 > from the initial Eggress release-candidate boundary to real pproxy parity.
 > It intentionally uses a stricter definition of parity than the existing

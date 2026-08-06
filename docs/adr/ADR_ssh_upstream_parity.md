@@ -50,7 +50,7 @@ This is an entire SSH client implementation, not a protocol handler.
 
 ### No Acceptable Pure-Rust SSH Library
 
-The project's design constraints (`unsafe_code = "forbid"`, no C dependencies,
+The project's design constraints (`unsafe_code = "deny"`, no C dependencies,
 no OpenSSL) eliminate the most mature SSH libraries:
 
 | Library | Status | Constraint conflict |
@@ -129,7 +129,7 @@ forwarding, host-key verification, and password/key authentication.
 **Rejected because**: The maintenance burden of owning an SSH client
 implementation (host-key policy, authentication methods, channel lifecycle,
 keepalive, reconnect, flow control) is disproportionate to the proxy use case.
-The `unsafe_code = "forbid"` constraint eliminates libraries with C bindings,
+The `unsafe_code = "deny"` constraint eliminates libraries with C bindings,
 leaving only `russh` — which still requires significant security-critical code.
 
 ### 2. Feature-Gated SSH Implementation

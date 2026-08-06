@@ -210,6 +210,7 @@ def _manifest_tier_for_diagnostic(code: str) -> str:
         "ssl-no-listener",
         "trojan-auto-tls",
         "get-url",
+        "reuse-port",
     }
     # Compatible with warning: works but emits a diagnostic.
     compatible_with_warning = {

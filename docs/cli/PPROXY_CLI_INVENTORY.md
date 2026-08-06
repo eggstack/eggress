@@ -91,13 +91,21 @@ with eggress handling status and migration notes.
 
 ### Process Management
 
-#### `--daemon` / `-d` — Daemonize
+#### `--daemon` — Daemonize
 
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Fork into background and run as a daemon. |
 | Eggress handling | **Unsupported** — emits unsupported feature diagnostic ("--daemon mode is not supported; use systemd or process manager"). Use systemd, supervisord, or another process manager. |
 | Example | `pproxy -l socks5://:1080 -r direct --daemon` |
+
+#### `-d` — Debug Tracebacks
+
+| Property | Value |
+|----------|-------|
+| pproxy behavior | Enable debug tracebacks on exception. |
+| Eggress handling | **Compatible** — enables debug-level diagnostics; equivalent to RUST_LOG=debug. |
+| Example | `pproxy -l socks5://:1080 -d` |
 
 ### Logging
 
@@ -119,12 +127,12 @@ with eggress handling status and migration notes.
 
 ### Connection Behavior
 
-#### `--reuse` — Port Reuse
+#### `--reuse` — SO_REUSEPORT
 
 | Property | Value |
 |----------|-------|
-| pproxy behavior | Enable connection reuse / pooling for upstream connections. |
-| Eggress handling | **Intentional non-parity** — emits unknown-flag warning. Connection pooling is not implemented; eggress uses one upstream connection per proxy session. This is a deliberate design choice. |
+| pproxy behavior | Enable SO_REUSEPORT on listener sockets (Linux). |
+| Eggress handling | **Supported with warning** — configures SO_REUSEPORT on listener sockets. Not connection pooling. |
 | Example | `pproxy -l socks5://:1080 -r http://proxy:8080 --reuse` |
 
 ### PAC and System Proxy
@@ -212,12 +220,13 @@ with eggress handling status and migration notes.
 | `--ssl` | (none) | TLS listener cert/key | Partial | Generates TLS listener config in TOML |
 | `-b` | (none) | Block regex rules | Partial | Generates reject rules with host-regex matcher |
 | `--rulefile` | `-rulefile` | Rule file path | Partial | Parses rulefile; generates reject rules for simple patterns |
-| `--daemon` | `-d` | Daemonize | Unsupported | Use systemd/process manager |
+| `--daemon` | — | Daemonize | Unsupported | Use systemd/process manager |
+| `-d` | (none) | Debug tracebacks | Compatible | Set `RUST_LOG=debug` |
 | `-v` | (none) | Verbose logging | Partial | Set `RUST_LOG=debug` |
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
-| `--reuse` | (none) | Connection reuse | Intentional non-parity | Connection pooling not implemented |
+| `--reuse` | (none) | SO_REUSEPORT | Supported with warning | Configures SO_REUSEPORT on listener sockets |
 | `--pac` | (path) | PAC file serving | Supported | Consumes path and maps it to the admin PAC route |
-| `--sys` | (none) | System proxy | Supported | Auto-invokes eggress system-proxy inspect |
+| `--sys` | (none) | System proxy | Intentional non-parity | Use `eggress system-proxy apply --apply` for mutation |
 | `--get` | (PATH,FILE) | Static content | Partial | Validates and serves through the admin server |
 | `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the supplied target and exits |
 | `-f` | `--config` | Config file | Supported | Different schema |

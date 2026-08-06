@@ -301,7 +301,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 7. **Capability classification**: Explicit `UnsupportedProtocol`/`UnsupportedChain` results prevent silent fallback to unsupported modes.
 8. **TLS certificate verification**: System root store by default; insecure mode is API-only with documentation warnings.
 9. **Admin loopback default**: Admin server binds to `127.0.0.1` unless explicitly configured otherwise.
-10. **No `unsafe` code**: Workspace-wide `unsafe_code = "forbid"` prevents memory safety issues.
+10. **No `unsafe` code**: Workspace-wide `unsafe_code = "deny"` prevents memory safety issues.
 11. **No OpenSSL dependency**: Uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface.
 12. **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only hot-reloadable fields are swapped.
 13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH, Unix (upstream), and other unsupported protocols. No silent fallback to direct or different protocols.
