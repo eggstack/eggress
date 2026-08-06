@@ -443,9 +443,10 @@ Phase 3 is complete only when all are true:
 
 | Artifact | Baseline | After Phase 3 | Change |
 |----------|----------|---------------|--------|
-| Full `eggress` | 9.3M | 9.3M | 0 |
-| Full `pproxy` | 8.2M | 8.2M | 0 |
-| Common `eggress` | 8.0M | 7.7M | -300KB |
+| Full `eggress` | 9.3M | 9.2M | -100KB |
+| Full `pproxy` | 8.2M | 8.1M | -100KB |
+| Common `eggress` | 8.0M | 7.6M | -400KB |
+| `release-cli-small` eggress | — | 5.5M | opt-level=z + panic=abort + full LTO |
 
 ### Dependency graph changes
 
@@ -488,6 +489,12 @@ Phase 3 is complete only when all are true:
 
 7. **System proxy gated on `operations`** — Both `eggress-cli` and `eggress-pproxy-main` gate system proxy inspection behind the operations feature.
 
+8. **Removed `logging` feature from rustls/tokio-rustls** — The `logging` feature enabled rustls internal debug logging via the `log` crate. The codebase uses `tracing`, not `log` directly. Removing it saved 100KB across all builds with no behavior change.
+
+9. **Admin config validation in common builds** — Common builds now reject `[admin]` config with a clear error: "admin server support not included in this build; enable the 'operations' feature or remove [admin] from config". Reverse config was already rejected similarly.
+
+10. **`release-cli-small` profile added** — An opt-in standalone CLI profile with `panic = "abort"`, `opt-level = "z"`, and full LTO. Produces a 5.5M binary (40% smaller than default release). Not used for the Python wheel or default release builds.
+
 ### Retained changes
 
 - `eggress-admin` removed from common dependency graph ✓
@@ -495,8 +502,17 @@ Phase 3 is complete only when all are true:
 - Default/full behavior unchanged ✓
 - All feature combinations compile ✓
 - 302 tests pass ✓
+- Admin/reverse config rejected with clear error in common builds ✓
+- rustls `logging` feature removed (100KB reduction) ✓
+- `release-cli-small` profile added (5.5M standalone CLI binary) ✓
+- 7 feature boundary tests added ✓
+- Python test suite: 2202 pass, 1 pre-existing failure, 114 skipped ✓
 
 ### Rejected changes
 
 - Making `eggress-metrics` optional: Rejected because the data plane needs the `MetricsRegistry` type for counter tracking even without operations. The `prometheus-client` dependency remains in common builds.
 - Moving `ReverseRegistry` to `eggress-protocol-reverse`: Rejected as unnecessary complexity; making `reverse` require `operations` is simpler and correct.
+- Disabling `tracing-subscriber` features: Both `env-filter` and `json` are actively used by CLI binaries. No reduction possible.
+- Disabling Clap features: `color`, `suggestions`, and `error-context` provide useful CLI UX. No reduction justified.
+- Gating `serde_json` behind operations: Used extensively in CLI output, admin routes, embed, pproxy-compat, testkit, and system-proxy. Not reducible.
+- Creating a `release-cli-s` profile with `opt-level = "s"`: Measured 5.8M vs 5.5M for `opt-level = "z"`. `z` wins.

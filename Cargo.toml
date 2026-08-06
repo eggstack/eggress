@@ -77,8 +77,8 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 h2 = "0.4"
 http-body-util = "0.1"
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"] }
 webpki-roots = "0.26"
 pkcs8 = "0.11"
 rcgen = "0.13"
@@ -146,6 +146,10 @@ strip = "symbols"
 inherits = "release"
 opt-level = "z"
 lto = true
+
+[profile.release-cli-small]
+inherits = "release-small"
+panic = "abort"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

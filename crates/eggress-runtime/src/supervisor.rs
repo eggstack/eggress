@@ -559,6 +559,15 @@ impl ServiceSupervisor {
             ));
         }
 
+        #[cfg(not(feature = "operations"))]
+        if rt_config.admin.as_ref().is_some_and(|a| a.enabled) {
+            return Err(RuntimeError::Other(
+                "admin server support not included in this build; \
+                 enable the 'operations' feature or remove [admin] from config"
+                    .to_string(),
+            ));
+        }
+
         for lcfg in &rt_config.listeners {
             if lcfg.unix.is_none() {
                 let _bind_addr: std::net::SocketAddr =
@@ -775,6 +784,7 @@ impl ServiceSupervisor {
         #[allow(unused_variables)]
         let metrics = self.state.metrics.clone();
         let readiness = self.state.readiness.clone();
+        #[cfg(feature = "operations")]
         let admin_state_ref = self.state.clone();
         let active_connections = self.state.active_connections.clone();
         let shutdown_grace = self.shutdown_grace;
@@ -799,9 +809,11 @@ impl ServiceSupervisor {
                 state: admin_state_ref.clone(),
             });
 
+        #[cfg(feature = "operations")]
         let metrics_registry_for_admin = self.metrics_registry.clone();
 
         let run_async = async move {
+            #[cfg(feature = "operations")]
             let metrics_registry = metrics_registry_for_admin;
             // Start health probes inside the runtime context
             {
@@ -817,6 +829,7 @@ impl ServiceSupervisor {
 
             let current_snapshot = snapshot.load();
             let listener_configs = current_snapshot.listeners.clone();
+            #[cfg(feature = "operations")]
             let admin_config = current_snapshot.admin.clone();
             drop(current_snapshot);
 
