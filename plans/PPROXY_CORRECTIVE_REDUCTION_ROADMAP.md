@@ -2,10 +2,15 @@
 
 ## Status
 
-**IMPLEMENTED**
+**IMPLEMENTED — POST-CLOSURE CORRECTIVE PENDING**
 
-All four phase plans are implemented. See the commit range and final
-decisions below.
+All four original phase plans are implemented. A final review of the landed
+state found a small set of residual implementation/closure mismatches. Those
+are governed by:
+
+[`PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`](PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md)
+
+Do not reopen the completed phase scope beyond that narrow follow-up.
 
 ## Baseline
 
@@ -95,8 +100,9 @@ At closure:
 | 2 | [`PPROXY_CORRECTIVE_PHASE_2_PYTHON_BEHAVIOR.md`](PPROXY_CORRECTIVE_PHASE_2_PYTHON_BEHAVIOR.md) | Remove silent facade behavior and align the bounded Python namespace with real runtime capability. | Phase 1 diagnostic taxonomy stable |
 | 3 | [`PPROXY_CORRECTIVE_PHASE_3_FEATURE_TOPOLOGY_AND_SIZE.md`](PPROXY_CORRECTIVE_PHASE_3_FEATURE_TOPOLOGY_AND_SIZE.md) | Make optional feature boundaries truthful and perform a measured, low-risk binary-size pass. | Phases 1-2 may run in parallel; shared API changes settled before closure |
 | 4 | [`PPROXY_CORRECTIVE_PHASE_4_CONTRACT_CI_CLOSURE.md`](PPROXY_CORRECTIVE_PHASE_4_CONTRACT_CI_CLOSURE.md) | Consolidate source-of-truth documents, repair CI path coverage, and close the line without new ceremony. | Phases 1-3 complete |
+| Follow-up | [`PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`](PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md) | Correct residual `-d`, `--sys`, execution-gate, Python claim/classification, and verification mismatches found after Phase 4. | Phases 1-4 landed |
 
-These four plans are the complete implementation set. Do not split individual flags, Python methods, feature gates, or document corrections into additional plan files.
+The four numbered phases remain the completed implementation set. The post-closure follow-up is a bounded corrective pass for defects found during review and must not be split into additional parity phases.
 
 ## Phase boundaries
 
@@ -115,6 +121,10 @@ Trace actual dependency edges from the CLI, runtime, server, metrics, admin, emb
 ### Phase 4 — Contract and CI closure
 
 Regenerate active compatibility claims from corrected behavior, demote historical records, correct roadmap status/link drift, and make Python CI path coverage truthful. Do not add a new closure report; update this roadmap and active documents in place.
+
+### Post-closure corrective pass
+
+Review of the landed Phase 1-4 implementation found a small residual set: `-d` is parsed but not consumed by standalone logging selection; `--sys` is fail-closed yet unreachable inspection code and stale closure prose remain; the two compatibility execution paths do not apply identical unknown-option gating; Python closure text overstates native backing for top-level factory objects; and a small number of structural Python methods still need test-backed classification. The follow-up plan owns only those items and final verification.
 
 ## Global non-goals
 
@@ -168,10 +178,11 @@ ls -lh target/full/release/eggress target/full/release/pproxy target/lean/releas
 This roadmap is complete only when all are true:
 
 - all four phase plans are implemented or explicitly closed as unnecessary with code- or measurement-backed reasoning;
+- the post-closure corrective pass is implemented or explicitly closes every review finding with code/test-backed reasoning;
 - the five confirmed CLI semantic defects are corrected or fail explicitly before startup;
 - unsupported and unknown compatibility inputs cannot silently alter execution;
 - every public Python facade method has an evidence-backed behavior classification;
-- silent compatibility no-ops are removed;
+- silent compatibility no-ops are removed or proven to match upstream sentinel behavior;
 - default/full feature behavior is unchanged;
 - the lean graph demonstrably omits meaningful optional families or ineffective gates are removed;
 - active compatibility documentation and manifests agree with executable tests;
@@ -185,23 +196,35 @@ This roadmap is complete only when all are true:
 ### Implementation commit range
 
 Phases 1-3: `f08b8d0..6cb43dd`
-Phase 4: current commit
+Phase 4: `367d7cb`
+Post-closure corrective: pending — see `PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`
 
-### Final CLI compatibility decisions
+### Phase 4 review corrections pending
+
+The Phase 4 closure record below reflects the state that was intended at implementation time. Final review identified specific statements requiring correction before unconditional closure:
+
+- `-d` is parsed independently but must be wired to observable standalone diagnostic/logging behavior or classified more narrowly.
+- `--sys` should remain unsupported/fatal in compatibility execution unless lifecycle-safe apply/rollback is actually implemented; inspection-only behavior is not an equivalent substitute.
+- standalone `pproxy` and `eggress pproxy run` must apply the same unknown/unsupported fail-closed policy.
+- top-level `pproxy.Connection` / `pproxy.Server` are pproxy-shaped factories/compatibility objects and must not be conflated with native `eggress.pproxy.Server`.
+- remaining structural Python sentinel/no-op methods need explicit test-backed classification.
+- final Python verification must record the actual full-suite result rather than carrying forward an unexplained pre-existing failure.
+
+### Final CLI compatibility decisions from Phase 4
 
 - `-d` is debug/tracebacks (separate from `--daemon`)
 - `--daemon` is fatal before startup (exit code 5)
 - `--reuse` configures SO_REUSEPORT on listener sockets (not connection pooling)
-- `--sys` provides inspection only; mutation requires explicit `--apply`
+- `--sys` was described as inspection only; this statement is under correction by the post-closure pass because compatibility execution currently classifies the flag as unsupported/fatal
 - `--pac`, `--get`, `--test` are value-taking options; values are not reclassified as positional
-- Unknown flags are fatal (exit code 2)
+- Unknown flags are fatal (exit code 2) in the standalone compatibility binary; parity with `eggress pproxy run` is pending
 - Trojan is supported for both inbound and upstream
 
-### Python methods
+### Python methods from Phase 4
 
-- Delegated to native: `Server`, `Connection`, `Rule`, `DIRECT`, lifecycle methods
-- Explicitly unsupported: top-level `import pproxy` before Phase 4 (use `from eggress import pproxy`)
-- Intentionally structural: `proto.*`, `cipher.*` internal classes
+- The prior closure text described `Server`, `Connection`, `Rule`, `DIRECT`, and lifecycle methods as delegated to native behavior. The post-closure pass must correct this wording to distinguish top-level pproxy-shaped factories/adapters from native `eggress.pproxy.Server` lifecycle behavior.
+- Known unsupported concrete operations use the stable compatibility exception hierarchy.
+- Structural `proto.*`, `cipher.*`, and proxy-class helper behavior remains subject to the bounded post-closure classification audit.
 
 ### Full/lean results
 
