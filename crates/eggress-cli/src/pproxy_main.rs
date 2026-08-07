@@ -112,39 +112,36 @@ fn main() -> ExitCode {
     };
 
     // Fatal gating: unknown flags and unsupported features stop startup.
-    if !pproxy_args.unknown_flags.is_empty() {
-        for flag in &pproxy_args.unknown_flags {
-            eprintln!("pproxy: error: unknown option '{flag}'");
+    // The shared gate is the single source of truth for the fail-closed
+    // policy applied by every compatibility execution entry point.
+    let gate = eggress_pproxy_compat::evaluate_execution_gate(&pproxy_args, &output);
+    if !gate.allows_start() {
+        for blocker in &gate.blockers {
+            match blocker {
+                eggress_pproxy_compat::BlockReason::UnknownFlag(flag) => {
+                    eprintln!("pproxy: error: unknown option '{flag}'");
+                }
+                eggress_pproxy_compat::BlockReason::Unsupported(u) => {
+                    eprintln!("pproxy: error: {u}");
+                }
+            }
         }
         eprintln!();
-        eprintln!("Run 'eggress pproxy check -- <args>' for supported options.");
-        std::process::exit(2); // EXIT_CLI_PARSE_ERROR
-    }
-
-    if output.has_unsupported() {
-        for u in &output.unsupported {
-            eprintln!("pproxy: error: {u}");
+        if gate
+            .blockers
+            .iter()
+            .any(|b| matches!(b, eggress_pproxy_compat::BlockReason::UnknownFlag(_)))
+        {
+            eprintln!("Run 'eggress pproxy check -- <args>' for supported options.");
+            std::process::exit(2); // EXIT_CLI_PARSE_ERROR
         }
-        eprintln!();
         eprintln!("These features are not supported by eggress and prevent startup.");
         eprintln!("Run 'eggress pproxy check -- <args>' for detailed compatibility report.");
         std::process::exit(5); // EXIT_UNSUPPORTED_FEATURE
     }
 
-    for w in &output.warnings {
+    for w in &gate.warnings {
         eprintln!("pproxy: note: {w}");
-    }
-
-    if pproxy_args.system_proxy {
-        #[cfg(feature = "operations")]
-        {
-            let result = eggress_system_proxy::inspect_system_proxy();
-            print_system_proxy_inspection(&result);
-        }
-        #[cfg(not(feature = "operations"))]
-        {
-            eprintln!("pproxy: system proxy inspection requires the 'operations' feature");
-        }
     }
 
     let has_test = pproxy_args
@@ -217,12 +214,7 @@ fn main() -> ExitCode {
 }
 
 fn init_logging(pproxy_args: &eggress_pproxy_compat::PproxyArgs) {
-    let level = match pproxy_args.verbose_level {
-        0 => "info",
-        1 => "debug",
-        2 => "debug",
-        _ => "trace",
-    };
+    let level = pproxy_args.default_log_level();
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -280,39 +272,6 @@ fn print_startup_banner(
 
     eprintln!();
     eprintln!("pproxy started, waiting for connections...");
-}
-
-#[cfg(feature = "operations")]
-fn print_system_proxy_inspection(result: &eggress_system_proxy::InspectionResult) {
-    eprintln!();
-    eprintln!("System Proxy Inspection");
-    eprintln!("=======================");
-    eprintln!("Platform: {}", result.platform);
-    eprintln!();
-
-    for cap in &result.capabilities {
-        eprintln!("  {cap}");
-    }
-    eprintln!();
-
-    if let Some(ref settings) = result.settings {
-        eprintln!("Current Settings (source: {}):", settings.source);
-        if let Some(ref http) = settings.http_proxy {
-            eprintln!("  HTTP proxy:  {http}");
-        }
-        if let Some(ref https) = settings.https_proxy {
-            eprintln!("  HTTPS proxy: {https}");
-        }
-        if let Some(ref socks) = settings.socks_proxy {
-            eprintln!("  SOCKS proxy: {socks}");
-        }
-        if let Some(ref no_proxy) = settings.no_proxy {
-            eprintln!("  No proxy:    {no_proxy}");
-        }
-    } else {
-        eprintln!("No proxy settings detected.");
-    }
-    eprintln!();
 }
 
 #[cfg(test)]

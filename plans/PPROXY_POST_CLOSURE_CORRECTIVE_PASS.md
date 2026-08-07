@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Parent roadmap
 
@@ -587,3 +587,105 @@ This follow-up is complete only when all of the following are true:
 8. Avoid broad refactors. The expected code delta should be small compared with Phases 1-4.
 9. Run focused tests after each workstream, then the broad gates once at the end.
 10. Update this plan's status to `IMPLEMENTED` and append the implementation commit range plus exact verification result when complete. Do not create another follow-up/closure plan unless a genuinely new defect class is found.
+
+---
+
+## Implementation summary
+
+### Workstream outcomes
+
+- **Workstream A — `-d` observability and testability.** Added a pure
+  `PproxyArgs::default_log_level` helper that derives the default tracing
+  level from both `debug` and `verbose_level`. The standalone `pproxy`
+  binary now consumes this helper. Added ten unit tests covering
+  every combination of `-d`, `-v`, `-vv`, `-vvv`, `--daemon`, and the
+  default case. Added four end-to-end tests in `pproxy_binary.rs` and
+  documented the policy in the capability manifest, the rust-proxy-dev
+  skill, the parity spec, the matrix, and the migration guide.
+
+- **Workstream B — `--sys` as explicit non-parity.** Removed the dead
+  `if pproxy_args.system_proxy` inspection branches in
+  `crates/eggress-cli/src/pproxy_main.rs` and
+  `crates/eggress-cli/src/main.rs` (handle_pproxy_run). Removed the
+  now-unused `print_system_proxy_inspection` helper. `--sys` continues
+  to fail before any inspection or service startup; the native
+  `egress system-proxy inspect` and `apply` subcommands remain
+  independent capabilities. Added binary and `pproxy run` tests that
+  assert the failure mode and confirm the "System Proxy Inspection"
+  banner never appears.
+
+- **Workstream C — Shared execution gate.** Added a small
+  `eggress_pproxy_compat::gate` module with `evaluate_execution_gate`,
+  `BlockReason`, and `ExecutionGate`. Both the standalone binary and
+  `eggress pproxy run` now consult the same helper. Unknown flags
+  remain exit code 2 (`EXIT_CLI_PARSE_ERROR`); unsupported features
+  remain exit code 5 (`EXIT_UNSUPPORTED_FEATURE`) in the standalone
+  binary and `EXIT_CONFIG_VALIDATION` in `eggress pproxy run`. Added
+  focused parity tests in both `pproxy_binary.rs` and
+  `pproxy_run_process.rs` for `--bogus-flag`, `--daemon`, `--auth 30`,
+  `--auth abc`, `--sys`, and a clean run. The Python
+  `eggress pproxy check` path remains non-executing and reports
+  classifications.
+
+- **Workstream D — Python backing claims and structural audit.**
+  Corrected active docs to distinguish top-level
+  `pproxy.Connection`/`pproxy.Server` (pproxy-shaped URI factories,
+  compatibility server path) from native `eggress.pproxy.Server`
+  (Rust-backed lifecycle) in `docs/architecture/python.md`,
+  `docs/PPROXY_PARITY_SPEC.md`, the matrix, the migration guide, the
+  rust-proxy-dev skill, the parent roadmap, and the `pproxy/__init__.py`
+  docstring. Added `TestStructuralMethodClassification` and
+  `TestUnsupportedBehaviorNeverSilentlySucceeds` classes to
+  `python/tests/test_pproxy_public_namespace.py`. Every reviewed
+  structural `None`/passthrough method now has an explicit
+  classification: upstream-match sentinel
+  (`ProxyDirect.wait_open_connection`, `ProxySimple.wait_open_connection`),
+  structural-only no-op (`ProxyH2.get_stream`, `ProxySSH.patch_stream`,
+  `ProxyQUIC.patch_writer`, `ProxyH3.get_protocol`,
+  `ProxyH3.get_stream`), or stable exception
+  (`ProxyH{2,3,SSH,QUIC,Backward}.wait_open_connection`).
+
+- **Workstream E — Canonical authority.** Reconciled the
+  practical compatibility matrix, capability manifest, parity spec,
+  migration guide, `pproxy-compat` architecture doc, and `python`
+  architecture doc. Recorded the corrected `--sys` decision, the
+  post-closure `-d` classification, and the Python factory vs lifecycle
+  distinction in the parent roadmap's closure record.
+
+- **Workstream F — Fresh final verification.** All focused and broad
+  Rust and Python test suites pass against a freshly built native
+  extension (see below).
+
+### Final verification result
+
+Fresh local verification against a clean `maturin develop` build
+(eggress 1.0.1, cp39-abi3, Linux x86_64) and the workspace's pinned
+stable Rust toolchain:
+
+- `cargo fmt --all -- --check`: passes.
+- `cargo clippy --workspace --all-targets -- -D warnings`: passes.
+- `cargo test -p eggress-pproxy-compat`: 322 passed, 0 failed.
+- `cargo test -p eggress-cli --test pproxy_binary`: 22 passed,
+  0 failed (added 6 tests across `-d`, `--sys`, `--auth`).
+- `cargo test -p eggress-cli --test pproxy_run_process`: 8 passed,
+  0 failed (added 5 parity tests).
+- `cargo test -p eggress-cli`: 93 passed, 132 ignored (the ignored
+  tests are opt-in interoperability suites unchanged by this pass).
+- `cargo test -p eggress-embed`: 40 passed.
+- `cargo test -p eggress-runtime --lib`: 53 passed.
+- `cargo test -p eggress-server --lib`: 90 passed.
+- `cargo test -p eggress-config --lib`: 102 passed.
+- `cargo test -p eggress-routing --lib`: 139 passed.
+- `cargo test -p eggress-core --lib`: 103 passed.
+- `cargo test -p eggress-uri --lib`: 48 passed.
+- `cargo test -p eggress-protocol-http --lib`: 127 passed.
+- `python -m pytest python/tests tests/compat -q`: 2215 passed,
+  114 skipped, 0 failed. The 114 skipped tests are platform-gated or
+  opt-in external-interop suites unchanged by this pass. No
+  pre-existing failure was carried forward.
+
+The post-closure corrective pass did not introduce a new failure in
+the Python suite. The previously observed pre-existing failure noted
+in the parent roadmap's Phase 3 record is not reproduced by the
+post-closure change set; if it appears in a different environment, the
+affected corrective/compatibility suites above are themselves green.

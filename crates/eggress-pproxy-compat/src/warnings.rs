@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// A warning emitted during pproxy compatibility translation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompatWarning {
     /// Short category tag (e.g. "unsupported-scheme", "partial-behavior").
     pub category: &'static str,
@@ -16,7 +16,7 @@ impl fmt::Display for CompatWarning {
 }
 
 /// An unsupported feature detected during translation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnsupportedFeature {
     /// Feature name.
     pub feature: &'static str,

@@ -150,8 +150,8 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Automatically configure system proxy settings (macOS/Windows). |
-| Eggress handling | **Supported** — auto-invokes `eggress system-proxy inspect` and prints the inspection result before starting the service. |
-| Example | `pproxy -l http://:8080 --sys` |
+| Eggress handling | **Unsupported in pproxy compatibility mode** — `--sys` fails before temp config creation or service startup through the shared execution gate. The native `eggress system-proxy inspect` and `eggress system-proxy apply` subcommands remain available under their own safety contract. |
+| Example | `pproxy -l http://:8080 --sys` → exit code 5 (`EXIT_UNSUPPORTED_FEATURE`) before startup. |
 
 #### `--get` — URL Fetch Helper
 

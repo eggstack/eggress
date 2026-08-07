@@ -222,6 +222,67 @@ fn verbose_double_flag_accepted() {
 }
 
 #[test]
+fn debug_flag_accepted_independently() {
+    // `-d` is a debug-level flag in pproxy 2.7.9; it must not affect
+    // the startup banner and must not enable daemon behavior.
+    let (_, stderr) = spawn_and_collect(
+        pproxy_bin().args(["-l", "http://:19820", "-r", "socks5://127.0.0.1:1080", "-d"]),
+        3000,
+    );
+    assert!(
+        stderr.contains("listen:") && stderr.contains("http://:19820"),
+        "expected listener in banner for -d startup, got: {stderr}",
+    );
+    assert!(
+        !stderr.to_lowercase().contains("daemon"),
+        "-d must not enable daemon behavior, got: {stderr}",
+    );
+}
+
+#[test]
+fn debug_flag_and_daemon_flag_still_fatal() {
+    // Even though -d is independent of --daemon, --daemon remains
+    // fatal before startup in pproxy compatibility mode.
+    let output = pproxy_bin()
+        .args([
+            "-l",
+            "http://:19821",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "-d",
+            "--daemon",
+        ])
+        .output()
+        .expect("failed to run pproxy");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for --daemon with -d, got {:?}",
+        output.status.code(),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("daemon") || stderr.contains("not supported"),
+        "expected daemon error in stderr when combining -d with --daemon, got: {stderr}",
+    );
+}
+
+#[test]
+fn debug_flag_changes_default_log_level() {
+    // -d alone selects a debug-level default log filter; a clean
+    // startup confirms that logging initialization succeeds.
+    // The actual log level is exercised by the unit-level
+    // `default_log_level` helper in eggress-pproxy-compat.
+    let (_, stderr) = spawn_and_collect(
+        pproxy_bin().args(["-l", "http://:19822", "-r", "socks5://127.0.0.1:1080", "-d"]),
+        2500,
+    );
+    assert!(
+        stderr.contains("eggress-pproxy-compat"),
+        "expected successful -d startup, got: {stderr}",
+    );
+}
+
+#[test]
 fn verbose_triple_flag_accepted() {
     let (_, stderr) = spawn_and_collect(
         pproxy_bin().args([
@@ -264,6 +325,87 @@ fn missing_value_for_r_fails() {
         .output()
         .expect("failed to run pproxy");
     assert!(!output.status.success());
+}
+
+#[test]
+fn sys_flag_fails_before_startup() {
+    // `--sys` is unsupported in pproxy compatibility mode and must fail
+    // before any inspection or service startup. The output must not
+    // contain inspection results presented as a successful outcome.
+    let output = pproxy_bin()
+        .args([
+            "-l",
+            "http://:19811",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--sys",
+        ])
+        .output()
+        .expect("failed to run pproxy");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for --sys, got {:?}",
+        output.status.code(),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("sys") || stderr.contains("not supported"),
+        "expected sys/not-supported error in stderr, got: {stderr}",
+    );
+    assert!(
+        !stderr.contains("System Proxy Inspection"),
+        "--sys must not run inspection in pproxy compatibility mode, got: {stderr}",
+    );
+}
+
+#[test]
+fn auth_flag_fails_unsupported() {
+    let output = pproxy_bin()
+        .args([
+            "-l",
+            "http://:19812",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--auth",
+            "30",
+        ])
+        .output()
+        .expect("failed to run pproxy");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for --auth, got {:?}",
+        output.status.code(),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("auth") || stderr.contains("not supported"),
+        "expected auth/not-supported error in stderr, got: {stderr}",
+    );
+}
+
+#[test]
+fn malformed_auth_fails() {
+    let output = pproxy_bin()
+        .args([
+            "-l",
+            "http://:19813",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--auth",
+            "abc",
+        ])
+        .output()
+        .expect("failed to run pproxy");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for malformed --auth, got {:?}",
+        output.status.code(),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("auth") || stderr.contains("error"),
+        "expected auth error in stderr, got: {stderr}",
+    );
 }
 
 #[test]

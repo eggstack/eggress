@@ -115,3 +115,151 @@ fn test_pproxy_run_unsupported_feature() {
         "expected unsupported/error message in stderr, got: {stderr}",
     );
 }
+
+#[test]
+fn test_pproxy_run_unknown_flag_fails() {
+    // `eggress pproxy run` must refuse unknown flags before startup,
+    // matching the standalone `pproxy` binary's behavior.
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19880",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--bogus-flag",
+        ],
+        5000,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit code for unknown flag, got {:?}\nstderr: {stderr}",
+        output.status.code(),
+    );
+    assert!(
+        stderr.contains("--bogus-flag") || stderr.contains("unknown"),
+        "expected unknown flag error in stderr, got: {stderr}",
+    );
+}
+
+#[test]
+fn test_pproxy_run_daemon_fails() {
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19881",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--daemon",
+        ],
+        5000,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit code for --daemon, got {:?}\nstderr: {stderr}",
+        output.status.code(),
+    );
+    assert!(
+        stderr.contains("daemon") || stderr.contains("not supported"),
+        "expected daemon error in stderr, got: {stderr}",
+    );
+}
+
+#[test]
+fn test_pproxy_run_auth_fails() {
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19882",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--auth",
+            "30",
+        ],
+        5000,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit code for --auth, got {:?}\nstderr: {stderr}",
+        output.status.code(),
+    );
+    assert!(
+        stderr.contains("auth") || stderr.contains("unsupported"),
+        "expected auth/unsupported error in stderr, got: {stderr}",
+    );
+}
+
+#[test]
+fn test_pproxy_run_sys_fails_before_startup() {
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19883",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--sys",
+        ],
+        5000,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit code for --sys, got {:?}\nstderr: {stderr}",
+        output.status.code(),
+    );
+    assert!(
+        !stderr.contains("System Proxy Inspection"),
+        "--sys must not run inspection in pproxy compatibility mode, got: {stderr}",
+    );
+    assert!(
+        stderr.contains("sys") || stderr.contains("unsupported"),
+        "expected sys/unsupported error in stderr, got: {stderr}",
+    );
+}
+
+#[test]
+fn test_pproxy_run_malformed_auth_fails() {
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19884",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--auth",
+            "abc",
+        ],
+        5000,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit code for malformed --auth, got {:?}\nstderr: {stderr}",
+        output.status.code(),
+    );
+    assert!(
+        stderr.contains("auth") || stderr.contains("error"),
+        "expected auth error in stderr, got: {stderr}",
+    );
+}

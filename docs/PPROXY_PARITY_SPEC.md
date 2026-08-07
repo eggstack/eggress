@@ -365,7 +365,7 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `--daemon` | Run as daemon | Fatal (exit code 5); use a process manager |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
 | `--pac` | PAC file path argument | Boolean flag enabling `/proxy.pac`; path is not consumed |
-| `--sys` | Set system proxy (mac/windows) | Inspection only; use `eggress system-proxy apply --apply` for mutation |
+| `--sys` | Set system proxy (mac/windows) | Unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection; mutation requires its own `apply` path. |
 | `--test` | URL argument; test and exit | Boolean flag with diagnostic guidance; URL is not consumed |
 
 ## 11. Python Library Usage
@@ -402,6 +402,14 @@ wrapping `eggress-embed`). This provides `EggressConfig`, `EggressService`,
 `from_pproxy_args`). The Python API is not a 1:1 match for pproxy's
 `pproxy.Server()` — it uses explicit lifecycle management (start/shutdown)
 rather than asyncio server objects.
+
+The bundled top-level `pproxy` namespace is a separate compatibility surface
+whose `Connection` and `Server` names are pproxy-shaped URI factories
+(aliases for `proxies_by_uri`), not the native `eggress.pproxy.Server`
+lifecycle class. The compatibility server path is a Python adapter that
+opens the underlying direct/upstream transport and invokes
+`prepare_connection()` once. Use `eggress.pproxy.Server` for the
+Rust-backed managed lifecycle.
 
 ## 12. Error and Failure Behavior
 

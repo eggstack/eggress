@@ -204,7 +204,6 @@ def _manifest_tier_for_diagnostic(code: str) -> str:
         "alive-check",
         "pac-serving",
         "test-mode",
-        "system-proxy",
         "log-file",
         "verbose-mode",
         "ssl-no-listener",

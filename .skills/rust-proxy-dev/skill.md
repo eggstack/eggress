@@ -149,7 +149,7 @@ When adding features to Connection, follow the pattern: Rust handles networking,
 
 - `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; strict CLI parity is not claimed
 - Source: `crates/eggress-cli/src/pproxy_main.rs` — raw arg parsing (not clap), delegates to `PproxyArgs::parse()` → `translate_pproxy_args()`
-- Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `--ssl`, `--pac <path>`, `--test <target>`, `--sys`, `--daemon/-d`, `--reuse`, `--get <path,file>`, `--log`, `--rulefile`, `--version`, `-h/--help`
+- Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `-d`, `--ssl`, `--pac <path>`, `--test <target>`, `--sys`, `--daemon`, `--reuse`, `--get <path,file>`, `--log`, `--rulefile`, `--auth <seconds>`, `--version`, `-h/--help`
 - `--help` prints comprehensive flag reference; `--version` prints `eggress-pproxy-compat {VERSION}`
 - The compatibility URI AST preserves combined protocol tokens, modifiers,
   fragment auth, local binding, fixed targets, plugins, raw rules, and the
@@ -157,10 +157,23 @@ When adding features to Connection, follow the pattern: Rust handles networking,
   runtime-supported, and must redact credentials in all diagnostics.
 - `--pac`, `--test`, and `--get` consume exactly one value. Their values must
   not become positional listeners or remotes.
-- `--sys` calls `inspect_system_proxy()` and prints results before starting
+- `-d` selects a debug-level default tracing filter via the shared
+  `PproxyArgs::default_log_level` helper. It is independent of `-v` and
+  `--daemon`. Explicit `RUST_LOG` remains authoritative.
+- `--sys` is unsupported in pproxy compatibility mode; the shared
+  `eggress_pproxy_compat::evaluate_execution_gate` fails before temp config
+  creation or service startup. Use native `eggress system-proxy inspect`
+  for read-only inspection; mutation has its own `apply` path.
+- `--daemon` is unsupported and fatal before startup.
+- `--auth <seconds>` is unsupported and fatal before startup.
 - `-v/-vv/-vvv` maps to RUST_LOG levels: 0→info, 1-2→debug, 3+→trace
+- Both the standalone `pproxy` binary and `eggress pproxy run` apply the
+  same fail-closed policy through the shared gate. Unknown, unsupported,
+  and non-equivalent options cannot start a partial service from either
+  entry point.
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
-- Tests: `cargo test -p eggress-cli --test pproxy_binary`
+- Tests: `cargo test -p eggress-cli --test pproxy_binary` and
+  `cargo test -p eggress-cli --test pproxy_run_process`
 
 Phase 5 compatibility runtime notes:
 - `httponly` is an upstream HTTP request adapter, not a listener protocol.

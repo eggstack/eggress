@@ -276,6 +276,102 @@ class TestProxyH3StructuralOnly:
         assert proxy.get_stream(None, 0) is None
 
 
+class TestStructuralMethodClassification:
+    """Audit the structural methods whose prior implementation returned
+    ``None`` or acted as a passthrough. Each method has one explicit
+    evidence-backed classification.
+    """
+
+    # ---- Upstream-match sentinel: None is the documented return --------
+
+    def test_proxy_direct_wait_open_connection_returns_none(self):
+        """ProxyDirect.wait_open_connection has no pooled connection to
+        return; matches upstream sentinel for "no cached connection".
+        """
+        from eggress._pproxy_proxy import ProxyDirect
+        proxy = ProxyDirect()
+        result = proxy.wait_open_connection("host", 80, None, 0)
+        assert result is None
+
+    def test_proxy_simple_wait_open_connection_returns_none(self):
+        """ProxySimple.wait_open_connection has no pooled connection to
+        return; matches upstream sentinel for "no cached connection".
+        """
+        from eggress._pproxy_proxy import ProxySimple
+        proxy = ProxySimple()
+        result = proxy.wait_open_connection("host", 80, None, 0)
+        assert result is None
+
+    # ---- Structural-only: shape preserved, body is a no-op --------------
+
+    def test_proxy_h2_get_stream_returns_none(self):
+        """ProxyH2.get_stream returns ``None`` because H2 transport is
+        owned by the Eggress Rust runtime; structural-only.
+        """
+        from eggress._pproxy_proxy import ProxyH2
+        proxy = ProxyH2()
+        assert proxy.get_stream(None, None, 1) is None
+
+    def test_proxy_ssh_patch_stream_is_noop(self):
+        """ProxySSH.patch_stream is structural-only; SSH is not supported.
+        Does not raise so the import-and-construct path stays intact.
+        """
+        from eggress._pproxy_proxy import ProxySSH
+        proxy = ProxySSH()
+        # Should not raise
+        proxy.patch_stream(None, None, "host", 22)
+        proxy.patch_stream("reader", "writer", "host", 22)
+
+    def test_proxy_quic_patch_writer_returns_argument(self):
+        """ProxyQUIC.patch_writer returns the writer unchanged; QUIC is
+        not supported and the patch is a no-op passthrough.
+        """
+        from eggress._pproxy_proxy import ProxyQUIC
+        proxy = ProxyQUIC()
+        sentinel = object()
+        assert proxy.patch_writer(sentinel) is sentinel
+
+    def test_proxy_h3_get_protocol_returns_none(self):
+        """ProxyH3.get_protocol returns ``None``; H3 is owned by the
+        Eggress Rust runtime and not exposed at this layer.
+        """
+        from eggress._pproxy_proxy import ProxyH3
+        proxy = ProxyH3()
+        assert proxy.get_protocol() is None
+        assert proxy.get_protocol(server_side=True, handler=None) is None
+
+    def test_proxy_h3_get_stream_returns_none(self):
+        """ProxyH3.get_stream returns ``None``; H3 is not supported.
+        """
+        from eggress._pproxy_proxy import ProxyH3
+        proxy = ProxyH3()
+        assert proxy.get_stream(None, 1) is None
+
+
+class TestUnsupportedBehaviorNeverSilentlySucceeds:
+    """Pooled connection / listener runtime hooks must raise the stable
+    exception rather than returning ``None`` or succeeding silently.
+    """
+
+    @pytest.mark.parametrize("class_name,method_name,regex", [
+        ("ProxySSH", "wait_open_connection", r"SSH connection pooling"),
+        ("ProxyQUIC", "wait_open_connection", r"QUIC connection pooling"),
+        ("ProxyH3", "wait_open_connection", r"H3 connection pooling"),
+        ("ProxyH2", "wait_open_connection", r"H2 connection pooling"),
+        ("ProxyBackward", "wait_open_connection", r"connection pooling"),
+    ])
+    def test_pooling_methods_raise(self, class_name, method_name, regex):
+        from eggress import _pproxy_proxy
+        from eggress.pproxy import UnsupportedPProxyFeature
+        cls = getattr(_pproxy_proxy, class_name)
+        proxy = cls()
+        method = getattr(proxy, method_name)
+        with pytest.raises(UnsupportedPProxyFeature, match=regex):
+            coro = method("host", 80, None, 0)
+            # Method is async; the exception is raised on await, not on call.
+            asyncio.run(coro)
+
+
 class TestPrintServerStarted:
     """print_server_started formats and returns a message."""
 

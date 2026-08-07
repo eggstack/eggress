@@ -367,15 +367,15 @@ classification against eggress (Rust).
 | `-b` | `block` | none | Block regex rule | **B** | eggress `[[rules]]` with `action = "reject"` |
 | `-a` | `alived` | `0` | Health check interval (seconds) | **B** | eggress `health.check_interval_sec` |
 | `-s` | `salgorithm` | `fa` | Scheduling algorithm | **A** | eggress `upstream.scheduler` (same keys) |
-| `-d` | `debug` | `0` | Debug tracebacks | **B** | eggress `RUST_LOG=debug` |
+| `-d` | `debug` | `0` | Debug tracebacks | **B** | eggress selects a debug-level default tracing filter via the shared `default_log_level` helper; explicit `RUST_LOG` remains authoritative. |
 | `-v` | `v` | `0` | Verbose output | **B** | eggress `RUST_LOG=info` / `trace` |
 | `--ssl` | `sslfile` | none | SSL cert[,key] file | **B** | eggress TLS config in TOML |
 | `--pac` | `pac` | none | PAC file path | **B** | eggress admin server serves PAC |
 | `--get` | `gets` | `[]` | Custom HTTP GET endpoints | **N/A** | pproxy-specific static serving |
-| `--auth` | `authtime` | `2592000` | Re-auth interval (seconds) | **B** | eggress auth is per-connection (no cache timeout) |
-| `--sys` | `sys` | `false` | Set system proxy (macOS/Windows) | **N/A** | OS integration; not in eggress scope |
-| `--reuse` | `ruport` | `false` | `SO_REUSEPORT` (Linux) | **N/A** | Linux-specific; not yet in eggress |
-| `--daemon` | `daemon` | `false` | Run as daemon | **N/A** | Process management; not in eggress scope |
+| `--auth` | `authtime` | `2592000` | Re-auth interval (seconds) | **B** | eggress auth is per-connection (no cache timeout); `--auth` is unsupported in pproxy compatibility mode |
+| `--sys` | `sys` | `false` | Set system proxy (macOS/Windows) | **N/A** | Unsupported in pproxy compatibility mode; native `eggress system-proxy inspect` and `apply` subcommands remain available under their own safety contract |
+| `--reuse` | `ruport` | `false` | `SO_REUSEPORT` (Linux) | **B** | eggress configures SO_REUSEPORT on listener sockets (not connection pooling) |
+| `--daemon` | `daemon` | `false` | Run as daemon | **N/A** | Unsupported; fatal before startup. Use systemd or a process manager |
 | `--test` | `test` | none | Test URL through proxy chain | **N/A** | Debug utility |
 | `--version` | version | — | Print version | **A** | eggress `--version` |
 

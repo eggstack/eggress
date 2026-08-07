@@ -2,15 +2,39 @@
 
 ## Status
 
-**IMPLEMENTED — POST-CLOSURE CORRECTIVE PENDING**
+**IMPLEMENTED — POST-CLOSURE CORRECTIVE PASS COMPLETE**
 
-All four original phase plans are implemented. A final review of the landed
-state found a small set of residual implementation/closure mismatches. Those
-are governed by:
+All four original phase plans are implemented. The post-closure corrective
+pass that closed the residual `-d`, `--sys`, execution-gate, Python
+claim/classification, and verification mismatches is also implemented.
 
-[`PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`](PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md)
+Implementation commit range: see the post-closure entry in the closure
+record below. Do not reopen the completed phase scope beyond that
+narrow follow-up (no new scope was introduced).
 
-Do not reopen the completed phase scope beyond that narrow follow-up.
+Final decisions recorded by the post-closure corrective pass:
+
+- `-d` is wired to a debug-level default tracing filter via the shared
+  `default_log_level` helper. Independent of `-v` and `--daemon`. An
+  explicit `RUST_LOG` environment variable remains authoritative.
+- `--sys` is unsupported and fatal before startup in pproxy compatibility
+  mode. The native `eggress system-proxy inspect` and `apply` subcommands
+  remain independent capabilities under their own safety contract.
+- The standalone `pproxy` binary and `eggress pproxy run` apply the same
+  fail-closed policy through the shared `eggress_pproxy_compat::evaluate_execution_gate`
+  helper. Unknown, unsupported, and unsupported-by-architecture flags
+  cannot start a partial service from either entry point.
+- Top-level `pproxy.Connection` / `pproxy.Server` are pproxy-shaped URI
+  factories (aliases for `proxies_by_uri`). They are not the native
+  `eggress.pproxy.Server` lifecycle class. The compatibility server path
+  is a Python adapter using `asyncio.start_server` and
+  `_eggress_stream_handler`.
+- The remaining structural Python methods (`ProxyDirect.wait_open_connection`,
+  `ProxySimple.wait_open_connection`, `ProxyH2.get_stream`, `ProxySSH.patch_stream`,
+  `ProxyQUIC.patch_writer`, `ProxyH3.get_protocol`, `ProxyH3.get_stream`) have
+  explicit test-backed classifications in `python/tests/test_pproxy_public_namespace.py`.
+  Sentinel `None` returns are preserved where upstream uses the same
+  sentinel; unsupported pooling/lifecycle hooks raise `UnsupportedPProxyFeature`.
 
 ## Baseline
 
@@ -197,34 +221,56 @@ This roadmap is complete only when all are true:
 
 Phases 1-3: `f08b8d0..6cb43dd`
 Phase 4: `367d7cb`
-Post-closure corrective: pending — see `PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`
+Post-closure corrective: see the implementation commit range recorded in
+`PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`.
 
-### Phase 4 review corrections pending
+### Phase 4 review corrections
 
-The Phase 4 closure record below reflects the state that was intended at implementation time. Final review identified specific statements requiring correction before unconditional closure:
+The Phase 4 closure record below reflects the state that was intended at
+implementation time. The post-closure corrective pass resolved the
+specific statements identified at final review:
 
-- `-d` is parsed independently but must be wired to observable standalone diagnostic/logging behavior or classified more narrowly.
-- `--sys` should remain unsupported/fatal in compatibility execution unless lifecycle-safe apply/rollback is actually implemented; inspection-only behavior is not an equivalent substitute.
-- standalone `pproxy` and `eggress pproxy run` must apply the same unknown/unsupported fail-closed policy.
-- top-level `pproxy.Connection` / `pproxy.Server` are pproxy-shaped factories/compatibility objects and must not be conflated with native `eggress.pproxy.Server`.
-- remaining structural Python sentinel/no-op methods need explicit test-backed classification.
-- final Python verification must record the actual full-suite result rather than carrying forward an unexplained pre-existing failure.
+- `-d` is wired to a debug-level default tracing filter via the shared
+  `default_log_level` helper. Independent of `-v` and `--daemon`.
+- `--sys` is unsupported and fatal before startup in pproxy compatibility
+  mode. Inspection-only behavior is not presented as equivalent to
+  pproxy's `--sys` mutation.
+- The standalone `pproxy` binary and `eggress pproxy run` apply the same
+  fail-closed policy through the shared `eggress_pproxy_compat::evaluate_execution_gate`
+  helper.
+- Top-level `pproxy.Connection` / `pproxy.Server` are pproxy-shaped URI
+  factories and must not be conflated with native `eggress.pproxy.Server`.
+- Remaining structural Python sentinel/no-op methods have explicit
+  test-backed classifications in `python/tests/test_pproxy_public_namespace.py`.
+- Final Python verification result is recorded in the post-closure
+  corrective pass.
 
-### Final CLI compatibility decisions from Phase 4
+### Final CLI compatibility decisions
 
-- `-d` is debug/tracebacks (separate from `--daemon`)
-- `--daemon` is fatal before startup (exit code 5)
-- `--reuse` configures SO_REUSEPORT on listener sockets (not connection pooling)
-- `--sys` was described as inspection only; this statement is under correction by the post-closure pass because compatibility execution currently classifies the flag as unsupported/fatal
-- `--pac`, `--get`, `--test` are value-taking options; values are not reclassified as positional
-- Unknown flags are fatal (exit code 2) in the standalone compatibility binary; parity with `eggress pproxy run` is pending
-- Trojan is supported for both inbound and upstream
+- `-d` enables a debug-level default tracing filter via the shared
+  `default_log_level` helper. Independent of `-v` and `--daemon`.
+- `--daemon` is fatal before startup (exit code 5).
+- `--reuse` configures SO_REUSEPORT on listener sockets (not connection pooling).
+- `--sys` is unsupported in pproxy compatibility mode; fails before startup.
+- `--pac`, `--get`, `--test` are value-taking options; values are not reclassified as positional.
+- Unknown flags are fatal in both the standalone compatibility binary and
+  `eggress pproxy run`. The shared `evaluate_execution_gate` helper
+  enforces the same classification in both entry points.
+- Trojan is supported for both inbound and upstream.
 
-### Python methods from Phase 4
+### Python methods
 
-- The prior closure text described `Server`, `Connection`, `Rule`, `DIRECT`, and lifecycle methods as delegated to native behavior. The post-closure pass must correct this wording to distinguish top-level pproxy-shaped factories/adapters from native `eggress.pproxy.Server` lifecycle behavior.
-- Known unsupported concrete operations use the stable compatibility exception hierarchy.
-- Structural `proto.*`, `cipher.*`, and proxy-class helper behavior remains subject to the bounded post-closure classification audit.
+- Top-level `pproxy.Connection` and `pproxy.Server` are pproxy-shaped URI
+  factories (aliases for `proxies_by_uri`). The compatibility server
+  path is a Python adapter using `asyncio.start_server` and
+  `_eggress_stream_handler`. It is NOT the native `eggress.pproxy.Server`
+  lifecycle class.
+- `eggress.pproxy.Server` is the native Rust-backed service lifecycle.
+- Known unsupported concrete operations use the stable compatibility
+  exception hierarchy.
+- Structural `proto.*`, `cipher.*`, and proxy-class helper behavior has
+  explicit test-backed classifications recorded in the post-closure
+  corrective pass.
 
 ### Full/lean results
 

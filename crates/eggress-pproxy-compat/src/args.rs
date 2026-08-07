@@ -234,6 +234,32 @@ impl PproxyArgs {
             || self.auth_timeout.is_some()
     }
 
+    /// Default tracing log level chosen from `-d` and `-v` verbosity flags.
+    ///
+    /// Resolution order (highest precedence first):
+    ///
+    /// 1. `-vvv` -> `trace`
+    /// 2. `-v` / `-vv` / `-d` -> `debug`
+    /// 3. otherwise -> `info`
+    ///
+    /// `-d` is independent of `-v` and of `--daemon`. This helper is the
+    /// single source of truth used by the standalone compatibility binary
+    /// (and tests) so the observable behavior of `-d` is testable without
+    /// depending on tracing internals.
+    ///
+    /// An explicit `RUST_LOG` environment variable remains authoritative
+    /// at the `tracing_subscriber` layer; this helper is only consulted when
+    /// `RUST_LOG` is unset or invalid.
+    pub fn default_log_level(&self) -> &'static str {
+        if self.verbose_level >= 3 {
+            "trace"
+        } else if self.verbose_level >= 1 || self.debug {
+            "debug"
+        } else {
+            "info"
+        }
+    }
+
     /// Parse all local URIs into typed representations.
     pub fn parse_local_uris(&self) -> Result<Vec<PproxyUri>, CompatError> {
         self.local
@@ -758,6 +784,88 @@ mod tests {
         let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into()]).unwrap();
         assert!(args.known_unsupported.is_empty());
         assert!(args.unknown_flags.is_empty());
+    }
+
+    #[test]
+    fn test_default_log_level_no_flags() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into()]).unwrap();
+        assert_eq!(args.default_log_level(), "info");
+    }
+
+    #[test]
+    fn test_default_log_level_d_flag() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-d".into()]).unwrap();
+        assert_eq!(args.default_log_level(), "debug");
+    }
+
+    #[test]
+    fn test_default_log_level_v_flag() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-v".into()]).unwrap();
+        assert_eq!(args.default_log_level(), "debug");
+    }
+
+    #[test]
+    fn test_default_log_level_vv_flag() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vv".into()]).unwrap();
+        assert_eq!(args.default_log_level(), "debug");
+    }
+
+    #[test]
+    fn test_default_log_level_vvv_flag() {
+        let args = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vvv".into()]).unwrap();
+        assert_eq!(args.default_log_level(), "trace");
+    }
+
+    #[test]
+    fn test_default_log_level_d_and_vv() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-d".into(),
+            "-vv".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.default_log_level(), "debug");
+    }
+
+    #[test]
+    fn test_default_log_level_d_and_vvv() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-d".into(),
+            "-vvv".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.default_log_level(), "trace");
+    }
+
+    #[test]
+    fn test_default_log_level_daemon_only_keeps_daemon_separate() {
+        let args =
+            PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "--daemon".into()]).unwrap();
+        assert!(args.daemon);
+        assert!(!args.debug);
+        assert_eq!(args.default_log_level(), "info");
+    }
+
+    #[test]
+    fn test_default_log_level_d_still_works_with_daemon() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-d".into(),
+            "--daemon".into(),
+        ])
+        .unwrap();
+        assert!(args.debug);
+        assert_eq!(args.default_log_level(), "debug");
+    }
+
+    #[test]
+    fn test_default_log_level_default_args() {
+        let args = PproxyArgs::default_args();
+        assert_eq!(args.default_log_level(), "info");
     }
 
     /// Table-driven arity test sourced from the checked-in baseline.

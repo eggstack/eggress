@@ -52,6 +52,9 @@ or current source behavior.
 `plans/PPROXY_PRACTICAL_PARITY_ROADMAP.md` governs completed parity work.
 `plans/PPROXY_CORRECTIVE_REDUCTION_ROADMAP.md` governs the corrective and
 reductive pass that closed the remaining compatibility defects.
+`plans/PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md` is the bounded follow-up
+that closed the residual `-d`, `--sys`, execution-gate, Python
+backing-claim, and verification mismatches found after the four phases.
 `plans/PPROXY_FULL_DROP_IN_ROADMAP.md` and older milestone plans are historical
 and are not acceptance gates for the bounded roadmap.
 

@@ -16,12 +16,12 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | CLI | `-l`, `-r`, `-ul`, `-ur` | yes | yes | yes | CLI translation tests | `matched` | Values remain associated with their flags. |
 | CLI | `--pac`, `--get`, `--test` ownership | yes | yes | yes | parser/CLI regression tests | `matched` | Values are not positional URIs. |
 | CLI | `-s`, `-a`, `-b`, `--rulefile`, `--ssl` | yes | yes | yes | translation/config tests | `supported_difference` | Lowered to native routing, health, TLS, and rules. |
-| CLI | `--sys` | yes | n/a | no | unsupported diagnostic tests | `intentional_non_parity` | Unsupported (no system proxy apply via pproxy compat). |
-| CLI | `-d` debug/traceback diagnostics | yes | n/a | yes | CLI diagnostic tests | `native_equivalent` | Debug/traceback diagnostics enabled by `-d`. |
-| CLI | `--daemon` | yes | n/a | no | unsupported fatal tests | `intentional_non_parity` | Fatal (exit code 5) before startup. Use a process manager. |
+| CLI | `--sys` | yes | n/a | no | unsupported diagnostic tests | `unsupported` | `--sys` is unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection. |
+| CLI | `-d` debug/traceback diagnostics | yes | n/a | yes | CLI diagnostic tests | `compatible_with_warning` | `-d` selects a debug-level default tracing filter; independent of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative. |
+| CLI | `--daemon` | yes | n/a | no | unsupported fatal tests | `unsupported` | Fatal (exit code 5) before startup. Use a process manager. |
 | CLI | `--reuse` (SO_REUSEPORT) | yes | n/a | yes | listener socket tests | `supported_difference` | Configures SO_REUSEPORT on listener sockets; not connection pooling. |
-| CLI | `--auth` | yes | n/a | no | unsupported fatal tests | `intentional_non_parity` | Validated and classified as unsupported (per-client auth reuse). |
-| CLI | Unknown flags | yes | n/a | no | fatal diagnostic tests | `intentional_non_parity` | Fatal with exit code 2. |
+| CLI | `--auth` | yes | n/a | no | unsupported fatal tests | `unsupported` | Validated and classified as unsupported (per-client auth reuse). |
+| CLI | Unknown flags | yes | n/a | no | fatal diagnostic tests | `unsupported` | Fatal with exit code 2 in both the standalone binary and `eggress pproxy run`. Report-class identifier `unknown-flag`. |
 | Inbound | HTTP/HTTPS CONNECT and forward proxy | yes | yes | yes | runtime/differential tests | `matched` | HTTPS is TLS-wrapped HTTP tunneling. |
 | Inbound | SOCKS4/4a | yes | yes | yes | runtime/differential tests | `matched` | SOCKS4a domain targets are covered. |
 | Inbound | SOCKS5 CONNECT and username/password auth | yes | yes | yes | runtime/differential tests | `matched` | BIND is explicitly rejected. |
@@ -54,9 +54,9 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | Transparent | Linux original-destination recovery | yes | bounded | yes | transparent runtime tests | `platform_limited` | Requires firewall setup and privileges. |
 | Transparent | macOS PF recovery | diagnosed | diagnosed | no | platform capability tests | `intentional_non_parity` | No disposable PF recovery implementation. |
 | Python package | `eggress` wheel plus top-level `pproxy` | yes | yes | yes | clean-wheel smoke tests | `matched` | One distribution; no separate compat wheel. |
-| Python package | `pproxy.Connection` TCP echo | n/a | yes | yes | public namespace/connection tests | `supported_difference` | Native Eggress stream adapter. |
+| Python package | `pproxy.Connection` TCP echo | n/a | yes | yes | public namespace/connection tests | `supported_difference` | Top-level `pproxy.Connection` is a pproxy-shaped URI factory; the underlying stream adapter is the Eggress implementation. |
 | Python package | Public UDP callback | n/a | yes | yes | public namespace tests | `supported_difference` | Not all private pproxy internals. |
-| Python package | `pproxy.Server` start/close and HTTP/SOCKS upstream routing | n/a | yes | yes | lifecycle/handshake-counting tests | `supported_difference` | Native-backed lifecycle; each supported upstream handshake occurs once. |
+| Python package | `pproxy.Server` start/close and HTTP/SOCKS upstream routing | n/a | yes | yes | lifecycle/handshake-counting tests | `supported_difference` | Top-level `pproxy.Server` is a pproxy-shaped URI factory alias; the compatibility server path is a Python adapter using `asyncio.start_server` and `_eggress_stream_handler`. It is NOT the native `eggress.pproxy.Server` lifecycle. |
 | Python package | `Rule` and `DIRECT` | n/a | yes | yes | public namespace tests | `matched` | Public factory and rule behavior. |
 | Python package | `proto`, `cipher`, plugin facades | n/a | bounded | bounded | protocol/cipher/plugin tests | `supported_difference` | Importability does not imply wire parity. |
 | Ciphers | AES-GCM and ChaCha20-Poly1305 AEAD | yes | yes | yes | KAT/protocol tests | `matched` | Modern methods are supported. |

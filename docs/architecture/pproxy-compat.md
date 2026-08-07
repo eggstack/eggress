@@ -50,11 +50,12 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 | `-r uri` | `[[upstreams]]` and `[[upstream_groups]]` |
 | `-s` | Server mode |
 | `-v` | Verbose logging |
+| `-d` | Debug-level default tracing filter via shared `default_log_level` helper |
 | `--ssl` | TLS configuration |
 | `-b addr` | Bind address |
 | `--rulefile path` | Rule file parsing |
 | `--pac path` | PAC serving configuration at the supplied admin path |
-| `--sys` | Unsupported (no system proxy apply via pproxy compat) |
+| `--sys` | Unsupported and fatal before startup; use native `eggress system-proxy ...` for inspection/apply |
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target

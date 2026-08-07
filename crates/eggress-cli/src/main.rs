@@ -788,30 +788,37 @@ fn handle_pproxy_run(args: &PproxyRun) {
         }
     };
 
-    if output.has_unsupported() {
-        for u in &output.unsupported {
-            eprintln!("warning: {u}");
+    // Fatal gating: unknown flags and unsupported features stop startup.
+    // The shared gate is the single source of truth for the fail-closed
+    // policy applied by every compatibility execution entry point.
+    let gate = eggress_pproxy_compat::evaluate_execution_gate(&pproxy_args, &output);
+    if !gate.allows_start() {
+        for blocker in &gate.blockers {
+            match blocker {
+                eggress_pproxy_compat::BlockReason::UnknownFlag(flag) => {
+                    eprintln!("error: unknown option '{flag}'");
+                }
+                eggress_pproxy_compat::BlockReason::Unsupported(u) => {
+                    eprintln!("warning: {u}");
+                }
+            }
         }
-        eprintln!("\nSome features are unsupported. Service may not behave as expected.");
+        eprintln!();
+        if gate
+            .blockers
+            .iter()
+            .any(|b| matches!(b, eggress_pproxy_compat::BlockReason::UnknownFlag(_)))
+        {
+            eprintln!("Run 'eggress pproxy check -- <args>' for supported options.");
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
+        }
+        eprintln!("Some features are unsupported. Service may not behave as expected.");
         eprintln!("refusing to start: unsupported features would yield a non-functional proxy.");
         std::process::exit(EXIT_CONFIG_VALIDATION);
     }
 
-    for w in &output.warnings {
+    for w in &gate.warnings {
         eprintln!("warning: {w}");
-    }
-
-    let has_sys = pproxy_args.system_proxy;
-    if has_sys {
-        #[cfg(feature = "operations")]
-        {
-            let result = eggress_system_proxy::inspect_system_proxy();
-            print_inspection_result(&result);
-        }
-        #[cfg(not(feature = "operations"))]
-        {
-            eprintln!("system proxy inspection requires the 'operations' feature");
-        }
     }
 
     let has_test = pproxy_args
