@@ -2,11 +2,13 @@
 
 ## Status
 
-**IMPLEMENTED — POST-CLOSURE CORRECTIVE PASS COMPLETE**
+**IMPLEMENTED — FINAL CONTRACT/REPORTING CLOSURE PASS COMPLETE**
 
 All four original phase plans are implemented. The post-closure corrective
 pass that closed the residual `-d`, `--sys`, execution-gate, Python
 claim/classification, and verification mismatches is also implemented.
+
+The final contract/reporting closure pass is implemented in `bd10467`.
 
 Implementation commit range: see the post-closure entry in the closure
 record below. Do not reopen the completed phase scope beyond that
@@ -222,8 +224,9 @@ This roadmap is complete only when all are true:
 Phases 1-3: `f08b8d0..6cb43dd`
 Phase 4: `367d7cb`
 Post-closure corrective: `f6336674353aa63d868c8247ffafb9eb5a3eca4e`.
-Final contract/reporting closure pass: pending in
-`PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md`.
+Final contract/reporting closure pass: `bd10467`; see
+`PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md` for focused verification and
+the unrelated workspace-gate blocker.
 
 ### Phase 4 review corrections
 

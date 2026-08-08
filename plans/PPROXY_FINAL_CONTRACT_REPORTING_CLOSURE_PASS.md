@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Parent roadmap
 
@@ -15,6 +15,7 @@
 - Review baseline: `f6336674353aa63d868c8247ffafb9eb5a3eca4e`
 - Compatibility reference: checked-in `pproxy==2.7.9` baseline under `compat/pproxy-2.7.9/`
 - Scope: final contract/reporting consistency only, plus one bounded `--test` entry-point parity correction if confirmed by focused test.
+- Implementation commit: `bd10467` (`fix: close pproxy contract reporting gaps`)
 
 ## Purpose
 
@@ -523,6 +524,14 @@ This pass does **not** authorize:
 ---
 
 ## Acceptance criteria
+
+The implementation criteria below are satisfied by `bd10467`. Changed-surface
+Rust verification and the Python smoke suite are green. The broad workspace
+gate was also attempted, but remains blocked by the unrelated existing
+`eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close`
+failure: unchanged runtime code reports zero active associations before the
+test assertion and the panic leaves its supervisor task running. That failure
+is outside this compatibility contract/reporting scope.
 
 This line of work is complete only when every item below is true.
 
