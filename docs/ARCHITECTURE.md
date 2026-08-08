@@ -185,7 +185,7 @@ pproxy compatibility layer:
 - URI translation from pproxy listen/remote format to eggress TOML
 - Typed flag model: `-l`, `-r`, `-s`, `-v`, `-d`, `-a`, `--ssl`, `-b`, `--rulefile`, `--pac`, `--test`, `--sys`, `--reuse`, `--auth`, `--daemon`, `--get`, `--log`
 - Fatal startup gating: unknown flags (exit code 2), unsupported features (exit code 5) prevent service start
-- `-d` enables debug/traceback diagnostics; `--daemon` and `--auth` are unsupported and fatal; `--sys` provides inspection (use `--apply` for mutation)
+- `-d` selects a debug-level default tracing filter and emits a compatibility warning about Python traceback semantics; `--daemon` and `--auth` are unsupported and fatal; `--sys` is unsupported and fails before startup (use native system-proxy commands for explicit inspection or mutation)
 - `--reuse` maps to listener SO_REUSEPORT on supported platforms (not connection pooling)
 - Default port inference for pproxy URI schemes (`default_port_for_scheme()`)
 - `__` chain separator parsing

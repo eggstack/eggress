@@ -14,10 +14,12 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | URI grammar | Unix-domain TCP upstream | yes | yes | platform-dependent | URI/config tests | `platform_limited` | Unix only; Windows reports a platform diagnostic. |
 | CLI | No-argument mixed-listener default | yes | n/a | yes | `pproxy_binary`, CLI tests | `matched` | Uses the documented HTTP/SOCKS default. |
 | CLI | `-l`, `-r`, `-ul`, `-ur` | yes | yes | yes | CLI translation tests | `matched` | Values remain associated with their flags. |
-| CLI | `--pac`, `--get`, `--test` ownership | yes | yes | yes | parser/CLI regression tests | `matched` | Values are not positional URIs. |
+| CLI | `--pac <path>` ownership and PAC mapping | yes | yes | yes | `test_pac_flag_emits_warning`, parser tests | `supported_difference` | Consumes the path and maps it to the Eggress admin PAC route. |
+| CLI | `--get <path,file>` static content | yes | bounded | yes | `test_valid_get_static_content_is_supported` | `supported_difference` | Valid values are served through native admin static content; malformed or unreadable values fail closed. |
+| CLI | `--test <target>` ownership and delegation | yes | yes | yes | `test_target_preserves_value_taking_option`, CLI command tests | `supported_difference` | Consumes the target and both compatibility entry points pass it to native upstream testing. |
 | CLI | `-s`, `-a`, `-b`, `--rulefile`, `--ssl` | yes | yes | yes | translation/config tests | `supported_difference` | Lowered to native routing, health, TLS, and rules. |
 | CLI | `--sys` | yes | n/a | no | unsupported diagnostic tests | `unsupported` | `--sys` is unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection. |
-| CLI | `-d` debug/traceback diagnostics | yes | n/a | yes | CLI diagnostic tests | `compatible_with_warning` | `-d` selects a debug-level default tracing filter; independent of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative. |
+| CLI | `-d` debug/traceback diagnostics | yes | n/a | yes | `test_debug_flag_emits_compatible_warning`, CLI diagnostic tests | `compatible_with_warning` | Emits `debug-mode`; selects a debug-level default tracing filter, but does not reproduce Python traceback semantics. Independent of `-v` and `--daemon`; explicit `RUST_LOG` remains authoritative. |
 | CLI | `--daemon` | yes | n/a | no | unsupported fatal tests | `unsupported` | Fatal (exit code 5) before startup. Use a process manager. |
 | CLI | `--reuse` (SO_REUSEPORT) | yes | n/a | yes | listener socket tests | `supported_difference` | Configures SO_REUSEPORT on listener sockets; not connection pooling. |
 | CLI | `--auth` | yes | n/a | no | unsupported fatal tests | `unsupported` | Validated and classified as unsupported (per-client auth reuse). |

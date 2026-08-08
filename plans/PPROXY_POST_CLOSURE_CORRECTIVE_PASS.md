@@ -13,6 +13,7 @@
 - Repository: `eggstack/eggress`
 - Branch: `main`
 - Review baseline: `367d7cb8233db8a71a7e5be4cc60260c60a4b235`
+- Implementation commit: `f6336674353aa63d868c8247ffafb9eb5a3eca4e`
 - Compatibility reference: `pproxy==2.7.9`
 - Scope: narrow correction of residual implementation/closure mismatches discovered after Phases 1-4.
 

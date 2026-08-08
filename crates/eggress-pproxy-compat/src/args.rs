@@ -51,7 +51,7 @@ pub struct PproxyArgs {
     pub remotes: Vec<String>,
     /// Verbosity level derived from `-v`/`-vv`/`-vvv` flags.
     pub verbose_level: u8,
-    /// `-d` flag: debug/traceback diagnostics native equivalent.
+    /// `-d` flag: debug-level compatibility diagnostics.
     pub debug: bool,
     /// `--daemon` flag: daemon mode request (unsupported).
     pub daemon: bool,
@@ -71,6 +71,14 @@ impl PproxyArgs {
     /// Check whether any arguments were provided.
     pub fn has_args(raw: &[String]) -> bool {
         !raw.is_empty()
+    }
+
+    /// Return the target supplied to `--test`, preserving the parser's
+    /// value-taking semantics for both compatibility execution entry points.
+    pub fn test_target(&self) -> Option<&str> {
+        self.known_unsupported
+            .iter()
+            .find_map(|flag| flag.strip_prefix("test="))
     }
 
     /// Create default pproxy args equivalent to running `pproxy` with no arguments.
@@ -351,6 +359,18 @@ mod tests {
             .unwrap();
         assert!(args.debug);
         assert!(!args.daemon);
+    }
+
+    #[test]
+    fn test_target_preserves_value_taking_option() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "--test".into(),
+            "https://example.invalid/health".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.test_target(), Some("https://example.invalid/health"));
     }
 
     #[test]

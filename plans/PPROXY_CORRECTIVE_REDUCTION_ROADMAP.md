@@ -221,8 +221,9 @@ This roadmap is complete only when all are true:
 
 Phases 1-3: `f08b8d0..6cb43dd`
 Phase 4: `367d7cb`
-Post-closure corrective: see the implementation commit range recorded in
-`PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md`.
+Post-closure corrective: `f6336674353aa63d868c8247ffafb9eb5a3eca4e`.
+Final contract/reporting closure pass: pending in
+`PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md`.
 
 ### Phase 4 review corrections
 

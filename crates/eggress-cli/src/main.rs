@@ -771,6 +771,20 @@ fn handle_pproxy_check(args: &PproxyCheck) {
 }
 
 #[cfg(feature = "pproxy-compat")]
+fn upstream_test_command_args(config_path: &std::path::Path, target: Option<&str>) -> Vec<String> {
+    let mut args = vec![
+        "upstream".to_string(),
+        "test".to_string(),
+        "-c".to_string(),
+        config_path.to_string_lossy().into_owned(),
+    ];
+    if let Some(target) = target {
+        args.extend(["-t".to_string(), target.to_string()]);
+    }
+    args
+}
+
+#[cfg(feature = "pproxy-compat")]
 fn handle_pproxy_run(args: &PproxyRun) {
     let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args.args) {
         Ok(a) => a,
@@ -821,10 +835,8 @@ fn handle_pproxy_run(args: &PproxyRun) {
         eprintln!("warning: {w}");
     }
 
-    let has_test = pproxy_args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("test="));
+    let test_target = pproxy_args.test_target();
+    let has_test = test_target.is_some();
 
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,
@@ -843,12 +855,7 @@ fn handle_pproxy_run(args: &PproxyRun) {
         let status = std::process::Command::new(
             std::env::current_exe().unwrap_or_else(|_| "eggress".into()),
         )
-        .args([
-            "upstream",
-            "test",
-            "-c",
-            config_path.to_str().unwrap_or_default(),
-        ])
+        .args(upstream_test_command_args(&config_path, test_target))
         .status();
         match status {
             Ok(s) => std::process::exit(s.code().unwrap_or(EXIT_RUNTIME_FAILURE)),
@@ -1732,6 +1739,26 @@ use tracing::Instrument;
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[cfg(feature = "pproxy-compat")]
+    #[test]
+    fn upstream_test_command_args_preserve_target() {
+        let args = upstream_test_command_args(
+            std::path::Path::new("/tmp/pproxy-compat.toml"),
+            Some("https://example.invalid/health"),
+        );
+        assert_eq!(
+            args,
+            vec![
+                "upstream",
+                "test",
+                "-c",
+                "/tmp/pproxy-compat.toml",
+                "-t",
+                "https://example.invalid/health",
+            ]
+        );
+    }
 
     #[tokio::test]
     async fn test_http_proxy_end_to_end() {

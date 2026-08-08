@@ -208,11 +208,13 @@ def _manifest_tier_for_diagnostic(code: str) -> str:
         "verbose-mode",
         "ssl-no-listener",
         "trojan-auto-tls",
-        "get-url",
+        "get-static-content",
         "reuse-port",
     }
+    # Compatible with warning: works with a documented semantic caveat.
     # Compatible with warning: works but emits a diagnostic.
     compatible_with_warning = {
+        "debug-mode",
         "scheduler",
         "credential-in-toml",
         "rulefile-partial",

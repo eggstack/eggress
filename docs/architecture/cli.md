@@ -97,7 +97,11 @@ The compatibility `pproxy` binary defaults, with no arguments, to
 `http+socks4+socks5://:8080` and direct routing. Repeated `-l`, `-r`, `-ul`, and
 `-ur` options retain input order. Unsupported options (e.g. `--daemon`, `--auth`,
 `--sys`) are fatal with exit code 5 before the service starts. Unknown flags are
-fatal with exit code 2. `-d` enables debug/traceback diagnostics.
+fatal with exit code 2. `-d` selects a debug-level default tracing filter and
+reports the Python traceback difference as a compatibility warning.
+`-d` selects a debug-level default tracing filter and emits a compatibility
+warning because Python traceback semantics are not reproduced. It is separate
+from `-v` and `--daemon`; explicit `RUST_LOG` remains authoritative.
 `--reuse` configures SO_REUSEPORT on listener sockets (not connection pooling).
 
 ## Dependencies

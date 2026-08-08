@@ -364,9 +364,9 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `--ssl` | TLS cert/key file (`certfile[,keyfile]`) | TLS config in eggress TOML |
 | `--daemon` | Run as daemon | Fatal (exit code 5); use a process manager |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
-| `--pac` | PAC file path argument | Boolean flag enabling `/proxy.pac`; path is not consumed |
+| `--pac` | PAC file path argument | Consumes the path and maps it to the Eggress admin PAC route; emits a native-equivalent diagnostic |
 | `--sys` | Set system proxy (mac/windows) | Unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection; mutation requires its own `apply` path. |
-| `--test` | URL argument; test and exit | Boolean flag with diagnostic guidance; URL is not consumed |
+| `--test` | URL argument; test and exit | Consumes the target and delegates it to `eggress upstream test`; both compatibility entry points preserve the target |
 
 ## 11. Python Library Usage
 
@@ -906,6 +906,10 @@ generate TOML configuration — the user must set `RUST_LOG=debug` in their
 environment. This is an intentional non-parity because eggress uses the
 standard Rust/tracing ecosystem for log control rather than a binary
 verbose flag.
+
+The compat layer parses `-d` separately from `-v` and `--daemon`. It selects a
+debug-level default tracing filter when `RUST_LOG` is unset and reports the
+Python traceback difference as a `debug-mode` compatibility warning.
 
 **pproxy `--log FILE` mapping**: The compat layer parses `--log` as a known
 flag but does not produce a diagnostic — the flag is silently dropped. Users

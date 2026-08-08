@@ -214,6 +214,16 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                 message: warn.message.clone(),
                 suggestion: Some("set RUST_LOG=debug".to_string()),
             },
+            "debug-mode" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("debug".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "Eggress selects debug-level default tracing; set RUST_LOG explicitly to override it"
+                        .to_string(),
+                ),
+            },
             "scheduler" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("scheduler".to_string()),
@@ -278,12 +288,15 @@ impl From<&CompatWarning> for StructuredDiagnostic {
                 message: warn.message.clone(),
                 suggestion: Some("SO_REUSEPORT applied to listener sockets".to_string()),
             },
-            "get-url" => StructuredDiagnostic {
+            "get-static-content" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("get".to_string()),
-                tier: Some("unsupported".to_string()),
+                tier: Some("native_equivalent".to_string()),
                 message: warn.message.clone(),
-                suggestion: Some("use curl --proxy <proxy-uri> <url>".to_string()),
+                suggestion: Some(
+                    "configure the same PATH,FILE pair as static content in the Eggress admin server"
+                        .to_string(),
+                ),
             },
             "rulefile-read" | "rulefile-parse" | "rulefile-partial" => StructuredDiagnostic {
                 code: DiagnosticCode::RulefileError,
@@ -659,6 +672,41 @@ mod tests {
         let diag = StructuredDiagnostic::from(&warn);
         assert_eq!(diag.code, DiagnosticCode::UnsupportedFlag);
         assert_eq!(diag.feature_id.as_deref(), Some("verbose"));
+    }
+
+    #[test]
+    fn from_debug_warning_uses_debug_feature_and_tier() {
+        let warn = CompatWarning {
+            category: "debug-mode",
+            message: "debug tracing difference".to_string(),
+        };
+        let diag = StructuredDiagnostic::from(&warn);
+        assert_eq!(diag.feature_id.as_deref(), Some("debug"));
+        assert_eq!(diag.tier.as_deref(), Some("compatible_with_warning"));
+    }
+
+    #[test]
+    fn touched_warning_categories_have_consistent_tiers() {
+        let categories = [
+            ("debug-mode", "debug"),
+            ("verbose-mode", "verbose"),
+            ("pac-serving", "pac"),
+            ("get-static-content", "get"),
+            ("test-mode", "test"),
+        ];
+        for (category, feature_id) in categories {
+            let warn = CompatWarning {
+                category,
+                message: "test diagnostic".to_string(),
+            };
+            let diagnostic = StructuredDiagnostic::from(&warn);
+            assert_eq!(diagnostic.feature_id.as_deref(), Some(feature_id));
+            assert_eq!(
+                diagnostic.tier.as_deref(),
+                Some(crate::manifest_tier_for_category(category).as_str()),
+                "tier mismatch for {category}"
+            );
+        }
     }
 
     #[test]

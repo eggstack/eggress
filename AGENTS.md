@@ -9,7 +9,8 @@ Compatibility claims must remain explicit and evidence-backed. Strict full drop-
 The maintained public matrix is `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, and the optional representative scenario index is `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. These replace aggregate parity percentages and historical certification claims; routine CI remains focused and does not require the external pproxy oracle.
 
 Key compatibility surface notes:
-- `--pac`, `--get`, and `--test` are value-taking options; their values must not be reclassified as positional listeners or remotes. Parsed-but-unsupported fields require precise diagnostics and redacted output.
+- `--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking options; their values must not be reclassified as positional listeners or remotes. PAC and valid GET values lower through the admin server; TEST passes the exact target to native upstream testing from both compatibility entry points. Parsed-but-unsupported fields require precise diagnostics and redacted output.
+- `-d` selects a debug-level default tracing filter and emits a `compatible_with_warning` reporter diagnostic; it remains independent of `-v` and `--daemon`, and explicit `RUST_LOG` is authoritative.
 - H2/WS/WSS remain upstream-only; bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains intentionally deferred.
 - Bounded fixed-target TCP/UDP raw/tunnel forms, Unix domain TCP upstreams on Unix, and per-connection outbound local binds are supported. These do not establish general multi-hop UDP, macOS PF transparent recovery, backward TLS, daemonization, or connection-reuse parity.
 

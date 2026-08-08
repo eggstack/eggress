@@ -36,12 +36,14 @@ pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
     match category {
         // Native equivalent: same outcome through different mechanism.
         "alive-check" | "pac-serving" | "test-mode" | "log-file" | "verbose-mode"
-        | "ssl-no-listener" | "trojan-auto-tls" | "get-url" | "reuse-port" => {
+        | "ssl-no-listener" | "trojan-auto-tls" | "get-static-content" | "reuse-port" => {
             ManifestTier::NativeEquivalent
         }
         // Compatible with warning: works but emits a diagnostic.
-        "scheduler" | "credential-in-toml" | "rulefile-partial" | "rulefile-parse"
-        | "rulefile-read" | "direct-mode" | "ul-no-listener" => ManifestTier::CompatibleWithWarning,
+        "debug-mode" | "scheduler" | "credential-in-toml" | "rulefile-partial"
+        | "rulefile-parse" | "rulefile-read" | "direct-mode" | "ul-no-listener" => {
+            ManifestTier::CompatibleWithWarning
+        }
         // Unknown categories default to "unsupported" to surface new gaps.
         _ => ManifestTier::Unsupported,
     }

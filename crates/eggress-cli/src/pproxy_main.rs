@@ -144,10 +144,8 @@ fn main() -> ExitCode {
         eprintln!("pproxy: note: {w}");
     }
 
-    let has_test = pproxy_args
-        .known_unsupported
-        .iter()
-        .any(|f| f.starts_with("test="));
+    let test_target = pproxy_args.test_target();
+    let has_test = test_target.is_some();
 
     let tmp_dir = match tempfile::tempdir() {
         Ok(d) => d,
@@ -176,11 +174,7 @@ fn main() -> ExitCode {
             "-c",
             config_path.to_str().unwrap_or_default(),
         ]);
-        if let Some(target) = pproxy_args
-            .known_unsupported
-            .iter()
-            .find_map(|f| f.strip_prefix("test="))
-        {
+        if let Some(target) = test_target {
             test_command.args(["-t", target]);
         }
         let status = test_command.status();

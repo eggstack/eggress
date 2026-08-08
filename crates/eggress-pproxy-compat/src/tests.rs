@@ -715,6 +715,32 @@ fn test_get_flag_generates_unknown_warning() {
 }
 
 #[test]
+fn test_valid_get_static_content_is_supported() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), "hello static content").unwrap();
+    let get_value = format!("/index.html,{}", file.path().display());
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "--get".into(),
+        get_value,
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(
+        !output.has_unsupported(),
+        "unexpected diagnostics: {:?}",
+        output.unsupported
+    );
+    assert!(output
+        .warnings
+        .iter()
+        .any(|w| w.category == "get-static-content"));
+    assert!(output.toml.contains("/index.html"));
+    assert!(output.toml.contains("hello static content"));
+}
+
+#[test]
 fn test_test_flag_generates_unknown_warning() {
     let args = PproxyArgs::parse(&[
         "-l".into(),

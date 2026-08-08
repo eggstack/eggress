@@ -141,7 +141,7 @@ The following pproxy features are explicitly unsupported:
 
 - **Trojan listeners** -- Trojan is supported for both inbound and upstream
 - **`--daemon` mode** -- Use systemd or a process manager instead
-- **`-d` debug** -- Enables debug-level default tracing filter via the shared `default_log_level` helper; independent of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative.
+- **`-d` debug** -- Enables a debug-level default tracing filter via the shared `default_log_level` helper and reports the Python traceback difference; independent of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative.
 - **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
 - **`-b` block regex rules** -- Use eggress TOML routing rules
 - **`--rulefile`** -- simple reject/block entries are translated; use Eggress TOML routing rules for complete semantics
@@ -234,6 +234,8 @@ are serializable to JSON. It is not a separate Python distribution.
 The pproxy 2.7.9 CLI argument shapes are preserved: `--pac` takes a path,
 `--test` takes a URL, and repeatable `--get` takes `PATH,FILE` values. The
 translator consumes these values before processing positional arguments.
+`--get` serves the supplied file as native admin static content; malformed or
+unreadable values fail closed.
 
 ## Parity Tiers
 

@@ -104,7 +104,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Enable debug tracebacks on exception. |
-| Eggress handling | **Compatible** — enables debug-level diagnostics; equivalent to RUST_LOG=debug. |
+| Eggress handling | **Compatible with warning** — selects a debug-level default tracing filter when `RUST_LOG` is unset; Python traceback semantics are not reproduced. |
 | Example | `pproxy -l socks5://:1080 -d` |
 
 ### Logging
@@ -153,12 +153,12 @@ with eggress handling status and migration notes.
 | Eggress handling | **Unsupported in pproxy compatibility mode** — `--sys` fails before temp config creation or service startup through the shared execution gate. The native `eggress system-proxy inspect` and `eggress system-proxy apply` subcommands remain available under their own safety contract. |
 | Example | `pproxy -l http://:8080 --sys` → exit code 5 (`EXIT_UNSUPPORTED_FEATURE`) before startup. |
 
-#### `--get` — URL Fetch Helper
+#### `--get` — Custom Static Content
 
 | Property | Value |
 |----------|-------|
-| pproxy behavior | Fetch a URL through the configured proxy (utility for testing). |
-| Eggress handling | **Partial** — validates `PATH,FILE` and serves it through the existing admin server. |
+| pproxy behavior | Serve custom HTTP content from the supplied `PATH,FILE` value. |
+| Eggress handling | **Supported with warning** — consumes `PATH,FILE`, validates and reads the file, and serves it through the existing admin server. Invalid or unreadable values fail closed. |
 | Example | `pproxy -l http://:8080 --get /index.html,index.html` |
 
 ### Testing
@@ -168,7 +168,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Test all remote proxies and exit. Verifies upstream connectivity. |
-| Eggress handling | **Supported** — translates the pproxy args to TOML config, writes to a temp file, runs `eggress upstream test -c <config>`, and exits with the result. Does not start the service. |
+| Eggress handling | **Supported** — translates the pproxy args to TOML config, writes to a temp file, runs `eggress upstream test -c <config> -t <target>`, and exits with the result. Does not start the service. |
 | Example | `pproxy -l http://:8080 -r http://proxy:8080 --test https://example.com/` |
 
 ### Config and Help
@@ -221,14 +221,14 @@ with eggress handling status and migration notes.
 | `-b` | (none) | Block regex rules | Partial | Generates reject rules with host-regex matcher |
 | `--rulefile` | `-rulefile` | Rule file path | Partial | Parses rulefile; generates reject rules for simple patterns |
 | `--daemon` | — | Daemonize | Unsupported | Use systemd/process manager |
-| `-d` | (none) | Debug tracebacks | Compatible | Set `RUST_LOG=debug` |
+| `-d` | (none) | Debug tracebacks | Compatible with warning | Debug-level default tracing; Python traceback semantics are not reproduced |
 | `-v` | (none) | Verbose logging | Partial | Set `RUST_LOG=debug` |
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | SO_REUSEPORT | Supported with warning | Configures SO_REUSEPORT on listener sockets |
 | `--pac` | (path) | PAC file serving | Supported | Consumes path and maps it to the admin PAC route |
 | `--sys` | (none) | System proxy | Intentional non-parity | Use `eggress system-proxy apply --apply` for mutation |
-| `--get` | (PATH,FILE) | Static content | Partial | Validates and serves through the admin server |
-| `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the supplied target and exits |
+| `--get` | (PATH,FILE) | Static content | Supported with warning | Validates and serves through the admin server; invalid values fail closed |
+| `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the exact supplied target and exits |
 | `-f` | `--config` | Config file | Supported | Different schema |
 | `--version` | (none) | Version | Supported | — |
 | `--help` | (none) | Help | Supported | — |

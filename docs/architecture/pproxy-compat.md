@@ -89,8 +89,10 @@ compatibility rule IDs include the declaration index, source, and pattern for
 groups retain their own configured defaults.
 
 `--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking
-options. PAC and static content use the existing admin server, while test mode
-passes the target to the existing upstream test command.
+options. PAC and valid static content use the existing admin server; malformed
+or unreadable static-content values fail closed. Both the standalone `pproxy`
+binary and `eggress pproxy run` pass the supplied test target to the existing
+upstream test command.
 
 ## Phase 5 boundary decisions
 

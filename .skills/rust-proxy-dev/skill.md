@@ -156,10 +156,13 @@ When adding features to Connection, follow the pattern: Rust handles networking,
   original URI. Translation must diagnose fields that are parsed but not
   runtime-supported, and must redact credentials in all diagnostics.
 - `--pac`, `--test`, and `--get` consume exactly one value. Their values must
-  not become positional listeners or remotes.
+  not become positional listeners or remotes. PAC and valid `PATH,FILE` GET
+  values use the admin server; TEST passes its exact target to native upstream
+  testing from both compatibility execution entry points.
 - `-d` selects a debug-level default tracing filter via the shared
-  `PproxyArgs::default_log_level` helper. It is independent of `-v` and
-  `--daemon`. Explicit `RUST_LOG` remains authoritative.
+  `PproxyArgs::default_log_level` helper and reports the Python traceback
+  difference as `debug-mode` at `compatible_with_warning`. It is independent
+  of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative.
 - `--sys` is unsupported in pproxy compatibility mode; the shared
   `eggress_pproxy_compat::evaluate_execution_gate` fails before temp config
   creation or service startup. Use native `eggress system-proxy inspect`

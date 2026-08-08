@@ -103,7 +103,9 @@ The compatibility binary follows pproxy's no-argument default:
 combined protocols, fragment authentication, local outbound binding, plugins,
 fixed targets, and raw rule suffixes for translation diagnostics. `--pac
 <path>`, `--get <path,file>`, and `--test <target>` each consume their value;
-they are not positional proxy URIs. Canonical fixed-target listeners use
+they are not positional proxy URIs. PAC and valid GET values lower through the
+admin server, while TEST delegates the exact target to native upstream testing.
+Canonical fixed-target listeners use
 `tunnel{host:port}://:listen-port`; the legacy `raw://{host:port}` extension
 remains accepted. UDP fixed-target and echo listeners require an explicit
 `-ul` URI, keeping TCP and UDP listener roles independent.

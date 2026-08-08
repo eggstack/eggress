@@ -111,6 +111,12 @@ pub fn translate_from_uris(
             "pproxy -v flag detected; set RUST_LOG=debug environment variable for equivalent behavior",
         );
     }
+    if args.debug {
+        output = output.with_warning(
+            "debug-mode",
+            "pproxy -d detected; Eggress enables debug-level default tracing, but does not reproduce Python traceback semantics",
+        );
+    }
     if args.reuse_port {
         output = output.with_warning(
             "reuse-port",
@@ -242,7 +248,7 @@ pub fn translate_from_uris(
                 }
             }
             output = output.with_warning(
-                "get-url",
+                "get-static-content",
                 format!("pproxy --get {value} is served as admin static content"),
             );
         }
@@ -1704,6 +1710,18 @@ mod tests {
     }
 
     #[test]
+    fn test_debug_flag_emits_compatible_warning() {
+        let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-d".into()])
+            .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.warnings.iter().any(|w| w.category == "debug-mode"));
+        assert_eq!(
+            crate::classify_aggregate_tier(&output.warnings, &[]),
+            crate::ManifestTier::CompatibleWithWarning
+        );
+    }
+
+    #[test]
     fn test_scheduler_flag_maps_to_toml() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
@@ -2416,7 +2434,10 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.warnings.iter().any(|w| w.category == "get-url"));
+        assert!(output
+            .warnings
+            .iter()
+            .any(|w| w.category == "get-static-content"));
     }
 
     #[test]
