@@ -8,7 +8,11 @@ All four original phase plans are implemented. The post-closure corrective
 pass that closed the residual `-d`, `--sys`, execution-gate, Python
 claim/classification, and verification mismatches is also implemented.
 
-The final contract/reporting closure pass is implemented in `bd10467`.
+The final contract/reporting closure pass is implemented in `bd10467`. The
+follow-up contract metadata reconciliation is implemented in
+`cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6` under Outcome 2: its focused and
+changed-surface gates pass, while the named pre-existing runtime observability
+test remains the sole workspace-test blocker.
 
 Implementation commit range: see the post-closure entry in the closure
 record below. Do not reopen the completed phase scope beyond that
@@ -224,9 +228,11 @@ This roadmap is complete only when all are true:
 Phases 1-3: `f08b8d0..6cb43dd`
 Phase 4: `367d7cb`
 Post-closure corrective: `f6336674353aa63d868c8247ffafb9eb5a3eca4e`.
-Final contract/reporting closure pass: `bd10467`; see
+Final contract/reporting closure pass: `bd10467`; metadata reconciliation:
+`cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`; see
 `PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md` for focused verification and
-the unrelated workspace-gate blocker.
+the unrelated workspace-gate blocker. PAC and verbose are both
+`compatible_with_warning`; `cli.get` config/runtime/CLI layers are complete.
 
 ### Phase 4 review corrections
 

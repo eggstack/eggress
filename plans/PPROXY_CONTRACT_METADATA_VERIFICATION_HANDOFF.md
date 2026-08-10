@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED — OUTCOME 2 (PROVEN UNRELATED BASELINE BLOCKER)**
 
 ## Parent line of work
 
@@ -16,6 +16,41 @@
 - Review baseline: `f157110b87abb25c53bc6d86c36fe4172adc6c50`
 - Compatibility reference: checked-in `pproxy==2.7.9` baseline under `compat/pproxy-2.7.9/`
 - Scope: final contract metadata reconciliation plus truthful disposition of the existing workspace-test blocker.
+- Implementation commit: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`
+
+## Final disposition
+
+- `pac-serving` is `compatible_with_warning` across the canonical manifest,
+  Rust tier/diagnostic mappings, and Python reporter. PAC is served through
+  the mapped Eggress admin route.
+- `verbose-mode` is `compatible_with_warning` across the same surfaces.
+  `-v/-vv/-vvv` select Rust tracing defaults (`debug`/`trace`), with explicit
+  `RUST_LOG` authoritative; runtime behavior was not changed.
+- `cli.get` now records `config = complete`, `runtime = complete`, and
+  `cli = complete`; valid `PATH,FILE` remains native admin static content and
+  malformed or unreadable values remain fail-closed.
+- Outcome 2 applies to the workspace gate. The exact named test fails before
+  its active-association assertion and does not terminate cleanly. It
+  reproduces on current `main` and on the pre-pass `f6336674` worktree, while
+  `git diff f6336674..HEAD -- crates/eggress-runtime` is empty. This is an
+  external/pre-existing runtime blocker, not a pproxy compatibility defect;
+  closure is scoped to the pproxy compatibility line.
+
+## Verification record
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo clippy --workspace --all-targets -- -D warnings`: passed.
+- `cargo test -p eggress-pproxy-compat`: passed, 327 tests.
+- `cargo test -p eggress-cli --test pproxy_binary`: passed, 22 tests.
+- `cargo test -p eggress-cli --test pproxy_run_process`: passed, 8 tests.
+- Fresh `maturin develop` plus `pytest python/tests tests/compat -q`: passed,
+  2215 passed, 114 skipped, 5 existing warnings.
+- `cargo test --workspace --locked`: attempted with a 180-second bound for
+  the non-terminating failure; all preceding suites passed, then
+  `eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close`
+  failed at line 1036 (`should have at least 1 active association`) and its
+  test process was terminated by the bound. The same focused failure was
+  reproduced at `f6336674`.
 
 ## Purpose
 
@@ -453,64 +488,64 @@ The implementation model may hand this work back as **complete** only when every
 
 ## A. Scope discipline
 
-- [ ] No new proxy/runtime feature was added.
-- [ ] No protocol, Python lifecycle, binary-size, release, or CI scope was opened.
-- [ ] No unrelated runtime file was changed unless direct causal evidence required it.
-- [ ] No new manifest, registry, workflow, or evidence framework was created.
+- [x] No new proxy/runtime feature was added.
+- [x] No protocol, Python lifecycle, binary-size, release, or CI scope was opened.
+- [x] No unrelated runtime file was changed unless direct causal evidence required it.
+- [x] No new manifest, registry, workflow, or evidence framework was created.
 
 ## B. PAC contract
 
-- [ ] One final machine tier is chosen for `pac-serving`.
-- [ ] Canonical manifest `cli.pac` uses that tier.
-- [ ] Rust `tier.rs` uses that tier.
-- [ ] Rust `StructuredDiagnostic` uses that tier.
-- [ ] Python reporter mapping uses that tier.
-- [ ] Focused tests assert the shared tier.
-- [ ] Human docs do not contradict the final decision.
+- [x] One final machine tier is chosen for `pac-serving`.
+- [x] Canonical manifest `cli.pac` uses that tier.
+- [x] Rust `tier.rs` uses that tier.
+- [x] Rust `StructuredDiagnostic` uses that tier.
+- [x] Python reporter mapping uses that tier.
+- [x] Focused tests assert the shared tier.
+- [x] Human docs do not contradict the final decision.
 
 ## C. Verbose contract
 
-- [ ] One final machine tier is chosen for `verbose-mode`.
-- [ ] Canonical manifest `cli.verbose` uses that tier.
-- [ ] Rust tier/diagnostic mappings use that tier.
-- [ ] Python reporter mapping uses that tier.
-- [ ] `debug-mode` remains independently `compatible_with_warning`.
-- [ ] Runtime `-v/-vv/-vvv` behavior is unchanged unless a focused test proved a bug.
+- [x] One final machine tier is chosen for `verbose-mode`.
+- [x] Canonical manifest `cli.verbose` uses that tier.
+- [x] Rust tier/diagnostic mappings use that tier.
+- [x] Python reporter mapping uses that tier.
+- [x] `debug-mode` remains independently `compatible_with_warning`.
+- [x] Runtime `-v/-vv/-vvv` behavior is unchanged unless a focused test proved a bug.
 
 ## D. GET metadata
 
-- [ ] `cli.get` no longer marks operational config/runtime/CLI layers `not_applicable` when they are actually exercised.
-- [ ] Valid `PATH,FILE` remains supported through admin static content.
-- [ ] Invalid or unreadable `PATH,FILE` remains fail-closed.
-- [ ] Manifest evidence points to focused executable tests.
-- [ ] Practical matrix and manifest no longer contradict one another about whether the path is operational.
+- [x] `cli.get` no longer marks operational config/runtime/CLI layers `not_applicable` when they are actually exercised.
+- [x] Valid `PATH,FILE` remains supported through admin static content.
+- [x] Invalid or unreadable `PATH,FILE` remains fail-closed.
+- [x] Manifest evidence points to focused executable tests.
+- [x] Practical matrix and manifest no longer contradict one another about whether the path is operational.
 
 ## E. Reporter consistency
 
-- [ ] `manifest_tier_for_category()` and `StructuredDiagnostic::from()` agree for `debug-mode`, `verbose-mode`, `pac-serving`, `get-static-content`, and `test-mode`.
-- [ ] Python reporter mapping agrees with Rust for those categories.
-- [ ] `eggress pproxy check --json` cannot emit contradictory feature/diagnostic tiers for the touched categories.
-- [ ] No new reporter abstraction was introduced.
+- [x] `manifest_tier_for_category()` and `StructuredDiagnostic::from()` agree for `debug-mode`, `verbose-mode`, `pac-serving`, `get-static-content`, and `test-mode`.
+- [x] Python reporter mapping agrees with Rust for those categories.
+- [x] `eggress pproxy check --json` cannot emit contradictory feature/diagnostic tiers for the touched categories.
+- [x] No new reporter abstraction was introduced.
 
 ## F. Verification
 
-- [ ] `cargo fmt --all -- --check` passes.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes.
-- [ ] `cargo test -p eggress-pproxy-compat` passes.
-- [ ] `cargo test -p eggress-cli --test pproxy_binary` passes.
-- [ ] `cargo test -p eggress-cli --test pproxy_run_process` passes.
-- [ ] Relevant Python compatibility tests pass against a fresh extension if Rust/Python reporter mappings changed.
-- [ ] `cargo test --workspace --locked` is attempted and its exact result is recorded.
-- [ ] If the workspace run is not green, Outcome 2 is used only with evidence that the sole remaining failure predates/is unrelated to this pproxy line.
-- [ ] No response or planning record claims a green workspace suite when one did not occur.
+- [x] `cargo fmt --all -- --check` passes.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
+- [x] `cargo test -p eggress-pproxy-compat` passes.
+- [x] `cargo test -p eggress-cli --test pproxy_binary` passes.
+- [x] `cargo test -p eggress-cli --test pproxy_run_process` passes.
+- [x] Relevant Python compatibility tests pass against a fresh extension if Rust/Python reporter mappings changed.
+- [x] `cargo test --workspace --locked` is attempted and its exact result is recorded.
+- [x] If the workspace run is not green, Outcome 2 is used only with evidence that the sole remaining failure predates/is unrelated to this pproxy line.
+- [x] No response or planning record claims a green workspace suite when one did not occur.
 
 ## G. Closure records
 
-- [ ] This file is marked `IMPLEMENTED` and records implementation SHA(s).
-- [ ] The final contract/reporting plan is corrected to reflect the actual workspace result.
-- [ ] The parent roadmap records this final follow-up and its exact closure status.
-- [ ] If an unrelated external blocker remains, it is named once and not converted into a new pproxy phase.
-- [ ] No additional follow-up plan is created for wording-only cleanup.
+- [x] This file is marked `IMPLEMENTED` and records implementation SHA(s).
+- [x] The final contract/reporting plan is corrected to reflect the actual workspace result.
+- [x] The parent roadmap records this final follow-up and its exact closure status.
+- [x] If an unrelated external blocker remains, it is named once and not converted into a new pproxy phase.
+- [x] No additional follow-up plan is created for wording-only cleanup.
 
 ---
 

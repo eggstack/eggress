@@ -741,6 +741,37 @@ fn test_valid_get_static_content_is_supported() {
 }
 
 #[test]
+fn test_malformed_get_static_content_fails_closed() {
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "--get".into(),
+        "relative.html,body.txt".into(),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output.unsupported.iter().any(|u| u.feature == "get-file"));
+}
+
+#[test]
+fn test_unreadable_get_static_content_fails_closed() {
+    let missing_file = tempfile::NamedTempFile::new().unwrap();
+    let missing_path = missing_file.path().to_path_buf();
+    drop(missing_file);
+    let args = PproxyArgs::parse(&[
+        "-l".into(),
+        "socks5://127.0.0.1:1080".into(),
+        "--get".into(),
+        format!("/index.html,{}", missing_path.display()),
+    ])
+    .unwrap();
+    let output = translate_pproxy_args(&args).unwrap();
+    assert!(output.has_unsupported());
+    assert!(output.unsupported.iter().any(|u| u.feature == "get-file"));
+}
+
+#[test]
 fn test_test_flag_generates_unknown_warning() {
     let args = PproxyArgs::parse(&[
         "-l".into(),
