@@ -202,10 +202,8 @@ def _manifest_tier_for_diagnostic(code: str) -> str:
     # Native equivalent: same outcome through different mechanism.
     native_equivalent = {
         "alive-check",
-        "pac-serving",
         "test-mode",
         "log-file",
-        "verbose-mode",
         "ssl-no-listener",
         "trojan-auto-tls",
         "get-static-content",
@@ -215,6 +213,8 @@ def _manifest_tier_for_diagnostic(code: str) -> str:
     # Compatible with warning: works but emits a diagnostic.
     compatible_with_warning = {
         "debug-mode",
+        "pac-serving",
+        "verbose-mode",
         "scheduler",
         "credential-in-toml",
         "rulefile-partial",

@@ -49,12 +49,12 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 | `-l uri` | `[[listeners]]` with parsed URI |
 | `-r uri` | `[[upstreams]]` and `[[upstream_groups]]` |
 | `-s` | Server mode |
-| `-v` | Verbose logging |
+| `-v/-vv/-vvv` | Verbose logging defaults (`debug`/`trace`) with a compatibility warning |
 | `-d` | Debug-level default tracing filter via shared `default_log_level` helper |
 | `--ssl` | TLS configuration |
 | `-b addr` | Bind address |
 | `--rulefile path` | Rule file parsing |
-| `--pac path` | PAC serving configuration at the supplied admin path |
+| `--pac path` | PAC serving configuration at the supplied admin path, with a compatibility warning |
 | `--sys` | Unsupported and fatal before startup; use native `eggress system-proxy ...` for inspection/apply |
 
 The translator parses combined protocols, fragment auth, local binding, canonical
@@ -93,6 +93,10 @@ options. PAC and valid static content use the existing admin server; malformed
 or unreadable static-content values fail closed. Both the standalone `pproxy`
 binary and `eggress pproxy run` pass the supplied test target to the existing
 upstream test command.
+
+PAC and verbosity are supported with compatibility warnings. PAC is served at
+the mapped Eggress admin route, and `-v/-vv/-vvv` select Rust tracing defaults;
+an explicit `RUST_LOG` value takes precedence.
 
 ## Phase 5 boundary decisions
 

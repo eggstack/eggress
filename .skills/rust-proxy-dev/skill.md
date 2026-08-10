@@ -159,6 +159,9 @@ When adding features to Connection, follow the pattern: Rust handles networking,
   not become positional listeners or remotes. PAC and valid `PATH,FILE` GET
   values use the admin server; TEST passes its exact target to native upstream
   testing from both compatibility execution entry points.
+- PAC and `-v/-vv/-vvv` are supported with compatibility warnings: PAC maps to
+  the admin route, while verbosity selects Rust tracing defaults (`debug` for
+  one or two occurrences, `trace` for three or more) unless `RUST_LOG` is set.
 - `-d` selects a debug-level default tracing filter via the shared
   `PproxyArgs::default_log_level` helper and reports the Python traceback
   difference as `debug-mode` at `compatible_with_warning`. It is independent

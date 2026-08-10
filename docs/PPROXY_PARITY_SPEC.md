@@ -364,7 +364,7 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `--ssl` | TLS cert/key file (`certfile[,keyfile]`) | TLS config in eggress TOML |
 | `--daemon` | Run as daemon | Fatal (exit code 5); use a process manager |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
-| `--pac` | PAC file path argument | Consumes the path and maps it to the Eggress admin PAC route; emits a native-equivalent diagnostic |
+| `--pac` | PAC file path argument | Consumes the path and maps it to the Eggress admin PAC route; emits a compatibility warning |
 | `--sys` | Set system proxy (mac/windows) | Unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection; mutation requires its own `apply` path. |
 | `--test` | URL argument; test and exit | Consumes the target and delegates it to `eggress upstream test`; both compatibility entry points preserve the target |
 
@@ -900,12 +900,12 @@ Eggress uses `tracing-subscriber` with `EnvFilter` for log control:
 | Log destination | stderr only; no built-in file output |
 | Credential redaction | `****:****@` format at all log levels |
 
-**pproxy `-v` mapping**: The compat layer parses `-v` as a known flag and
-emits a `verbose-mode` warning with migration guidance. It does not
-generate TOML configuration — the user must set `RUST_LOG=debug` in their
-environment. This is an intentional non-parity because eggress uses the
-standard Rust/tracing ecosystem for log control rather than a binary
-verbose flag.
+**pproxy `-v` mapping**: The compat layer parses `-v`, `-vv`, and `-vvv` as
+known flags and emits a `verbose-mode` compatibility warning. They select
+Rust tracing defaults (`debug` for one or two occurrences, `trace` for three
+or more); explicit `RUST_LOG` remains authoritative. This is a supported
+implementation difference because eggress uses the standard Rust/tracing
+ecosystem rather than pproxy's flag-controlled logging mechanism.
 
 The compat layer parses `-d` separately from `-v` and `--daemon`. It selects a
 debug-level default tracing filter when `RUST_LOG` is unset and reports the

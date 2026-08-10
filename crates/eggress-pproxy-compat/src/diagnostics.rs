@@ -210,7 +210,7 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "verbose-mode" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("verbose".to_string()),
-                tier: Some("native_equivalent".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some("set RUST_LOG=debug".to_string()),
             },
@@ -250,7 +250,7 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "pac-serving" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("pac".to_string()),
-                tier: Some("native_equivalent".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some(
                     "configure PAC serving in eggress TOML admin.pac block".to_string(),
@@ -672,6 +672,7 @@ mod tests {
         let diag = StructuredDiagnostic::from(&warn);
         assert_eq!(diag.code, DiagnosticCode::UnsupportedFlag);
         assert_eq!(diag.feature_id.as_deref(), Some("verbose"));
+        assert_eq!(diag.tier.as_deref(), Some("compatible_with_warning"));
     }
 
     #[test]

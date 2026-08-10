@@ -10,6 +10,7 @@ The maintained public matrix is `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATR
 
 Key compatibility surface notes:
 - `--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking options; their values must not be reclassified as positional listeners or remotes. PAC and valid GET values lower through the admin server; TEST passes the exact target to native upstream testing from both compatibility entry points. Parsed-but-unsupported fields require precise diagnostics and redacted output.
+- PAC and `-v/-vv/-vvv` remain supported with compatibility warnings: PAC maps to the admin server's PAC route, while verbosity selects Rust tracing defaults (`info`, `debug`, or `trace`) and yields to explicit `RUST_LOG`.
 - `-d` selects a debug-level default tracing filter and emits a `compatible_with_warning` reporter diagnostic; it remains independent of `-v` and `--daemon`, and explicit `RUST_LOG` is authoritative.
 - H2/WS/WSS remain upstream-only; bounded raw/tunnel listener forms are covered by Phase 5. QUIC/HTTP/3 remains intentionally deferred.
 - Bounded fixed-target TCP/UDP raw/tunnel forms, Unix domain TCP upstreams on Unix, and per-connection outbound local binds are supported. These do not establish general multi-hop UDP, macOS PF transparent recovery, backward TLS, daemonization, or connection-reuse parity.

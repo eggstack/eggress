@@ -8,6 +8,7 @@ import tempfile
 import pytest
 
 import eggress
+from eggress.pproxy import _manifest_tier_for_diagnostic
 from eggress import (
     PPProxyService,
     PPProxyHandle,
@@ -375,15 +376,16 @@ class TestCompatibilityReport:
             for f in report.features
         )
 
-    def test_native_equivalent_for_verbose(self):
-        report = check_pproxy_args(
-            ["-l", "socks5://127.0.0.1:0", "-v"]
-        )
-        assert report.tier in ("native_equivalent", "compatible_with_warning")
-        # Diagnostic tier for verbose should be "native_equivalent"
-        assert any(
-            d.tier == "native_equivalent" for d in report.diagnostics
-        )
+    def test_reporter_mapping_for_contract_warning_categories(self):
+        expected = {
+            "pac-serving": "compatible_with_warning",
+            "verbose-mode": "compatible_with_warning",
+            "debug-mode": "compatible_with_warning",
+            "get-static-content": "native_equivalent",
+            "test-mode": "native_equivalent",
+        }
+        for category, tier in expected.items():
+            assert _manifest_tier_for_diagnostic(category) == tier
 
     def test_reuse_is_native_equivalent_for_reuse_port(self):
         report = check_pproxy_args(

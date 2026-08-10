@@ -114,7 +114,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Enable verbose/debug logging output. |
-| Eggress handling | **Partial** — emits a warning ("pproxy -v flag detected; set RUST_LOG=debug environment variable for equivalent behavior"). No flag-based logging control; use `RUST_LOG` environment variable. |
+| Eggress handling | **Supported with warning** — maps `-v/-vv/-vvv` to `debug`/`trace` Rust tracing defaults. Explicit `RUST_LOG` remains authoritative. |
 | Example | `pproxy -l socks5://:1080 -v` |
 
 #### `--log` / `-log` — Log File
@@ -142,7 +142,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Serve a PAC (Proxy Auto-Configuration) file for browser auto-configuration. |
-| Eggress handling | **Supported** — generates `[admin.pac] enabled = true` in the translated TOML config. The PAC endpoint is served by the eggress admin HTTP server. |
+| Eggress handling | **Supported with warning** — generates `[admin.pac] enabled = true` in the translated TOML config. The PAC endpoint is served by the eggress admin HTTP server at the mapped path. |
 | Example | `pproxy -l http://:8080 --pac /path/to/proxy.pac` |
 
 #### `--sys` — Set System Proxy
@@ -222,10 +222,10 @@ with eggress handling status and migration notes.
 | `--rulefile` | `-rulefile` | Rule file path | Partial | Parses rulefile; generates reject rules for simple patterns |
 | `--daemon` | — | Daemonize | Unsupported | Use systemd/process manager |
 | `-d` | (none) | Debug tracebacks | Compatible with warning | Debug-level default tracing; Python traceback semantics are not reproduced |
-| `-v` | (none) | Verbose logging | Partial | Set `RUST_LOG=debug` |
+| `-v` | (none) | Verbose logging | Compatible with warning | Maps verbosity to Rust tracing defaults; explicit `RUST_LOG` wins |
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | SO_REUSEPORT | Supported with warning | Configures SO_REUSEPORT on listener sockets |
-| `--pac` | (path) | PAC file serving | Supported | Consumes path and maps it to the admin PAC route |
+| `--pac` | (path) | PAC file serving | Supported with warning | Consumes path and maps it to the admin PAC route |
 | `--sys` | (none) | System proxy | Intentional non-parity | Use `eggress system-proxy apply --apply` for mutation |
 | `--get` | (PATH,FILE) | Static content | Supported with warning | Validates and serves through the admin server; invalid values fail closed |
 | `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the exact supplied target and exits |

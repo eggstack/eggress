@@ -105,6 +105,9 @@ fixed targets, and raw rule suffixes for translation diagnostics. `--pac
 <path>`, `--get <path,file>`, and `--test <target>` each consume their value;
 they are not positional proxy URIs. PAC and valid GET values lower through the
 admin server, while TEST delegates the exact target to native upstream testing.
+PAC serving and verbosity are supported with compatibility warnings: PAC is
+served through the mapped admin route, and `-v/-vv/-vvv` select Rust tracing
+defaults while explicit `RUST_LOG` remains authoritative.
 Canonical fixed-target listeners use
 `tunnel{host:port}://:listen-port`; the legacy `raw://{host:port}` extension
 remains accepted. UDP fixed-target and echo listeners require an explicit
