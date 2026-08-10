@@ -690,7 +690,8 @@ stable Rust toolchain:
   pre-existing failure was carried forward.
 
 The post-closure corrective pass did not introduce a new failure in
-the Python suite. The workspace observability failure is independent of
-this pproxy line: it reproduces in the current tree and at the pre-pass
-`f6336674` baseline, while the runtime file is unchanged by the metadata
-follow-up. The affected corrective/compatibility suites above remain green.
+the Python suite. The later metadata follow-up initially reproduced a
+workspace observability assertion race; test-only synchronization in
+`eeaa411` removed that race without changing runtime code, and the full
+workspace gate is now green. The affected corrective/compatibility suites
+above remain green.

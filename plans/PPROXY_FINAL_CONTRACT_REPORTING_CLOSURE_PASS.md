@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — METADATA HANDOFF COMPLETE (OUTCOME 2)**
+**IMPLEMENTED — METADATA HANDOFF COMPLETE (OUTCOME 1)**
 
 ## Parent roadmap
 
@@ -17,7 +17,8 @@
 - Scope: final contract/reporting consistency only, plus one bounded `--test` entry-point parity correction if confirmed by focused test.
 - Implementation commit: `bd10467` (`fix: close pproxy contract reporting gaps`)
 - Metadata reconciliation follow-up: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`;
-  verification/closure records: `cf448e7`.
+  verification/closure records: `cf448e7`; test-only workspace correction:
+  `eeaa411`.
 
 ## Purpose
 
@@ -32,10 +33,9 @@ This pass should be the terminal pass for this line of work.
 The metadata follow-up selected `compatible_with_warning` for both
 `pac-serving` and `verbose-mode`, corrected the operational `cli.get` layer
 metadata to `complete` for config/runtime/CLI, and kept all execution
-semantics unchanged. Its workspace gate is closed under Outcome 2: the sole
-remaining failure is the pre-existing
-`eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close`
-test, reproduced at both current `main` and pre-pass `f6336674`.
+semantics unchanged. A bounded test-only synchronization correction in
+`eeaa411` removed the observability assertion race; the workspace gate now
+passes under Outcome 1.
 
 ## Governing constraints
 
@@ -536,17 +536,11 @@ This pass does **not** authorize:
 ## Acceptance criteria
 
 The implementation criteria below were satisfied by `bd10467`, with the
-metadata reconciliation completed by `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`
-and its focused GET evidence/closure records completed by `cf448e7`.
-Changed-surface Rust verification and the fresh-extension Python smoke suite
-are green. The broad workspace gate was attempted with
-`cargo test --workspace --locked` and remains blocked by the unrelated existing
-`eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close`
-failure at line 1036: unchanged runtime code reports zero active associations
-before the test assertion and the panic leaves its supervisor task running.
-The same failure reproduces at `f6336674`, and no runtime file is changed by
-this line. This is Outcome 2 and is outside this compatibility contract/
-reporting scope.
+metadata reconciliation completed by `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`,
+focused GET evidence/closure records completed by `cf448e7`, and the bounded
+test-only workspace correction completed by `eeaa411`. Changed-surface Rust
+verification, the fresh-extension Python smoke suite, and the full workspace
+gate are green. This is Outcome 1.
 
 This line of work is complete only when every item below is true.
 
@@ -588,9 +582,7 @@ This line of work is complete only when every item below is true.
 - focused `eggress pproxy run` process tests pass;
 - `cargo fmt --all -- --check` passes;
 - `cargo clippy --workspace --all-targets -- -D warnings` passes;
-- `cargo test --workspace --locked` is attempted and recorded as Outcome 2;
-  the sole remaining failure is the named pre-existing runtime observability
-  test, not a pproxy compatibility failure;
+- `cargo test --workspace --locked` passes and is recorded as Outcome 1;
 - no new routine CI job or matrix is introduced.
 
 ---

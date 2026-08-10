@@ -10,10 +10,10 @@ claim/classification, and verification mismatches is also implemented.
 
 The final contract/reporting closure pass is implemented in `bd10467`. The
 follow-up contract metadata reconciliation is implemented in
-`cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6` under Outcome 2: its focused and
-changed-surface gates pass, while the named pre-existing runtime observability
-test remains the sole workspace-test blocker. The focused GET fail-closed
-evidence and closure records are in `cf448e7`.
+`cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6` under Outcome 1. Its focused and
+changed-surface gates and full workspace gate pass. The focused GET fail-closed
+evidence and closure records are in `cf448e7`; the bounded test-only
+observability synchronization correction is in `eeaa411`.
 
 Implementation commit range: see the post-closure entry in the closure
 record below. Do not reopen the completed phase scope beyond that
@@ -230,9 +230,9 @@ Phases 1-3: `f08b8d0..6cb43dd`
 Phase 4: `367d7cb`
 Post-closure corrective: `f6336674353aa63d868c8247ffafb9eb5a3eca4e`.
 Final contract/reporting closure pass: `bd10467`; metadata reconciliation:
-`cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`; see
-`PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md` for focused verification and
-the unrelated workspace-gate blocker. PAC and verbose are both
+`cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`; test-only workspace correction:
+`eeaa411`; see `PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md` for focused
+and workspace verification. PAC and verbose are both
 `compatible_with_warning`; `cli.get` config/runtime/CLI layers are complete.
 Focused GET fail-closed evidence and the final closure-record update are in
 `cf448e7`.

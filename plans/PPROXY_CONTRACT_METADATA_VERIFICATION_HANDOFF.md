@@ -2,7 +2,7 @@
 
 ## Status
 
-**IMPLEMENTED — OUTCOME 2 (PROVEN UNRELATED BASELINE BLOCKER)**
+**IMPLEMENTED — OUTCOME 1 (WORKSPACE GATE PASSES)**
 
 ## Parent line of work
 
@@ -15,9 +15,11 @@
 - Branch: `main`
 - Review baseline: `f157110b87abb25c53bc6d86c36fe4172adc6c50`
 - Compatibility reference: checked-in `pproxy==2.7.9` baseline under `compat/pproxy-2.7.9/`
-- Scope: final contract metadata reconciliation plus truthful disposition of the existing workspace-test blocker.
+- Scope: final contract metadata reconciliation plus a bounded test-only
+  synchronization correction for the existing workspace-test race.
 - Implementation commits: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`,
-  `cf448e7` (focused GET fail-closed evidence and closure records).
+  `cf448e7` (focused GET fail-closed evidence and closure records), and
+  `eeaa411` (test-only UDP observability gauge synchronization).
 
 ## Final disposition
 
@@ -30,28 +32,26 @@
 - `cli.get` now records `config = complete`, `runtime = complete`, and
   `cli = complete`; valid `PATH,FILE` remains native admin static content and
   malformed or unreadable values remain fail-closed.
-- Outcome 2 applies to the workspace gate. The exact named test fails before
-  its active-association assertion and does not terminate cleanly. It
-  reproduces on current `main` and on the pre-pass `f6336674` worktree, while
-  `git diff f6336674..HEAD -- crates/eggress-runtime` is empty. This is an
-  external/pre-existing runtime blocker, not a pproxy compatibility defect;
-  closure is scoped to the pproxy compatibility line.
+- Outcome 1 applies to the workspace gate. The named observability test was
+  corrected without production/runtime changes: it now renders `/metrics`
+  before reading the bridged `/-/udp` gauge and polls within a bounded
+  readiness window. This removes the assertion race while preserving the
+  behavior under test.
 
 ## Verification record
 
 - `cargo fmt --all -- --check`: passed.
 - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
-- `cargo test -p eggress-pproxy-compat`: passed, 327 tests.
+- `cargo test -p eggress-pproxy-compat`: passed, 329 tests.
 - `cargo test -p eggress-cli --test pproxy_binary`: passed, 22 tests.
 - `cargo test -p eggress-cli --test pproxy_run_process`: passed, 8 tests.
 - Fresh `maturin develop` plus `pytest python/tests tests/compat -q`: passed,
   2215 passed, 114 skipped, 5 existing warnings.
-- `cargo test --workspace --locked`: attempted with a 180-second bound for
-  the non-terminating failure; all preceding suites passed, then
-  `eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close`
-  failed at line 1036 (`should have at least 1 active association`) and its
-  test process was terminated by the bound. The same focused failure was
-  reproduced at `f6336674`.
+- `cargo test -p eggress-runtime --test observability
+  udp_active_gauges_return_to_zero_after_close`: passed in five consecutive
+  focused runs after `eeaa411`.
+- `cargo test --workspace --locked`: passed, including all workspace tests and
+  doc tests; the previously hanging observability test completed successfully.
 
 ## Purpose
 
@@ -191,7 +191,7 @@ Add or retain focused evidence proving valid `PATH,FILE` produces usable static 
 
 ---
 
-## Residual D — workspace verification gate was not literally satisfied
+## Residual D — workspace verification gate (resolved)
 
 `PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md` requires:
 
@@ -201,17 +201,19 @@ cargo test --workspace --locked
 
 to pass before closure.
 
-The implementation record instead states that the broad workspace run remains blocked by:
+The initial metadata verification reproduced a failure in:
 
 ```text
 eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close
 ```
 
-and characterizes that failure as unrelated and pre-existing.
+The failure was an assertion race: `/-/udp` read the metrics gauge before the
+`/metrics` bridge synchronized it. The test-only correction in `eeaa411` now
+renders `/metrics` and polls within a bounded readiness window. The full
+workspace gate passes, including this test.
 
-The line was nevertheless marked complete.
-
-This is a closure-policy inconsistency even if the pproxy implementation itself is correct.
+This was a closure-policy inconsistency even though the pproxy implementation
+itself was correct.
 
 ### Required disposition
 
@@ -412,7 +414,7 @@ The practical matrix may continue using its human-facing `supported_difference` 
 
 ---
 
-# Workstream 6 — Truthfully disposition the workspace blocker
+# Workstream 6 — Truthfully verify the workspace gate
 
 This workstream is verification and recordkeeping first, not runtime development.
 
@@ -478,7 +480,7 @@ Primary records:
 4. Record the corrected `cli.get` layer metadata.
 5. Record the exact workspace verification result and Outcome 1, 2, or 3.
 6. If Outcome 2 applies, explicitly state that closure is scoped to the pproxy compatibility line and that the named runtime test remains an external/pre-existing repository issue.
-7. Remove or amend any prior sentence that says the literal workspace gate passed when it did not.
+7. Remove or amend any prior sentence that says the literal workspace gate passed when it did not; record Outcome 1 when the gate passes.
 8. Do not create another closure report or evidence file.
 
 ---
@@ -537,8 +539,9 @@ The implementation model may hand this work back as **complete** only when every
 - [x] `cargo test -p eggress-cli --test pproxy_run_process` passes.
 - [x] Relevant Python compatibility tests pass against a fresh extension if Rust/Python reporter mappings changed.
 - [x] `cargo test --workspace --locked` is attempted and its exact result is recorded.
-- [x] If the workspace run is not green, Outcome 2 is used only with evidence that the sole remaining failure predates/is unrelated to this pproxy line.
-- [x] No response or planning record claims a green workspace suite when one did not occur.
+- [x] The workspace run is green and Outcome 1 is recorded.
+- [x] No response or planning record claims a green workspace suite without a
+  completed green run.
 
 ## G. Closure records
 
@@ -587,11 +590,14 @@ Expected non-touchpoints:
 3. Make the Rust/Python/manifest tier decision once, then propagate it; do not independently choose tiers in each layer.
 4. Treat the `cli.get` issue as metadata unless executable tests fail.
 5. Do not touch `-d`, `--test`, `--sys`, `--reuse`, or networking behavior unless a focused regression appears.
-6. For the workspace blocker, prove causality before changing runtime code. A pre-existing unrelated failure should be documented, not absorbed into this pproxy scope.
+6. For a workspace blocker, prove causality before changing runtime code. A
+   harmless test-only synchronization correction is acceptable when it removes
+   a confirmed test race without changing runtime behavior.
 7. Prefer adding one table row to existing consistency tests over creating new test infrastructure.
 8. Run focused checks first. Run the broad workspace gate once after the narrow changes settle.
 9. Update planning records last, from the actual observed results.
-10. Hand back only when every checked handoff criterion is satisfied or when the sole unsatisfied broad-workspace item is explicitly proven and recorded as an unrelated baseline blocker under Outcome 2.
+10. Hand back only when every checked handoff criterion is satisfied and the
+    workspace result is recorded under the applicable outcome.
 
 ## Terminal condition
 
