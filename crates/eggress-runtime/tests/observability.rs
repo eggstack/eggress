@@ -1029,14 +1029,23 @@ enabled = true
         .expect("udp associate");
     assert_eq!(reply[1], 0x00);
 
-    // Verify active association gauge is > 0
-    let (status, body) = http_get(&admin_addr, "/-/udp").await;
-    assert_eq!(status, 200);
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(
-        json["associations_active"].as_i64().unwrap() >= 1,
-        "should have at least 1 active association"
-    );
+    // The association is registered by a task spawned after the SOCKS reply,
+    // and the top-level gauge is bridged when /metrics is rendered. Give both
+    // tasks a bounded readiness window before asserting.
+    let mut active = 0;
+    for _ in 0..100 {
+        let (status, _) = http_get(&admin_addr, "/metrics").await;
+        assert_eq!(status, 200);
+        let (status, body) = http_get(&admin_addr, "/-/udp").await;
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        active = json["associations_active"].as_i64().unwrap();
+        if active >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(active >= 1, "should have at least 1 active association");
 
     // Close TCP control connection
     drop(stream);
