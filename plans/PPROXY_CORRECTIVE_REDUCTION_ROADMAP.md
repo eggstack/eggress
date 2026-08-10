@@ -12,7 +12,8 @@ The final contract/reporting closure pass is implemented in `bd10467`. The
 follow-up contract metadata reconciliation is implemented in
 `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6` under Outcome 2: its focused and
 changed-surface gates pass, while the named pre-existing runtime observability
-test remains the sole workspace-test blocker.
+test remains the sole workspace-test blocker. The focused GET fail-closed
+evidence and closure records are in `cf448e7`.
 
 Implementation commit range: see the post-closure entry in the closure
 record below. Do not reopen the completed phase scope beyond that
@@ -233,6 +234,8 @@ Final contract/reporting closure pass: `bd10467`; metadata reconciliation:
 `PPROXY_FINAL_CONTRACT_REPORTING_CLOSURE_PASS.md` for focused verification and
 the unrelated workspace-gate blocker. PAC and verbose are both
 `compatible_with_warning`; `cli.get` config/runtime/CLI layers are complete.
+Focused GET fail-closed evidence and the final closure-record update are in
+`cf448e7`.
 
 ### Phase 4 review corrections
 

@@ -16,7 +16,8 @@
 - Review baseline: `f157110b87abb25c53bc6d86c36fe4172adc6c50`
 - Compatibility reference: checked-in `pproxy==2.7.9` baseline under `compat/pproxy-2.7.9/`
 - Scope: final contract metadata reconciliation plus truthful disposition of the existing workspace-test blocker.
-- Implementation commit: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`
+- Implementation commits: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`,
+  `cf448e7` (focused GET fail-closed evidence and closure records).
 
 ## Final disposition
 

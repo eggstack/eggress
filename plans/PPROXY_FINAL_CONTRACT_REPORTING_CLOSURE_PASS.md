@@ -16,7 +16,8 @@
 - Compatibility reference: checked-in `pproxy==2.7.9` baseline under `compat/pproxy-2.7.9/`
 - Scope: final contract/reporting consistency only, plus one bounded `--test` entry-point parity correction if confirmed by focused test.
 - Implementation commit: `bd10467` (`fix: close pproxy contract reporting gaps`)
-- Metadata reconciliation follow-up: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`.
+- Metadata reconciliation follow-up: `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`;
+  verification/closure records: `cf448e7`.
 
 ## Purpose
 
@@ -535,7 +536,8 @@ This pass does **not** authorize:
 ## Acceptance criteria
 
 The implementation criteria below were satisfied by `bd10467`, with the
-metadata reconciliation completed by `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`.
+metadata reconciliation completed by `cef6851cc7275aca3cb8f9e27cc3dc8b4f7abff6`
+and its focused GET evidence/closure records completed by `cf448e7`.
 Changed-surface Rust verification and the fresh-extension Python smoke suite
 are green. The broad workspace gate was attempted with
 `cargo test --workspace --locked` and remains blocked by the unrelated existing

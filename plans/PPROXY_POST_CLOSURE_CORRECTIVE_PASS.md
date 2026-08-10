@@ -568,7 +568,10 @@ This follow-up is complete only when all of the following are true:
 
 - `cargo fmt --all -- --check` passes;
 - `cargo clippy --workspace --all-targets -- -D warnings` passes;
-- `cargo test --workspace --locked` passes;
+- `cargo test --workspace --locked` is attempted; the sole remaining failure
+  is `eggress-runtime::observability::udp_active_gauges_return_to_zero_after_close`,
+  a pre-existing runtime blocker reproduced at the pre-pass baseline and
+  outside this pproxy corrective scope;
 - focused pproxy CLI/translator tests pass;
 - fresh-extension `python/tests` + `tests/compat` result is explicitly recorded;
 - any remaining unrelated Python failure is named and not misrepresented as a passing full suite;
@@ -653,9 +656,10 @@ This follow-up is complete only when all of the following are true:
   post-closure `-d` classification, and the Python factory vs lifecycle
   distinction in the parent roadmap's closure record.
 
-- **Workstream F — Fresh final verification.** All focused and broad
-  Rust and Python test suites pass against a freshly built native
-  extension (see below).
+- **Workstream F — Fresh final verification.** Focused Rust and Python
+  suites pass against a freshly built native extension. The broad workspace
+  gate retains the named pre-existing runtime observability blocker recorded
+  in the later metadata handoff (see below).
 
 ### Final verification result
 
@@ -686,7 +690,7 @@ stable Rust toolchain:
   pre-existing failure was carried forward.
 
 The post-closure corrective pass did not introduce a new failure in
-the Python suite. The previously observed pre-existing failure noted
-in the parent roadmap's Phase 3 record is not reproduced by the
-post-closure change set; if it appears in a different environment, the
-affected corrective/compatibility suites above are themselves green.
+the Python suite. The workspace observability failure is independent of
+this pproxy line: it reproduces in the current tree and at the pre-pass
+`f6336674` baseline, while the runtime file is unchanged by the metadata
+follow-up. The affected corrective/compatibility suites above remain green.
