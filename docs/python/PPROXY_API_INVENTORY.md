@@ -1,5 +1,10 @@
 # pproxy 2.7.9 — Static API Inventory
 
+> **Historical document.** This file records a historical implementation/audit
+> state. It must not be used to infer current support. Current support lives in
+> the canonical manifest (`docs/parity/pproxy_capability_manifest.toml`) and
+> practical matrix (`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`).
+
 Comprehensive inventory of the pproxy Python package API surface with tier
 classification against eggress (Rust).
 

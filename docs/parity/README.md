@@ -17,6 +17,22 @@ It uses these labels:
 | `native_extension` | Eggress-only functionality with no pproxy claim. |
 | `platform_limited` | Available where the required operating-system facility exists. |
 
+### Tier classification rules
+
+These rules govern how capabilities are classified:
+
+- **Same flag + different config schema**: Not `drop_in`. A flag with the same
+  purpose but incompatible file contents is a `supported_difference`, not
+  unchanged-input compatibility.
+- **Accepted flag + different output destination**: Not `native_equivalent`. If
+  the flag is recognized but the requested outcome does not occur (e.g., log
+  file is not written), classify as `supported_difference` and document the
+  actual alternative.
+- **Same unsupported operation on both implementations**: Not
+  `intentional_non_parity`. When pproxy itself does not implement an operation
+  (e.g., SOCKS4 BIND), a matching refusal by Eggress is `unsupported`, not
+  Eggress-specific non-parity.
+
 ## Authoritative documents
 
 - [`PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) — maintained public matrix and exclusions.

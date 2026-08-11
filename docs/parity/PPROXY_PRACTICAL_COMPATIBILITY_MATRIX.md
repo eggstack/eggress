@@ -14,6 +14,7 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | URI grammar | Unix-domain TCP upstream | yes | yes | platform-dependent | URI/config tests | `platform_limited` | Unix only; Windows reports a platform diagnostic. |
 | CLI | No-argument mixed-listener default | yes | n/a | yes | `pproxy_binary`, CLI tests | `matched` | Uses the documented HTTP/SOCKS default. |
 | CLI | `-l`, `-r`, `-ul`, `-ur` | yes | yes | yes | CLI translation tests | `matched` | Values remain associated with their flags. |
+| CLI | `-f/--config` flag ownership | yes | yes | yes | `cli.config` manifest entry | `compatible_with_warning` | Flag recognized; schema differs so pproxy config files cannot be used unchanged. |
 | CLI | `--pac <path>` ownership and PAC mapping | yes | yes | yes | `test_pac_flag_emits_warning`, parser tests | `supported_difference` | Consumes the path and maps it to the Eggress admin PAC route. |
 | CLI | `--get <path,file>` static content | yes | bounded | yes | `test_valid_get_static_content_is_supported` | `supported_difference` | Valid values are served through native admin static content; malformed or unreadable values fail closed. |
 | CLI | `--test <target>` ownership and delegation | yes | yes | yes | `test_target_preserves_value_taking_option`, CLI command tests | `supported_difference` | Consumes the target and both compatibility entry points pass it to native upstream testing. |
@@ -21,12 +22,13 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 | CLI | `--sys` | yes | n/a | no | unsupported diagnostic tests | `unsupported` | `--sys` is unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection. |
 | CLI | `-d` debug/traceback diagnostics | yes | n/a | yes | `test_debug_flag_emits_compatible_warning`, CLI diagnostic tests | `compatible_with_warning` | Emits `debug-mode`; selects a debug-level default tracing filter, but does not reproduce Python traceback semantics. Independent of `-v` and `--daemon`; explicit `RUST_LOG` remains authoritative. |
 | CLI | `--daemon` | yes | n/a | no | unsupported fatal tests | `unsupported` | Fatal (exit code 5) before startup. Use a process manager. |
+| CLI | Unknown flags | yes | n/a | no | fatal diagnostic tests | `unsupported` | Fatal with exit code 2 in both the standalone binary and `eggress pproxy run`. Report-class identifier `unknown-flag`. |
 | CLI | `--reuse` (SO_REUSEPORT) | yes | n/a | yes | listener socket tests | `supported_difference` | Configures SO_REUSEPORT on listener sockets; not connection pooling. |
 | CLI | `--auth` | yes | n/a | no | unsupported fatal tests | `unsupported` | Validated and classified as unsupported (per-client auth reuse). |
-| CLI | Unknown flags | yes | n/a | no | fatal diagnostic tests | `unsupported` | Fatal with exit code 2 in both the standalone binary and `eggress pproxy run`. Report-class identifier `unknown-flag`. |
+| CLI | `--log` log file | yes | n/a | no | `test_log_flag_emits_warning` | `compatible_with_warning` | Flag recognized and parsed; no file is written. Logs go to stderr via tracing-subscriber. |
 | Inbound | HTTP/HTTPS CONNECT and forward proxy | yes | yes | yes | runtime/differential tests | `matched` | HTTPS is TLS-wrapped HTTP tunneling. |
 | Inbound | SOCKS4/4a | yes | yes | yes | runtime/differential tests | `matched` | SOCKS4a domain targets are covered. |
-| Inbound | SOCKS5 CONNECT and username/password auth | yes | yes | yes | runtime/differential tests | `matched` | BIND is explicitly rejected. |
+| Inbound | SOCKS5 CONNECT and username/password auth | yes | yes | yes | runtime/differential tests | `matched` | BIND is unsupported on both pproxy and Eggress. |
 | Inbound | SOCKS5 UDP ASSOCIATE | yes | bounded | yes | UDP runtime/differential tests | `supported_difference` | Public API and framing boundaries are documented. |
 | Inbound | Shadowsocks AEAD and Trojan | yes | bounded | yes | protocol/runtime tests | `supported_difference` | Native implementations; no strict private-API claim. |
 | Inbound | TCP/UDP echo and fixed-target raw/tunnel | yes | bounded | yes | corrective parser/config/runtime tests | `supported_difference` | TCP is retained independently; UDP requires explicit `-ul` configuration. |
@@ -69,7 +71,7 @@ in [`README.md`](README.md). A skipped oracle run is not evidence of a match.
 SSH, QUIC/HTTP/3, SSR, legacy Shadowsocks ciphers/OTA, unsupported plugins,
 daemonization (`--daemon`), per-client auth reuse (`--auth`), system proxy apply
 via pproxy compat (`--sys`), unsupported reverse compositions, general multi-hop
-UDP, and unavailable platform transparent facilities remain explicit exclusions.
-Unknown flags and unsupported options are fatal (exit code 2 or 5) rather than
-warnings. Known syntax is diagnosed with an alternative, boundary, or platform
-reason rather than silently selecting another protocol.
+UDP, SOCKS4/SOCKS5 BIND, and unavailable platform transparent facilities remain
+explicit exclusions. Unknown flags and unsupported options are fatal (exit code 2
+or 5) rather than warnings. Known syntax is diagnosed with an alternative,
+boundary, or platform reason rather than silently selecting another protocol.

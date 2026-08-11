@@ -23,8 +23,8 @@ The workspace `Cargo.toml` configures both rustls and tokio-rustls to exclude
 native build deps:
 
 ```toml
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"] }
 ```
 
 `default-features = false` on both crates disables the `aws_lc_rs` default

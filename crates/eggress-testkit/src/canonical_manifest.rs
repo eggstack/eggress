@@ -1561,4 +1561,166 @@ mod tests {
             }
         }
     }
+
+    /// Phase 2 contract test: cli.config must not be drop_in when schemas differ.
+    #[test]
+    fn cli_config_not_drop_in_with_different_schema() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        let cli_config = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "cli.config")
+            .expect("cli.config entry must exist");
+
+        assert_ne!(
+            cli_config.tier, "drop_in",
+            "cli.config must not be drop_in when pproxy and eggress use different config schemas"
+        );
+        assert!(
+            cli_config.notes.to_lowercase().contains("schema")
+                || cli_config.notes.to_lowercase().contains("differ"),
+            "cli.config notes should mention schema difference"
+        );
+    }
+
+    /// Phase 2 contract test: cli.log must not claim native_equivalent when no
+    /// file is written.
+    #[test]
+    fn cli_log_not_native_equivalent_without_file_output() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        let cli_log = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "cli.log")
+            .expect("cli.log entry must exist");
+
+        assert_ne!(
+            cli_log.tier, "native_equivalent",
+            "cli.log must not be native_equivalent when pproxy writes to a file \
+             but eggress only logs to stderr"
+        );
+        assert!(
+            cli_log.notes.to_lowercase().contains("stderr")
+                || cli_log.notes.to_lowercase().contains("no file"),
+            "cli.log notes should mention stderr or that no file is written"
+        );
+    }
+
+    /// Phase 2 contract test: SOCKS4/5 BIND must be unsupported (not
+    /// intentional_non_parity) when pproxy also does not implement the
+    /// operation.
+    #[test]
+    fn socks4_socks5_bind_are_unsupported_not_intentional() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        for id in &["protocol.socks4_bind", "protocol.socks5_bind"] {
+            let cap = manifest
+                .capability
+                .iter()
+                .find(|c| c.id == *id)
+                .unwrap_or_else(|| panic!("{id} entry must exist"));
+
+            assert_ne!(
+                cap.tier, "intentional_non_parity",
+                "{id} must not be intentional_non_parity when pproxy also lacks the operation; \
+                 use unsupported instead"
+            );
+            assert!(
+                cap.notes.to_lowercase().contains("neither pproxy")
+                    || cap.notes.to_lowercase().contains("pproxy also"),
+                "{id} notes should mention that pproxy also does not implement it"
+            );
+        }
+    }
+
+    /// Phase 2 contract test: matrix and manifest must not directly contradict
+    /// for corrected entries.
+    #[test]
+    fn corrected_entries_no_manifest_matrix_contradiction() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        let workspace_root = path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("should have workspace root");
+
+        let matrix_path =
+            workspace_root.join("docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md");
+        if !matrix_path.exists() {
+            eprintln!("practical matrix not found, skipping");
+            return;
+        }
+        let matrix = fs::read_to_string(&matrix_path).expect("should read practical matrix");
+
+        // If cli.config is not drop_in in manifest, matrix must not say matched
+        // for config-related rows.
+        let cli_config = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "cli.config")
+            .expect("cli.config must exist");
+        if cli_config.tier != "drop_in" {
+            assert!(
+                !matrix.contains("-f/--config`) | yes | yes | yes | `matched`"),
+                "matrix should not claim -f/--config is matched when manifest says {}",
+                cli_config.tier
+            );
+        }
+
+        // If cli.log is not native_equivalent, matrix must not claim it
+        // produces equivalent file output.
+        let cli_log = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "cli.log")
+            .expect("cli.log must exist");
+        if cli_log.tier == "compatible_with_warning" {
+            // The matrix should not have a "matched" row for --log
+            let log_rows: Vec<&str> = matrix
+                .lines()
+                .filter(|l| l.contains("--log") && l.contains("|"))
+                .collect();
+            for row in log_rows {
+                assert!(
+                    !row.contains("`matched`"),
+                    "matrix row for --log should not be matched: {row}"
+                );
+            }
+        }
+    }
 }

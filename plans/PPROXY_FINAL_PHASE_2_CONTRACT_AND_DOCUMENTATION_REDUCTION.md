@@ -2,7 +2,35 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+### Changes made
+
+- **`cli.config`**: Demoted from `drop_in` to `compatible_with_warning`. Different TOML schema; pproxy config files cannot be used unchanged.
+- **`cli.log`**: Demoted from `native_equivalent` to `compatible_with_warning`. Flag recognized but no file written; logs go to stderr.
+- **`protocol.socks4_bind`**: Reclassified from `intentional_non_parity` to `unsupported`. pproxy also does not implement SOCKS4 BIND.
+- **`protocol.socks5_bind`**: Reclassified from `intentional_non_parity` to `unsupported`. pproxy also does not implement SOCKS5 BIND.
+
+### Files corrected
+
+- `docs/parity/pproxy_capability_manifest.toml` — tier corrections and notes
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` — reconciled with corrected manifest
+- `docs/parity/README.md` — tier classification rules added
+- `docs/DEPENDENCY_POLICY.md` — removed stale `logging` feature from rustls/tokio-rustls examples
+- `docs/PPROXY_PARITY_SPEC.md` — historical banner added
+- `docs/python/PPROXY_API_INVENTORY.md` — historical banner added
+- `docs/release/FINAL_PPROXY_PARITY_CERTIFICATION_TRACK_BC.md` — historical banner added
+- `crates/eggress-testkit/src/canonical_manifest.rs` — 4 targeted contract tests added
+
+### Verification summary
+
+- `python3 scripts/validate_pproxy_parity_manifest.py` — PASS (149 capabilities, 0 errors)
+- `cargo test -p eggress-testkit canonical_manifest` — 56 passed (52 existing + 4 new)
+- `cargo test -p eggress-pproxy-compat -- bind` — 12 passed
+- `cargo test -p eggress-pproxy-compat test_log_flag` — 1 passed
+- `cargo fmt --all -- --check` — PASS
+- `cargo clippy --workspace --all-targets -- -D warnings` — PASS
+- `cargo test --workspace --locked` — PASS
 
 ## Parent roadmap
 

@@ -1,5 +1,10 @@
 # Track B/C Release Closure Certification
 
+> **Historical document.** This file records a historical release-closure state.
+> It must not be used to infer current support. Current support lives in the
+> canonical manifest (`docs/parity/pproxy_capability_manifest.toml`) and
+> practical matrix (`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`).
+
 **Status:** Certified subset / release-candidate closure
 **Reference target:** `pproxy==2.7.9`
 **Canonical contract:** `docs/parity/pproxy_capability_manifest.toml`
