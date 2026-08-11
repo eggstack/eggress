@@ -16,8 +16,8 @@ identified in review of current `main`:
    handshake/authentication failure or timeout;
 2. compatibility tier semantics are duplicated across Rust, Python, and the
    canonical manifest and have already drifted (`--log`, SOCKS BIND);
-3. SOCKS5 request parsing is permissive about the reserved byte and one public
-   encoder silently truncates overlong domain names;
+3. ~~SOCKS5 request parsing is permissive about the reserved byte and one public~~
+   ~~encoder silently truncates overlong domain names;~~ **Resolved in Phase 3.**
 4. routine verification is now appropriately small, but parity-record machinery
    and parts of release artifact validation remain more elaborate than the
    behavioral guarantees they provide; binary-size work needs to be measurement
@@ -97,7 +97,7 @@ SOCKS BIND drift and make aggregate classification semantics explicit.
 
 Plan: `POST_PARITY_PHASE_3_SOCKS5_PROTOCOL_CORRECTNESS.md`
 
-Tighten RFC-required reserved-field handling and remove silent address
+**COMPLETED.** Tighten RFC-required reserved-field handling and remove silent address
 truncation. Keep this strictly at the codec/handshake boundary.
 
 ### Phase 4 — Verification and size reduction

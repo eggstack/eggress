@@ -24,7 +24,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         group.bench_function("encode_ipv4_small", |b| {
             let mut buf = Vec::with_capacity(256);
             b.iter(|| {
-                encode_socks5_udp_datagram(&target, &payload, &mut buf);
+                encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
             });
         });
     }
@@ -36,7 +36,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         group.bench_function("encode_ipv4_large", |b| {
             let mut buf = Vec::with_capacity(2048);
             b.iter(|| {
-                encode_socks5_udp_datagram(&target, &payload, &mut buf);
+                encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
             });
         });
     }
@@ -48,7 +48,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         group.bench_function("encode_domain_small", |b| {
             let mut buf = Vec::with_capacity(256);
             b.iter(|| {
-                encode_socks5_udp_datagram(&target, &payload, &mut buf);
+                encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
             });
         });
     }
@@ -60,7 +60,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         group.bench_function("encode_ipv6_large", |b| {
             let mut buf = Vec::with_capacity(2048);
             b.iter(|| {
-                encode_socks5_udp_datagram(&target, &payload, &mut buf);
+                encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
             });
         });
     }
@@ -70,7 +70,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         let target = ipv4_target.clone();
         let payload = small_payload.clone();
         let mut encoded = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut encoded);
+        encode_socks5_udp_datagram(&target, &payload, &mut encoded).unwrap();
         group.bench_function("decode_ipv4", |b| {
             b.iter(|| {
                 decode_socks5_udp_datagram(&encoded).unwrap();
@@ -83,7 +83,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         let target = domain_target.clone();
         let payload = small_payload.clone();
         let mut encoded = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut encoded);
+        encode_socks5_udp_datagram(&target, &payload, &mut encoded).unwrap();
         group.bench_function("decode_domain", |b| {
             b.iter(|| {
                 decode_socks5_udp_datagram(&encoded).unwrap();
@@ -98,7 +98,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         group.bench_function("roundtrip_ipv4_small", |b| {
             let mut buf = Vec::with_capacity(256);
             b.iter(|| {
-                encode_socks5_udp_datagram(&target, &payload, &mut buf);
+                encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
                 decode_socks5_udp_datagram(&buf).unwrap();
             });
         });
@@ -111,7 +111,7 @@ fn udp_relay_benchmark(c: &mut Criterion) {
         group.bench_function("roundtrip_domain_small", |b| {
             let mut buf = Vec::with_capacity(256);
             b.iter(|| {
-                encode_socks5_udp_datagram(&target, &payload, &mut buf);
+                encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
                 decode_socks5_udp_datagram(&buf).unwrap();
             });
         });

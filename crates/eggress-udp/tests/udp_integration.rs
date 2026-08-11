@@ -242,7 +242,7 @@ fn codec_decode_encode_roundtrip_ipv4() {
     let target = SocksAddr::IPv4([10, 0, 0, 1], 9999);
     let payload = b"roundtrip data";
 
-    let encoded = encode_response(&target, payload);
+    let encoded = encode_response(&target, payload).unwrap();
     let req = decode_packet(&encoded, &limits).unwrap();
     assert_eq!(req.target, target);
     assert_eq!(req.payload, payload);
@@ -257,7 +257,7 @@ fn codec_decode_encode_roundtrip_ipv6() {
     );
     let payload = b"ipv6 roundtrip";
 
-    let encoded = encode_response(&target, payload);
+    let encoded = encode_response(&target, payload).unwrap();
     let req = decode_packet(&encoded, &limits).unwrap();
     assert_eq!(req.target, target);
     assert_eq!(req.payload, payload);
@@ -269,7 +269,7 @@ fn codec_decode_encode_roundtrip_domain() {
     let target = SocksAddr::Domain("localhost".to_string(), 5353);
     let payload = b"dns query";
 
-    let encoded = encode_response(&target, payload);
+    let encoded = encode_response(&target, payload).unwrap();
     let req = decode_packet(&encoded, &limits).unwrap();
     assert_eq!(req.target, target);
     assert_eq!(req.payload, payload);
@@ -282,7 +282,7 @@ fn codec_rejects_oversized_packet() {
         ..Default::default()
     };
     let target = SocksAddr::IPv4([192, 168, 1, 1], 8080);
-    let encoded = encode_response(&target, b"hello world this is long");
+    let encoded = encode_response(&target, b"hello world this is long").unwrap();
     assert!(matches!(
         decode_packet(&encoded, &limits),
         Err(UdpError::DatagramTooLarge(_, 10))

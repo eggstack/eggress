@@ -58,7 +58,7 @@ pub async fn standalone_udp_relay(
     tokio::spawn(async move {
         while let Some(msg) = response_rx.recv().await {
             let mut out = Vec::new();
-            encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
+            let _ = encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
             if socket_clone.send_to(&out, msg.client).await.is_ok() {
                 metrics_clone.record_standalone_packet_out(out.len() as u64);
             } else {

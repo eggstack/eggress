@@ -35,6 +35,8 @@ SOCKS4/4a and SOCKS5 proxy protocol implementations.
 - Method negotiation (no-auth, username/password)
 - Bounded credentials (255 bytes max)
 - CONNECT, BIND, UDP ASSOCIATE commands
+- TCP request parsers reject non-zero RSV bytes per RFC 1928
+- `SocksAddr::encode_reply()` is fallible: rejects domains exceeding 255 bytes
 - UDP datagram codec: encode/decode with IPv4, IPv6, and domain targets
 
 ## UDP ASSOCIATE

@@ -83,7 +83,7 @@ impl SocksAddr {
     }
 
     /// Encode this address into bytes for a SOCKS5 reply.
-    pub fn encode_reply(&self) -> Vec<u8> {
+    pub fn encode_reply(&self) -> Result<Vec<u8>, Socks5Error> {
         let mut buf = Vec::new();
         match self {
             SocksAddr::IPv4(addr, port) => {
@@ -92,11 +92,13 @@ impl SocksAddr {
                 buf.extend_from_slice(&port.to_be_bytes());
             }
             SocksAddr::Domain(domain, port) => {
+                let byte_len = domain.len();
+                if byte_len > 255 {
+                    return Err(Socks5Error::DomainTooLong(byte_len));
+                }
                 buf.push(ATYP_DOMAIN);
-                // SOCKS5 spec limits domain to 255 bytes; clamp to prevent silent truncation
-                let len = domain.len().min(255) as u8;
-                buf.push(len);
-                buf.extend_from_slice(&domain.as_bytes()[..len as usize]);
+                buf.push(byte_len as u8);
+                buf.extend_from_slice(domain.as_bytes());
                 buf.extend_from_slice(&port.to_be_bytes());
             }
             SocksAddr::IPv6(addr, port) => {
@@ -105,7 +107,7 @@ impl SocksAddr {
                 buf.extend_from_slice(&port.to_be_bytes());
             }
         }
-        buf
+        Ok(buf)
     }
 }
 
@@ -146,7 +148,10 @@ pub fn parse_connect_request(buf: &[u8]) -> Result<(SocksAddr, &[u8]), Socks5Err
     if cmd != CMD_CONNECT {
         return Err(Socks5Error::UnsupportedCommand(cmd));
     }
-    let _rsv = buf[2];
+    let rsv = buf[2];
+    if rsv != 0 {
+        return Err(Socks5Error::InvalidReservedByte(rsv));
+    }
     let atyp = buf[3];
 
     let (addr, rest) = match atyp {
@@ -201,7 +206,10 @@ pub fn parse_socks5_request(buf: &[u8]) -> Result<(Socks5Command, SocksAddr, &[u
     }
     let cmd = buf[1];
     let command = parse_command(cmd)?;
-    let _rsv = buf[2];
+    let rsv = buf[2];
+    if rsv != 0 {
+        return Err(Socks5Error::InvalidReservedByte(rsv));
+    }
     let atyp = buf[3];
 
     let (addr, rest) = match atyp {
@@ -356,7 +364,10 @@ pub async fn read_connect_request<R: AsyncRead + Unpin>(
         return Err(Socks5Error::UnsupportedCommand(cmd));
     }
 
-    let _rsv = reader.read_u8().await?;
+    let rsv = reader.read_u8().await?;
+    if rsv != 0 {
+        return Err(Socks5Error::InvalidReservedByte(rsv));
+    }
 
     let atyp = reader.read_u8().await?;
 
@@ -402,7 +413,10 @@ pub async fn read_socks5_request<R: AsyncRead + Unpin>(
     let cmd = reader.read_u8().await?;
     let command = parse_command(cmd)?;
 
-    let _rsv = reader.read_u8().await?;
+    let rsv = reader.read_u8().await?;
+    if rsv != 0 {
+        return Err(Socks5Error::InvalidReservedByte(rsv));
+    }
 
     let atyp = reader.read_u8().await?;
 
@@ -449,7 +463,7 @@ pub async fn send_connect_reply<W: AsyncWrite + Unpin>(
     bind_addr: &SocksAddr,
 ) -> Result<(), Socks5Error> {
     let mut reply = vec![0x05, rep, 0x00]; // version, reply, reserved
-    reply.extend_from_slice(&bind_addr.encode_reply());
+    reply.extend_from_slice(&bind_addr.encode_reply()?);
     writer.write_all(&reply).await?;
     writer.flush().await?;
     Ok(())
@@ -883,13 +897,13 @@ mod tests {
     #[tokio::test]
     async fn test_socks_addr_encode_reply() {
         let ipv4 = SocksAddr::IPv4([192, 168, 1, 1], 8080);
-        let encoded = ipv4.encode_reply();
+        let encoded = ipv4.encode_reply().unwrap();
         assert_eq!(encoded[0], ATYP_IPV4);
         assert_eq!(&encoded[1..5], &[192, 168, 1, 1]);
         assert_eq!(&encoded[5..7], &8080u16.to_be_bytes());
 
         let domain = SocksAddr::Domain("example.com".to_string(), 443);
-        let encoded = domain.encode_reply();
+        let encoded = domain.encode_reply().unwrap();
         assert_eq!(encoded[0], ATYP_DOMAIN);
         assert_eq!(encoded[1], 11); // "example.com" length
         assert_eq!(&encoded[2..13], b"example.com");
@@ -996,5 +1010,141 @@ mod tests {
         assert_eq!(response[3], 0x01); // atyp IPv4
         assert_eq!(&response[4..8], &[127, 0, 0, 1]);
         assert_eq!(&response[8..10], &1080u16.to_be_bytes());
+    }
+
+    #[test]
+    fn parse_socks5_request_rsv_zero_accepted() {
+        let buf = [0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0x00, 0x50];
+        let result = parse_socks5_request(&buf);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn parse_socks5_request_rsv_nonzero_rejected() {
+        let buf = [0x05, 0x01, 0x01, 0x01, 127, 0, 0, 1, 0x00, 0x50];
+        let result = parse_socks5_request(&buf);
+        assert!(matches!(
+            result,
+            Err(Socks5Error::InvalidReservedByte(0x01))
+        ));
+    }
+
+    #[test]
+    fn parse_connect_request_rsv_nonzero_rejected() {
+        let buf = [0x05, 0x01, 0x42, 0x01, 127, 0, 0, 1, 0x00, 0x50];
+        let result = parse_connect_request(&buf);
+        assert!(matches!(
+            result,
+            Err(Socks5Error::InvalidReservedByte(0x42))
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_socks5_request_rsv_nonzero_rejected() {
+        let (mut client, mut server) = duplex(1024);
+
+        // version=5, cmd=1 (CONNECT), rsv=0x01 (non-zero), atyp=1 (IPv4)
+        client
+            .write_all(&[0x05, 0x01, 0x01, 0x01, 127, 0, 0, 1])
+            .await
+            .unwrap();
+        client.write_all(&80u16.to_be_bytes()).await.unwrap();
+
+        let result = read_socks5_request(&mut server).await;
+        assert!(matches!(
+            result,
+            Err(Socks5Error::InvalidReservedByte(0x01))
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_connect_request_rsv_nonzero_rejected() {
+        let (mut client, mut server) = duplex(1024);
+
+        // version=5, cmd=1 (CONNECT), rsv=0xFF, atyp=1 (IPv4)
+        client
+            .write_all(&[0x05, 0x01, 0xFF, 0x01, 127, 0, 0, 1])
+            .await
+            .unwrap();
+        client.write_all(&80u16.to_be_bytes()).await.unwrap();
+
+        let result = read_connect_request(&mut server).await;
+        assert!(matches!(
+            result,
+            Err(Socks5Error::InvalidReservedByte(0xFF))
+        ));
+    }
+
+    #[test]
+    fn encode_reply_domain_255_bytes_ok() {
+        let domain = "a".repeat(255);
+        let addr = SocksAddr::Domain(domain, 80);
+        let encoded = addr.encode_reply().unwrap();
+        assert_eq!(encoded[0], ATYP_DOMAIN);
+        assert_eq!(encoded[1], 255);
+        assert_eq!(&encoded[2..257], "a".repeat(255).as_bytes());
+        assert_eq!(&encoded[257..259], &80u16.to_be_bytes());
+    }
+
+    #[test]
+    fn encode_reply_domain_256_bytes_error() {
+        let domain = "a".repeat(256);
+        let addr = SocksAddr::Domain(domain, 80);
+        let result = addr.encode_reply();
+        assert!(matches!(result, Err(Socks5Error::DomainTooLong(256))));
+    }
+
+    #[test]
+    fn encode_reply_multibyte_utf8_domain_exceeding_255_bytes() {
+        // Each 'é' is 2 bytes in UTF-8. 128 * 2 = 256 bytes > 255
+        let domain = "é".repeat(128);
+        let addr = SocksAddr::Domain(domain, 80);
+        let result = addr.encode_reply();
+        assert!(matches!(result, Err(Socks5Error::DomainTooLong(256))));
+    }
+
+    #[test]
+    fn encode_reply_ipv4_unchanged() {
+        let addr = SocksAddr::IPv4([192, 168, 1, 1], 8080);
+        let encoded = addr.encode_reply().unwrap();
+        assert_eq!(encoded, vec![ATYP_IPV4, 192, 168, 1, 1, 0x1F, 0x90]);
+    }
+
+    #[test]
+    fn encode_reply_ipv6_unchanged() {
+        let addr = SocksAddr::IPv6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 443);
+        let encoded = addr.encode_reply().unwrap();
+        assert_eq!(encoded[0], ATYP_IPV6);
+        assert_eq!(
+            &encoded[1..17],
+            &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        );
+        assert_eq!(&encoded[17..19], &443u16.to_be_bytes());
+    }
+
+    #[test]
+    fn encode_reply_domain_unchanged_for_valid() {
+        let addr = SocksAddr::Domain("example.com".to_string(), 443);
+        let encoded = addr.encode_reply().unwrap();
+        assert_eq!(encoded[0], ATYP_DOMAIN);
+        assert_eq!(encoded[1], 11);
+        assert_eq!(&encoded[2..13], b"example.com");
+        assert_eq!(&encoded[13..15], &443u16.to_be_bytes());
+    }
+
+    #[test]
+    fn udp_rsv_first_byte_nonzero_rejected() {
+        use super::super::udp_codec::{decode_socks5_udp_datagram, UdpCodecError};
+        let pkt = vec![0x01, 0x00, 0x00, ATYP_IPV4, 1, 2, 3, 4, 0x00, 0x50];
+        let result = decode_socks5_udp_datagram(&pkt);
+        assert!(matches!(result, Err(UdpCodecError::BadReserved)));
+    }
+
+    #[test]
+    fn udp_rsv_second_byte_nonzero_rejected() {
+        use super::super::udp_codec::{decode_socks5_udp_datagram, UdpCodecError};
+        let pkt = vec![0x00, 0x01, 0x00, ATYP_IPV4, 1, 2, 3, 4, 0x00, 0x50];
+        let result = decode_socks5_udp_datagram(&pkt);
+        assert!(matches!(result, Err(UdpCodecError::BadReserved)));
     }
 }

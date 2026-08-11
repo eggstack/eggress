@@ -41,7 +41,7 @@ proptest! {
     fn encode_decode_roundtrip_ipv4(addr: [u8; 4], port: u16, payload in proptest::collection::vec(any::<u8>(), 0..1024)) {
         let target = SocksAddr::IPv4(addr, port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut buf);
+        encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         prop_assert_eq!(req.target, target);
         prop_assert_eq!(req.payload, payload.as_slice());
@@ -51,7 +51,7 @@ proptest! {
     fn encode_decode_roundtrip_ipv6(addr: [u8; 16], port: u16, payload in proptest::collection::vec(any::<u8>(), 0..1024)) {
         let target = SocksAddr::IPv6(addr, port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut buf);
+        encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         prop_assert_eq!(req.target, target);
         prop_assert_eq!(req.payload, payload.as_slice());
@@ -61,7 +61,7 @@ proptest! {
     fn encode_decode_roundtrip_domain(domain in "[a-z]{1,63}", port: u16, payload in proptest::collection::vec(any::<u8>(), 0..1024)) {
         let target = SocksAddr::Domain(domain, port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut buf);
+        encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         prop_assert_eq!(req.target, target);
         prop_assert_eq!(req.payload, payload.as_slice());
@@ -71,7 +71,7 @@ proptest! {
     fn encode_decode_roundtrip_any(target in arb_socks_addr()) {
         let (target, payload) = target;
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut buf);
+        encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         prop_assert_eq!(req.target, target);
         prop_assert_eq!(req.payload, payload.as_slice());
@@ -82,7 +82,7 @@ proptest! {
         let payload = b"test";
         let target = SocksAddr::IPv4([1, 2, 3, 4], 80);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
         // Tamper with FRAG byte
         buf[2] = frag;
         let result = decode_socks5_udp_datagram(&buf);
@@ -94,7 +94,7 @@ proptest! {
         let payload = b"test";
         let target = SocksAddr::IPv4([1, 2, 3, 4], 80);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
         // Tamper with RSV byte 0
         buf[0] = byte0;
         let result = decode_socks5_udp_datagram(&buf);
@@ -106,7 +106,7 @@ proptest! {
         let payload = b"test";
         let target = SocksAddr::IPv4([1, 2, 3, 4], 80);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
         // Tamper with RSV byte 1
         buf[1] = byte1;
         let result = decode_socks5_udp_datagram(&buf);
@@ -127,7 +127,7 @@ proptest! {
     fn payload_preserved_exactly(payload in proptest::collection::vec(any::<u8>(), 0..4096)) {
         let target = SocksAddr::IPv4([10, 0, 0, 1], 1234);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, &payload, &mut buf);
+        encode_socks5_udp_datagram(&target, &payload, &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         prop_assert_eq!(req.payload.len(), payload.len());
         for (i, &b) in req.payload.iter().enumerate() {
@@ -143,7 +143,7 @@ proptest! {
             _ => SocksAddr::Domain("a".to_string(), port),
         };
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, b"", &mut buf);
+        encode_socks5_udp_datagram(&target, b"", &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         prop_assert_eq!(req.target, target);
         prop_assert_eq!(req.payload.len(), 0);
@@ -153,7 +153,7 @@ proptest! {
     fn domain_encoding_length(domain in "[a-z]{1,255}", port: u16) {
         let target = SocksAddr::Domain(domain.clone(), port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, b"", &mut buf);
+        encode_socks5_udp_datagram(&target, b"", &mut buf).unwrap();
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         if let SocksAddr::Domain(decoded_domain, decoded_port) = &req.target {
             prop_assert_eq!(decoded_domain.len(), domain.len());
@@ -168,7 +168,7 @@ proptest! {
     fn ipv4_fixed_size_layout(addr: [u8; 4], port: u16) {
         let target = SocksAddr::IPv4(addr, port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, b"X", &mut buf);
+        encode_socks5_udp_datagram(&target, b"X", &mut buf).unwrap();
         // RSV(2) + FRAG(1) + ATYP(1) + ADDR(4) + PORT(2) + PAYLOAD(1) = 11
         prop_assert_eq!(buf.len(), 11);
         prop_assert_eq!(buf[3], ATYP_IPV4);
@@ -180,7 +180,7 @@ proptest! {
     fn ipv6_fixed_size_layout(addr: [u8; 16], port: u16) {
         let target = SocksAddr::IPv6(addr, port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, b"X", &mut buf);
+        encode_socks5_udp_datagram(&target, b"X", &mut buf).unwrap();
         // RSV(2) + FRAG(1) + ATYP(1) + ADDR(16) + PORT(2) + PAYLOAD(1) = 23
         prop_assert_eq!(buf.len(), 23);
         prop_assert_eq!(buf[3], ATYP_IPV6);
@@ -192,7 +192,7 @@ proptest! {
     fn domain_variable_size_layout(domain in "[a-z]{1,63}", port: u16) {
         let target = SocksAddr::Domain(domain.clone(), port);
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, b"X", &mut buf);
+        encode_socks5_udp_datagram(&target, b"X", &mut buf).unwrap();
         // RSV(2) + FRAG(1) + ATYP(1) + LEN(1) + domain + PORT(2) + PAYLOAD(1)
         let expected = 5 + domain.len() + 2 + 1;
         prop_assert_eq!(buf.len(), expected);

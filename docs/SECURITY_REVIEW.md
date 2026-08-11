@@ -76,8 +76,9 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Returns `HeaderTooLarge` or `TooManyHeaders` errors on overflow.
 
 **Oversized SOCKS Domain Fields**:
-- SOCKS5 codec decodes domain names from the wire; no explicit size limit beyond the datagram framing.
+- SOCKS5 codec decodes domain names from the wire; TCP request parsers reject non-zero RSV bytes per RFC 1928.
 - Domain names are validated as valid UTF-8 before use.
+- `SocksAddr::encode_reply()` rejects domains exceeding 255 bytes; it never silently truncates.
 
 **Trojan Password and Server-Name Handling**:
 - Trojan protocol uses password as the sole authentication token.

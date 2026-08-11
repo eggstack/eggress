@@ -503,7 +503,7 @@ pub async fn udp_relay_loop(
                 Some(msg) = response_rx.recv() => {
                     if let Some(client_addr) = association.client_udp_addr() {
                         let mut out = Vec::new();
-                        encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
+                        let _ = encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
                         let _ = relay_socket.send_to(&out, client_addr).await;
                         config.udp_metrics.record_packet_down(msg.payload.len() as u64);
                     }

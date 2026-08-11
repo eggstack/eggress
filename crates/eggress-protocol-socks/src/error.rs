@@ -39,6 +39,12 @@ pub enum Socks5Error {
 
     #[error("address too long")]
     AddressTooLong,
+
+    #[error("non-zero reserved byte: {0}")]
+    InvalidReservedByte(u8),
+
+    #[error("domain exceeds SOCKS5 255-byte limit: {0}")]
+    DomainTooLong(usize),
 }
 
 impl From<Socks5Error> for std::io::Error {
@@ -120,6 +126,14 @@ mod tests {
             "unexpected end of stream"
         );
         assert_eq!(Socks5Error::AddressTooLong.to_string(), "address too long");
+        assert_eq!(
+            Socks5Error::InvalidReservedByte(0x01).to_string(),
+            "non-zero reserved byte: 1"
+        );
+        assert_eq!(
+            Socks5Error::DomainTooLong(256).to_string(),
+            "domain exceeds SOCKS5 255-byte limit: 256"
+        );
     }
 
     #[test]

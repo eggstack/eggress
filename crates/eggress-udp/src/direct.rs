@@ -69,12 +69,13 @@ async fn resolve_target(target: &SocksAddr) -> Result<SocketAddr, UdpError> {
     addrs.next().ok_or(UdpError::UnresolvedTarget)
 }
 
-pub fn encode_response(target: &SocksAddr, payload: &[u8]) -> Vec<u8> {
+pub fn encode_response(target: &SocksAddr, payload: &[u8]) -> Result<Vec<u8>, UdpError> {
     let mut buf = Vec::new();
     eggress_protocol_socks::socks5::udp_codec::encode_socks5_udp_datagram(
         target, payload, &mut buf,
-    );
-    buf
+    )
+    .map_err(UdpError::Codec)?;
+    Ok(buf)
 }
 
 #[cfg(test)]
@@ -151,7 +152,7 @@ mod tests {
     async fn encode_response_format() {
         let target = SocksAddr::IPv4([10, 0, 0, 1], 80);
         let payload = b"response data";
-        let encoded = encode_response(&target, payload);
+        let encoded = encode_response(&target, payload).unwrap();
         assert_eq!(encoded[0], 0x00);
         assert_eq!(encoded[1], 0x00);
         assert_eq!(encoded[2], 0x00);

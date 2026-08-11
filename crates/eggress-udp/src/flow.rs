@@ -74,7 +74,8 @@ impl Socks5UdpTargetFlow {
     pub async fn send(&self, target: &SocksAddr, payload: &[u8]) -> Result<(), std::io::Error> {
         use crate::codec::encode_socks5_udp_datagram;
         let mut out = Vec::new();
-        encode_socks5_udp_datagram(target, payload, &mut out);
+        encode_socks5_udp_datagram(target, payload, &mut out)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         self.udp_socket
             .send_to(&out, self.upstream_relay_addr)
             .await?;

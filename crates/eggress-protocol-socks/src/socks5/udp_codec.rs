@@ -92,19 +92,31 @@ pub fn decode_socks5_udp_datagram(packet: &[u8]) -> Result<Socks5UdpRequest<'_>,
     Ok(Socks5UdpRequest { target, payload })
 }
 
-pub fn encode_socks5_udp_datagram(target: &SocksAddr, payload: &[u8], out: &mut Vec<u8>) {
+pub fn encode_socks5_udp_datagram(
+    target: &SocksAddr,
+    payload: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<(), UdpCodecError> {
     out.clear();
     out.extend_from_slice(&[0x00, 0x00]);
     out.push(0x00);
-    out.extend_from_slice(&target.encode_reply());
+    let encoded = target
+        .encode_reply()
+        .map_err(|_| UdpCodecError::MalformedDomain)?;
+    out.extend_from_slice(&encoded);
     out.extend_from_slice(payload);
+    Ok(())
 }
 
 pub fn decode_socks5_udp_request(packet: &[u8]) -> Result<Socks5UdpRequest<'_>, UdpCodecError> {
     decode_socks5_udp_datagram(packet)
 }
 
-pub fn encode_socks5_udp_response(target: &SocksAddr, payload: &[u8], out: &mut Vec<u8>) {
+pub fn encode_socks5_udp_response(
+    target: &SocksAddr,
+    payload: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<(), UdpCodecError> {
     encode_socks5_udp_datagram(target, payload, out)
 }
 
@@ -166,7 +178,7 @@ mod tests {
         let target = SocksAddr::IPv4([10, 0, 0, 1], 9999);
         let payload = b"roundtrip";
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
 
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         assert_eq!(req.target, target);
@@ -179,7 +191,7 @@ mod tests {
         let target = SocksAddr::IPv6(addr, 80);
         let payload = b"test payload";
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
 
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         assert_eq!(req.target, target);
@@ -191,7 +203,7 @@ mod tests {
         let target = SocksAddr::Domain("localhost".to_string(), 5353);
         let payload = b"dns query";
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
 
         let req = decode_socks5_udp_datagram(&buf).unwrap();
         assert_eq!(req.target, target);
@@ -314,7 +326,7 @@ mod tests {
         let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
         let payload = b"test";
         let mut buf = Vec::new();
-        encode_socks5_udp_datagram(&target, payload, &mut buf);
+        encode_socks5_udp_datagram(&target, payload, &mut buf).unwrap();
 
         assert_eq!(buf[0], 0x00);
         assert_eq!(buf[1], 0x00);
