@@ -291,9 +291,9 @@ members = ["ss-udp"]
 
 **Trojan URI:** `trojan://password@host:port`
 
-> **Note:** `h2`, `ws`/`wss`, `raw`/`tunnel` protocols are implemented as protocol
-> crates only and are not integrated as inbound or upstream protocols through the
-> runtime supervisor. They are rejected by `compile_protocol()` and `parse_listener_uri`.
+> **Note:** `h2`, `ws`/`wss`, `raw`/`tunnel` protocols are supported as **upstream-only** protocols
+> through the runtime supervisor. They are not integrated as inbound/listener protocols and
+> are rejected by `parse_listener_uri`.
 
 ### `[upstreams.health]`
 
