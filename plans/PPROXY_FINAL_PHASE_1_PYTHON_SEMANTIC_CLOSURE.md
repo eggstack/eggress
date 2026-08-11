@@ -2,7 +2,29 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+### Changes made
+
+- **`DUMMY`**: Changed from `object()` to callable identity function `def DUMMY(value): return value`, matching pproxy 2.7.9 behavior.
+- **`UDP_LIMIT`**: Changed from `64` to `30`, matching pproxy 2.7.9 value.
+- **`prepare_ciphers(non-None)`**: Now raises `UnsupportedPProxyFeature` instead of silently returning `(reader, writer)`. The `cipher is None` path retains upstream-compatible `(None, None)` return.
+- **Plugin rejection**: `_proxy_by_uri()` now raises `UnsupportedPProxyFeature` when plugin metadata is present in the URI path, instead of silently discarding it.
+
+### Files changed
+
+- `python/pproxy/server.py` — DUMMY, UDP_LIMIT, prepare_ciphers, plugin rejection
+- `python/tests/test_pproxy_public_namespace.py` — Phase 1 behavioral tests
+- `python/tests/test_milestone_c_functional.py` — updated test_prepare_with_plugins to expect exception
+
+### Verification summary
+
+- `python/tests/test_pproxy_public_namespace.py` — 11 new Phase 1 tests passed (TestDummyIdentity, TestUDPLimit, TestPrepareCiphersHonesty, TestPluginRejection)
+- `python/tests tests/compat` — 2226 passed, 114 skipped
+- `cargo fmt --all -- --check` — PASS
+- `cargo clippy --workspace --all-targets -- -D warnings` — PASS
+- `cargo test --workspace --locked` — 2491 passed, 146 ignored
+- `python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml` — PASS (149 capabilities, 0 errors)
 
 ## Parent roadmap
 

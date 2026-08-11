@@ -15,8 +15,12 @@ from eggress.pproxy import PProxyCompatibilityError, UnsupportedPProxyFeature
 from eggress.protocol import get_protos, netloc_split
 
 SOCKET_TIMEOUT = 60
-UDP_LIMIT = 64
-DUMMY = object()
+UDP_LIMIT = 30
+
+
+def DUMMY(value):
+    """Identity helper matching pproxy 2.7.9's ``pproxy.server.DUMMY``."""
+    return value
 
 
 def compile_rule(filename):
@@ -61,6 +65,11 @@ def _proxy_by_uri(uri, jump):
     if err:
         raise argparse.ArgumentTypeError(err)
     path, _, _plugins = url.path.partition(",")
+    if _plugins:
+        raise UnsupportedPProxyFeature(
+            "plugin",
+            alternative="pproxy plugin execution is not supported by eggress",
+        )
     path, _, lbind = path.partition("@")
     cipher, _, location = url.netloc.rpartition("@")
     host, port = (
@@ -139,7 +148,13 @@ async def check_server_alive(interval, rserver, verbose):
 async def prepare_ciphers(cipher, reader, writer, bind=None, server_side=True):
     if cipher is None:
         return None, None
-    return reader, writer
+    raise UnsupportedPProxyFeature(
+        "prepare_ciphers",
+        alternative=(
+            "pproxy's internal Python stream-cipher/plugin wrapper is not replicated; "
+            "use Eggress native Shadowsocks AEAD or managed runtime APIs"
+        ),
+    )
 
 
 async def datagram_handler(writer, data, addr, protos, urserver, block, cipher, salgorithm,

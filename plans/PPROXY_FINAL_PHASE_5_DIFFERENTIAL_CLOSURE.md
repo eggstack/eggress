@@ -2,7 +2,22 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+### Verification summary
+
+All Phase 5 acceptance criteria met:
+
+- **Phase 1-4 implemented**: Phase 1 implemented (DUMMY, UDP_LIMIT, prepare_ciphers, plugin rejection); Phases 2-4 already IMPLEMENTED.
+- **Focused pproxy 2.7.9 source/oracle evidence**: DUMMY callable identity, UDP_LIMIT=30, prepare_ciphers non-None raises, plugin-bearing URI raises — all verified by focused tests.
+- **Standalone pproxy and eggress pproxy run startup paths**: Both entry points share the in-memory typed config boundary (Phase 3 implementation).
+- **`--test` exact-target behavior**: Shared in-process upstream test function via `eggress_cli::run_upstream_test` (Phase 3 implementation).
+- **Regex backend/boundary tests**: Trust model codified, backtrack limit enabled, pattern/rule bounds enforced (Phase 4 implementation).
+- **Manifest validator**: PASS (149 capabilities, 0 errors).
+- **Broad Rust gate**: `cargo fmt --all -- --check` PASS, `cargo clippy --workspace --all-targets -- -D warnings` PASS, `cargo test --workspace --locked` 2491 passed, 146 ignored.
+- **Broad Python gate**: Fresh extension build + `python/tests tests/compat` 2226 passed, 114 skipped.
+- **No new CI jobs, parity percentages, or certification artifacts added**.
+- **No excluded scope (SSH, QUIC/H3, SSR, plugins, daemonization, etc.) added**.
 
 ## Parent roadmap
 

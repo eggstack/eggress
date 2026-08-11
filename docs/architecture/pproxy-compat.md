@@ -59,8 +59,10 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target
-extension, plugins, and canonical raw rule suffixes without discarding them.
-Unsupported fields are reported after parsing. Common HTTP/SOCKS, HTTP-only,
+extension, and canonical raw rule suffixes. Plugin metadata is parsed for
+diagnostic purposes but plugin execution is explicitly unsupported — the
+Python compatibility factory rejects plugin-bearing URIs with
+`UnsupportedPProxyFeature`. Unsupported fields are reported after parsing. Common HTTP/SOCKS, HTTP-only,
 AEAD Shadowsocks, H2, WS/WSS, raw, tunnel, and Unix-domain TCP upstream flows lower through the
 same native URI/config path. H2 and WSS normalize to the native `+tls` form;
 raw/tunnel brace-delimited targets become the native raw endpoint. Bounded

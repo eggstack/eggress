@@ -57,6 +57,12 @@ reductive pass that closed the remaining compatibility defects.
 `plans/PPROXY_POST_CLOSURE_CORRECTIVE_PASS.md` is the bounded follow-up
 that closed the residual `-d`, `--sys`, execution-gate, Python
 backing-claim, and verification mismatches found after the four phases.
+`plans/PPROXY_FINAL_CORRECTIVE_CLOSURE_ROADMAP.md` governs the final
+corrective closure: Python semantic fixes, contract/documentation
+reduction, execution-path simplification, regex trust boundary, and
+differential closure. The bounded `pproxy==2.7.9` parity program is
+considered closed; future work requires a reproducible defect or explicit
+scope decision.
 `plans/PPROXY_FULL_DROP_IN_ROADMAP.md` and older milestone plans are historical
 and are not acceptance gates for the bounded roadmap.
 

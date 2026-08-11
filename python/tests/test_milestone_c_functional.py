@@ -358,13 +358,13 @@ class TestPrepareCiphers:
 
     @pytest.mark.asyncio
     async def test_prepare_with_plugins(self):
+        """Phase 1: non-None cipher raises UnsupportedPProxyFeature."""
+        from eggress.pproxy import UnsupportedPProxyFeature
         from pproxy.server import prepare_ciphers
         from pproxy.cipher import get_cipher
 
         err, apply_fn = get_cipher("aes-256-gcm:test")
         assert err is None
-        # apply_fn is the cipher setup callable with .cipher, .plugins, etc.
-        assert apply_fn.plugins == []
 
         reader = asyncio.StreamReader()
         reader.feed_eof()
@@ -384,9 +384,8 @@ class TestPrepareCiphers:
                 return type("Proto", (), {"is_closing": lambda self: False})()
 
         writer = MockWriter()
-        result = await prepare_ciphers(apply_fn, reader, writer, server_side=True)
-        # Returns (reader, writer) tuple after cipher setup
-        assert result is not None
+        with pytest.raises(UnsupportedPProxyFeature, match="prepare_ciphers"):
+            await prepare_ciphers(apply_fn, reader, writer, server_side=True)
 
 
 class TestCheckServerAlive:

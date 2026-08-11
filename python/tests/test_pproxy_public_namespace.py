@@ -393,3 +393,97 @@ class TestPrintServerStarted:
         assert "host=0.0.0.0" in result
         assert "port=8080" in result
 
+
+# ---------------------------------------------------------------------------
+# Phase 1: Python semantic closure tests
+# ---------------------------------------------------------------------------
+
+
+class TestDummyIdentity:
+    """DUMMY is a callable identity helper matching pproxy 2.7.9."""
+
+    def test_dummy_is_callable(self):
+        from pproxy.server import DUMMY
+        assert callable(DUMMY)
+
+    def test_dummy_returns_argument(self):
+        from pproxy.server import DUMMY
+        assert DUMMY(42) == 42
+
+    def test_dummy_preserves_identity(self):
+        from pproxy.server import DUMMY
+        sentinel = object()
+        assert DUMMY(sentinel) is sentinel
+
+    def test_dummy_returns_string_unchanged(self):
+        from pproxy.server import DUMMY
+        assert DUMMY("hello") == "hello"
+
+
+class TestUDPLimit:
+    """UDP_LIMIT matches pproxy 2.7.9 value."""
+
+    def test_udp_limit_value(self):
+        from pproxy.server import UDP_LIMIT
+        assert UDP_LIMIT == 30
+
+
+class TestPrepareCiphersHonesty:
+    """prepare_ciphers raises for non-None cipher (unsupported operation)."""
+
+    @pytest.mark.asyncio
+    async def test_prepare_ciphers_none_returns_none_pair(self):
+        from pproxy.server import prepare_ciphers
+        result = await prepare_ciphers(None, None, None)
+        assert result == (None, None)
+
+    @pytest.mark.asyncio
+    async def test_prepare_ciphers_non_none_raises(self):
+        from eggress.pproxy import UnsupportedPProxyFeature
+        from pproxy.server import prepare_ciphers
+        fake_cipher = object()
+        with pytest.raises(UnsupportedPProxyFeature, match="prepare_ciphers"):
+            await prepare_ciphers(fake_cipher, None, None)
+
+    @pytest.mark.asyncio
+    async def test_prepare_ciphers_non_none_no_mutation(self):
+        """No mutation of inputs before the exception is raised."""
+        from eggress.pproxy import UnsupportedPProxyFeature
+        from pproxy.server import prepare_ciphers
+
+        class Spy:
+            mutated = False
+            def __setattr__(self, name, value):
+                if name == "mutated":
+                    object.__setattr__(self, name, value)
+                else:
+                    object.__setattr__(self, name, value)
+                    self.mutated = True
+
+        spy = Spy()
+        fake_cipher = object()
+        with pytest.raises(UnsupportedPProxyFeature):
+            await prepare_ciphers(fake_cipher, spy, spy)
+        assert not spy.mutated
+
+
+class TestPluginRejection:
+    """Plugin-bearing URIs fail explicitly."""
+
+    def test_plugin_in_path_raises(self):
+        from eggress.pproxy import UnsupportedPProxyFeature
+        from pproxy.server import proxy_by_uri
+        with pytest.raises(UnsupportedPProxyFeature, match="plugin"):
+            proxy_by_uri("socks5://:1080/,plugin_name")
+
+    def test_plugin_free_uri_succeeds(self):
+        from pproxy.server import proxy_by_uri
+        proxy = proxy_by_uri("socks5://:1080")
+        assert proxy is not None
+
+    def test_plugin_with_options_raises(self):
+        from eggress.pproxy import UnsupportedPProxyFeature
+        from pproxy.server import proxy_by_uri
+        with pytest.raises(UnsupportedPProxyFeature, match="plugin"):
+            proxy_by_uri("socks5://:1080/,plugin,option1")
+
