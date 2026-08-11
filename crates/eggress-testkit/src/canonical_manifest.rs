@@ -1761,6 +1761,67 @@ mod tests {
             "system_proxy.apply must not advertise nonexistent CLI: {}",
             apply.eggress_behavior
         );
+
+        let workspace_root = path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("should have workspace root");
+        let system_proxy_readme =
+            fs::read_to_string(workspace_root.join("docs/system_proxy/README.md"))
+                .expect("system proxy README should exist");
+        assert!(
+            !system_proxy_readme.contains("eggress system-proxy apply")
+                && !system_proxy_readme.contains("--apply")
+                && !system_proxy_readme.contains("apply --dry-run"),
+            "active system proxy README must not advertise a public mutation CLI"
+        );
+    }
+
+    /// The installed wheel owns the bounded top-level pproxy namespace.
+    #[test]
+    fn python_importable_package_matches_wheel_contract() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+        let package = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "python.importable_package")
+            .expect("python.importable_package entry must exist");
+
+        assert_ne!(
+            package.tier, "unsupported",
+            "the manifest must not deny a namespace shipped by the wheel"
+        );
+        assert_eq!(package.python, "complete");
+        assert_eq!(package.evidence, "integration");
+        assert!(
+            package
+                .tests
+                .iter()
+                .any(|test| test.contains("test_import_top_level_pproxy_package")),
+            "manifest must cite the maintained installed-wheel import test"
+        );
+
+        let workspace_root = path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .expect("should have workspace root");
+        let pyproject =
+            fs::read_to_string(workspace_root.join("crates/eggress-python/pyproject.toml"))
+                .expect("Python packaging configuration should exist");
+        assert!(
+            pyproject.contains("pproxy/**/*.py"),
+            "the wheel packaging configuration must include the top-level pproxy package"
+        );
     }
 
     /// Phase 2 contract test: matrix and manifest must not directly contradict

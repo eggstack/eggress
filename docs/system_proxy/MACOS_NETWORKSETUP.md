@@ -2,7 +2,7 @@
 
 ## Overview
 
-On macOS, system proxy settings are managed via the `networksetup` command-line tool. This document describes how Eggress interacts with `networksetup` for inspection and apply.
+On macOS, system proxy settings are managed via the `networksetup` command-line tool. This document describes the read-only inspection backend and the platform command reference retained by the Rust library.
 
 ## Inspection
 
@@ -24,9 +24,13 @@ networksetup -listallnetworkservices
 
 Eggress uses the first listed service by default (typically `*Wi-Fi` or `*Ethernet`).
 
-## Dry-Run Apply Commands
+## Platform command reference
 
-Eggress generates the following commands for apply (not executed by default):
+The following platform-native commands document the operations that the Rust
+library can plan. They are not commands exposed by the Eggress CLI and are not
+executed by `eggress system-proxy inspect`.
+
+Example platform-native commands:
 
 ```bash
 # Enable and set HTTP proxy
@@ -58,4 +62,5 @@ networksetup -setsocksfirewallproxy <service> off
 - Requires `networksetup` to be available (standard on macOS)
 - Some services may require admin privileges to modify
 - Eggress never executes these commands automatically
-- Always use `--dry-run` to preview before applying
+- Review any platform-native mutation carefully before applying it; Eggress
+  does not apply these commands through its native CLI.

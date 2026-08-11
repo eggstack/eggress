@@ -881,7 +881,7 @@ pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
 | `--rulefile` | rejected | Compatible — loads pproxy plain regex lines and lowers them to a high-priority hostname block (Phase 2) |
 | `--reuse` | listener SO_REUSEPORT | Supported with warning — configures SO_REUSEPORT on listener sockets |
 | `--log` | rejected | Intentional non-parity — emits structured diagnostic |
-| `--sys` | inspection; use `--apply` for mutation | Inspection supported; mutation is explicit |
+| `--sys` | inspection and global mutation | Compatibility mode refuses mutation; native CLI exposes read-only inspection only |
 
 For the complete inventory with diagnostic codes, see
 [`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).

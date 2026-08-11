@@ -377,18 +377,32 @@ None. Both the temporary-file and subprocess stop conditions were avoided. The i
 
 ### Artifact measurement
 
-Toolchain: rustc 1.97.1, cargo 1.97.1. Profile: release (optimized).
+Toolchain: rustc 1.97.1, cargo 1.97.1, host/target
+`x86_64-unknown-linux-gnu`. Profile: release (optimized). The pre-Phase-3
+revision `3c1f12721deb2f25832c81a0303b8e7a6230d37a` is an ancestor of the
+Phase-3 refactor commit `16abdff2778b83b131979031c134396c2435c45f` and was
+built without patching the historical source.
 
-Current artifact sizes:
-- `eggress`: 9,671,808 bytes (9.2M)
-- `pproxy`: 8,541,872 bytes (8.1M)
+Both revisions were built with equivalent isolated commands:
 
-Pre-Phase-3 revision `3c1f12721deb2f25832c81a0303b8e7a6230d37a` was not
-rebuilt for comparison because the historical revision may not compile
-cleanly with the current toolchain. The architectural simplification
-(temp-file elimination, subprocess removal, `tempfile` to dev-dependencies)
-is the primary measured benefit. No binary-size CI gate or threshold was
-added.
+```text
+cd /tmp/eggress-pre-phase3
+CARGO_TARGET_DIR=/tmp/eggress-size-pre cargo build -p eggress-cli --release --locked
+
+cd /tmp/eggress-post-phase3
+CARGO_TARGET_DIR=/tmp/eggress-size-post cargo build -p eggress-cli --release --locked
+```
+
+Exact artifact sizes:
+
+| Revision | `eggress` | `pproxy` |
+|---|---:|---:|
+| Pre-Phase 3 (`3c1f127`) | 9,641,736 bytes | 8,480,160 bytes |
+| Current (`65370af`) | 9,671,808 bytes | 8,541,872 bytes |
+
+The comparison is informational: the refactor's primary benefit is removal
+of temporary-file and sibling-process coupling, not binary-size reduction.
+No binary-size CI gate or threshold was added.
 
 Dependency evidence:
 - `cargo tree -p eggress-cli -i tempfile -e normal`: nothing (tempfile not in production tree)

@@ -1,17 +1,24 @@
 # System Proxy Integration
 
-System proxy inspection and configuration helpers for Eggress.
+System proxy inspection and library-side configuration helpers for Eggress.
 
 ## Overview
 
-Eggress provides **read-only system proxy inspection** and **explicit dry-run apply** capabilities. System proxy mutation is operationally risky and never happens automatically.
+Eggress provides read-only system proxy inspection through the native CLI. The
+`eggress-system-proxy` Rust crate also contains planning, command-generation,
+and rollback-state primitives for library integrations. Those library
+capabilities are not exposed as public native CLI mutation commands, and
+system proxy state is never changed automatically.
 
 ## Design Principles
 
 1. **No hidden global mutation**: System proxy settings are never changed during normal `eggress run` or `eggress pproxy run`.
 2. **Read-only by default**: Inspection is safe and requires no elevated privileges.
-3. **Explicit apply**: Any proxy mutation requires explicit `--apply` flag and supports `--dry-run`.
-4. **Rollback support**: Apply saves previous settings to a rollback file for revert.
+3. **Read-only native CLI**: `eggress system-proxy inspect` is the only public
+   native system-proxy command.
+4. **Library-only mutation primitives**: Planning, command previews, and
+   rollback-state handling remain available to Rust callers through the crate
+   API; they are not CLI commands.
 5. **Credential redaction**: Passwords are stripped from all output and logs.
 
 ## CLI Usage
@@ -26,20 +33,21 @@ eggress system-proxy inspect
 eggress system-proxy inspect --json
 ```
 
-### Apply proxy settings (crate-level API only)
+### Rust library capabilities
 
-Apply and rollback primitives are available in the `eggress-system-proxy`
-crate as Rust APIs but are **not exposed as CLI subcommands**. Use
-platform-native tools for system proxy mutation.
+The `eggress-system-proxy` crate exposes apply planning, platform command
+construction, and rollback-state primitives as Rust APIs. They are library
+capabilities only; the native CLI remains read-only. Use platform-native tools
+for any operator-controlled system proxy mutation.
 
 ## Platform Support
 
-| Platform | Inspection | Apply | Notes |
+| Platform | Native CLI inspection | Rust library capability | Notes |
 |----------|-----------|-------|-------|
-| macOS | `networksetup` | Dry-run commands | Uses first network service |
-| Windows | Registry (Internet Settings) | Dry-run commands | `HKCU\...\Internet Settings` |
-| Linux | `gsettings` (GNOME) | Dry-run commands | GNOME desktop environment |
-| All | Environment variables | Shell exports | `HTTP_PROXY`, `HTTPS_PROXY`, etc. |
+| macOS | `networksetup` | Planning and command construction | Uses first network service |
+| Windows | Registry (Internet Settings) | Planning and command construction | `HKCU\...\Internet Settings` |
+| Linux | `gsettings` (GNOME) | Planning and command construction | GNOME desktop environment |
+| All | Environment variables | Platform-specific library helpers | `HTTP_PROXY`, `HTTPS_PROXY`, etc. |
 
 ## Architecture
 

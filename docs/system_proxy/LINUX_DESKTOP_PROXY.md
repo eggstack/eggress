@@ -27,7 +27,11 @@ gsettings get org.gnome.system.proxy.http host
 gsettings get org.gnome.system.proxy.http port
 ```
 
-### Dry-Run Apply Commands
+### Platform command reference
+
+The following platform-native commands are reference material for the Rust
+library's planning helpers. They are not Eggress CLI commands and are not
+executed by `eggress system-proxy inspect`.
 
 ```bash
 gsettings set org.gnome.system.proxy mode 'manual'
@@ -53,4 +57,4 @@ KDE proxy settings are managed via `kwriteconfig5` and `kreadconfig5`. Support i
 - Requires `gsettings` to be available (GNOME desktop)
 - KDE support is deferred
 - Non-desktop (server) environments typically use environment variables
-- Eggress never executes these commands automatically
+- Eggress never executes these commands from its native CLI

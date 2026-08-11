@@ -351,7 +351,7 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "unit"
-tests = ["test_test_flag_generates_unknown_warning", "test_target_preserves_value_taking_option", "upstream_test_command_args_preserve_target"]
+tests = ["test_test_flag_generates_unknown_warning", "test_target_preserves_value_taking_option", "test_mode_runs_in_process_no_sibling_binary", "test_pproxy_run_test_mode_in_process"]
 diagnostic = "test-mode"
 notes = "The target remains owned by --test and is passed to native upstream testing. The compatibility service is not started for test mode."
 
@@ -2461,20 +2461,18 @@ id = "python.importable_package"
 category = "python"
 pproxy_surface = "import pproxy"
 pproxy_behavior = "import pproxy to access Server(), Connection, etc."
-eggress_behavior = "The single eggress distribution installs the eggress namespace and bundled eggress.pproxy helpers; it does not install top-level pproxy modules."
-tier = "unsupported"
+eggress_behavior = "The single eggress distribution installs the eggress namespace and a bounded top-level pproxy compatibility namespace alongside it."
+tier = "drop_in"
 parser = "not_applicable"
 translator = "not_applicable"
 config = "not_applicable"
 runtime = "not_applicable"
 cli = "not_applicable"
-python = "refused"
+python = "complete"
 docs = "complete"
-evidence = "docs_only"
-tests = []
-notes = "Top-level import is intentionally absent until Phase 4. Use from eggress import pproxy."
-caveat_class = "intentional_non_parity"
-rationale = "The current release publishes one eggress distribution and does not claim ownership of the top-level pproxy namespace."
+evidence = "integration"
+tests = ["test_wheel_import_smoke.py::test_import_top_level_pproxy_package"]
+notes = "The single eggress wheel intentionally owns the bounded top-level pproxy namespace. Installed-wheel smoke tests verify importability and representative public exports; this does not imply that every private upstream pproxy internal is implemented."
 
 [[capability]]
 id = "python.translate_pproxy_args"

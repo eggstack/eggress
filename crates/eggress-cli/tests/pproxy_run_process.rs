@@ -328,3 +328,30 @@ fn test_pproxy_run_unsupported_exit_code_matches_standalone() {
         output.status.code(),
     );
 }
+
+#[test]
+fn test_pproxy_run_test_mode_in_process() {
+    // The nested compatibility entry point must use the same in-process
+    // upstream-test implementation as standalone pproxy --test.
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19891",
+            "-r",
+            "socks5://127.0.0.1:19892",
+            "--test",
+            "http://example.com/eggress-test-target",
+        ],
+        5000,
+    );
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected unreachable upstream test to fail, got {:?}\nstderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}

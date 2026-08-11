@@ -2,7 +2,17 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Implementation summary
+
+- **Implementation commit**: recorded after the final verification commit is created.
+- **Phase 3 artifact evidence**: The pre-Phase-3 revision `3c1f12721deb2f25832c81a0303b8e7a6230d37a` was verified as an ancestor of `16abdff2778b83b131979031c134396c2435c45f` and built successfully under rustc/cargo 1.97.1 on `x86_64-unknown-linux-gnu`. Isolated release builds measured pre-Phase-3 `eggress` at 9,641,736 bytes and `pproxy` at 8,480,160 bytes; current `eggress` at 9,671,808 bytes and `pproxy` at 8,541,872 bytes. `cargo tree -p eggress-cli -i tempfile -e normal` produced no normal dependency path.
+- **System-proxy surface**: Active documentation now describes `eggress system-proxy inspect` as the read-only public CLI and labels apply planning, command generation, and rollback-state primitives as Rust library capabilities only. No mutation CLI was added.
+- **Python package contract**: A fresh installed wheel imports top-level `pproxy` and its representative public exports through `test_wheel_import_smoke.py::test_import_top_level_pproxy_package`. The canonical manifest now records `python.importable_package` as `drop_in` with `python = "complete"` and integration evidence; the practical matrix already agrees.
+- **CLI evidence and exit status**: `cli.test` cites the live in-process tests `test_test_flag_generates_unknown_warning`, `test_target_preserves_value_taking_option`, `test_mode_runs_in_process_no_sibling_binary`, and `test_pproxy_run_test_mode_in_process`. Standalone `pproxy --daemon` and nested `eggress pproxy run -- --daemon` tests both freeze exit code 5.
+- **Documentation scope**: README, AGENTS.md, and the architecture index already described the bundled top-level namespace and bounded compatibility surface accurately; no unrelated wording changes were needed there.
+- **Verification**: Focused Rust tests passed (`canonical_manifest`: 60; `pproxy_binary`: 25; `pproxy_run_process`: 11; `cli_exit_codes`: 5). The canonical manifest validator passed all 149 capabilities. A fresh installed wheel passed all 17 `test_wheel_import_smoke.py` tests with `--import-mode=importlib`, including top-level `pproxy` import and source-tree isolation. The local CI-equivalent Python smoke suite passed 2,226 tests with 114 skipped and 5 warnings. The broad Rust gate passed format check, Clippy with `-D warnings`, and 2,500 workspace tests with 146 ignored.
 
 ## Baseline
 

@@ -33,8 +33,8 @@ manifest.
 | macOS PF original-destination recovery | ⛔ | ⛔ | ⛔ | ⛔ | ⛔ | ⛔ |
 | Reverse / backward proxy (control channel) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | System proxy inspection (read-only) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| System proxy apply (dry-run only) | ❌ | ❌ | 🟡 | 🟡 | ❌ | ❌ |
-| System proxy revert (macOS only) | ❌ | ❌ | 🟡 | 🟡 | ❌ | ❌ |
+| System proxy apply CLI | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| System proxy rollback CLI | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Hot-reload of routing + upstreams | 🟦 | 🟦 | 🟦 | 🟦 | 🟦 | ❌ |
 | HTTP/2 CONNECT tunnel | 🟦 | 🟦 | 🟦 | 🟦 | 🟦 | ❌ |
 | WebSocket tunnel (server + upstream) | 🟦 | 🟦 | 🟦 | 🟦 | 🟦 | ❌ |
@@ -67,9 +67,9 @@ manifest.
 - `eggress-runtime::platform` reports macOS PF capability as `KernelUnsupported`
   on all macOS versions tested (audit H3 in Phase 25-28 hardening).
 - System proxy inspection uses `networksetup -getwebproxy` /
-  `-getsecurewebproxy` / `-getsocksfirewallproxy`. Apply and revert use
-  `networksetup -setwebproxy` etc. All operations are explicit (dry-run by
-  default).
+  `-getsecurewebproxy` / `-getsocksfirewallproxy`. The Rust library retains
+  platform command-planning primitives, but no public apply or rollback CLI
+  command is released.
 
 ### Windows x86_64
 

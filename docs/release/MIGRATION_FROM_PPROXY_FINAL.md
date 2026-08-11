@@ -370,7 +370,9 @@ for d in diags:
 - **No PF transparent proxy** (`intentional_non_parity`). Use `pfctl`
   with a standard listener instead.
 - System proxy inspection uses `networksetup`.
-- System proxy apply/revert requires explicit `--apply` flag.
+- Eggress compatibility `--sys` is refused; use `eggress system-proxy inspect`
+  for the native read-only surface. Rust system-proxy planning and rollback
+  primitives are library APIs, not public CLI commands.
 - All other features available.
 
 ### Windows

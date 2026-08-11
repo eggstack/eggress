@@ -207,9 +207,10 @@ fn unsupported_daemon_flag_fails() {
         ])
         .output()
         .expect("failed to run pproxy");
-    assert!(
-        !output.status.success(),
-        "expected non-zero exit for --daemon, got {:?}",
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "expected exit code 5 (unsupported --daemon), got {:?}",
         output.status.code()
     );
     let stderr = String::from_utf8_lossy(&output.stderr);

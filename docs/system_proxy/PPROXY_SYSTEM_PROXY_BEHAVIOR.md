@@ -31,15 +31,17 @@ Eggress intentionally diverges from pproxy's hidden global mutation:
 
 1. **No automatic mutation**: System proxy settings are never changed during normal operation.
 2. **Read-only inspection**: `eggress system-proxy inspect` reads settings without modification.
-3. **Explicit apply**: Any mutation requires explicit `--apply` flag.
-4. **Dry-run support**: All apply commands can be previewed without execution.
-5. **Rollback state**: Previous settings are saved to a file before any mutation.
+3. **No native mutation command**: The native CLI does not expose a public
+   command for changing or reverting system proxy state.
+4. **Rust library capability**: `eggress-system-proxy` retains planning,
+   platform command-generation, and rollback-state primitives for Rust callers.
+   These are not native CLI features.
 
 ## Classification
 
 | Feature | pproxy | Eggress | Status |
 |---------|--------|---------|--------|
-| `--sys` flag | Global mutation | Not implemented | **Intentional non-parity** |
+| `--sys` flag | Global mutation | Compatibility mode refuses it | **Intentional non-parity** |
 | System proxy inspection | Via `--sys` | `eggress system-proxy inspect` | **Supported** |
-| Dry-run apply | Not available | `--dry-run` flag | **Supported** |
-| Rollback state | Best-effort cleanup | Explicit rollback file | **Supported** |
+| System proxy mutation command | Implicit through `--sys` | No public native CLI command | **Intentional non-parity** |
+| Planning and rollback primitives | Internal to pproxy cleanup | Rust library API only | **Library capability** |

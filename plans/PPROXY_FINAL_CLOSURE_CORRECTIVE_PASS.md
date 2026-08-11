@@ -10,7 +10,7 @@ All acceptance criteria met:
 
 - **Canonical contract**: `cli.test` describes in-process shared Rust testing path; `cli.sys` no longer advertises nonexistent apply CLI; `system_proxy.apply`/`rollback` reclassified as unsupported (not exposed as CLI subcommands).
 - **Help text**: `-d` no longer claims native-equivalent traceback; `--log` no longer describes stderr as native-equivalent file output. `help_flag_d_and_log_wording` test guards corrected semantics.
-- **Phase 3 evidence**: Current artifact sizes recorded (eggress 9.2M, pproxy 8.1M); `tempfile` absent from production dependency tree.
+- **Phase 3 evidence**: Same-environment release builds were completed for pre-Phase-3 (`eggress` 9,641,736 bytes; `pproxy` 8,480,160 bytes) and current (`eggress` 9,671,808 bytes; `pproxy` 8,541,872 bytes); `tempfile` is absent from the production dependency tree.
 - **Regex/resource bounds**: `FANCY_REGEX_BACKTRACK_LIMIT = 1_000_000` explicitly configured; exhaustion test proves limit enforcement; `rulefile_max_entries_enforced` covers 10,001-entry overflow.
 - **Closure records**: Phase 5 and roadmap summaries distinguish upstream pproxy behavior from Eggress fail-closed behavior for prepare_ciphers and plugins.
 - **Exit semantics**: Both standalone `pproxy` and `eggress pproxy run` return exit 5 for unsupported features; `test_pproxy_run_unsupported_exit_code_matches_standalone` guards unified behavior.
