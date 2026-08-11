@@ -21,6 +21,10 @@ Prometheus-compatible metrics registry using `prometheus-client`. Bridges metric
 | `eggress_session_bytes_up_total` | Counter | protocol |
 | `eggress_session_bytes_down_total` | Counter | protocol |
 
+### Connection Lifecycle
+
+Session accounting is structurally balanced: `record_session_start()` increments `connections_active`, and exactly one `record_session()` call decrements it before the connection handler returns. This covers successful sessions, authentication failures, protocol errors, and handshake timeouts equally. Auth failures additionally increment a specialized `auth_failures` counter.
+
 ### Route Decision Metrics
 
 | Metric | Type | Labels |

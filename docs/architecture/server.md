@@ -29,12 +29,16 @@ Connection lifecycle management — the main entry point for processing inbound 
 ```
 serve_connection()
   │
+  ├─ record_session_start()
+  │
   ├─ accept() → AcceptedSession
   │   ├─ ReplayStream sniffs initial bytes
   │   ├─ ProtocolDispatcher tries detectors in order
   │   ├─ HTTP CONNECT → PendingTunnel
   │   ├─ HTTP forward → PendingHttpForward
   │   └─ SOCKS4/5, Shadowsocks, Trojan → PendingTunnel
+  │
+  ├─ (auth failure / protocol error / timeout → SessionReport)
   │
   ├─ RouteRequest built from session metadata
   ├─ Router.decide() → RouteDecision
@@ -48,7 +52,7 @@ serve_connection()
   │
   ├─ relay() / HTTP forward exchange
   │
-  └─ SessionReport recorded
+  └─ record_session(&report)   ← exactly one terminal call
 ```
 
 ## Traits

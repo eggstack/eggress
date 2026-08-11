@@ -107,6 +107,10 @@ pub struct ConnectionConfig {
 }
 
 /// Handle a single inbound connection.
+///
+/// Every non-panicking return from this function goes through exactly one
+/// terminal metrics finalization: after `record_session_start()`, exactly
+/// one `record_session()` call is made before returning.
 pub async fn serve_connection(
     client: eggress_core::BoxStream,
     config: ConnectionConfig,
@@ -129,13 +133,13 @@ pub async fn serve_connection(
     )
     .await;
 
-    let session = match accepted {
-        Ok(Ok(session)) => session,
+    let report = match accepted {
+        Ok(Ok(session)) => execute::execute(session, &config).await,
         Ok(Err(accept::AcceptError::AuthenticationFailed)) => {
             if let Some(metrics) = &config.metrics {
                 metrics.record_auth_failure();
             }
-            return SessionReport {
+            SessionReport {
                 protocol: None,
                 target: None,
                 route: "unknown".to_string(),
@@ -147,41 +151,35 @@ pub async fn serve_connection(
                 upstream_group: None,
                 upstream_id: None,
                 selection_reason: None,
-            };
+            }
         }
-        Ok(Err(_)) => {
-            return SessionReport {
-                protocol: None,
-                target: None,
-                route: "unknown".to_string(),
-                bytes_upstream: 0,
-                bytes_downstream: 0,
-                outcome: execute::SessionOutcome::ClientProtocolError,
-                failure: Some(execute::FailureCategory::Protocol),
-                rule_id: None,
-                upstream_group: None,
-                upstream_id: None,
-                selection_reason: None,
-            };
-        }
-        Err(_) => {
-            return SessionReport {
-                protocol: None,
-                target: None,
-                route: "unknown".to_string(),
-                bytes_upstream: 0,
-                bytes_downstream: 0,
-                outcome: execute::SessionOutcome::HandshakeTimedOut,
-                failure: Some(execute::FailureCategory::HandshakeTimeout),
-                rule_id: None,
-                upstream_group: None,
-                upstream_id: None,
-                selection_reason: None,
-            };
-        }
+        Ok(Err(_)) => SessionReport {
+            protocol: None,
+            target: None,
+            route: "unknown".to_string(),
+            bytes_upstream: 0,
+            bytes_downstream: 0,
+            outcome: execute::SessionOutcome::ClientProtocolError,
+            failure: Some(execute::FailureCategory::Protocol),
+            rule_id: None,
+            upstream_group: None,
+            upstream_id: None,
+            selection_reason: None,
+        },
+        Err(_) => SessionReport {
+            protocol: None,
+            target: None,
+            route: "unknown".to_string(),
+            bytes_upstream: 0,
+            bytes_downstream: 0,
+            outcome: execute::SessionOutcome::HandshakeTimedOut,
+            failure: Some(execute::FailureCategory::HandshakeTimeout),
+            rule_id: None,
+            upstream_group: None,
+            upstream_id: None,
+            selection_reason: None,
+        },
     };
-
-    let report = execute::execute(session, &config).await;
 
     if let Some(metrics) = &config.metrics {
         metrics.record_session(&report);
@@ -1198,6 +1196,290 @@ mod tests {
         ));
 
         origin_jh.abort();
+    }
+}
+
+/// Tests proving that session metrics are structurally balanced: one
+/// `record_session_start()` followed by exactly one `record_session()` for
+/// every path through `serve_connection()`.
+#[cfg(test)]
+mod metrics_lifecycle_tests {
+    use super::*;
+    use eggress_routing::{RouteActionSpec, Router};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A test-only metrics implementation that counts calls.
+    struct RecordingMetrics {
+        starts: AtomicUsize,
+        terminals: AtomicUsize,
+        auth_failures: AtomicUsize,
+        terminal_reports: Mutex<Vec<execute::SessionOutcome>>,
+    }
+
+    impl RecordingMetrics {
+        fn new() -> Self {
+            Self {
+                starts: AtomicUsize::new(0),
+                terminals: AtomicUsize::new(0),
+                auth_failures: AtomicUsize::new(0),
+                terminal_reports: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl SessionMetrics for RecordingMetrics {
+        fn record_session_start(&self) {
+            self.starts.fetch_add(1, Ordering::SeqCst);
+        }
+        fn record_session(&self, report: &SessionReport) {
+            self.terminals.fetch_add(1, Ordering::SeqCst);
+            self.terminal_reports
+                .lock()
+                .unwrap()
+                .push(std::mem::replace(
+                    &mut report.outcome.clone_outcome(),
+                    execute::SessionOutcome::Completed,
+                ));
+        }
+        fn record_auth_failure(&self) {
+            self.auth_failures.fetch_add(1, Ordering::SeqCst);
+        }
+        fn record_route_decision(&self, _: &str, _: &str, _: &str) {}
+        fn record_upstream_open(&self, _: &str, _: &str) {}
+        fn record_upstream_failure(&self, _: &str, _: &str) {}
+    }
+
+    impl execute::SessionOutcome {
+        fn clone_outcome(&self) -> Self {
+            match self {
+                Self::Completed => Self::Completed,
+                Self::ClientProtocolError => Self::ClientProtocolError,
+                Self::AuthenticationFailed => Self::AuthenticationFailed,
+                Self::HandshakeTimedOut => Self::HandshakeTimedOut,
+                Self::RouteFailed => Self::RouteFailed,
+                Self::RelayFailed => Self::RelayFailed,
+                Self::Cancelled => Self::Cancelled,
+            }
+        }
+    }
+
+    fn test_direct_routing() -> Arc<dyn RouteService> {
+        Arc::new(Router::new(vec![], RouteActionSpec::Direct))
+    }
+
+    fn test_all_protocols() -> Arc<[eggress_core::ProtocolId]> {
+        Arc::from([
+            eggress_core::ProtocolId::Http,
+            eggress_core::ProtocolId::Socks4,
+            eggress_core::ProtocolId::Socks5,
+            eggress_core::ProtocolId::Http2,
+            eggress_core::ProtocolId::WebSocket,
+            eggress_core::ProtocolId::Raw,
+        ])
+    }
+
+    fn metrics_config(metrics: Arc<RecordingMetrics>) -> ConnectionConfig {
+        ConnectionConfig {
+            routing: test_direct_routing(),
+            context: ConnectionContext::default(),
+            handshake_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(10),
+            protocols: test_all_protocols(),
+            authentication: accept::InboundAuthentication::None,
+            metrics: Some(metrics),
+            udp: None,
+            tls_client_config: None,
+            shadowsocks: None,
+            shadowsocks_metrics: None,
+            trojan: None,
+            fixed_target: None,
+            local_bind: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn metrics_balanced_after_successful_session() {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+        let metrics = Arc::new(RecordingMetrics::new());
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let m = metrics.clone();
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let config = metrics_config(m);
+            serve_connection(boxed, config).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x00]);
+
+        stream.write_all(&[0x05, 0x01, 0x00, 0x01]).await.unwrap();
+        match echo_addr.ip() {
+            std::net::IpAddr::V4(ip) => stream.write_all(&ip.octets()).await.unwrap(),
+            std::net::IpAddr::V6(ip) => stream.write_all(&ip.octets()).await.unwrap(),
+        }
+        stream
+            .write_all(&echo_addr.port().to_be_bytes())
+            .await
+            .unwrap();
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await.unwrap();
+        stream.write_all(b"hello").await.unwrap();
+        stream.shutdown().await.unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
+
+        let m = &*metrics;
+        assert_eq!(m.starts.load(Ordering::SeqCst), 1, "expected 1 start");
+        assert_eq!(m.terminals.load(Ordering::SeqCst), 1, "expected 1 terminal");
+        assert_eq!(
+            m.auth_failures.load(Ordering::SeqCst),
+            0,
+            "no auth failures"
+        );
+        echo_jh.abort();
+    }
+
+    #[tokio::test]
+    async fn metrics_balanced_after_auth_failure() {
+        let auth = accept::InboundAuthentication::UsernamePassword {
+            username: "user".to_string(),
+            password: "secret".to_string(),
+        };
+        let metrics = Arc::new(RecordingMetrics::new());
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let m = metrics.clone();
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let mut cfg = metrics_config(m);
+            cfg.authentication = auth;
+            serve_connection(boxed, cfg).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(&[0x05, 0x02, 0x00, 0x02]).await.unwrap();
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0x02]);
+
+        stream
+            .write_all(&[0x01, 0x04, b'u', b's', b'e', b'r', 0x05])
+            .await
+            .unwrap();
+        stream.write_all(b"wrong").await.unwrap();
+        let mut auth_resp = [0u8; 2];
+        stream.read_exact(&mut auth_resp).await.unwrap();
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::AuthenticationFailed
+        ));
+
+        let m = &*metrics;
+        assert_eq!(m.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(m.terminals.load(Ordering::SeqCst), 1);
+        assert_eq!(m.auth_failures.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn metrics_balanced_after_protocol_error() {
+        let metrics = Arc::new(RecordingMetrics::new());
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let m = metrics.clone();
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            serve_connection(boxed, metrics_config(m)).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        stream.write_all(b"garbage data").await.unwrap();
+        stream.shutdown().await.unwrap();
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::ClientProtocolError
+        ));
+
+        let m = &*metrics;
+        assert_eq!(m.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(m.terminals.load(Ordering::SeqCst), 1);
+        assert_eq!(m.auth_failures.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn metrics_balanced_after_handshake_timeout() {
+        let metrics = Arc::new(RecordingMetrics::new());
+        let (_client_stream, server_stream) = tokio::io::duplex(1024);
+        let boxed: eggress_core::BoxStream = Box::new(server_stream);
+        let task = tokio::spawn(serve_connection(boxed, metrics_config(metrics.clone())));
+        tokio::time::advance(Duration::from_secs(6)).await;
+
+        let report = task.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::HandshakeTimedOut
+        ));
+
+        let m = &*metrics;
+        assert_eq!(m.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(m.terminals.load(Ordering::SeqCst), 1);
+        assert_eq!(m.auth_failures.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn no_double_finalization_for_route_failure() {
+        let rules = vec![eggress_routing::CompiledRule {
+            id: eggress_routing::RuleId(std::sync::Arc::from("block")),
+            matcher: eggress_routing::MatchExpr::Any,
+            action: eggress_routing::RouteActionSpec::Reject(
+                eggress_core::RejectReason::AccessDenied,
+            ),
+        }];
+        let routing: Arc<dyn eggress_routing::RouteService> =
+            Arc::new(Router::new(rules, eggress_routing::RouteActionSpec::Direct));
+        let metrics = Arc::new(RecordingMetrics::new());
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let m = metrics.clone();
+        let proxy_jh = tokio::spawn(async move {
+            let (stream, _) = proxy_listener.accept().await.unwrap();
+            let boxed: eggress_core::BoxStream = Box::new(stream);
+            let mut cfg = metrics_config(m);
+            cfg.routing = routing;
+            serve_connection(boxed, cfg).await
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        let request = "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+
+        let report = proxy_jh.await.unwrap();
+        assert!(matches!(
+            report.outcome,
+            execute::SessionOutcome::RouteFailed | execute::SessionOutcome::ClientProtocolError
+        ));
+
+        let m = &*metrics;
+        assert_eq!(m.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(m.terminals.load(Ordering::SeqCst), 1);
     }
 }
 
