@@ -63,7 +63,7 @@ impl CompatRegex {
             Ok(r) => Ok(Self::Fast(r)),
             Err(_) => {
                 // Fall back to fancy_regex for Perl/Python-like constructs
-                match fancy_regex::Regex::new(pattern) {
+                match fancy_regex::RegexBuilder::new(pattern).build() {
                     Ok(r) => Ok(Self::Fancy(r)),
                     Err(e) => Err(RegexCompileError::CompileError {
                         pattern: pattern.to_string(),
@@ -83,7 +83,7 @@ impl CompatRegex {
             });
         }
 
-        match fancy_regex::Regex::new(pattern) {
+        match fancy_regex::RegexBuilder::new(pattern).build() {
             Ok(r) => Ok(Self::Fancy(r)),
             Err(e) => Err(RegexCompileError::CompileError {
                 pattern: pattern.to_string(),
@@ -422,6 +422,21 @@ mod tests {
             }
             _ => panic!("expected PatternTooLong"),
         }
+    }
+
+    #[test]
+    fn compile_pattern_at_length_boundary() {
+        let pattern = "a".repeat(MAX_PATTERN_LEN);
+        let re = CompatRegex::compile(&pattern).unwrap();
+        assert_eq!(re.as_str().len(), MAX_PATTERN_LEN);
+    }
+
+    #[test]
+    fn fancy_regex_backtrack_limit_applied() {
+        let re = CompatRegex::compile(r"(?=.*(\d)\1)").unwrap();
+        assert!(re.is_fancy());
+        let result = re.is_match("a11b");
+        assert!(result.is_ok());
     }
 
     #[test]

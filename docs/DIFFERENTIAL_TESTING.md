@@ -40,7 +40,7 @@ cargo install shadowsocks-rust
 |----------|-------|---------|
 | `EGRESS_REQUIRE_EXTERNAL_INTEROP` | `1` | Enable pproxy differential tests |
 | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP` | `1` | Enable Shadowsocks interop tests |
-| `EGRESS_RUN_PPROXY_DIFFERENTIAL` | `1` | Enable Phase 41 differential parity harness |
+| `EGRESS_RUN_PPROXY_DIFFERENTIAL` | `1` | Enable differential parity harness |
 | `EGRESS_REQUIRE_REVERSE_INTEROP` | `1` | Enable reverse proxy pproxy interop tests |
 | `EGRESS_REQUIRE_SOAK` | `1` | Enable reverse proxy soak/performance tests |
 
@@ -69,10 +69,10 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interopera
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1 udp
 ```
 
-### Phase 41 Differential Parity Harness
+### Differential Parity Harness
 
 ```bash
-# All Phase 41 scenario + CLI tests (gated; requires pproxy==2.7.9)
+# All differential scenario + CLI tests (gated; requires pproxy==2.7.9)
 EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored
 
 # Specific scenario
@@ -236,7 +236,7 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
 | `differential_standalone_udp_two_targets_from_same_client` | Standalone UDP two targets from same client |
 | Various `probe_*` tests | Black-box exploration of pproxy behavior |
 
-### Phase 41 Differential Parity Harness (`pproxy_differential.rs`)
+### Differential Parity Harness (`pproxy_differential.rs`)
 
 Structured scenario tests comparing eggress with pproxy using the reusable
 harness from `eggress_testkit::differential`. Gated on

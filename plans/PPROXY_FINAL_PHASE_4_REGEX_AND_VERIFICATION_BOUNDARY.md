@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Parent roadmap
 
@@ -13,6 +13,63 @@
 Codify the intended trust/resource boundary for pproxy-compatible regular expressions and rule files, preserve the useful existing bounds, and ensure the repository's verification apparatus remains proportionate: routine smoke checks stay small while expensive oracle/certification/fuzz/performance work remains specialized and opt-in.
 
 This phase is primarily clarification and reduction. It must not introduce a regex sandbox, worker process, generalized policy engine, or new CI matrix.
+
+## Implementation summary
+
+### Threat-model decision
+
+Production call-site discovery confirmed:
+
+- **No unauthenticated network client can supply an arbitrary compatibility regex pattern at runtime.** All patterns originate from CLI arguments, configuration files, or rule files controlled by the local operator.
+- **Regexes are compiled only during CLI translation and config load.** `CompatRegex::compile()` is called from `PproxyRuleFile::load()` (rule file parsing) and `compile_block_pattern()` (block flag validation), both of which execute at translation time. The runtime routing engine uses `regex::Regex` directly.
+- **Strings matched at connection time are bounded destination attributes.** The routing engine matches against `request.target.host` (hostname string) and `request.target.port` (decimal port string), not arbitrary network payload.
+- **Rule files are not re-read on reload.** `PproxyRuleFile` is used only during pproxy CLI translation. On SIGHUP, the runtime re-reads the TOML config, not the original pproxy rule file.
+- **Native Eggress routing rules do not use the fancy fallback.** `host_regex` and `destination_port_regex` in TOML config are compiled with `regex::Regex` directly. The `fancy_regex` backend is confined to pproxy compatibility translation validation.
+- **`compile_fancy` and `CompatRegex::is_match` have zero production callers.** They exist for test coverage and potential future use.
+
+No contrary remote-controlled pattern path was found. The trusted-configuration model holds.
+
+### Changes made
+
+**Workstream A — Trust model codified:**
+- `docs/architecture/pproxy-compat.md`: Added "Regex and rule trust model" section documenting the input-trust boundary, backend selection, bounds enforcement, and the confinement of fancy_regex to compatibility translation.
+- `README.md`: Refined design goal from "Resource-bounded hostile-input handling" to "Resource-bounded hostile network input; trusted operator configuration may use compatibility features with documented computational cost".
+- `docs/architecture/routing.md`: Clarified that native rules use `regex::Regex` while pproxy compatibility patterns may use `CompatRegex` with fancy fallback.
+
+**Workstream B — Tests preserved and extended:**
+- `regex_compat.rs`: Added `compile_pattern_at_length_boundary` test verifying exactly 4096-byte patterns compile successfully. Added `fancy_regex_backtrack_limit_applied` test verifying fancy patterns with backreferences work correctly.
+
+**Workstream C — Confirmed:**
+- No compatibility regex is evaluated against arbitrarily large network payload. Matching is confined to destination hostname and port strings.
+
+**Workstream D — Backtrack limit enabled:**
+- `regex_compat.rs`: Changed `fancy_regex::Regex::new()` calls to `fancy_regex::RegexBuilder::new(pattern).build()` in both `compile()` (fancy fallback path) and `compile_fancy()`. This enables the built-in backtrack limit (default 1,000,000 steps) without architecture changes.
+
+**Workstream E — Verification docs cleaned:**
+- `docs/DIFFERENTIAL_TESTING.md`: Replaced stale "Phase 41" labels with current "Differential Parity Harness" name (3 occurrences).
+
+**Workstream F — Orphaned scripts:**
+- 23 scripts are orphaned from active use (referenced only by historical plans). Per plan policy, they are retained as working specialized infrastructure but are not treated as routine ceremony. No active tests, workflows, or release processes reference them.
+
+**Workstream G — CI non-regression:**
+- Confirmed hosted CI remains the lean topology: one Ubuntu Rust smoke job, one path-scoped Python smoke job, one release-only publish workflow. No changes needed.
+
+**Workstream H — Performance:**
+- No regex compilation behavior changed in a way that would affect performance. The `RegexBuilder` path is equivalent to `Regex::new()` for patterns that use the fancy backend.
+
+### Tests run
+
+```bash
+cargo test -p eggress-pproxy-compat regex   # 29 passed
+cargo test -p eggress-pproxy-compat rule    # 21 passed
+cargo fmt --all -- --check                  # clean
+cargo clippy --workspace --all-targets -- -D warnings  # clean
+cargo test --workspace --locked             # 2491 passed, 146 ignored
+```
+
+### Verification machinery actually removed/demoted
+
+None. The orphaned strict/certification scripts are retained per the plan's conservative default. The Phase 41 labels were the only stale references corrected.
 
 ## Current regex baseline
 

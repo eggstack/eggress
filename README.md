@@ -14,7 +14,7 @@ eggress preserves the compact URI-driven workflow of `pproxy` while using explic
 - TCP and UDP
 - Secure defaults with explicit legacy compatibility
 - Embeddable Rust library
-- Resource-bounded hostile-input handling
+- Resource-bounded hostile network input; trusted operator configuration may use compatibility features with documented computational cost
 - Pure Rust dependencies wherever practical
 - Differential interoperability tests against Python `pproxy`
 - Linux, macOS, and Windows support where the underlying capability exists

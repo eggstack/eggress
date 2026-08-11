@@ -98,6 +98,33 @@ PAC and verbosity are supported with compatibility warnings. PAC is served at
 the mapped Eggress admin route, and `-v/-vv/-vvv` select Rust tracing defaults;
 an explicit `RUST_LOG` value takes precedence.
 
+## Regex and rule trust model
+
+pproxy compatibility regex and rule definitions are **trusted local
+configuration**, not hostile network input. Patterns originate from
+command-line arguments, configuration files, or rule files controlled
+by the local operator. No unauthenticated network client can supply
+an arbitrary compatibility regex pattern at runtime.
+
+The fast `regex` backend is the default compilation path. When a
+pattern uses Perl/Python-like constructs (look-around, backreferences),
+compilation falls back to the `fancy_regex` backend. Pattern length
+(`MAX_PATTERN_LEN = 4096` bytes) and rule count
+(`MAX_RULE_ENTRIES = 10_000`) are enforced before compilation. The
+`fancy_regex` backend includes a built-in backtrack limit (default
+1,000,000 steps) that prevents catastrophic backtracking from
+blocking indefinitely, but operators must not load untrusted rule sets.
+
+Native Eggress routing rules (`host_regex`, `destination_port_regex`)
+use the standard `regex::Regex` crate directly and do not invoke the
+fancy fallback path. The `fancy_regex` backend is confined to pproxy
+compatibility translation and rule-file validation.
+
+After translation, rule-file patterns are lowered to native
+`regex::Regex` in the generated TOML config. The runtime routing
+engine matches against bounded destination attributes (hostname string,
+decimal port string), not arbitrary network payload data.
+
 ## Phase 5 boundary decisions
 
 macOS PF transparent-destination recovery remains intentional non-parity: it

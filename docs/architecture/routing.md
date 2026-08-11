@@ -35,7 +35,7 @@ all = [
 ```
 
 Supported matchers:
-- `host_exact`, `host_suffix`, `host_regex` — destination hostname matching
+- `host_exact`, `host_suffix`, `host_regex` — destination hostname matching (native rules use `regex::Regex`; pproxy compatibility patterns use `CompatRegex` which may fall back to `fancy_regex` for look-around/backreferences)
 - `destination_port`, `destination_port_regex`, `source_port` — port matching (exact, regex, range, or set)
 - `source_cidr` — source IP CIDR matching
 - `protocol` — inbound protocol (http, socks4, socks5, etc.)
