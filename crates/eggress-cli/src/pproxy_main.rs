@@ -1,4 +1,5 @@
 use std::process::ExitCode;
+use std::time::Duration;
 
 const VERSION: &str = concat!("eggress-pproxy-compat ", env!("CARGO_PKG_VERSION"));
 
@@ -57,22 +58,6 @@ fn print_version() {
 
 fn print_help() {
     print!("{HELP_TEXT}");
-}
-
-/// Resolve the `eggress` binary path.
-///
-/// First tries to find a sibling `eggress` binary next to the current executable.
-/// Falls back to just `"eggress"` and lets the system PATH resolve it.
-fn resolve_eggress_binary() -> std::path::PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join("eggress");
-            if sibling.exists() {
-                return sibling;
-            }
-        }
-    }
-    std::path::PathBuf::from("eggress")
 }
 
 fn main() -> ExitCode {
@@ -145,53 +130,34 @@ fn main() -> ExitCode {
     }
 
     let test_target = pproxy_args.test_target();
-    let has_test = test_target.is_some();
-
-    let tmp_dir = match tempfile::tempdir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("pproxy: failed to create temp directory: {e}");
-            std::process::exit(1); // EXIT_RUNTIME_FAILURE
-        }
-    };
-    let config_path = tmp_dir.path().join("pproxy-compat.toml");
-    if let Err(e) = std::fs::write(&config_path, &output.toml) {
-        eprintln!("pproxy: failed to write config: {e}");
-        std::process::exit(1); // EXIT_RUNTIME_FAILURE
-    }
 
     print_startup_banner(&pproxy_args, &output);
 
-    if has_test {
-        // Resolve the eggress binary: look for a sibling 'eggress' binary
-        // next to the current executable (pproxy). This avoids the recursion
-        // problem where current_exe() resolves to the pproxy binary itself.
-        let eggress_bin = resolve_eggress_binary();
-        let mut test_command = std::process::Command::new(&eggress_bin);
-        test_command.args([
-            "upstream",
-            "test",
-            "-c",
-            config_path.to_str().unwrap_or_default(),
-        ]);
-        if let Some(target) = test_target {
-            test_command.args(["-t", target]);
-        }
-        let status = test_command.status();
-        match status {
-            Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+    // Parse translated TOML into a validated RuntimeConfig in-memory.
+    // No temporary file is created; the config lives entirely in process memory.
+    let (rt_config, _warnings) =
+        match eggress_config::validate_and_compile_toml_with_warnings(&output.toml) {
+            Ok(r) => r,
             Err(e) => {
-                eprintln!("pproxy: failed to run upstream test: {e}");
-                std::process::exit(1); // EXIT_RUNTIME_FAILURE
+                eprintln!("pproxy: config error: {e}");
+                std::process::exit(3); // EXIT_CONFIG_VALIDATION
             }
-        }
+        };
+
+    if let Some(target) = test_target {
+        let timeout = Duration::from_secs(10);
+        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(target), timeout, false);
+        std::process::exit(exit_code);
     }
 
     init_logging(&pproxy_args);
 
     tracing::info!("starting eggress with pproxy-compatible config");
 
-    match eggress_runtime::ServiceSupervisor::start(config_path.to_str().unwrap_or_default()) {
+    // Start from the in-memory RuntimeConfig. No config file path is provided,
+    // so SIGHUP reload is disabled (there is no stable user-authored config
+    // file to reload from in compatibility mode).
+    match eggress_runtime::ServiceSupervisor::start_from_config(rt_config, None) {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("pproxy: runtime error: {e}");
@@ -291,5 +257,54 @@ mod tests {
     #[test]
     fn test_version_string() {
         assert!(VERSION.contains("eggress-pproxy-compat"));
+    }
+
+    #[test]
+    fn in_memory_config_from_translated_toml() {
+        let args = vec![
+            "-l".to_string(),
+            "http://127.0.0.1:0".to_string(),
+            "-r".to_string(),
+            "socks5://127.0.0.1:1080".to_string(),
+        ];
+        let pproxy_args = eggress_pproxy_compat::PproxyArgs::parse(&args).unwrap();
+        let output = eggress_pproxy_compat::translate_pproxy_args(&pproxy_args).unwrap();
+
+        // TOML is available for diagnostics
+        assert!(!output.toml.is_empty());
+        assert!(output.toml.contains("[[listeners]]"));
+
+        // Parse the TOML in-memory without touching the filesystem
+        let (rt_config, _warnings) =
+            eggress_config::validate_and_compile_toml_with_warnings(&output.toml).unwrap();
+        assert_eq!(rt_config.listeners.len(), 1);
+        assert!(rt_config.listeners[0].name.starts_with("pproxy-"));
+    }
+
+    #[test]
+    fn in_memory_config_rejects_invalid_toml() {
+        let bad_toml = "version = 1\n[[listeners]]\nname = \"bad\"\nbind = \"not-a-addr\"\nprotocols = [\"http\"]\nconnection_limit = 0\n";
+        let result = eggress_config::validate_and_compile_toml_with_warnings(bad_toml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn translation_output_toml_is_parseable() {
+        let args = vec![
+            "-l".to_string(),
+            "socks5://127.0.0.1:0".to_string(),
+            "-r".to_string(),
+            "http://proxy:8080".to_string(),
+        ];
+        let pproxy_args = eggress_pproxy_compat::PproxyArgs::parse(&args).unwrap();
+        let output = eggress_pproxy_compat::translate_pproxy_args(&pproxy_args).unwrap();
+
+        // The generated TOML must be valid and compile to a RuntimeConfig
+        let result = eggress_config::validate_and_compile_toml(&output.toml);
+        assert!(
+            result.is_ok(),
+            "translated TOML should be valid: {:?}",
+            result.err()
+        );
     }
 }

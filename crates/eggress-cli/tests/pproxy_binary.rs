@@ -451,3 +451,45 @@ fn spawn_and_collect_inner(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, 
     let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
     (status, stderr)
 }
+
+#[test]
+fn test_mode_runs_in_process_no_sibling_binary() {
+    // Regression: --test must call the shared Rust upstream-test implementation
+    // in-process, not spawn a sibling `eggress` binary. We verify by running
+    // with a target that connects to a non-existent upstream; the test should
+    // complete with a failure exit code (unreachable) without needing an
+    // `eggress` binary on PATH.
+    let output = pproxy_bin()
+        .args([
+            "-l",
+            "http://:19890",
+            "-r",
+            "socks5://127.0.0.1:19891",
+            "--test",
+            "http://example.com",
+        ])
+        .output()
+        .expect("failed to run pproxy --test");
+    // The test mode should exit (not hang) and report the upstream as
+    // unreachable. Exit code 1 = unreachable (all upstreams failed).
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit for unreachable upstream test"
+    );
+}
+
+#[test]
+fn in_memory_startup_no_tempfile() {
+    // Regression: pproxy startup must not create temporary files. We verify
+    // by checking the startup banner appears (which is printed before config
+    // validation) and the process starts correctly with in-memory config.
+    let (_, stderr) = spawn_and_collect(
+        pproxy_bin().args(["-l", "http://:19892", "-r", "socks5://127.0.0.1:1080"]),
+        2000,
+    );
+    assert!(
+        stderr.contains("listen:") && stderr.contains("http://:19892"),
+        "expected successful in-memory startup, got: {stderr}",
+    );
+}

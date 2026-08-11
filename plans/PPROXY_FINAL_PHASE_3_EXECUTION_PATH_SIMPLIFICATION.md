@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Parent roadmap
 
@@ -327,3 +327,58 @@ Phase 3 is complete only when all are true:
 - broad workspace gate passes;
 - Python suite passes if shared APIs used by the extension changed;
 - this plan is updated in place to `IMPLEMENTED` with the final execution architecture, retained stop-condition decisions if any, dependency changes, measurements, implementation commit(s), and verification summary.
+
+## Implementation summary
+
+### Final execution architecture
+
+The compatibility execution path was simplified to eliminate temporary-file round trips and sibling-process spawning. The new architecture:
+
+```text
+PproxyArgs
+  -> translate_pproxy_args()
+  -> TranslationOutput { toml, ... }
+  -> eggress_config::validate_and_compile_toml_with_warnings(toml)
+  -> RuntimeConfig (in-memory, validated)
+  -> ServiceSupervisor::start_from_config(rt_config, None)
+  -> runtime
+```
+
+For `--test` mode:
+
+```text
+PproxyArgs
+  -> translate_pproxy_args()
+  -> TranslationOutput { toml, ... }
+  -> eggress_config::validate_and_compile_toml_with_warnings(toml)
+  -> RuntimeConfig
+  -> eggress_cli::run_upstream_test(rt_config, target, timeout, json)
+  -> exit
+```
+
+### Key changes
+
+1. **`eggress-config`**: Added `validate_and_compile_toml()` and `validate_and_compile_toml_with_warnings()` — parse a TOML string in memory through the same validation/compilation pipeline as file-backed startup.
+
+2. **`eggress-runtime`**: Added `ServiceSupervisor::start_from_config(rt_config, config_path)` — starts the supervisor from a pre-validated `RuntimeConfig`. The `config_path` parameter controls SIGHUP reload: `Some(path)` enables it (file-backed native startup), `None` disables it (compatibility in-memory startup). Refactored internal `init_with_config()` shared by both `start()` and `start_from_config()`.
+
+3. **`eggress-cli`**: Created `src/lib.rs` with shared upstream test function (`run_upstream_test`, `run_upstream_test_with_mode`, `build_test_chain_executor`, `test_upstream_tcp`). Both `eggress upstream test` and `pproxy --test` call the same in-process implementation. Removed tempfile writing and subprocess spawning from both `pproxy_main.rs` and `handle_pproxy_run()`.
+
+4. **Dependencies**: `tempfile` moved from `[dependencies]` to `[dev-dependencies]` for `eggress-cli`. No production code path creates temporary files.
+
+### Retained stop-condition decisions
+
+None. Both the temporary-file and subprocess stop conditions were avoided. The in-memory config boundary is clean and the shared upstream test function is straightforward.
+
+### Dependency changes
+
+- `tempfile` removed from `eggress-cli` production dependencies (moved to dev-dependencies)
+- No new dependencies added
+
+### Verification
+
+- `cargo fmt --all -- --check`: passes
+- `cargo clippy --workspace --all-targets -- -D warnings`: passes
+- `cargo test --workspace --locked`: 2483 passed, 146 ignored
+- `cargo deny check`: advisories ok, bans ok, licenses ok, sources ok
+- `cargo tree -p eggress-cli -i tempfile -e normal`: nothing (tempfile not in production tree)

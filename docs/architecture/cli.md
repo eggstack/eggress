@@ -82,7 +82,7 @@ Accepts pproxy-style arguments and translates them internally to eggress configu
 `--pac <PATH>`, `--get <PATH,FILE>`, and `--test <TARGET>` consume one required
 value each. Values remain owned by the option rather than becoming positional
 listener or remote URIs. PAC and static files use the existing admin server;
-`--test` delegates the supplied target to `eggress upstream test`.
+`--test` runs the shared Rust upstream-test implementation in-process.
 
 ## Key Arguments
 

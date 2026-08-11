@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const EXIT_SUCCESS: i32 = 0;
 const EXIT_CLI_PARSE_ERROR: i32 = 2;
@@ -14,9 +14,7 @@ const EXIT_SIGINT: i32 = 130;
 const EXIT_SIGTERM: i32 = 143;
 
 use clap::{Parser, Subcommand};
-use eggress_core::chain::{ChainExecutor, HopHandler};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
-use eggress_core::{BoxStream, TargetAddr, TargetHost};
 use eggress_routing::{RouteActionSpec, RouteService, Router, SharedRoutingService};
 use eggress_server::ConnectionConfig;
 use tokio_util::sync::CancellationToken;
@@ -308,7 +306,7 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
         body_str.len(),
     );
 
-    let result = run_async_test(move || {
+    let result = eggress_cli::run_async_test(move || {
         let host = host.clone();
         let port = port;
         let request = request.clone();
@@ -404,43 +402,6 @@ fn parse_admin_url(url: &str) -> (String, u16, String) {
     (host, port, path.to_string())
 }
 
-/// Run an async test future to completion.
-///
-/// If a Tokio runtime is already active on the current thread (e.g. when the
-/// CLI is invoked from inside `#[tokio::main]`), spawn the future on a
-/// dedicated OS thread with its own multi-thread runtime and join it. This
-/// avoids the "Cannot start a runtime from within a runtime" panic that
-/// `Handle::current().block_on` would trigger.
-///
-/// If no runtime is active, build a fresh single-threaded runtime and drive
-/// the future on it directly.
-fn run_async_test<F, T>(make_future: F) -> T
-where
-    F: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>> + Send + 'static,
-    T: Send + 'static,
-{
-    if tokio::runtime::Handle::try_current().is_ok() {
-        std::thread::Builder::new()
-            .name("eggress-cli-test".to_string())
-            .spawn(move || -> T {
-                let rt = tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                    .expect("failed to build tokio runtime for cli test");
-                rt.block_on(make_future())
-            })
-            .expect("failed to spawn cli test thread")
-            .join()
-            .expect("cli test thread panicked")
-    } else {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("failed to build tokio runtime for cli test");
-        rt.block_on(make_future())
-    }
-}
-
 fn handle_upstream_test(args: &UpstreamTest) {
     let rt = match &args.config {
         Some(path) => match eggress_config::compile::load_and_compile(path) {
@@ -456,96 +417,29 @@ fn handle_upstream_test(args: &UpstreamTest) {
         }
     };
 
-    let upstreams: Vec<_> = if let Some(ref id) = args.id {
-        rt.upstreams.iter().filter(|u| &u.id == id).collect()
+    // Filter upstreams by --id if provided
+    let rt = if let Some(ref id) = args.id {
+        let mut filtered = rt;
+        filtered.upstreams.retain(|u| &u.id == id);
+        filtered
     } else {
-        rt.upstreams.iter().collect()
+        rt
     };
 
-    if upstreams.is_empty() {
+    if rt.upstreams.is_empty() {
         eprintln!("no upstreams found matching criteria");
         std::process::exit(EXIT_CONFIG_VALIDATION);
     }
 
-    let target = match &args.target {
-        Some(t) => match t.parse::<eggress_core::TargetAddr>() {
-            Ok(addr) => addr,
-            Err(e) => {
-                eprintln!("invalid target: {e}");
-                std::process::exit(EXIT_CLI_PARSE_ERROR);
-            }
-        },
-        None => eggress_core::TargetAddr {
-            host: TargetHost::Domain("example.com".to_string()),
-            port: 443,
-        },
-    };
-
     let timeout = Duration::from_secs(args.timeout);
-    let is_proxy_mode = args.mode == "proxy";
-    let target_string = target.to_string();
-
-    let mut results = Vec::new();
-
-    for upstream in &upstreams {
-        let chain = &upstream.chain;
-        let first_hop = &chain.hops[0];
-        let host = &first_hop.endpoint.host;
-        let port = first_hop.endpoint.port;
-
-        let result = if is_proxy_mode {
-            let hops = chain.hops.clone();
-            let target_for_closure = target.clone();
-            let (reachable, latency_ms, error) = run_async_test(move || {
-                let target = target_for_closure.clone();
-                let hops = hops.clone();
-                Box::pin(async move {
-                    let executor = build_test_chain_executor();
-                    test_upstream_proxy(&executor, &hops, &target, timeout).await
-                })
-            });
-            UpstreamTestResult {
-                id: upstream.id.clone(),
-                host: host.clone(),
-                port,
-                target: target_string.clone(),
-                mode: "proxy".to_string(),
-                reachable,
-                latency_ms,
-                error,
-                failure: None,
-                failed_hop: None,
-            }
-        } else {
-            let host_owned = host.clone();
-            let result = run_async_test(move || {
-                let host = host_owned.clone();
-                Box::pin(async move { test_upstream(&host, port, timeout).await })
-            });
-            UpstreamTestResult {
-                id: upstream.id.clone(),
-                host: host.clone(),
-                port,
-                target: target_string.clone(),
-                ..result
-            }
-        };
-        results.push(result);
-    }
-
-    if args.json {
-        match serde_json::to_string_pretty(&results) {
-            Ok(json) => println!("{json}"),
-            Err(e) => {
-                eprintln!("failed to serialize results: {e}");
-                std::process::exit(EXIT_RUNTIME_FAILURE);
-            }
-        }
-    } else {
-        for result in &results {
-            print_upstream_test_result(result);
-        }
-    }
+    let exit_code = eggress_cli::run_upstream_test_with_mode(
+        &rt,
+        args.target.as_deref(),
+        &args.mode,
+        timeout,
+        args.json,
+    );
+    std::process::exit(exit_code);
 }
 
 #[cfg(feature = "pproxy-compat")]
@@ -771,20 +665,6 @@ fn handle_pproxy_check(args: &PproxyCheck) {
 }
 
 #[cfg(feature = "pproxy-compat")]
-fn upstream_test_command_args(config_path: &std::path::Path, target: Option<&str>) -> Vec<String> {
-    let mut args = vec![
-        "upstream".to_string(),
-        "test".to_string(),
-        "-c".to_string(),
-        config_path.to_string_lossy().into_owned(),
-    ];
-    if let Some(target) = target {
-        args.extend(["-t".to_string(), target.to_string()]);
-    }
-    args
-}
-
-#[cfg(feature = "pproxy-compat")]
 fn handle_pproxy_run(args: &PproxyRun) {
     let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args.args) {
         Ok(a) => a,
@@ -836,39 +716,30 @@ fn handle_pproxy_run(args: &PproxyRun) {
     }
 
     let test_target = pproxy_args.test_target();
-    let has_test = test_target.is_some();
 
-    let tmp_dir = match tempfile::tempdir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("failed to create temp directory: {e}");
-            std::process::exit(EXIT_RUNTIME_FAILURE);
-        }
-    };
-    let config_path = tmp_dir.path().join("pproxy-compat.toml");
-    if let Err(e) = std::fs::write(&config_path, &output.toml) {
-        eprintln!("failed to write config: {e}");
-        std::process::exit(EXIT_RUNTIME_FAILURE);
-    }
-
-    if has_test {
-        let status = std::process::Command::new(
-            std::env::current_exe().unwrap_or_else(|_| "eggress".into()),
-        )
-        .args(upstream_test_command_args(&config_path, test_target))
-        .status();
-        match status {
-            Ok(s) => std::process::exit(s.code().unwrap_or(EXIT_RUNTIME_FAILURE)),
+    // Parse translated TOML into a validated RuntimeConfig in-memory.
+    // No temporary file is created; the config lives entirely in process memory.
+    let (rt_config, _warnings) =
+        match eggress_config::validate_and_compile_toml_with_warnings(&output.toml) {
+            Ok(r) => r,
             Err(e) => {
-                eprintln!("failed to run upstream test: {e}");
-                std::process::exit(EXIT_RUNTIME_FAILURE);
+                eprintln!("config error: {e}");
+                std::process::exit(EXIT_CONFIG_VALIDATION);
             }
-        }
+        };
+
+    if let Some(target) = test_target {
+        let timeout = Duration::from_secs(10);
+        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(target), timeout, false);
+        std::process::exit(exit_code);
     }
 
     tracing::info!("starting eggress with pproxy-compatible config");
 
-    match eggress_runtime::ServiceSupervisor::start(config_path.to_str().unwrap_or_default()) {
+    // Start from the in-memory RuntimeConfig. No config file path is provided,
+    // so SIGHUP reload is disabled (there is no stable user-authored config
+    // file to reload from in compatibility mode).
+    match eggress_runtime::ServiceSupervisor::start_from_config(rt_config, None) {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("runtime error: {e}");
@@ -918,20 +789,6 @@ struct ChainInfo {
     is_chain: bool,
 }
 
-#[derive(serde::Serialize)]
-struct UpstreamTestResult {
-    id: String,
-    host: String,
-    port: u16,
-    target: String,
-    mode: String,
-    reachable: bool,
-    latency_ms: Option<u64>,
-    error: Option<String>,
-    failure: Option<String>,
-    failed_hop: Option<usize>,
-}
-
 #[cfg(feature = "pproxy-compat")]
 fn tier_label(tier: &eggress_pproxy_compat::ManifestTier) -> &'static str {
     match tier {
@@ -941,209 +798,6 @@ fn tier_label(tier: &eggress_pproxy_compat::ManifestTier) -> &'static str {
         eggress_pproxy_compat::ManifestTier::IntentionalNonParity => "Intentional non-parity",
         eggress_pproxy_compat::ManifestTier::Unsupported => "Unsupported",
     }
-}
-
-fn build_test_chain_executor() -> ChainExecutor {
-    struct HttpHopHandler;
-
-    impl HopHandler for HttpHopHandler {
-        fn protocol(&self) -> eggress_uri::ProtocolSpec {
-            eggress_uri::ProtocolSpec::Http
-        }
-
-        fn handshake<'a>(
-            &'a self,
-            stream: BoxStream,
-            target: &'a TargetAddr,
-            hop: &'a eggress_uri::ProxyHopSpec,
-            _hop_index: usize,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            let auth = hop
-                .credentials
-                .as_ref()
-                .map(|c| (c.username.as_str(), c.password.as_str()));
-            Box::pin(async move {
-                eggress_protocol_http::http_connect(stream, target, auth, &Default::default())
-                    .await
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-            })
-        }
-    }
-
-    struct Socks5HopHandler;
-
-    impl HopHandler for Socks5HopHandler {
-        fn protocol(&self) -> eggress_uri::ProtocolSpec {
-            eggress_uri::ProtocolSpec::Socks5
-        }
-
-        fn handshake<'a>(
-            &'a self,
-            stream: BoxStream,
-            target: &'a TargetAddr,
-            hop: &'a eggress_uri::ProxyHopSpec,
-            _hop_index: usize,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            let socks_addr = target_to_socks_addr(target);
-            let auth = hop
-                .credentials
-                .as_ref()
-                .map(|c| (c.username.as_str(), c.password.as_str()));
-            Box::pin(async move {
-                eggress_protocol_socks::socks5::client::socks5_connect(stream, &socks_addr, auth)
-                    .await
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-            })
-        }
-    }
-
-    struct Socks4HopHandler;
-
-    impl HopHandler for Socks4HopHandler {
-        fn protocol(&self) -> eggress_uri::ProtocolSpec {
-            eggress_uri::ProtocolSpec::Socks4
-        }
-
-        fn handshake<'a>(
-            &'a self,
-            stream: BoxStream,
-            target: &'a TargetAddr,
-            hop: &'a eggress_uri::ProxyHopSpec,
-            _hop_index: usize,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<BoxStream, Box<dyn std::error::Error + Send + Sync>>,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            let user_id = hop.credentials.as_ref().map(|c| c.username.as_str());
-            Box::pin(async move {
-                eggress_protocol_socks::socks4_connect(stream, target, user_id)
-                    .await
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-            })
-        }
-    }
-
-    let handlers: Vec<Box<dyn HopHandler>> = vec![
-        Box::new(HttpHopHandler),
-        Box::new(Socks5HopHandler),
-        Box::new(Socks4HopHandler),
-    ];
-    ChainExecutor::new(handlers)
-}
-
-fn target_to_socks_addr(target: &TargetAddr) -> eggress_protocol_socks::socks5::server::SocksAddr {
-    use eggress_protocol_socks::socks5::server::SocksAddr;
-    match &target.host {
-        TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),
-        TargetHost::Ip(std::net::IpAddr::V6(ip)) => SocksAddr::IPv6(ip.octets(), target.port),
-        TargetHost::Domain(d) => SocksAddr::Domain(d.clone(), target.port),
-    }
-}
-
-async fn test_upstream_proxy(
-    executor: &ChainExecutor,
-    chain: &[eggress_uri::ProxyHopSpec],
-    target: &TargetAddr,
-    timeout: Duration,
-) -> (bool, Option<u64>, Option<String>) {
-    let start = Instant::now();
-
-    match tokio::time::timeout(timeout, executor.execute(chain, target)).await {
-        Ok(Ok(_stream)) => {
-            let elapsed = start.elapsed().as_millis() as u64;
-            (true, Some(elapsed), None)
-        }
-        Ok(Err(e)) => (false, None, Some(e.to_string())),
-        Err(_) => (false, None, Some("connection timed out".to_string())),
-    }
-}
-
-async fn test_upstream(host: &str, port: u16, timeout: Duration) -> UpstreamTestResult {
-    let addr = format!("{}:{}", host, port);
-    let start = Instant::now();
-
-    let result = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await;
-
-    let elapsed = start.elapsed().as_millis() as u64;
-
-    match result {
-        Ok(Ok(_stream)) => UpstreamTestResult {
-            id: String::new(),
-            host: host.to_string(),
-            port,
-            target: String::new(),
-            mode: "tcp".to_string(),
-            reachable: true,
-            latency_ms: Some(elapsed),
-            error: None,
-            failure: None,
-            failed_hop: None,
-        },
-        Ok(Err(e)) => UpstreamTestResult {
-            id: String::new(),
-            host: host.to_string(),
-            port,
-            target: String::new(),
-            mode: "tcp".to_string(),
-            reachable: false,
-            latency_ms: None,
-            error: Some(e.to_string()),
-            failure: None,
-            failed_hop: None,
-        },
-        Err(_) => UpstreamTestResult {
-            id: String::new(),
-            host: host.to_string(),
-            port,
-            target: String::new(),
-            mode: "tcp".to_string(),
-            reachable: false,
-            latency_ms: None,
-            error: Some("connection timed out".to_string()),
-            failure: None,
-            failed_hop: None,
-        },
-    }
-}
-
-fn print_upstream_test_result(result: &UpstreamTestResult) {
-    let status = if result.reachable {
-        "reachable"
-    } else {
-        "unreachable"
-    };
-    let latency = result
-        .latency_ms
-        .map(|ms| format!("{}ms", ms))
-        .unwrap_or_else(|| "n/a".to_string());
-    let error = result
-        .error
-        .as_deref()
-        .map(|e| format!(" ({e})"))
-        .unwrap_or_default();
-
-    println!(
-        "{} {}:{} [{}] latency={}{}",
-        result.id, result.host, result.port, status, latency, error
-    );
 }
 
 #[cfg(feature = "operations")]
@@ -1740,26 +1394,6 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    #[cfg(feature = "pproxy-compat")]
-    #[test]
-    fn upstream_test_command_args_preserve_target() {
-        let args = upstream_test_command_args(
-            std::path::Path::new("/tmp/pproxy-compat.toml"),
-            Some("https://example.invalid/health"),
-        );
-        assert_eq!(
-            args,
-            vec![
-                "upstream",
-                "test",
-                "-c",
-                "/tmp/pproxy-compat.toml",
-                "-t",
-                "https://example.invalid/health",
-            ]
-        );
-    }
-
     #[tokio::test]
     async fn test_http_proxy_end_to_end() {
         let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
@@ -1856,7 +1490,7 @@ mod tests {
     async fn test_upstream_test_reachable() {
         let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
 
-        let result = test_upstream(
+        let result = eggress_cli::test_upstream_tcp(
             &echo_addr.ip().to_string(),
             echo_addr.port(),
             Duration::from_secs(5),
@@ -1872,7 +1506,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_upstream_test_unreachable() {
-        let result = test_upstream("127.0.0.1", 1, Duration::from_secs(1)).await;
+        let result = eggress_cli::test_upstream_tcp("127.0.0.1", 1, Duration::from_secs(1)).await;
 
         assert!(!result.reachable);
         assert!(result.latency_ms.is_none());
@@ -1881,7 +1515,7 @@ mod tests {
 
     #[test]
     fn test_upstream_test_json_output() {
-        let result = UpstreamTestResult {
+        let result = eggress_cli::UpstreamTestResult {
             id: "test-upstream".to_string(),
             host: "127.0.0.1".to_string(),
             port: 1080,

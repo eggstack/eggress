@@ -263,3 +263,43 @@ fn test_pproxy_run_malformed_auth_fails() {
         "expected auth error in stderr, got: {stderr}",
     );
 }
+
+#[test]
+fn test_pproxy_run_in_memory_config() {
+    // Regression: eggress pproxy run must start from in-memory config
+    // without writing temporary files. The process should start and run
+    // until we kill it (proving the in-memory config worked).
+    let mut child = eggress_bin()
+        .args([
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://127.0.0.1:19893",
+            "-r",
+            "socks5://127.0.0.1:1080",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn eggress pproxy run");
+
+    // Give it a moment to start
+    std::thread::sleep(std::time::Duration::from_millis(2000));
+    // If the process is still running, the in-memory config worked.
+    // If it exited early with an error, that's a failure.
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            panic!(
+                "eggress pproxy run exited early with status: {:?}",
+                status.code()
+            );
+        }
+        Ok(None) => {
+            // Still running - success, kill it
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        Err(e) => panic!("failed to check process status: {e}"),
+    }
+}

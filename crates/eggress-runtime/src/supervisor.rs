@@ -526,7 +526,7 @@ impl RuntimeState {
 
 #[allow(dead_code)]
 pub struct ServiceSupervisor {
-    config_path: String,
+    config_path: Option<String>,
     state: Arc<RuntimeState>,
     metrics_registry: Arc<eggress_metrics::MetricsRegistry>,
     cancel: CancellationToken,
@@ -552,6 +552,26 @@ impl ServiceSupervisor {
             tracing::warn!("config security warning: {warning}");
         }
 
+        Self::init_with_config(rt_config, Some(config_path.to_string()))
+    }
+
+    /// Start from an already-validated [`RuntimeConfig`] without reading a file.
+    ///
+    /// When `config_path` is provided (file-backed startup), SIGHUP reload
+    /// is enabled. When `None` (in-memory/compatibility startup), SIGHUP
+    /// reload is disabled because there is no stable user-authored config
+    /// file to reload from.
+    pub fn start_from_config(
+        rt_config: eggress_config::compile::RuntimeConfig,
+        config_path: Option<String>,
+    ) -> Result<Self, RuntimeError> {
+        Self::init_with_config(rt_config, config_path)
+    }
+
+    fn init_with_config(
+        rt_config: eggress_config::compile::RuntimeConfig,
+        config_path: Option<String>,
+    ) -> Result<Self, RuntimeError> {
         #[cfg(not(feature = "reverse"))]
         if !rt_config.reverse_servers.is_empty() || !rt_config.reverse_clients.is_empty() {
             return Err(RuntimeError::Other(
@@ -672,7 +692,7 @@ impl ServiceSupervisor {
         let shutdown_grace = rt_config.process.shutdown_grace;
 
         Ok(ServiceSupervisor {
-            config_path: config_path.to_string(),
+            config_path,
             state,
             metrics_registry,
             cancel,
@@ -728,7 +748,14 @@ impl ServiceSupervisor {
     /// 4. Atomically swap routing and snapshot
     /// 5. Update stored rt_config for subsequent reloads
     pub fn reload_config(&mut self) -> ReloadResult {
-        let config_path = self.config_path.clone();
+        let config_path = match self.config_path {
+            Some(ref p) => p.clone(),
+            None => {
+                return ReloadResult::Rejected {
+                    reason: "no config file path available for reload".to_string(),
+                };
+            }
+        };
         let new_rt_config = match eggress_config::compile::load_and_compile(&config_path) {
             Ok(c) => c,
             Err(e) => {
@@ -774,7 +801,7 @@ impl ServiceSupervisor {
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         #[allow(unused_variables)]
-        let config_path = self.config_path.clone();
+        let config_path = self.config_path.clone().unwrap_or_default();
         let routing = self.state.routing.clone();
         let listener_cancel = self.listener_cancel.clone();
         let connection_cancel = self.connection_cancel.clone();
@@ -2013,7 +2040,7 @@ impl ServiceSupervisor {
                             tracing::info!("shutdown signal received");
                             break;
                         }
-                        _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() => {
+                        _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() && !config_path.is_empty() => {
                             tracing::info!("reload signal received, reloading config from {config_path}");
                             let prev_snapshot = snapshot.load();
                             let prev_ref: Option<&CompiledRuntimeSnapshot> = Some(&prev_snapshot);

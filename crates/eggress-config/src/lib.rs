@@ -9,7 +9,17 @@ pub use error::{ConfigError, ConfigWarning};
 
 pub fn load_and_validate(path: &str) -> Result<RuntimeConfig, ConfigError> {
     let contents = file::load_config_file(path)?;
-    let config: model::ConfigFile = toml::from_str(&contents)?;
+    validate_and_compile_toml(&contents)
+}
+
+/// Parse, validate, and compile a TOML config string in memory.
+///
+/// This is the shared boundary for compatibility startup paths that produce
+/// TOML in-process rather than reading a file on disk. The canonical config
+/// validation boundary is identical to file-backed startup: parse, version
+/// check, validate, compile.
+pub fn validate_and_compile_toml(toml_str: &str) -> Result<RuntimeConfig, ConfigError> {
+    let config: model::ConfigFile = toml::from_str(toml_str)?;
     if let Some(version) = config.version {
         if version != 1 {
             return Err(ConfigError::UnsupportedVersion(version));
@@ -30,7 +40,18 @@ pub fn load_and_validate_with_warnings(
     path: &str,
 ) -> Result<(RuntimeConfig, Vec<ConfigWarning>), ConfigError> {
     let contents = file::load_config_file(path)?;
-    let config: model::ConfigFile = toml::from_str(&contents)?;
+    validate_and_compile_toml_with_warnings(&contents)
+}
+
+/// Parse, validate, and compile a TOML config string in memory, also
+/// returning security warnings.
+///
+/// This is the in-memory equivalent of [`load_and_validate_with_warnings`],
+/// used by compatibility startup paths that produce TOML in-process.
+pub fn validate_and_compile_toml_with_warnings(
+    toml_str: &str,
+) -> Result<(RuntimeConfig, Vec<ConfigWarning>), ConfigError> {
+    let config: model::ConfigFile = toml::from_str(toml_str)?;
     if let Some(version) = config.version {
         if version != 1 {
             return Err(ConfigError::UnsupportedVersion(version));
