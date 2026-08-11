@@ -55,7 +55,7 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 | `-b addr` | Bind address |
 | `--rulefile path` | Rule file parsing |
 | `--pac path` | PAC serving configuration at the supplied admin path, with a compatibility warning |
-| `--sys` | Unsupported and fatal before startup; use native `eggress system-proxy ...` for inspection/apply |
+| `--sys` | Unsupported and fatal before startup; use native `eggress system-proxy inspect` for read-only inspection |
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target

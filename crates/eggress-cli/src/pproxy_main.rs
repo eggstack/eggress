@@ -25,11 +25,11 @@ OPTIONS:
     -b <PATTERN>           Block rule pattern (regex)
     -a <SECONDS>           Alive/health check interval
     -s <SCHEDULER>         Scheduler (rr, fa, rc, lc)
-    -d                     Debug/traceback diagnostics (native equivalent)
+    -d                     Debug-level tracing diagnostics (differs from Python traceback behavior)
     -v                     Verbose mode (sets RUST_LOG=debug)
     --ssl <CERT,KEY>       Enable TLS on listeners
     --rulefile <PATH>      Load routing rules from file
-    --log <PATH>           Log file path (native equivalent: stderr)
+    --log <PATH>           Log file path (recognized for compat; logs remain on stderr)
     --pac <PATH>           Serve PAC content at PATH
     --test <URL>           Test the supplied target and exit
     --sys                  System proxy apply (unsupported; use 'eggress system-proxy inspect')

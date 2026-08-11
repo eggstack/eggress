@@ -708,7 +708,7 @@ fn handle_pproxy_run(args: &PproxyRun) {
         }
         eprintln!("Some features are unsupported. Service may not behave as expected.");
         eprintln!("refusing to start: unsupported features would yield a non-functional proxy.");
-        std::process::exit(EXIT_CONFIG_VALIDATION);
+        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
     }
 
     for w in &gate.warnings {

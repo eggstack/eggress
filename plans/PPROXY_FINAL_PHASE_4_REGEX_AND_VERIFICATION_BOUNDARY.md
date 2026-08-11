@@ -42,8 +42,8 @@ No contrary remote-controlled pattern path was found. The trusted-configuration 
 **Workstream C — Confirmed:**
 - No compatibility regex is evaluated against arbitrarily large network payload. Matching is confined to destination hostname and port strings.
 
-**Workstream D — Backtrack limit enabled:**
-- `regex_compat.rs`: Changed `fancy_regex::Regex::new()` calls to `fancy_regex::RegexBuilder::new(pattern).build()` in both `compile()` (fancy fallback path) and `compile_fancy()`. This enables the built-in backtrack limit (default 1,000,000 steps) without architecture changes.
+**Workstream D — Backtrack limit explicitly configured:**
+- `regex_compat.rs`: Defined `FANCY_REGEX_BACKTRACK_LIMIT = 1_000_000` constant matching the fancy_regex 0.14 default. Changed `fancy_regex::Regex::new()` calls to `fancy_regex::RegexBuilder::new(pattern).backtrack_limit(FANCY_REGEX_BACKTRACK_LIMIT).build()` in both `compile()` (fancy fallback path) and `compile_fancy()`. Replaced the misleading `fancy_regex_backtrack_limit_applied` test with `fancy_regex_backtrack_limit_exhaustion` (proves limit enforcement via a known pathological pattern), `fancy_regex_explicit_limit_matches_default` (confirms constant matches dependency default), and `fancy_regex_backtrack_limit_is_configured` (guards the constant value). The existing `rulefile_max_entries_enforced` test covers the 10,001-entry overflow boundary.
 
 **Workstream E — Verification docs cleaned:**
 - `docs/DIFFERENTIAL_TESTING.md`: Replaced stale "Phase 41" labels with current "Differential Parity Harness" name (3 occurrences).

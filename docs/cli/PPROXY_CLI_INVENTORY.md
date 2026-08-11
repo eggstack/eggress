@@ -150,7 +150,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Automatically configure system proxy settings (macOS/Windows). |
-| Eggress handling | **Unsupported in pproxy compatibility mode** — `--sys` fails before temp config creation or service startup through the shared execution gate. The native `eggress system-proxy inspect` and `eggress system-proxy apply` subcommands remain available under their own safety contract. |
+| Eggress handling | **Unsupported in pproxy compatibility mode** — `--sys` fails before temp config creation or service startup through the shared execution gate. The native `eggress system-proxy inspect` subcommand provides read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands. |
 | Example | `pproxy -l http://:8080 --sys` → exit code 5 (`EXIT_UNSUPPORTED_FEATURE`) before startup. |
 
 #### `--get` — Custom Static Content
@@ -168,7 +168,7 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Test all remote proxies and exit. Verifies upstream connectivity. |
-| Eggress handling | **Supported** — translates the pproxy args to TOML config, writes to a temp file, runs `eggress upstream test -c <config> -t <target>`, and exits with the result. Does not start the service. |
+| Eggress handling | **Supported** — translates the pproxy args to TOML config in memory, compiles the config, and calls the shared Rust upstream-test implementation. Does not start the service or write a temporary config file. |
 | Example | `pproxy -l http://:8080 -r http://proxy:8080 --test https://example.com/` |
 
 ### Config and Help
@@ -226,7 +226,7 @@ with eggress handling status and migration notes.
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | SO_REUSEPORT | Supported with warning | Configures SO_REUSEPORT on listener sockets |
 | `--pac` | (path) | PAC file serving | Supported with warning | Consumes path and maps it to the admin PAC route |
-| `--sys` | (none) | System proxy | Intentional non-parity | Use `eggress system-proxy apply --apply` for mutation |
+| `--sys` | (none) | System proxy | Unsupported | Use native `eggress system-proxy inspect` for read-only inspection |
 | `--get` | (PATH,FILE) | Static content | Supported with warning | Validates and serves through the admin server; invalid values fail closed |
 | `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the exact supplied target and exits |
 | `-f` | `--config` | Config file | Supported | Different schema |

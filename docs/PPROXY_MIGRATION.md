@@ -147,7 +147,7 @@ The following pproxy features are explicitly unsupported:
 - **`--rulefile`** -- simple reject/block entries are translated; use Eggress TOML routing rules for complete semantics
 - **`--reuse`** -- SO_REUSEPORT on listener sockets (not connection pooling)
 - **`--log`** -- Use `RUST_LOG=debug` environment variable
-- **`--sys`** -- Unsupported in pproxy compatibility mode; fails before startup. Use the native `eggress system-proxy inspect` and `eggress system-proxy apply --dry-run` subcommands for read-only inspection and explicit mutation under their own safety contract.
+- **`--sys`** -- Unsupported in pproxy compatibility mode; fails before startup. Use the native `eggress system-proxy inspect` subcommand for read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands.
 - **Multi-hop UDP** -- Not supported
 - **macOS PF transparent destination recovery** -- Intentional non-parity; requires privileged `/dev/pf` ioctl access
 - **Backward TLS/mixed reverse chains** -- Intentional partial compatibility; reverse framing is not a normal chain stream

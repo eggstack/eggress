@@ -56,6 +56,34 @@ fn help_flag() {
 }
 
 #[test]
+fn help_flag_d_and_log_wording() {
+    let output = pproxy_bin()
+        .arg("--help")
+        .output()
+        .expect("failed to run pproxy");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // -d must not claim native-equivalent Python traceback semantics
+    assert!(
+        !stdout.contains("native equivalent") || !stdout.contains("traceback"),
+        "-d help must not pair 'native equivalent' with traceback wording: {stdout}"
+    );
+    assert!(
+        stdout.contains("tracing") || stdout.contains("debug") || stdout.contains("Debug"),
+        "-d help should mention tracing or debug: {stdout}"
+    );
+    // --log must not describe stderr as native-equivalent file output
+    assert!(
+        !stdout.contains("native equivalent: stderr"),
+        "--log help must not describe stderr as native equivalent: {stdout}"
+    );
+    assert!(
+        stdout.contains("stderr") || stdout.contains("recognized") || stdout.contains("compat"),
+        "--log help should mention stderr or compat: {stdout}"
+    );
+}
+
+#[test]
 fn short_help_flag() {
     let output = pproxy_bin()
         .arg("-h")

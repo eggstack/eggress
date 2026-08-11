@@ -1659,6 +1659,110 @@ mod tests {
         }
     }
 
+    /// Corrective-pass contract test: cli.test must not claim subprocess delegation.
+    #[test]
+    fn cli_test_no_stale_subprocess_wording() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        let cli_test = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "cli.test")
+            .expect("cli.test entry must exist");
+
+        let stale_phrases = [
+            "eggress upstream test -c",
+            "sibling",
+            "eggress upstream test -c <config> -t <target>",
+        ];
+        for phrase in &stale_phrases {
+            assert!(
+                !cli_test.eggress_behavior.contains(phrase),
+                "cli.test eggress_behavior must not contain stale subprocess phrase '{}': {}",
+                phrase,
+                cli_test.eggress_behavior
+            );
+            assert!(
+                !cli_test.notes.contains(phrase),
+                "cli.test notes must not contain stale subprocess phrase '{}': {}",
+                phrase,
+                cli_test.notes
+            );
+        }
+    }
+
+    /// Corrective-pass contract test: cli.sys must not advertise a nonexistent apply CLI.
+    #[test]
+    fn cli_sys_no_stale_apply_cli_claim() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        let cli_sys = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "cli.sys")
+            .expect("cli.sys entry must exist");
+
+        // cli.sys should not advertise a native apply CLI subcommand
+        assert!(
+            !cli_sys.eggress_behavior.contains("apply"),
+            "cli.sys eggress_behavior must not advertise nonexistent apply CLI: {}",
+            cli_sys.eggress_behavior
+        );
+        assert!(
+            !cli_sys.notes.contains("apply --dry-run"),
+            "cli.sys notes must not reference nonexistent apply --dry-run: {}",
+            cli_sys.notes
+        );
+    }
+
+    /// Corrective-pass contract test: system_proxy.apply must not claim drop_in.
+    #[test]
+    fn system_proxy_apply_not_cli_command() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        let apply = manifest
+            .capability
+            .iter()
+            .find(|c| c.id == "system_proxy.apply")
+            .expect("system_proxy.apply entry must exist");
+
+        assert_ne!(
+            apply.tier, "drop_in",
+            "system_proxy.apply must not be drop_in when no public CLI command exists"
+        );
+        assert!(
+            !apply
+                .eggress_behavior
+                .contains("eggress system-proxy apply"),
+            "system_proxy.apply must not advertise nonexistent CLI: {}",
+            apply.eggress_behavior
+        );
+    }
+
     /// Phase 2 contract test: matrix and manifest must not directly contradict
     /// for corrected entries.
     #[test]

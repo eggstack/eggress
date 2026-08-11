@@ -303,3 +303,28 @@ fn test_pproxy_run_in_memory_config() {
         Err(e) => panic!("failed to check process status: {e}"),
     }
 }
+
+#[test]
+fn test_pproxy_run_unsupported_exit_code_matches_standalone() {
+    // Both entry points must return exit code 5 (EXIT_UNSUPPORTED_FEATURE)
+    // for the same unsupported feature.
+    let output = run_with_timeout(
+        &[
+            "pproxy",
+            "run",
+            "--",
+            "-l",
+            "http://:19890",
+            "-r",
+            "socks5://127.0.0.1:1080",
+            "--daemon",
+        ],
+        5000,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "eggress pproxy run should exit 5 for unsupported --daemon, got {:?}",
+        output.status.code(),
+    );
+}

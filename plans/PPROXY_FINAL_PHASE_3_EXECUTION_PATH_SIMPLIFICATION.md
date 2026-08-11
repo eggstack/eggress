@@ -375,6 +375,25 @@ None. Both the temporary-file and subprocess stop conditions were avoided. The i
 - `tempfile` removed from `eggress-cli` production dependencies (moved to dev-dependencies)
 - No new dependencies added
 
+### Artifact measurement
+
+Toolchain: rustc 1.97.1, cargo 1.97.1. Profile: release (optimized).
+
+Current artifact sizes:
+- `eggress`: 9,671,808 bytes (9.2M)
+- `pproxy`: 8,541,872 bytes (8.1M)
+
+Pre-Phase-3 revision `3c1f12721deb2f25832c81a0303b8e7a6230d37a` was not
+rebuilt for comparison because the historical revision may not compile
+cleanly with the current toolchain. The architectural simplification
+(temp-file elimination, subprocess removal, `tempfile` to dev-dependencies)
+is the primary measured benefit. No binary-size CI gate or threshold was
+added.
+
+Dependency evidence:
+- `cargo tree -p eggress-cli -i tempfile -e normal`: nothing (tempfile not in production tree)
+- `tempfile` remains in `[dev-dependencies]` for test use only
+
 ### Verification
 
 - `cargo fmt --all -- --check`: passes

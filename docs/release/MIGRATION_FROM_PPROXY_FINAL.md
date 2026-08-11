@@ -276,7 +276,7 @@ These pproxy features are deliberately not replicated in eggress:
 | `--rulefile` | Compatible with warning | Translates pproxy rulefiles to `[[rules]]` with diagnostics for untranslatable patterns |
 | `--reuse` (SO_REUSEPORT) | Supported with warning | Configures SO_REUSEPORT on listener sockets |
 | `--log` file | Native-equivalent | Emits structured diagnostic |
-| `--sys` (system proxy) | Unsupported in pproxy compatibility mode | Use the native `eggress system-proxy inspect` and `eggress system-proxy apply --dry-run` subcommands for read-only inspection and explicit mutation under their own safety contract |
+| `--sys` (system proxy) | Unsupported in pproxy compatibility mode | Use the native `eggress system-proxy inspect` subcommand for read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands. |
 | `--alive` check interval | Design choice | Configure `[upstreams.health]` in TOML |
 | SOCKS4/SOCKS5 BIND | Deferred | Returns `REP_COMMAND_NOT_SUPPORTED` (0x07) |
 | Multi-hop UDP chains | Architecture | Single-hop only |

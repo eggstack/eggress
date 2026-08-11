@@ -26,21 +26,11 @@ eggress system-proxy inspect
 eggress system-proxy inspect --json
 ```
 
-### Apply proxy settings (dry-run)
+### Apply proxy settings (crate-level API only)
 
-```bash
-# Show what commands would be run (default)
-eggress system-proxy apply --http http://127.0.0.1:8080 --https http://127.0.0.1:8443
-
-# Actually apply (future phase)
-eggress system-proxy apply --http http://127.0.0.1:8080 --apply
-```
-
-### Revert proxy settings
-
-```bash
-eggress system-proxy revert ~/.cache/eggress/proxy.rollback.json
-```
+Apply and rollback primitives are available in the `eggress-system-proxy`
+crate as Rust APIs but are **not exposed as CLI subcommands**. Use
+platform-native tools for system proxy mutation.
 
 ## Platform Support
 

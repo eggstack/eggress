@@ -118,7 +118,7 @@ See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 - [x] `-a N` generates `[health] interval = "Ns"`
 - [x] `--pac` generates `[admin.pac] enabled = true`
 - [x] `--test` translates and runs `eggress upstream test`, then exits
-- [x] `--sys` is unsupported in pproxy compatibility mode and fails before startup. Read-only inspection and explicit mutation are exposed through the native `eggress system-proxy inspect` and `eggress system-proxy apply` subcommands under their own safety contract.
+- [x] `--sys` is unsupported in pproxy compatibility mode and fails before startup. Read-only inspection is exposed through the native `eggress system-proxy inspect` subcommand. Crate-level apply/rollback primitives are not exposed as CLI subcommands.
 - [x] `--log`, `--get` emit structured diagnostics
 
 ### Phase 39: pproxy URI grammar and chain semantics — complete

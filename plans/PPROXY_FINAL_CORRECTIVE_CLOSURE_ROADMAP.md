@@ -11,9 +11,9 @@
   - Phase 1: DUMMY restored to callable identity; UDP_LIMIT corrected to 30; prepare_ciphers non-None raises UnsupportedPProxyFeature; plugin-bearing URIs rejected explicitly.
   - Phase 2: cli.config demoted to compatible_with_warning; cli.log demoted to compatible_with_warning; SOCKS4/SOCKS5 BIND reclassified as unsupported (matching pproxy); stale H2/WS/raw/tunnel docs corrected.
   - Phase 3: Temp-file round-trip eliminated; in-memory typed config boundary via `validate_and_compile_toml_with_warnings`; subprocess `eggress` spawn eliminated; shared `run_upstream_test` function. tempfile moved to dev-dependencies.
-  - Phase 4: Regex trust model codified (trusted operator config, not hostile network input); fancy_regex backtrack limit enabled; stale Phase 41 verification labels cleaned.
+  - Phase 4: Regex trust model codified (trusted operator config, not hostile network input); fancy_regex backtrack limit explicitly configured via `FANCY_REGEX_BACKTRACK_LIMIT = 1_000_000`; exhaustion and rule-entry overflow tests added; stale Phase 41 verification labels cleaned.
   - Phase 5: Full verification gate passed; manifest validated; all phase plans updated.
-- **Focused differential/oracle checks**: Phase 1 behavioral tests (DUMMY, UDP_LIMIT, prepare_ciphers, plugin rejection) verified against pinned pproxy 2.7.9 behavior.
+- **Focused differential/oracle checks**: Phase 1 behavioral tests (DUMMY callable identity, UDP_LIMIT=30) verified as upstream matches against pinned pproxy 2.7.9. non-`None` `prepare_ciphers` and plugin-bearing URIs are Eggress fail-closed decisions (raises `UnsupportedPProxyFeature`), not upstream-equivalent behavior.
 - **Broad Rust result**: 2491 passed, 146 ignored. Format and Clippy clean.
 - **Broad Python result**: 2226 passed, 114 skipped. Fresh extension build successful.
 - **Environment-limited checks**: External pproxy differential/oracle tests not run (require live pproxy installation); existing checked-in evidence and focused tests cover all changed surfaces.
