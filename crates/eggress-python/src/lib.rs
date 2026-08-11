@@ -1118,6 +1118,11 @@ impl PyTranslationWarning {
         &self.inner.message
     }
 
+    #[getter]
+    fn tier(&self) -> &str {
+        eggress_pproxy_compat::manifest_tier_for_category(self.inner.category).as_str()
+    }
+
     fn __repr__(&self) -> String {
         format!("[{}] {}", self.inner.category, self.inner.message)
     }
@@ -1139,6 +1144,11 @@ impl PyUnsupportedFeature {
     #[getter]
     fn message(&self) -> &str {
         &self.inner.detail
+    }
+
+    #[getter]
+    fn tier(&self) -> &str {
+        eggress_pproxy_compat::classify_unsupported_feature_tier(self.inner.feature)
     }
 
     fn __repr__(&self) -> String {

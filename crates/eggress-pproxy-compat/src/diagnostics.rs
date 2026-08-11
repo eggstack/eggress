@@ -275,7 +275,7 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "log-file" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("log".to_string()),
-                tier: Some("native_equivalent".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some(
                     "redirect stderr with shell redirection for file logging".to_string(),
@@ -408,12 +408,12 @@ fn classify_unsupported_feature(
         | "direct-listener" => (DiagnosticCode::UnsupportedProtocol, "unsupported", None),
         "socks4-bind" => (
             DiagnosticCode::UnsupportedProtocol,
-            "intentional_non_parity",
+            "unsupported",
             Some("SOCKS4 BIND is not implemented; pproxy also does not implement SOCKS4 BIND"),
         ),
         "socks5-bind" => (
             DiagnosticCode::UnsupportedProtocol,
-            "intentional_non_parity",
+            "unsupported",
             Some("SOCKS5 BIND is not implemented; pproxy also does not implement SOCKS5 BIND"),
         ),
         "udp-http-transport" | "udp-https-transport" => (
@@ -461,6 +461,16 @@ fn classify_unsupported_feature(
 /// at the error level.
 pub fn classify_unsupported_feature_code(feature: &str) -> DiagnosticCode {
     classify_unsupported_feature_inner(feature)
+}
+
+/// Return the manifest-aligned tier string for an unsupported feature.
+///
+/// This is the single source of truth for unsupported-feature tier
+/// classification. Python and the canonical manifest must agree with
+/// this function.
+pub fn classify_unsupported_feature_tier(feature: &'static str) -> &'static str {
+    let (_, tier, _) = classify_unsupported_feature(feature);
+    tier
 }
 
 fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {

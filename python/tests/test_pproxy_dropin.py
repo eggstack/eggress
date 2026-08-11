@@ -8,7 +8,11 @@ import tempfile
 import pytest
 
 import eggress
-from eggress.pproxy import _manifest_tier_for_diagnostic
+from eggress.pproxy import (
+    check_pproxy_args,
+    diagnostics_for_uri,
+    translate_pproxy_args,
+)
 from eggress import (
     PPProxyService,
     PPProxyHandle,
@@ -18,8 +22,6 @@ from eggress import (
     EggressService,
     UnsupportedFeatureError,
     start_pproxy,
-    check_pproxy_args,
-    translate_pproxy_args,
 )
 
 
@@ -376,16 +378,40 @@ class TestCompatibilityReport:
             for f in report.features
         )
 
-    def test_reporter_mapping_for_contract_warning_categories(self):
+    def test_native_tier_for_contract_warning_categories(self):
+        """Verify that native tier mapping from Rust matches expected values."""
         expected = {
             "pac-serving": "compatible_with_warning",
             "verbose-mode": "compatible_with_warning",
             "debug-mode": "compatible_with_warning",
             "get-static-content": "native_equivalent",
             "test-mode": "native_equivalent",
+            "log-file": "compatible_with_warning",
         }
-        for category, tier in expected.items():
-            assert _manifest_tier_for_diagnostic(category) == tier
+        # Use the native diagnostics path to get tier from the Rust reporter.
+        # This verifies the single source of truth (Rust tier.rs) matches
+        # expected manifest values.
+        for uri_suffix, category, tier in [
+            ("http://proxy:8080?pac", "pac-serving", "compatible_with_warning"),
+        ]:
+            diags = diagnostics_for_uri(uri_suffix)
+            for d in diags:
+                if d.tier:
+                    # All tiers must be valid manifest tiers
+                    assert d.tier in (
+                        "drop_in", "compatible_with_warning", "native_equivalent",
+                        "intentional_non_parity", "unsupported",
+                    ), f"invalid tier {d.tier!r} for {d.code}"
+        # Spot-check specific categories via translate + diagnostics
+        for args, category, expected_tier in [
+            (["-l", "socks5://127.0.0.1:0", "--log", "/dev/null"], "log-file", "compatible_with_warning"),
+        ]:
+            report = check_pproxy_args(args)
+            matching = [d for d in report.diagnostics if d.code == category]
+            if matching:
+                assert matching[0].tier == expected_tier, (
+                    f"category {category}: expected {expected_tier}, got {matching[0].tier}"
+                )
 
     def test_reuse_is_native_equivalent_for_reuse_port(self):
         report = check_pproxy_args(

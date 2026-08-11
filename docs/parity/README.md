@@ -19,6 +19,15 @@ It uses these labels:
 
 ### Tier classification rules
 
+`crates/eggress-pproxy-compat/src/tier.rs` is the **single executable
+owner** for compatibility tier semantics. `manifest_tier_for_category()`
+maps diagnostic warning categories to the five-tier vocabulary, and
+`classify_aggregate_tier()` picks the worst tier from a set of warnings.
+Python consumes native tier values from the Rust reporter rather than
+maintaining an independent tier table. A cross-check test in
+`eggress-testkit` validates that manifest diagnostic tiers match the Rust
+reporter.
+
 These rules govern how capabilities are classified:
 
 - **Same flag + different config schema**: Not `drop_in`. A flag with the same

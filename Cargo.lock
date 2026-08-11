@@ -864,6 +864,7 @@ name = "eggress-testkit"
 version = "1.0.1"
 dependencies = [
  "eggress-config",
+ "eggress-pproxy-compat",
  "eggress-runtime",
  "rcgen",
  "regex",

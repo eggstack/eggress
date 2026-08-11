@@ -32,15 +32,32 @@ impl ManifestTier {
 }
 
 /// Map a translator warning category to its manifest-aligned tier.
+///
+/// This is the **single executable source of truth** for diagnostic-category
+/// → tier mapping. Python and the canonical manifest must agree with this
+/// function. Unknown categories default to `Unsupported` to surface gaps.
 pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
     match category {
         // Native equivalent: same outcome through different mechanism.
-        "alive-check" | "test-mode" | "log-file" | "ssl-no-listener" | "trojan-auto-tls"
+        "alive-check" | "test-mode" | "ssl-no-listener" | "trojan-auto-tls"
         | "get-static-content" | "reuse-port" => ManifestTier::NativeEquivalent,
         // Compatible with warning: works but emits a diagnostic.
-        "debug-mode" | "pac-serving" | "verbose-mode" | "scheduler" | "credential-in-toml"
-        | "rulefile-partial" | "rulefile-parse" | "rulefile-read" | "direct-mode"
-        | "ul-no-listener" => ManifestTier::CompatibleWithWarning,
+        "debug-mode"
+        | "pac-serving"
+        | "verbose-mode"
+        | "scheduler"
+        | "credential-in-toml"
+        | "rulefile-partial"
+        | "rulefile-parse"
+        | "rulefile-read"
+        | "direct-mode"
+        | "ul-no-listener"
+        | "log-file"
+        | "config-schema"
+        | "reverse-proxy-warning"
+        | "socks5_udp_framing_divergence" => ManifestTier::CompatibleWithWarning,
+        // Unsupported: feature or operation not implemented.
+        "socks4_bind_unsupported" | "socks5_bind_unsupported" => ManifestTier::Unsupported,
         // Unknown categories default to "unsupported" to surface new gaps.
         _ => ManifestTier::Unsupported,
     }
@@ -52,8 +69,8 @@ pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
 /// Severity order (worst first):
 /// 1. any unsupported hard failure -> `unsupported`
 /// 2. any intentional non-parity    -> `intentional_non_parity`
-/// 3. any native-equivalent warning -> `native_equivalent`
-/// 4. any compatible-with-warning   -> `compatible_with_warning`
+/// 3. any compatible-with-warning   -> `compatible_with_warning`
+/// 4. any native-equivalent warning -> `native_equivalent`
 /// 5. no diagnostics                -> `drop_in`
 pub fn classify_aggregate_tier(
     warnings: &[CompatWarning],
@@ -70,15 +87,15 @@ pub fn classify_aggregate_tier(
     }
     if warnings
         .iter()
-        .any(|w| manifest_tier_for_category(w.category) == ManifestTier::NativeEquivalent)
-    {
-        return ManifestTier::NativeEquivalent;
-    }
-    if warnings
-        .iter()
         .any(|w| manifest_tier_for_category(w.category) == ManifestTier::CompatibleWithWarning)
     {
         return ManifestTier::CompatibleWithWarning;
+    }
+    if warnings
+        .iter()
+        .any(|w| manifest_tier_for_category(w.category) == ManifestTier::NativeEquivalent)
+    {
+        return ManifestTier::NativeEquivalent;
     }
     ManifestTier::DropIn
 }
@@ -123,7 +140,8 @@ mod tests {
     #[test]
     fn native_equivalent_beats_compatible() {
         let tier = classify_aggregate_tier(&[warn("direct-mode"), warn("alive-check")], &[]);
-        assert_eq!(tier, ManifestTier::NativeEquivalent);
+        // compatible_with_warning dominates native_equivalent in severity
+        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
     }
 
     #[test]
@@ -153,5 +171,37 @@ mod tests {
             "intentional_non_parity"
         );
         assert_eq!(ManifestTier::Unsupported.as_str(), "unsupported");
+    }
+
+    #[test]
+    fn mixed_native_and_compatible_aggregates_to_compatible() {
+        let tier = classify_aggregate_tier(&[warn("alive-check"), warn("direct-mode")], &[]);
+        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
+    }
+
+    #[test]
+    fn log_file_is_compatible_with_warning() {
+        assert_eq!(
+            manifest_tier_for_category("log-file"),
+            ManifestTier::CompatibleWithWarning
+        );
+    }
+
+    #[test]
+    fn socks4_bind_category_maps_to_unsupported() {
+        // socks4-bind and socks5-bind are unsupported (neither pproxy nor
+        // eggress implements BIND). Unknown categories default to unsupported.
+        assert_eq!(
+            manifest_tier_for_category("socks4-bind"),
+            ManifestTier::Unsupported
+        );
+    }
+
+    #[test]
+    fn socks5_bind_category_maps_to_unsupported() {
+        assert_eq!(
+            manifest_tier_for_category("socks5-bind"),
+            ManifestTier::Unsupported
+        );
     }
 }

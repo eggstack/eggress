@@ -26,6 +26,7 @@ regex.workspace = true
 tokio-test.workspace = true
 eggress-config = { path = "../eggress-config" }
 eggress-runtime = { path = "../eggress-runtime" }
+eggress-pproxy-compat = { path = "../eggress-pproxy-compat" }
 
 [lints]
 workspace = true

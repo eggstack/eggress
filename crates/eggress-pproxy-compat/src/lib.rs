@@ -11,7 +11,10 @@ pub mod uri;
 pub mod warnings;
 
 pub use args::PproxyArgs;
-pub use diagnostics::{DiagnosticCode, StructuredDiagnostic};
+pub use diagnostics::{
+    classify_unsupported_feature_code, classify_unsupported_feature_tier, DiagnosticCode,
+    StructuredDiagnostic,
+};
 pub use error::CompatError;
 pub use gate::{evaluate as evaluate_execution_gate, BlockReason, ExecutionGate};
 pub use regex_compat::{CompatRegex, PproxyRuleFile, RegexBackend, RegexCompileError};

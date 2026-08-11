@@ -34,13 +34,25 @@ upstream `pproxy` distribution must not be installed alongside Eggress.
 
 ## Parity Classification
 
-`ManifestTier` classifies features:
-- `compatible` — matched for the defined scenario
-- `supported` — usable with documented differences
-- `partial` — partially implemented
-- `intentional_non_parity` — deliberate divergence
-- `experimental` — unstable
-- `unsupported` — not implemented
+`ManifestTier` is the **single executable source of truth** for
+compatibility tier classification. `manifest_tier_for_category()` maps
+diagnostic warning categories to tiers, and `classify_unsupported_feature_tier()`
+maps unsupported feature names to tiers. The canonical manifest and Python
+compatibility layer must agree with these functions; a cross-check test in
+`eggress-testkit` prevents reporter/manifest tier drift.
+
+Five-tier vocabulary:
+- `drop_in` — no warning expected
+- `compatible_with_warning` — works but emits a diagnostic
+- `native_equivalent` — outcome same as pproxy, different mechanism
+- `intentional_non_parity` — flag parsed, no plan to implement
+- `unsupported` — flag or feature not implemented
+
+`classify_aggregate_tier()` picks the worst tier from a set of warnings
+with this dominance order (worst first): `unsupported` >
+`intentional_non_parity` > `compatible_with_warning` >
+`native_equivalent` > `drop_in`. Python consumes native tier values
+from the Rust reporter rather than maintaining an independent tier table.
 
 ## Flag Mapping
 

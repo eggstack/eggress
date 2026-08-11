@@ -168,70 +168,6 @@ def translate_pproxy_uri(
     return TranslationResult(_translate_pproxy_uri(local, list(remotes)))
 
 
-# Feature IDs classified as intentional_non_parity. Mirrors the Rust
-# eggress_pproxy_compat::diagnostics mapping for the corresponding
-# unsupported-feature diagnostics (ssh-listener, ssr-listener, socks-bind).
-INTENTIONAL_NON_PARITY_FEATURE_IDS = frozenset({
-    "ssh-listener",
-    "ssh-upstream",
-    "ssr-listener",
-    "ssr-upstream",
-    "socks4-bind",
-    "socks5-bind",
-})
-
-
-def _manifest_tier_for_diagnostic(code: str) -> str:
-    """Map a translator warning code to its manifest-aligned tier.
-
-    The translator emits structured warning codes for known modifier flags
-    and unsupported cases. This helper classifies them according to the
-    same five-tier vocabulary as
-    ``docs/parity/pproxy_capability_manifest.toml``:
-
-    - ``intentional_non_parity`` — flag parsed, no plan to implement
-    - ``native_equivalent`` — outcome same as pproxy, different mechanism
-    - ``compatible_with_warning`` — works but emits a diagnostic
-    - ``unsupported`` — flag or feature not implemented
-    - ``drop_in`` — no warning expected
-    """
-    # Intentional non-parity: connection pooling, etc.
-    intentional = {
-        "reuse-connection",
-    }
-    # Native equivalent: same outcome through different mechanism.
-    native_equivalent = {
-        "alive-check",
-        "test-mode",
-        "log-file",
-        "ssl-no-listener",
-        "trojan-auto-tls",
-        "get-static-content",
-        "reuse-port",
-    }
-    # Compatible with warning: works with a documented semantic caveat.
-    # Compatible with warning: works but emits a diagnostic.
-    compatible_with_warning = {
-        "debug-mode",
-        "pac-serving",
-        "verbose-mode",
-        "scheduler",
-        "credential-in-toml",
-        "rulefile-partial",
-        "rulefile-parse",
-        "rulefile-read",
-        "direct-mode",
-        "ul-no-listener",
-    }
-    if code in intentional:
-        return "intentional_non_parity"
-    if code in native_equivalent:
-        return "native_equivalent"
-    if code in compatible_with_warning:
-        return "compatible_with_warning"
-    return "unsupported"
-
-
 def _classify_aggregate_tier(
     warnings: list[Diagnostic], unsupported: list[Diagnostic]
 ) -> str:
@@ -297,10 +233,14 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
     warn_diags: list[Diagnostic] = []
     for w in result.warnings:
         code = getattr(w, "category", "warning")
+        # Use the native tier from the structured diagnostic; fall back to
+        # the Rust-level manifest_tier_for_category mapping.  Do NOT
+        # maintain a separate Python tier table.
+        native_tier = getattr(w, "tier", None)
         warn_diags.append(Diagnostic(
             code=code,
             feature_id=None,
-            tier=_manifest_tier_for_diagnostic(code),
+            tier=native_tier,
             message=getattr(w, "message", str(w)),
             suggestion=None,
         ))
@@ -308,15 +248,14 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
     unsupported_diags: list[Diagnostic] = []
     for u in result.unsupported:
         feat = getattr(u, "feature", None)
-        feat_tier = (
-            "intentional_non_parity"
-            if feat in INTENTIONAL_NON_PARITY_FEATURE_IDS
-            else "unsupported"
-        )
+        # Use the native tier from the structured diagnostic for
+        # unsupported features.  Do NOT maintain a separate Python
+        # intentional-non-parity set; the Rust reporter owns that mapping.
+        native_tier = getattr(u, "tier", None)
         unsupported_diags.append(Diagnostic(
             code="unsupported_protocol",
             feature_id=feat,
-            tier=feat_tier,
+            tier=native_tier,
             message=getattr(u, "message", str(u)),
             suggestion=None,
         ))
@@ -344,12 +283,14 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
     unsupported_feature_ids = {
         u.feature for u in result.unsupported if getattr(u, "feature", None)
     }
+    # Build a tier lookup from the native unsupported diagnostics so we
+    # don't maintain a separate Python tier table.
+    native_unsupported_tiers: dict[str, str] = {}
+    for d in unsupported_diags:
+        if d.feature_id and d.tier:
+            native_unsupported_tiers[d.feature_id] = d.tier
     for feat_id in unsupported_feature_ids:
-        feat_tier = (
-            "intentional_non_parity"
-            if feat_id in INTENTIONAL_NON_PARITY_FEATURE_IDS
-            else "unsupported"
-        )
+        feat_tier = native_unsupported_tiers.get(feat_id, "unsupported")
         features.append(
             FeatureInfo(
                 feature_id=feat_id, tier=feat_tier, supported=False

@@ -1888,4 +1888,38 @@ mod tests {
             }
         }
     }
+
+    /// Phase 2 cross-check: manifest diagnostic tiers must agree with the
+    /// Rust `manifest_tier_for_category` function for every capability entry
+    /// that declares a `diagnostic` field.
+    ///
+    /// This prevents the "manifest tier != Rust reporter tier" drift without
+    /// requiring a second full manifest in Rust source.
+    #[test]
+    fn manifest_diagnostic_tiers_match_rust_reporter() {
+        let path = match find_canonical_manifest_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("canonical manifest not found, skipping");
+                return;
+            }
+        };
+        let manifest =
+            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
+
+        for cap in &manifest.capability {
+            if let Some(ref diag) = cap.diagnostic {
+                if diag.is_empty() {
+                    continue;
+                }
+                let rust_tier = eggress_pproxy_compat::manifest_tier_for_category(diag);
+                let rust_tier_str = rust_tier.as_str();
+                assert_eq!(
+                    cap.tier, rust_tier_str,
+                    "manifest capability '{}' has tier '{}' but Rust reporter returns '{}' for diagnostic '{}'",
+                    cap.id, cap.tier, rust_tier_str, diag,
+                );
+            }
+        }
+    }
 }
