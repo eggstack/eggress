@@ -6,7 +6,7 @@
 
 ## Implementation summary
 
-- **Implementation commit**: recorded after the final verification commit is created.
+- **Implementation commit**: `5427f4c9d9dd5516bc10edae6482300cd6cd657e` (final amended commit SHA may differ only because this record is part of the commit).
 - **Phase 3 artifact evidence**: The pre-Phase-3 revision `3c1f12721deb2f25832c81a0303b8e7a6230d37a` was verified as an ancestor of `16abdff2778b83b131979031c134396c2435c45f` and built successfully under rustc/cargo 1.97.1 on `x86_64-unknown-linux-gnu`. Isolated release builds measured pre-Phase-3 `eggress` at 9,641,736 bytes and `pproxy` at 8,480,160 bytes; current `eggress` at 9,671,808 bytes and `pproxy` at 8,541,872 bytes. `cargo tree -p eggress-cli -i tempfile -e normal` produced no normal dependency path.
 - **System-proxy surface**: Active documentation now describes `eggress system-proxy inspect` as the read-only public CLI and labels apply planning, command generation, and rollback-state primitives as Rust library capabilities only. No mutation CLI was added.
 - **Python package contract**: A fresh installed wheel imports top-level `pproxy` and its representative public exports through `test_wheel_import_smoke.py::test_import_top_level_pproxy_package`. The canonical manifest now records `python.importable_package` as `drop_in` with `python = "complete"` and integration evidence; the practical matrix already agrees.
