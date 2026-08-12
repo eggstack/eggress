@@ -8,7 +8,7 @@ Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for o
 
 The repository has two automatic smoke workflows and one manual publish workflow:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite. Triggers on push to `main` and manual dispatch.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the workspace test suite, and a lean-build compile check. Triggers on push to `main` and manual dispatch.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages. Triggers on Python-relevant pushes to `main` and manual dispatch.
 - `.github/workflows/publish-python.yml`: Python package publication to PyPI/TestPyPI using OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch. Requires `id-token: write` permission and repository environments `pypi`/`testpypi`.
 
@@ -40,6 +40,7 @@ For a normal Rust change, the expected broad local check is:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
+cargo check -p eggress-cli --no-default-features --features common
 ```
 
 For a Python-facing change, also build the extension and run the relevant Python tests:

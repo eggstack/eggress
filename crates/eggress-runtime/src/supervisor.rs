@@ -269,6 +269,7 @@ fn classify_listeners(
 
 struct PreparedListener {
     name: String,
+    #[allow(dead_code)] // used only with `operations` feature
     bind: String,
     protocols: Vec<ProtocolId>,
     listener: TcpListener,

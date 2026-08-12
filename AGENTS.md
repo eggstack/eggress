@@ -130,6 +130,7 @@ Before merging a substantial Rust change, run the broad workspace gate:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
+cargo check -p eggress-cli --no-default-features --features common
 ```
 
 For Python-facing changes, build the native wheel in a clean environment and run the relevant Python tests:
@@ -192,7 +193,7 @@ Ordinary changes do not require generated evidence bundles, uploaded artifacts, 
 
 The repository has two automatic smoke workflows and one manual publish workflow:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, and workspace tests.
+- `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, workspace tests, and a lean-build compile check.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job.
 - `.github/workflows/publish-python.yml`: multi-platform wheel and sdist build, smoke tests, and publication to PyPI/TestPyPI via OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch. Builds wheels for Linux (x86_64, aarch64), macOS (x86_64, arm64), and Windows (x86_64) using the Python stable ABI.
 

@@ -29,6 +29,7 @@ Before merging a substantial Rust change, run:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
+cargo check -p eggress-cli --no-default-features --features common
 ```
 
 `cargo check` is not a separate required gate because Clippy and the test build already compile the workspace. It remains useful interactively when a faster compile-only pass is desired.

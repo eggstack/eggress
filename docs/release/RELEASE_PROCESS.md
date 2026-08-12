@@ -126,8 +126,7 @@ cleanly, and verifies readiness is false.
 
 Before production use, manually dispatch TestPyPI with a safe version, confirm
 all build, collection, smoke, and publish jobs succeed, install one artifact
-from TestPyPI in a clean environment, and run the same smoke script. Record
-the run URL and filenames in `plans/LEAN_RUNTIME_CORRECTIVE_PASS.md`. Do not
+from TestPyPI in a clean environment, and run the same smoke script. Do not
 push a production tag solely to test the workflow.
 
 Crates.io publication remains manual and is not coupled to the Python release workflow.

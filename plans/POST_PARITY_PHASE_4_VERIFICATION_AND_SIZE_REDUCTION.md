@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**COMPLETE**
 
 Parent roadmap: `POST_PARITY_CORRECTIVE_AND_REDUCTION_ROADMAP.md`
 

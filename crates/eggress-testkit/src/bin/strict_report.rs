@@ -437,16 +437,6 @@ fn format_markdown(
 
     out.push_str("# pproxy 2.7.9 Strict Compatibility Report\n\n");
 
-    out.push_str("> **CORRECTIVE PASS NOTICE:** This report was regenerated as part of the\n");
-    out.push_str("> Milestones A–C Corrective Pass (`plans/MILESTONES_A_C_CORRECTIVE_PASS.md`).\n");
-    out.push_str(
-        "> Records using `module_existence` comparators with `drop_in` status have namespace\n",
-    );
-    out.push_str(
-        "> evidence only and require behavioral validation before true drop_in status can be\n",
-    );
-    out.push_str("> claimed. See the corrective pass plan for details.\n\n");
-
     out.push_str(&format!(
         "**Oracle version:** pproxy=={}\n",
         manifest.meta.pproxy_version
