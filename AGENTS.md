@@ -60,7 +60,12 @@ backing-claim, and verification mismatches found after the four phases.
 `plans/PPROXY_FINAL_CORRECTIVE_CLOSURE_ROADMAP.md` governs the final
 corrective closure: Python semantic fixes, contract/documentation
 reduction, execution-path simplification, regex trust boundary, and
-differential closure. The bounded `pproxy==2.7.9` parity program is
+differential closure. `plans/POST_PARITY_CORRECTIVE_AND_REDUCTION_ROADMAP.md`
+governs the post-parity corrective and reduction pass (session metrics
+lifecycle, compatibility taxonomy single source, SOCKS5 protocol
+correctness, and verification/size reduction), closed by the bounded
+`plans/POST_PARITY_FINAL_CORRECTIVE_PASS.md`. The bounded
+`pproxy==2.7.9` parity program is
 considered closed; future work requires a reproducible defect or explicit
 scope decision.
 `plans/PPROXY_FULL_DROP_IN_ROADMAP.md` and older milestone plans are historical

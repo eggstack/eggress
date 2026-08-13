@@ -1191,6 +1191,21 @@ impl PyTranslationResult {
         !self.output.has_unsupported()
     }
 
+    /// Manifest-aligned aggregate compatibility tier.
+    ///
+    /// This is the single source of truth for the five-tier compatibility
+    /// classification; Python and the canonical manifest must agree with
+    /// this value. The same value is reused by the CLI `pproxy check`
+    /// reporter.
+    #[getter]
+    fn tier(&self) -> &'static str {
+        eggress_pproxy_compat::classify_aggregate_tier(
+            &self.output.warnings,
+            &self.output.unsupported,
+        )
+        .as_str()
+    }
+
     fn config(&self, py: Python<'_>) -> PyResult<PyEggressConfig> {
         let config = py
             .detach(|| eggress_embed::EggressConfig::from_toml_str(&self.output.toml))

@@ -2080,3 +2080,113 @@ enabled = true
     token.cancel();
     jh.await.ok();
 }
+
+// ---------------------------------------------------------------------------
+// 16. Failed-handshake lifecycle against the real MetricsRegistry
+//
+// This is a concrete regression for the post-Phase-1 acceptance criteria:
+// once a session is started through the real server/runtime path, the
+// corresponding active/total/failure counters must balance after the
+// connection terminates — even when the handshake itself fails.
+//
+// Phase 1 proved the structural balance with a test-only metrics double
+// (RecordingMetrics). This test exercises the actual
+// `eggress_metrics::MetricsRegistry` through the existing runtime path so
+// the concrete Prometheus output is pinned.
+//
+// The mandatory assertions are:
+//   eggress_connections_active       == 0
+//   eggress_connections_total        == 1
+//   eggress_connection_failures_total == 1
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn metrics_registry_lifecycle_balances_after_failed_handshake() {
+    let config = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+
+[[rules]]
+id = "route-all"
+any = true
+direct = true
+
+[admin]
+bind = "127.0.0.1:0"
+enabled = true
+"#;
+
+    let f = write_config(config);
+    let path = f.path().to_str().unwrap();
+    let mut sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
+    let state = sup.state().clone();
+    let token = sup.shutdown_token();
+    let jh = tokio::task::spawn_blocking(move || sup.run());
+
+    wait_ready(&state).await;
+    let listener_addr = get_listener_addr(&state);
+    let admin_addr = get_admin_addr(&state);
+
+    // Establish the baseline for connection counters before driving any
+    // traffic. The shared metrics registry carries a counter that begins
+    // at zero on a fresh process but a stale render in an embedded
+    // process could differ. This test runs against a freshly-started
+    // supervisor, so the baseline is zero.
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+    let baseline_active = metric_value(&body, "eggress_connections_active")
+        .expect("eggress_connections_active should be present");
+    let baseline_total = metric_value(&body, "eggress_connections_total")
+        .expect("eggress_connections_total should be present");
+    let baseline_failures = metric_value(&body, "eggress_connection_failures_total")
+        .expect("eggress_connection_failures_total should be present");
+    assert_eq!(baseline_active, 0.0, "active must start at 0");
+    assert_eq!(baseline_total, 0.0, "total must start at 0");
+    assert_eq!(baseline_failures, 0.0, "failures must start at 0");
+
+    // Open a real SOCKS5 listener-bound connection and send a malformed
+    // SOCKS5 method-selection handshake. The proxy must increment
+    // `eggress_connections_total`, increment
+    // `eggress_connection_failures_total`, and return
+    // `eggress_connections_active` to baseline.
+    let mut stream = tokio::net::TcpStream::connect(listener_addr)
+        .await
+        .expect("connect");
+    // Truncated method-selection: advertise 100 methods but never send
+    // them. The peer will close after a short read failure.
+    stream.write_all(&[0x05, 100]).await.unwrap();
+    drop(stream);
+    // Allow the server side to observe the close and finalize the
+    // session metrics.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (status, body) = http_get(&admin_addr, "/metrics").await;
+    assert_eq!(status, 200);
+    let active = metric_value(&body, "eggress_connections_active")
+        .expect("eggress_connections_active should be present");
+    let total = metric_value(&body, "eggress_connections_total")
+        .expect("eggress_connections_total should be present");
+    let failures = metric_value(&body, "eggress_connection_failures_total")
+        .expect("eggress_connection_failures_total should be present");
+    assert_eq!(
+        active, baseline_active,
+        "eggress_connections_active should return to baseline after handshake failure, got {active}"
+    );
+    assert_eq!(
+        total,
+        baseline_total + 1.0,
+        "eggress_connections_total should increment exactly once on a failed handshake, got {total}"
+    );
+    assert_eq!(
+        failures,
+        baseline_failures + 1.0,
+        "eggress_connection_failures_total should increment exactly once on a failed handshake, got {failures}"
+    );
+
+    token.cancel();
+    jh.await.ok();
+}

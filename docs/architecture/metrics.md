@@ -25,6 +25,21 @@ Prometheus-compatible metrics registry using `prometheus-client`. Bridges metric
 
 Session accounting is structurally balanced: `record_session_start()` increments `connections_active`, and exactly one `record_session()` call decrements it before the connection handler returns. This covers successful sessions, authentication failures, protocol errors, and handshake timeouts equally. Auth failures additionally increment a specialized `auth_failures` counter.
 
+The structural balance is pinned by two complementary regression layers:
+
+- a trait-boundary test using a `RecordingMetrics` test double in
+  `crates/eggress-server/src/lib.rs` proves one `record_session_start()`
+  is followed by exactly one `record_session()` across success,
+  authentication failure, malformed protocol, handshake timeout, and
+  route failure paths;
+- a concrete `MetricsRegistry` regression in
+  `crates/eggress-runtime/tests/observability.rs` exercises a real
+  connection through the existing runtime path and asserts that after
+  the failed handshake terminates the actual Prometheus output shows
+  `eggress_connections_active == 0`,
+  `eggress_connections_total == 1`, and
+  `eggress_connection_failures_total == 1`.
+
 ### Route Decision Metrics
 
 | Metric | Type | Labels |

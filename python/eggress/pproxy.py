@@ -146,6 +146,10 @@ class TranslationResult:
     def ok(self) -> bool:
         return self._inner.ok
 
+    @property
+    def tier(self) -> str:
+        return self._inner.tier
+
     def config(self):
         from eggress.config import EggressConfig
 
@@ -168,51 +172,15 @@ def translate_pproxy_uri(
     return TranslationResult(_translate_pproxy_uri(local, list(remotes)))
 
 
-def _classify_aggregate_tier(
-    warnings: list[Diagnostic], unsupported: list[Diagnostic]
-) -> str:
-    """Pick the worst manifest-aligned tier from the diagnostics.
-
-    Deterministic severity order (worst first):
-        1. any unsupported (non-intentional) hard failure -> ``unsupported``
-        2. any intentional non-parity                     -> ``intentional_non_parity``
-        3. any native-equivalent warning                  -> ``native_equivalent``
-        4. any compatible-with-warning                    -> ``compatible_with_warning``
-        5. no diagnostics                                 -> ``drop_in``
-
-    An ``unsupported`` diagnostic whose tier itself is
-    ``intentional_non_parity`` (e.g. SSH listener) does NOT escalate the
-    aggregate above ``intentional_non_parity`` — it is still parsed and
-    reported, but the overall tier reflects that it is by design rather
-    than a runtime error.
-    """
-    if any(
-        (d.tier or "") != "intentional_non_parity" for d in unsupported
-    ):
-        return "unsupported"
-    has_intentional = any(
-        (d.tier or "") == "intentional_non_parity"
-        for d in (*warnings, *unsupported)
-    )
-    if has_intentional:
-        return "intentional_non_parity"
-    has_native = any(
-        (w.tier or "") == "native_equivalent" for w in warnings
-    )
-    if has_native:
-        return "native_equivalent"
-    if warnings:
-        return "compatible_with_warning"
-    return "drop_in"
-
-
 def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
     """Translate pproxy args and return a full compatibility report.
 
     Returns a :class:`CompatibilityReport` with tier classification,
     diagnostics, parsed URIs, and generated TOML.
 
-    The aggregate ``tier`` field uses the same five-tier vocabulary as
+    The aggregate ``tier`` field is supplied by the native translation
+    layer (``eggress_pproxy_compat::classify_aggregate_tier``) and uses
+    the same five-tier vocabulary as
     ``docs/parity/pproxy_capability_manifest.toml``:
 
     - ``drop_in``
@@ -261,7 +229,7 @@ def check_pproxy_args(args: Sequence[str]) -> CompatibilityReport:
         ))
 
     diagnostics = list(warn_diags) + list(unsupported_diags)
-    tier = _classify_aggregate_tier(warn_diags, unsupported_diags)
+    tier = result.tier
 
     parsed_uris: dict[str, UriInfo] = {}
     i = 0

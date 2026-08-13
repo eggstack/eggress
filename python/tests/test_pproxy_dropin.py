@@ -422,6 +422,57 @@ class TestCompatibilityReport:
             d.tier == "native_equivalent" for d in report.diagnostics
         )
 
+    def test_aggregate_tier_dominates_native_equivalent(self):
+        """A material compatibility warning must not be hidden by a
+        better ``native_equivalent`` warning.
+
+        This pins the corrected aggregate ordering: a single invocation
+        carrying both a ``native_equivalent`` warning (``--reuse``) and a
+        ``compatible_with_warning`` warning (``--log``) must aggregate to
+        ``compatible_with_warning`` rather than ``native_equivalent``.
+        """
+        report = check_pproxy_args(
+            [
+                "-l", "socks5://127.0.0.1:0",
+                "-r", "http://proxy:8080",
+                "--reuse",
+                "--log", "/dev/null",
+            ]
+        )
+        # A compatible warning must dominate a native_equivalent warning.
+        assert report.tier == "compatible_with_warning"
+        tiers = {d.tier for d in report.diagnostics if d.tier}
+        assert "native_equivalent" in tiers
+        assert "compatible_with_warning" in tiers
+
+    def test_aggregate_tier_ssh_listener_is_intentional_non_parity(self):
+        """An SSH listener is intentional non-parity, not generic unsupported."""
+        report = check_pproxy_args(["-l", "ssh://user@host:22"])
+        assert report.tier == "intentional_non_parity"
+        assert report.ok is False
+        # The per-diagnostic tier must also be intentional_non_parity
+        # for the SSH listener record.
+        ssh_unsupported = [
+            d for d in report.unsupported
+            if d.feature_id and "ssh" in d.feature_id
+        ]
+        assert ssh_unsupported, "expected an ssh unsupported diagnostic"
+        assert all(
+            d.tier == "intentional_non_parity" for d in ssh_unsupported
+        )
+
+    def test_aggregate_tier_native_property_exposed(self):
+        """``TranslationResult.tier`` must surface the native aggregate
+        result rather than recomputing it in Python."""
+        result = translate_pproxy_args(
+            ["-l", "socks5://127.0.0.1:0", "-r", "http://proxy:8080", "--reuse"]
+        )
+        report = check_pproxy_args(
+            ["-l", "socks5://127.0.0.1:0", "-r", "http://proxy:8080", "--reuse"]
+        )
+        assert result.tier == "native_equivalent"
+        assert report.tier == result.tier
+
     def test_parsed_uris_populated(self):
         report = check_pproxy_args(["-l", "socks5://127.0.0.1:0"])
         assert "socks5://127.0.0.1:0" in report.parsed_uris

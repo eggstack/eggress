@@ -2,7 +2,12 @@
 
 ## Status
 
-**PLANNED**
+**COMPLETE**
+
+Closed by [`POST_PARITY_FINAL_CORRECTIVE_PASS.md`](POST_PARITY_FINAL_CORRECTIVE_PASS.md),
+which corrected the remaining aggregate-tier classification and concrete
+metrics-lifecycle defects. No additional closure/certification plan is
+created.
 
 ## Baseline
 
@@ -80,7 +85,7 @@ Execute the phases in this order.
 
 Plan: `POST_PARITY_PHASE_1_SESSION_METRICS_LIFECYCLE.md`
 
-Fix the concrete production-observability defect first. The phase must create one
+**COMPLETED.** Fix the concrete production-observability defect first. The phase must create one
 finalization path for successful and failed sessions and prove that active,
 total, and failure counters remain balanced after authentication failure,
 protocol failure, timeout, route failure, relay failure, and success.
@@ -89,7 +94,7 @@ protocol failure, timeout, route failure, relay failure, and success.
 
 Plan: `POST_PARITY_PHASE_2_COMPATIBILITY_TAXONOMY_SINGLE_SOURCE.md`
 
-Remove duplicated classification logic that allowed the canonical manifest,
+**COMPLETED.** Remove duplicated classification logic that allowed the canonical manifest,
 Rust reporter, and Python reporter to disagree. Correct the known `--log` and
 SOCKS BIND drift and make aggregate classification semantics explicit.
 
@@ -104,7 +109,7 @@ truncation. Keep this strictly at the codec/handshake boundary.
 
 Plan: `POST_PARITY_PHASE_4_VERIFICATION_AND_SIZE_REDUCTION.md`
 
-Reduce low-value verification duplication, keep the current smoke CI floor, and
+**COMPLETED.** Reduce low-value verification duplication, keep the current smoke CI floor, and
 measure release artifacts before changing build topology. Binary-size changes
 are conditional on evidence and must stop if the available gain is marginal or
 requires architecture churn.

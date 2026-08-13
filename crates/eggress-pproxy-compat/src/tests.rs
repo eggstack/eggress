@@ -813,3 +813,140 @@ fn test_pac_get_test_flags_do_not_produce_unsupported_features() {
     let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
     assert_eq!(parsed["version"].as_integer(), Some(1));
 }
+
+// ---------------------------------------------------------------------------
+// Cross-surface aggregate-tier regressions.
+//
+// These tests exercise the public `translate_pproxy_args()` path rather than
+// hand-constructing `CompatWarning` values. They prove the aggregate tier
+// ordering is correct for representative pproxy arguments.
+// ---------------------------------------------------------------------------
+
+fn aggregate_tier(args: &[&str]) -> crate::ManifestTier {
+    let raw: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let parsed = PproxyArgs::parse(&raw).expect("parse");
+    let output = translate_pproxy_args(&parsed).expect("translate");
+    crate::classify_aggregate_tier(&output.warnings, &output.unsupported)
+}
+
+#[test]
+fn cross_surface_aggregate_tier_compatible_with_warning_for_direct_mode() {
+    // `-l socks5://...` with no `-r` produces a `direct-mode` warning
+    // (compatible_with_warning). There is no upstream so the warning is
+    // unavoidable for a plain listen-only invocation.
+    let raw: Vec<String> = ["-l", "socks5://127.0.0.1:0"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let parsed = PproxyArgs::parse(&raw).expect("parse");
+    let output = translate_pproxy_args(&parsed).expect("translate");
+    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    assert_eq!(tier, crate::ManifestTier::CompatibleWithWarning);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_native_equivalent_for_reuse_port() {
+    // `--reuse` triggers a `reuse-port` warning (native_equivalent).
+    let tier = aggregate_tier(&[
+        "-l",
+        "socks5://127.0.0.1:0",
+        "-r",
+        "http://proxy:8080",
+        "--reuse",
+    ]);
+    assert_eq!(tier, crate::ManifestTier::NativeEquivalent);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_compatible_with_warning_for_log_file() {
+    // `--log` triggers a `log-file` warning (compatible_with_warning).
+    let tier = aggregate_tier(&["-l", "socks5://127.0.0.1:0", "--log", "/dev/null"]);
+    assert_eq!(tier, crate::ManifestTier::CompatibleWithWarning);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_compatible_dominates_native_equivalent() {
+    // Combine `--reuse` (native_equivalent) with `--log` (compatible_with_warning).
+    // The aggregate must be compatible_with_warning, not native_equivalent.
+    let tier = aggregate_tier(&[
+        "-l",
+        "socks5://127.0.0.1:0",
+        "-r",
+        "http://proxy:8080",
+        "--reuse",
+        "--log",
+        "/dev/null",
+    ]);
+    assert_eq!(tier, crate::ManifestTier::CompatibleWithWarning);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_intentional_non_parity_for_ssh_listener() {
+    // SSH listener is classified as `intentional_non_parity`, NOT generic
+    // `unsupported`. The service remains non-runnable (ok == false) because
+    // the translation report still contains the unsupported feature record.
+    let raw: Vec<String> = ["-l", "ssh://user@host:22"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let parsed = PproxyArgs::parse(&raw).expect("parse");
+    let output = translate_pproxy_args(&parsed).expect("translate");
+    assert!(output.has_unsupported());
+    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    assert_eq!(tier, crate::ManifestTier::IntentionalNonParity);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_unsupported_for_hard_unsupported_feature() {
+    // `--daemon` is a hard unsupported feature (not an intentional exclusion),
+    // so the aggregate must be `unsupported` even when other warnings exist.
+    let raw: Vec<String> = [
+        "-l",
+        "socks5://127.0.0.1:0",
+        "-r",
+        "http://proxy:8080",
+        "--daemon",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let parsed = PproxyArgs::parse(&raw).expect("parse");
+    let output = translate_pproxy_args(&parsed).expect("translate");
+    assert!(output.has_unsupported());
+    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    assert_eq!(tier, crate::ManifestTier::Unsupported);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_intentional_non_parity_for_ssr_listener() {
+    // SSR listener (not in a chain) is classified as `intentional_non_parity`
+    // and remains non-runnable.
+    let raw: Vec<String> = ["-l", "ssr://aes-256-ctr:secret@proxy:8388"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let parsed = PproxyArgs::parse(&raw).expect("parse");
+    let output = translate_pproxy_args(&parsed).expect("translate");
+    assert!(output.has_unsupported());
+    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    assert_eq!(tier, crate::ManifestTier::IntentionalNonParity);
+}
+
+#[test]
+fn cross_surface_aggregate_tier_unsupported_for_ssh_upstream_in_chain() {
+    // `-r ssh://...` is always wrapped in a chain. The chain validator
+    // reports `chain-unsupported-hop` (hard `unsupported`) AND the per-hop
+    // validator reports `ssh-upstream` (`intentional_non_parity`). The
+    // aggregate must be `unsupported` because chain composition is the
+    // hard failure; the per-diagnostic tier still reflects the underlying
+    // intentional exclusion.
+    let raw: Vec<String> = ["-l", "socks5://127.0.0.1:0", "-r", "ssh://user@hop:22"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let parsed = PproxyArgs::parse(&raw).expect("parse");
+    let output = translate_pproxy_args(&parsed).expect("translate");
+    assert!(output.has_unsupported());
+    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    assert_eq!(tier, crate::ManifestTier::Unsupported);
+}

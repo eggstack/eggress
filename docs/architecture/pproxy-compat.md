@@ -49,10 +49,26 @@ Five-tier vocabulary:
 - `unsupported` — flag or feature not implemented
 
 `classify_aggregate_tier()` picks the worst tier from a set of warnings
-with this dominance order (worst first): `unsupported` >
-`intentional_non_parity` > `compatible_with_warning` >
-`native_equivalent` > `drop_in`. Python consumes native tier values
-from the Rust reporter rather than maintaining an independent tier table.
+and unsupported features with this dominance order (worst first):
+`unsupported` > `intentional_non_parity` > `compatible_with_warning` >
+`native_equivalent` > `drop_in`.
+
+The aggregate classifier consults the native per-diagnostic tier of every
+unsupported feature id via `manifest_tier_for_unsupported_feature()`
+(which reuses the per-diagnostic tier owned by
+`classify_unsupported_feature_tier()`), so a known intentional
+exclusion (SSH listener/upstream, SSR listener/upstream, legacy
+Shadowsocks ciphers) reports as `intentional_non_parity` rather than
+being collapsed into generic `unsupported`. Unknown warning
+categories and unknown unsupported feature ids fail closed to
+`unsupported`.
+
+The classifier is the single executable source of truth for both
+per-diagnostic and aggregate tier semantics. The Rust CLI
+(`pproxy check`) and the Python `check_pproxy_args()` reporter both
+consume the same native aggregate result via the `tier` property on
+`PyTranslationResult`; Python does not maintain an independent tier
+table, severity order, or intentional-exclusion set.
 
 ## Flag Mapping
 

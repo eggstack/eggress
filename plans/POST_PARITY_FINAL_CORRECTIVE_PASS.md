@@ -2,11 +2,20 @@
 
 ## Status
 
-**PLANNED**
+**COMPLETE**
 
 Parent roadmap: `POST_PARITY_CORRECTIVE_AND_REDUCTION_ROADMAP.md`
 
 Planning baseline: `0029194a82ec8bdadc3c89c0944902db1bd3333f`.
+
+This pass closed the last two post-parity defects: Rust now owns both
+per-diagnostic and aggregate tier classification (so the CLI and Python
+reporters consume the same native aggregate result and SSH/SSR/legacy
+cipher intentional exclusions are no longer collapsed into generic
+`unsupported`); and the existing `RecordingMetrics` lifecycle regression
+suite is paired with a concrete `MetricsRegistry` failed-handshake
+regression that pins `eggress_connections_active`/`_total`/
+`_connection_failures_total` against the real runtime path.
 
 ## Purpose
 

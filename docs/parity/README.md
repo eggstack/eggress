@@ -20,13 +20,29 @@ It uses these labels:
 ### Tier classification rules
 
 `crates/eggress-pproxy-compat/src/tier.rs` is the **single executable
-owner** for compatibility tier semantics. `manifest_tier_for_category()`
-maps diagnostic warning categories to the five-tier vocabulary, and
-`classify_aggregate_tier()` picks the worst tier from a set of warnings.
-Python consumes native tier values from the Rust reporter rather than
-maintaining an independent tier table. A cross-check test in
-`eggress-testkit` validates that manifest diagnostic tiers match the Rust
-reporter.
+owner** for both per-diagnostic and aggregate compatibility tier
+semantics. `manifest_tier_for_category()` maps diagnostic warning
+categories to the five-tier vocabulary;
+`classify_unsupported_feature_tier()` (in `diagnostics.rs`) maps
+unsupported feature ids to tiers and is reused by
+`manifest_tier_for_unsupported_feature()` so per-diagnostic and
+aggregate classification never disagree.
+
+`classify_aggregate_tier()` picks the worst tier from a set of
+warnings and unsupported features, with the severity order
+(worst first): `unsupported` > `intentional_non_parity` >
+`compatible_with_warning` > `native_equivalent` > `drop_in`. Known
+intentional exclusions (SSH listener/upstream, SSR listener/upstream,
+legacy Shadowsocks ciphers) aggregate to `intentional_non_parity`
+rather than generic `unsupported`; unknown warning categories and
+unknown unsupported feature ids fail closed to `unsupported`.
+
+Both the Rust CLI (`pproxy check`) and the Python `check_pproxy_args()`
+reporter consume the same native aggregate result via the `tier`
+property on `PyTranslationResult`. Python does not maintain an
+independent tier table, severity order, or intentional-exclusion set.
+A cross-check test in `eggress-testkit` validates that manifest
+diagnostic tiers match the Rust reporter.
 
 These rules govern how capabilities are classified:
 

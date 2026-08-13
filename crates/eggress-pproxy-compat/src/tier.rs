@@ -63,6 +63,24 @@ pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
     }
 }
 
+/// Map an unsupported feature id to its manifest-aligned tier.
+///
+/// This is the **single executable source of truth** for unsupported-feature
+/// classification. It reuses the per-diagnostic tier owned by
+/// [`crate::diagnostics::classify_unsupported_feature_tier`] so the
+/// aggregate classifier and the per-diagnostic reporter never disagree.
+pub fn manifest_tier_for_unsupported_feature(feature: &'static str) -> ManifestTier {
+    match crate::diagnostics::classify_unsupported_feature_tier(feature) {
+        "drop_in" => ManifestTier::DropIn,
+        "compatible_with_warning" => ManifestTier::CompatibleWithWarning,
+        "native_equivalent" => ManifestTier::NativeEquivalent,
+        "intentional_non_parity" => ManifestTier::IntentionalNonParity,
+        // Any unknown feature id (and the default "unsupported" branch
+        // already covers it) must fail closed to `Unsupported`.
+        _ => ManifestTier::Unsupported,
+    }
+}
+
 /// Pick the worst manifest-aligned tier from a set of warnings and
 /// unsupported features.
 ///
@@ -72,14 +90,37 @@ pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
 /// 3. any compatible-with-warning   -> `compatible_with_warning`
 /// 4. any native-equivalent warning -> `native_equivalent`
 /// 5. no diagnostics                -> `drop_in`
+///
+/// The aggregate classifier consults the native per-diagnostic tier of
+/// every unsupported feature id, so a known intentional exclusion
+/// (e.g. SSH, SSR, legacy cipher) reports as `intentional_non_parity`
+/// rather than being collapsed into generic `unsupported`. Unknown
+/// unsupported feature ids and unknown warning categories fail closed
+/// to `Unsupported`.
 pub fn classify_aggregate_tier(
     warnings: &[CompatWarning],
     unsupported: &[UnsupportedFeature],
 ) -> ManifestTier {
-    if !unsupported.is_empty() {
+    // Any unsupported feature whose native tier is `unsupported` (including
+    // unknown feature ids) collapses the aggregate to `unsupported`.
+    if unsupported
+        .iter()
+        .any(|u| manifest_tier_for_unsupported_feature(u.feature) == ManifestTier::Unsupported)
+    {
         return ManifestTier::Unsupported;
     }
+    // Any unknown warning category also fails closed to `unsupported`,
+    // because `manifest_tier_for_category` defaults to `Unsupported` for
+    // categories the classifier does not recognize.
     if warnings
+        .iter()
+        .any(|w| manifest_tier_for_category(w.category) == ManifestTier::Unsupported)
+    {
+        return ManifestTier::Unsupported;
+    }
+    if unsupported.iter().any(|u| {
+        manifest_tier_for_unsupported_feature(u.feature) == ManifestTier::IntentionalNonParity
+    }) || warnings
         .iter()
         .any(|w| manifest_tier_for_category(w.category) == ManifestTier::IntentionalNonParity)
     {
@@ -113,6 +154,13 @@ mod tests {
         }
     }
 
+    fn unsupported(feature: &'static str) -> UnsupportedFeature {
+        UnsupportedFeature {
+            feature,
+            detail: String::new(),
+        }
+    }
+
     #[test]
     fn empty_input_is_drop_in() {
         let tier = classify_aggregate_tier(&[], &[]);
@@ -120,42 +168,98 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_overrides_warnings() {
-        let u = UnsupportedFeature {
-            feature: "ssh",
-            detail: String::new(),
-        };
-        let tier = classify_aggregate_tier(&[warn("direct-mode")], &[u]);
-        assert_eq!(tier, ManifestTier::Unsupported);
+    fn native_equivalent_warning_only() {
+        let tier = classify_aggregate_tier(&[warn("alive-check")], &[]);
+        assert_eq!(tier, ManifestTier::NativeEquivalent);
     }
 
     #[test]
-    fn intentional_non_parity_beats_compatible() {
-        let tier = classify_aggregate_tier(&[warn("direct-mode"), warn("scheduler")], &[]);
-        // scheduler is compatible_with_warning, so this should be compatible_with_warning
-        // unless there's an intentional_non_parity warning
-        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
-    }
-
-    #[test]
-    fn native_equivalent_beats_compatible() {
-        let tier = classify_aggregate_tier(&[warn("direct-mode"), warn("alive-check")], &[]);
-        // compatible_with_warning dominates native_equivalent in severity
-        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
-    }
-
-    #[test]
-    fn compatible_with_warning_when_only_compatible() {
+    fn compatible_warning_only() {
         let tier = classify_aggregate_tier(&[warn("direct-mode")], &[]);
         assert_eq!(tier, ManifestTier::CompatibleWithWarning);
     }
 
     #[test]
-    fn unknown_category_is_unsupported() {
-        assert_eq!(
-            manifest_tier_for_category("totally-new-category"),
-            ManifestTier::Unsupported
+    fn compatible_with_warning_dominates_native_equivalent() {
+        // The native_equivalent + compatible_with_warning case is the
+        // exact regression: a material compatibility warning must NOT be
+        // hidden by a better `native_equivalent` result.
+        let tier = classify_aggregate_tier(&[warn("alive-check"), warn("direct-mode")], &[]);
+        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
+    }
+
+    #[test]
+    fn intentional_non_parity_unsupported_feature_only() {
+        // SSH, SSR, and legacy-cipher are intentional non-parity. With no
+        // harder feature present, the aggregate must be intentional_non_parity
+        // and NOT generic unsupported.
+        for feature in [
+            "ssh-listener",
+            "ssh-upstream",
+            "ssr-listener",
+            "ssr-upstream",
+            "legacy-cipher",
+        ] {
+            let tier = classify_aggregate_tier(&[], &[unsupported(feature)]);
+            assert_eq!(
+                tier,
+                ManifestTier::IntentionalNonParity,
+                "expected intentional_non_parity for {feature}, got {tier:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn intentional_non_parity_dominates_compatible_warning() {
+        let tier = classify_aggregate_tier(
+            &[],
+            &[unsupported("ssh-listener"), unsupported("ssh-upstream")],
         );
+        // Add a compatible warning
+        let tier_with_warning =
+            classify_aggregate_tier(&[warn("direct-mode")], &[unsupported("ssh-listener")]);
+        assert_eq!(tier, ManifestTier::IntentionalNonParity);
+        assert_eq!(tier_with_warning, ManifestTier::IntentionalNonParity);
+    }
+
+    #[test]
+    fn hard_unsupported_dominates_intentional_non_parity() {
+        let tier =
+            classify_aggregate_tier(&[], &[unsupported("ssh-listener"), unsupported("daemon")]);
+        assert_eq!(tier, ManifestTier::Unsupported);
+    }
+
+    #[test]
+    fn hard_unsupported_dominates_compatible_warning() {
+        let tier = classify_aggregate_tier(&[warn("direct-mode")], &[unsupported("daemon")]);
+        assert_eq!(tier, ManifestTier::Unsupported);
+    }
+
+    #[test]
+    fn unknown_warning_category_is_unsupported() {
+        let tier = classify_aggregate_tier(&[warn("totally-new-category")], &[]);
+        assert_eq!(tier, ManifestTier::Unsupported);
+    }
+
+    #[test]
+    fn unknown_unsupported_feature_id_is_unsupported() {
+        // An unknown unsupported feature id must fail closed to `unsupported`.
+        let tier = classify_aggregate_tier(&[], &[unsupported("made-up-feature")]);
+        assert_eq!(tier, ManifestTier::Unsupported);
+    }
+
+    #[test]
+    fn socks4_bind_unsupported_aggregates_to_unsupported() {
+        // `socks4-bind` is a generic unsupported feature, not an
+        // intentional exclusion, so the aggregate is `unsupported`.
+        let tier = classify_aggregate_tier(&[], &[unsupported("socks4-bind")]);
+        assert_eq!(tier, ManifestTier::Unsupported);
+    }
+
+    #[test]
+    fn socks5_bind_unsupported_aggregates_to_unsupported() {
+        let tier = classify_aggregate_tier(&[], &[unsupported("socks5-bind")]);
+        assert_eq!(tier, ManifestTier::Unsupported);
     }
 
     #[test]
@@ -174,12 +278,6 @@ mod tests {
     }
 
     #[test]
-    fn mixed_native_and_compatible_aggregates_to_compatible() {
-        let tier = classify_aggregate_tier(&[warn("alive-check"), warn("direct-mode")], &[]);
-        assert_eq!(tier, ManifestTier::CompatibleWithWarning);
-    }
-
-    #[test]
     fn log_file_is_compatible_with_warning() {
         assert_eq!(
             manifest_tier_for_category("log-file"),
@@ -189,8 +287,8 @@ mod tests {
 
     #[test]
     fn socks4_bind_category_maps_to_unsupported() {
-        // socks4-bind and socks5-bind are unsupported (neither pproxy nor
-        // eggress implements BIND). Unknown categories default to unsupported.
+        // socks4-bind and socks5-bind categories are unsupported. Unknown
+        // categories also default to unsupported to surface new gaps.
         assert_eq!(
             manifest_tier_for_category("socks4-bind"),
             ManifestTier::Unsupported
@@ -201,6 +299,30 @@ mod tests {
     fn socks5_bind_category_maps_to_unsupported() {
         assert_eq!(
             manifest_tier_for_category("socks5-bind"),
+            ManifestTier::Unsupported
+        );
+    }
+
+    #[test]
+    fn manifest_tier_for_unsupported_feature_uses_native_classification() {
+        assert_eq!(
+            manifest_tier_for_unsupported_feature("ssh-listener"),
+            ManifestTier::IntentionalNonParity
+        );
+        assert_eq!(
+            manifest_tier_for_unsupported_feature("ssr-upstream"),
+            ManifestTier::IntentionalNonParity
+        );
+        assert_eq!(
+            manifest_tier_for_unsupported_feature("legacy-cipher"),
+            ManifestTier::IntentionalNonParity
+        );
+        assert_eq!(
+            manifest_tier_for_unsupported_feature("daemon"),
+            ManifestTier::Unsupported
+        );
+        assert_eq!(
+            manifest_tier_for_unsupported_feature("made-up-feature"),
             ManifestTier::Unsupported
         );
     }

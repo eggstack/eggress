@@ -43,9 +43,10 @@ chain hops are prepared in declaration order.
 | Function | Description |
 |---|---|
 | `start_pproxy()` | Multi-mode start (args, local/remote, config, config_path) |
-| `translate_pproxy_args()` | Translate pproxy CLI args to TOML |
+| `translate_pproxy_args()` | Translate pproxy CLI args to TOML; `TranslationResult.tier` carries the native aggregate tier |
 | `translate_pproxy_uri()` | Translate pproxy URI to eggress TOML |
 | `check_pproxy_uri()` | Validate pproxy URI |
+| `check_pproxy_args()` | Translate pproxy args and return a `CompatibilityReport` with the native aggregate tier |
 | `redact_pproxy_uri()` | Redact credentials from URI |
 | `diagnostics_for_uri()` | Structured diagnostics for URI |
 | `explain_config_toml()` | Explain TOML configuration |
