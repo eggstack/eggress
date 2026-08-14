@@ -68,6 +68,7 @@ mod tests {
             )),
             reverse_registry: Arc::new(ReverseRegistry::new()),
             metrics_enabled: true,
+            auth: None,
         }
     }
 
@@ -94,6 +95,7 @@ mod tests {
             )),
             reverse_registry: Arc::new(ReverseRegistry::new()),
             metrics_enabled: true,
+            auth: None,
         }
     }
 
@@ -178,6 +180,20 @@ mod tests {
         assert_eq!(status, 200);
         assert!(body.contains("eggress_connections_active"));
         assert!(body.contains("eggress_connections_total"));
+    }
+
+    #[tokio::test]
+    async fn configured_auth_rejects_unauthenticated_requests() {
+        let mut state = test_state();
+        state.auth = Some(eggress_config::compile::AdminAuthConfig {
+            bearer_token: Some("secret".to_string()),
+            basic_username: None,
+            basic_password: None,
+        });
+        let addr = start_server(state).await;
+        let (status, body) = http_get(&addr, "/-/status").await;
+        assert_eq!(status, 401);
+        assert_eq!(body, "unauthorized");
     }
 
     #[tokio::test]

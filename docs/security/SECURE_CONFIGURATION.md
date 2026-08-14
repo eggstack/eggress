@@ -54,7 +54,7 @@ uri = "socks5+tls://upstream.example:1080"
 
 ### 3. Admin Endpoint Security
 
-The admin server exposes `/-/status`, `/-/config`, `/-/routes`, `/-/upstreams`, and `/-/metrics`. It has **no authentication** — access control relies entirely on network binding.
+The admin server exposes `/-/status`, `/-/config`, `/-/routes`, `/-/upstreams`, and `/-/metrics`. Configure authentication for non-loopback access; configured credentials protect every endpoint.
 
 **Default:** `127.0.0.1:9090` (loopback only).
 
@@ -63,6 +63,9 @@ The admin server exposes `/-/status`, `/-/config`, `/-/routes`, `/-/upstreams`, 
 bind = "127.0.0.1:9090"
 enabled = true
 metrics = true
+
+[admin.auth]
+bearer_token_env = "EGGRESS_ADMIN_TOKEN"
 ```
 
 If remote admin access is required:
@@ -71,7 +74,7 @@ If remote admin access is required:
 2. If you must bind to a non-loopback address, use OS-level firewall rules to restrict access
 3. Consider disabling metrics (`metrics = false`) if not needed — metrics are exposed on the same admin endpoint
 
-**Warning:** Config validation emits a structured warning if admin is bound to a non-loopback address. Use `load_and_validate_with_warnings()` in the embed API to review warnings before startup.
+Non-loopback admin binds are rejected unless authentication is configured.
 
 ### 4. UDP Security Settings
 

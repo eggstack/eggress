@@ -37,7 +37,7 @@ Uses Eggress as an open proxy by connecting to non-loopback listener or admin.
 
 **Mitigations:**
 - Default admin bind is `127.0.0.1:9090`
-- Config validation warns on non-loopback binds without authentication
+- Config validation rejects non-loopback admin binds without authentication
 - Shadowsocks/TLS listeners provide built-in authentication
 - `unsafe_code = "deny"` prevents memory safety issues that could be exploited
 

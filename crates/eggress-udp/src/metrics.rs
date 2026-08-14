@@ -11,6 +11,8 @@ pub struct UdpMetrics {
     pub bytes_up: AtomicU64,
     pub bytes_down: AtomicU64,
     pub dropped_packets: AtomicU64,
+    pub dropped_encode_errors: AtomicU64,
+    pub dropped_send_errors: AtomicU64,
     pub target_flows_active: AtomicU64,
     pub target_flows_total: AtomicU64,
     pub decode_errors: AtomicU64,
@@ -64,6 +66,16 @@ impl UdpMetrics {
 
     pub fn record_dropped(&self) {
         self.dropped_packets.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_dropped_encode_error(&self) {
+        self.dropped_encode_errors.fetch_add(1, Ordering::Relaxed);
+        self.record_dropped();
+    }
+
+    pub fn record_dropped_send_error(&self) {
+        self.dropped_send_errors.fetch_add(1, Ordering::Relaxed);
+        self.record_dropped();
     }
 
     pub fn record_target_flow_created(&self) {

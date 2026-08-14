@@ -30,6 +30,14 @@ Local admin HTTP server providing operational endpoints for health, metrics, rou
 | `AdminSnapshotProvider` | Trait for providing live snapshots per request |
 | `StaticAdminSnapshot` | Fixed snapshot for tests |
 
+## Authentication
+
+Configure `[admin.auth]` with either `bearer_token` (or
+`bearer_token_env`) or `basic_auth.user` plus `password`/`password_env`.
+Configured credentials are checked on every endpoint, including health and
+readiness. Non-loopback admin binds require authentication; loopback binds
+may remain unauthenticated for local probes.
+
 ## Snapshot Provider
 
 The runtime implements `AdminSnapshotProvider`, so admin handlers see live data from the current `CompiledRuntimeSnapshot` on every request. Reloads take effect without restarting the admin server.

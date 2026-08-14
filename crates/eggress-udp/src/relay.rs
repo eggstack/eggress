@@ -71,6 +71,7 @@ async fn handle_client_datagram(
     config: &RelayConfig,
     response_tx: &mpsc::UnboundedSender<ResponseMsg>,
     _association: &UdpAssociation,
+    cancel: &CancellationToken,
 ) -> Result<(), UdpError> {
     let request = match decode_packet(packet, &config.limits) {
         Ok(r) => r,
@@ -165,15 +166,19 @@ async fn handle_client_datagram(
                                 let flow_response_tx = response_tx.clone();
                                 let flow_target = target.clone();
                                 let flow_socket = udp_socket.clone();
+                                let flow_cancel = cancel.clone();
 
                                 let recv_task = tokio::spawn(async move {
                                     let mut recv_buf = [0u8; 65535];
-                                    while let Ok(Ok((n, _peer))) = tokio::time::timeout(
-                                        std::time::Duration::from_secs(30),
-                                        flow_socket.recv_from(&mut recv_buf),
-                                    )
-                                    .await
-                                    {
+                                    loop {
+                                        let result = tokio::select! {
+                                            _ = flow_cancel.cancelled() => break,
+                                            result = tokio::time::timeout(
+                                                std::time::Duration::from_secs(30),
+                                                flow_socket.recv_from(&mut recv_buf),
+                                            ) => result,
+                                        };
+                                        let Ok(Ok((n, _peer))) = result else { break };
                                         if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                             if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
                                                 let _ = flow_response_tx.send(ResponseMsg {
@@ -280,15 +285,19 @@ async fn handle_client_datagram(
                         let flow_socket = udp_socket.clone();
                         let flow_method = method;
                         let flow_password = password.as_bytes().to_vec();
+                        let flow_cancel = cancel.clone();
 
                         let recv_task = tokio::spawn(async move {
                             let mut recv_buf = [0u8; 65535];
-                            while let Ok(Ok((n, _peer))) = tokio::time::timeout(
-                                std::time::Duration::from_secs(30),
-                                flow_socket.recv_from(&mut recv_buf),
-                            )
-                            .await
-                            {
+                            loop {
+                                let result = tokio::select! {
+                                    _ = flow_cancel.cancelled() => break,
+                                    result = tokio::time::timeout(
+                                        std::time::Duration::from_secs(30),
+                                        flow_socket.recv_from(&mut recv_buf),
+                                    ) => result,
+                                };
+                                let Ok(Ok((n, _peer))) = result else { break };
                                 if let Ok((resp_target, resp_payload)) =
                                     eggress_protocol_shadowsocks::udp::decode_udp_packet(
                                         flow_method,
@@ -391,15 +400,19 @@ async fn handle_client_datagram(
             let target_addr_clone = request.target.clone();
             let flow_response_tx = response_tx.clone();
             let flow_socket = flow.socket.clone();
+            let flow_cancel = cancel.clone();
 
             let recv_task = tokio::spawn(async move {
                 let mut recv_buf = [0u8; 65535];
-                while let Ok(Ok(n)) = tokio::time::timeout(
-                    std::time::Duration::from_secs(30),
-                    flow_socket.recv(&mut recv_buf),
-                )
-                .await
-                {
+                loop {
+                    let result = tokio::select! {
+                        _ = flow_cancel.cancelled() => break,
+                        result = tokio::time::timeout(
+                            std::time::Duration::from_secs(30),
+                            flow_socket.recv(&mut recv_buf),
+                        ) => result,
+                    };
+                    let Ok(Ok(n)) = result else { break };
                     let payload = recv_buf[..n].to_vec();
                     let _ = flow_response_tx.send(ResponseMsg {
                         target: target_addr_clone.clone(),
@@ -493,6 +506,7 @@ pub async fn udp_relay_loop(
                         &config,
                         &response_tx,
                         &association,
+                        &cancel,
                     ).await {
                         tracing::trace!(
                             association_id = ?assoc_id,
@@ -503,9 +517,19 @@ pub async fn udp_relay_loop(
                 Some(msg) = response_rx.recv() => {
                     if let Some(client_addr) = association.client_udp_addr() {
                         let mut out = Vec::new();
-                        let _ = encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
-                        let _ = relay_socket.send_to(&out, client_addr).await;
-                        config.udp_metrics.record_packet_down(msg.payload.len() as u64);
+                        match encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out) {
+                            Ok(()) => match relay_socket.send_to(&out, client_addr).await {
+                                Ok(_) => config.udp_metrics.record_packet_down(msg.payload.len() as u64),
+                                Err(error) => {
+                                    tracing::debug!(%error, client = %client_addr, "failed to send UDP response");
+                                    config.udp_metrics.record_dropped_send_error();
+                                }
+                            },
+                            Err(error) => {
+                                tracing::debug!(%error, "failed to encode UDP response");
+                                config.udp_metrics.record_dropped_encode_error();
+                            }
+                        }
                     }
                 }
                 _ = cancel.cancelled() => {

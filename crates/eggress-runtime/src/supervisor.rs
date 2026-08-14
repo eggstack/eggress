@@ -1980,8 +1980,7 @@ impl ServiceSupervisor {
             };
 
             #[cfg(feature = "operations")]
-            if let Some(server) = pre_bound_admin {
-                let admin_cfg = admin_config.as_ref().unwrap();
+            if let (Some(server), Some(admin_cfg)) = (pre_bound_admin, admin_config.as_ref()) {
                 let metrics_enabled = admin_cfg.metrics;
                 let state_ref = state_ref.clone();
                 let provider: Arc<dyn AdminSnapshotProvider> = listener_infos_provider.clone();
@@ -1991,6 +1990,7 @@ impl ServiceSupervisor {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner()) = Some(addr);
                 }
+                let admin_auth = admin_cfg.auth.clone();
                 admin_tasks.spawn(async move {
                     let admin_state = eggress_admin::AdminState {
                         metrics: metrics_registry.clone(),
@@ -2004,6 +2004,7 @@ impl ServiceSupervisor {
                         #[cfg(not(feature = "reverse"))]
                         reverse_registry: std::sync::Arc::new(eggress_admin::ReverseRegistry::new()),
                         metrics_enabled,
+                        auth: admin_auth,
                     };
                     if let Err(e) = server.run(admin_state).await {
                         tracing::error!("admin server error: {e}");
@@ -2206,7 +2207,14 @@ impl ServiceSupervisor {
                 })
                 .map_err(RuntimeError::RuntimeInit)?
                 .join()
-                .map_err(|_| RuntimeError::Other("supervisor thread panicked".to_string()))?
+                .map_err(|payload| {
+                    let message = payload
+                        .downcast_ref::<String>()
+                        .map(String::as_str)
+                        .or_else(|| payload.downcast_ref::<&'static str>().copied())
+                        .unwrap_or("unknown panic payload");
+                    RuntimeError::Other(format!("supervisor thread panicked: {message}"))
+                })?
         };
 
         self.health = std::sync::Arc::try_unwrap(health)

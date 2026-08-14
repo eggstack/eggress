@@ -52,7 +52,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 
 **Admin Bind Defaults**:
 - Admin server defaults to `127.0.0.1` (loopback only) in configuration.
-- No authentication on admin endpoints — relies on loopback binding for access control.
+- Admin endpoints support bearer-token or basic authentication; non-loopback binds require configured authentication.
 - Operator must explicitly configure non-loopback bind to expose admin externally.
 
 **Non-Loopback Listener Exposure**:
@@ -324,9 +324,8 @@ Adversaries may include malicious clients on the network, compromised upstream p
 
 ## Residual Risks
 
-1. **No admin authentication**: Admin endpoints have no auth; access control relies entirely on network-level loopback binding. If operator binds admin to `0.0.0.0`, it is exposed without auth.
-2. **No per-connection timeout for protocol detection**: A client that connects but sends no data will hold a connection indefinitely (until TCP keepalive or OS timeout).
-3. **No global connection limit**: Only per-listener limits are configurable; no cross-listener cap.
+1. **No per-connection timeout for protocol detection**: A client that connects but sends no data will hold a connection indefinitely (until TCP keepalive or OS timeout).
+2. **No global connection limit**: Only per-listener limits are configurable; no cross-listener cap.
 4. **Route expression DoS**: Complex regex or deeply nested matchers could cause high CPU usage during evaluation. No regex timeout is enforced.
 5. **No rate limiting**: No request rate limiting on any protocol or admin endpoint.
 6. **Logging level sensitivity**: At `debug` level, connection metadata is logged; operators should be cautious about log retention in sensitive environments.

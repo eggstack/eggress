@@ -412,7 +412,7 @@ above for protocol details).
 | `auth_password_env` | string | no | Environment variable containing the authentication password |
 | `reconnect_initial` | duration string | no | Initial reconnect backoff (default: `"1s"`) |
 | `reconnect_max` | duration string | no | Max reconnect backoff (default: `"30s"`) |
-| `heartbeat_interval` | duration string | no | Heartbeat interval to keep the control channel alive (default: `"60s"`) |
+| `heartbeat_interval` | duration string | no | Heartbeat interval to keep the control channel alive and the reverse control read timeout (default: `"60s"`) |
 
 ```toml
 [[reverse_clients]]
@@ -530,6 +530,25 @@ Value can be `"direct"`, `"reject"`, or a group ID reference.
 | `metrics` | bool | false | Enable `/metrics` endpoint |
 | `pac` | table | none | PAC file configuration |
 | `static_content` | table array | none | Static content routes |
+
+### `[admin.auth]`
+
+Configure exactly one authentication method for non-loopback admin binds.
+`bearer_token_env` and `basic_auth.password_env` keep secrets out of the TOML
+file. Configured credentials protect every admin endpoint.
+
+```toml
+[admin.auth]
+bearer_token_env = "EGGRESS_ADMIN_TOKEN"
+```
+
+Or use basic authentication:
+
+```toml
+[admin.auth.basic_auth]
+user = "operator"
+password_env = "EGGRESS_ADMIN_PASSWORD"
+```
 
 ### `[admin.pac]`
 

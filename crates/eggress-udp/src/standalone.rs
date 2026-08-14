@@ -55,14 +55,29 @@ pub async fn standalone_udp_relay(
 
     let socket_clone = socket.clone();
     let metrics_clone = config.udp_metrics.clone();
+    let response_cancel = cancel.clone();
     tokio::spawn(async move {
-        while let Some(msg) = response_rx.recv().await {
+        loop {
+            let msg = tokio::select! {
+                _ = response_cancel.cancelled() => break,
+                msg = response_rx.recv() => match msg {
+                    Some(msg) => msg,
+                    None => break,
+                },
+            };
             let mut out = Vec::new();
-            let _ = encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out);
-            if socket_clone.send_to(&out, msg.client).await.is_ok() {
-                metrics_clone.record_standalone_packet_out(out.len() as u64);
-            } else {
-                metrics_clone.record_dropped();
+            match encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out) {
+                Ok(()) => match socket_clone.send_to(&out, msg.client).await {
+                    Ok(_) => metrics_clone.record_standalone_packet_out(out.len() as u64),
+                    Err(error) => {
+                        tracing::debug!(%error, client = %msg.client, "failed to send standalone UDP response");
+                        metrics_clone.record_dropped_send_error();
+                    }
+                },
+                Err(error) => {
+                    tracing::debug!(%error, "failed to encode standalone UDP response");
+                    metrics_clone.record_dropped_encode_error();
+                }
             }
         }
     });
@@ -156,6 +171,7 @@ pub async fn standalone_udp_relay(
                                     client_addr,
                                     &response_tx,
                                     e.key().target().clone(),
+                                    &cancel,
                                 ).await {
                                     Ok(entry) => e.insert(entry),
                                     Err(e) => {
@@ -226,15 +242,19 @@ pub async fn standalone_udp_relay(
                                             let flow_target = target.clone();
                                             let flow_socket = udp_socket.clone();
                                             let flow_client = client_addr;
+                                            let flow_cancel = cancel.clone();
 
                                             let recv_task = tokio::spawn(async move {
                                                 let mut recv_buf = [0u8; 65535];
-                                                while let Ok(Ok((n, _peer))) = tokio::time::timeout(
-                                                    std::time::Duration::from_secs(30),
-                                                    flow_socket.recv_from(&mut recv_buf),
-                                                )
-                                                .await
-                                                {
+                                                loop {
+                                                    let result = tokio::select! {
+                                                        _ = flow_cancel.cancelled() => break,
+                                                        result = tokio::time::timeout(
+                                                            std::time::Duration::from_secs(30),
+                                                            flow_socket.recv_from(&mut recv_buf),
+                                                        ) => result,
+                                                    };
+                                                    let Ok(Ok((n, _peer))) = result else { break };
                                                     if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                                         if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
                                                             let _ = flow_response_tx.send(ResponseMsg {
@@ -330,15 +350,19 @@ pub async fn standalone_udp_relay(
                                     let flow_method = method;
                                     let flow_password = password.as_bytes().to_vec();
                                     let flow_client = client_addr;
+                                    let flow_cancel = cancel.clone();
 
                                     let recv_task = tokio::spawn(async move {
                                         let mut recv_buf = [0u8; 65535];
-                                        while let Ok(Ok((n, _peer))) = tokio::time::timeout(
-                                            std::time::Duration::from_secs(30),
-                                            flow_socket.recv_from(&mut recv_buf),
-                                        )
-                                        .await
-                                        {
+                                        loop {
+                                            let result = tokio::select! {
+                                                _ = flow_cancel.cancelled() => break,
+                                                result = tokio::time::timeout(
+                                                    std::time::Duration::from_secs(30),
+                                                    flow_socket.recv_from(&mut recv_buf),
+                                                ) => result,
+                                            };
+                                            let Ok(Ok((n, _peer))) = result else { break };
                                             if let Ok((resp_target, resp_payload)) =
                                                 eggress_protocol_shadowsocks::udp::decode_udp_packet(
                                                     flow_method,
@@ -436,21 +460,26 @@ async fn build_direct_flow(
     client_addr: SocketAddr,
     response_tx: &tokio::sync::mpsc::UnboundedSender<ResponseMsg>,
     target: SocksAddr,
+    cancel: &CancellationToken,
 ) -> Result<TargetFlowEntry, UdpError> {
     let flow = UdpTargetFlow::new(target.clone(), local_udp_bind_addr()).await?;
 
     let flow_response_tx = response_tx.clone();
     let flow_target = target.clone();
     let flow_socket = flow.socket.clone();
+    let flow_cancel = cancel.clone();
 
     let recv_task = tokio::spawn(async move {
         let mut recv_buf = [0u8; 65535];
-        while let Ok(Ok(n)) = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            flow_socket.recv(&mut recv_buf),
-        )
-        .await
-        {
+        loop {
+            let result = tokio::select! {
+                _ = flow_cancel.cancelled() => break,
+                result = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    flow_socket.recv(&mut recv_buf),
+                ) => result,
+            };
+            let Ok(Ok(n)) = result else { break };
             let payload = recv_buf[..n].to_vec();
             let _ = flow_response_tx.send(ResponseMsg {
                 client: client_addr,

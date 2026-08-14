@@ -128,6 +128,7 @@ fn test_state_with_listeners() -> AdminState {
         )),
         reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
         metrics_enabled: true,
+        auth: None,
     }
 }
 

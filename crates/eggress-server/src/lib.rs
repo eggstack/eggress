@@ -383,7 +383,10 @@ mod tests {
                     for line in head_str.lines() {
                         if let Some((name, value)) = line.split_once(':') {
                             if name.eq_ignore_ascii_case("Content-Length") {
-                                content_length = value.trim().parse().ok();
+                                content_length = match value.trim().parse() {
+                                    Ok(length) => Some(length),
+                                    Err(_) => return,
+                                };
                             } else if name.eq_ignore_ascii_case("Transfer-Encoding")
                                 && value.trim().eq_ignore_ascii_case("chunked")
                             {
@@ -423,8 +426,10 @@ mod tests {
                                 }
                                 let size_str =
                                     String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
-                                let chunk_size =
-                                    usize::from_str_radix(size_str.trim(), 16).unwrap_or(0);
+                                let chunk_size = match usize::from_str_radix(size_str.trim(), 16) {
+                                    Ok(size) => size,
+                                    Err(_) => return,
+                                };
                                 if chunk_size == 0 {
                                     let mut trail = [0u8; 2];
                                     let _ = stream.read_exact(&mut trail).await;

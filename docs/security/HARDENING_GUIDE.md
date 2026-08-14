@@ -15,10 +15,10 @@ Eggress defaults to a conservative security posture:
 
 ### 1. Admin Server
 
-- **Default**: `127.0.0.1:9090` — no authentication
-- **Risk**: If bound to `0.0.0.0`, admin endpoints are exposed to the network
-- **Action**: Keep admin on loopback unless remote admin is explicitly needed
-- **If remote admin required**: Use network-level access control (firewall, VPN)
+- **Default**: `127.0.0.1:9090`; loopback probes may be unauthenticated
+- **Risk**: Non-loopback binds without authentication are rejected
+- **Action**: Configure `[admin.auth]` with a bearer token or basic credentials for remote access
+- **Additional protection**: Use network-level access control (firewall, VPN)
 
 ### 2. Listener Authentication
 

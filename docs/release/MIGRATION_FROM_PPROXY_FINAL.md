@@ -390,9 +390,10 @@ Python 3.14. The eggress Python package itself runs on Python 3.9+.
 
 ## 9. Security Warnings
 
-1. **No admin authentication**: Admin endpoints (`/-/status`,
-   `/-/metrics`) are bound to `127.0.0.1` by default. If you bind admin
-   to `0.0.0.0`, it is exposed without auth.
+1. **Admin authentication**: Admin endpoints (`/-/status`,
+   `/-/metrics`) are bound to `127.0.0.1` by default. Configure
+   `[admin.auth]` before using a non-loopback bind; such binds are rejected
+   without authentication.
 
 2. **Reverse control channel is plaintext**: The backward/reverse control
    channel sends auth as raw `user:pass` bytes. Use TLS via stunnel or

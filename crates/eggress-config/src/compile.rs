@@ -249,8 +249,16 @@ pub struct AdminConfig {
     pub bind: String,
     pub enabled: bool,
     pub metrics: bool,
+    pub auth: Option<AdminAuthConfig>,
     pub pac: Option<PacConfig>,
     pub static_content: Vec<StaticRoute>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminAuthConfig {
+    pub bearer_token: Option<String>,
+    pub basic_username: Option<String>,
+    pub basic_password: Option<String>,
 }
 
 fn compile_reject_reason(s: &str) -> Result<RejectReason, ConfigError> {
@@ -602,7 +610,7 @@ pub fn compile_config(config: &ConfigFile) -> Result<RuntimeConfig, ConfigError>
     let groups = compile_groups(config)?;
     let rules = compile_rules(config)?;
     let default_action = compile_default_action(config);
-    let admin = compile_admin(config);
+    let admin = compile_admin(config)?;
     let reverse_servers = compile_reverse_servers(config)?;
     let reverse_clients = compile_reverse_clients(config)?;
 
@@ -1335,8 +1343,12 @@ fn compile_default_action(config: &ConfigFile) -> eggress_routing::RouteActionSp
     }
 }
 
-fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
-    let admin = config.admin.as_ref()?;
+fn compile_admin(config: &ConfigFile) -> Result<Option<AdminConfig>, ConfigError> {
+    let Some(admin) = config.admin.as_ref() else {
+        return Ok(None);
+    };
+
+    let auth = admin.auth.as_ref().map(compile_admin_auth).transpose()?;
 
     let pac = admin.pac.as_ref().map(|pac_toml| {
         let path = pac_toml.path.clone().unwrap_or_else(|| "/pac".to_string());
@@ -1367,15 +1379,77 @@ fn compile_admin(config: &ConfigFile) -> Option<AdminConfig> {
         })
         .unwrap_or_default();
 
-    Some(AdminConfig {
+    Ok(Some(AdminConfig {
         bind: admin
             .bind
             .clone()
             .unwrap_or_else(|| "127.0.0.1:9090".to_string()),
         enabled: admin.enabled.unwrap_or(true),
         metrics: admin.metrics.unwrap_or(true),
+        auth,
         pac,
         static_content,
+    }))
+}
+
+fn compile_admin_auth(
+    auth: &crate::model::AdminAuthConfig,
+) -> Result<AdminAuthConfig, ConfigError> {
+    let bearer_token = resolve_password(
+        auth.bearer_token.as_deref(),
+        auth.bearer_token_env.as_deref(),
+        "admin.auth.bearer_token",
+    )?;
+
+    if bearer_token.as_deref().is_some_and(str::is_empty) {
+        return Err(ConfigError::validation(
+            "admin.auth.bearer_token",
+            "bearer token must not be empty",
+        ));
+    }
+
+    let basic = auth.basic_auth.as_ref();
+    if bearer_token.is_some() && basic.is_some() {
+        return Err(ConfigError::validation(
+            "admin.auth",
+            "configure either bearer_token or basic_auth, not both",
+        ));
+    }
+
+    let (basic_username, basic_password) = if let Some(basic) = basic {
+        let password = resolve_password(
+            basic.password.as_deref(),
+            basic.password_env.as_deref(),
+            "admin.auth.basic_auth",
+        )?;
+        let Some(password) = password else {
+            return Err(ConfigError::validation(
+                "admin.auth.basic_auth",
+                "basic_auth requires password or password_env",
+            ));
+        };
+        if basic.user.is_empty() || password.is_empty() {
+            return Err(ConfigError::validation(
+                "admin.auth.basic_auth",
+                "basic_auth user and password must not be empty",
+            ));
+        }
+        (Some(basic.user.clone()), Some(password))
+    } else {
+        (None, None)
+    };
+
+    if bearer_token.is_none() && basic_username.is_none() {
+        return Err(ConfigError::validation(
+            "admin.auth",
+            "authentication requires bearer_token or basic_auth",
+        ));
+    }
+
+    Ok(AdminAuthConfig {
+        bearer_token,
+        basic_username,
+        basic_password,
     })
 }
 
@@ -1562,8 +1636,6 @@ fn compile_reverse_clients(
 
             let parallel_connections = c.parallel_connections.unwrap_or(1);
 
-            // BUG-005: Without default_target_host and default_target_port,
-            // the reverse client cannot connect to any target. Reject at compile time.
             if c.default_target_host.is_none() || c.default_target_port.is_none() {
                 return Err(ConfigError::validation(
                     &path,
@@ -1580,6 +1652,9 @@ fn compile_reverse_clients(
                 reconnect_max_ms,
                 default_target_host: c.default_target_host.clone(),
                 default_target_port: c.default_target_port,
+                // The reverse control protocol uses the client's heartbeat
+                // interval as its read timeout; retain this compatibility
+                // mapping until the schema gains a separate timeout field.
                 read_timeout_ms: heartbeat_interval_ms,
                 drain_grace_ms: 5_000,
                 parallel_connections,

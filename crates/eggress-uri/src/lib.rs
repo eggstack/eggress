@@ -208,6 +208,9 @@ fn split_hops(uri: &str) -> Result<Vec<String>, UriParseError> {
             bracket_depth -= 1;
             current.push(chars[i]);
         } else if bracket_depth == 0 && i + 1 < len && chars[i] == '_' && chars[i + 1] == '_' {
+            if (i > 0 && chars[i - 1] == '_') || (i + 2 < len && chars[i + 2] == '_') {
+                return Err(UriParseError::DuplicateHopSeparator);
+            }
             hops.push(current.clone());
             current.clear();
             i += 2;
@@ -710,6 +713,14 @@ mod tests {
         assert_eq!(result.hops[1].protocols, vec![ProtocolSpec::Http]);
         assert_eq!(result.hops[1].endpoint.host, "hop2");
         assert_eq!(result.hops[1].endpoint.port, 8080);
+    }
+
+    #[test]
+    fn test_triple_hop_separator_is_rejected() {
+        assert!(matches!(
+            parse_proxy_chain("socks5://a:1080___http://b:8080"),
+            Err(UriParseError::DuplicateHopSeparator)
+        ));
     }
 
     #[test]

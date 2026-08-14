@@ -505,7 +505,7 @@ impl H2ConnectionPool {
 
     /// Try to acquire an existing idle connection from the pool.
     fn try_acquire_entry(&self) -> Option<Arc<H2ConnectionEntry>> {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap().clone();
         let now = Instant::now();
         for entry in entries.iter() {
             if entry.is_available(self.max_concurrent_streams)
@@ -566,31 +566,28 @@ impl H2ConnectionPool {
             loop {
                 tokio::time::sleep(pool.idle_timeout / 2).await;
                 pool.reap_idle_entries();
-                if pool.entries.lock().unwrap().is_empty() {
-                    pool.reaper_running.store(false, Ordering::Release);
-                    return;
-                }
             }
         });
     }
 
     fn reap_idle_entries(&self) {
         let now = Instant::now();
-        let mut entries = self.entries.lock().unwrap();
-        entries.retain(|entry| {
+        let entries = self.entries.lock().unwrap().clone();
+        for entry in &entries {
             if entry.retired.load(Ordering::Acquire) {
-                return false;
+                continue;
             }
             let last_used = *entry.last_used.lock().unwrap();
             if now.duration_since(last_used) >= self.idle_timeout
                 && entry.active_streams.load(Ordering::Acquire) == 0
             {
                 entry.mark_retired();
-                false
-            } else {
-                true
             }
-        });
+        }
+        self.entries
+            .lock()
+            .unwrap()
+            .retain(|entry| !entry.retired.load(Ordering::Acquire));
     }
 
     /// Release a connection back to the pool after a stream completes.

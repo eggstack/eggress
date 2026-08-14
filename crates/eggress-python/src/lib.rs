@@ -1,9 +1,25 @@
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 static PY_CONNECTION_LIVE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static PY_CONNECTION_TOTAL_CREATED: AtomicUsize = AtomicUsize::new(0);
+static PY_OUTBOUND_RUNTIME: OnceLock<Result<Arc<tokio::runtime::Runtime>, String>> =
+    OnceLock::new();
+
+fn outbound_runtime() -> Result<Arc<tokio::runtime::Runtime>, String> {
+    PY_OUTBOUND_RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map(Arc::new)
+                .map_err(|e| format!("runtime setup failed: {e}"))
+        })
+        .as_ref()
+        .map(Arc::clone)
+        .map_err(Clone::clone)
+}
 
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
@@ -353,11 +369,9 @@ impl PyConnection {
     }
 
     fn close(&mut self, py: Python<'_>) -> PyResult<()> {
-        let current = self.state.load(Ordering::Acquire);
-        if current == STATE_CLOSED || current == STATE_FAILED {
+        if !begin_close(&self.state) {
             return Ok(());
         }
-        self.state.store(STATE_CLOSING, Ordering::Release);
         if let Some(handle) = self.handle.take() {
             py.detach(|| handle.shutdown_blocking())
                 .map_err(|e| ConnectionError::new_err(format!("shutdown error: {e}")))?;
@@ -392,15 +406,21 @@ impl PyConnection {
     }
 
     fn __del__(&mut self, py: Python<'_>) {
-        let current = self.state.load(Ordering::Acquire);
-        if current == STATE_CLOSED || current == STATE_FAILED {
+        if !begin_close(&self.state) {
             return;
         }
         eprintln!(
             "Warning: Connection object was not properly closed. Calling close() in __del__."
         );
         if let Some(handle) = self.handle.take() {
-            let _ = py.detach(|| handle.shutdown_blocking());
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                py.detach(|| handle.shutdown_blocking())
+            }));
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => eprintln!("shutdown error in __del__: {error}"),
+                Err(_) => eprintln!("shutdown panicked in __del__"),
+            }
         }
         self.state.store(STATE_CLOSED, Ordering::Release);
         PY_CONNECTION_LIVE_COUNT.fetch_sub(1, Ordering::Relaxed);
@@ -429,6 +449,19 @@ impl PyConnection {
     fn reset_connection_stats() {
         PY_CONNECTION_LIVE_COUNT.store(0, Ordering::Relaxed);
         PY_CONNECTION_TOTAL_CREATED.store(0, Ordering::Relaxed);
+    }
+}
+
+fn begin_close(state: &AtomicU8) -> bool {
+    loop {
+        let current = state.load(Ordering::Acquire);
+        if current == STATE_CLOSED || current == STATE_FAILED || current == STATE_CLOSING {
+            return false;
+        }
+        match state.compare_exchange(current, STATE_CLOSING, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return true,
+            Err(_) => continue,
+        }
     }
 }
 
@@ -1658,12 +1691,7 @@ impl PyOutboundConnector {
                 }
             })
             .transpose()?;
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| ConnectionError::new_err(format!("runtime setup failed: {e}")))?,
-        );
+        let runtime = outbound_runtime().map_err(ConnectionError::new_err)?;
         let inner = &self.inner;
         let result = py.detach(|| {
             runtime.block_on(async {

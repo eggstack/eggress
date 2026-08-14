@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use std::time::Instant;
 
+use base64::Engine;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::service::service_fn;
@@ -17,6 +18,46 @@ use eggress_config::compile::{PacConfig, StaticRoute};
 pub struct AdminServer {
     pub(crate) listener: TcpListener,
     cancel: CancellationToken,
+}
+
+fn authorized(
+    req: &http::Request<hyper::body::Incoming>,
+    auth: &eggress_config::compile::AdminAuthConfig,
+) -> bool {
+    if let Some(expected) = auth.bearer_token.as_deref() {
+        return authorization_payload(req, "Bearer").is_some_and(|token| token == expected);
+    }
+
+    let Some(username) = auth.basic_username.as_deref() else {
+        return false;
+    };
+    let Some(password) = auth.basic_password.as_deref() else {
+        return false;
+    };
+    authorization_payload(req, "Basic")
+        .and_then(|value| base64::engine::general_purpose::STANDARD.decode(value).ok())
+        .and_then(|value| String::from_utf8(value).ok())
+        .and_then(|value| {
+            value
+                .split_once(':')
+                .map(|(user, pass)| (user.to_string(), pass.to_string()))
+        })
+        .is_some_and(|(user, pass)| user == username && pass == password)
+}
+
+fn authorization_payload<'a>(
+    req: &'a http::Request<hyper::body::Incoming>,
+    scheme: &str,
+) -> Option<&'a str> {
+    req.headers()
+        .get(http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            let (actual_scheme, payload) = value.split_once(' ')?;
+            actual_scheme
+                .eq_ignore_ascii_case(scheme)
+                .then_some(payload)
+        })
 }
 
 impl AdminServer {
@@ -38,7 +79,20 @@ impl AdminServer {
                     tokio::spawn(async move {
                         let service = service_fn(move |req| {
                             let state = state.clone();
-                            async move { Ok::<_, std::convert::Infallible>(handle_request(req, &state).await) }
+                            async move {
+                                let response = match state.auth.as_ref() {
+                                    Some(auth) if !authorized(&req, auth) => {
+                                        http::Response::builder()
+                                            .status(401)
+                                            .header(http::header::WWW_AUTHENTICATE, "Bearer, Basic")
+                                            .header(http::header::CONTENT_TYPE, "text/plain")
+                                            .body(Full::new(Bytes::from_static(b"unauthorized")))
+                                            .expect("static admin auth response")
+                                    }
+                                    _ => handle_request(req, &state).await,
+                                };
+                                Ok::<_, std::convert::Infallible>(response)
+                            }
                         });
                         let conn = hyper::server::conn::http1::Builder::new()
                             .serve_connection(TokioIo::new(stream), service);
@@ -111,6 +165,7 @@ pub struct AdminState {
     pub reverse_registry: Arc<ReverseRegistry>,
     /// Whether the `/metrics` endpoint is enabled.
     pub metrics_enabled: bool,
+    pub auth: Option<eggress_config::compile::AdminAuthConfig>,
 }
 
 impl AdminState {

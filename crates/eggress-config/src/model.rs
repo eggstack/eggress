@@ -256,8 +256,25 @@ pub struct AdminConfig {
     pub bind: Option<String>,
     pub enabled: Option<bool>,
     pub metrics: Option<bool>,
+    pub auth: Option<AdminAuthConfig>,
     pub pac: Option<PacConfigToml>,
     pub static_content: Option<Vec<StaticContentToml>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminAuthConfig {
+    pub bearer_token: Option<String>,
+    pub bearer_token_env: Option<String>,
+    pub basic_auth: Option<AdminBasicAuthConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdminBasicAuthConfig {
+    pub user: String,
+    pub password: Option<String>,
+    pub password_env: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

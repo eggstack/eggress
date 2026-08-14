@@ -26,6 +26,10 @@ protocol+protocol://user:password@host:port?rule#local
 
 - `+` separates multiple protocols within a single hop (e.g., `socks5+tls`)
 - `__` separates proxy hops in a chain
+- A hop separator must contain exactly two underscores; repeated separators
+  such as `___` are rejected.
+- URI endpoint ports must be in `1..=65535`. Port `0` is reserved for TOML
+  listener binds where the operating system assigns a port.
 - `?` introduces route rule expressions
 - `#` introduces local bind address
 

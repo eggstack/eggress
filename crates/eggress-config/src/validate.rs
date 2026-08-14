@@ -950,6 +950,19 @@ fn validate_admin(admin: &crate::model::AdminConfig, errors: &mut Vec<ConfigErro
         }
     }
 
+    if admin.enabled.unwrap_or(true)
+        && admin
+            .bind
+            .as_deref()
+            .is_some_and(|bind| !is_loopback_bind(bind))
+        && admin.auth.is_none()
+    {
+        errors.push(ConfigError::validation(
+            "admin.auth",
+            "non-loopback admin binds require authentication",
+        ));
+    }
+
     if let Some(ref pac) = admin.pac {
         if let Some(ref path) = pac.path {
             if !path.starts_with('/') {
@@ -1133,7 +1146,7 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
     // 35.4 / 35.7: Warn about non-loopback admin bind
     if let Some(ref admin) = config.admin {
         if let Some(ref bind) = admin.bind {
-            if !is_loopback_bind(bind) {
+            if !is_loopback_bind(bind) && admin.auth.is_none() {
                 warnings.push(ConfigWarning {
                     path: "admin.bind".to_string(),
                     message: format!(
@@ -1313,6 +1326,7 @@ mod tests {
                 bind: Some("0.0.0.0:9090".to_string()),
                 enabled: None,
                 metrics: None,
+                auth: None,
                 pac: None,
                 static_content: None,
             }),
@@ -1340,6 +1354,7 @@ mod tests {
                 bind: Some("127.0.0.1:9090".to_string()),
                 enabled: None,
                 metrics: None,
+                auth: None,
                 pac: None,
                 static_content: None,
             }),

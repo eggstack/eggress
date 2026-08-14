@@ -516,7 +516,11 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
         }
         if let Some((name, value)) = parse_header_line(line) {
             if name.eq_ignore_ascii_case("Content-Length") {
-                content_length = value.parse::<u64>().ok();
+                content_length = Some(
+                    value
+                        .parse::<u64>()
+                        .map_err(|_| HttpError::InvalidContentLength)?,
+                );
             } else if name.eq_ignore_ascii_case("Transfer-Encoding") {
                 for coding in value.split(',') {
                     let coding_name = coding.trim().split(';').next().unwrap_or("").trim();
@@ -1824,6 +1828,48 @@ mod tests {
         assert!(matches!(
             forward_response(&mut upstream, &mut client).await,
             Err(HttpError::UpgradeUnsupported)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_rejects_invalid_content_length() {
+        use tokio::io::AsyncWriteExt;
+
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            upstream_write
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: invalid\r\n\r\n")
+                .await
+                .unwrap();
+        });
+        let (_client_read, client_write) = tokio::io::duplex(1024);
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        assert!(matches!(
+            forward_response(&mut upstream, &mut client).await,
+            Err(HttpError::InvalidContentLength)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_rejects_invalid_chunk_size() {
+        use tokio::io::AsyncWriteExt;
+
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            upstream_write
+                .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nnope\r\n")
+                .await
+                .unwrap();
+        });
+        let (_client_read, client_write) = tokio::io::duplex(1024);
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        assert!(matches!(
+            forward_response(&mut upstream, &mut client).await,
+            Err(HttpError::MalformedResponse(message)) if message.contains("invalid chunk size")
         ));
     }
 

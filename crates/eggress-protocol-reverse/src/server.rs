@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -233,6 +234,13 @@ impl ReverseServer {
         // before binding any sockets.
         self.config.validate()?;
 
+        if self.config.auth_username.is_none() || self.config.auth_password.is_none() {
+            warn!(
+                control_bind = %self.config.control_bind,
+                "reverse server control channel has no authentication configured"
+            );
+        }
+
         // Enforce the allow_bind policy up-front so misconfiguration is loud.
         if let Some(external_bind) = self.config.external_bind {
             if !self.config.is_bind_allowed(external_bind) {
@@ -261,7 +269,7 @@ impl ReverseServer {
         let control_tx_clone = control_tx.clone();
         let metrics_clone = metrics.clone();
         let state_clone = state.clone();
-        tokio::spawn(async move {
+        let control_task = tokio::spawn(async move {
             Self::accept_control_connections(
                 control_listener,
                 config_clone,
@@ -274,12 +282,12 @@ impl ReverseServer {
         });
 
         // Spawn external client acceptor
-        if let Some(external_listener) = external_listener {
+        let external_task = if let Some(external_listener) = external_listener {
             let config_clone = config.clone();
             let cancel_clone = cancel.clone();
             let metrics_clone = metrics.clone();
             let state_clone = state.clone();
-            tokio::spawn(async move {
+            Some(tokio::spawn(async move {
                 Self::accept_external_clients(
                     external_listener,
                     config_clone,
@@ -289,7 +297,7 @@ impl ReverseServer {
                     state_clone,
                 )
                 .await;
-            });
+            }))
         } else {
             // No external listener: drain the control channel so the
             // counter accurately reflects connections that have not yet
@@ -297,30 +305,39 @@ impl ReverseServer {
             // is closed and the active_control counter is decremented.
             let state_clone = state.clone();
             let metrics_clone = metrics.clone();
-            tokio::spawn(async move {
+            let cancel_clone = cancel.clone();
+            Some(tokio::spawn(async move {
                 let mut control_rx = control_rx;
-                while let Some(ctrl) = control_rx.recv().await {
-                    debug!(
-                        control_peer = %ctrl.peer_addr,
-                        "dropping control connection: no external listener"
-                    );
-                    drop(ctrl.stream);
-                    state_clone.active_control.fetch_sub(1, Ordering::Relaxed);
-                    if let Some(m) = metrics_clone.as_deref() {
-                        m.record_control_closed();
+                loop {
+                    tokio::select! {
+                        Some(ctrl) = control_rx.recv() => {
+                            debug!(
+                                control_peer = %ctrl.peer_addr,
+                                "dropping control connection: no external listener"
+                            );
+                            drop(ctrl.stream);
+                            state_clone.active_control.fetch_sub(1, Ordering::Relaxed);
+                            if let Some(m) = metrics_clone.as_deref() {
+                                m.record_control_closed();
+                            }
+                        }
+                        _ = cancel_clone.cancelled() => break,
                     }
                 }
-            });
-        }
+            }))
+        };
 
         // Wait for shutdown
         cancel.cancelled().await;
         let drain_start = Instant::now();
         info!("reverse server shutting down, draining active streams");
 
-        // Wait briefly for active streams to finish. We do not have a direct
-        // count of in-flight relay tasks, but a short bounded sleep gives them
-        // a chance to exit cleanly.
+        // Stop the accept loops before returning. The external accept loop
+        // also aborts and joins every in-flight relay task it owns.
+        let _ = control_task.await;
+        if let Some(task) = external_task {
+            let _ = task.await;
+        }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let drain_ms = drain_start.elapsed().as_millis() as u64;
         if let Some(ref m) = metrics {
@@ -482,51 +499,77 @@ impl ReverseServer {
         metrics: Option<Arc<ReverseMetrics>>,
         state: Arc<ReverseServerState>,
     ) {
+        let mut relay_tasks = JoinSet::new();
+
         loop {
             tokio::select! {
                 result = listener.accept() => {
                     match result {
                         Ok((external_stream, peer_addr)) => {
-                            if state.active_streams.load(Ordering::Relaxed)
-                                >= config.max_streams_per_listener
-                            {
-                                warn!(
-                                    peer = %peer_addr,
-                                    active = state.active_streams.load(Ordering::Relaxed),
-                                    max = config.max_streams_per_listener,
-                                    "dropping external client: max_streams_per_listener reached"
-                                );
-                                state.dropped_stream_limit.fetch_add(1, Ordering::Relaxed);
-                                drop(external_stream);
-                                continue;
+                            match state.active_streams.fetch_update(
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                                |current| {
+                                    (current < config.max_streams_per_listener)
+                                        .then_some(current + 1)
+                                },
+                            ) {
+                                Ok(_) => {}
+                                Err(current) => {
+                                    warn!(
+                                        peer = %peer_addr,
+                                        active = current,
+                                        max = config.max_streams_per_listener,
+                                        "dropping external client: max_streams_per_listener reached"
+                                    );
+                                    state.dropped_stream_limit.fetch_add(1, Ordering::Relaxed);
+                                    drop(external_stream);
+                                    continue;
+                                }
                             }
-                            // Enforce max_pending_external: reject if too many
-                            // clients are already waiting for a control connection.
-                            let pending = state.pending_external.load(Ordering::Relaxed);
-                            if pending >= config.max_pending_external {
+
+                            match state.pending_external.fetch_update(
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                                |current| {
+                                    (current < config.max_pending_external)
+                                        .then_some(current + 1)
+                                },
+                            ) {
+                                Ok(_) => {}
+                                Err(current) => {
+                                    state.active_streams.fetch_sub(1, Ordering::Release);
                                 warn!(
                                     peer = %peer_addr,
-                                    pending,
+                                    pending = current,
                                     max = config.max_pending_external,
                                     "dropping external client: max_pending_external reached"
                                 );
-                                state.dropped_pending_limit.fetch_add(1, Ordering::Relaxed);
-                                drop(external_stream);
-                                continue;
+                                    state.dropped_pending_limit.fetch_add(1, Ordering::Relaxed);
+                                    drop(external_stream);
+                                    continue;
+                                }
                             }
-                            state.pending_external.fetch_add(1, Ordering::Relaxed);
                             // Get an available control connection
-                            match control_rx.recv().await {
+                            let control = tokio::select! {
+                                control = control_rx.recv() => control,
+                                _ = cancel.cancelled() => {
+                                    state.pending_external.fetch_sub(1, Ordering::Release);
+                                    state.active_streams.fetch_sub(1, Ordering::Release);
+                                    drop(external_stream);
+                                    break;
+                                }
+                            };
+                            match control {
                                 Some(control) => {
-                                    state.pending_external.fetch_sub(1, Ordering::Relaxed);
+                                    state.pending_external.fetch_sub(1, Ordering::Release);
                                     let metrics = metrics.clone();
                                     let state = state.clone();
                                     let idle_timeout = (config.read_timeout_ms > 0).then(|| {
                                         std::time::Duration::from_millis(config.read_timeout_ms)
                                     });
-                                    state.active_streams.fetch_add(1, Ordering::Relaxed);
                                     state.active_control.fetch_sub(1, Ordering::Relaxed);
-                                    tokio::spawn(async move {
+                                    relay_tasks.spawn(async move {
                                         info!(
                                             peer = %peer_addr,
                                             control_peer = %control.peer_addr,
@@ -554,12 +597,13 @@ impl ReverseServer {
                                             m.record_stream_closed(0);
                                             m.record_control_closed();
                                         }
-                                        state.active_streams.fetch_sub(1, Ordering::Relaxed);
+                                        state.active_streams.fetch_sub(1, Ordering::Release);
                                         debug!(peer = %peer_addr, "relay finished");
                                     });
                                 }
                                 None => {
-                                    state.pending_external.fetch_sub(1, Ordering::Relaxed);
+                                    state.pending_external.fetch_sub(1, Ordering::Release);
+                                    state.active_streams.fetch_sub(1, Ordering::Release);
                                     warn!(peer = %peer_addr, "no control connections available, rejecting external client");
                                     drop(external_stream);
                                 }
@@ -576,6 +620,9 @@ impl ReverseServer {
                 }
             }
         }
+
+        relay_tasks.abort_all();
+        while relay_tasks.join_next().await.is_some() {}
     }
 
     /// Shut down the reverse server.

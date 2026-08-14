@@ -250,7 +250,13 @@ impl HealthManager {
                         break;
                     }
 
-                    let permit = semaphore.clone().acquire_owned().await.unwrap();
+                    let permit = match semaphore.clone().acquire_owned().await {
+                        Ok(permit) => permit,
+                        Err(error) => {
+                            tracing::warn!(%error, "health probe semaphore closed");
+                            break;
+                        }
+                    };
                     let upstream = upstream.clone();
                     let config = config.clone();
                     let probe_clone = probe.clone();
