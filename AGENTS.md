@@ -11,6 +11,8 @@ Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI targ
 cargo test -p eggress-routing
 cargo test -p eggress-runtime retry_fallback
 cargo test -p eggress-cli --test cli_exit_codes
+python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
+python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml --check-matrix docs/parity/composition_matrix.toml
 ```
 
 **Broad pre-merge gate:**
@@ -130,6 +132,16 @@ Per-subsystem architecture lives under `docs/architecture/`:
 | Testkit | `docs/architecture/testkit.md` |
 
 Key source-of-truth docs: `docs/CI_STATUS.md`, `docs/TESTING.md`, `docs/release/RELEASE_PROCESS.md`, `docs/ARCHITECTURE.md`, `docs/parity/pproxy_capability_manifest.toml`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`.
+
+The active strict-oracle contract is pinned to the `pproxy==2.7.9` tag at
+`09d4752f17ed6787e1a073c93980eec019887ee3` from
+`https://github.com/qwj/python-proxy`. The phase-0 manifest and matrix are the
+only active strict-target authorities. In particular, `--log`,
+`-f/--config`, and `--rulefile` are not tagged-parser flags, and SOCKS4/SOCKS5
+BIND are not implemented by the oracle; Eggress extensions or matching
+refusals must not be recorded as strict gaps. Use
+`scripts/pproxy_surface_probe.py` against isolated oracle and wheel
+interpreters when updating the Python module inventory.
 
 Files under `plans/` are historical records; they explain why code exists but do not override current policy or source behavior.
 

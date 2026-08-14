@@ -64,7 +64,7 @@ pub const PINNED_PPROXY_VERSION: &str = "2.7.9";
 pub const PINNED_MANIFEST_VERSION: &str = "1";
 
 /// Pinned schema name.
-pub const PINNED_SCHEMA: &str = "phase_37";
+pub const PINNED_SCHEMA: &str = "phase_0";
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -76,6 +76,8 @@ pub struct CanonicalManifestMeta {
     pub manifest_version: String,
     pub pproxy_version: String,
     pub schema: String,
+    pub oracle_commit: String,
+    pub oracle_repository: String,
 }
 
 /// A single capability entry in the canonical manifest.
@@ -114,6 +116,11 @@ pub struct CanonicalCapability {
     pub caveat_class: Option<String>,
     #[serde(default)]
     pub differential_exception: Option<bool>,
+    pub upstream_evidence: String,
+    pub implementation: String,
+    pub status: String,
+    pub strict_closure_required: bool,
+    pub strict_phase: String,
 }
 
 /// The complete canonical manifest structure.
@@ -593,6 +600,8 @@ mod tests {
             manifest_version: PINNED_MANIFEST_VERSION.to_string(),
             pproxy_version: PINNED_PPROXY_VERSION.to_string(),
             schema: PINNED_SCHEMA.to_string(),
+            oracle_commit: "09d4752f17ed6787e1a073c93980eec019887ee3".to_string(),
+            oracle_repository: "https://github.com/qwj/python-proxy".to_string(),
         }
     }
 
@@ -626,6 +635,11 @@ mod tests {
             rationale: None,
             caveat_class: None,
             differential_exception: None,
+            upstream_evidence: "test source".to_string(),
+            implementation: "test implementation".to_string(),
+            status: "matched".to_string(),
+            strict_closure_required: false,
+            strict_phase: "10".to_string(),
         }
     }
 
@@ -1562,9 +1576,10 @@ mod tests {
         }
     }
 
-    /// Phase 2 contract test: cli.config must not be drop_in when schemas differ.
+    /// Phase 0 contract test: flags absent from the tagged parser must not
+    /// appear as upstream capabilities in the active manifest.
     #[test]
-    fn cli_config_not_drop_in_with_different_schema() {
+    fn false_gap_cli_entries_are_absent() {
         let path = match find_canonical_manifest_path() {
             Some(p) => p,
             None => {
@@ -1575,86 +1590,16 @@ mod tests {
         let manifest =
             validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
 
-        let cli_config = manifest
-            .capability
-            .iter()
-            .find(|c| c.id == "cli.config")
-            .expect("cli.config entry must exist");
-
-        assert_ne!(
-            cli_config.tier, "drop_in",
-            "cli.config must not be drop_in when pproxy and eggress use different config schemas"
-        );
-        assert!(
-            cli_config.notes.to_lowercase().contains("schema")
-                || cli_config.notes.to_lowercase().contains("differ"),
-            "cli.config notes should mention schema difference"
-        );
-    }
-
-    /// Phase 2 contract test: cli.log must not claim native_equivalent when no
-    /// file is written.
-    #[test]
-    fn cli_log_not_native_equivalent_without_file_output() {
-        let path = match find_canonical_manifest_path() {
-            Some(p) => p,
-            None => {
-                eprintln!("canonical manifest not found, skipping");
-                return;
-            }
-        };
-        let manifest =
-            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
-
-        let cli_log = manifest
-            .capability
-            .iter()
-            .find(|c| c.id == "cli.log")
-            .expect("cli.log entry must exist");
-
-        assert_ne!(
-            cli_log.tier, "native_equivalent",
-            "cli.log must not be native_equivalent when pproxy writes to a file \
-             but eggress only logs to stderr"
-        );
-        assert!(
-            cli_log.notes.to_lowercase().contains("stderr")
-                || cli_log.notes.to_lowercase().contains("no file"),
-            "cli.log notes should mention stderr or that no file is written"
-        );
-    }
-
-    /// Phase 2 contract test: SOCKS4/5 BIND must be unsupported (not
-    /// intentional_non_parity) when pproxy also does not implement the
-    /// operation.
-    #[test]
-    fn socks4_socks5_bind_are_unsupported_not_intentional() {
-        let path = match find_canonical_manifest_path() {
-            Some(p) => p,
-            None => {
-                eprintln!("canonical manifest not found, skipping");
-                return;
-            }
-        };
-        let manifest =
-            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
-
-        for id in &["protocol.socks4_bind", "protocol.socks5_bind"] {
-            let cap = manifest
-                .capability
-                .iter()
-                .find(|c| c.id == *id)
-                .unwrap_or_else(|| panic!("{id} entry must exist"));
-
-            assert_ne!(
-                cap.tier, "intentional_non_parity",
-                "{id} must not be intentional_non_parity when pproxy also lacks the operation; \
-                 use unsupported instead"
-            );
+        for id in ["cli.config", "cli.log", "cli.rulefile"] {
             assert!(
-                cap.notes.to_lowercase().contains("neither pproxy")
-                    || cap.notes.to_lowercase().contains("pproxy also"),
-                "{id} notes should mention that pproxy also does not implement it"
+                !manifest.capability.iter().any(|cap| cap.id == id),
+                "{id} is an Eggress extension, not a pproxy 2.7.9 parser capability"
+            );
+        }
+        for id in ["protocol.socks4_bind", "protocol.socks5_bind"] {
+            assert!(
+                !manifest.capability.iter().any(|cap| cap.id == id),
+                "{id} is refused by both implementations and is not strict work"
             );
         }
     }
@@ -1824,10 +1769,10 @@ mod tests {
         );
     }
 
-    /// Phase 2 contract test: matrix and manifest must not directly contradict
-    /// for corrected entries.
+    /// Phase 0 contract test: the maintained matrix must not resurrect
+    /// parser flags that are absent from the frozen upstream source.
     #[test]
-    fn corrected_entries_no_manifest_matrix_contradiction() {
+    fn matrix_excludes_false_upstream_surfaces() {
         let path = match find_canonical_manifest_path() {
             Some(p) => p,
             None => {
@@ -1835,9 +1780,6 @@ mod tests {
                 return;
             }
         };
-        let manifest =
-            validate_canonical_manifest_file(&path).expect("canonical manifest should be valid");
-
         let workspace_root = path
             .parent()
             .and_then(|p| p.parent())
@@ -1851,41 +1793,11 @@ mod tests {
             return;
         }
         let matrix = fs::read_to_string(&matrix_path).expect("should read practical matrix");
-
-        // If cli.config is not drop_in in manifest, matrix must not say matched
-        // for config-related rows.
-        let cli_config = manifest
-            .capability
-            .iter()
-            .find(|c| c.id == "cli.config")
-            .expect("cli.config must exist");
-        if cli_config.tier != "drop_in" {
+        for false_surface in ["| `--log` |", "| `-f/--config` |", "| `--rulefile` |"] {
             assert!(
-                !matrix.contains("-f/--config`) | yes | yes | yes | `matched`"),
-                "matrix should not claim -f/--config is matched when manifest says {}",
-                cli_config.tier
+                !matrix.contains(false_surface),
+                "matrix must not present {false_surface} as an upstream parser capability"
             );
-        }
-
-        // If cli.log is not native_equivalent, matrix must not claim it
-        // produces equivalent file output.
-        let cli_log = manifest
-            .capability
-            .iter()
-            .find(|c| c.id == "cli.log")
-            .expect("cli.log must exist");
-        if cli_log.tier == "compatible_with_warning" {
-            // The matrix should not have a "matched" row for --log
-            let log_rows: Vec<&str> = matrix
-                .lines()
-                .filter(|l| l.contains("--log") && l.contains("|"))
-                .collect();
-            for row in log_rows {
-                assert!(
-                    !row.contains("`matched`"),
-                    "matrix row for --log should not be matched: {row}"
-                );
-            }
         }
     }
 

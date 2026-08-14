@@ -1,7 +1,8 @@
-# pproxy Capability Manifest (Phase 37)
+# pproxy Capability Manifest (Strict Phase 0)
 #
-# Authoritative compatibility contract for pproxy parity.
-# Each entry is one granular capability with tier, layer, and evidence.
+# Authoritative compatibility contract for the exact pproxy 2.7.9 tag.
+# Each entry is one granular capability with compatibility tier, source
+# evidence, Eggress implementation location, strict status, and phase owner.
 #
 # Tiers: drop_in, compatible_with_warning, native_equivalent,
 #         intentional_non_parity, unsupported
@@ -11,7 +12,9 @@
 [meta]
 manifest_version = "1"
 pproxy_version = "2.7.9"
-schema = "phase_37"
+schema = "phase_0"
+oracle_commit = "09d4752f17ed6787e1a073c93980eec019887ee3"
+oracle_repository = "https://github.com/qwj/python-proxy"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CLI Flags
@@ -20,7 +23,7 @@ schema = "phase_37"
 [[capability]]
 id = "cli.listen"
 category = "cli"
-pproxy_surface = "-l / --listen"
+pproxy_surface = "-l"
 pproxy_behavior = "Bind one or more TCP listener URIs."
 eggress_behavior = "Translates to [[listeners]] TOML entries; scheme maps to protocols field."
 tier = "drop_in"
@@ -33,12 +36,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "pproxy_cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = "Same syntax; identical binding behavior for HTTP, SOCKS4/4a, SOCKS5, SS."
 
 [[capability]]
 id = "cli.remote"
 category = "cli"
-pproxy_surface = "-r / --remote"
+pproxy_surface = "-r"
 pproxy_behavior = "Specify upstream proxy URIs with chaining via __ separator."
 eggress_behavior = "Translates to [[upstreams]] and [[upstream_groups]]; __-separated chains parsed into per-hop TOML upstream URIs."
 tier = "drop_in"
@@ -51,12 +59,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "pproxy_cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = "Multiple -r generates group with round-robin (2+) or first-available (1)."
 
 [[capability]]
 id = "cli.udp_listen"
 category = "cli"
-pproxy_surface = "-ul / --udp-listen"
+pproxy_surface = "-ul"
 pproxy_behavior = "Bind a standalone UDP relay socket."
 eggress_behavior = "Generates mode = standalone_pproxy_udp config."
 tier = "drop_in"
@@ -69,12 +82,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_ul_generates_standalone_udp_listener", "pproxy_cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = "Accepts URI, :port, host:port, plain port formats."
 
 [[capability]]
 id = "cli.udp_remote"
 category = "cli"
-pproxy_surface = "-ur / --udp-remote"
+pproxy_surface = "-ur"
 pproxy_behavior = "Specify upstream for UDP traffic relayed via -ul."
 eggress_behavior = "Generates UDP upstream group with transport-matching rule."
 tier = "drop_in"
@@ -87,12 +105,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_ul_and_ur_generates_udp_upstream_group", "pproxy_cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = ""
 
 [[capability]]
 id = "cli.scheduler"
 category = "cli"
-pproxy_surface = "-s / --scheduler"
+pproxy_surface = "-s"
 pproxy_behavior = "Set load-balancing algorithm (rr, fa, rc, lc)."
 eggress_behavior = "Maps documented pproxy values to native schedulers; compatibility mode defaults to first-available in declaration order regardless of remote count. Unrecognized values warn and default to first-available."
 tier = "compatible_with_warning"
@@ -105,13 +128,18 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "scheduler_runtime_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "6"
 diagnostic = "scheduler"
 notes = "The compatibility translator maps fa/rr/rc/lc to first-available/round-robin/random/least-connections. Native TOML scheduler defaults are unchanged."
 
 [[capability]]
 id = "cli.alive"
 category = "cli"
-pproxy_surface = "-a / --alive"
+pproxy_surface = "-a"
 pproxy_behavior = "Set alive check interval in seconds."
 eggress_behavior = "Maps to [health] interval on upstreams; emits diagnostic pointing to the equivalent eggress health section."
 tier = "native_equivalent"
@@ -124,6 +152,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = "pproxy interval-based; eggress uses hysteresis state machine with TCP probes. Different mechanism, same outcome. Translation evidence (unit/integration) only; no pproxy differential test for health-probe timing equivalence."
 
 [[capability]]
@@ -142,12 +175,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_ssl_flag_generates_tls_config", "test_ssl_cert_only_generates_tls_config", "test_ssl_flag_applies_to_all_listeners"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = "Translation + runtime smoke evidence; no pproxy differential coverage of --ssl semantics. Multi-listener scope matches pproxy (TLS on every listener); verified by translator unit test."
 
 [[capability]]
 id = "cli.block"
 category = "cli"
-pproxy_surface = "-b / --block"
+pproxy_surface = "-b"
 pproxy_behavior = "Block connections matching regex patterns."
 eggress_behavior = "Validates regex via CompatRegex (dual fast/fancy backend); translates block regex to reject rules with host-regex matcher in TOML."
 tier = "drop_in"
@@ -160,26 +198,12 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_block_flag_generates_reject_rule", "test_block_flag_toml_roundtrip"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = "Regex validated at parse time via CompatRegex. Reject-rule grammar is limited to host-regex matchers (no port/transport qualifiers in pproxy regex scope)."
-
-[[capability]]
-id = "cli.rulefile"
-category = "cli"
-pproxy_surface = "--rulefile / -rulefile"
-pproxy_behavior = "Load routing rules from a line-based file."
-eggress_behavior = "Loads pproxy's plain non-comment regex lines via PproxyRuleFile::load() and lowers them to a high-priority hostname block rule. Missing or malformed files fail translation."
-tier = "compatible_with_warning"
-parser = "complete"
-translator = "complete"
-config = "partial"
-runtime = "not_applicable"
-cli = "complete"
-python = "not_applicable"
-docs = "complete"
-evidence = "unit"
-tests = ["test_rulefile_missing_file_fails_translation", "test_rulefile_generates_block_rules"]
-diagnostic = "rulefile-partial"
-notes = "Regex validated at load time via CompatRegex with the pproxy 2.7.9 line-based format. Native-incompatible fancy regex features fail with a precise diagnostic."
 
 [[capability]]
 id = "cli.daemon"
@@ -197,6 +221,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_exit_code_unsupported_daemon"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "gap"
+strict_closure_required = true
+strict_phase = "9"
 notes = "Separate from -d (debug). Use systemd, supervisord, or process manager."
 caveat_class = "cli_process_model"
 
@@ -216,13 +245,18 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["default_log_level_d_flag", "default_log_level_vvv_flag", "default_log_level_daemon_only_keeps_daemon_separate", "debug_flag_accepted_independently", "test_debug_flag_emits_compatible_warning"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "6"
 diagnostic = "debug-mode"
 notes = "Different mechanism (default tracing filter vs Python traceback flag); debug-level diagnostics are enabled, but Python traceback semantics are not reproduced. -d and --daemon are distinct options. No config artifact is produced: -d influences only the default tracing level selected at startup when RUST_LOG is unset."
 
 [[capability]]
 id = "cli.verbose"
 category = "cli"
-pproxy_surface = "-v / --verbose"
+pproxy_surface = "-v"
 pproxy_behavior = "Enable verbose/debug logging output."
 eggress_behavior = "Maps -v/-vv/-vvv to info/debug/trace default tracing levels and emits a compatibility diagnostic; explicit RUST_LOG remains authoritative."
 tier = "compatible_with_warning"
@@ -235,27 +269,13 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_verbose_flag_emits_warning", "default_log_level_v_flag", "default_log_level_vvv_flag"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "6"
 diagnostic = "verbose-mode"
-notes = "Different mechanism and level granularity (Rust tracing defaults versus pproxy's flag-controlled logging); the flag is recognized at parse time and emits a diagnostic. No config artifact is produced, and explicit RUST_LOG takes precedence."
-
-[[capability]]
-id = "cli.log"
-category = "cli"
-pproxy_surface = "--log / -log"
-pproxy_behavior = "Write log output to a file."
-eggress_behavior = "Recognizes the flag but does not write to the supplied path; logs remain on stderr via tracing-subscriber."
-tier = "compatible_with_warning"
-parser = "complete"
-translator = "complete"
-config = "not_applicable"
-runtime = "not_applicable"
-cli = "complete"
-python = "not_applicable"
-docs = "complete"
-evidence = "unit"
-tests = ["test_log_flag_emits_warning"]
-diagnostic = "log-file"
-notes = "The flag is recognized at parse time and emits a diagnostic, but no file is written. pproxy writes log output to the specified path; eggress logs to stderr. No config artifact is produced; the log= flag is recognized at parse time and emits a diagnostic. Use RUST_LOG env var and shell redirection for file logging."
+notes = "Repeatable action-count flag; there is no --verbose alias. Different mechanism and level granularity (Rust tracing defaults versus pproxy's flag-controlled logging); the flag is recognized at parse time and emits a diagnostic. No config artifact is produced, and explicit RUST_LOG takes precedence."
 
 [[capability]]
 id = "cli.reuse"
@@ -273,6 +293,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 diagnostic = "reuse-port"
 notes = "pproxy uses --reuse for listener socket SO_REUSEPORT on supported systems, not connection pooling."
 
@@ -292,6 +317,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pac_flag_emits_warning", "test_pac_get_test_flags_do_not_produce_unsupported_features"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "6"
 diagnostic = "pac-serving"
 notes = "The supplied value remains owned by --pac; Eggress serves the generated PAC through its admin server at the mapped path. This is a supported implementation difference rather than pproxy's original serving mechanism."
 
@@ -311,10 +341,40 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["sys_flag_fails_before_startup", "pproxy_run_sys_fails_before_startup"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "gap"
+strict_closure_required = true
+strict_phase = "2"
 diagnostic = "system-proxy"
 notes = "pproxy --sys mutates global state at startup; eggress compatibility mode does not provide lifecycle-safe apply/rollback semantics and refuses to start. Native `eggress system-proxy inspect` provides read-only inspection. Crate-level system-proxy apply/planning primitives are not exposed as a public CLI subcommand."
 caveat_class = "intentional_non_parity"
 rationale = "pproxy --sys mutates OS-level proxy state. Eggress pproxy compatibility mode is not allowed to perform implicit mutation; the native inspect subcommand is the supported read-only path."
+
+[[capability]]
+id = "cli.auth"
+category = "cli"
+pproxy_surface = "--auth"
+pproxy_behavior = "Set the per-client-IP re-authentication interval in seconds."
+eggress_behavior = "Parses the value and reports the unsupported per-client-IP auth-reuse behavior before startup."
+tier = "unsupported"
+parser = "complete"
+translator = "complete"
+config = "refused"
+runtime = "refused"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "unit"
+tests = ["auth_flag_fails_before_startup"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "gap"
+strict_closure_required = true
+strict_phase = "2"
+diagnostic = "auth-timeout"
+notes = "The value-taking flag exists in pproxy 2.7.9. Eggress does not yet reproduce AuthTable reuse by source IP; this is a strict Phase 2 gap."
+caveat_class = "missing_protocol_role"
 
 [[capability]]
 id = "cli.get"
@@ -332,6 +392,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_valid_get_static_content_is_supported", "test_malformed_get_static_content_fails_closed", "test_unreadable_get_static_content_fails_closed", "test_get_flag_emits_warning"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 diagnostic = "get-static-content"
 notes = "The valid PATH,FILE form is supported through native admin static content. Invalid values use the separate get-file unsupported diagnostic and do not start a partial service."
 caveat_class = "cli_process_model"
@@ -352,27 +417,13 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["test_test_flag_generates_unknown_warning", "test_target_preserves_value_taking_option", "test_mode_runs_in_process_no_sibling_binary", "test_pproxy_run_test_mode_in_process"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 diagnostic = "test-mode"
 notes = "The target remains owned by --test and is passed to native upstream testing. The compatibility service is not started for test mode."
-
-[[capability]]
-id = "cli.config"
-category = "cli"
-pproxy_surface = "-f / --config"
-pproxy_behavior = "Load configuration from a TOML/YAML/JSON file."
-eggress_behavior = "eggress --config path/to/config.toml natively. Different schema."
-tier = "compatible_with_warning"
-parser = "complete"
-translator = "complete"
-config = "complete"
-runtime = "complete"
-cli = "complete"
-python = "not_applicable"
-docs = "complete"
-evidence = "integration"
-tests = ["integration_tests"]
-diagnostic = "config-schema"
-notes = "Same flag ownership and arity; Eggress accepts a config path. Schema differs: pproxy accepts TOML/YAML/JSON in its own schema; eggress uses its own TOML schema. A pproxy config file cannot be used unchanged."
 
 [[capability]]
 id = "cli.version"
@@ -390,12 +441,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = ""
 
 [[capability]]
 id = "cli.help"
 category = "cli"
-pproxy_surface = "--help"
+pproxy_surface = "-h / --help"
 pproxy_behavior = "Print usage information and exit."
 eggress_behavior = "eggress --help shows help for all subcommands."
 tier = "drop_in"
@@ -408,12 +464,17 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "6"
 notes = ""
 
 [[capability]]
 id = "cli.check_json_chain_info"
 category = "cli"
-pproxy_surface = "pproxy check --json"
+pproxy_surface = "Eggress extension: pproxy check --json"
 pproxy_behavior = "pproxy check reports proxy status."
 eggress_behavior = "Includes per-remote chain metadata: raw, hops count, hop_schemes, is_chain flag."
 tier = "compatible_with_warning"
@@ -426,6 +487,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
+implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "6"
 notes = "pproxy does not emit chain_info in check output; eggress extends with chain metadata."
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -448,6 +514,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -466,6 +537,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "tls_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -484,6 +560,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -502,6 +583,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -520,6 +606,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -538,6 +629,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "1"
 notes = ""
 
 [[capability]]
@@ -556,6 +652,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "1"
 notes = "Alias for ss://"
 
 [[capability]]
@@ -574,6 +675,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "1"
 rationale = "SSR is non-standard; obfs/protocol/cipher layers have no RFC. Rejected with structured diagnostic."
 caveat_class = "intentional_non_parity"
 
@@ -593,6 +699,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["unit_tests", "differential_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Full Trojan support: client upstream and inbound listener with TLS. ATYP 0x03 (domain) matches pproxy. Differential tests: differential_trojan_upstream, differential_trojan_auth_failure."
 
 [[capability]]
@@ -611,6 +722,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "docs_only"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "1"
 rationale = "SSH is not a proxy protocol; adds significant dependency weight (no pure-Rust SSH library avoids C/OpenSSL complexity). Use OpenSSH dynamic forwarding (ssh -D) instead. See ADR docs/adr/ADR_ssh_upstream_parity.md."
 notes = "Intentional non-parity per ADR. SSH is not a proxy protocol; use OpenSSH dynamic forwarding (ssh -D) instead."
 caveat_class = "missing_protocol_transport"
@@ -631,6 +747,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests", "integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -649,6 +770,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_transparent_config_validation"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Linux only; requires SO_ORIGINAL_DST. Same mechanism as pproxy."
 
 [[capability]]
@@ -667,6 +793,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_unix_listener_bind_and_accept"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Unix only; not available on Windows."
 
 [[capability]]
@@ -685,6 +816,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_accepts_control_connection", "test_echo_relay_through_server"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 diagnostic = "reverse-proxy-warning"
 notes = "TCP-only raw relay; no built-in TLS; plaintext auth possible; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind."
 
@@ -704,6 +840,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_accepts_control_connection"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Alias for bind://; same reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal)."
 
 [[capability]]
@@ -722,6 +863,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_client_server_roundtrip"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "5"
 diagnostic = "reverse-proxy-warning"
 notes = "TCP-only raw relay; no built-in TLS; plaintext auth possible."
 
@@ -741,6 +887,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_client_server_roundtrip"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Alias for backward://; same reverse proxy caveats (no TLS, plaintext auth)."
 
 [[capability]]
@@ -759,6 +910,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Promoted in Phase B3; upstream-only per pproxy behavior."
 
 [[capability]]
@@ -777,6 +933,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Promoted in Phase B3; alias for raw://."
 
 [[capability]]
@@ -795,6 +956,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_websocket_echo"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "Promoted in Phase B3; upstream-only per pproxy behavior."
 
 [[capability]]
@@ -813,6 +979,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_websocket_echo"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "Promoted in Phase B3; upstream-only with TLS transport wrapper."
 
 [[capability]]
@@ -832,6 +1003,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_h2_connect_error_display", "h2_upstream_routes_tcp_echo", "h2_connect_with_auth", "h2_upstream_auth_success", "h2_upstream_auth_failure", "h2_upstream_concurrent_streams", "h2_connect_relay_to_http", "h2_chain_socks5_to_h2_to_http", "h2_chain_http_to_h2", "h2_upstream_config_validation", "h2_upstream_connection_loss", "h2_upstream_connection_reuse", "h2_upstream_flow_control_pressure", "h2_upstream_concurrent_stream_limit"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "Promoted in Phase B4; upstream-only with TLS transport wrapper."
 caveat_class = ""
 
@@ -851,6 +1027,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["tls_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -869,6 +1050,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_accepts_control_connection"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 diagnostic = "reverse-proxy-warning"
 notes = "Activates reverse/backward mode; inherits reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal)."
 
@@ -888,6 +1074,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Semicolon and comma are explicitly rejected with diagnostics suggesting __."
 
 [[capability]]
@@ -906,6 +1097,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Per-hop diagnostics carry unsupported_protocol or unsupported_transport_wrapper codes."
 
 [[capability]]
@@ -924,6 +1120,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Emits invalid_chainComposition diagnostic with migration suggestion."
 
 [[capability]]
@@ -942,6 +1143,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -960,6 +1166,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_connect_ipv6", "differential_socks5_connect_domain"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -978,6 +1189,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -996,6 +1212,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
+implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1018,6 +1239,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_tcp_echo", "differential_http_connect_ipv4_target"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Byte-exact payload match verified."
 
@@ -1037,6 +1263,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_ipv6_target"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Byte-exact payload match verified."
 
@@ -1056,6 +1287,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_domain_target"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Byte-exact payload match verified."
 
@@ -1075,6 +1311,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_auth_success"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Proxy auth with valid credentials succeeds on both implementations."
 
@@ -1094,6 +1335,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_auth_failure"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Auth failure class matches pproxy behavior."
 
@@ -1113,6 +1359,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_refused_target"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Failure class matches; HTTP status may differ."
 
@@ -1132,6 +1383,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_client_half_close", "differential_http_connect_server_half_close"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Both client and server half-close paths verified."
 
@@ -1151,6 +1407,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_fragmented_client_payload", "differential_http_connect_fragmented_upstream_payload"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Fragmented payload relay verified on both directions."
 
@@ -1170,6 +1431,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_connect_timeout"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Failure class matches; exact error message may differ."
 
@@ -1189,6 +1455,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_get"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Byte-exact body match verified."
 
@@ -1208,6 +1479,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_post_with_body"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Byte-exact body match with Content-Length verified."
 
@@ -1227,6 +1503,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_head"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "HEAD response headers match."
 
@@ -1246,6 +1527,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_chunked_body"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Chunked body relay verified."
 
@@ -1265,6 +1551,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_persistent_connection"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Persistent session model; sequential requests on same connection."
 
@@ -1284,6 +1575,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_connection_close"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Connection close timing verified."
 
@@ -1303,6 +1599,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_auth_success"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Proxy auth with valid credentials succeeds on both implementations."
 
@@ -1322,6 +1623,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_malformed_request"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Error class matches; exact status may differ."
 
@@ -1341,6 +1647,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_forward_upstream_connection_close"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Upstream connection close handling verified."
 
@@ -1360,6 +1671,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks4_connect_tcp_echo"]
+upstream_evidence = "pproxy/proto.py:Socks4.accept/connect"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Differential tests with pproxy 2.7.9."
 
@@ -1379,6 +1695,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks4_user_id_propagation"]
+upstream_evidence = "pproxy/proto.py:Socks4.accept/connect"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "User ID field handling verified."
 
@@ -1398,6 +1719,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks4_refused_target"]
+upstream_evidence = "pproxy/proto.py:Socks4.accept/connect"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Failure class matches pproxy behavior."
 
@@ -1417,6 +1743,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks4_malformed_version", "differential_socks4_truncated_request"]
+upstream_evidence = "pproxy/proto.py:Socks4.accept/connect"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Version byte and truncated request handling verified."
 
@@ -1436,29 +1767,13 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks4a_connect_domain"]
+upstream_evidence = "pproxy/proto.py:Socks4.accept/connect"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Domain resolution in SOCKS4a verified."
-
-[[capability]]
-id = "protocol.socks4_bind"
-category = "protocol"
-pproxy_surface = "SOCKS4 BIND"
-pproxy_behavior = "SOCKS4 BIND command is not implemented by pproxy."
-eggress_behavior = "Returns REP_COMMAND_NOT_SUPPORTED (0x07); matches pproxy's refusal."
-tier = "unsupported"
-parser = "complete"
-translator = "complete"
-config = "refused"
-runtime = "refused"
-cli = "complete"
-python = "not_applicable"
-docs = "complete"
-evidence = "unit"
-tests = ["pproxy_compat_tests"]
-notes = "Neither pproxy nor eggress implements SOCKS4 BIND. Server rejects with RFC-compliant 0x07 reply. This is not Eggress-specific non-parity."
-caveat_class = "intentional_non_parity"
-rationale = "BIND is deprecated in SOCKS4; pproxy does not implement it; security risk of opening arbitrary listeners"
-diagnostic = "socks4_bind_unsupported"
 
 [[capability]]
 id = "protocol.socks5.connect_ipv4"
@@ -1476,6 +1791,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_connect_tcp_echo"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Byte-exact payload match verified."
 
@@ -1495,6 +1815,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_connect_ipv6"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "IPv6 target address type verified."
 
@@ -1514,6 +1839,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_connect_domain"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Domain target address type verified."
 
@@ -1533,6 +1863,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_refused_target"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Failure class matches pproxy behavior."
 
@@ -1552,6 +1887,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_auth"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Auth success path verified with pproxy."
 
@@ -1571,6 +1911,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_auth_failure"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Auth failure class matches pproxy behavior."
 
@@ -1590,6 +1935,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_malformed_address_type", "differential_socks5_unsupported_udp_command"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Invalid address type and unsupported command handling verified."
 
@@ -1609,29 +1959,13 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_early_close_greeting", "differential_socks5_early_close_request", "differential_socks5_server_half_close"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "Connection lifecycle edge cases verified."
-
-[[capability]]
-id = "protocol.socks5_bind"
-category = "protocol"
-pproxy_surface = "SOCKS5 BIND"
-pproxy_behavior = "SOCKS5 BIND command is not implemented by pproxy."
-eggress_behavior = "Returns REP_COMMAND_NOT_SUPPORTED (0x07); matches pproxy's refusal."
-tier = "unsupported"
-parser = "complete"
-translator = "complete"
-config = "refused"
-runtime = "refused"
-cli = "complete"
-python = "not_applicable"
-docs = "complete"
-evidence = "unit"
-tests = ["pproxy_compat_tests"]
-notes = "Neither pproxy nor eggress implements SOCKS5 BIND. Server rejects with RFC-compliant 0x07 reply. This is not Eggress-specific non-parity."
-caveat_class = "intentional_non_parity"
-rationale = "BIND is rarely used; pproxy does not implement it; security risk of opening arbitrary listeners"
-diagnostic = "socks5_bind_unsupported"
 
 [[capability]]
 id = "protocol.socks5.udp_associate"
@@ -1649,6 +1983,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_udp_associate"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "5"
 diagnostic = "socks5_udp_framing_divergence"
 notes = "Framing differs but relay success matches. pproxy uses custom framing; eggress uses standard SOCKS5 UDP ASSOCIATE."
 
@@ -1668,6 +2007,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_through_http_upstream"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "SOCKS5 inbound through HTTP upstream verified."
 
@@ -1687,6 +2031,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_socks5_through_socks5_upstream"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "SOCKS5 inbound through SOCKS5 upstream verified."
 
@@ -1706,6 +2055,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_to_socks5_upstream"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "HTTP CONNECT inbound through SOCKS5 upstream verified."
 
@@ -1725,6 +2079,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_http_to_http_upstream"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 differential_exception = true
 notes = "HTTP CONNECT inbound through HTTP upstream verified."
 
@@ -1744,6 +2103,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "WS upstream consumes the prior-hop stream; WebSocket handshake is performed over the SOCKS5-established TCP connection."
 
 [[capability]]
@@ -1762,6 +2126,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "WS upstream consumes the prior-hop stream; WebSocket handshake is performed over the HTTP-established TCP connection."
 
 [[capability]]
@@ -1780,6 +2149,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Raw is a passthrough that correctly forwards the prior-hop stream."
 
 [[capability]]
@@ -1798,6 +2172,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Raw is a passthrough that correctly forwards the prior-hop stream."
 
 [[capability]]
@@ -1816,6 +2195,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["h2_chain_socks5_to_h2_to_http", "h2_chain_http_to_h2"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)."
 
 [[capability]]
@@ -1834,6 +2218,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["h2_chain_http_to_h2"]
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)."
 
 [[capability]]
@@ -1852,6 +2241,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/proto.py:BaseProtocol and pproxy/server.py:ProxySimple"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -1870,6 +2264,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["differential_standalone_udp_direct_echo", "differential_standalone_udp_domain_target"]
+upstream_evidence = "pproxy/proto.py:BaseProtocol and pproxy/server.py:ProxySimple"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "matched"
+strict_closure_required = false
+strict_phase = "5"
 differential_exception = true
 notes = "Multiple entry points verified with differential tests."
 
@@ -1889,6 +2288,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/proto.py:BaseProtocol and pproxy/server.py:ProxySimple"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "matched"
+strict_closure_required = false
+strict_phase = "5"
 notes = "Prevents generating UDP upstream configs that runtime cannot execute. pproxy silently generates non-functional configs for unsupported UDP transports."
 
 [[capability]]
@@ -1907,6 +2311,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/proto.py:BaseProtocol and pproxy/server.py:ProxySimple"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "gap"
+strict_closure_required = true
+strict_phase = "5"
 rationale = "Multi-hop UDP chains require complex per-hop relay logic with session state tracking across hops; the complexity is not justified given single-hop UDP covers all practical use cases."
 notes = "UDP multi-hop requires complex per-hop relay logic that is not implemented. Single-hop UDP via direct, socks5, or ss is supported."
 
@@ -1926,6 +2335,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["differential_socks5_udp_associate"]
+upstream_evidence = "pproxy/proto.py:Socks5.accept/connect/udp_accept"
+implementation = "crates/eggress-protocol-socks"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "5"
 diagnostic = "socks5_udp_framing_divergence"
 notes = "pproxy uses a non-standard UDP framing; eggress uses standard RFC 1928 framing. Functional compatibility is maintained."
 
@@ -1945,6 +2359,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["shadowsocks_tcp_tests", "interoperability_shadowsocks_tcp"]
+upstream_evidence = "pproxy/proto.py:SS and pproxy/cipher.py:AEADCipher"
+implementation = "crates/eggress-protocol-shadowsocks and crates/eggress-udp"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "1"
 notes = "Wire-compatible with standard Shadowsocks sserver/sslocal. No pproxy differential tests; integration evidence only."
 
 [[capability]]
@@ -1963,6 +2382,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["shadowsocks_udp_tests"]
+upstream_evidence = "pproxy/proto.py:SS and pproxy/cipher.py:AEADCipher"
+implementation = "crates/eggress-protocol-shadowsocks and crates/eggress-udp"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "1"
 notes = "Standard AEAD format; interoperable. No pproxy differential tests; integration evidence only."
 
 [[capability]]
@@ -1981,6 +2405,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/proto.py:SSR"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "3"
 rationale = "Non-standard extension; obfs/protocol/cipher layers have no RFC. SSR URIs recognized and rejected."
 caveat_class = "intentional_non_parity"
 
@@ -2000,6 +2429,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["unit_tests", "differential_tests"]
+upstream_evidence = "pproxy/proto.py:Trojan"
+implementation = "crates/eggress-protocol-trojan"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Trojan upstream client with rustls TLS. ATYP 0x03 matches pproxy. Differential test: differential_trojan_upstream."
 
 [[capability]]
@@ -2018,6 +2452,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["unit_tests", "differential_tests", "integration_tests"]
+upstream_evidence = "pproxy/proto.py:Trojan"
+implementation = "crates/eggress-protocol-trojan"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Accept inbound Trojan connections over TLS with SHA224 password verification. Fallback routing on auth failure. Differential test: differential_trojan_auth_failure."
 
 [[capability]]
@@ -2036,6 +2475,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "docs_only"
 tests = ["pproxy_compat_tests"]
+upstream_evidence = "pproxy/proto.py:SSH and pproxy/server.py:ProxySSH"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "7"
 rationale = "SSH is not a proxy protocol; maintaining a secure SSH client implementation (host-key verification, auth methods, direct-tcpip channels, keepalive) is disproportionate to the proxy use case. See ADR docs/adr/ADR_ssh_upstream_parity.md."
 notes = "Intentional non-parity per ADR. Use OpenSSH dynamic forwarding or external SOCKS proxy."
 caveat_class = "missing_protocol_transport"
@@ -2056,6 +2500,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "none"
 tests = []
+upstream_evidence = "pproxy/server.py:ProxyQUIC/ProxyH3"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "8"
 rationale = "Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md). pproxy QUIC behavior is experimental."
 caveat_class = "deferred_by_adr"
 
@@ -2075,6 +2524,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "none"
 tests = []
+upstream_evidence = "pproxy/proto.py:HTTP.accept/connect"
+implementation = "crates/eggress-protocol-http"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "8"
 rationale = "Deferred by ADR (docs/adr/ADR_quic_h3_pproxy_parity.md)."
 caveat_class = "deferred_by_adr"
 
@@ -2094,6 +2548,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_websocket_echo"]
+upstream_evidence = "pproxy/proto.py:WS and pproxy/server.py:ProxySimple"
+implementation = "crates/eggress-protocol-websocket"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "2"
 notes = "Native runtime support exists, but the pproxy compatibility translator does not currently expose this path."
 caveat_class = "translator_scope_gap"
 
@@ -2113,6 +2572,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/proto.py:BaseProtocol and pproxy/server.py:ProxySimple"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Native runtime support exists, but the pproxy compatibility translator does not currently expose this path."
 caveat_class = "translator_scope_gap"
 
@@ -2133,6 +2597,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["test_h2_connect_error_display", "h2_upstream_routes_tcp_echo", "h2_connect_with_auth", "h2_upstream_auth_success", "h2_upstream_auth_failure", "h2_upstream_concurrent_streams", "h2_connect_relay_to_http", "h2_chain_socks5_to_h2_to_http", "h2_chain_http_to_h2", "h2_upstream_config_validation", "h2_upstream_connection_loss", "h2_upstream_connection_reuse", "h2_upstream_flow_control_pressure", "h2_upstream_concurrent_stream_limit"]
+upstream_evidence = "pproxy/proto.py:H2 and pproxy/server.py:ProxyH2"
+implementation = "crates/eggress-server and crates/eggress-runtime"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "2"
 notes = "Native runtime support exists, but the pproxy compatibility translator does not currently expose this path."
 caveat_class = "translator_scope_gap"
 
@@ -2156,6 +2625,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:compile_rule"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Phase 2: URI-attached predicates are lowered to ordered one-member route groups; unruled remotes share a first-available catch-all and unmatched traffic falls direct."
 caveat_class = "translator_scope_gap"
 
@@ -2175,13 +2649,18 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:compile_rule"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Different mechanism (rule action vs separate flag); same outcome."
 
 [[capability]]
 id = "routing.rulefile_translation"
 category = "routing"
-pproxy_surface = "--rulefile flag"
-pproxy_behavior = "Load routing rules from line-based file."
+pproxy_surface = "Eggress extension: rule-file translator"
+pproxy_behavior = "Load Eggress routing rules from a line-based compatibility file."
 eggress_behavior = "Translates pproxy's plain regex-line file into a high-priority hostname block rule; missing or malformed files fail translation."
 tier = "compatible_with_warning"
 parser = "complete"
@@ -2193,6 +2672,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "unit"
 tests = ["pproxy_cli_tests"]
+upstream_evidence = "No tagged CLI flag; Eggress extension retained for migration"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Use Eggress TOML [[rules]] for complete routing semantics; the pproxy rule-file bridge is intentionally partial."
 caveat_class = "translator_scope_gap"
 
@@ -2212,6 +2696,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "differential"
 tests = ["differential_scheduler_round_robin"]
+upstream_evidence = "pproxy/server.py:schedule"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Eggress uses global atomic cursor; pproxy resets on reload."
 
 [[capability]]
@@ -2230,6 +2719,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["scheduler_runtime_tests"]
+upstream_evidence = "pproxy/server.py:schedule"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -2248,6 +2742,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["scheduler_runtime_tests"]
+upstream_evidence = "pproxy/server.py:schedule"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -2266,6 +2765,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["scheduler_runtime_tests"]
+upstream_evidence = "pproxy/server.py:schedule"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -2284,6 +2788,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["scheduler_runtime_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "Eggress uses hysteresis state machine; different mechanism, same outcome."
 
 [[capability]]
@@ -2302,6 +2811,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "eggress-native feature; pproxy has no equivalent. Not a parity claim."
 
 [[capability]]
@@ -2320,6 +2834,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["cli_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Different invocation; same verification."
 
 [[capability]]
@@ -2338,6 +2857,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["pac_static_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -2356,6 +2880,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["pac_static_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = ""
 
 [[capability]]
@@ -2374,6 +2903,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["system_proxy_inspect"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "2"
 notes = "Read-only inspection; no hidden global mutation."
 
 [[capability]]
@@ -2392,6 +2926,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "docs_only"
 tests = []
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "gap"
+strict_closure_required = true
+strict_phase = "2"
 notes = "Crate-level capability exists but no public CLI command is exposed. Use platform-native tools or the inspection API."
 caveat_class = "missing_protocol_command"
 rationale = "Apply and rollback primitives exist in the eggress-system-proxy crate but are not wired to a public CLI subcommand. No documented public reason to expose them as CLI."
@@ -2412,6 +2951,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "docs_only"
 tests = []
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "gap"
+strict_closure_required = true
+strict_phase = "2"
 notes = "Crate-level rollback capability exists but no public CLI command is exposed."
 caveat_class = "missing_protocol_command"
 rationale = "Rollback primitives exist in the eggress-system-proxy crate but are not wired to a public CLI subcommand. No documented public reason to expose them as CLI."
@@ -2432,6 +2976,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["integration_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "eggress-native feature."
 
 [[capability]]
@@ -2450,6 +2999,11 @@ python = "not_applicable"
 docs = "complete"
 evidence = "integration"
 tests = ["reload_tests"]
+upstream_evidence = "pproxy/server.py:main and ProxySimple"
+implementation = "crates/eggress-routing and crates/eggress-pproxy-compat/src/translate.rs"
+status = "matched"
+strict_closure_required = false
+strict_phase = "10"
 notes = "Only routing/upstreams/groups/health are hot-reloadable; listener topology requires restart."
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2472,6 +3026,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_wheel_import_smoke.py::test_import_top_level_pproxy_package"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "The single eggress wheel intentionally owns the bounded top-level pproxy namespace. Installed-wheel smoke tests verify importability and representative public exports; this does not imply that every private upstream pproxy internal is implemented."
 
 [[capability]]
@@ -2490,6 +3049,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_compat.py::test_local_socks5_direct", "test_pproxy_compat.py::test_local_http_direct"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Eggress-native Python API; translates common pproxy args to TOML but does not reproduce pproxy CLI arity or every option."
 
 [[capability]]
@@ -2508,6 +3072,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_compat.py::test_shadowsocks_supported", "test_pproxy_compat.py::test_unsupported_ssh"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = ""
 
 [[capability]]
@@ -2526,6 +3095,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_compat.py::test_local_socks5_direct"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "No config artifact is produced; check_pproxy_args returns a structured report object in Python without generating TOML."
 
 [[capability]]
@@ -2544,6 +3118,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_lifecycle.py::test_start_and_stop"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "4"
 notes = "The Eggress Server shape and stream/lifecycle contract differ from pproxy.Server; use it as a migration helper, not a drop-in alias."
 
 [[capability]]
@@ -2562,6 +3141,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_lifecycle.py::test_start_and_stop", "test_server_lifecycle.py::test_close_is_idempotent"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Same lifecycle semantics."
 
 [[capability]]
@@ -2580,6 +3164,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_lifecycle.py::test_sync_context_manager", "test_server_lifecycle.py::test_async_context_manager"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "eggress extension; pproxy has no equivalent."
 
 [[capability]]
@@ -2598,6 +3187,11 @@ python = "partial"
 docs = "not_started"
 evidence = "none"
 tests = []
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "gap"
+strict_closure_required = true
+strict_phase = "4"
 notes = "Not yet implemented as full async wrapper API."
 
 [[capability]]
@@ -2616,6 +3210,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_lifecycle.py", "test_server_status"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "eggress-native Python API."
 
 [[capability]]
@@ -2634,6 +3233,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_server_lifecycle.py::test_close_is_idempotent"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Same stop semantics; idempotent."
 
 [[capability]]
@@ -2652,6 +3256,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_compat.py"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Structured error types; different mechanism, same exception semantics."
 
 [[capability]]
@@ -2670,6 +3279,11 @@ python = "complete"
 docs = "complete"
 evidence = "unit"
 tests = ["test_pproxy_utility_fixtures"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Compatibility layer; not a 1:1 API match."
 
 [[capability]]
@@ -2688,6 +3302,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_dropin.py::TestPPProxyServiceFromArgs", "test_pproxy_dropin.py::TestPPProxyServiceFromUri", "test_pproxy_dropin.py::TestPPProxyServiceFromToml", "test_pproxy_dropin.py::TestPPProxyServiceFromFile"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "pproxy-compatible service builder; from_args matches pproxy CLI arg style."
 
 [[capability]]
@@ -2706,6 +3325,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_dropin.py::TestCompatibilityReport"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "check_pproxy_args returns CompatibilityReport instead of TranslationResult."
 
 [[capability]]
@@ -2724,6 +3348,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_pproxy_dropin.py::TestStartPproxy"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Multiple input modes for maximum compatibility with pproxy usage patterns."
 
 [[capability]]
@@ -2742,6 +3371,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["test_wheel_import_smoke.py::test_py_typed_marker_exists"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Stub files: _eggress.pyi, __init__.pyi, pproxy.pyi, service.pyi, config.pyi, exceptions.pyi. Static typing artifacts cannot be differentially tested."
 
 [[capability]]
@@ -2760,6 +3394,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["python/tests/test_wheel_import_smoke.py::test_import_eggress"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Canonical import path; it never injects or aliases sys.modules['pproxy']."
 
 [[capability]]
@@ -2778,6 +3417,11 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["python/tests/test_proxy_connection.py::test_tcp_connect_returns_native_stream_without_listener", "python/tests/test_proxy_connection.py::test_async_native_stream_does_not_create_listener"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "Certified for direct TCP and the upstream protocol/chain cells covered by the release evidence bundle. The returned object is stream-compatible, not socket.socket-compatible."
 
 [[capability]]
@@ -2796,4 +3440,346 @@ python = "complete"
 docs = "complete"
 evidence = "integration"
 tests = ["python/tests/test_protocol_cipher.py", "python-pproxy-compat/pyproject.toml"]
+upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
+implementation = "python/pproxy and crates/eggress-python"
+status = "matched"
+strict_closure_required = false
+strict_phase = "4"
 notes = "The canonical eggress package may omit the extra and then reports functional cipher operations unavailable; the compatibility distribution always declares it."
+
+# Exact installed-package module inventory. The upstream package contains
+# these ten importable module files at the frozen tag; missing Eggress modules
+# are recorded as strict Phase 4 gaps rather than silently omitted.
+
+[[capability]]
+id = "python.module.pproxy"
+category = "python"
+pproxy_surface = "pproxy/__init__.py"
+pproxy_behavior = "Top-level package exporting Connection, Server, Rule, and DIRECT."
+eggress_behavior = "Bundled top-level pproxy package is importable from the Eggress wheel."
+tier = "compatible_with_warning"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "not_applicable"
+cli = "not_applicable"
+python = "complete"
+docs = "complete"
+evidence = "integration"
+tests = ["python/tests/test_wheel_import_smoke.py"]
+upstream_evidence = "pproxy/__init__.py at tag 2.7.9; setup.py:packages"
+implementation = "python/pproxy and crates/eggress-python"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Module exists; the bounded adapter is not a private-internals drop-in."
+
+[[capability]]
+id = "python.module.pproxy_proto"
+category = "python"
+pproxy_surface = "pproxy/proto.py"
+pproxy_behavior = "Protocol classes and protocol helper functions."
+eggress_behavior = "Bundled compatibility facade exposes the documented protocol surface."
+tier = "compatible_with_warning"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "not_applicable"
+cli = "not_applicable"
+python = "complete"
+docs = "complete"
+evidence = "integration"
+tests = ["tests/compat/test_pproxy_api_contract.py"]
+upstream_evidence = "pproxy/proto.py at tag 2.7.9; setup.py:packages"
+implementation = "python/pproxy and crates/eggress-python"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Module exists; unsupported private operations fail explicitly."
+
+[[capability]]
+id = "python.module.pproxy_server"
+category = "python"
+pproxy_surface = "pproxy/server.py"
+pproxy_behavior = "Server factories, proxy classes, scheduling, and process entry point."
+eggress_behavior = "Bundled server facade exposes factories and bounded adapters."
+tier = "compatible_with_warning"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "not_applicable"
+cli = "not_applicable"
+python = "complete"
+docs = "complete"
+evidence = "integration"
+tests = ["python/tests/test_pproxy_public_namespace.py"]
+upstream_evidence = "pproxy/server.py at tag 2.7.9; setup.py:packages"
+implementation = "python/pproxy and crates/eggress-python"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Module exists; native runtime ownership means internal lifecycle helpers are not all functional pproxy clones."
+
+[[capability]]
+id = "python.module.pproxy_cipher"
+category = "python"
+pproxy_surface = "pproxy/cipher.py"
+pproxy_behavior = "Cipher registry and cipher classes."
+eggress_behavior = "Modern cipher facade is importable from the bundled package."
+tier = "compatible_with_warning"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "not_applicable"
+cli = "not_applicable"
+python = "complete"
+docs = "complete"
+evidence = "integration"
+tests = ["python/tests/test_cipher_truth.py"]
+upstream_evidence = "pproxy/cipher.py at tag 2.7.9; setup.py:packages"
+implementation = "python/pproxy and crates/eggress-python"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "4"
+notes = "The facade intentionally does not claim legacy stream-cipher wire parity."
+
+[[capability]]
+id = "python.module.pproxy_plugin"
+category = "python"
+pproxy_surface = "pproxy/plugin.py"
+pproxy_behavior = "Six built-in plugin classes and plugin registry."
+eggress_behavior = "Plugin facade is importable but plugin execution is not implemented."
+tier = "intentional_non_parity"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "refused"
+cli = "not_applicable"
+python = "complete"
+docs = "complete"
+evidence = "unit"
+tests = ["python/tests/test_plugin.py"]
+upstream_evidence = "pproxy/plugin.py at tag 2.7.9; setup.py:packages"
+implementation = "python/pproxy and crates/eggress-python"
+status = "intentional_non_parity"
+strict_closure_required = true
+strict_phase = "3"
+notes = "Exact built-in plugin behavior is owned by strict Phase 3."
+rationale = "The module is present for bounded imports, but plugin wire transforms are intentionally deferred to the strict compatibility phase."
+
+[[capability]]
+id = "python.module.pproxy_cipherpy"
+category = "python"
+pproxy_surface = "pproxy/cipherpy.py"
+pproxy_behavior = "Pure-Python fallback cipher implementation."
+eggress_behavior = "No bundled cipherpy module."
+tier = "unsupported"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "refused"
+cli = "not_applicable"
+python = "not_started"
+docs = "complete"
+evidence = "docs_only"
+tests = ["scripts/pproxy_surface_probe.py"]
+upstream_evidence = "pproxy/cipherpy.py at tag 2.7.9; setup.py:packages"
+implementation = "not shipped in python/pproxy/"
+status = "gap"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Missing from the installed Eggress wheel; strict Phase 4 gap."
+rationale = "The pure-Python fallback is not shipped in the bounded wheel and is tracked as strict Phase 4 work."
+
+[[capability]]
+id = "python.module.pproxy_verbose"
+category = "python"
+pproxy_surface = "pproxy/verbose.py"
+pproxy_behavior = "Verbose statistics and logging helpers."
+eggress_behavior = "No bundled verbose module."
+tier = "unsupported"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "refused"
+cli = "not_applicable"
+python = "not_started"
+docs = "complete"
+evidence = "docs_only"
+tests = ["scripts/pproxy_surface_probe.py"]
+upstream_evidence = "pproxy/verbose.py at tag 2.7.9; setup.py:packages"
+implementation = "not shipped in python/pproxy/"
+status = "gap"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Missing from the installed Eggress wheel; strict Phase 4 gap."
+rationale = "Verbose helper module parity is tracked as strict Phase 4 work."
+
+[[capability]]
+id = "python.module.pproxy_sysproxy"
+category = "python"
+pproxy_surface = "pproxy/sysproxy.py"
+pproxy_behavior = "macOS and Windows system-proxy setup helpers."
+eggress_behavior = "No bundled pproxy.sysproxy module; native inspection remains separate."
+tier = "unsupported"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "refused"
+cli = "not_applicable"
+python = "not_started"
+docs = "complete"
+evidence = "docs_only"
+tests = ["scripts/pproxy_surface_probe.py"]
+upstream_evidence = "pproxy/sysproxy.py at tag 2.7.9; setup.py:packages"
+implementation = "not shipped in python/pproxy/"
+status = "gap"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Missing from the installed Eggress wheel; strict Phase 4 gap."
+rationale = "Platform-specific pproxy module parity is tracked as strict Phase 4 work."
+
+[[capability]]
+id = "python.module.pproxy_doc"
+category = "python"
+pproxy_surface = "pproxy/__doc__.py"
+pproxy_behavior = "Package metadata constants and version fallback."
+eggress_behavior = "No bundled pproxy.__doc__ module."
+tier = "unsupported"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "refused"
+cli = "not_applicable"
+python = "not_started"
+docs = "complete"
+evidence = "docs_only"
+tests = ["scripts/pproxy_surface_probe.py"]
+upstream_evidence = "pproxy/doc.py at tag 2.7.9; setup.py:packages"
+implementation = "not shipped in python/pproxy/"
+status = "gap"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Missing from the installed Eggress wheel; strict Phase 4 gap."
+rationale = "The metadata module is tracked as strict Phase 4 package-surface work."
+
+[[capability]]
+id = "python.module.pproxy_main"
+category = "python"
+pproxy_surface = "pproxy/__main__.py"
+pproxy_behavior = "python -m pproxy entry point delegating to server.main."
+eggress_behavior = "No bundled pproxy.__main__ module."
+tier = "unsupported"
+parser = "not_applicable"
+translator = "not_applicable"
+config = "not_applicable"
+runtime = "refused"
+cli = "not_applicable"
+python = "not_started"
+docs = "complete"
+evidence = "docs_only"
+tests = ["scripts/pproxy_surface_probe.py"]
+upstream_evidence = "pproxy/main.py at tag 2.7.9; setup.py:packages"
+implementation = "not shipped in python/pproxy/"
+status = "gap"
+strict_closure_required = true
+strict_phase = "4"
+notes = "Missing from the installed Eggress wheel; strict Phase 4 gap."
+rationale = "The python -m entry-point module is tracked as strict Phase 4 package-surface work."
+
+# Modern pproxy AEAD inventory. IV_LENGTH is also the per-method salt length
+# for the pproxy packet cipher and is not interchangeable across methods.
+
+[[capability]]
+id = "protocol.cipher.aes128_gcm"
+category = "protocol"
+pproxy_surface = "pproxy/cipher.py:AES_128_GCM_Cipher (IV_LENGTH=16)"
+pproxy_behavior = "AES-128-GCM Shadowsocks AEAD uses a 16-byte salt/IV."
+eggress_behavior = "Native AES-128-GCM method is available with method-specific salt handling."
+tier = "drop_in"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "unit"
+tests = ["crates/eggress-protocol-shadowsocks/src/method.rs::test_salt_nonce_tag_sizes"]
+upstream_evidence = "pproxy/cipher.py:AES_128_GCM_Cipher"
+implementation = "crates/eggress-protocol-shadowsocks/src/method.rs:CipherMethod::Aes128Gcm"
+status = "matched"
+strict_closure_required = false
+strict_phase = "1"
+differential_exception = true
+notes = "Exact upstream method name and 16-byte salt/IV are recorded for the Phase 1 wire audit."
+
+[[capability]]
+id = "protocol.cipher.aes192_gcm"
+category = "protocol"
+pproxy_surface = "pproxy/cipher.py:AES_192_GCM_Cipher (IV_LENGTH=24)"
+pproxy_behavior = "AES-192-GCM Shadowsocks AEAD uses a 24-byte salt/IV."
+eggress_behavior = "No AES-192-GCM method is currently exposed."
+tier = "unsupported"
+parser = "partial"
+translator = "partial"
+config = "refused"
+runtime = "refused"
+cli = "partial"
+python = "not_applicable"
+docs = "complete"
+evidence = "docs_only"
+tests = ["scripts/pproxy_surface_probe.py"]
+upstream_evidence = "pproxy/cipher.py:AES_192_GCM_Cipher"
+implementation = "crates/eggress-protocol-shadowsocks/src/method.rs:CipherMethod"
+status = "gap"
+strict_closure_required = true
+strict_phase = "1"
+notes = "The 24-byte method-specific salt/IV is required by the frozen oracle; AES-192-GCM is Phase 1 work."
+rationale = "AES-192-GCM is a real 2.7.9 method but is not currently exposed by Eggress; implementation is assigned to strict Phase 1."
+
+[[capability]]
+id = "protocol.cipher.aes256_gcm"
+category = "protocol"
+pproxy_surface = "pproxy/cipher.py:AES_256_GCM_Cipher (IV_LENGTH=32)"
+pproxy_behavior = "AES-256-GCM Shadowsocks AEAD uses a 32-byte salt/IV."
+eggress_behavior = "Native AES-256-GCM is available, but the current wire path requires the Phase 1 method-specific salt audit."
+tier = "compatible_with_warning"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "partial"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "unit"
+tests = ["crates/eggress-protocol-shadowsocks/src/method.rs::test_salt_nonce_tag_sizes"]
+upstream_evidence = "pproxy/cipher.py:AES_256_GCM_Cipher"
+implementation = "crates/eggress-protocol-shadowsocks/src/method.rs:CipherMethod::Aes256Gcm"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "1"
+notes = "The frozen oracle's 32-byte salt/IV must remain distinct from AES-128-GCM's 16 bytes."
+
+[[capability]]
+id = "protocol.cipher.chacha20_ietf_poly1305"
+category = "protocol"
+pproxy_surface = "pproxy/cipher.py:ChaCha20_IETF_POLY1305_Cipher (IV_LENGTH=32)"
+pproxy_behavior = "ChaCha20-IETF-Poly1305 Shadowsocks AEAD uses a 32-byte salt/IV."
+eggress_behavior = "Native ChaCha20-IETF-Poly1305 is available, but the current wire path requires the Phase 1 method-specific salt audit."
+tier = "compatible_with_warning"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "partial"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "unit"
+tests = ["crates/eggress-protocol-shadowsocks/src/method.rs::test_salt_nonce_tag_sizes"]
+upstream_evidence = "pproxy/cipher.py:ChaCha20_IETF_POLY1305_Cipher"
+implementation = "crates/eggress-protocol-shadowsocks/src/method.rs:CipherMethod::ChaCha20IetfPoly1305"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "1"
+notes = "The frozen oracle's 32-byte salt/IV is explicit and must not be reduced to the AES-128 size."

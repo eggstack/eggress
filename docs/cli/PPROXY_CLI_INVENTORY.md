@@ -1,5 +1,11 @@
 # pproxy CLI Inventory
 
+> **Contract note:** This older inventory is retained for migration history.
+> The active exact-parser inventory is
+> [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](../parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md).
+> The frozen 2.7.9 parser does not declare `--log`, `-f/--config`, or
+> `--rulefile`; similarly named Eggress options are extensions.
+
 Comprehensive inventory of pproxy 2.7.9 CLI flags and invocation forms,
 with eggress handling status and migration notes.
 

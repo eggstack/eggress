@@ -183,7 +183,7 @@ pproxy compatibility layer:
 - `pproxy check` — validates translated configuration
 - `pproxy run` — runs eggress with pproxy-style arguments (translated internally)
 - URI translation from pproxy listen/remote format to eggress TOML
-- Typed flag model: `-l`, `-r`, `-s`, `-v`, `-d`, `-a`, `--ssl`, `-b`, `--rulefile`, `--pac`, `--test`, `--sys`, `--reuse`, `--auth`, `--daemon`, `--get`, `--log`
+- Typed flag model follows the frozen pproxy 2.7.9 parser: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-d`, `-v`, `--ssl`, `--pac`, `--get`, `--auth`, `--sys`, `--reuse`, `--daemon`, `--test`, `--version`, and `--help`. Eggress-only `--config`, `--log`, and `--rulefile` extensions are not upstream flags.
 - Fatal startup gating: unknown flags (exit code 2), unsupported features (exit code 5) prevent service start
 - `-d` selects a debug-level default tracing filter and emits a compatibility warning about Python traceback semantics; `--daemon` and `--auth` are unsupported and fatal; `--sys` is unsupported and fails before startup (use native system-proxy commands for explicit inspection or mutation)
 - `--reuse` maps to listener SO_REUSEPORT on supported platforms (not connection pooling)

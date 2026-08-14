@@ -1,5 +1,10 @@
 # Migrating from pproxy to Eggress (Final)
 
+> **Historical migration guide:** The exact active 2.7.9 parser contract is
+> maintained in [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](../parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md).
+> In particular, `--log`, `-f/--config`, and `--rulefile` are not flags in the
+> frozen upstream parser; any Eggress support for those names is an extension.
+
 This is the comprehensive migration guide for users moving from Python
 `pproxy` 2.7.9 to the eggress parity release candidate (v0.1.0). It
 covers direct CLI migration, TOML translation, protocol-by-protocol

@@ -323,15 +323,21 @@ See `docs/PYTHON_BINDINGS.md` for the full Python API reference.
 
 ## pproxy compatibility
 
-eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The Rust crate `eggress-pproxy-compat` is an internal translation library used by the CLI and Python bindings; it is not a separate Python distribution. The bundled `eggress.pproxy` module provides:
+eggress maintains a behavior-oriented compatibility contract against the
+`pproxy==2.7.9` tag at commit
+`09d4752f17ed6787e1a073c93980eec019887ee3`. The Rust crate
+`eggress-pproxy-compat` is an internal translation library used by the CLI and
+Python bindings; it is not a separate Python distribution. The bundled
+`eggress.pproxy` module provides:
 
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
 - CLI flag translation with structured warnings for unsupported features
 - Phase 1 URI grammar and CLI ownership coverage, including mixed listeners,
   redaction, fixed-target metadata, and value-taking options
-- Phase 2 compatibility routing: first-available declaration order, explicit
-  `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, pproxy
-  rule files, high-priority block expressions, and direct unmatched fallback
+- Compatibility routing: first-available declaration order, explicit
+  `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, the
+  `-b` block bridge, and direct unmatched fallback. Eggress's optional rule
+  file bridge is an extension; pproxy 2.7.9 has no `--rulefile` flag.
 - Structured diagnostics for unsupported protocols (SSH and deferred transports)
 - Phase 5 and corrective-pass runtime coverage for `httponly` upstreams,
   TCP/UDP `echo`, canonical fixed-target
@@ -349,7 +355,8 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 - **SSH** upstream transport — rejected with a recommendation to use OpenSSH dynamic forwarding (`ssh -D`)
 - **QUIC/HTTP/3** — deferred by ADR; URI schemes `quic://` and `h3://` are rejected
 - **SSR/legacy Shadowsocks** — non-standard extensions rejected with clear diagnostics
-- **SOCKS4/SOCKS5 BIND** — returns `REP_COMMAND_NOT_SUPPORTED`
+- **SOCKS4/SOCKS5 BIND** — pproxy 2.7.9 also requires CONNECT (`0x01`); the
+  matching refusal is not an Eggress-specific strict gap
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
 - **Certificate reload** — requires restart
 - **Private pproxy internals** — only the documented bounded public surface is supported; private implementation details and unsupported protocol families fail explicitly
@@ -359,7 +366,7 @@ eggress maintains a behavior-oriented compatibility contract against `pproxy==2.
 
 - [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) — maintained observable compatibility matrix and exclusions
 - [`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`](docs/parity/PPROXY_CLOSURE_SCENARIOS.md) — optional representative oracle and public smoke scenarios
-- [`docs/parity/pproxy_capability_manifest.toml`](docs/parity/pproxy_capability_manifest.toml) — 148 capabilities across 5 categories with tier classification
+- [`docs/parity/pproxy_capability_manifest.toml`](docs/parity/pproxy_capability_manifest.toml) — active phase-0 inventory with frozen-source evidence and strict-phase status
 - [`docs/parity/pproxy_2_7_9_strict_manifest.toml`](docs/parity/pproxy_2_7_9_strict_manifest.toml) — 194 behavioral capability records
 - [`docs/parity/PPROXY_COMPATIBILITY_POLICY.md`](docs/parity/PPROXY_COMPATIBILITY_POLICY.md) — historical strict-manifest policy and provenance
 
@@ -407,14 +414,14 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] SOCKS4 CONNECT server and client
 - [x] SOCKS4 user ID
 - [x] SOCKS4a domain targets
-- [ ] SOCKS4 BIND (intentionally deferred)
+- [x] SOCKS4 BIND refusal (pproxy 2.7.9 does not implement BIND)
 
 ### SOCKS5
 
 - [x] SOCKS5 CONNECT server and client
 - [x] SOCKS5 no-auth and username/password authentication
 - [x] SOCKS5 IPv4, IPv6, and domain targets
-- [ ] SOCKS5 BIND (intentionally deferred)
+- [x] SOCKS5 BIND refusal (pproxy 2.7.9 does not implement BIND)
 - [x] SOCKS5 UDP ASSOCIATE server and client
 
 ### Routing and scheduling

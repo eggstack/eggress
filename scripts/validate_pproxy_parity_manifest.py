@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the pproxy capability manifest (Phase 37, hardened Phase 42).
+"""Validate the pproxy capability manifest (strict Phase 0 and legacy entries).
 
 Usage:
     python3 scripts/validate_pproxy_parity_manifest.py [--strict] [--validate-only] MANIFEST_PATH
@@ -78,7 +78,44 @@ VALID_EVIDENCE = frozenset({
     "none",
 })
 
-REQUIRED_FIELDS = {"id", "category", "tier", "parser", "translator", "config", "runtime", "cli", "python", "docs", "evidence"}
+REQUIRED_FIELDS = {
+    "id", "category", "tier", "parser", "translator", "config", "runtime",
+    "cli", "python", "docs", "evidence", "upstream_evidence", "implementation",
+    "status", "strict_closure_required", "strict_phase",
+}
+
+STRICT_STATUSES = frozenset({
+    "matched", "supported_difference", "gap", "intentional_non_parity",
+    "platform_limited",
+})
+ORACLE_COMMIT = "09d4752f17ed6787e1a073c93980eec019887ee3"
+EXPECTED_CLI_IDS = frozenset({
+    "cli.listen", "cli.remote", "cli.udp_listen", "cli.udp_remote",
+    "cli.block", "cli.alive", "cli.scheduler", "cli.debug", "cli.verbose",
+    "cli.ssl_listener", "cli.pac", "cli.get", "cli.auth", "cli.sys",
+    "cli.reuse", "cli.daemon", "cli.test", "cli.version", "cli.help",
+})
+EXPECTED_CLI_SURFACES = {
+    "cli.listen": "-l",
+    "cli.remote": "-r",
+    "cli.udp_listen": "-ul",
+    "cli.udp_remote": "-ur",
+    "cli.block": "-b",
+    "cli.alive": "-a",
+    "cli.scheduler": "-s",
+    "cli.debug": "-d",
+    "cli.verbose": "-v",
+    "cli.ssl_listener": "--ssl",
+    "cli.pac": "--pac",
+    "cli.get": "--get",
+    "cli.auth": "--auth",
+    "cli.sys": "--sys",
+    "cli.reuse": "--reuse",
+    "cli.daemon": "--daemon",
+    "cli.test": "--test",
+    "cli.version": "--version",
+    "cli.help": "-h / --help",
+}
 
 # Layers that must be "complete" for a drop_in claim
 def required_drop_in_layers_for_category(category: str) -> set[str]:
@@ -148,12 +185,48 @@ def validate_manifest(manifest_path: Path, strict: bool = False, validate_only: 
     errors: list[Diagnostic] = []
     warnings: list[Diagnostic] = []
 
+    meta = data.get("meta", {})
+    phase0 = meta.get("schema") == "phase_0"
+    if phase0:
+        if meta.get("pproxy_version") != "2.7.9":
+            errors.append(Diagnostic("error", 16, "meta", "phase-0 manifest must target pproxy 2.7.9"))
+        if meta.get("oracle_commit") != ORACLE_COMMIT:
+            errors.append(Diagnostic("error", 16, "meta", f"oracle_commit must be {ORACLE_COMMIT}"))
+        if meta.get("oracle_repository") != "https://github.com/qwj/python-proxy":
+            errors.append(Diagnostic("error", 16, "meta", "oracle_repository must identify qwj/python-proxy"))
+
+    phase0_cli_ids: list[str] = []
+
     seen_ids: dict[str, int] = {}
 
     for idx, cap in enumerate(capabilities):
         entry_id = cap.get("id", f"<entry {idx}>")
         tier = cap.get("tier", "")
         category = cap.get("category", "")
+
+        if phase0:
+            missing_fields = sorted(REQUIRED_FIELDS - cap.keys())
+            if missing_fields:
+                errors.append(Diagnostic(
+                    "error", 16, entry_id,
+                    "phase-0 inventory record missing fields: " + ", ".join(missing_fields),
+                ))
+            if cap.get("status") not in STRICT_STATUSES:
+                errors.append(Diagnostic("error", 16, entry_id, f"unknown strict status '{cap.get('status', '')}'"))
+            if not str(cap.get("upstream_evidence", "")).strip():
+                errors.append(Diagnostic("error", 16, entry_id, "upstream_evidence must not be empty"))
+            if not str(cap.get("implementation", "")).strip():
+                errors.append(Diagnostic("error", 16, entry_id, "implementation must not be empty"))
+            if str(cap.get("strict_phase", "")) not in {str(i) for i in range(1, 11)}:
+                errors.append(Diagnostic("error", 16, entry_id, "strict_phase must be one of 1..10"))
+            if category == "cli" and entry_id in EXPECTED_CLI_IDS:
+                phase0_cli_ids.append(entry_id)
+                if cap.get("pproxy_surface") != EXPECTED_CLI_SURFACES[entry_id]:
+                    errors.append(Diagnostic(
+                        "error", 16, entry_id,
+                        "pproxy_surface must exactly match the tagged parser: "
+                        + EXPECTED_CLI_SURFACES[entry_id],
+                    ))
 
         # ── Rule 1: Unknown tier/layer/evidence values ──────────────────
         if tier and tier not in VALID_TIERS:
@@ -404,6 +477,17 @@ def validate_manifest(manifest_path: Path, strict: bool = False, validate_only: 
                     "integration/differential evidence; add test file names "
                     "to 'tests' list for verifiability"
                 ))
+
+    if phase0:
+        actual_cli_ids = set(phase0_cli_ids)
+        missing_cli = sorted(EXPECTED_CLI_IDS - actual_cli_ids)
+        duplicate_cli = sorted(
+            entry_id for entry_id in EXPECTED_CLI_IDS if phase0_cli_ids.count(entry_id) > 1
+        )
+        if missing_cli:
+            errors.append(Diagnostic("error", 16, "cli", "missing real 2.7.9 flags: " + ", ".join(missing_cli)))
+        if duplicate_cli:
+            errors.append(Diagnostic("error", 16, "cli", "duplicate real 2.7.9 flags: " + ", ".join(duplicate_cli)))
 
     # ── Report ──────────────────────────────────────────────────────────
     total_caps = len(capabilities)

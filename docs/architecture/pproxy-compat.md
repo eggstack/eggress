@@ -2,7 +2,10 @@
 
 `crates/eggress-pproxy-compat/`
 
-pproxy 2.7.9 compatibility layer for CLI argument translation, URI parsing, and parity classification.
+pproxy 2.7.9 compatibility layer for CLI argument translation, URI parsing,
+and parity classification. The oracle is frozen to tag commit
+`09d4752f17ed6787e1a073c93980eec019887ee3` from
+`qwj/python-proxy`; see the phase-0 manifest for source evidence.
 
 This is an internal Rust crate, not a separately published Python package.
 The Python compatibility surface is bundled in the `eggress` distribution as
@@ -76,14 +79,23 @@ table, severity order, or intentional-exclusion set.
 |---|---|
 | `-l uri` | `[[listeners]]` with parsed URI |
 | `-r uri` | `[[upstreams]]` and `[[upstream_groups]]` |
+| `-ul uri` / `-ur uri` | Standalone UDP listener/upstream configuration |
 | `-s` | Server mode |
 | `-v/-vv/-vvv` | Verbose logging defaults (`debug`/`trace`) with a compatibility warning |
 | `-d` | Debug-level default tracing filter via shared `default_log_level` helper |
 | `--ssl` | TLS configuration |
-| `-b addr` | Bind address |
-| `--rulefile path` | Rule file parsing |
+| `-b regex` | Native reject rule |
+| `-a seconds` | Native health interval with a compatibility warning |
 | `--pac path` | PAC serving configuration at the supplied admin path, with a compatibility warning |
+| `--get path,file` | Native admin static content |
+| `--auth seconds` | Parsed, then refused because per-client-IP reuse is not implemented |
 | `--sys` | Unsupported and fatal before startup; use native `eggress system-proxy inspect` for read-only inspection |
+| `--reuse` / `--daemon` / `--test` | Socket reuse, process-model refusal, and in-process URL testing |
+
+The tagged parser does not declare `--log`, `-f/--config`, or `--rulefile`.
+Eggress may accept those names as extensions (`--config` is native TOML mode;
+`--log` is a stderr/log-format compatibility extension; rule files are
+available through the Eggress bridge), but they are not pproxy 2.7.9 flags.
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target
@@ -111,9 +123,10 @@ query (`?rule=...` or a raw query suffix) becomes a route predicate matching
 the requested hostname or decimal destination port. Ruled remotes are lowered
 to deterministic one-member groups in declaration order; unruled remotes share
 a final first-available group. When no predicate matches, the translator emits
-a direct fallback. `-b {regex}` is a high-priority hostname block, while a
-non-braced `-b PATH` and `--rulefile PATH` load pproxy's plain regex-line file
-format. Missing or malformed rule files fail translation. Generated
+a direct fallback. `-b {regex}` is a high-priority hostname block. Eggress's
+extension bridge may also accept a non-braced `-b PATH` rule file, but that is
+not an upstream `--rulefile` claim. Missing or malformed rule files fail
+translation. Generated
 compatibility rule IDs include the declaration index, source, and pattern for
 `route explain`. Explicit `-s fa`, `rr`, `rc`, and `lc` values map to the native scheduler names; native TOML
 groups retain their own configured defaults.

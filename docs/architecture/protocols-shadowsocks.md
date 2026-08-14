@@ -4,6 +4,12 @@
 
 Shadowsocks proxy protocol with AEAD cipher support.
 
+The strict pproxy 2.7.9 oracle uses these modern AEAD method-specific salt/IV
+sizes: `aes-128-gcm` 16 bytes, `aes-192-gcm` 24 bytes, `aes-256-gcm` 32 bytes,
+and `chacha20-ietf-poly1305` 32 bytes. These values come from the frozen
+`pproxy/cipher.py` classes and are tracked in the phase-0 manifest; they are
+not a claim that legacy stream ciphers or OTA are supported.
+
 ## Supported Ciphers
 
 | Method | Key Size | Nonce Size | Tag Size |

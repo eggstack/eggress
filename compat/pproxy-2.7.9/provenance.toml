@@ -6,10 +6,12 @@
 [oracle]
 package = "pproxy"
 version = "2.7.9"
-source = "pypi"
-repository = "https://github.com/nicholaskh/pproxy"
+source = "git-tag"
+repository = "https://github.com/qwj/python-proxy"
+tag = "2.7.9"
+commit = "09d4752f17ed6787e1a073c93980eec019887ee3"
 license = "MIT"
-retrieval_date = "2026-07-16"
+retrieval_date = "2026-08-14"
 
 [oracle.interpreter]
 min_python = "3.9"

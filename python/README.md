@@ -109,9 +109,14 @@ with PPProxyService.from_toml(toml_str) as handle:
 
 ## API Contract (Phase C1)
 
-A machine-readable contract of the pproxy 2.7.9 public API is maintained at
-`python/compat/pproxy_api_contract.json`. It inventories 105 symbols across
-4 modules with full signatures, class hierarchies, and async classifications.
+A machine-readable contract of the bounded pproxy adapter is maintained at
+`python/compat/pproxy_api_contract.json`. The exact upstream installed-package
+inventory is maintained separately in
+`compat/pproxy-2.7.9/namespace-baseline.json` and the active parity manifest.
+Use `scripts/pproxy_surface_probe.py` with isolated oracle and wheel
+interpreters to compare module names, top-level exports, tracked signatures,
+async classification, and class bases. Importability is not a claim that
+private pproxy internals are functionally reproduced.
 
 ### Classification summary
 

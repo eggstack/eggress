@@ -5,8 +5,10 @@ oracle used for differential compatibility testing.
 
 ## Oracle Overview
 
-The oracle is the frozen reference implementation (`pproxy==2.7.9`) against
-which eggress's pproxy compatibility is measured. Every differential test
+The oracle is the frozen reference implementation (`pproxy==2.7.9`) at tag
+commit `09d4752f17ed6787e1a073c93980eec019887ee3` in
+[`qwj/python-proxy`](https://github.com/qwj/python-proxy), against which
+Eggress's pproxy compatibility is measured. Every differential test
 runs the same scenario against both the oracle and the candidate and
 compares structured observations.
 
@@ -21,6 +23,7 @@ compares structured observations.
 | `compat/pproxy-2.7.9/known-defects.toml` | Registry of reproducible upstream defects |
 | `compat/pproxy-2.7.9/namespace-baseline.json` | Python namespace inventory baseline |
 | `compat/pproxy-2.7.9/cli-baseline.json` | CLI flags baseline |
+| `scripts/pproxy_surface_probe.py` | Small import/signature/module inventory probe |
 
 ## Bootstrap
 
@@ -29,16 +32,22 @@ python3.11 -m venv .venv-oracle
 .venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-oracle.txt
 .venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-optional.txt
 .venv-oracle/bin/python -c "import pproxy; print(pproxy.__version__)"
+.venv-oracle/bin/python scripts/pproxy_surface_probe.py > /tmp/pproxy-2.7.9-surface.json
 ```
+
+Run the same probe with the Python interpreter that has the Eggress wheel
+installed. Compare only the tracked fields needed by a test; do not turn the
+probe output into a snapshot of every private or imported symbol.
 
 ## Verification
 
 The oracle runner verifies before every execution:
 
 1. **Installed version** matches `2.7.9`
-2. **Package hash** matches `hashes.toml` (when `EGRESS_ORACLE_REQUIRE_HASH=1`)
-3. **Python version** is in the tested set (`3.9`–`3.13`)
-4. **Optional dependencies** are installed for protocol coverage
+2. **Resolved source** is the pinned tag/commit above
+3. **Package hash** matches `hashes.toml` (when `EGRESS_ORACLE_REQUIRE_HASH=1`)
+4. **Python version** is in the tested set (`3.9`–`3.13`)
+5. **Optional dependencies** are installed for protocol coverage
 
 On mismatch, execution halts with a hard error. No silent fallback to a
 system-installed pproxy is permitted.

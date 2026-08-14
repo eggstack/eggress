@@ -5,6 +5,12 @@ Eggress targets practical, behavior-oriented compatibility with
 the compatibility translator are separate surfaces, and a matching name or
 successful import does not establish full pproxy parity.
 
+The strict contract is pinned to the `2.7.9` tag at commit
+`09d4752f17ed6787e1a073c93980eec019887ee3` in
+[`qwj/python-proxy`](https://github.com/qwj/python-proxy). Source locations in
+the manifest are evidence references to that frozen tree; upstream `master`
+and later releases are out of scope.
+
 The maintained user-facing summary is
 [`PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md).
 It uses these labels:
@@ -16,6 +22,12 @@ It uses these labels:
 | `intentional_non_parity` | Explicitly excluded from the practical compatibility target. |
 | `native_extension` | Eggress-only functionality with no pproxy claim. |
 | `platform_limited` | Available where the required operating-system facility exists. |
+
+The machine-readable manifest also records a per-entry `status` using the
+strict inventory vocabulary `matched`, `supported_difference`, `gap`,
+`intentional_non_parity`, or `platform_limited`, plus `strict_phase` and
+`strict_closure_required`. `tier` remains the practical compatibility reporter
+vocabulary; it is not a parity percentage.
 
 ### Tier classification rules
 
@@ -71,6 +83,12 @@ The strict manifest, evidence inventories, and phase completion records are
 historical or diagnostic inputs. They are not a release claim and must not be
 used to infer aggregate parity percentages. External oracle checks remain
 optional and are not part of routine hosted CI.
+
+Phase 0 specifically removes `--log`, `-f/--config`, and `--rulefile` from the
+upstream flag inventory because none is declared by the tagged parser. Eggress
+may still accept some of these as native or compatibility extensions. SOCKS4
+and SOCKS5 BIND are likewise not pproxy 2.7.9 capabilities: their refusal is
+not a strict Eggress gap.
 
 The Python distribution is `eggress`. Its wheel contains the bounded top-level
 `pproxy` package as well as the `eggress` namespace; there is no separately

@@ -45,6 +45,7 @@ Interoperability tests, certification probes, smoke clients, and development uti
 |---|---|
 | `compare_observations.py` | Compare test observations |
 | `snapshot_pproxy_api.py` | Snapshot pproxy API surface |
+| `pproxy_surface_probe.py` | Compare the frozen module, export, signature, async, and class-base surface |
 | `probe_pproxy_chain_topology.py` | Probe pproxy chain topology |
 | `demonstrate_regression_injections.py` | Demonstrate regression injection patterns |
 

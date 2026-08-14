@@ -1,5 +1,10 @@
 # pproxy Final Corrective Closure Roadmap
 
+> **Historical record.** Phase 0 reset the active contract after this plan
+> was completed. Do not use its older `cli.config`, `cli.log`, or BIND gap
+> accounting as current requirements; see the active parity matrix and
+> `plans/PPROXY_STRICT_PHASE_0_ORACLE_CONTRACT_RESET.md`.
+
 ## Status
 
 **IMPLEMENTED — CLOSED**

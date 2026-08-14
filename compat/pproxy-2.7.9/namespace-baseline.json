@@ -1,8 +1,20 @@
 {
   "package": "pproxy",
   "version": "2.7.9",
-  "source": "pypi",
-  "extracted": "2026-07-20",
+  "source": "https://github.com/qwj/python-proxy@09d4752f17ed6787e1a073c93980eec019887ee3",
+  "extracted": "2026-08-14",
+  "package_files": [
+    "pproxy/__init__.py",
+    "pproxy/__doc__.py",
+    "pproxy/__main__.py",
+    "pproxy/cipher.py",
+    "pproxy/cipherpy.py",
+    "pproxy/plugin.py",
+    "pproxy/proto.py",
+    "pproxy/server.py",
+    "pproxy/sysproxy.py",
+    "pproxy/verbose.py"
+  ],
   "python_versions_tested": ["3.11"],
   "modules": {
     "pproxy": {
@@ -10,9 +22,21 @@
         {"name": "Connection", "kind": "function", "signature": "(uri_jumps)"},
         {"name": "DIRECT", "kind": "ProxyDirect"},
         {"name": "Rule", "kind": "function", "signature": "(filename)"},
-        {"name": "Server", "kind": "function", "signature": "(uri_jumps)"}
+        {"name": "Server", "kind": "function", "signature": "(uri_jumps)"},
+        {"name": "proto", "kind": "module"},
+        {"name": "server", "kind": "module"}
       ],
-      "submodules": ["proto", "server", "cipher", "cipherpy", "plugin", "verbose", "sysproxy"]
+      "submodules": ["__doc__", "__main__", "proto", "server", "cipher", "cipherpy", "plugin", "verbose", "sysproxy"]
+    },
+    "pproxy.__doc__": {
+      "public_symbols": [],
+      "submodules": [],
+      "module_only": true
+    },
+    "pproxy.__main__": {
+      "public_symbols": [],
+      "submodules": [],
+      "module_only": true
     },
     "pproxy.proto": {
       "public_symbols": [
