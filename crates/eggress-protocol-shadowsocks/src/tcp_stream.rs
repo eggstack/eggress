@@ -10,10 +10,8 @@ use crate::aead::{aead_decrypt_raw, aead_encrypt_raw};
 use crate::method::CipherMethod;
 use crate::nonce::NonceCounter;
 
-/// Maximum plaintext payload per AEAD chunk in the standard Shadowsocks framing.
-///
-/// The length field is a u16, so the maximum payload is 65535 bytes.
-pub const MAX_CHUNK_PAYLOAD: usize = 65535;
+/// Maximum plaintext payload per pproxy/SIP003 AEAD chunk.
+pub const MAX_CHUNK_PAYLOAD: usize = 16 * 1024 - 1;
 
 /// Internal read state machine for standard SIP003 framing.
 #[derive(Clone, Copy, Debug)]
@@ -170,6 +168,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
     pub fn into_inner(self) -> S {
         self.inner
     }
+
+    /// Preserve plaintext that was carried in the initial request frame after
+    /// the destination address. Standard Shadowsocks clients may coalesce the
+    /// address and their first application payload into one AEAD chunk.
+    pub(crate) fn prepend_read_plaintext(&mut self, plaintext: &[u8]) {
+        if !plaintext.is_empty() {
+            self.read_plain.extend_from_slice(plaintext);
+        }
+    }
 }
 
 /// Read bytes from `inner` into `buf` until `buf.len() >= target`.
@@ -262,8 +269,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                     this.read_state = ReadState::LengthBlock;
                 }
                 ReadState::LengthBlock => {
-                    // Read the 18-byte encrypted length block (2 plaintext bytes + 16 tag).
-                    match read_until(&mut this.inner, cx, &mut this.read_buf, 18) {
+                    // Read the encrypted length block (2 plaintext bytes + tag).
+                    let len_block_size = 2 + this.method.tag_size();
+                    match read_until(&mut this.inner, cx, &mut this.read_buf, len_block_size) {
                         Poll::Ready(Ok(true)) => {}
                         Poll::Ready(Ok(false)) => {
                             // Clean EOF — no more data from the inner stream.
@@ -284,9 +292,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
 
                     // Decrypt length block with current nonce.
                     let nonce = this.read_nonce.current();
-                    let len_plaintext =
-                        aead_decrypt_raw(this.method, subkey, &nonce, &this.read_buf[..18])
-                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let len_plaintext = aead_decrypt_raw(
+                        this.method,
+                        subkey,
+                        &nonce,
+                        &this.read_buf[..len_block_size],
+                    )
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     // Advance past length nonce.
                     this.read_nonce.advance().map_err(io::Error::other)?;
@@ -302,6 +314,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                     let payload_len =
                         u16::from_be_bytes([len_plaintext[0], len_plaintext[1]]) as usize;
                     this.read_buf.clear();
+
+                    if payload_len > MAX_CHUNK_PAYLOAD {
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "payload length {} exceeds maximum {}",
+                                payload_len, MAX_CHUNK_PAYLOAD
+                            ),
+                        )));
+                    }
 
                     // A zero-length payload signals end-of-stream.
                     if payload_len == 0 {

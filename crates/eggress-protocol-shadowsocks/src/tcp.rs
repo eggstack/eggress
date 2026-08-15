@@ -10,7 +10,7 @@ use crate::tcp_stream::ShadowsocksAeadStream;
 use eggress_core::{BoxStream, TargetAddr};
 
 /// Maximum size for a single Shadowsocks data frame (payload length).
-pub const MAX_FRAME_SIZE: usize = 65535;
+pub const MAX_FRAME_SIZE: usize = 16 * 1024 - 1;
 
 /// Send a Shadowsocks TCP CONNECT request and return the upgraded stream.
 ///
@@ -85,7 +85,7 @@ pub async fn shadowsocks_accept(
 
     let subkey = method.derive_key(password.as_bytes(), &salt)?;
     let tag_size = method.tag_size();
-    let len_block_size = 2 + tag_size; // 18 bytes
+    let len_block_size = 2 + tag_size;
 
     // Read the 18-byte encrypted length block (nonce 0).
     let mut len_block = vec![0u8; len_block_size];
@@ -108,6 +108,13 @@ pub async fn shadowsocks_accept(
         ));
     }
     let addr_len = u16::from_be_bytes([len_plaintext[0], len_plaintext[1]]) as usize;
+    if addr_len > crate::aead::MAX_CHUNK_PAYLOAD {
+        return Err(ShadowsocksError::DecryptionFailed(format!(
+            "address length {} exceeds maximum {}",
+            addr_len,
+            crate::aead::MAX_CHUNK_PAYLOAD
+        )));
+    }
 
     // Read the address payload block (nonce 1).
     let mut addr_block = vec![0u8; addr_len + tag_size];
@@ -126,7 +133,7 @@ pub async fn shadowsocks_accept(
             ShadowsocksError::DecryptionFailed(e.to_string())
         })?;
 
-    let (target_addr, _consumed) = decode_address(&address_plaintext)?;
+    let (target_addr, consumed) = decode_address(&address_plaintext)?;
 
     if let Some(m) = metrics.as_ref() {
         m.record_tcp_session_accepted();
@@ -135,16 +142,11 @@ pub async fn shadowsocks_accept(
 
     // Data chunks: read nonces start at 2 (address header used 0,1),
     // write nonces start at 0 (first response to client uses nonce 0).
-    Ok((
-        Box::new(ShadowsocksAeadStream::new_server(
-            stream,
-            method,
-            subkey,
-            true,
-            password.to_string(),
-        )),
-        target_addr,
-    ))
+    let mut ss_stream =
+        ShadowsocksAeadStream::new_server(stream, method, subkey, true, password.to_string());
+    ss_stream.prepend_read_plaintext(&address_plaintext[consumed..]);
+
+    Ok((Box::new(ss_stream), target_addr))
 }
 
 #[cfg(test)]
@@ -202,6 +204,7 @@ mod tests {
     async fn test_shadowsocks_connect_all_methods() {
         let methods = [
             CipherMethod::Aes128Gcm,
+            CipherMethod::Aes192Gcm,
             CipherMethod::Aes256Gcm,
             CipherMethod::ChaCha20IetfPoly1305,
         ];

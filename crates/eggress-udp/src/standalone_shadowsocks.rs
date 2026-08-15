@@ -19,7 +19,9 @@ use crate::security::validate_standalone_target;
 use crate::udp_capability::{udp_capability, UdpRelayCapability};
 use crate::upstream_socks5::{open_socks5_udp_upstream, Socks5UdpUpstreamConfig};
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr};
-use eggress_protocol_shadowsocks::udp::{decode_udp_packet, encode_udp_packet};
+use eggress_protocol_shadowsocks::udp::{
+    decode_pproxy_udp_packet, decode_udp_packet, encode_pproxy_udp_packet,
+};
 use eggress_protocol_socks::socks5::server::SocksAddr;
 use eggress_routing::{
     RouteError, RouteRequest, RouteService, SelectedRoute, SelectionReason, TransportKind,
@@ -62,7 +64,7 @@ pub async fn shadowsocks_standalone_udp_relay(
             let target_addr = socks_to_target_addr(&msg.target);
             let mut salt = vec![0u8; resp_method.salt_size()];
             rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
-            match encode_udp_packet(
+            match encode_pproxy_udp_packet(
                 resp_method,
                 &resp_password,
                 &target_addr,
@@ -98,7 +100,7 @@ pub async fn shadowsocks_standalone_udp_relay(
 
                 let packet = &buf[..n];
 
-                let (target_addr, payload) = match decode_udp_packet(
+                let (target_addr, payload) = match decode_pproxy_udp_packet(
                     config.method,
                     config.password.as_bytes(),
                     packet,
@@ -562,8 +564,8 @@ mod tests {
         target: &TargetAddr,
         payload: &[u8],
     ) -> Vec<u8> {
-        let salt = [0x42u8; 16];
-        encode_udp_packet(method, password, target, payload, &salt).unwrap()
+        let salt = vec![0x42u8; method.salt_size()];
+        encode_pproxy_udp_packet(method, password, target, payload, &salt).unwrap()
     }
 
     #[tokio::test]
@@ -603,7 +605,7 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        let (resp_target, resp_payload) = decode_udp_packet(
+        let (resp_target, resp_payload) = decode_pproxy_udp_packet(
             eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
             b"test-password-123456",
             &recv_buf[..n],
@@ -699,7 +701,7 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        let (_, resp_payload) = decode_udp_packet(
+        let (_, resp_payload) = decode_pproxy_udp_packet(
             eggress_protocol_shadowsocks::CipherMethod::Aes256Gcm,
             b"test-password-123456",
             &recv_buf[..n],

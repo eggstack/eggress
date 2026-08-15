@@ -216,20 +216,23 @@ relies on BIND, you need an alternative approach.
 
 **Status:** Supported (manifest: `shadowsocks_tcp_upstream`, `shadowsocks_udp`)
 
-Eggress uses standard SIP003 AEAD framing. It is wire-compatible with
+Eggress uses standard SIP003 AEAD framing for TCP and standard Shadowsocks
+upstreams. Its standalone Shadowsocks UDP listener additionally implements
+pproxy 2.7.9's `PacketCipher` chunk format. TCP is wire-compatible with
 standard Shadowsocks implementations (ssserver, sslocal, shadowsocks-rust).
 
 | Scenario | pproxy | eggress |
 |---|---|---|
 | Shadowsocks TCP (AEAD) | Yes | Yes (standard SIP003) |
-| Shadowsocks UDP (AEAD) | Yes | Yes (standard AEAD format) |
+| Shadowsocks UDP upstream (AEAD) | Yes | Yes (standard AEAD format) |
+| Standalone Shadowsocks UDP listener | Yes (`PacketCipher`) | Yes (pproxy `PacketCipher`) |
 | Shadowsocks inbound listener | Yes | Yes (explicit protocol mode) |
 | Legacy stream ciphers | Yes | **Not supported** (security) |
 | ShadowsocksR (SSR) | Yes | **Not supported** (non-standard) |
 
 **Migration notes:**
-- **Only AEAD methods** are supported: `aes-128-gcm`, `aes-256-gcm`,
-  `chacha20-ietf-poly1305`. Legacy stream ciphers produce
+- **Only AEAD methods** are supported: `aes-128-gcm`, `aes-192-gcm`,
+  `aes-256-gcm`, `chacha20-ietf-poly1305`. Legacy stream ciphers produce
   `LegacyMethodUnsupported` errors.
 - SSR URIs (`ssr://`) are rejected with `SsrUnsupported` errors.
 - Shadowsocks TCP framing uses standard SIP003 AEAD (two AEAD

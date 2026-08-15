@@ -125,7 +125,8 @@ Protocol-specific tests live alongside the implementation:
 ### Differential tests
 - `crates/eggress-cli/tests/differential_pproxy.rs` — gated differential tests against pproxy (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`)
 - `crates/eggress-cli/tests/pproxy_differential.rs` — optional reusable differential parity harness (`EGRESS_RUN_PPROXY_DIFFERENTIAL=1`)
-- `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests (TCP tests fail due to non-standard framing)
+- `crates/eggress-cli/tests/interoperability_shadowsocks.rs` — gated Shadowsocks interop tests against maintained `ssserver`/`sslocal`; cover standard TCP/UDP framing and method-specific salts
+- `crates/eggress-cli/tests/interoperability_pproxy.rs` — gated pproxy 2.7.9 TCP and PacketCipher UDP checks across all four modern AEAD methods
 - `crates/eggress-cli/tests/oracle.rs` — scenario-driven oracle harness (31 scenarios, `EGRESS_PPROXY_CERTIFY=1`)
 
 Gated tests require environment variables and external tools. See `docs/DIFFERENTIAL_TESTING.md` for prerequisites, environment variables, and running instructions.

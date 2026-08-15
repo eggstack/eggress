@@ -13,7 +13,7 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 
 SSR and legacy stream ciphers are intentionally unsupported. The codebase provides clear diagnostic errors:
 
-- `LegacyMethodUnsupported` error variant — produced when a legacy stream cipher method (e.g., `aes-*-ctr`, `aes-*-cfb`, `rc4`, `rc4-md5`, `chacha20-ietf`) is detected at parse time.
+- `LegacyMethodUnsupported` error variant — produced when a legacy stream cipher method (e.g., `aes-*-ctr`, `aes-*-cfb`, `rc4`, `rc4-md5`, `chacha20-ietf`) is detected at parse time. Modern AEAD coverage is `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`; these methods have pproxy-specific salt/IV sizes of 16, 24, 32, and 32 bytes.
 - `SsrUnsupported` error variant — produced when an SSR URI (`ssr://`) is encountered.
 - `is_legacy_method()` in `eggress-protocol-shadowsocks::method` — detects known legacy methods.
 

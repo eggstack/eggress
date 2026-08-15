@@ -449,7 +449,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 | HTTP CONNECT | yes | no |
 | SOCKS4/SOCKS4a | yes | no |
 | SOCKS5 | yes | one-hop |
-| Shadowsocks | yes (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305) | yes (standard AEAD) |
+| Shadowsocks | yes (aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305) | yes (standard AEAD upstream; pproxy PacketCipher standalone inbound) |
 | Trojan | yes (rustls) | no |
 
 ### UDP
@@ -482,8 +482,8 @@ Legend: `[x]` complete, `[ ]` not complete.
 ### Shadowsocks
 
 - [x] TCP client and server (standard SIP003 AEAD framing)
-- [x] UDP client and server (standard AEAD format)
-- [x] AEAD cipher support (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)
+- [x] UDP client and server (standard upstream AEAD plus pproxy-compatible standalone inbound format)
+- [x] AEAD cipher support (aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [x] Legacy stream cipher diagnostics (rejected with clear error)
 - [x] Interoperability with `shadowsocks-rust`
 

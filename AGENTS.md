@@ -68,6 +68,13 @@ The `operations` feature gates the admin HTTP server, Prometheus metrics export,
 
 The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP.
 
+Shadowsocks strict AEAD coverage includes `aes-128-gcm`, `aes-192-gcm`,
+`aes-256-gcm`, and `chacha20-ietf-poly1305`. Their pproxy 2.7.9 salt/IV sizes
+are respectively 16, 24, 32, and 32 bytes; all use 12-byte nonces and
+16-byte tags. The TCP chunk limit follows pproxy's 16 KiB - 1 byte packet
+limit. Keep the method inventory and wire-format claims synchronized with
+`docs/architecture/protocols-shadowsocks.md` and the phase-0 parity manifest.
+
 ## Test locations
 
 - Unit tests: in each crate's `src/` files
@@ -85,6 +92,14 @@ The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds repor
 | `EGRESS_REQUIRE_REVERSE_INTEROP=1` | Enable reverse proxy pproxy interop |
 | `EGRESS_REQUIRE_SOAK=1` | Enable soak/performance tests |
 | `EGRESS_RUN_PPROXY_DIFFERENTIAL=1` | Enable differential parity harness |
+
+Before changing Shadowsocks compatibility claims, run the gated oracle and
+maintained-implementation suites locally:
+
+```bash
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test interoperability_pproxy -- --ignored --test-threads=1
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
+```
 
 ## Skills
 
@@ -162,6 +177,9 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 - Shutdown ordering: readiness false, listener stop, connection drain/cancellation, then admin shutdown.
 - Runtime routing, health, admin, and metrics share the same compiled runtime snapshot.
 - Protocol and transport composition must be validated before execution.
+- Shadowsocks compatibility evidence must include pproxy 2.7.9 and a maintained
+  Shadowsocks implementation; Eggress-to-Eggress roundtrips alone are not
+  wire-compatibility evidence.
 - `unsafe_code = "deny"` at workspace level; do not add unsafe without justification.
 - No OpenSSL, no C dependencies, no `build.rs` without explicit reason. `deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, and `cmake`.
 

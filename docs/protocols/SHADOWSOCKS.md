@@ -2,8 +2,9 @@
 
 ## Overview
 
-Shadowsocks proxy protocol with AEAD cipher support. Both TCP and UDP use
-standard, wire-compatible AEAD framing per SIP003.
+Shadowsocks proxy protocol with AEAD cipher support. TCP uses standard,
+wire-compatible SIP003 framing. UDP has separate standard-upstream and
+pproxy-compatible standalone listener formats.
 
 ### TCP Status: Standard (SIP003 AEAD Framing)
 
@@ -17,11 +18,14 @@ See [TCP Audit](SHADOWSOCKS_TCP_AUDIT.md) for the history of the framing
 correction (Phase 21) and [TCP Parity](SHADOWSOCKS_PARITY.md) for the full
 wire format specification.
 
-### UDP Status: Standard
+### UDP Status: Dual compatibility paths
 
-The UDP packet format uses the standard Shadowsocks AEAD UDP format:
-`salt + encrypted(address + payload)`. This is interoperable with standard
-Shadowsocks implementations (e.g., `shadowsocks-rust`, `ssserver`).
+The maintained Shadowsocks UDP path uses the standard format
+`salt + AEAD(address + payload)`, interoperable with `shadowsocks-rust` and
+other standard implementations. The pproxy-compatible standalone inbound path
+uses `encode_pproxy_udp_packet`/`decode_pproxy_udp_packet`: a method-sized salt
+followed by pproxy's `PacketCipher` chunk sequence (encrypted length and
+encrypted payload blocks). These packet formats are not interchangeable.
 
 See [UDP Parity](SHADOWSOCKS_UDP_PARITY.md) for the full wire format
 specification.
@@ -42,17 +46,19 @@ Source: `crates/eggress-protocol-shadowsocks/src/`
 | Method                  | Key Size | Salt Size | Nonce Size | Tag Size |
 |-------------------------|----------|-----------|------------|----------|
 | `aes-128-gcm`           | 16 bytes | 16 bytes  | 12 bytes   | 16 bytes |
-| `aes-256-gcm`           | 32 bytes | 16 bytes  | 12 bytes   | 16 bytes |
-| `chacha20-ietf-poly1305` | 32 bytes | 16 bytes  | 12 bytes   | 16 bytes |
+| `aes-192-gcm`           | 24 bytes | 24 bytes  | 12 bytes   | 16 bytes |
+| `aes-256-gcm`           | 32 bytes | 32 bytes  | 12 bytes   | 16 bytes |
+| `chacha20-ietf-poly1305` | 32 bytes | 32 bytes  | 12 bytes   | 16 bytes |
 
 Method names are case-insensitive. Unsupported methods return `UnsupportedMethod`.
 
 ## Key Derivation
 
-Subkeys are derived using HKDF-SHA256:
+Subkeys are derived using pproxy's EVP-MD5 + HKDF-SHA1 sequence:
 
-1. Compute `IKM = SHA256(password)`
-2. Expand with `HKDF-SHA256(salt, IKM, info="ss-subkey")` to `key_size` bytes
+1. Expand the password with EVP_BytesToKey-compatible chained MD5 digests.
+2. Use the first `key_size` bytes as HKDF-SHA1 IKM with the connection salt.
+3. Expand with `info = "ss-subkey"` to `key_size` bytes.
 
 Source: `crates/eggress-protocol-shadowsocks/src/method.rs:50`
 
@@ -61,14 +67,16 @@ Source: `crates/eggress-protocol-shadowsocks/src/method.rs:50`
 ### Initial Payload
 
 ```
-+--------+----------------------------------------------+
-|  Salt  |  AEAD( address_header, nonce=0x000...000 )  |
-+--------+----------------------------------------------+
- 16 bytes              variable
++--------+-------------------------------+----------------------------------------------+
+|  Salt  | AEAD(first-chunk length, nonce=0) | AEAD(address [+ first payload], nonce=1) |
++--------+-------------------------------+----------------------------------------------+
+ method-sized                  18 bytes       variable
 ```
 
-- **Salt**: 16 random bytes, sent in the clear
-- **Address Header**: AEAD-encrypted target address (nonce = 12 zero bytes)
+- **Salt**: method-sized random bytes, sent in the clear
+- **Address Header**: AEAD-encrypted target address. Standard clients may
+  coalesce the first application payload in the same chunk; the receiver
+  preserves plaintext after the decoded address (the address block uses nonce 1).
 
 ### Data Chunks (repeated until close)
 
@@ -86,7 +94,7 @@ Each data chunk consists of two separate AEAD operations:
 
 Nonces increment by **2** per chunk (one for length, one for payload).
 
-Maximum payload per chunk: **65,535 bytes** (2^16 - 1).
+Maximum payload per chunk: **16,383 bytes** (pproxy's `PACKET_LIMIT`).
 
 ### Address Format
 
@@ -120,8 +128,9 @@ Source: `crates/eggress-protocol-shadowsocks/src/address.rs`
 - **Plaintext**: Target address (Shadowsocks format) concatenated with payload
 - **AEAD**: Encrypts the entire plaintext with nonce = zero bytes
 
-Each UDP packet is self-contained. Tampered packets or wrong keys cause
-decryption failure.
+Each UDP packet is self-contained. Standard packets are one AEAD operation;
+pproxy-compatible packets use the same two-block chunk framing as TCP with a
+zero nonce. Tampered packets or wrong keys cause decryption failure.
 
 ### Key Differences from TCP
 
@@ -140,7 +149,7 @@ Example: `ss://aes-256-gcm:mypassword@192.168.1.1:8388`
 ## Test Coverage
 
 - Encrypt/decrypt roundtrips for IPv4, IPv6, and domain targets
-- All three cipher methods tested
+- All four cipher methods tested
 - UDP packet encode/decode roundtrips
 - Tampered packet detection
 - Wrong key detection
@@ -149,8 +158,9 @@ Example: `ss://aes-256-gcm:mypassword@192.168.1.1:8388`
 - Nonce uniqueness verification
 - Address encoding/decoding edge cases (truncated, unknown ATYP)
 - TCP connect sends correct payload structure
-- UDP standard AEAD format (salt + encrypted payload)
-- UDP interoperability with standard Shadowsocks format
+- Standard UDP AEAD format and pproxy PacketCipher UDP format
+- UDP interoperability with maintained standard implementations and pproxy
+  2.7.9 known-answer vectors
 - Standard SIP003 AEAD TCP framing (two AEAD ops per chunk)
 - Inbound listener protocol handling
 

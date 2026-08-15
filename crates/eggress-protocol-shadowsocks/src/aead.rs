@@ -1,4 +1,8 @@
-use aes_gcm::{aead::Aead, Aes128Gcm, Aes256Gcm, KeyInit, Nonce};
+use aes_gcm::{
+    aead::{consts::U12, Aead},
+    aes::Aes192,
+    Aes128Gcm, Aes256Gcm, AesGcm, KeyInit, Nonce,
+};
 use chacha20poly1305::ChaCha20Poly1305;
 
 use crate::error::ShadowsocksError;
@@ -6,8 +10,11 @@ use crate::method::CipherMethod;
 
 /// Maximum plaintext payload per AEAD chunk in the standard Shadowsocks framing.
 ///
-/// The length field is a u16, so the maximum payload is 65535 bytes.
-pub const MAX_CHUNK_PAYLOAD: usize = 65535;
+/// pproxy limits each AEAD packet to 16 KiB - 1 bytes even though the length
+/// field itself is a u16.
+pub const MAX_CHUNK_PAYLOAD: usize = 16 * 1024 - 1;
+
+type Aes192Gcm = AesGcm<Aes192, U12>;
 
 /// Encrypt plaintext using AEAD with a random salt.
 ///
@@ -85,13 +92,15 @@ pub fn encrypt_chunk(
     nonce: &[u8],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
+    if plaintext.len() > MAX_CHUNK_PAYLOAD {
+        return Err(ShadowsocksError::Other(format!(
+            "plaintext too large for AEAD chunk: {} bytes (max {})",
+            plaintext.len(),
+            MAX_CHUNK_PAYLOAD
+        )));
+    }
     // Prepend length (2 bytes big-endian)
-    let len: u16 = plaintext.len().try_into().map_err(|_| {
-        ShadowsocksError::Other(format!(
-            "plaintext too large for AEAD chunk: {} bytes (max 65535)",
-            plaintext.len()
-        ))
-    })?;
+    let len = plaintext.len() as u16;
     let mut payload = Vec::with_capacity(2 + plaintext.len());
     payload.extend_from_slice(&len.to_be_bytes());
     payload.extend_from_slice(plaintext);
@@ -171,7 +180,7 @@ pub fn decrypt_chunk_standard(
     data: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
     let tag_size = method.tag_size();
-    let len_block_size = 2 + tag_size; // 18 bytes
+    let len_block_size = 2 + tag_size;
 
     if data.len() < len_block_size {
         return Err(ShadowsocksError::DecryptionFailed(
@@ -188,6 +197,12 @@ pub fn decrypt_chunk_standard(
     }
 
     let payload_len = u16::from_be_bytes([len_plaintext[0], len_plaintext[1]]) as usize;
+    if payload_len > MAX_CHUNK_PAYLOAD {
+        return Err(ShadowsocksError::DecryptionFailed(format!(
+            "payload length {} exceeds maximum {}",
+            payload_len, MAX_CHUNK_PAYLOAD
+        )));
+    }
     let expected_total = len_block_size + payload_len + tag_size;
 
     if data.len() < expected_total {
@@ -210,6 +225,77 @@ pub fn decrypt_chunk_standard(
         &payload_nonce,
         &data[payload_start..payload_end],
     )?;
+
+    Ok(plaintext)
+}
+
+/// Encrypt a sequence of pproxy AEAD chunks with consecutive nonces.
+pub(crate) fn encrypt_standard_chunks(
+    method: CipherMethod,
+    key: &[u8],
+    nonce: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
+    let mut output = Vec::new();
+    let mut current_nonce = nonce.to_vec();
+    for chunk in plaintext.chunks(MAX_CHUNK_PAYLOAD) {
+        output.extend_from_slice(&encrypt_chunk_standard(method, key, &current_nonce, chunk)?);
+        let length_nonce = nonce_increment(&current_nonce)?;
+        current_nonce = nonce_increment(&length_nonce)?;
+    }
+    Ok(output)
+}
+
+/// Decrypt a sequence of pproxy AEAD chunks with consecutive nonces.
+pub(crate) fn decrypt_standard_chunks(
+    method: CipherMethod,
+    key: &[u8],
+    nonce: &[u8],
+    data: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
+    let tag_size = method.tag_size();
+    let len_block_size = 2 + tag_size;
+    let mut current_nonce = nonce.to_vec();
+    let mut offset = 0;
+    let mut plaintext = Vec::new();
+
+    while offset < data.len() {
+        if data.len() - offset < len_block_size {
+            return Err(ShadowsocksError::DecryptionFailed(
+                "data too short for pproxy length block".into(),
+            ));
+        }
+        let length_plaintext = aead_decrypt_raw(
+            method,
+            key,
+            &current_nonce,
+            &data[offset..offset + len_block_size],
+        )?;
+        let payload_len = u16::from_be_bytes([length_plaintext[0], length_plaintext[1]]) as usize;
+        if payload_len > MAX_CHUNK_PAYLOAD {
+            return Err(ShadowsocksError::DecryptionFailed(format!(
+                "payload length {} exceeds maximum {}",
+                payload_len, MAX_CHUNK_PAYLOAD
+            )));
+        }
+        offset += len_block_size;
+        let payload_wire_len = payload_len + tag_size;
+        if data.len() - offset < payload_wire_len {
+            return Err(ShadowsocksError::DecryptionFailed(
+                "data too short for pproxy payload block".into(),
+            ));
+        }
+        let length_nonce = nonce_increment(&current_nonce)?;
+        let payload = aead_decrypt_raw(
+            method,
+            key,
+            &length_nonce,
+            &data[offset..offset + payload_wire_len],
+        )?;
+        plaintext.extend_from_slice(&payload);
+        offset += payload_wire_len;
+        current_nonce = nonce_increment(&length_nonce)?;
+    }
 
     Ok(plaintext)
 }
@@ -245,6 +331,13 @@ pub fn aead_encrypt_raw(
                 .encrypt(nonce, plaintext)
                 .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
         }
+        CipherMethod::Aes192Gcm => {
+            let cipher = Aes192Gcm::new_from_slice(key)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
+            cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
+        }
         CipherMethod::Aes256Gcm => {
             let cipher = Aes256Gcm::new_from_slice(key)
                 .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
@@ -274,6 +367,13 @@ pub fn aead_decrypt_raw(
     match method {
         CipherMethod::Aes128Gcm => {
             let cipher = Aes128Gcm::new_from_slice(key)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
+            cipher
+                .decrypt(nonce, ciphertext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
+        }
+        CipherMethod::Aes192Gcm => {
+            let cipher = Aes192Gcm::new_from_slice(key)
                 .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
             cipher
                 .decrypt(nonce, ciphertext)
@@ -335,6 +435,15 @@ mod tests {
         let plaintext = b"hello shadowsocks";
         let encrypted = encrypt_frame(CipherMethod::Aes256Gcm, key, plaintext).unwrap();
         let decrypted = decrypt_frame(CipherMethod::Aes256Gcm, key, &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip_aes192() {
+        let key = b"0123456789abcdef01234567";
+        let plaintext = b"hello shadowsocks";
+        let encrypted = encrypt_frame(CipherMethod::Aes192Gcm, key, plaintext).unwrap();
+        let decrypted = decrypt_frame(CipherMethod::Aes192Gcm, key, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
     }
 
@@ -426,6 +535,76 @@ mod tests {
         let decrypted =
             decrypt_chunk_standard(CipherMethod::Aes256Gcm, key, &nonce, &wire).unwrap();
         assert_eq!(decrypted, payload);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_chunk_standard_roundtrip_aes192() {
+        let key = b"0123456789abcdef01234567";
+        let nonce = vec![0u8; 12];
+        let payload = b"aes-192 standard chunk test";
+        let wire = encrypt_chunk_standard(CipherMethod::Aes192Gcm, key, &nonce, payload).unwrap();
+        let decrypted =
+            decrypt_chunk_standard(CipherMethod::Aes192Gcm, key, &nonce, &wire).unwrap();
+        assert_eq!(decrypted, payload);
+    }
+
+    #[test]
+    fn test_pproxy_known_answer_vectors() {
+        // Captured from pproxy==2.7.9's AEADCipher implementation with the
+        // fixed password, method-sized salt, zero nonce, and plaintext below.
+        let password = b"phase1-vector-password";
+        let plaintext = b"phase-1-known-answer";
+        let cases = [
+            (
+                CipherMethod::Aes128Gcm,
+                "000102030405060708090a0b0c0d0e0f",
+                "9c9ad70264cd061c56f1e3492fbf1528",
+                "a8e3c5be9630d97db3fdc8024c606d78aba455a8d0d5c7d7c5148cc4e076ee7fc2367b6f",
+            ),
+            (
+                CipherMethod::Aes192Gcm,
+                "000102030405060708090a0b0c0d0e0f1011121314151617",
+                "7b56c2ce83b11c5ca9d5401b08d0cea7bcc15428500352d6",
+                "e4345ba47ae93b62f6a6450a55e96f01803c46b46500f30d290566a1617c5b97f16995d5",
+            ),
+            (
+                CipherMethod::Aes256Gcm,
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+                "9e3a9a86f6293e1d6ddb2f4285a818bb9ebb9a9fe08498735ba4967425f88fc9",
+                "506e8c5971d7e254b42b6fcc6c7919c11baf60bd7406966bfaf1838bbdcd1d4ade826c22",
+            ),
+            (
+                CipherMethod::ChaCha20IetfPoly1305,
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+                "9e3a9a86f6293e1d6ddb2f4285a818bb9ebb9a9fe08498735ba4967425f88fc9",
+                "cdaa76308bb8e130e2f4d351494ca1efca87098c744a0c2b8afe27f77f1999dbd13bee5e",
+            ),
+        ];
+
+        for (method, salt_hex, subkey_hex, ciphertext_hex) in cases {
+            let salt = hex_bytes(salt_hex);
+            let expected_subkey = hex_bytes(subkey_hex);
+            let expected_ciphertext = hex_bytes(ciphertext_hex);
+            let subkey = method.derive_key(password, &salt).unwrap();
+            assert_eq!(subkey, expected_subkey, "subkey mismatch for {method}");
+            let ciphertext = aead_encrypt_raw(method, &subkey, &[0u8; 12], plaintext).unwrap();
+            assert_eq!(
+                ciphertext, expected_ciphertext,
+                "ciphertext mismatch for {method}"
+            );
+            assert_eq!(
+                aead_decrypt_raw(method, &subkey, &[0u8; 12], &ciphertext).unwrap(),
+                plaintext
+            );
+        }
+    }
+
+    fn hex_bytes(value: &str) -> Vec<u8> {
+        value
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
     }
 
     #[test]

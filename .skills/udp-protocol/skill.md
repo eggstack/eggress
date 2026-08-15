@@ -9,7 +9,9 @@ Use when working with UDP associations, datagram relay, upstream SOCKS5 relay, o
 - Client address pinning is enabled by default
 - Direct forwarding and one-hop SOCKS5 upstream are supported
 - Multi-hop chains and HTTP/MASQUE are NOT supported for UDP
-- Shadowsocks upstream is supported (standard AEAD format, one-hop only)
+- Shadowsocks upstream is supported one-hop using standard AEAD UDP packets;
+  standalone inbound Shadowsocks uses the explicit pproxy PacketCipher format
+  and must not be conflated with the standard upstream path.
 
 ## Key types (`eggress-udp`)
 - `UdpAssociation` — association state machine

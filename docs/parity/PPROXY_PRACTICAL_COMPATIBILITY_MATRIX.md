@@ -49,7 +49,7 @@ contract.
 | SOCKS5 UDP ASSOCIATE | `supported_difference` | Public framing/relay boundary is narrower |
 | Direct TCP/UDP and one-hop HTTP/SOCKS upstreams | `matched` | Runtime and differential tests |
 | TCP `__` chains and routing predicates | `supported_difference` | Native chain model preserves supported compositions |
-| Shadowsocks AEAD TCP/UDP | `supported_difference` | Modern methods only; method-specific salt sizing is Phase 1 |
+| Shadowsocks AEAD TCP/UDP | `supported_difference` | Four modern methods with method-specific salts; standard UDP upstream plus exact pproxy PacketCipher standalone inbound path |
 | Trojan client/server roles | `supported_difference` | Native implementation; no private pproxy API claim |
 | H2 and WS/WSS | `supported_difference` | Tagged pproxy has listener/client roles; Eggress boundary is currently upstream-focused; Phase 2 |
 | SSR framing and built-in plugins | `gap` | Exact tagged behavior is Phase 3 |

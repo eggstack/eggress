@@ -7,6 +7,7 @@ use crate::error::ShadowsocksError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CipherMethod {
     Aes128Gcm,
+    Aes192Gcm,
     Aes256Gcm,
     ChaCha20IetfPoly1305,
 }
@@ -16,6 +17,7 @@ impl CipherMethod {
     pub fn parse_method(s: &str) -> Result<Self, ShadowsocksError> {
         match s.to_lowercase().as_str() {
             "aes-128-gcm" => Ok(CipherMethod::Aes128Gcm),
+            "aes-192-gcm" => Ok(CipherMethod::Aes192Gcm),
             "aes-256-gcm" => Ok(CipherMethod::Aes256Gcm),
             "chacha20-ietf-poly1305" => Ok(CipherMethod::ChaCha20IetfPoly1305),
             _ => {
@@ -32,14 +34,15 @@ impl CipherMethod {
     pub fn key_size(&self) -> usize {
         match self {
             CipherMethod::Aes128Gcm => 16,
+            CipherMethod::Aes192Gcm => 24,
             CipherMethod::Aes256Gcm => 32,
             CipherMethod::ChaCha20IetfPoly1305 => 32,
         }
     }
 
-    /// Salt size in bytes.
+    /// Salt/IV size in bytes.
     pub fn salt_size(&self) -> usize {
-        16
+        self.key_size()
     }
 
     /// Nonce size in bytes.
@@ -116,6 +119,7 @@ impl std::fmt::Display for CipherMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CipherMethod::Aes128Gcm => write!(f, "aes-128-gcm"),
+            CipherMethod::Aes192Gcm => write!(f, "aes-192-gcm"),
             CipherMethod::Aes256Gcm => write!(f, "aes-256-gcm"),
             CipherMethod::ChaCha20IetfPoly1305 => write!(f, "chacha20-ietf-poly1305"),
         }
@@ -171,6 +175,14 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_aes_192_gcm() {
+        assert_eq!(
+            CipherMethod::parse_method("aes-192-gcm").unwrap(),
+            CipherMethod::Aes192Gcm
+        );
+    }
+
+    #[test]
     fn test_parse_chacha20() {
         assert_eq!(
             CipherMethod::parse_method("chacha20-ietf-poly1305").unwrap(),
@@ -207,18 +219,20 @@ mod tests {
     #[test]
     fn test_key_sizes() {
         assert_eq!(CipherMethod::Aes128Gcm.key_size(), 16);
+        assert_eq!(CipherMethod::Aes192Gcm.key_size(), 24);
         assert_eq!(CipherMethod::Aes256Gcm.key_size(), 32);
         assert_eq!(CipherMethod::ChaCha20IetfPoly1305.key_size(), 32);
     }
 
     #[test]
     fn test_salt_nonce_tag_sizes() {
-        for method in [
-            CipherMethod::Aes128Gcm,
-            CipherMethod::Aes256Gcm,
-            CipherMethod::ChaCha20IetfPoly1305,
+        for (method, size) in [
+            (CipherMethod::Aes128Gcm, 16),
+            (CipherMethod::Aes192Gcm, 24),
+            (CipherMethod::Aes256Gcm, 32),
+            (CipherMethod::ChaCha20IetfPoly1305, 32),
         ] {
-            assert_eq!(method.salt_size(), 16);
+            assert_eq!(method.salt_size(), size);
             assert_eq!(method.nonce_size(), 12);
             assert_eq!(method.tag_size(), 16);
         }
@@ -247,6 +261,7 @@ mod tests {
     #[test]
     fn test_display() {
         assert_eq!(CipherMethod::Aes128Gcm.to_string(), "aes-128-gcm");
+        assert_eq!(CipherMethod::Aes192Gcm.to_string(), "aes-192-gcm");
         assert_eq!(CipherMethod::Aes256Gcm.to_string(), "aes-256-gcm");
         assert_eq!(
             CipherMethod::ChaCha20IetfPoly1305.to_string(),

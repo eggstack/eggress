@@ -272,7 +272,7 @@ Auth failure behavior:
 | UDP ASSOCIATE (server) | Not supported as server | Supported (full RFC 1928) |
 | UDP ASSOCIATE (client) | Supported when connecting through upstream | Supported |
 | Direct UDP forwarding | `-r direct` | Supported |
-| Shadowsocks UDP upstream | supported | Supported (standard AEAD; single-hop) |
+| Shadowsocks UDP upstream | supported | Supported (standard single-AEAD; single-hop) |
 | Standalone UDP mode | `-ul` without TCP control | Supported (`mode = "standalone_pproxy_udp"`) |
 
 pproxy's UDP relay protocol:
@@ -300,7 +300,7 @@ See `differential_socks5_udp_associate` test.
 
 | Feature | pproxy | Eggress |
 |---------|--------|---------|
-| Shadowsocks AEAD | `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported |
+| Shadowsocks AEAD | `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305` | Supported |
 | Shadowsocks stream | `aes-128-ctr`, `aes-192-ctr`, `aes-256-ctr`, etc. | **Rejected** (insecure, deprecated) |
 | Trojan over TLS | rustls/ssl | Supported (rustls) |
 | HTTPS wrapping | Supported | Planned (Phase 6) |
@@ -309,11 +309,12 @@ See `differential_socks5_udp_associate` test.
 
 Shadowsocks AEAD ciphers (all supported by both):
 
-| Cipher | Key length | Nonce length | Tag length |
-|--------|-----------|-------------|-----------|
-| `aes-128-gcm` | 16 bytes | 12 bytes | 16 bytes |
-| `aes-256-gcm` | 32 bytes | 12 bytes | 16 bytes |
-| `chacha20-ietf-poly1305` | 32 bytes | 12 bytes | 16 bytes |
+| Cipher | Key length | Salt/IV length | Nonce length | Tag length |
+|--------|-----------|----------------|-------------|-----------|
+| `aes-128-gcm` | 16 bytes | 16 bytes | 12 bytes | 16 bytes |
+| `aes-192-gcm` | 24 bytes | 24 bytes | 12 bytes | 16 bytes |
+| `aes-256-gcm` | 32 bytes | 32 bytes | 12 bytes | 16 bytes |
+| `chacha20-ietf-poly1305` | 32 bytes | 32 bytes | 12 bytes | 16 bytes |
 
 Shadowsocks stream ciphers (pproxy supports, Eggress rejects):
 

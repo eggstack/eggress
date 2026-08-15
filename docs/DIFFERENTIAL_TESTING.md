@@ -284,13 +284,13 @@ datagram framing (RSV + FRAG + ATYP + ADDR + PORT + PAYLOAD).
 | `interop_shadowsocks_tcp_eggress_to_external_server` | eggress SOCKS5 → external ssserver → echo | **PASS** (standard SIP003 AEAD framing) |
 | `interop_shadowsocks_tcp_external_client_to_eggress` | sslocal → eggress SS server → echo | **PASS** (standard SIP003 AEAD framing) |
 | `interop_shadowsocks_tcp_eggress_self_consistent` | eggress-to-eggress SS TCP | **PASS** |
-| `interop_shadowsocks_udp_eggress_to_external_server` | eggress SS UDP → external ssserver → echo | **PASS** (standard AEAD format) |
+| `interop_shadowsocks_udp_eggress_to_external_server` | eggress SS UDP → external ssserver → echo | **PASS** (standard single-AEAD format) |
 | `interop_shadowsocks_udp_eggress_self_consistent` | eggress-to-eggress SS UDP | **PASS** |
 | `interop_shadowsocks_tcp_wrong_password_fails` | Wrong password failure | **PASS** (should fail) |
 | `interop_shadowsocks_udp_wrong_password_fails` | Wrong password UDP failure | **PASS** (should fail) |
 | `interop_shadowsocks_tcp_aes_128_gcm` | aes-128-gcm method coverage | **PASS** |
 | `interop_shadowsocks_tcp_chacha20_ietf_poly1305` | chacha20-ietf-poly1305 method coverage | **PASS** |
-| `interop_shadowsocks_tcp_large_payload` | Multi-chunk AEAD payload (>65535-byte test) | **PASS** |
+| `interop_shadowsocks_tcp_large_payload` | Multi-chunk AEAD payload (16,383-byte chunk limit) | **PASS** |
 | `interop_shadowsocks_tcp_domain_target` | SOCKS5 domain-name target through SS upstream | **PASS** |
 | `interop_shadowsocks_tcp_half_close` | Half-close behavior on Shadowsocks path | **PASS** |
 | `interop_shadowsocks_udp_inbound_large_packet` | UDP listener large-packet decoding | **PASS** |
@@ -352,11 +352,14 @@ for the corrective audit history.
 **Status**: TCP Shadowsocks is classified as **Supported** (standard wire format,
 single-hop upstream only).
 
-### Shadowsocks UDP: Standard-Compliant
+### Shadowsocks UDP: Standard and pproxy-compatible paths
 
-The eggress Shadowsocks UDP implementation uses standard AEAD format (salt
-prefix, standard nonce derivation). UDP interop tests pass against standard
-implementations.
+The maintained Shadowsocks UDP upstream path uses the standard single-AEAD
+format and passes `ssserver` interop. Standalone Shadowsocks inbound listeners
+use pproxy 2.7.9's PacketCipher chunk format, covered by deterministic vectors
+and the pproxy-gated integration test. These formats are intentionally kept
+separate because standard Shadowsocks UDP and pproxy's UDP `PacketCipher` are
+not wire-compatible.
 
 ### Python Version Compatibility
 

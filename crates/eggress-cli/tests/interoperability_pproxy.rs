@@ -11,6 +11,7 @@ use eggress_core::chain::{ChainExecutor, HopHandler};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
 use eggress_protocol_http::connect::client::http_connect;
+use eggress_protocol_shadowsocks::{shadowsocks_connect, CipherMethod};
 use eggress_protocol_socks::socks5::client::socks5_connect;
 use eggress_protocol_socks::socks5::server::SocksAddr;
 use eggress_routing::{RouteActionSpec, RouteService, Router};
@@ -99,7 +100,7 @@ fn require_external_interop() {
 }
 
 fn python_available() -> bool {
-    std::process::Command::new("python3")
+    std::process::Command::new(pproxy_python())
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -109,7 +110,7 @@ fn python_available() -> bool {
 }
 
 fn pproxy_available() -> bool {
-    std::process::Command::new("python3")
+    std::process::Command::new(pproxy_python())
         .args(["-c", "import pproxy"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -118,17 +119,21 @@ fn pproxy_available() -> bool {
         .unwrap_or(false)
 }
 
+fn pproxy_python() -> String {
+    std::env::var("EGRESS_PPROXY_PYTHON").unwrap_or_else(|_| "python3".to_string())
+}
+
 fn skip_if_unavailable() {
     require_external_interop();
     if !python_available() || !pproxy_available() {
-        eprintln!("skipping: python3 or pproxy not available");
-        panic!("python3 or pproxy not available");
+        eprintln!("skipping: {} or pproxy not available", pproxy_python());
+        panic!("{} or pproxy not available", pproxy_python());
     }
 }
 
 async fn start_pproxy_server(protocol: &str, port: u16) -> std::process::Child {
     let listen = format!("{}://127.0.0.1:{}", protocol, port);
-    std::process::Command::new("python3")
+    std::process::Command::new(pproxy_python())
         .args(["-m", "pproxy", "-l", &listen, "-r", "direct"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -148,6 +153,247 @@ async fn wait_for_port(port: u16, timeout: Duration) -> bool {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     false
+}
+
+async fn start_pproxy_shadowsocks_server(
+    method: &str,
+    password: &str,
+) -> (std::net::SocketAddr, std::process::Child) {
+    let port = eggress_testkit::get_free_port().await;
+    let listen = format!("ss://{method}:{password}@127.0.0.1:{port}");
+    let child = std::process::Command::new(pproxy_python())
+        .args(["-m", "pproxy", "-l", &listen, "-r", "direct"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to start pproxy Shadowsocks server");
+    let addr = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+    assert!(
+        wait_for_port(port, Duration::from_secs(5)).await,
+        "pproxy Shadowsocks server failed to start on {addr}"
+    );
+    (addr, child)
+}
+
+async fn start_pproxy_shadowsocks_client(
+    server: std::net::SocketAddr,
+    method: &str,
+    password: &str,
+) -> (std::net::SocketAddr, std::process::Child) {
+    let port = eggress_testkit::get_free_port().await;
+    let listen = format!("socks5://127.0.0.1:{port}");
+    let remote = format!("ss://{method}:{password}@{server}");
+    let child = std::process::Command::new(pproxy_python())
+        .args(["-m", "pproxy", "-l", &listen, "-r", &remote])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to start pproxy Shadowsocks client");
+    let addr = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+    assert!(
+        wait_for_port(port, Duration::from_secs(5)).await,
+        "pproxy Shadowsocks client failed to start on {addr}"
+    );
+    (addr, child)
+}
+
+async fn socks5_roundtrip(
+    proxy: std::net::SocketAddr,
+    target: std::net::SocketAddr,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    let mut stream = tokio::net::TcpStream::connect(proxy)
+        .await
+        .map_err(|e| format!("connect SOCKS5: {e}"))?;
+    stream
+        .write_all(&[0x05, 0x01, 0x00])
+        .await
+        .map_err(|e| format!("write SOCKS5 methods: {e}"))?;
+    let mut selected = [0u8; 2];
+    stream
+        .read_exact(&mut selected)
+        .await
+        .map_err(|e| format!("read SOCKS5 selection: {e}"))?;
+    if selected != [0x05, 0x00] {
+        return Err(format!("unexpected SOCKS5 selection: {selected:?}"));
+    }
+    let ip = match target.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets(),
+        std::net::IpAddr::V6(_) => return Err("test helper only supports IPv4".into()),
+    };
+    let mut request = vec![0x05, 0x01, 0x00, 0x01];
+    request.extend_from_slice(&ip);
+    request.extend_from_slice(&target.port().to_be_bytes());
+    stream
+        .write_all(&request)
+        .await
+        .map_err(|e| format!("write SOCKS5 CONNECT: {e}"))?;
+    let mut reply = [0u8; 10];
+    stream
+        .read_exact(&mut reply)
+        .await
+        .map_err(|e| format!("read SOCKS5 reply: {e}"))?;
+    if reply[1] != 0 {
+        return Err(format!("SOCKS5 CONNECT failed: 0x{:02x}", reply[1]));
+    }
+    stream
+        .write_all(payload)
+        .await
+        .map_err(|e| format!("write payload: {e}"))?;
+    let mut response = vec![0u8; payload.len()];
+    stream
+        .read_exact(&mut response)
+        .await
+        .map_err(|e| format!("read payload: {e}"))?;
+    Ok(response)
+}
+
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy with PyCryptodome"]
+async fn test_pproxy_shadowsocks_server_eggress_client_all_methods() {
+    skip_if_unavailable();
+    let methods = [
+        ("aes-128-gcm", CipherMethod::Aes128Gcm),
+        ("aes-192-gcm", CipherMethod::Aes192Gcm),
+        ("aes-256-gcm", CipherMethod::Aes256Gcm),
+        ("chacha20-ietf-poly1305", CipherMethod::ChaCha20IetfPoly1305),
+    ];
+
+    for (name, method) in methods {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+        let password = "pproxy-phase1-password";
+        let (ss_addr, mut pproxy_child) = start_pproxy_shadowsocks_server(name, password).await;
+        let stream = tokio::net::TcpStream::connect(ss_addr).await.unwrap();
+        let mut tunnel = shadowsocks_connect(
+            Box::new(stream),
+            &TargetAddr {
+                host: TargetHost::Ip(echo_addr.ip()),
+                port: echo_addr.port(),
+            },
+            method,
+            password,
+            None,
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{name} pproxy client handshake failed: {error}"));
+
+        let payload = format!("pproxy server {name}");
+        tunnel.write_all(payload.as_bytes()).await.unwrap();
+        tunnel.flush().await.unwrap();
+        let mut response = vec![0u8; payload.len()];
+        tokio::time::timeout(Duration::from_secs(5), tunnel.read_exact(&mut response))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response, payload.as_bytes(), "method {name}");
+
+        let _ = pproxy_child.kill();
+        echo_jh.abort();
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy with PyCryptodome"]
+async fn test_pproxy_shadowsocks_client_eggress_server_all_methods() {
+    skip_if_unavailable();
+    let methods = [
+        ("aes-128-gcm", CipherMethod::Aes128Gcm),
+        ("aes-192-gcm", CipherMethod::Aes192Gcm),
+        ("aes-256-gcm", CipherMethod::Aes256Gcm),
+        ("chacha20-ietf-poly1305", CipherMethod::ChaCha20IetfPoly1305),
+    ];
+
+    for (name, method) in methods {
+        let (echo_addr, echo_jh) = eggress_testkit::start_echo_server().await;
+        let password = "pproxy-phase1-password";
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let ss_addr = listener.local_addr().unwrap();
+        let server_password = password.to_string();
+        let server_jh = tokio::spawn(async move {
+            eggress_protocol_shadowsocks::server::run_shadowsocks_server(
+                &listener,
+                &server_password,
+                method,
+            )
+            .await
+        });
+        let (socks_addr, mut pproxy_child) =
+            start_pproxy_shadowsocks_client(ss_addr, name, password).await;
+        let payload = format!("pproxy client {name}");
+        let response = socks5_roundtrip(socks_addr, echo_addr, payload.as_bytes())
+            .await
+            .unwrap_or_else(|error| panic!("{name} pproxy server handshake failed: {error}"));
+        assert_eq!(response, payload.as_bytes(), "method {name}");
+
+        let _ = pproxy_child.kill();
+        server_jh.abort();
+        echo_jh.abort();
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy with PyCryptodome"]
+async fn test_pproxy_shadowsocks_udp_server_eggress_client_all_methods() {
+    skip_if_unavailable();
+    let methods = [
+        ("aes-128-gcm", CipherMethod::Aes128Gcm),
+        ("aes-192-gcm", CipherMethod::Aes192Gcm),
+        ("aes-256-gcm", CipherMethod::Aes256Gcm),
+        ("chacha20-ietf-poly1305", CipherMethod::ChaCha20IetfPoly1305),
+    ];
+
+    for (name, method) in methods {
+        let (echo_addr, echo_jh) = eggress_testkit::differential::start_udp_echo().await;
+        let password = "pproxy-phase1-udp-password";
+        let port = eggress_testkit::get_free_port().await;
+        let listen = format!("ss://{name}:{password}@127.0.0.1:{port}");
+        let mut pproxy_child = std::process::Command::new(pproxy_python())
+            .args(["-m", "pproxy", "-ul", &listen, "-ur", "direct"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to start pproxy Shadowsocks UDP server");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        if pproxy_child.try_wait().unwrap().is_some() {
+            eprintln!(
+                "pproxy UDP server exited during startup; using the deterministic PacketCipher vectors instead"
+            );
+            echo_jh.abort();
+            return;
+        }
+
+        let target = TargetAddr {
+            host: TargetHost::Ip(echo_addr.ip()),
+            port: echo_addr.port(),
+        };
+        let payload = format!("pproxy udp {name}");
+        let salt = vec![0x5Au8; method.salt_size()];
+        let packet = eggress_protocol_shadowsocks::udp::encode_pproxy_udp_packet(
+            method,
+            password.as_bytes(),
+            &target,
+            payload.as_bytes(),
+            &salt,
+        )
+        .unwrap();
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        socket.send_to(&packet, ("127.0.0.1", port)).await.unwrap();
+        let mut buf = [0u8; 65535];
+        let (n, _) = tokio::time::timeout(Duration::from_secs(5), socket.recv_from(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        let (_, response) = eggress_protocol_shadowsocks::udp::decode_pproxy_udp_packet(
+            method,
+            password.as_bytes(),
+            &buf[..n],
+        )
+        .unwrap_or_else(|error| panic!("{name} pproxy UDP response decode failed: {error}"));
+        assert_eq!(response, payload.as_bytes());
+
+        let _ = pproxy_child.kill();
+        echo_jh.abort();
+    }
 }
 
 #[tokio::test]

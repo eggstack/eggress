@@ -300,7 +300,7 @@ classification against eggress (Rust).
 | AES-128-GCM | Yes (pycryptodome + pure py) | Yes (ring crate) | **A** |
 | AES-256-GCM | Yes (pycryptodome + pure py) | Yes (ring crate) | **A** |
 | ChaCha20-IETF-Poly1305 | Yes (pycryptodome + pure py) | Yes (chacha20poly1305 crate) | **A** |
-| AES-192-GCM | Yes | No | **C** |
+| AES-192-GCM | Yes | Yes (Rust AEAD) | **A** |
 | All other ciphers | Yes | No (rejected as legacy) | **N/A** |
 
 ---

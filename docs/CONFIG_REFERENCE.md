@@ -252,7 +252,7 @@ protocol://[user:pass@]host:port[/rule][+tls]
 
 **Shadowsocks URI:** `shadowsocks://method:password@host:port`
 
-Supported AEAD methods: `aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`. Legacy stream ciphers are not supported and produce clear error messages (e.g., `LegacyMethodUnsupported`). ShadowsocksR (SSR) is not supported; SSR URIs (`ssr://`) are rejected with a clear `SsrUnsupported` error.
+Supported AEAD methods: `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`. Legacy stream ciphers are not supported and produce clear error messages (e.g., `LegacyMethodUnsupported`). ShadowsocksR (SSR) is not supported; SSR URIs (`ssr://`) are rejected with a clear `SsrUnsupported` error.
 
 ```toml
 # Shadowsocks upstream (TCP)
@@ -275,8 +275,10 @@ method = "aes-256-gcm"
 password = "my-secret-password"
 ```
 
-Shadowsocks UDP uses standard AEAD format (`salt + encrypted(address + payload)`).
-It works as an upstream for UDP associations routed through a SOCKS5 listener:
+Shadowsocks UDP upstreams use the standard AEAD format
+(`salt + encrypted(address + payload)`). Standalone Shadowsocks UDP inbound
+listeners use the pproxy-compatible `PacketCipher` chunk format. The upstream
+path works for UDP associations routed through a SOCKS5 listener:
 
 ```toml
 # Shadowsocks UDP upstream (single-hop via SOCKS5 UDP ASSOCIATE)

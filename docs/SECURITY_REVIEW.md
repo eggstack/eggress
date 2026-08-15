@@ -172,14 +172,18 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Full AEAD stream encryption (not just header encryption); each direction is independently encrypted.
 - Standard TCP framing: encrypted length prefix + encrypted payload, compatible with standard Shadowsocks implementations.
 - Nonces are per-direction counters starting at 1, preventing nonce reuse.
-- Per-connection subkeys derived via HKDF-SHA256 from the shared secret and a random salt.
-- Only AEAD methods are supported (`aes-128-gcm`, `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream cipher URIs produce `LegacyMethodUnsupported` errors with a message suggesting AEAD methods.
+- Per-connection subkeys use the pproxy-compatible EVP_BytesToKey MD5
+  expansion followed by HKDF-SHA1 with a random method-sized salt.
+- Only AEAD methods are supported (`aes-128-gcm`, `aes-192-gcm`,
+  `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream cipher URIs produce
+  `LegacyMethodUnsupported` errors with a message suggesting AEAD methods.
 - SSR URIs (`ssr://`) produce `SsrUnsupported` errors. The pproxy compat layer produces `UnsupportedFeature` diagnostics for both legacy stream ciphers and SSR URIs.
 - Password is never logged; URI display uses the redacted `****:****@` format.
 
 **Shadowsocks UDP Security Properties** (`eggress-protocol-shadowsocks/src/udp.rs`):
 - Standard AEAD UDP format: `salt + encrypted(address + payload)` per datagram.
-- Per-connection subkeys derived via HKDF-SHA256 from the shared secret and a random salt (same derivation as TCP).
+- Per-datagram subkeys use the same EVP-MD5 + HKDF-SHA1 derivation as TCP with
+  a fresh method-sized salt.
 - Each datagram uses a fresh random salt; no nonce reuse across datagrams.
 - Only AEAD methods are supported (same set as TCP); legacy stream ciphers are rejected.
 - Payload length is authenticated via AEAD tag, preventing truncation or extension attacks.

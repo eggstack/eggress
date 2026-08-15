@@ -39,7 +39,7 @@ Keep this document in sync with the manifest.
 | Feature | Tier | Evidence | How to run |
 |---------|------|----------|------------|
 | `socks5_udp_associate_relay` | Partial | Differential (pproxy==2.7.9) — framing differs | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
-| `shadowsocks_udp` | Supported | Standard AEAD interop | `cargo test -p eggress-runtime shadowsocks_udp` |
+| `shadowsocks_udp` | Supported | Standard Shadowsocks UDP interop plus pproxy PacketCipher vectors/inbound integration | `cargo test -p eggress-runtime shadowsocks_udp`; `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test interoperability_pproxy -- --ignored --test-threads=1 pproxy_shadowsocks` |
 | `direct_udp_forwarding` | Supported | Synthetic | `cargo test -p eggress-runtime udp` (SOCKS5 ASSOCIATE) + `cargo test -p eggress-runtime standalone` (standalone pproxy UDP relay) |
 | `standalone_udp_relay` | Supported | Differential (pproxy==2.7.9) — standalone mode | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored -- standalone_udp` |
 | `standalone_udp_error_handling` | Supported | Differential (pproxy==2.7.9) — malformed/frag handling | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored -- standalone_udp` |
@@ -51,7 +51,7 @@ Keep this document in sync with the manifest.
 | `http_connect_upstream` | Compatible | Differential (pproxy==2.7.9) | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 | `socks4_upstream` | Supported | Synthetic | `cargo test -p eggress-runtime upstream_protocols` |
 | `socks5_upstream` | Compatible | Differential (pproxy==2.7.9) | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
-| `shadowsocks_upstream` | Supported | Standard AEAD interop | `cargo test -p eggress-protocol-shadowsocks` |
+| `shadowsocks_upstream` | Supported | Standard AEAD interop with maintained `ssserver`/`sslocal` | `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1` |
 | `trojan_upstream_client` | Partial | Synthetic | `cargo test -p eggress-protocol-trojan` |
 | `direct_upstream` | Compatible | Differential (pproxy==2.7.9) | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 
@@ -60,7 +60,7 @@ Keep this document in sync with the manifest.
 | Feature | Tier | Evidence | How to run |
 |---------|------|----------|------------|
 | `socks5_udp_upstream` | Partial | Synthetic | `cargo test -p eggress-runtime udp_upstream` |
-| `shadowsocks_udp_upstream` | Supported | Standard AEAD interop | `cargo test -p eggress-runtime shadowsocks_udp` |
+| `shadowsocks_udp_upstream` | Supported | Standard single-AEAD UDP interop | `cargo test -p eggress-runtime shadowsocks_udp`; gated `interoperability_shadowsocks` |
 
 ## Chain Behavior
 
@@ -90,7 +90,7 @@ Keep this document in sync with the manifest.
 | `http_auth_rejection` | Compatible | Differential (pproxy==2.7.9) | `EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test differential_pproxy -- --ignored` |
 | `socks5_username_password` | Supported | Synthetic | `cargo test -p eggress-runtime integration` |
 | `http_basic_auth` | Supported | Synthetic | `cargo test -p eggress-runtime integration` |
-| `shadowsocks_password` | Supported | Standard AEAD interop | `cargo test -p eggress-protocol-shadowsocks` |
+| `shadowsocks_password` | Supported | Four-method KATs and maintained implementation interop | `cargo test -p eggress-protocol-shadowsocks`; gated Shadowsocks interop |
 
 ## Phase 19 HTTP/SOCKS Baseline Closure
 

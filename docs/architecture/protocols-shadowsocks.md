@@ -12,11 +12,12 @@ not a claim that legacy stream ciphers or OTA are supported.
 
 ## Supported Ciphers
 
-| Method | Key Size | Nonce Size | Tag Size |
-|---|---|---|---|
-| AES-128-GCM | 16 bytes | 12 bytes | 16 bytes |
-| AES-256-GCM | 32 bytes | 12 bytes | 16 bytes |
-| ChaCha20-IETF-Poly1305 | 32 bytes | 12 bytes | 16 bytes |
+| Method | Key Size | Salt/IV Size | Nonce Size | Tag Size |
+|---|---:|---:|---:|---:|
+| AES-128-GCM | 16 bytes | 16 bytes | 12 bytes | 16 bytes |
+| AES-192-GCM | 24 bytes | 24 bytes | 12 bytes | 16 bytes |
+| AES-256-GCM | 32 bytes | 32 bytes | 12 bytes | 16 bytes |
+| ChaCha20-IETF-Poly1305 | 32 bytes | 32 bytes | 12 bytes | 16 bytes |
 
 ## Key Functions
 
@@ -35,10 +36,13 @@ not a claim that legacy stream ciphers or OTA are supported.
 
 ## Wire Format
 
-- Key derivation via HKDF-SHA256
+- Key derivation uses EVP_BytesToKey-compatible MD5 expansion followed by
+  HKDF-SHA1 with `info = "ss-subkey"`; output length is the method key size.
 - Address encoded in encrypted payload (IPv4, IPv6, domain)
-- Random nonce per message
-- UDP packets use same AEAD with random nonce
+- TCP and UDP salts use the method-specific sizes above. TCP uses a fresh salt
+  per direction; UDP uses a fresh salt per datagram.
+- Nonces are 12-byte little-endian counters for TCP and zero for each UDP
+  packet.
 
 ## Legacy Detection
 

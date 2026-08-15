@@ -138,8 +138,10 @@ SOCKS4/4a and SOCKS5 protocol implementations:
 
 ### eggress-protocol-shadowsocks
 Shadowsocks protocol implementation:
-- AEAD cipher methods: AES-128-GCM, AES-256-GCM, ChaCha20-IETF-Poly1305
-- Key derivation via HKDF-SHA256
+- AEAD cipher methods: AES-128-GCM, AES-192-GCM, AES-256-GCM,
+  ChaCha20-IETF-Poly1305
+- pproxy-compatible key derivation via EVP_BytesToKey MD5 expansion followed
+  by HKDF-SHA1 (`info = "ss-subkey"`)
 - Shadowsocks address encoding/decoding (IPv4, IPv6, domain)
 - TCP CONNECT with encrypted address header
 - UDP packet encode/decode with random nonce

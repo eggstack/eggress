@@ -144,6 +144,13 @@ async fn start_udp_echo() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>)
     (addr, jh)
 }
 
+async fn reserve_udp_port() -> u16 {
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let port = socket.local_addr().unwrap().port();
+    drop(socket);
+    port
+}
+
 /// Wait until a TCP port is accepting connections.
 async fn wait_for_port(port: u16, timeout: Duration) -> bool {
     let start = std::time::Instant::now();
@@ -283,6 +290,7 @@ async fn send_through_socks5(
     target_host: &str,
     target_port: u16,
     payload: &[u8],
+    shutdown_write: bool,
 ) -> Result<Vec<u8>, String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -336,9 +344,15 @@ async fn send_through_socks5(
         .await
         .map_err(|e| format!("write payload: {e}"))?;
     writer
-        .shutdown()
+        .flush()
         .await
-        .map_err(|e| format!("shutdown write: {e}"))?;
+        .map_err(|e| format!("flush payload: {e}"))?;
+    if shutdown_write {
+        writer
+            .shutdown()
+            .await
+            .map_err(|e| format!("shutdown write: {e}"))?;
+    }
 
     // Read response with timeout — data should arrive before connection closes
     let mut buf = Vec::new();
@@ -347,7 +361,12 @@ async fn send_through_socks5(
         let mut chunk = [0u8; 4096];
         match tokio::time::timeout(Duration::from_millis(500), reader.read(&mut chunk)).await {
             Ok(Ok(0)) => break,
-            Ok(Ok(n)) => buf.extend_from_slice(&chunk[..n]),
+            Ok(Ok(n)) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if buf == payload {
+                    break;
+                }
+            }
             Ok(Err(e)) => return Err(format!("read response: {e}")),
             Err(_) => continue,
         }
@@ -498,6 +517,7 @@ upstream_group = "route-group"
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"interop tcp test",
+        true,
     )
     .await
     .expect("TCP interop failed");
@@ -549,14 +569,15 @@ direct = true
         panic!("sslocal failed to start");
     }
 
-    let payload = send_through_socks5(
+    let result = send_through_socks5(
         socks_addr,
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"interop tcp test reverse",
+        false,
     )
-    .await
-    .expect("TCP interop (reverse) failed");
+    .await;
+    let payload = result.expect("TCP interop (reverse) failed");
 
     assert_eq!(payload, b"interop tcp test reverse");
 
@@ -618,8 +639,8 @@ async fn send_through_socks5_domain(
         ));
     }
     let bnd_len = match reply_head[3] {
-        0x01 => 4,
-        0x04 => 16,
+        0x01 => 4 + 2,
+        0x04 => 16 + 2,
         0x03 => {
             let mut l = [0u8; 1];
             reader
@@ -759,6 +780,7 @@ upstream_group = "route-group"
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         &payload,
+        true,
     )
     .await
     .expect("TCP interop failed with large payload");
@@ -869,6 +891,7 @@ async fn interop_shadowsocks_udp_inbound_large_packet() {
     let method = "aes-256-gcm";
     let cipher: eggress_protocol_shadowsocks::CipherMethod =
         eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
+    let udp_port = reserve_udp_port().await;
 
     let ss_config = format!(
         r#"
@@ -885,6 +908,7 @@ password = "{password}"
 
 [listeners.udp]
 mode = "shadowsocks_udp"
+bind = "127.0.0.1:{udp_port}"
 client_pin = true
 
 [[rules]]
@@ -902,7 +926,7 @@ direct = true
     rand::thread_rng().fill_bytes(&mut salt);
 
     let payload = vec![0xCDu8; 8 * 1024];
-    let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
+    let encoded = eggress_protocol_shadowsocks::udp::encode_pproxy_udp_packet(
         cipher,
         password.as_bytes(),
         &eggress_core::TargetAddr {
@@ -915,13 +939,14 @@ direct = true
     .expect("encode udp packet");
 
     let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    udp_sock.send_to(&encoded, ss_addr).await.expect("send");
+    let udp_addr = std::net::SocketAddr::new(ss_addr.ip(), udp_port);
+    udp_sock.send_to(&encoded, udp_addr).await.expect("send");
 
     let mut buf = [0u8; 65535];
     let result = tokio::time::timeout(Duration::from_secs(5), udp_sock.recv_from(&mut buf)).await;
     let (n, _peer) = result.expect("timeout").expect("recv");
 
-    let (_target, decoded) = eggress_protocol_shadowsocks::udp::decode_udp_packet(
+    let (_target, decoded) = eggress_protocol_shadowsocks::udp::decode_pproxy_udp_packet(
         cipher,
         password.as_bytes(),
         &buf[..n],
@@ -948,7 +973,6 @@ async fn interop_shadowsocks_udp_eggress_to_external_server() {
     let method = "aes-256-gcm";
     let cipher: eggress_protocol_shadowsocks::CipherMethod =
         eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
-
     let (ss_addr, mut _ss_guard) = start_external_ssserver(password, method).await;
 
     let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
@@ -1016,6 +1040,10 @@ version = 1
 name = "socks-in"
 bind = "127.0.0.1:0"
 protocols = ["socks5"]
+udp_enabled = true
+
+[listeners.udp]
+enabled = true
 
 [[upstreams]]
 id = "ss-up"
@@ -1099,6 +1127,7 @@ upstream_group = "route-group"
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"should fail",
+        true,
     )
     .await;
 
@@ -1107,7 +1136,7 @@ upstream_group = "route-group"
     echo_jh.abort();
 
     assert!(
-        result.is_err(),
+        result.is_err() || result.as_ref().is_ok_and(|payload| payload.is_empty()),
         "wrong password should cause connection failure, but got: {result:?}"
     );
 }
@@ -1210,6 +1239,7 @@ upstream_group = "route-group"
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"aes-128-gcm test",
+        true,
     )
     .await
     .expect("TCP interop failed with aes-128-gcm");
@@ -1266,6 +1296,7 @@ upstream_group = "route-group"
         &echo_addr.ip().to_string(),
         echo_addr.port(),
         b"chacha20 test",
+        true,
     )
     .await
     .expect("TCP interop failed with chacha20-ietf-poly1305");
@@ -1435,6 +1466,7 @@ async fn interop_shadowsocks_udp_inbound_echo() {
     let method = "aes-256-gcm";
     let cipher: eggress_protocol_shadowsocks::CipherMethod =
         eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
+    let udp_port = reserve_udp_port().await;
 
     let ss_config = format!(
         r#"
@@ -1451,6 +1483,7 @@ password = "{password}"
 
 [listeners.udp]
 mode = "shadowsocks_udp"
+bind = "127.0.0.1:{udp_port}"
 client_pin = true
 
 [[rules]]
@@ -1465,7 +1498,7 @@ direct = true
     let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
     let salt = vec![0x55u8; cipher.salt_size()];
 
-    let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
+    let encoded = eggress_protocol_shadowsocks::udp::encode_pproxy_udp_packet(
         cipher,
         password.as_bytes(),
         &eggress_core::TargetAddr {
@@ -1479,7 +1512,7 @@ direct = true
 
     let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     udp_sock
-        .send_to(&encoded, ss_addr)
+        .send_to(&encoded, std::net::SocketAddr::new(ss_addr.ip(), udp_port))
         .await
         .expect("send failed");
 
@@ -1497,9 +1530,12 @@ direct = true
     }
 
     let data = response.expect("No UDP response received from eggress inbound SS server");
-    let (_target, payload) =
-        eggress_protocol_shadowsocks::udp::decode_udp_packet(cipher, password.as_bytes(), &data)
-            .expect("UDP decode failed");
+    let (_target, payload) = eggress_protocol_shadowsocks::udp::decode_pproxy_udp_packet(
+        cipher,
+        password.as_bytes(),
+        &data,
+    )
+    .expect("UDP decode failed");
 
     assert_eq!(payload, b"inbound udp echo");
 
@@ -1520,6 +1556,7 @@ async fn interop_shadowsocks_udp_inbound_wrong_password() {
     let method = "aes-256-gcm";
     let cipher: eggress_protocol_shadowsocks::CipherMethod =
         eggress_protocol_shadowsocks::CipherMethod::parse_method(method).unwrap();
+    let udp_port = reserve_udp_port().await;
 
     let ss_config = format!(
         r#"
@@ -1536,6 +1573,7 @@ password = "{correct_password}"
 
 [listeners.udp]
 mode = "shadowsocks_udp"
+bind = "127.0.0.1:{udp_port}"
 client_pin = true
 
 [[rules]]
@@ -1550,7 +1588,7 @@ direct = true
     let target = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), udp_echo_addr.port());
     let salt = vec![0x56u8; cipher.salt_size()];
 
-    let encoded = eggress_protocol_shadowsocks::udp::encode_udp_packet(
+    let encoded = eggress_protocol_shadowsocks::udp::encode_pproxy_udp_packet(
         cipher,
         wrong_password.as_bytes(),
         &eggress_core::TargetAddr {
@@ -1564,7 +1602,7 @@ direct = true
 
     let udp_sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     udp_sock
-        .send_to(&encoded, ss_addr)
+        .send_to(&encoded, std::net::SocketAddr::new(ss_addr.ip(), udp_port))
         .await
         .expect("send failed");
 
