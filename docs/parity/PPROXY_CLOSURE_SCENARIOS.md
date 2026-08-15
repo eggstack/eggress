@@ -15,6 +15,8 @@ The reusable Rust harness in
 - HTTP and SOCKS5 upstream chains, including authentication;
 - first-available route selection and per-remote rule predicates;
 - standalone UDP direct echo and one-hop SOCKS5 UDP relay;
+- composed SOCKS5/Shadowsocks UDP chains with local echo fixtures;
+- raw backward channels, repeated +in, reconnect, and one HTTP/SOCKS5 jump;
 - fixed-target/raw and promoted advanced transport paths where fixtures apply.
 
 Run it with:

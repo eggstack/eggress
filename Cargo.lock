@@ -695,6 +695,7 @@ version = "1.0.1"
 dependencies = [
  "bytes",
  "eggress-core",
+ "eggress-uri",
  "serde",
  "serde_json",
  "subtle",

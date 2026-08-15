@@ -342,19 +342,19 @@ TCP SOCKS5 client → UDP ASSOCIATE command → server creates UdpAssociation
 
 ## UDP Upstream Relay
 
-Eggress supports relaying UDP through one-hop SOCKS5 upstream proxies. The relay
-works as follows:
+Eggress supports relaying UDP through composable SOCKS5 and Shadowsocks
+upstream hops. The relay works as follows:
 
 1. Client sends SOCKS5 UDP datagram to Eggress
 2. Eggress decodes the target address and payload
 3. Routing selects a direct or upstream path
-4. For SOCKS5 upstream paths:
+4. For UDP-capable upstream paths:
    - Establishes TCP control connection to upstream
    - Performs SOCKS5 handshake (method negotiation + optional auth)
    - Sends UDP ASSOCIATE request to upstream
-   - Creates per-target UDP association with upstream
-   - Encodes and sends SOCKS5 UDP datagrams to upstream relay
-   - Receives responses and forwards to client
+   - Creates bounded per-hop UDP associations where required
+   - Encodes nested datagrams from the destination inward
+   - Receives responses and decodes them from outer to inner
 5. For direct paths: sends directly via connected UDP socket
 
 ### Flow Model
@@ -370,8 +370,9 @@ existing flow until idle timeout.
 
 ### Unsupported Chains
 
-HTTP, SOCKS4, and multi-hop chains are explicitly rejected for UDP with metrics.
-No silent fallback to direct unless the routing policy selects a direct fallback.
+HTTP, SOCKS4, Trojan, and other non-UDP hops are explicitly rejected for UDP
+with metrics. No silent fallback to direct unless the routing policy selects a
+direct fallback.
 
 ### Reload Semantics
 
@@ -462,16 +463,18 @@ Every UDP datagram is routed through the Phase 2 rule engine using `RouteService
 
 - `SelectedRoute::Direct { selection_reason: Normal }` — forward to target via direct UDP socket.
 - `SelectedRoute::Direct { selection_reason: DirectFallback }` — forward via direct, with fallback metric recorded.
-- `SelectedRoute::Upstream { .. }` — forward via one-hop SOCKS5 upstream if capable; drop with `unsupported_upstream` metric for HTTP/SOCKS4/multi-hop chains.
+- `SelectedRoute::Upstream { .. }` — forward through the composed UDP hop
+  pipeline when every hop is SOCKS5 or Shadowsocks; drop with
+  `unsupported_upstream` for non-UDP protocols.
 - `RouteError::Rejected { .. }` — drop with policy metric.
 
 Route rules can match on `transport` to distinguish UDP from TCP traffic. Route changes via SIGHUP take effect on subsequent datagrams without restarting the UDP listener.
 
 ### Supported upstream relay
 
-Phase 4 supports one-hop SOCKS5 upstream relay for UDP. HTTP, SOCKS4, and
-multi-hop chains are explicitly rejected for UDP with metrics. No silent
-fallback to direct unless the routing policy selects a direct fallback.
+Phase 5 supports recursive UDP framing for SOCKS5 and Shadowsocks chains.
+HTTP, SOCKS4, Trojan, H2, WebSocket, and QUIC-specific transports remain
+explicitly rejected or deferred. No silent fallback is performed.
 
 ### UDP task tracking
 

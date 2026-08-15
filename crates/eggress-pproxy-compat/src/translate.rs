@@ -270,6 +270,7 @@ pub fn translate_from_uris(
                 external_bind: bind,
                 auth_username: local.username.clone(),
                 auth_password: local.password.clone(),
+                pproxy_compat: true,
             });
             // Emit credential warning if auth present
             if local.username.is_some() {
@@ -674,56 +675,57 @@ pub fn translate_from_uris(
     // lowering.
     let mut tcp_routes: Vec<TcpCompatRoute> = Vec::new();
     for (idx, chain) in remote_chains.iter().enumerate() {
-        // Single-hop backward/upstream URIs with +in modifier → reverse_clients
-        if chain.hops.len() == 1 {
+        // Backward/upstream URIs with +in modifier become one maintained
+        // compatibility worker per +in occurrence. The final non-direct hop
+        // supplies pproxy's raw auth field; the complete chain is retained
+        // for jump-aware transport setup.
+        if chain.hops.iter().any(PproxyUri::is_backward) {
             let remote = &chain.hops[0];
-            if remote.is_backward() {
-                // Backward + SSL (+ssl modifier) is not supported
-                if remote.ssl {
-                    output = output.with_unsupported(
-                        "backward-tls",
-                        format!(
-                            "Backward upstream '{}': TLS on backward connections is not supported",
-                            remote.redacted_display()
-                        ),
-                    );
-                }
-                let server_addr = remote.endpoint_display();
-                let client_id = format!("pproxy-reverse-client-{}", idx);
-                reverse_clients.push(ReverseClientToml {
-                    id: client_id,
-                    server_addr,
-                    auth_username: remote.username.clone(),
-                    auth_password: remote.password.clone(),
-                    parallel_connections: if remote.backward_num() > 1 {
-                        Some(remote.backward_num())
-                    } else {
-                        None
-                    },
-                });
-                // Emit credential warning if auth present
-                if remote.username.is_some() {
-                    output = output.with_warning(
+            let auth_hop = chain
+                .hops
+                .iter()
+                .rev()
+                .find(|hop| hop.scheme != "direct")
+                .unwrap_or(remote);
+            // Backward + SSL (+ssl modifier) is not supported
+            if chain.hops.iter().any(|hop| hop.ssl) {
+                output = output.with_unsupported(
+                    "backward-tls",
+                    format!(
+                        "Backward upstream '{}': TLS on backward connections is not supported",
+                        remote.redacted_display()
+                    ),
+                );
+            }
+            let server_addr = remote.endpoint_display();
+            let client_id = format!("pproxy-reverse-client-{}", idx);
+            reverse_clients.push(ReverseClientToml {
+                id: client_id,
+                server_addr,
+                server_uri: Some(build_chain_config_uri(chain)),
+                auth_username: auth_hop.username.clone(),
+                auth_password: auth_hop.password.clone(),
+                parallel_connections: {
+                    let count: u32 = chain
+                        .hops
+                        .iter()
+                        .map(PproxyUri::backward_num)
+                        .sum::<u32>()
+                        .max(1);
+                    (count > 1).then_some(count)
+                },
+                pproxy_compat: true,
+            });
+            // Emit credential warning if auth present
+            if auth_hop.username.is_some() {
+                output = output.with_warning(
                         "credential-in-toml",
                         format!(
                             "Reverse client 'pproxy-reverse-client-{}' has plaintext credentials in generated TOML",
                             idx
                         ),
                     );
-                }
-                continue;
             }
-        }
-
-        // Multi-hop backward chains are not supported
-        if chain.hops.len() > 1 && chain.hops.iter().any(|h| h.is_backward()) {
-            output = output.with_unsupported(
-                "chain-backward-composition",
-                format!(
-                    "chain '{}' contains backward (+in) hops; multi-hop backward chain composition is not supported",
-                    chain.redacted_display()
-                ),
-            );
             continue;
         }
 
@@ -833,79 +835,81 @@ pub fn translate_from_uris(
     let mut udp_upstream_ids = Vec::new();
     let mut udp_routes: Vec<TcpCompatRoute> = Vec::new();
     for (idx, remote_str) in udp_remotes.iter().enumerate() {
-        let remote_uri =
-            crate::uri::parse_pproxy_uri(remote_str).map_err(|e| CompatError::InvalidArgs {
+        let remote_chain =
+            crate::uri::parse_pproxy_chain(remote_str).map_err(|e| CompatError::InvalidArgs {
                 message: format!("invalid UDP remote URI '{}': {}", remote_str, e),
             })?;
+        let remote_uri = remote_chain
+            .hops
+            .first()
+            .expect("pproxy chain parser returns at least one hop");
 
-        // Check for unsupported upstream protocols
-        // UDP only supports direct, socks5, and shadowsocks upstreams.
-        // HTTP, HTTPS, SOCKS4, SOCKS4a, and Trojan do not support UDP relay.
-        match remote_uri.scheme.as_str() {
-            "ss" | "shadowsocks" => {}
-            "ssr" => {
-                output = output.with_unsupported(
+        // UDP composition is recursive, but intentionally closed over the
+        // protocols with a real pproxy UDP path. Unsupported chains are
+        // retained as diagnostics instead of being silently coerced to TCP.
+        let unsupported = remote_chain
+            .hops
+            .iter()
+            .find(|hop| !matches!(hop.scheme.as_str(), "socks5" | "ss" | "shadowsocks"));
+        if let Some(unsupported) = unsupported {
+            match unsupported.scheme.as_str() {
+                "ssr" => {
+                    output = output.with_unsupported(
                     "ssr-udp",
                     format!(
                         "ShadowsocksR (SSR) UDP upstream '{}': only bounded SSR TCP framing/plugins are supported; SSR UDP is not implemented",
                         remote_uri.redacted_display()
                     ),
                 );
-                continue;
-            }
-            "socks5" => {}
-            "direct" => {}
-            "http" | "https" => {
-                output = output.with_unsupported(
+                }
+                "http" | "https" => {
+                    output = output.with_unsupported(
                     "udp-http-transport",
                     format!(
                         "HTTP/HTTPS UDP upstream '{}': HTTP CONNECT does not support UDP relay; use direct://, socks5://, or ss:// for UDP upstreams",
                         remote_uri.redacted_display()
                     ),
                 );
-                continue;
-            }
-            "socks4" | "socks4a" => {
-                output = output.with_unsupported(
+                }
+                "socks4" | "socks4a" => {
+                    output = output.with_unsupported(
                     "udp-socks4-transport",
                     format!(
                         "SOCKS4 UDP upstream '{}': SOCKS4 does not support UDP relay; use socks5:// for UDP upstreams",
                         remote_uri.redacted_display()
                     ),
                 );
-                continue;
-            }
-            "trojan" => {
-                output = output.with_unsupported(
+                }
+                "trojan" => {
+                    output = output.with_unsupported(
                     "udp-trojan-transport",
                     format!(
                         "Trojan UDP upstream '{}': Trojan does not support UDP relay; use direct://, socks5://, or ss://",
                         remote_uri.redacted_display()
                     ),
                 );
-                continue;
+                }
+                "h2" | "ws" | "wss" | "raw" | "tunnel" => {
+                    output = output.with_unsupported(
+                        "unsupported-role",
+                        format!(
+                            "{} UDP upstream '{}' is recognized but only supports TCP",
+                            remote_uri.scheme,
+                            remote_uri.redacted_display()
+                        ),
+                    );
+                }
+                other => {
+                    output = output.with_unsupported(
+                        "scheme",
+                        format!("unknown scheme '{}' in UDP upstream URI", other),
+                    );
+                }
             }
-            "h2" | "ws" | "wss" | "raw" | "tunnel" => {
-                output = output.with_unsupported(
-                    "unsupported-role",
-                    format!(
-                        "{} UDP upstream '{}' is recognized but only supports TCP",
-                        remote_uri.scheme,
-                        remote_uri.redacted_display()
-                    ),
-                );
-                continue;
-            }
-            other => {
-                output = output.with_unsupported(
-                    "scheme",
-                    format!("unknown scheme '{}' in UDP upstream URI", other),
-                );
-                continue;
-            }
+            continue;
         }
         let upstream_id = format!("pproxy-udp-upstream-{}", idx);
-        let config_uri = build_config_uri(&remote_uri);
+        let config_uri = build_chain_config_uri(&remote_chain);
 
         upstreams.push(UpstreamToml {
             id: upstream_id.clone(),
@@ -1543,6 +1547,7 @@ struct ReverseServerToml {
     auth_username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     auth_password: Option<String>,
+    pproxy_compat: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -1550,11 +1555,14 @@ struct ReverseClientToml {
     id: String,
     server_addr: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    server_uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     auth_username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     auth_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parallel_connections: Option<u32>,
+    pproxy_compat: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -2315,7 +2323,7 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_backward_with_jump_chain_unsupported() {
+    fn test_translate_backward_with_jump_chain() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -2324,23 +2332,14 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(
-            output
-                .unsupported
-                .iter()
-                .any(|u| u.feature == "chain-backward-composition"),
-            "expected chain-backward-composition unsupported, got: {:?}",
-            output.unsupported
-        );
-        // The invalid URI should be filtered out — no reverse_clients generated
         let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
-        assert!(
-            parsed.get("reverse_clients").is_none()
-                || parsed["reverse_clients"]
-                    .as_array()
-                    .map_or(true, |a| a.is_empty())
+        let clients = parsed["reverse_clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 1);
+        assert_eq!(
+            clients[0]["server_uri"].as_str(),
+            Some("socks5://a:1__http://b:2")
         );
+        assert_eq!(clients[0]["pproxy_compat"].as_bool(), Some(true));
     }
 
     #[test]

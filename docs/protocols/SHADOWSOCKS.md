@@ -203,7 +203,8 @@ Standard Shadowsocks clients can connect to the inbound listener:
 
 - No legacy stream ciphers (RC4, etc.) -- only AEAD methods. Legacy stream cipher methods (aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf, etc.) are detected at parse time via `is_legacy_method()` and produce a `LegacyMethodUnsupported` error with a helpful message suggesting AEAD methods.
 - No plugin transport modes (simple-obfs, v2ray-plugin, etc.)
-- No multi-hop UDP (single Shadowsocks hop only)
+- UDP framing composes with other proven UDP hops; non-UDP protocols remain
+  rejected during validation
 - Shadowsocks is not auto-detected in mixed-protocol listeners (encrypted
   wire format has no detectable signature; must be declared explicitly)
 - ShadowsocksR (SSR) has a bounded pproxy compatibility path behind the

@@ -31,7 +31,7 @@ adapter that opens the underlying direct/upstream transport and invokes the
 backed by the Rust `EggressService` lifecycle. Use
 `eggress.pproxy.Server` for the native Rust-backed service lifecycle.
 TCP connection methods return asyncio reader/writer-compatible objects.
-Unsupported listener roles, multi-hop UDP, and excluded protocol
+Unsupported listener roles, UDP over non-UDP protocols, and excluded protocol
 families fail with explicit ``UnsupportedPProxyFeature`` exceptions
 (a subclass of ``PProxyCompatibilityError(RuntimeError)``).
 

@@ -668,7 +668,7 @@ all = [
 }
 
 #[tokio::test]
-async fn runtime_multi_hop_upstream_drops_unsupported() {
+async fn runtime_multi_hop_upstream_accepts_composed_udp_chain() {
     let upstream1 = eggress_udp::testkit::Socks5UdpTestServer::start(
         eggress_udp::testkit::Socks5TestServerConfig {
             mode: eggress_udp::testkit::Socks5TestMode::Echo,
@@ -722,11 +722,13 @@ all = [
 
     let f = write_config(&config);
     let path = f.path().to_str().unwrap();
-    // Config validation now rejects multi-hop upstream + UDP listener at config time
+    // UDP-capable SOCKS5 hops are now represented by the composed hop
+    // pipeline and must pass validation/startup.
     let result = eggress_runtime::ServiceSupervisor::start(path);
     assert!(
-        result.is_err(),
-        "multi-hop upstream with UDP listener should be rejected at config validation"
+        result.is_ok(),
+        "UDP-capable multi-hop upstream should pass config validation: {:?}",
+        result.err()
     );
 }
 

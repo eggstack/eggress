@@ -47,7 +47,9 @@ contract.
 | HTTP/HTTPS, SOCKS4/4a, SOCKS5 CONNECT | `matched` | URI, protocol, and paired compatibility tests |
 | SOCKS5 username/password authentication | `matched` | Success and failure differential cases |
 | SOCKS5 UDP ASSOCIATE | `supported_difference` | Public framing/relay boundary is narrower |
-| Direct TCP/UDP and one-hop HTTP/SOCKS upstreams | `matched` | Runtime and differential tests |
+| Direct TCP/UDP and HTTP/SOCKS upstreams | `matched` | Runtime and differential tests |
+| pproxy backward/reverse raw channels | `supported_difference` | Separate raw-auth adapter, reconnect and jump tests; QUIC marker deferred |
+| UDP chains of SOCKS5/Shadowsocks hops | `supported_difference` | Composable codecs and runtime flow tests; unsupported protocols fail validation |
 | TCP `__` chains and routing predicates | `supported_difference` | Native chain model preserves supported compositions |
 | Shadowsocks AEAD TCP/UDP | `supported_difference` | Four modern methods with method-specific salts; standard UDP upstream plus exact pproxy PacketCipher standalone inbound path |
 | Trojan client/server roles | `supported_difference` | Native implementation; no private pproxy API claim |
@@ -89,8 +91,7 @@ strict phase, and focused test references.
 ## Stable exclusions and boundaries
 
 SSH, QUIC/HTTP/3, SSR, exact plugin transforms, legacy Shadowsocks ciphers and
-OTA, daemonization, general
-multi-hop UDP, and unavailable platform transparent facilities remain
+OTA, daemonization, UDP over non-UDP protocols, and unavailable platform transparent facilities remain
 explicit strict gaps or exclusions according to their phase records. Unknown
 flags and unsupported options fail with structured diagnostics; known Eggress
 extensions do not alter the frozen upstream inventory.

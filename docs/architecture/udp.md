@@ -37,13 +37,29 @@ Each unique target address gets its own `UdpTargetFlow`:
 
 ## Upstream Relay
 
-One-hop SOCKS5 upstream support:
+UDP upstreams are built from a closed set of composable hop codecs:
+
+1. Encode the innermost destination hop first.
+2. Wrap each preceding hop around that datagram.
+3. Send through the first hop's UDP transport.
+4. Decode the response in outer-to-inner order.
+
+The supported hop set is SOCKS5 UDP and standard Shadowsocks UDP. Each SOCKS5
+hop owns a bounded TCP UDP-ASSOCIATE control session; Shadowsocks hops use
+their configured AEAD packet codec. Domain, IPv4, and IPv6 destination
+metadata remains inside the innermost frame.
+
+For a one-hop SOCKS5 upstream, the pipeline is:
 1. Establish TCP control connection to upstream
 2. SOCKS5 handshake + UDP ASSOCIATE
 3. Per-target UDP association with upstream
 4. Encode/decode SOCKS5 UDP datagrams
 
-HTTP, SOCKS4, and multi-hop chains are rejected for UDP (no silent fallback).
+HTTP, SOCKS4, Trojan, H2, WebSocket, and mixed chains containing any of those
+protocols are rejected for UDP (no silent fallback). QUIC-specific UDP
+transport remains deferred until Phase 8. A composed chain is accepted only
+when every hop has a real codec and the runtime can establish its UDP
+transport.
 
 ## Bounded compatibility listener modes
 

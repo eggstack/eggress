@@ -335,6 +335,10 @@ pub struct ReverseServerConfig {
     pub max_streams: Option<u32>,
     /// Heartbeat interval (e.g., "30s").
     pub heartbeat_interval: Option<String>,
+    /// Use the pproxy 2.7.9 raw backward wire adapter instead of native
+    /// Eggress reverse framing.
+    #[serde(default)]
+    pub pproxy_compat: bool,
 }
 
 /// Configuration for a reverse proxy control client.
@@ -348,6 +352,9 @@ pub struct ReverseClientConfig {
     pub id: String,
     /// Address of the reverse server to connect to.
     pub server_addr: String,
+    /// Original pproxy backward chain, retained for jump-aware lowering.
+    #[serde(default)]
+    pub server_uri: Option<String>,
     /// Optional username for authentication.
     pub auth_username: Option<String>,
     /// Optional password for authentication.
@@ -368,4 +375,8 @@ pub struct ReverseClientConfig {
     /// Default target port to connect to when the control channel
     /// does not specify one (e.g., 80).
     pub default_target_port: Option<u16>,
+    /// Use the pproxy 2.7.9 raw backward wire adapter instead of native
+    /// Eggress reverse framing.
+    #[serde(default)]
+    pub pproxy_compat: bool,
 }

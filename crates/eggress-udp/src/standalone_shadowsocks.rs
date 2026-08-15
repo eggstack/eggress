@@ -6,6 +6,7 @@ use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
 
+use crate::composed::open_composed_udp_upstream;
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
 use crate::flow::{
@@ -436,6 +437,77 @@ pub async fn shadowsocks_standalone_udp_relay(
                                     config.udp_metrics.record_standalone_rejected();
                                     continue;
                                 }
+                            }
+                        }
+                        UdpRelayCapability::SupportedComposed => {
+                            let key = UdpFlowKey::Composed {
+                                target: target_socks.clone(),
+                                upstream_id: upstream.clone(),
+                            };
+                            if !can_use_flow(state, &key, total_flows, &config.limits) {
+                                config.udp_metrics.record_standalone_rejected();
+                                drop(pending_lease);
+                                continue;
+                            }
+
+                            let active_lease = pending_lease.established();
+                            let entry = match state.target_flows.entry(key) {
+                                std::collections::hash_map::Entry::Occupied(mut e) => {
+                                    e.get_mut().touch();
+                                    e.into_mut()
+                                }
+                                std::collections::hash_map::Entry::Vacant(e) => {
+                                    let flow = match open_composed_udp_upstream(
+                                        upstream.clone(),
+                                        (*chain).clone(),
+                                        local_udp_bind_addr(),
+                                        active_lease,
+                                    )
+                                    .await
+                                    {
+                                        Ok(flow) => flow,
+                                        Err(_) => {
+                                            config.udp_metrics.record_standalone_rejected();
+                                            continue;
+                                        }
+                                    };
+                                    let flow_socket = flow.socket.clone();
+                                    let flow_stack = flow.stack.clone();
+                                    let flow_response_tx = response_tx.clone();
+                                    let flow_client = client_addr;
+                                    let recv_task = tokio::spawn(async move {
+                                        let mut recv_buf = [0u8; 65535];
+                                        while let Ok(Ok((n, _peer))) = tokio::time::timeout(
+                                            std::time::Duration::from_secs(30),
+                                            flow_socket.recv_from(&mut recv_buf),
+                                        )
+                                        .await
+                                        {
+                                            if let Ok((target, payload)) =
+                                                flow_stack.decode_response(recv_buf[..n].to_vec())
+                                            {
+                                                let _ = flow_response_tx.send(ResponseMsg {
+                                                    client: flow_client,
+                                                    target: target_to_socks_addr(&target),
+                                                    payload,
+                                                });
+                                            }
+                                        }
+                                    });
+                                    config.udp_metrics.record_standalone_flow_created();
+                                    e.insert(TargetFlowEntry {
+                                        flow: UdpFlowKind::Composed(flow),
+                                        recv_task,
+                                    })
+                                }
+                            };
+
+                            if let UdpFlowKind::Composed(flow) = &mut entry.flow {
+                                if flow.send(&target_socks, &payload).await.is_err() {
+                                    config.udp_metrics.record_standalone_rejected();
+                                }
+                            } else {
+                                config.udp_metrics.record_standalone_rejected();
                             }
                         }
                         UdpRelayCapability::UnsupportedProtocol { .. } => {

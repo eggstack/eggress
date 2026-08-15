@@ -6,6 +6,9 @@ use eggress_uri::ProxyChainSpec;
 #[derive(Debug)]
 pub enum UdpRelayCapability {
     SupportedSocks5,
+    /// A recursive stack of real UDP-capable hops. The first hop is the
+    /// outer wire layer and the last hop targets the destination.
+    SupportedComposed,
     #[cfg(feature = "shadowsocks")]
     SupportedShadowsocks {
         method: eggress_protocol_shadowsocks::CipherMethod,
@@ -71,7 +74,21 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
                 }
             }
         }
-        _ => UdpRelayCapability::UnsupportedMultiHop,
+        _ => {
+            if chain.hops.iter().all(|hop| {
+                hop.protocols.len() == 1
+                    && match hop.protocols[0] {
+                        ProtocolSpec::Socks5 => true,
+                        #[cfg(feature = "shadowsocks")]
+                        ProtocolSpec::Shadowsocks => extract_shadowsocks_creds(hop).is_some(),
+                        _ => false,
+                    }
+            }) {
+                UdpRelayCapability::SupportedComposed
+            } else {
+                UdpRelayCapability::UnsupportedMultiHop
+            }
+        }
     }
 }
 
@@ -102,15 +119,19 @@ pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
                     },
                     _ => UdpRelayCapability::SupportedSocks5,
                 }
+            } else if chain.hops.iter().all(|hop| {
+                hop.protocols.len() == 1 && matches!(hop.protocols[0], ProtocolSpec::Socks5)
+            }) {
+                UdpRelayCapability::SupportedComposed
             } else {
-                UdpRelayCapability::SupportedSocks5
+                UdpRelayCapability::UnsupportedMultiHop
             }
         }
         CapabilityResult::UnsupportedProtocol { protocol } => {
             UdpRelayCapability::UnsupportedProtocol { protocol }
         }
         CapabilityResult::UnsupportedChain { reason } => {
-            if reason == "multi-hop" {
+            if reason == "multi-hop" || reason.starts_with("multi-hop") {
                 UdpRelayCapability::UnsupportedMultiHop
             } else if reason == "multi-protocol" && chain.hops.len() == 1 {
                 UdpRelayCapability::UnsupportedProtocol {
@@ -242,6 +263,18 @@ mod tests {
         assert!(matches!(
             udp_capability(&c),
             UdpRelayCapability::UnsupportedMultiHop
+        ));
+    }
+
+    #[test]
+    fn two_udp_capable_hops_are_composable() {
+        let c = chain(vec![
+            hop(vec![ProtocolSpec::Socks5]),
+            hop(vec![ProtocolSpec::Socks5]),
+        ]);
+        assert!(matches!(
+            udp_capability(&c),
+            UdpRelayCapability::SupportedComposed
         ));
     }
 

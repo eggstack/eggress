@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::assoc::UdpAssociation;
 use crate::codec::{decode_packet, encode_socks5_udp_datagram};
+use crate::composed::open_composed_udp_upstream;
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
 use crate::flow::{TargetFlowEntry, UdpFlowKey, UdpFlowKind};
@@ -57,6 +58,7 @@ fn reap_idle_flows(
                 #[cfg(feature = "shadowsocks")]
                 UdpFlowKind::ShadowsocksUpstream(_) => {}
                 UdpFlowKind::Direct(_) => {}
+                UdpFlowKind::Composed(_) => {}
             }
             metrics.record_target_flow_timeout();
         }
@@ -366,6 +368,87 @@ async fn handle_client_datagram(
                     .record_packet_up(request.payload.len() as u64);
                 return Ok(());
             }
+            UdpRelayCapability::SupportedComposed => {
+                let key = UdpFlowKey::Composed {
+                    target: request.target.clone(),
+                    upstream_id: upstream.clone(),
+                };
+                if flows.len() >= config.limits.max_targets_per_association
+                    && !flows.contains_key(&key)
+                {
+                    config.udp_metrics.record_dropped();
+                    drop(pending_lease);
+                    return Ok(());
+                }
+
+                let entry = match flows.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.get_mut().touch();
+                        e.into_mut()
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        let flow = match open_composed_udp_upstream(
+                            upstream.clone(),
+                            (*chain).clone(),
+                            crate::flow::local_udp_bind_addr(),
+                            pending_lease.established(),
+                        )
+                        .await
+                        {
+                            Ok(flow) => flow,
+                            Err(error) => {
+                                tracing::debug!(%error, "failed to create composed UDP flow");
+                                config.udp_metrics.record_dropped();
+                                return Ok(());
+                            }
+                        };
+                        let flow_socket = flow.socket.clone();
+                        let flow_stack = flow.stack.clone();
+                        let flow_response_tx = response_tx.clone();
+                        let flow_cancel = cancel.clone();
+                        let recv_task = tokio::spawn(async move {
+                            let mut recv_buf = [0u8; 65535];
+                            loop {
+                                let result = tokio::select! {
+                                    _ = flow_cancel.cancelled() => break,
+                                    result = tokio::time::timeout(
+                                        std::time::Duration::from_secs(30),
+                                        flow_socket.recv_from(&mut recv_buf),
+                                    ) => result,
+                                };
+                                let Ok(Ok((n, _peer))) = result else { break };
+                                if let Ok((target, payload)) =
+                                    flow_stack.decode_response(recv_buf[..n].to_vec())
+                                {
+                                    let _ = flow_response_tx.send(ResponseMsg {
+                                        target: target_to_socks_addr(&target),
+                                        payload,
+                                    });
+                                }
+                            }
+                        });
+                        config.udp_metrics.record_target_flow_created();
+                        e.insert(TargetFlowEntry {
+                            flow: UdpFlowKind::Composed(flow),
+                            recv_task,
+                        })
+                    }
+                };
+
+                if let UdpFlowKind::Composed(flow) = &mut entry.flow {
+                    if flow.send(&request.target, request.payload).await.is_err() {
+                        config.udp_metrics.record_dropped();
+                        return Ok(());
+                    }
+                } else {
+                    config.udp_metrics.record_dropped();
+                    return Ok(());
+                }
+                config
+                    .udp_metrics
+                    .record_packet_up(request.payload.len() as u64);
+                return Ok(());
+            }
             UdpRelayCapability::UnsupportedProtocol { .. } => {
                 config.udp_metrics.record_dropped();
                 drop(pending_lease);
@@ -553,6 +636,7 @@ pub async fn udp_relay_loop(
             #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(_) => {}
             UdpFlowKind::Direct(_) => {}
+            UdpFlowKind::Composed(_) => {}
         }
         config.udp_metrics.record_target_flow_closed();
     }
@@ -612,7 +696,6 @@ fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
     }
 }
 
-#[cfg(feature = "shadowsocks")]
 fn target_to_socks_addr(target: &TargetAddr) -> SocksAddr {
     match &target.host {
         TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),

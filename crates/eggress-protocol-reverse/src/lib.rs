@@ -3,6 +3,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub mod client;
+pub mod compat_pproxy;
 pub mod metrics;
 pub mod server;
 

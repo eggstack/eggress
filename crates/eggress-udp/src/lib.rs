@@ -1,8 +1,10 @@
 pub mod assoc;
 pub mod codec;
+pub mod composed;
 pub mod direct;
 pub mod error;
 pub mod flow;
+pub mod hop;
 pub mod limits;
 pub mod metrics;
 pub mod registry;

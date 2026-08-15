@@ -11,6 +11,7 @@ Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI targ
 cargo test -p eggress-routing
 cargo test -p eggress-runtime retry_fallback
 cargo test -p eggress-cli --test cli_exit_codes
+cargo test -p eggress-runtime --test reverse_runtime --test udp --test udp_upstream --test reverse_interop
 python3 -m pytest python/tests/test_pproxy_phase4_contract.py -q
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml --check-matrix docs/parity/composition_matrix.toml
@@ -71,7 +72,7 @@ verbose helpers and platform system-proxy behavior.
 
 The `operations` feature gates the admin HTTP server, Prometheus metrics export, and system-proxy integration. The `reverse` feature requires `operations`. Lean builds (`--no-default-features --features common`) exclude extended protocols (Shadowsocks, Trojan, WebSocket), reverse runtime, system-proxy, and compatibility layers.
 
-The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP. The `pproxy-legacy` feature enables the isolated SSR/plugin compatibility path; native builds do not need it.
+The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP. UDP composition is closed over SOCKS5 and, in extended builds, Shadowsocks; HTTP/SOCKS4/Trojan/H2/WS/QUIC UDP paths must fail validation. The `pproxy-legacy` feature enables the isolated SSR/plugin compatibility path; native builds do not need it.
 
 Shadowsocks strict AEAD coverage includes `aes-128-gcm`, `aes-192-gcm`,
 `aes-256-gcm`, and `chacha20-ietf-poly1305`. Their pproxy 2.7.9 salt/IV sizes

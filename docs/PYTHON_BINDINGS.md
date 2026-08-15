@@ -1298,7 +1298,7 @@ Milestone C makes the Python internals exposed by `pproxy==2.7.9` behaviorally f
 
 - SSH, QUIC/H3 transport implementation
 - Salsa20, Blowfish, CAST5, DES ciphers (no `cryptography` backend)
-- Multi-hop UDP and reverse composition
+- UDP chains containing non-UDP protocols and reverse composition beyond the documented compatibility adapter
 - Full CLI/process parity
 
 ## Wrapper and Composition Objects (Phase C4)

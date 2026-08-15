@@ -1395,6 +1395,7 @@ mod tests {
                 auth_password_env: None,
                 max_streams: None,
                 heartbeat_interval: None,
+                pproxy_compat: false,
             }]),
             reverse_clients: None,
         };
@@ -1425,6 +1426,7 @@ mod tests {
                 auth_password_env: None,
                 max_streams: None,
                 heartbeat_interval: None,
+                pproxy_compat: false,
             }]),
             reverse_clients: None,
         };
@@ -1454,6 +1456,7 @@ mod tests {
                 auth_password_env: Some("MY_SECRET".to_string()),
                 max_streams: None,
                 heartbeat_interval: None,
+                pproxy_compat: false,
             }]),
             reverse_clients: None,
         };

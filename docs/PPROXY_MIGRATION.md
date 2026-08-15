@@ -131,7 +131,7 @@ upstream_group = "chain"
 | HTTP-only upstream (`httponly://`) | Supported | Existing HTTP forward path rewrites origin-form requests to absolute-form |
 | Unix-domain TCP upstream | Supported on Unix | Tokio UnixStream; UDP and Windows are rejected |
 | Echo endpoint | Supported | Explicit TCP/UDP loopback utility |
-| Fixed-target UDP tunnel | Supported | One configured target with bounded packet relay; no multi-hop UDP claim |
+| Fixed-target UDP tunnel | Supported | One configured target with bounded packet relay; composed UDP upstreams are limited to proven SOCKS5/Shadowsocks hops |
 | TLS ALPN | Supported | Configurable ALPN values for H2 and HTTP/1.1 (Phase 26) |
 | Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
 
@@ -148,7 +148,7 @@ The following pproxy features are explicitly unsupported:
 - **`--reuse`** -- SO_REUSEPORT on listener sockets (not connection pooling)
 - **`--log`** -- Use `RUST_LOG=debug` environment variable
 - **`--sys`** -- Unsupported in pproxy compatibility mode; fails before startup. Use the native `eggress system-proxy inspect` subcommand for read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands.
-- **Multi-hop UDP** -- Not supported
+- **UDP over non-UDP chains** -- Not supported; composed UDP chains are limited to SOCKS5 and standard Shadowsocks hops
 - **macOS PF transparent destination recovery** -- Intentional non-parity; requires privileged `/dev/pf` ioctl access
 - **Backward TLS/mixed reverse chains** -- Intentional partial compatibility; reverse framing is not a normal chain stream
 - **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)

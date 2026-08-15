@@ -602,7 +602,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as runtime-integrated upstream (Phase B3)**: WebSocket tunnels (`ws://`, `wss://`), Raw fixed-target tunnels (`raw://`, `tunnel://`)
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
-- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, multi-hop UDP
+- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, UDP chains containing non-UDP protocols
 - **Implemented**: Trojan inbound listener and upstream
 
 ### Diagnostic behavior

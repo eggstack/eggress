@@ -396,7 +396,7 @@ async fn http_upstream_drops_unsupported() {
 }
 
 #[tokio::test]
-async fn multi_hop_chain_drops_unsupported() {
+async fn multi_hop_chain_is_accepted_by_composed_relay() {
     let upstream1 = Socks5UdpTestServer::start(Socks5TestServerConfig {
         mode: Socks5TestMode::NoAuth,
         relay_addr: None,
@@ -430,11 +430,11 @@ async fn multi_hop_chain_drops_unsupported() {
     let client_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client_socket.connect(relay_addr).await.unwrap();
 
-    let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"multi-hop drop");
+    let pkt = ipv4_socks5_packet([127, 0, 0, 1], 8080, b"multi-hop composed");
     client_socket.send(&pkt).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 1);
+    assert_eq!(udp_metrics.dropped_packets.load(Ordering::Relaxed), 0);
 
     cancel.cancel();
     relay_handle.await.unwrap().unwrap();

@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
+use crate::hop::UdpHopStack;
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
 use eggress_core::{TargetAddr, TargetHost, UpstreamId};
@@ -31,6 +32,10 @@ pub enum UdpFlowKey {
         target: SocksAddr,
         upstream_id: UpstreamId,
     },
+    Composed {
+        target: SocksAddr,
+        upstream_id: UpstreamId,
+    },
 }
 
 impl UdpFlowKey {
@@ -40,6 +45,7 @@ impl UdpFlowKey {
             UdpFlowKey::Socks5Upstream { target, .. } => target,
             #[cfg(feature = "shadowsocks")]
             UdpFlowKey::ShadowsocksUpstream { target, .. } => target,
+            UdpFlowKey::Composed { target, .. } => target,
         }
     }
 }
@@ -49,6 +55,7 @@ pub enum UdpFlowKind {
     Socks5Upstream(Socks5UdpTargetFlow),
     #[cfg(feature = "shadowsocks")]
     ShadowsocksUpstream(ShadowsocksUdpTargetFlow),
+    Composed(ComposedUdpTargetFlow),
 }
 
 pub struct Socks5UdpTargetFlow {
@@ -95,6 +102,64 @@ pub struct ShadowsocksUdpTargetFlow {
     pub last_activity: Instant,
 }
 
+pub struct ComposedUdpTargetFlow {
+    pub target: Option<SocksAddr>,
+    pub upstream_id: UpstreamId,
+    pub socket: Arc<tokio::net::UdpSocket>,
+    pub outer_relay_addr: SocketAddr,
+    pub stack: UdpHopStack,
+    pub relay_targets: Vec<TargetAddr>,
+    pub control_cancels: Vec<CancellationToken>,
+    pub control_tasks: Vec<JoinHandle<()>>,
+    pub lease: ActiveLease,
+    pub last_activity: Instant,
+}
+
+impl ComposedUdpTargetFlow {
+    pub fn touch(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    pub fn last_activity(&self) -> Instant {
+        self.last_activity
+    }
+
+    pub async fn send(
+        &mut self,
+        target: &SocksAddr,
+        payload: &[u8],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let target_addr = socks_to_target_addr(target);
+        let packet = self.stack.encode_request_with_next_targets(
+            &target_addr,
+            payload,
+            &self.relay_targets,
+        )?;
+        self.socket.send_to(&packet, self.outer_relay_addr).await?;
+        self.target = Some(target.clone());
+        Ok(())
+    }
+
+    pub fn decode_response(
+        &self,
+        packet: Vec<u8>,
+    ) -> Result<(SocksAddr, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+        let (target, payload) = self.stack.decode_response(packet)?;
+        Ok((target_to_socks_addr(&target), payload))
+    }
+}
+
+impl Drop for ComposedUdpTargetFlow {
+    fn drop(&mut self) {
+        for cancel in &self.control_cancels {
+            cancel.cancel();
+        }
+        for task in &self.control_tasks {
+            task.abort();
+        }
+    }
+}
+
 #[cfg(feature = "shadowsocks")]
 impl ShadowsocksUdpTargetFlow {
     pub fn touch(&mut self) {
@@ -137,6 +202,11 @@ impl Drop for TargetFlowEntry {
         if let UdpFlowKind::Socks5Upstream(flow) = &self.flow {
             flow.control_cancel.cancel();
         }
+        if let UdpFlowKind::Composed(flow) = &self.flow {
+            for cancel in &flow.control_cancels {
+                cancel.cancel();
+            }
+        }
     }
 }
 
@@ -147,6 +217,7 @@ impl TargetFlowEntry {
             UdpFlowKind::Socks5Upstream(f) => f.touch(),
             #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(f) => f.touch(),
+            UdpFlowKind::Composed(f) => f.touch(),
         }
     }
 
@@ -156,6 +227,7 @@ impl TargetFlowEntry {
             UdpFlowKind::Socks5Upstream(f) => f.last_activity(),
             #[cfg(feature = "shadowsocks")]
             UdpFlowKind::ShadowsocksUpstream(f) => f.last_activity(),
+            UdpFlowKind::Composed(f) => f.last_activity(),
         }
     }
 }
@@ -211,6 +283,11 @@ pub fn shutdown_flow(entry: &TargetFlowEntry) {
     entry.recv_task.abort();
     if let UdpFlowKind::Socks5Upstream(flow) = &entry.flow {
         flow.control_cancel.cancel();
+    }
+    if let UdpFlowKind::Composed(flow) = &entry.flow {
+        for cancel in &flow.control_cancels {
+            cancel.cancel();
+        }
     }
 }
 

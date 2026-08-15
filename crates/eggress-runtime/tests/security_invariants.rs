@@ -414,7 +414,8 @@ fn unsupported_protocol_combinations_not_silent() {
     assert!(!caps.is_udp_supported());
     assert!(matches!(
         caps.udp_associate,
-        CapabilityResult::UnsupportedChain { reason } if reason == "multi-hop"
+        CapabilityResult::UnsupportedChain { reason }
+            if reason == "multi-hop contains a non-UDP protocol"
     ));
 
     // Multi-protocol hop is unsupported for both

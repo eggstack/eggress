@@ -1992,6 +1992,39 @@ impl ServiceSupervisor {
                 drop(current_snapshot);
 
                 for rs_cfg in reverse_servers {
+                    if rs_cfg.pproxy_compat {
+                        let server_config =
+                            eggress_protocol_reverse::compat_pproxy::PproxyBackwardServerConfig {
+                                control_bind: rs_cfg.control_bind,
+                                external_bind: rs_cfg.external_bind,
+                                auth: eggress_protocol_reverse::compat_pproxy::raw_auth(
+                                    rs_cfg.auth_username.as_deref(),
+                                    rs_cfg.auth_password.as_deref(),
+                                ),
+                                max_control_connections: rs_cfg.max_control_connections as usize,
+                                max_pending_external: rs_cfg.max_pending_external as usize,
+                                read_timeout_ms: rs_cfg.read_timeout_ms,
+                            };
+                        let server =
+                            eggress_protocol_reverse::compat_pproxy::PproxyBackwardServer::new(
+                                server_config,
+                            );
+                        let server_cancel = server.cancel_token();
+                        let cancel_clone = cancel.clone();
+                        tasks.spawn(async move {
+                            let result = tokio::select! {
+                                r = server.run() => r,
+                                _ = cancel_clone.cancelled() => {
+                                    server_cancel.cancel();
+                                    Ok(())
+                                }
+                            };
+                            if let Err(e) = result {
+                                tracing::error!(error = %e, "pproxy backward server error");
+                            }
+                        });
+                        continue;
+                    }
                     let server_config = eggress_protocol_reverse::server::ReverseServerConfig {
                         control_bind: rs_cfg.control_bind,
                         external_bind: Some(rs_cfg.external_bind),
@@ -2053,6 +2086,50 @@ impl ServiceSupervisor {
 
                     let parallel = rc_cfg.parallel_connections.max(1);
                     for conn_idx in 0..parallel {
+                        if rc_cfg.pproxy_compat {
+                            let client_config = eggress_protocol_reverse::compat_pproxy::PproxyBackwardClientConfig {
+                                server_addr: rc_cfg.server_addr,
+                                server_chain: rc_cfg.server_chain.clone(),
+                                auth: eggress_protocol_reverse::compat_pproxy::raw_auth(
+                                    rc_cfg.auth_username.as_deref(),
+                                    rc_cfg.auth_password.as_deref(),
+                                ),
+                                reconnect_initial_ms: rc_cfg.reconnect_initial_ms,
+                                reconnect_max_ms: rc_cfg.reconnect_max_ms,
+                                read_timeout_ms: rc_cfg.read_timeout_ms,
+                                target_connect_timeout_ms: 10_000,
+                            };
+                            let client =
+                                eggress_protocol_reverse::compat_pproxy::PproxyBackwardClient::new(
+                                    client_config,
+                                    std::sync::Arc::new(
+                                        crate::reverse::RouteEngineTargetResolver::new(
+                                            routing.clone(),
+                                            host.clone(),
+                                            port,
+                                            std::sync::Arc::from(rc_cfg.id.as_str()),
+                                            Some(rc_cfg.server_addr),
+                                        ),
+                                    ),
+                                );
+                            let cancel_clone = cancel.clone();
+                            let client_cancel = client.cancel_token();
+                            let client_id = rc_cfg.id.clone();
+                            let server_addr = rc_cfg.server_addr;
+                            tasks.spawn(async move {
+                                let result = tokio::select! {
+                                    r = client.run() => r,
+                                    _ = cancel_clone.cancelled() => {
+                                        client_cancel.cancel();
+                                        Ok(())
+                                    }
+                                };
+                                if let Err(e) = result {
+                                    tracing::error!(error = %e, client_id = %client_id, server = %server_addr, conn = conn_idx, "pproxy backward client error");
+                                }
+                            });
+                            continue;
+                        }
                         let client_config = eggress_protocol_reverse::client::ReverseClientConfig {
                             server_addr: rc_cfg.server_addr,
                             auth_username: rc_cfg.auth_username.clone(),

@@ -39,10 +39,11 @@ impl UpstreamCapabilities {
 /// - Direct route (0 hops): TCP and UDP are not handled via upstream capability
 /// - HTTP upstream: TCP CONNECT supported; UDP unsupported
 /// - SOCKS4 upstream: TCP CONNECT supported; UDP unsupported
-/// - SOCKS5 upstream: TCP CONNECT supported; UDP supported for one-hop only
+/// - SOCKS5 upstream: TCP CONNECT supported; UDP supported
 /// - Shadowsocks upstream: TCP not advertised (non-standard AEAD framing);
 ///   UDP supported (standard AEAD format)
-/// - Multi-hop: TCP may be supported; UDP unsupported
+/// - Multi-hop: TCP may be supported; UDP is supported when every hop has a
+///   proven UDP codec (SOCKS5 or Shadowsocks)
 pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
     match chain.hops.len() {
         0 => UpstreamCapabilities {
@@ -68,12 +69,25 @@ pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
                 }
             }
         }
-        _ => UpstreamCapabilities {
-            tcp_connect: CapabilityResult::Supported,
-            udp_associate: CapabilityResult::UnsupportedChain {
-                reason: "multi-hop".to_string(),
-            },
-        },
+        _ => {
+            let udp_supported = chain.hops.iter().all(|hop| {
+                hop.protocols.len() == 1
+                    && matches!(
+                        hop.protocols[0],
+                        ProtocolSpec::Socks5 | ProtocolSpec::Shadowsocks
+                    )
+            });
+            UpstreamCapabilities {
+                tcp_connect: CapabilityResult::Supported,
+                udp_associate: if udp_supported {
+                    CapabilityResult::Supported
+                } else {
+                    CapabilityResult::UnsupportedChain {
+                        reason: "multi-hop contains a non-UDP protocol".to_string(),
+                    }
+                },
+            }
+        }
     }
 }
 
@@ -262,7 +276,7 @@ mod tests {
         assert_eq!(
             caps.udp_associate,
             CapabilityResult::UnsupportedChain {
-                reason: "multi-hop".to_string()
+                reason: "multi-hop contains a non-UDP protocol".to_string()
             }
         );
     }
@@ -305,7 +319,7 @@ mod tests {
         let caps = classify_upstream_chain(&c);
         match &caps.udp_associate {
             CapabilityResult::UnsupportedChain { reason } => {
-                assert_eq!(reason, "multi-hop");
+                assert_eq!(reason, "multi-hop contains a non-UDP protocol");
             }
             _ => panic!("expected UnsupportedChain"),
         }

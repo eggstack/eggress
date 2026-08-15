@@ -287,7 +287,7 @@ These pproxy features are deliberately not replicated in eggress:
 | `--sys` (system proxy) | Unsupported in pproxy compatibility mode | Use the native `eggress system-proxy inspect` subcommand for read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands. |
 | `--alive` check interval | Design choice | Configure `[upstreams.health]` in TOML |
 | SOCKS4/SOCKS5 BIND | Deferred | Returns `REP_COMMAND_NOT_SUPPORTED` (0x07) |
-| Multi-hop UDP chains | Architecture | Single-hop only |
+| UDP chains containing non-UDP protocols | Architecture | SOCKS5 and standard Shadowsocks composition only |
 | SSH transport | Out of scope | SSH is not a proxy protocol |
 | Legacy stream ciphers | Security | Use AEAD methods only |
 | ShadowsocksR extensions outside Phase 3 | Non-standard / legacy encryption | Use bounded `pproxy-legacy` TCP support or standard Shadowsocks |
@@ -445,7 +445,7 @@ benchmarking. No regression from Phase 34 baselines is expected.
 ## 11. Known Limitations
 
 1. **SOCKS4/SOCKS5 BIND** not implemented (returns 0x07).
-2. **Multi-hop UDP chains** not supported (single-hop only).
+2. **UDP chains containing non-UDP protocols** are not supported; bounded SOCKS5 and standard Shadowsocks compositions are supported.
 3. **Connection pooling** not implemented (one upstream per session).
 4. **Hot reload** is routing-only; listener topology changes require
    restart.

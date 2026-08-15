@@ -24,6 +24,7 @@ pub struct CompiledReverseServerConfig {
     pub max_listeners_per_client: u32,
     pub max_streams_per_listener: u32,
     pub max_pending_external: u32,
+    pub pproxy_compat: bool,
 }
 
 /// Compiled reverse client configuration with resolved defaults and parsed addresses.
@@ -31,6 +32,7 @@ pub struct CompiledReverseServerConfig {
 pub struct CompiledReverseClientConfig {
     pub id: String,
     pub server_addr: std::net::SocketAddr,
+    pub server_chain: Option<eggress_uri::ProxyChainSpec>,
     pub auth_username: Option<String>,
     pub auth_password: Option<String>,
     pub reconnect_initial_ms: u64,
@@ -40,6 +42,7 @@ pub struct CompiledReverseClientConfig {
     pub read_timeout_ms: u64,
     pub drain_grace_ms: u64,
     pub parallel_connections: u32,
+    pub pproxy_compat: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1605,6 +1608,7 @@ fn compile_reverse_servers(
                 max_listeners_per_client: 1,
                 max_streams_per_listener: max_streams,
                 max_pending_external: 1024,
+                pproxy_compat: s.pproxy_compat,
             })
         })
         .collect()
@@ -1630,6 +1634,17 @@ fn compile_reverse_clients(
                     &format!("invalid socket address: {}", c.server_addr),
                 )
             })?;
+            let server_chain = c
+                .server_uri
+                .as_deref()
+                .map(eggress_uri::parse_proxy_chain)
+                .transpose()
+                .map_err(|error| {
+                    ConfigError::validation(
+                        &format!("{}.server_uri", path),
+                        &format!("invalid backward chain: {error}"),
+                    )
+                })?;
 
             let auth_password = resolve_password(
                 c.auth_password.as_deref(),
@@ -1679,6 +1694,7 @@ fn compile_reverse_clients(
             Ok(CompiledReverseClientConfig {
                 id: c.id.clone(),
                 server_addr,
+                server_chain,
                 auth_username: c.auth_username.clone(),
                 auth_password,
                 reconnect_initial_ms,
@@ -1691,6 +1707,7 @@ fn compile_reverse_clients(
                 read_timeout_ms: heartbeat_interval_ms,
                 drain_grace_ms: 5_000,
                 parallel_connections,
+                pproxy_compat: c.pproxy_compat,
             })
         })
         .collect()

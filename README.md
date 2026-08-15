@@ -458,7 +458,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 | Direct | yes | yes |
 | HTTP CONNECT | yes | no |
 | SOCKS4/SOCKS4a | yes | no |
-| SOCKS5 | yes | one-hop |
+| SOCKS5 | yes | one-hop and composed UDP-capable chains |
 | Shadowsocks | yes (aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305) | yes (standard AEAD upstream; pproxy PacketCipher standalone inbound) |
 | Trojan | yes (rustls) | no |
 
@@ -475,7 +475,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] UDP through one-hop Shadowsocks upstream (standard AEAD)
 - [x] Standalone UDP relay (`mode = "standalone_pproxy_udp"`)
 - [ ] UDP through Trojan upstream
-- [ ] UDP through multi-hop proxy chains
+- [x] UDP through composed SOCKS5/Shadowsocks hop chains, with reverse-order response decoding
 - [ ] UDP through HTTP/MASQUE/CONNECT-UDP
 
 ### TLS
