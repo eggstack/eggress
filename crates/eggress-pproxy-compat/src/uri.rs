@@ -236,11 +236,9 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     for token in split_scheme_tokens(&scheme_part)? {
         let (token, token_target) = parse_protocol_token(token)?;
         if let Some(target) = token_target {
-            if token != "tunnel" {
+            if !matches!(token, "tunnel" | "raw" | "ws" | "wss" | "h2") {
                 return Err(CompatError::InvalidUri {
-                    message: format!(
-                        "fixed target is only supported on tunnel protocol, not '{token}'"
-                    ),
+                    message: format!("fixed target is not supported on '{token}'"),
                 });
             }
             if fixed_target.replace(target).is_some() {
@@ -278,6 +276,10 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         });
     }
     let scheme = protocol_chain.join("+");
+
+    if protocol_chain.iter().any(|token| token == "wss") {
+        tls = true;
+    }
 
     // Validate known schemes
     for protocol in &protocol_chain {
@@ -370,9 +372,9 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
         }
     }
     // A canonical token target and the URI endpoint have independent roles:
-    // `tunnel{target}://listener` binds the listener endpoint while fixing the
-    // relay destination. The legacy `raw://{target}` form uses the endpoint
-    // extension itself as the fixed target.
+    // `tunnel{target}://listener` and `ws{target}://listener` bind the
+    // listener endpoint while fixing the relay destination. The legacy
+    // `raw://{target}` form uses the endpoint extension itself as the target.
     let endpoint_for_parse = endpoint_fixed_target.as_deref().unwrap_or(endpoint_str);
     let (host, mut port, port_specified) = parse_endpoint(endpoint_for_parse)?;
     if !port_specified && !host.is_empty() {

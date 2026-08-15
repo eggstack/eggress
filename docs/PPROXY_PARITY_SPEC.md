@@ -371,7 +371,7 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `--daemon` | Run as daemon | Fatal (exit code 5); use a process manager |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
 | `--pac` | PAC file path argument | Consumes the path and maps it to the Eggress admin PAC route; emits a compatibility warning |
-| `--sys` | Set system proxy (mac/windows) | Unsupported in pproxy compatibility mode; fails before startup. Use native `eggress system-proxy inspect` for read-only inspection; mutation requires its own `apply` path. |
+| `--sys` | Set system proxy (mac/windows) | Supported with warning in compatibility mode; applies the bound local SOCKS5/HTTP listener through the existing backend and restores prior settings. |
 | `--test` | URL argument; test and exit | Consumes the target and delegates it to `eggress upstream test`; both compatibility entry points preserve the target |
 
 ## 11. Python Library Usage
@@ -882,7 +882,7 @@ pproxy exposes 14 CLI flags/options. The eggress compat layer maps 7 of them:
 | `--rulefile` | rejected | Compatible — loads pproxy plain regex lines and lowers them to a high-priority hostname block (Phase 2) |
 | `--reuse` | listener SO_REUSEPORT | Supported with warning — configures SO_REUSEPORT on listener sockets |
 | `--log` | rejected | Intentional non-parity — emits structured diagnostic |
-| `--sys` | inspection and global mutation | Compatibility mode refuses mutation; native CLI exposes read-only inspection only |
+| `--sys` | inspection and global mutation | Compatibility mode applies the selected bound SOCKS5/HTTP listener through the existing backend and restores prior settings; native CLI inspection remains read-only |
 
 For the complete inventory with diagnostic codes, see
 [`docs/PPROXY_MIGRATION.md`](./PPROXY_MIGRATION.md).

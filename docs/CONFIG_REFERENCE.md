@@ -293,7 +293,7 @@ members = ["ss-udp"]
 
 **Trojan URI:** `trojan://password@host:port`
 
-> **Note:** `h2`, `ws`/`wss`, `raw`/`tunnel` protocols are supported as **upstream-only** protocols
+> **Note:** `h2`, `ws`/`wss`, `raw`/`tunnel` protocols are supported upstream. The pproxy compatibility translator also supports `h2://` listeners and fixed-target `ws{host:port}://`/`wss{host:port}://` listeners; native TOML listeners should use the dedicated protocol/runtime configuration described in the architecture docs.
 > through the runtime supervisor. They are not integrated as inbound/listener protocols and
 > are rejected by `parse_listener_uri`.
 

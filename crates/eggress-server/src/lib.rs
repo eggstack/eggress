@@ -1,4 +1,6 @@
 pub mod accept;
+#[cfg(feature = "extended")]
+pub mod advanced;
 pub mod error;
 pub mod execute;
 pub mod listener;
@@ -8,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use accept::AcceptedSession;
+pub use accept::AuthReuseCache;
 pub use error::SessionOpenError;
 pub use execute::{build_chain_executor, FailureCategory, SessionReport};
 
@@ -81,6 +84,7 @@ pub struct ConnectionContext {
 }
 
 /// Configuration for a single connection.
+#[derive(Clone)]
 pub struct ConnectionConfig {
     pub routing: Arc<dyn RouteService>,
     pub context: ConnectionContext,
@@ -121,7 +125,7 @@ pub async fn serve_connection(
 
     let accepted = tokio::time::timeout(
         config.handshake_timeout,
-        accept::accept_with_fixed_target(
+        accept::accept_with_fixed_target_for_peer(
             client,
             &config.protocols,
             &config.authentication,
@@ -129,6 +133,7 @@ pub async fn serve_connection(
             config.shadowsocks_metrics.as_ref(),
             config.trojan.as_ref(),
             config.fixed_target.as_ref(),
+            config.context.source.map(|peer| peer.ip()),
         ),
     )
     .await;

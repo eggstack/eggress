@@ -6,19 +6,19 @@ System proxy inspection and library-side configuration helpers for Eggress.
 
 Eggress provides read-only system proxy inspection through the native CLI. The
 `eggress-system-proxy` Rust crate also contains planning, command-generation,
-and rollback-state primitives for library integrations. Those library
-capabilities are not exposed as public native CLI mutation commands, and
-system proxy state is never changed automatically.
+and rollback-state primitives for library integrations. Native `eggress run`
+remains read-only; the pproxy compatibility executable explicitly opts into
+apply/rollback behavior with `--sys`.
 
 ## Design Principles
 
-1. **No hidden global mutation**: System proxy settings are never changed during normal `eggress run` or `eggress pproxy run`.
+1. **No hidden global mutation**: System proxy settings are never changed during normal `eggress run`; compatibility `eggress pproxy run --sys` is the explicit exception and always keeps rollback state.
 2. **Read-only by default**: Inspection is safe and requires no elevated privileges.
 3. **Read-only native CLI**: `eggress system-proxy inspect` is the only public
    native system-proxy command.
-4. **Library-only mutation primitives**: Planning, command previews, and
-   rollback-state handling remain available to Rust callers through the crate
-   API; they are not CLI commands.
+4. **Explicit compatibility mutation**: Planning, command execution, and
+   rollback-state handling are used by `pproxy --sys`; native CLI mutation
+   commands remain unavailable.
 5. **Credential redaction**: Passwords are stripped from all output and logs.
 
 ## CLI Usage
@@ -36,9 +36,9 @@ eggress system-proxy inspect --json
 ### Rust library capabilities
 
 The `eggress-system-proxy` crate exposes apply planning, platform command
-construction, and rollback-state primitives as Rust APIs. They are library
-capabilities only; the native CLI remains read-only. Use platform-native tools
-for any operator-controlled system proxy mutation.
+construction, and rollback-state primitives as Rust APIs. The native CLI
+remains read-only, while compatibility `pproxy --sys` uses these APIs to apply
+the selected bound listener and restore prior settings on shutdown.
 
 ## Platform Support
 

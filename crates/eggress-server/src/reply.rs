@@ -16,6 +16,8 @@ pub async fn send_tunnel_success(
                 .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await?;
         }
+        (TunnelProtocol::Http2, ReplyContext::Http2)
+        | (TunnelProtocol::WebSocket, ReplyContext::WebSocket) => {}
         (TunnelProtocol::Socks4, ReplyContext::Socks4) => {
             eggress_protocol_socks::socks4::server::write_socks4_reply(
                 &mut pending.client,
@@ -56,6 +58,10 @@ pub async fn send_tunnel_failure(
         (TunnelProtocol::HttpConnect, ReplyContext::Http) => {
             let status = http_failure_status(error);
             pending.client.write_all(status).await?;
+        }
+        (TunnelProtocol::Http2, ReplyContext::Http2)
+        | (TunnelProtocol::WebSocket, ReplyContext::WebSocket) => {
+            pending.client.shutdown().await.ok();
         }
         (TunnelProtocol::Socks4, ReplyContext::Socks4) => {
             eggress_protocol_socks::socks4::server::write_socks4_reply(

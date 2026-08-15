@@ -32,9 +32,9 @@ OPTIONS:
     --log <PATH>           Log file path (recognized for compat; logs remain on stderr)
     --pac <PATH>           Serve PAC content at PATH
     --test <URL>           Test the supplied target and exit
-    --sys                  System proxy apply (unsupported; use 'eggress system-proxy inspect')
+    --sys                  Apply the selected local HTTP/SOCKS5 listener as system proxy
     --reuse                Listener SO_REUSEPORT (Linux only)
-    --auth <SECONDS>       Per-client auth reuse interval (unsupported)
+    --auth <SECONDS>       Per-client source-IP auth reuse interval
     --get <PATH,FILE>      Serve FILE at PATH through the admin server
     --daemon               Daemon mode (unsupported; use systemd)
     --version              Print version and exit
@@ -157,7 +157,15 @@ fn main() -> ExitCode {
     // Start from the in-memory RuntimeConfig. No config file path is provided,
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
-    match eggress_runtime::ServiceSupervisor::start_from_config(rt_config, None) {
+    let compatibility_options = eggress_runtime::CompatibilityOptions {
+        auth_timeout: pproxy_args.auth_timeout,
+        system_proxy: pproxy_args.system_proxy,
+    };
+    match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
+        rt_config,
+        None,
+        compatibility_options,
+    ) {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("pproxy: runtime error: {e}");

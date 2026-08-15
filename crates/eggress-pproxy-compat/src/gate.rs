@@ -111,27 +111,19 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_blocks_sys() {
+    fn evaluate_allows_sys_with_warning() {
         let args = parse(&["-l", "http://:8080", "--sys"]);
         let output = crate::translate::translate_pproxy_args(&args).unwrap();
         let gate = evaluate(&args, &output);
-        assert!(!gate.allows_start());
-        assert!(gate
-            .blockers
-            .iter()
-            .any(|b| matches!(b, BlockReason::Unsupported(u) if u.feature == "system-proxy")));
+        assert!(gate.allows_start(), "unexpected blockers: {:?}", gate);
     }
 
     #[test]
-    fn evaluate_blocks_auth() {
+    fn evaluate_allows_auth_with_warning() {
         let args = parse(&["-l", "http://:8080", "--auth", "3600"]);
         let output = crate::translate::translate_pproxy_args(&args).unwrap();
         let gate = evaluate(&args, &output);
-        assert!(!gate.allows_start());
-        assert!(gate
-            .blockers
-            .iter()
-            .any(|b| matches!(b, BlockReason::Unsupported(u) if u.feature == "auth-timeout")));
+        assert!(gate.allows_start(), "unexpected blockers: {:?}", gate);
     }
 
     #[test]

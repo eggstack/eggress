@@ -53,6 +53,39 @@ fn run_with_timeout(args: &[&str], timeout_ms: u64) -> std::process::Output {
     }
 }
 
+fn run_and_kill(args: &[&str], timeout_ms: u64) -> (Option<i32>, String) {
+    let mut child = eggress_bin()
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn eggress");
+
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stderr = child.stderr.take().expect("stderr pipe missing");
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut stderr, &mut bytes).unwrap();
+                return (status.code(), String::from_utf8_lossy(&bytes).into_owned());
+            }
+            Ok(None) if start.elapsed().as_millis() <= timeout_ms as u128 => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let status = child.wait().expect("failed to wait for killed process");
+                let mut stderr = child.stderr.take().expect("stderr pipe missing");
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut stderr, &mut bytes).unwrap();
+                return (status.code(), String::from_utf8_lossy(&bytes).into_owned());
+            }
+            Err(e) => panic!("failed to check process status: {e}"),
+        }
+    }
+}
+
 #[test]
 fn test_pproxy_run_invalid_args() {
     let output = run_with_timeout(&["pproxy", "run", "--", "-l"], 5000);
@@ -175,8 +208,8 @@ fn test_pproxy_run_daemon_fails() {
 }
 
 #[test]
-fn test_pproxy_run_auth_fails() {
-    let output = run_with_timeout(
+fn test_pproxy_run_auth_starts_listener() {
+    let (status, stderr) = run_and_kill(
         &[
             "pproxy",
             "run",
@@ -188,24 +221,22 @@ fn test_pproxy_run_auth_fails() {
             "--auth",
             "30",
         ],
-        5000,
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit code for --auth, got {:?}\nstderr: {stderr}",
-        output.status.code(),
+        1500,
     );
     assert!(
-        stderr.contains("auth") || stderr.contains("unsupported"),
-        "expected auth/unsupported error in stderr, got: {stderr}",
+        status.is_none(),
+        "expected listener to remain running with --auth, got {status:?}\nstderr: {stderr}"
+    );
+    assert!(
+        (stderr.contains("listen:") || stderr.contains("auth-timeout"))
+            && !stderr.contains("unsupported"),
+        "expected supported auth startup in stderr, got: {stderr}",
     );
 }
 
 #[test]
-fn test_pproxy_run_sys_fails_before_startup() {
-    let output = run_with_timeout(
+fn test_pproxy_run_sys_uses_compatibility_operation() {
+    let (status, stderr) = run_and_kill(
         &[
             "pproxy",
             "run",
@@ -216,22 +247,15 @@ fn test_pproxy_run_sys_fails_before_startup() {
             "socks5://127.0.0.1:1080",
             "--sys",
         ],
-        5000,
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit code for --sys, got {:?}\nstderr: {stderr}",
-        output.status.code(),
+        1500,
     );
     assert!(
-        !stderr.contains("System Proxy Inspection"),
-        "--sys must not run inspection in pproxy compatibility mode, got: {stderr}",
+        stderr.contains("listen:") || stderr.contains("sys") || stderr.contains("proxy"),
+        "expected system-proxy startup or operation output, got status {status:?}: {stderr}",
     );
     assert!(
-        stderr.contains("sys") || stderr.contains("unsupported"),
-        "expected sys/unsupported error in stderr, got: {stderr}",
+        !stderr.contains("unsupported"),
+        "--sys must not be rejected as unsupported: {stderr}",
     );
 }
 

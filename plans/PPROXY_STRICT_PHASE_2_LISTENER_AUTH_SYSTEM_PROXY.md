@@ -1,5 +1,12 @@
 # pproxy Strict Phase 2 — Listener Roles, Auth Reuse, and System Proxy
 
+Status: implemented. The compatibility runtime now includes multiplexed H2
+listeners, fixed-target WS/WSS listeners, bounded source-IP auth reuse, and
+explicit system-proxy apply/rollback orchestration. Focused protocol, cache,
+rollback, CLI, and parity-manifest validation provide local evidence; external
+pproxy interoperability remains gated by the repository's opt-in environment
+variables.
+
 ## Objective
 
 Close the highest-value remaining gaps that can be implemented primarily by wiring existing Eggress machinery rather than creating new transport stacks.

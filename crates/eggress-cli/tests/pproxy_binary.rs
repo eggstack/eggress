@@ -358,57 +358,54 @@ fn missing_value_for_r_fails() {
 
 #[test]
 fn sys_flag_fails_before_startup() {
-    // `--sys` is unsupported in pproxy compatibility mode and must fail
-    // before any inspection or service startup. The output must not
-    // contain inspection results presented as a successful outcome.
-    let output = pproxy_bin()
-        .args([
+    // The local Linux backend may reject system-proxy application, or keep
+    // the service running when the host extension is available. Either way,
+    // it must use the compatibility operation rather than an unsupported
+    // feature gate.
+    let (status, stderr) = spawn_and_collect(
+        pproxy_bin().args([
             "-l",
             "http://:19811",
             "-r",
             "socks5://127.0.0.1:1080",
             "--sys",
-        ])
-        .output()
-        .expect("failed to run pproxy");
-    assert!(
-        !output.status.success(),
-        "expected non-zero exit for --sys, got {:?}",
-        output.status.code(),
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("sys") || stderr.contains("not supported"),
-        "expected sys/not-supported error in stderr, got: {stderr}",
+        ]),
+        1500,
     );
     assert!(
-        !stderr.contains("System Proxy Inspection"),
-        "--sys must not run inspection in pproxy compatibility mode, got: {stderr}",
+        stderr.contains("listen:") || stderr.contains("sys") || stderr.contains("proxy"),
+        "expected system-proxy startup or operation output, got status {status:?}: {stderr}",
+    );
+    assert!(
+        !stderr.contains("unsupported"),
+        "--sys must not be rejected as unsupported: {stderr}",
     );
 }
 
 #[test]
-fn auth_flag_fails_unsupported() {
-    let output = pproxy_bin()
-        .args([
+fn auth_flag_starts_compatibility_listener() {
+    let (status, stderr) = spawn_and_collect(
+        pproxy_bin().args([
             "-l",
             "http://:19812",
             "-r",
             "socks5://127.0.0.1:1080",
             "--auth",
             "30",
-        ])
-        .output()
-        .expect("failed to run pproxy");
-    assert!(
-        !output.status.success(),
-        "expected non-zero exit for --auth, got {:?}",
-        output.status.code(),
+        ]),
+        1500,
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("auth") || stderr.contains("not supported"),
-        "expected auth/not-supported error in stderr, got: {stderr}",
+        status.is_none(),
+        "expected listener to remain running, got {status:?}: {stderr}"
+    );
+    assert!(
+        stderr.contains("listen:"),
+        "expected startup banner, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("unsupported"),
+        "--auth must not be rejected as unsupported: {stderr}"
     );
 }
 

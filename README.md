@@ -360,9 +360,16 @@ Python bindings; it is not a separate Python distribution. The bundled
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
 - **Certificate reload** — requires restart
 - **Private pproxy internals** — only the documented bounded public surface is supported; private implementation details and unsupported protocol families fail explicitly
-- **Advanced compatibility transports** — H2 and WS/WSS remain upstream-only; bounded raw/tunnel fixed-target TCP/UDP and `echo` listener forms are supported
+- **Advanced compatibility transports** — H2 listeners accept independent CONNECT streams; WS/WSS listeners use a fixed target (`ws{host:port}://listener`), with WSS over configured TLS; bounded raw/tunnel fixed-target TCP/UDP and `echo` listener forms remain supported
 
 ### Compatibility manifests
+
+The pproxy-compatible binary supports `--auth <seconds>` for bounded,
+source-IP authentication reuse when listener credentials are configured. The
+cache is process-local and expires on a monotonic clock. `--sys` applies the
+actual bound local SOCKS5 listener when available, otherwise HTTP, through the
+existing platform backend and restores prior settings on shutdown or failed
+startup.
 
 - [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) — maintained observable compatibility matrix and exclusions
 - [`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`](docs/parity/PPROXY_CLOSURE_SCENARIOS.md) — optional representative oracle and public smoke scenarios
@@ -503,6 +510,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Fixed-target WebSocket tunnel
 - [x] WebSocket in proxy chains
 - [x] Stream-native composition — WS handshake over prior-hop stream
+- [x] Compatibility WS/WSS fixed-target listeners
 
 ### Raw forwarding
 
@@ -518,6 +526,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] GOAWAY handling, upstream connection pooling
 - [x] H2-over-TLS ALPN, H2 authentication
 - [x] Stream-native composition — H2 handshake over prior-hop stream
+- [x] Compatibility H2 CONNECT listener with per-stream routing
 
 ### Reverse and backward proxying
 

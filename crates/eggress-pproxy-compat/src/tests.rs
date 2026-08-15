@@ -193,20 +193,29 @@ fn test_local_bind_reaches_native_chain_and_httponly_listener_is_rejected() {
 }
 
 #[test]
-fn test_advanced_transport_listener_is_role_specific_unsupported() {
-    for scheme in ["h2", "ws", "wss"] {
-        let args = PproxyArgs::parse(&["-l".into(), format!("{}://:1080", scheme)]).unwrap();
-        let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "unsupported-role"));
-        assert!(!output
-            .unsupported
-            .iter()
-            .any(|u| u.detail.contains("unknown scheme")));
-    }
+fn test_advanced_transport_listener_roles_are_translated() {
+    let h2 = PproxyArgs::parse(&["-l".into(), "h2://:1080".into()]).unwrap();
+    let h2_output = translate_pproxy_args(&h2).unwrap();
+    assert!(!h2_output.has_unsupported(), "{:?}", h2_output.unsupported);
+    assert!(h2_output.toml.contains("protocols = [\"h2\"]"));
+
+    let ws = PproxyArgs::parse(&["-l".into(), "ws{127.0.0.1:80}://:1080".into()]).unwrap();
+    let ws_output = translate_pproxy_args(&ws).unwrap();
+    assert!(!ws_output.has_unsupported(), "{:?}", ws_output.unsupported);
+    assert!(ws_output.toml.contains("protocols = [\"websocket\"]"));
+
+    let wss = PproxyArgs::parse(&[
+        "-l".into(),
+        "wss{127.0.0.1:80}://:1080".into(),
+        "--ssl".into(),
+        "cert.pem,key.pem".into(),
+    ])
+    .unwrap();
+    let wss_output = translate_pproxy_args(&wss).unwrap();
+    assert!(!wss_output
+        .unsupported
+        .iter()
+        .any(|u| u.feature == "unsupported-role"));
 }
 
 #[test]

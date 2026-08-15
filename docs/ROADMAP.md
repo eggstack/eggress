@@ -93,7 +93,7 @@ See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 
 ### Phases 25–28: Hardening and advanced transports — complete
 
-- [x] Transparent proxy, Unix domain sockets, reverse proxy supervisor integration, H2/WS/Raw protocol-crate only, QUIC/H3 rejection, CLI native-equivalent closure
+- [x] Transparent proxy, Unix domain sockets, reverse proxy supervisor integration, H2/WS/Raw runtime and bounded compatibility listener roles, QUIC/H3 rejection, CLI native-equivalent closure
 
 ### Phase 29–32: Python API parity and hardening — complete
 
@@ -118,7 +118,7 @@ See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 - [x] `-a N` generates `[health] interval = "Ns"`
 - [x] `--pac` generates `[admin.pac] enabled = true`
 - [x] `--test` translates and runs `eggress upstream test`, then exits
-- [x] `--sys` is unsupported in pproxy compatibility mode and fails before startup. Read-only inspection is exposed through the native `eggress system-proxy inspect` subcommand. Crate-level apply/rollback primitives are not exposed as CLI subcommands.
+- [x] Compatibility `--sys` applies the selected bound listener through the existing system-proxy backend and restores prior settings; native inspection remains read-only.
 - [x] `--log`, `--get` emit structured diagnostics
 
 ### Phase 39: pproxy URI grammar and chain semantics — complete

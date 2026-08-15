@@ -27,21 +27,23 @@ pproxy exposes a `--sys` command-line flag that configures the system-wide proxy
 
 ## Eggress Divergence
 
-Eggress intentionally diverges from pproxy's hidden global mutation:
+Eggress preserves the compatibility mutation boundary while making lifecycle
+behavior explicit:
 
-1. **No automatic mutation**: System proxy settings are never changed during normal operation.
-2. **Read-only inspection**: `eggress system-proxy inspect` reads settings without modification.
-3. **No native mutation command**: The native CLI does not expose a public
-   command for changing or reverting system proxy state.
-4. **Rust library capability**: `eggress-system-proxy` retains planning,
-   platform command-generation, and rollback-state primitives for Rust callers.
-   These are not native CLI features.
+1. **Compatibility-only mutation**: pproxy `--sys` applies only after its
+   listener binds successfully and selects the actual local SOCKS5/HTTP port.
+2. **Lifecycle-safe rollback**: Prior settings are captured in memory and
+   restored on normal shutdown, signal handling, or a later startup failure.
+3. **Native separation**: Native mode does not mutate system proxy settings;
+   `eggress system-proxy inspect` remains read-only.
+4. **Structured commands**: `eggress-system-proxy` passes program and argument
+   vectors directly to the command runner and uses `MockCommandRunner` in tests.
 
 ## Classification
 
 | Feature | pproxy | Eggress | Status |
 |---------|--------|---------|--------|
-| `--sys` flag | Global mutation | Compatibility mode refuses it | **Intentional non-parity** |
+| `--sys` flag | Global mutation | Compatibility mode applies and rolls back through existing backend | **Supported with warning** |
 | System proxy inspection | Via `--sys` | `eggress system-proxy inspect` | **Supported** |
-| System proxy mutation command | Implicit through `--sys` | No public native CLI command | **Intentional non-parity** |
+| System proxy mutation command | Implicit through `--sys` | Compatibility-only; no implicit native mutation | **Supported with warning** |
 | Planning and rollback primitives | Internal to pproxy cleanup | Rust library API only | **Library capability** |

@@ -281,17 +281,28 @@ impl tokio::io::AsyncRead for H2StreamRead {
         if !this.buffer.is_empty() {
             let len = this.buffer.len().min(buf.remaining());
             buf.put_slice(&this.buffer.split_to(len));
+            this.recv
+                .flow_control()
+                .release_capacity(len)
+                .map_err(std::io::Error::other)?;
             return Poll::Ready(Ok(()));
         }
 
-        let mut data_fut = Box::pin(this.recv.data());
-        match data_fut.as_mut().poll(cx) {
+        let poll = {
+            let mut data_fut = Box::pin(this.recv.data());
+            data_fut.as_mut().poll(cx)
+        };
+        match poll {
             Poll::Ready(Some(Ok(data))) => {
                 let len = data.len().min(buf.remaining());
                 buf.put_slice(&data[..len]);
                 if len < data.len() {
                     this.buffer = data.slice(len..);
                 }
+                this.recv
+                    .flow_control()
+                    .release_capacity(len)
+                    .map_err(std::io::Error::other)?;
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(e))),

@@ -14,6 +14,7 @@ System-level proxy configuration inspection, application, and rollback.
 | `SystemProxyStatus` | Current status |
 | `InspectionResult` | Result of proxy inspection |
 | `ApplyPlan` | Plan to apply proxy settings |
+| `AppliedProxy` | In-memory, idempotent rollback guard |
 | `Command` | System command to execute |
 | `RollbackState` | State for rolling back changes |
 
@@ -33,6 +34,8 @@ System-level proxy configuration inspection, application, and rollback.
 | `inspect_system_proxy()` | Read current system proxy settings |
 | `check_system_proxy_capability()` | Detect platform capabilities |
 | `plan_apply()` | Build an apply plan with rollback state |
+| `apply_compatibility_proxy()` | Apply a bound localhost HTTP/SOCKS5 listener and retain rollback state |
+| `AppliedProxy::restore()` | Restore captured settings; safe to call more than once |
 
 ## Command Runner
 
@@ -45,5 +48,15 @@ System-level proxy configuration inspection, application, and rollback.
 ## Dependencies
 
 None — standalone crate with no workspace dependencies.
+
+The pproxy compatibility runtime calls `apply_compatibility_proxy()` only
+after all configured listeners bind successfully. It prefers a usable local
+SOCKS5 listener and otherwise selects HTTP, captures the prior settings, and
+restores them on normal shutdown, signal handling, or a later startup error.
+Native `eggress system-proxy` commands retain their explicit semantics.
+
+Apply and rollback pass structured program/argument vectors to the command
+runner; shell-string execution and credential-bearing logs are not allowed.
+Unit tests inject `MockCommandRunner`.
 
 See [overview.md](overview.md) for context.

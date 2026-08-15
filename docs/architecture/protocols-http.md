@@ -35,6 +35,15 @@ HTTP/1.1 and H2 proxy protocol implementation.
 | `ForwardResponse` | Forward proxy response with body framing |
 | `H2PoolRegistry` | H2 connection pool registry |
 
+## Compatibility H2 listener
+
+The pproxy compatibility path exposes `h2://listener` as an H2 CONNECT
+listener. `serve_h2_connection` drives one parent connection and routes each
+CONNECT stream independently, validating `:authority` and
+`proxy-authorization`. DATA receive capacity is released as bytes are read,
+and GOAWAY or transport loss ends the parent without cancelling unrelated
+streams that have already been handed to the relay executor.
+
 ## Body Framing
 
 - `Content-Length` body copying with bounded buffers

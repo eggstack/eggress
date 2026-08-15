@@ -351,7 +351,7 @@ capability_ids = [
 notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Runtime-Integrated Advanced Transports (upstream-only, promoted in B3/B4)
+# Runtime-Integrated Advanced Transports (upstream and bounded compatibility listeners)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [[cell]]
@@ -363,7 +363,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.ws_runtime",
 ]
-notes = "WebSocket tunnel upstream only; binary-mode byte stream adapter. No listener role."
+notes = "WebSocket upstream plus fixed-target compatibility listener; binary-mode byte stream adapter."
 
 [[cell]]
 protocol = "wss"
@@ -374,7 +374,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.ws_runtime",
 ]
-notes = "WSS = WebSocket + TLS; upstream only with TLS transport wrapper. No listener role."
+notes = "WSS = WebSocket + TLS; upstream plus fixed-target compatibility listener with configured TLS."
 
 [[cell]]
 protocol = "h2"
@@ -385,7 +385,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.h2_runtime",
 ]
-notes = "Promoted in Phase B4; H2 CONNECT upstream only with TLS/ALPN. No listener role."
+notes = "H2 CONNECT upstream plus multiplexed compatibility listener with TLS/ALPN support."
 
 [[cell]]
 protocol = "raw"
@@ -515,4 +515,4 @@ description = "All protocols are now runtime-integrated (B4 promoted h2)"
 [[constraint]]
 type = "upstream_only_no_listener"
 applies_to = ["ws", "wss", "h2", "raw"]
-description = "Advanced transports are upstream-only; they cannot act as listeners or intermediate chain hops"
+description = "Advanced transports support upstream/intermediate composition; H2 and fixed-target WS/WSS also have bounded compatibility listener roles"

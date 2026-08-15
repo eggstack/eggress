@@ -4,9 +4,6 @@ use crate::error::CompatError;
 use crate::uri::{PproxyChain, PproxyUri};
 use crate::warnings::{CompatWarning, TranslationOutput};
 
-/// Max supported --auth value (30 days in seconds).
-const AUTH_MAX_SECONDS: u64 = 30 * 24 * 60 * 60;
-
 fn take_required_value(
     raw: &[String],
     index: &mut usize,
@@ -25,21 +22,13 @@ fn parse_auth_duration(value: &str) -> Result<Duration, CompatError> {
             message: "--auth requires a non-empty numeric value".to_string(),
         });
     }
-    let seconds: u64 = trimmed.parse().map_err(|_| CompatError::InvalidArgs {
-        message: format!(
-            "--auth value '{}' is not a valid non-negative integer",
-            trimmed
-        ),
+    let seconds: i64 = trimmed.parse().map_err(|_| CompatError::InvalidArgs {
+        message: format!("--auth value '{}' is not a valid integer", trimmed),
     })?;
-    if seconds > AUTH_MAX_SECONDS {
-        return Err(CompatError::InvalidArgs {
-            message: format!(
-                "--auth value {} exceeds maximum supported value of {} seconds (30 days)",
-                seconds, AUTH_MAX_SECONDS
-            ),
-        });
-    }
-    Ok(Duration::from_secs(seconds))
+    // argparse accepts negative integers. pproxy's AuthTable then expires
+    // those entries immediately, so preserve that behavior as a zero-length
+    // Rust duration instead of inventing a parser-side upper/lower bound.
+    Ok(Duration::from_secs(seconds.max(0) as u64))
 }
 
 /// Parsed pproxy-compatible CLI arguments.
@@ -59,7 +48,7 @@ pub struct PproxyArgs {
     pub reuse_port: bool,
     /// `--auth <seconds>`: per-client authentication reuse interval.
     pub auth_timeout: Option<Duration>,
-    /// `--sys` flag: system proxy settings apply (unsupported).
+    /// `--sys` flag: apply the selected compatibility listener as the system proxy.
     pub system_proxy: bool,
     /// Known-but-unsupported flags that require a translation decision.
     pub known_unsupported: Vec<String>,
@@ -235,11 +224,7 @@ impl PproxyArgs {
 
     /// Check if there are any unknown or unsupported flags.
     pub fn has_unknown_or_unsupported(&self) -> bool {
-        !self.unknown_flags.is_empty()
-            || !self.known_unsupported.is_empty()
-            || self.daemon
-            || self.system_proxy
-            || self.auth_timeout.is_some()
+        !self.unknown_flags.is_empty() || !self.known_unsupported.is_empty() || self.daemon
     }
 
     /// Default tracing log level chosen from `-d` and `-v` verbosity flags.
@@ -759,9 +744,21 @@ mod tests {
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
             "--auth".into(),
-            "999999999999".into(),
+            "9223372036854775808".into(),
         ]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_auth_negative_matches_argparse_integer() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://127.0.0.1:0".into(),
+            "--auth".into(),
+            "-1".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.auth_timeout, Some(Duration::ZERO));
     }
 
     #[test]

@@ -156,8 +156,8 @@ with eggress handling status and migration notes.
 | Property | Value |
 |----------|-------|
 | pproxy behavior | Automatically configure system proxy settings (macOS/Windows). |
-| Eggress handling | **Unsupported in pproxy compatibility mode** — `--sys` fails before temp config creation or service startup through the shared execution gate. The native `eggress system-proxy inspect` subcommand provides read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands. |
-| Example | `pproxy -l http://:8080 --sys` → exit code 5 (`EXIT_UNSUPPORTED_FEATURE`) before startup. |
+| Eggress handling | **Supported with warning** — after listener bind, `--sys` applies the selected local SOCKS5/HTTP listener through `eggress-system-proxy` and restores captured settings on shutdown or startup failure. |
+| Example | `pproxy -l http://:8080 --sys` → applies the bound HTTP listener and restores prior settings on exit. |
 
 #### `--get` — Custom Static Content
 
@@ -232,7 +232,7 @@ with eggress handling status and migration notes.
 | `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
 | `--reuse` | (none) | SO_REUSEPORT | Supported with warning | Configures SO_REUSEPORT on listener sockets |
 | `--pac` | (path) | PAC file serving | Supported with warning | Consumes path and maps it to the admin PAC route |
-| `--sys` | (none) | System proxy | Unsupported | Use native `eggress system-proxy inspect` for read-only inspection |
+| `--sys` | (none) | System proxy | Supported with warning | Applies after bind and restores prior settings; macOS/Windows are strict parity targets |
 | `--get` | (PATH,FILE) | Static content | Supported with warning | Validates and serves through the admin server; invalid values fail closed |
 | `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the exact supplied target and exits |
 | `-f` | `--config` | Config file | Supported | Different schema |

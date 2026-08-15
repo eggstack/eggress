@@ -14,18 +14,18 @@ QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`
 
 ## Tier classification
 
-WebSocket, Raw, and H2 CONNECT are native runtime upstream protocols. The
-compatibility translator bridges bounded upstream forms through the native
-URI/config path; this does not make their upstream-only boundaries or fixed
-target restrictions disappear.
+WebSocket, Raw, and H2 CONNECT are native runtime transports. The
+compatibility translator bridges upstream forms through the native URI/config
+path and also exposes bounded H2 listener and fixed-target WS/WSS listener
+roles. WS/WSS listeners require a fixed target; H2 listeners multiplex one
+CONNECT request per stream.
 
-- The CLI `parse_listener_uri` rejects `h2://`, `ws://`, and `wss://` as
-  listener URIs. Phase 5 admits bounded `raw://`/`tunnel://` listener forms
-  only when a brace-delimited fixed target is present.
-- The compatibility translator rejects H2/WS/WSS listener roles with
-  structured diagnostics; native TOML configuration may support the
-  corresponding upstream compositions. `echo` is an explicit compatibility
-  listener utility, including a bounded UDP echo mode.
+- Compatibility `h2://` listeners are multiplexed H2 CONNECT servers.
+- Compatibility `ws{target}://listener` and
+  `wss{target}://listener` forms are fixed-target WebSocket servers;
+  `--ssl` supplies the WSS certificate and `http/1.1` ALPN.
+- `echo` is an explicit compatibility listener utility, including a bounded
+  UDP echo mode.
 - Tests: `cargo test -p eggress-config` and the protocol/runtime tests cover
   the native paths and refusal boundaries.
 
@@ -39,10 +39,13 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
 - `RawHopHandler` passes through the stream directly (raw passthrough).
 - `WebSocketHopHandler` performs the WebSocket handshake over the prior-hop stream via `connect_over_stream()`.
 - `H2HopHandler` performs the H2 CONNECT handshake over the prior-hop stream; TLS ALPN is handled by the chain executor.
-- These protocols cannot act as listeners (upstream-only), enforced by the `upstream_only_no_listener` constraint type.
+- Raw remains an explicit fixed-target listener; H2 and WebSocket listener
+  roles use dedicated runtime handlers rather than protocol sniffing.
 
 ## H2 CONNECT
 - Server: `h2_connect::handle_h2_connect()` accepts H2 connections, dispatches CONNECT, bridges stream to TCP target
+- Compatibility server: `eggress_server::advanced::serve_h2_connection()` accepts
+  independent CONNECT streams, validates proxy auth, and routes each stream.
 - Client: Use `h2` crate to connect to upstream H2 proxy, issue CONNECT request
 - Key type: `H2StreamWrite` — AsyncWrite adapter for h2::SendStream with flow control
 - `H2HopHandler` — Runtime HopHandler for H2 CONNECT upstream, performs H2 handshake over the prior-hop stream (stream-native); TLS ALPN handled by chain executor
@@ -50,6 +53,8 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
 
 ## WebSocket Tunnels
 - Server: `WebSocketTunnelServer::accept_upgrade()` accepts TCP, completes WS handshake, returns BoxStream
+- Compatibility server: `serve_websocket_connection()` validates the upgrade
+  auth header and relays to the configured fixed target.
 - Client: `WebSocketTunnelClient::connect()` connects to WS/WSS upstream, returns BoxStream
 - Key type: `WebSocketStreamAdapter` — wraps split WS stream as AsyncRead+AsyncWrite
 - Binary frames = stream data, Close = shutdown, Ping/Pong handled automatically
@@ -74,6 +79,7 @@ WS, WSS, Raw, and H2 upstream handlers now **consume the prior-hop stream** supp
 
 ## Common pitfalls
 - H2 flow control: must use `reserve_capacity`/`poll_capacity` before sending DATA
+  and release received capacity as DATA is consumed.
 - WebSocket binary frames only — text frames are logged and skipped
 - Raw tunnels have no protocol detection — must be explicitly configured
 - Raw/tunnel fixed-target listeners are TCP stream forwarding; the bounded

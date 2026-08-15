@@ -7,4 +7,4 @@ pub mod supervisor;
 
 pub use error::RuntimeError;
 pub use snapshot::CompiledRuntimeSnapshot;
-pub use supervisor::{RuntimeState, ServiceSupervisor};
+pub use supervisor::{CompatibilityOptions, RuntimeState, ServiceSupervisor};

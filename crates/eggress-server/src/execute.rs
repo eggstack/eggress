@@ -167,6 +167,8 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
         AcceptedSession::Tunnel(pending) => {
             let protocol = Some(match pending.protocol {
                 crate::accept::TunnelProtocol::HttpConnect => "http".to_string(),
+                crate::accept::TunnelProtocol::Http2 => "h2".to_string(),
+                crate::accept::TunnelProtocol::WebSocket => "websocket".to_string(),
                 crate::accept::TunnelProtocol::Socks4 => "socks4".to_string(),
                 crate::accept::TunnelProtocol::Socks5 => "socks5".to_string(),
                 crate::accept::TunnelProtocol::Shadowsocks => "shadowsocks".to_string(),
@@ -423,6 +425,8 @@ async fn execute_tunnel(
         listener: &config.context.listener,
         inbound_protocol: match pending.protocol {
             crate::accept::TunnelProtocol::HttpConnect => eggress_core::ProtocolId::Http,
+            crate::accept::TunnelProtocol::Http2 => eggress_core::ProtocolId::Http2,
+            crate::accept::TunnelProtocol::WebSocket => eggress_core::ProtocolId::WebSocket,
             crate::accept::TunnelProtocol::Socks4 => eggress_core::ProtocolId::Socks4,
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
             crate::accept::TunnelProtocol::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,

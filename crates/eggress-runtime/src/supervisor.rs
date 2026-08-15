@@ -542,6 +542,15 @@ pub struct ServiceSupervisor {
     shutdown_grace: Duration,
     rt_config: eggress_config::compile::RuntimeConfig,
     tls_client_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    compatibility_options: CompatibilityOptions,
+}
+
+/// Explicit options used only by the pproxy compatibility executable.
+/// Native configuration startup always uses the default value.
+#[derive(Debug, Clone, Default)]
+pub struct CompatibilityOptions {
+    pub auth_timeout: Option<Duration>,
+    pub system_proxy: bool,
 }
 
 impl ServiceSupervisor {
@@ -553,7 +562,11 @@ impl ServiceSupervisor {
             tracing::warn!("config security warning: {warning}");
         }
 
-        Self::init_with_config(rt_config, Some(config_path.to_string()))
+        Self::init_with_config(
+            rt_config,
+            Some(config_path.to_string()),
+            CompatibilityOptions::default(),
+        )
     }
 
     /// Start from an already-validated [`RuntimeConfig`] without reading a file.
@@ -566,12 +579,21 @@ impl ServiceSupervisor {
         rt_config: eggress_config::compile::RuntimeConfig,
         config_path: Option<String>,
     ) -> Result<Self, RuntimeError> {
-        Self::init_with_config(rt_config, config_path)
+        Self::init_with_config(rt_config, config_path, CompatibilityOptions::default())
+    }
+
+    pub fn start_from_config_with_options(
+        rt_config: eggress_config::compile::RuntimeConfig,
+        config_path: Option<String>,
+        compatibility_options: CompatibilityOptions,
+    ) -> Result<Self, RuntimeError> {
+        Self::init_with_config(rt_config, config_path, compatibility_options)
     }
 
     fn init_with_config(
         rt_config: eggress_config::compile::RuntimeConfig,
         config_path: Option<String>,
+        compatibility_options: CompatibilityOptions,
     ) -> Result<Self, RuntimeError> {
         #[cfg(not(feature = "reverse"))]
         if !rt_config.reverse_servers.is_empty() || !rt_config.reverse_clients.is_empty() {
@@ -708,6 +730,7 @@ impl ServiceSupervisor {
             shutdown_grace,
             rt_config,
             tls_client_config: None,
+            compatibility_options,
         })
     }
 
@@ -827,6 +850,7 @@ impl ServiceSupervisor {
         let state_ref = self.state.clone();
         let rt_config = self.rt_config.clone();
         let tls_client_config = self.tls_client_config.clone();
+        let compatibility_options = self.compatibility_options.clone();
 
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
@@ -841,6 +865,11 @@ impl ServiceSupervisor {
         let metrics_registry_for_admin = self.metrics_registry.clone();
 
         let run_async = async move {
+            #[cfg(feature = "operations")]
+            let mut compatibility_system_proxy: Option<
+                eggress_system_proxy::AppliedProxy,
+            > = None;
+
             #[cfg(feature = "operations")]
             let metrics_registry = metrics_registry_for_admin;
             // Start health probes inside the runtime context
@@ -866,6 +895,10 @@ impl ServiceSupervisor {
             }
 
             let mut prepared = Vec::new();
+            let compatibility_auth_reuse = compatibility_options
+                .auth_timeout
+                .map(eggress_server::accept::AuthReuseCache::new)
+                .map(Arc::new);
             #[cfg(unix)]
             let mut unix_listener_args = Vec::new();
             let mut transparent_listener_args = Vec::new();
@@ -878,9 +911,17 @@ impl ServiceSupervisor {
                         if auth_cfg.auth_type == "password" {
                             let username = auth_cfg.username.clone().unwrap_or_default();
                             let password = auth_cfg.password.clone().unwrap_or_default();
-                            eggress_server::accept::InboundAuthentication::UsernamePassword {
-                                username,
-                                password,
+                            if let Some(reuse) = compatibility_auth_reuse.clone() {
+                                eggress_server::accept::InboundAuthentication::UsernamePasswordWithReuse {
+                                    username,
+                                    password,
+                                    reuse,
+                                }
+                            } else {
+                                eggress_server::accept::InboundAuthentication::UsernamePassword {
+                                    username,
+                                    password,
+                                }
                             }
                         } else {
                             eggress_server::accept::InboundAuthentication::None
@@ -1666,6 +1707,63 @@ impl ServiceSupervisor {
             }
 
             // Spawn standard TCP accept loops
+            #[cfg(feature = "operations")]
+            let compatibility_proxy_selection = prepared
+                .iter()
+                .find(|listener| {
+                    listener.protocols.contains(&ProtocolId::Socks5)
+                        && listener.local_addr.port() != 0
+                })
+                .map(|listener| {
+                    (
+                        eggress_system_proxy::CompatibilityProxyKind::Socks5,
+                        listener.local_addr.port(),
+                    )
+                })
+                .or_else(|| {
+                    prepared
+                        .iter()
+                        .find(|listener| {
+                            listener.protocols.contains(&ProtocolId::Http)
+                                && listener.local_addr.port() != 0
+                        })
+                        .map(|listener| {
+                            (
+                                eggress_system_proxy::CompatibilityProxyKind::Http,
+                                listener.local_addr.port(),
+                            )
+                        })
+                });
+
+            // All compatibility TCP listeners are bound before this point,
+            // so --sys can use the actual selected port. Apply before any
+            // accept loop or admin task is started; an apply failure is
+            // therefore still a pre-run startup error.
+            if compatibility_options.system_proxy {
+                #[cfg(feature = "operations")]
+                {
+                    let selected = compatibility_proxy_selection.ok_or_else(|| {
+                        RuntimeError::Other(
+                            "--sys requires a usable local HTTP or SOCKS5 listener".to_string(),
+                        )
+                    })?;
+                    let address = std::net::SocketAddr::new(
+                        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                        selected.1,
+                    );
+                    compatibility_system_proxy = Some(
+                        eggress_system_proxy::apply_compatibility_proxy(selected.0, address)
+                            .map_err(RuntimeError::Other)?,
+                    );
+                }
+                #[cfg(not(feature = "operations"))]
+                {
+                    return Err(RuntimeError::Other(
+                        "--sys requires the operations feature".to_string(),
+                    ));
+                }
+            }
+
             for prepared_listener in prepared {
                 let routing = routing.clone();
                 let state = state_ref.clone();
@@ -1766,6 +1864,12 @@ impl ServiceSupervisor {
                                     Box::new(conn.stream)
                                 };
 
+                            #[cfg(feature = "extended")]
+                            let advanced_protocol = conn_protocols.first().copied();
+                            #[cfg(feature = "extended")]
+                            let advanced_is_single = conn_protocols.len() == 1;
+                            #[cfg(feature = "extended")]
+                            let advanced_fixed_target = fixed_target.clone();
                             let config = eggress_server::ConnectionConfig {
                                 routing: routing as Arc<dyn RouteService>,
                                 context: eggress_server::ConnectionContext {
@@ -1799,6 +1903,38 @@ impl ServiceSupervisor {
                                 fixed_target,
                                 local_bind,
                             };
+
+                            #[cfg(feature = "extended")]
+                            if matches!(
+                                advanced_protocol,
+                                Some(ProtocolId::Http2 | ProtocolId::WebSocket)
+                            ) && advanced_is_single
+                            {
+                                let advanced_result = match advanced_protocol {
+                                    Some(ProtocolId::Http2) => {
+                                        eggress_server::advanced::serve_h2_connection(
+                                            stream, config,
+                                        )
+                                        .await
+                                    }
+                                    Some(ProtocolId::WebSocket) => match advanced_fixed_target {
+                                        Some(target) => {
+                                            eggress_server::advanced::serve_websocket_connection(
+                                                stream, config, target,
+                                            )
+                                            .await
+                                        }
+                                        None => Err("WebSocket listener requires a fixed target"
+                                            .to_string()),
+                                    },
+                                    _ => unreachable!(),
+                                };
+                                if let Err(error) = advanced_result {
+                                    tracing::debug!(%peer, %error, "advanced listener ended");
+                                }
+                                active.fetch_sub(1, Ordering::Relaxed);
+                                return;
+                            }
 
                             let report = tokio::select! {
                                 report = eggress_server::serve_connection(stream, config)
@@ -2183,6 +2319,11 @@ impl ServiceSupervisor {
             admin_cancel.cancel();
             admin_tasks.close();
             admin_tasks.wait().await;
+
+            #[cfg(feature = "operations")]
+            if let Some(mut proxy) = compatibility_system_proxy {
+                proxy.restore().map_err(RuntimeError::Other)?;
+            }
 
             Ok::<_, RuntimeError>(())
         };

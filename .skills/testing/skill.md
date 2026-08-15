@@ -21,6 +21,9 @@ In `crates/eggress-runtime/tests/`:
 - `udp_upstream.rs` — SOCKS5 upstream relay, shutdown, metrics
 - `upstream_protocols.rs` — HTTP CONNECT, SOCKS4, SOCKS5, stream-native WS/Raw/H2 chain tests, and
   unsupported-combo (HTTP/SOCKS4/Shadowsocks/Trojan + UDP) rejection
+- Compatibility listener coverage should exercise H2 multiplexing and fixed-target
+  WS/WSS locally, plus source-IP auth reuse/expiry and `--sys` rollback with
+  `MockCommandRunner`; do not use public-internet fixtures.
 - `lifecycle_invariants.rs` — runtime lifecycle invariants
 - `observability.rs` — metrics, admin, observability correctness
 - `security_invariants.rs` — security constraints and invariants

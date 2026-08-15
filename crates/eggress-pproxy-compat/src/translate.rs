@@ -91,16 +91,16 @@ pub fn translate_from_uris(
         );
     }
     if args.system_proxy {
-        output = output.with_unsupported(
+        output = output.with_warning(
             "system-proxy",
-            "--sys requests system proxy apply; eggress does not apply system proxy settings via pproxy compatibility",
+            "--sys applies the selected local HTTP or SOCKS5 listener and restores prior settings on shutdown",
         );
     }
     if let Some(auth) = args.auth_timeout {
-        output = output.with_unsupported(
+        output = output.with_warning(
             "auth-timeout",
             format!(
-                "--auth {}s requests per-client authentication reuse; eggress authenticates per-connection and cannot apply this option",
+                "--auth {}s enables pproxy-compatible source-IP authentication reuse",
                 auth.as_secs()
             ),
         );
@@ -174,7 +174,11 @@ pub fn translate_from_uris(
             } else {
                 None
             };
-            ssl_config = Some(TlsToml { cert, key });
+            ssl_config = Some(TlsToml {
+                cert,
+                key,
+                alpn: None,
+            });
         }
         if let Some(block_value) = flag.strip_prefix("block=") {
             if block_value.starts_with('{') && block_value.ends_with('}') {
@@ -353,11 +357,13 @@ pub fn translate_from_uris(
                     reject_listener = true;
                 }
                 "raw" | "tunnel" if local.fixed_target.is_some() => {}
-                "h2" | "ws" | "wss" => {
+                "h2" => {}
+                "ws" | "wss" if local.fixed_target.is_some() => {}
+                "ws" | "wss" => {
                     output = output.with_unsupported(
-                        "unsupported-role",
+                        "listener-fixed-target",
                         format!(
-                            "{} listener '{}' is recognized but Eggress supports it only as an upstream",
+                            "{} listener '{}' requires a fixed target such as ws{{target}}://:port",
                             protocol,
                             local.redacted_display()
                         ),
@@ -390,6 +396,7 @@ pub fn translate_from_uris(
                     "unix" => "socks5",
                     "echo" => "echo",
                     "raw" | "tunnel" => "raw",
+                    "ws" | "wss" => "websocket",
                     other => other,
                 }
                 .to_string()
@@ -414,6 +421,7 @@ pub fn translate_from_uris(
 
         let listener_name = format!("pproxy-local-{}", idx);
         let bind = local.bind_display();
+        let is_h2_listener = protocols.len() == 1 && protocols[0] == "h2";
 
         let mut listener_entry = ListenerToml {
             name: listener_name.clone(),
@@ -430,6 +438,26 @@ pub fn translate_from_uris(
             fixed_target: local.fixed_target.clone(),
             local_bind: local.local_bind.clone(),
         };
+
+        if local.tls || local.scheme == "wss" {
+            if ssl_config.is_none() {
+                output = output.with_unsupported(
+                    "tls-listener-cert",
+                    format!(
+                        "TLS listener '{}' requires --ssl CERT,KEY",
+                        local.redacted_display()
+                    ),
+                );
+            } else {
+                listener_entry.tls = ssl_config.clone();
+            }
+        }
+
+        if is_h2_listener {
+            if let Some(ref mut tls) = listener_entry.tls {
+                tls.alpn = Some(vec!["h2".to_string()]);
+            }
+        }
 
         // Handle auth on listener
         if local.scheme.as_str() == "ss" || local.scheme.as_str() == "shadowsocks" {
@@ -467,6 +495,7 @@ pub fn translate_from_uris(
                 listener_entry.tls = Some(TlsToml {
                     cert: "/path/to/cert.pem".to_string(),
                     key: Some("/path/to/key.pem".to_string()),
+                    alpn: None,
                 });
                 output = output.with_warning(
                     "trojan-auto-tls",
@@ -552,7 +581,17 @@ pub fn translate_from_uris(
     if let Some(tls) = ssl_config {
         if !listeners.is_empty() {
             for listener in listeners.iter_mut() {
-                listener.tls = Some(tls.clone());
+                let mut listener_tls = tls.clone();
+                if listener.protocols.iter().any(|protocol| protocol == "h2") {
+                    listener_tls.alpn = Some(vec!["h2".to_string()]);
+                } else if listener
+                    .protocols
+                    .iter()
+                    .any(|protocol| protocol == "websocket")
+                {
+                    listener_tls.alpn = Some(vec!["http/1.1".to_string()]);
+                }
+                listener.tls = Some(listener_tls);
             }
         } else {
             output = output.with_warning(
@@ -1311,6 +1350,8 @@ struct TlsToml {
     cert: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alpn: Option<Vec<String>>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -2366,7 +2407,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sys_flag_emits_unsupported() {
+    fn test_sys_flag_emits_warning() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -2374,11 +2415,8 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "system-proxy"));
+        assert!(!output.has_unsupported());
+        assert!(output.warnings.iter().any(|w| w.category == "system-proxy"));
     }
 
     #[test]

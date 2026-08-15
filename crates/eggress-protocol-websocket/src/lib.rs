@@ -8,6 +8,7 @@ use eggress_core::BoxStream;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{Sink, Stream, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
@@ -196,6 +197,16 @@ impl WebSocketTunnelServer {
         &self,
         stream: tokio::net::TcpStream,
     ) -> Result<BoxStream, WebSocketError> {
+        self.accept_upgrade_over_stream(stream).await
+    }
+
+    pub async fn accept_upgrade_over_stream<S>(
+        &self,
+        stream: S,
+    ) -> Result<BoxStream, WebSocketError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let ws_stream = tokio_tungstenite::accept_async(stream)
             .await
             .map_err(|e| WebSocketError::Handshake(e.to_string()))?;
@@ -208,12 +219,97 @@ impl WebSocketTunnelServer {
         stream: tokio::net::TcpStream,
         config: tokio_tungstenite::tungstenite::protocol::WebSocketConfig,
     ) -> Result<BoxStream, WebSocketError> {
+        self.accept_upgrade_with_config_over_stream(stream, config)
+            .await
+    }
+
+    pub async fn accept_upgrade_with_config_over_stream<S>(
+        &self,
+        stream: S,
+        config: tokio_tungstenite::tungstenite::protocol::WebSocketConfig,
+    ) -> Result<BoxStream, WebSocketError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let ws_stream = tokio_tungstenite::accept_async_with_config(stream, Some(config))
             .await
             .map_err(|e| WebSocketError::Handshake(e.to_string()))?;
 
         Ok(WebSocketStreamAdapter::new(ws_stream, self.max_message_size).into_boxed())
     }
+}
+
+/// Complete a server-side WebSocket upgrade and validate an optional proxy
+/// Basic-Auth header. The returned username is present only when credentials
+/// were supplied and validated on this connection.
+#[allow(clippy::result_large_err)]
+pub async fn accept_upgrade_with_auth<S>(
+    stream: S,
+    credentials: Option<(&str, &str)>,
+) -> Result<(BoxStream, Option<String>), WebSocketError>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let expected = credentials.map(|(user, pass)| (user.to_string(), pass.to_string()));
+    let accepted_user = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+    let accepted_user_for_callback = accepted_user.clone();
+    let ws_stream = tokio_tungstenite::accept_hdr_async(
+        stream,
+        move |request: &Request, response: Response| {
+            let Some((expected_user, expected_password)) = expected.as_ref() else {
+                return Ok(response);
+            };
+            let Some(header) = request
+                .headers()
+                .get("proxy-authorization")
+                .and_then(|value| value.to_str().ok())
+            else {
+                return Err(ErrorResponse::new(None));
+            };
+            let Some((user, password)) = parse_basic_auth(header) else {
+                return Err(ErrorResponse::new(None));
+            };
+            if user != *expected_user || password != *expected_password {
+                return Err(ErrorResponse::new(None));
+            }
+            *accepted_user_for_callback
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(user);
+            Ok(response)
+        },
+    )
+    .await
+    .map_err(|e| WebSocketError::Handshake(e.to_string()))?;
+
+    let user = accepted_user
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    Ok((
+        WebSocketStreamAdapter::new(ws_stream, DEFAULT_MAX_MESSAGE_SIZE).into_boxed(),
+        user,
+    ))
+}
+
+fn parse_basic_auth(value: &str) -> Option<(String, String)> {
+    let encoded = value.strip_prefix("Basic ")?;
+    let bytes = encoded.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len() * 3 / 4);
+    let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut buffer = 0u32;
+    let mut bits = 0u8;
+    for byte in bytes.iter().copied().filter(|byte| *byte != b'=') {
+        let value = table.iter().position(|candidate| *candidate == byte)? as u32;
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            decoded.push((buffer >> bits) as u8);
+        }
+    }
+    let decoded = String::from_utf8(decoded).ok()?;
+    let (user, password) = decoded.split_once(':')?;
+    Some((user.to_string(), password.to_string()))
 }
 
 pub struct WebSocketTunnelClient {

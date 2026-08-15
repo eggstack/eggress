@@ -2,7 +2,13 @@ use std::fmt;
 use std::path::PathBuf;
 
 use crate::command_runner::CommandRunner;
-use crate::inspection::SystemProxySettings;
+use crate::inspection::{detect_platform, inspect_system_proxy_with_runner, SystemProxySettings};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompatibilityProxyKind {
+    Http,
+    Socks5,
+}
 
 /// A structured system command. Programs and arguments are kept separate so
 /// that callers can pass them directly to `Command::new(program).args(args)`
@@ -71,6 +77,97 @@ pub struct RollbackState {
     pub socks_proxy: Option<String>,
     /// Previous no-proxy/bypass list.
     pub no_proxy: Option<String>,
+}
+
+/// In-memory rollback guard for compatibility `--sys`.
+pub struct AppliedProxy {
+    rollback: Option<RollbackState>,
+}
+
+impl AppliedProxy {
+    pub fn restore(&mut self) -> Result<(), String> {
+        let Some(rollback) = self.rollback.take() else {
+            return Ok(());
+        };
+        let runner = crate::command_runner::RealCommandRunner;
+        restore_with_runner(&rollback, &runner)
+    }
+
+    pub fn restore_with_runner(&mut self, runner: &dyn CommandRunner) -> Result<(), String> {
+        let Some(rollback) = self.rollback.take() else {
+            return Ok(());
+        };
+        restore_with_runner(&rollback, runner)
+    }
+}
+
+impl Drop for AppliedProxy {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
+}
+
+/// Apply the compatibility system proxy using the platform backend and keep
+/// all rollback state in memory. This is deliberately separate from native
+/// `eggress system-proxy` inspection and from user-authored configuration.
+pub fn apply_compatibility_proxy(
+    kind: CompatibilityProxyKind,
+    address: std::net::SocketAddr,
+) -> Result<AppliedProxy, String> {
+    let runner = crate::command_runner::RealCommandRunner;
+    apply_compatibility_proxy_with_runner(kind, address, &runner)
+}
+
+pub fn apply_compatibility_proxy_with_runner(
+    kind: CompatibilityProxyKind,
+    address: std::net::SocketAddr,
+    runner: &dyn CommandRunner,
+) -> Result<AppliedProxy, String> {
+    let platform = detect_platform();
+    let inspection = inspect_system_proxy_with_runner(runner);
+    if !inspection.apply_supported {
+        return Err(format!(
+            "system proxy apply is unavailable on platform '{platform}'"
+        ));
+    }
+    let settings = inspection
+        .settings
+        .ok_or_else(|| "unable to inspect current system proxy settings".to_string())?;
+    let endpoint = address.to_string();
+    let (http, https, socks) = match kind {
+        CompatibilityProxyKind::Http => (Some(endpoint.clone()), Some(endpoint), None),
+        CompatibilityProxyKind::Socks5 => (None, None, Some(endpoint)),
+    };
+    let plan = plan_apply(
+        &platform,
+        None,
+        http.as_deref(),
+        https.as_deref(),
+        socks.as_deref(),
+        None,
+        Some(&settings),
+    );
+    let rollback = create_rollback(&platform, plan.service.as_deref(), &settings);
+    if let Err(error) = execute_apply(&plan, runner) {
+        let rollback_error = restore_with_runner(&rollback, runner).err();
+        return Err(match rollback_error {
+            Some(rollback_error) => format!("{error}; rollback failed: {rollback_error}"),
+            None => error,
+        });
+    }
+    Ok(AppliedProxy {
+        rollback: Some(rollback),
+    })
+}
+
+fn restore_with_runner(rollback: &RollbackState, runner: &dyn CommandRunner) -> Result<(), String> {
+    for command in generate_revert_commands(rollback) {
+        let args: Vec<&str> = command.args.iter().map(String::as_str).collect();
+        runner
+            .run(&command.program, &args)
+            .map_err(|error| format!("failed to restore '{command}': {error}"))?;
+    }
+    Ok(())
 }
 
 impl RollbackState {
@@ -464,5 +561,34 @@ mod tests {
         assert!(commands
             .iter()
             .any(|c| c.to_string().contains("setwebproxy")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn applied_proxy_restore_is_idempotent() {
+        use std::os::unix::process::ExitStatusExt;
+        let runner = MockCommandRunner::new().add_always(
+            "networksetup",
+            Ok(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            }),
+        );
+        let rollback = RollbackState {
+            timestamp: "12345".to_string(),
+            platform: "macos".to_string(),
+            service: Some("*Wi-Fi".to_string()),
+            http_proxy: None,
+            https_proxy: None,
+            socks_proxy: None,
+            no_proxy: None,
+        };
+        let mut applied = AppliedProxy {
+            rollback: Some(rollback),
+        };
+        applied.restore_with_runner(&runner).unwrap();
+        applied.restore_with_runner(&runner).unwrap();
+        assert!(!runner.calls().is_empty());
     }
 }

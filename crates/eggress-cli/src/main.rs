@@ -739,7 +739,15 @@ fn handle_pproxy_run(args: &PproxyRun) {
     // Start from the in-memory RuntimeConfig. No config file path is provided,
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
-    match eggress_runtime::ServiceSupervisor::start_from_config(rt_config, None) {
+    let compatibility_options = eggress_runtime::CompatibilityOptions {
+        auth_timeout: pproxy_args.auth_timeout,
+        system_proxy: pproxy_args.system_proxy,
+    };
+    match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
+        rt_config,
+        None,
+        compatibility_options,
+    ) {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("runtime error: {e}");

@@ -27,8 +27,8 @@ extensions with similar names, but those do not become pproxy claims.
 | `--ssl` | Listener certificate/key | `supported_difference` | `cli.ssl_listener`; native TLS configuration |
 | `--pac` | PAC path | `supported_difference` | `cli.pac`; mapped to native admin serving |
 | `--get` | Static path/file, repeatable | `supported_difference` | `cli.get`; native admin static content |
-| `--auth` | Per-source-IP re-auth interval | `gap` | `cli.auth`; AuthTable reuse remains Phase 2 work |
-| `--sys` | Apply system proxy settings | `gap` | `cli.sys`; compatibility mode refuses implicit global mutation |
+| `--auth` | Per-source-IP re-auth interval | `supported_difference` | `cli.auth`; bounded process-local IP cache with monotonic expiry |
+| `--sys` | Apply system proxy settings | `supported_difference` | `cli.sys`; existing backend, post-bind apply, in-memory rollback; macOS/Windows strict targets |
 | `--reuse` | `SO_REUSEPORT` | `matched` | `cli.reuse`; platform behavior is documented |
 | `--daemon` | Daemonize process | `gap` | `cli.daemon`; Phase 9 process-model work |
 | `--test` | Test supplied URL and exit | `supported_difference` | `cli.test`; in-process native upstream test |
@@ -51,7 +51,7 @@ contract.
 | TCP `__` chains and routing predicates | `supported_difference` | Native chain model preserves supported compositions |
 | Shadowsocks AEAD TCP/UDP | `supported_difference` | Four modern methods with method-specific salts; standard UDP upstream plus exact pproxy PacketCipher standalone inbound path |
 | Trojan client/server roles | `supported_difference` | Native implementation; no private pproxy API claim |
-| H2 and WS/WSS | `supported_difference` | Tagged pproxy has listener/client roles; Eggress boundary is currently upstream-focused; Phase 2 |
+| H2 and WS/WSS | `supported_difference` | Upstream and compatibility listener roles; H2 multiplexes CONNECT streams, WS/WSS use fixed targets |
 | SSR framing and built-in plugins | `gap` | Exact tagged behavior is Phase 3 |
 | SSH upstream/jump/remote-forward | `gap` | Phase 7 optional transport |
 | QUIC/H3 listener/client/UDP roles | `gap` | Phase 8 optional transport |
@@ -84,7 +84,7 @@ strict phase, and focused test references.
 ## Stable exclusions and boundaries
 
 SSH, QUIC/HTTP/3, SSR, exact plugin transforms, legacy Shadowsocks ciphers and
-OTA, daemonization, per-client `--auth` reuse, system-proxy apply, general
+OTA, daemonization, general
 multi-hop UDP, and unavailable platform transparent facilities remain
 explicit strict gaps or exclusions according to their phase records. Unknown
 flags and unsupported options fail with structured diagnostics; known Eggress

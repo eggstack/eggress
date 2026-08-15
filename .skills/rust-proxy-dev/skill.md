@@ -166,12 +166,15 @@ When adding features to Connection, follow the pattern: Rust handles networking,
   `PproxyArgs::default_log_level` helper and reports the Python traceback
   difference as `debug-mode` at `compatible_with_warning`. It is independent
   of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative.
-- `--sys` is unsupported in pproxy compatibility mode; the shared
-  `eggress_pproxy_compat::evaluate_execution_gate` fails before temp config
-  creation or service startup. Use native `eggress system-proxy inspect`
-  for read-only inspection; mutation has its own `apply` path.
+- `--sys` is supported in pproxy compatibility mode through the existing
+  system-proxy backend. It applies after listener bind, prefers a local
+  SOCKS5 listener over HTTP, and restores captured settings on shutdown or
+  failed startup. Native `eggress system-proxy` commands retain their own
+  explicit semantics.
 - `--daemon` is unsupported and fatal before startup.
-- `--auth <seconds>` is unsupported and fatal before startup.
+- `--auth <seconds>` enables bounded, process-local source-IP authentication
+  reuse when listener credentials are configured. Native mode never enables
+  this cache implicitly.
 - `-v/-vv/-vvv` maps to RUST_LOG levels: 0→info, 1-2→debug, 3+→trace
 - Both the standalone `pproxy` binary and `eggress pproxy run` apply the
   same fail-closed policy through the shared gate. Unknown, unsupported,

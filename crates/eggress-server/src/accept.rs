@@ -1,16 +1,93 @@
+use std::collections::HashMap;
 use std::fmt;
+use std::net::IpAddr;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use eggress_core::BoxStream;
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Authentication policy for inbound connections.
+/// Bounded compatibility authentication state keyed by source IP.
+///
+/// This intentionally lives in the server crate but is only constructed by
+/// the pproxy compatibility runtime. Native Eggress listeners continue to
+/// authenticate every connection independently.
+pub struct AuthReuseCache {
+    timeout: Duration,
+    entries: Mutex<HashMap<IpAddr, AuthReuseEntry>>,
+    max_entries: usize,
+}
+
+struct AuthReuseEntry {
+    identity: ClientIdentity,
+    last_authenticated: Instant,
+}
+
+impl AuthReuseCache {
+    pub const DEFAULT_MAX_ENTRIES: usize = 4096;
+
+    pub fn new(timeout: Duration) -> Self {
+        Self {
+            timeout,
+            entries: Mutex::new(HashMap::new()),
+            max_entries: Self::DEFAULT_MAX_ENTRIES,
+        }
+    }
+
+    pub fn lookup(&self, peer_ip: IpAddr) -> Option<ClientIdentity> {
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        entries.retain(|_, entry| now.duration_since(entry.last_authenticated) <= self.timeout);
+        entries.get(&peer_ip).map(|entry| entry.identity.clone())
+    }
+
+    pub fn record(&self, peer_ip: IpAddr, identity: ClientIdentity) {
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        entries.retain(|_, entry| now.duration_since(entry.last_authenticated) <= self.timeout);
+        if entries.len() >= self.max_entries && !entries.contains_key(&peer_ip) {
+            if let Some(oldest) = entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_authenticated)
+                .map(|(ip, _)| *ip)
+            {
+                entries.remove(&oldest);
+            }
+        }
+        entries.insert(
+            peer_ip,
+            AuthReuseEntry {
+                identity,
+                last_authenticated: now,
+            },
+        );
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 #[derive(Clone)]
 pub enum InboundAuthentication {
     None,
-    UsernamePassword { username: String, password: String },
+    UsernamePassword {
+        username: String,
+        password: String,
+    },
+    UsernamePasswordWithReuse {
+        username: String,
+        password: String,
+        reuse: Arc<AuthReuseCache>,
+    },
 }
 
 impl fmt::Debug for InboundAuthentication {
@@ -20,6 +97,10 @@ impl fmt::Debug for InboundAuthentication {
             InboundAuthentication::UsernamePassword { .. } => {
                 write!(f, "InboundAuthentication::UsernamePassword {{ .. }}")
             }
+            InboundAuthentication::UsernamePasswordWithReuse { .. } => write!(
+                f,
+                "InboundAuthentication::UsernamePasswordWithReuse {{ .. }}"
+            ),
         }
     }
 }
@@ -29,7 +110,47 @@ impl fmt::Display for InboundAuthentication {
         match self {
             InboundAuthentication::None => write!(f, "none"),
             InboundAuthentication::UsernamePassword { .. } => write!(f, "username/password"),
+            InboundAuthentication::UsernamePasswordWithReuse { .. } => {
+                write!(f, "username/password with IP reuse")
+            }
         }
+    }
+}
+
+pub(crate) fn auth_credentials(
+    auth: &InboundAuthentication,
+) -> Option<(&str, &str, Option<&AuthReuseCache>)> {
+    match auth {
+        InboundAuthentication::None => None,
+        InboundAuthentication::UsernamePassword { username, password } => {
+            Some((username, password, None))
+        }
+        InboundAuthentication::UsernamePasswordWithReuse {
+            username,
+            password,
+            reuse,
+        } => Some((username, password, Some(reuse))),
+    }
+}
+
+pub(crate) fn cached_identity(
+    auth: &InboundAuthentication,
+    peer_ip: Option<IpAddr>,
+) -> Option<ClientIdentity> {
+    let (_, _, reuse) = auth_credentials(auth)?;
+    peer_ip.and_then(|ip| reuse.and_then(|cache| cache.lookup(ip)))
+}
+
+pub(crate) fn record_authenticated(
+    auth: &InboundAuthentication,
+    peer_ip: Option<IpAddr>,
+    identity: &ClientIdentity,
+) {
+    let Some((_, _, Some(cache))) = auth_credentials(auth) else {
+        return;
+    };
+    if let Some(ip) = peer_ip {
+        cache.record(ip, identity.clone());
     }
 }
 
@@ -86,6 +207,8 @@ pub struct PendingUdpAssociate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TunnelProtocol {
     HttpConnect,
+    Http2,
+    WebSocket,
     Socks4,
     Socks5,
     Shadowsocks,
@@ -96,6 +219,8 @@ pub enum TunnelProtocol {
 /// Information needed to send a protocol-specific reply later.
 pub enum ReplyContext {
     Http,
+    Http2,
+    WebSocket,
     Socks4,
     Socks5,
     Shadowsocks,
@@ -212,6 +337,33 @@ pub async fn accept_with_fixed_target(
     trojan_config: Option<&InboundTrojanConfig>,
     fixed_target: Option<&TargetAddr>,
 ) -> Result<AcceptedSession, AcceptError> {
+    accept_with_fixed_target_for_peer(
+        client,
+        protocols,
+        auth,
+        shadowsocks_config,
+        shadowsocks_metrics,
+        trojan_config,
+        fixed_target,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn accept_with_fixed_target_for_peer(
+    client: BoxStream,
+    protocols: &[ProtocolId],
+    auth: &InboundAuthentication,
+    shadowsocks_config: Option<&InboundShadowsocksConfig>,
+    #[cfg(feature = "extended")] shadowsocks_metrics: Option<
+        &std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
+    >,
+    #[cfg(not(feature = "extended"))] shadowsocks_metrics: Option<&()>,
+    trojan_config: Option<&InboundTrojanConfig>,
+    fixed_target: Option<&TargetAddr>,
+    peer_ip: Option<IpAddr>,
+) -> Result<AcceptedSession, AcceptError> {
     #[cfg(not(feature = "extended"))]
     let _ = (shadowsocks_config, shadowsocks_metrics, trojan_config);
     #[cfg(feature = "extended")]
@@ -254,7 +406,7 @@ pub async fn accept_with_fixed_target(
             first_byte[0]
         );
         let stream: BoxStream = Box::new(PrefixedStream::new(first_byte.to_vec(), stream));
-        return accept_socks5(stream, auth).await;
+        return accept_socks5(stream, auth, peer_ip).await;
     }
 
     // Check SOCKS4
@@ -264,7 +416,7 @@ pub async fn accept_with_fixed_target(
             first_byte[0]
         );
         let stream: BoxStream = Box::new(PrefixedStream::new(first_byte.to_vec(), stream));
-        return accept_socks4(stream).await;
+        return accept_socks4(stream, auth, peer_ip).await;
     }
 
     // Try HTTP detection if HTTP is allowed
@@ -285,7 +437,7 @@ pub async fn accept_with_fixed_target(
                     &prefix[..prefix.len().min(16)]
                 );
                 let stream: BoxStream = Box::new(PrefixedStream::new(prefix, stream));
-                return accept_http(stream, auth).await;
+                return accept_http(stream, auth, peer_ip).await;
             }
             DetectResult::NeedMore => {
                 // Read more bytes
@@ -302,7 +454,7 @@ pub async fn accept_with_fixed_target(
                             &prefix[..prefix.len().min(16)]
                         );
                         let stream: BoxStream = Box::new(PrefixedStream::new(prefix, stream));
-                        return accept_http(stream, auth).await;
+                        return accept_http(stream, auth, peer_ip).await;
                     }
                     DetectResult::NoMatch => {
                         return Err(AcceptError::Protocol(
@@ -480,6 +632,7 @@ fn detect_http_method(prefix: &[u8]) -> DetectResult {
 async fn accept_socks5(
     stream: BoxStream,
     auth: &InboundAuthentication,
+    peer_ip: Option<IpAddr>,
 ) -> Result<AcceptedSession, AcceptError> {
     use eggress_protocol_socks::socks5::server::{
         read_auth_request, read_method_negotiation, read_socks5_request, send_auth_response,
@@ -496,21 +649,12 @@ async fn accept_socks5(
     const AUTH_USERNAME_PASSWORD: u8 = 0x02;
     const AUTH_NO_ACCEPTABLE: u8 = 0xFF;
 
-    let selected_method = match auth {
-        InboundAuthentication::UsernamePassword { .. } => {
-            if methods.contains(&AUTH_USERNAME_PASSWORD) {
-                AUTH_USERNAME_PASSWORD
-            } else {
-                AUTH_NO_ACCEPTABLE
-            }
-        }
-        InboundAuthentication::None => {
-            if methods.contains(&AUTH_NONE) {
-                AUTH_NONE
-            } else {
-                AUTH_NO_ACCEPTABLE
-            }
-        }
+    let cached = cached_identity(auth, peer_ip);
+    let selected_method = match (auth_credentials(auth), cached.is_some()) {
+        (None, _) | (Some(_), true) if methods.contains(&AUTH_NONE) => AUTH_NONE,
+        (Some(_), _) if methods.contains(&AUTH_USERNAME_PASSWORD) => AUTH_USERNAME_PASSWORD,
+        (None, _) => AUTH_NO_ACCEPTABLE,
+        (Some(_), _) => AUTH_NO_ACCEPTABLE,
     };
 
     // Send method selection
@@ -531,8 +675,9 @@ async fn accept_socks5(
     }
 
     // Handle auth if required
-    let mut identity = ClientIdentity::Anonymous;
-    if let InboundAuthentication::UsernamePassword { username, password } = auth {
+    let mut identity = cached.unwrap_or(ClientIdentity::Anonymous);
+    if selected_method == AUTH_USERNAME_PASSWORD {
+        let (username, password, _) = auth_credentials(auth).expect("auth method requires policy");
         match read_auth_request(&mut reader, password).await {
             Ok(client_username) => {
                 use subtle::ConstantTimeEq;
@@ -543,6 +688,7 @@ async fn accept_socks5(
                     return Err(AcceptError::AuthenticationFailed);
                 }
                 identity = ClientIdentity::Username(client_username);
+                record_authenticated(auth, peer_ip, &identity);
                 send_auth_response(&mut writer, true)
                     .await
                     .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
@@ -591,7 +737,11 @@ async fn accept_socks5(
     }
 }
 
-async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError> {
+async fn accept_socks4(
+    stream: BoxStream,
+    auth: &InboundAuthentication,
+    peer_ip: Option<IpAddr>,
+) -> Result<AcceptedSession, AcceptError> {
     use eggress_protocol_socks::socks4::server::read_socks4_request;
 
     let (mut reader, writer) = tokio::io::split(stream);
@@ -609,11 +759,29 @@ async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError
             port: request.addr.port(),
         }
     };
-    let identity = if request.user_id.is_empty() {
-        ClientIdentity::Anonymous
-    } else {
-        ClientIdentity::Opaque(request.user_id)
-    };
+    let cached = cached_identity(auth, peer_ip);
+    if cached.is_none() {
+        if let Some((username, _, _)) = auth_credentials(auth) {
+            use subtle::ConstantTimeEq;
+            let user_ok: bool = request.user_id.as_bytes().ct_eq(username.as_bytes()).into();
+            if !user_ok {
+                return Err(AcceptError::AuthenticationFailed);
+            }
+        }
+    }
+    let identity = cached.unwrap_or({
+        if request.user_id.is_empty() {
+            ClientIdentity::Anonymous
+        } else {
+            ClientIdentity::Opaque(request.user_id)
+        }
+    });
+    if matches!(
+        identity,
+        ClientIdentity::Opaque(_) | ClientIdentity::Username(_)
+    ) {
+        record_authenticated(auth, peer_ip, &identity);
+    }
     let stream: BoxStream = Box::new(tokio::io::join(reader, writer));
 
     Ok(AcceptedSession::Tunnel(PendingTunnel {
@@ -628,6 +796,7 @@ async fn accept_socks4(stream: BoxStream) -> Result<AcceptedSession, AcceptError
 async fn accept_http(
     mut stream: BoxStream,
     auth: &InboundAuthentication,
+    peer_ip: Option<IpAddr>,
 ) -> Result<AcceptedSession, AcceptError> {
     // Read the request line to determine method
     let mut head_buf = Vec::with_capacity(256);
@@ -667,7 +836,7 @@ async fn accept_http(
     let mut stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
 
     if method == "connect" {
-        let request = read_connect_request_from_stream(&mut stream, auth).await?;
+        let request = read_connect_request_from_stream(&mut stream, auth, peer_ip).await?;
         Ok(AcceptedSession::Tunnel(PendingTunnel {
             target: request.target,
             client: stream,
@@ -721,9 +890,10 @@ async fn accept_http(
 
         // Parse Proxy-Authorization from the raw head
         let head_str = String::from_utf8_lossy(&head_buf);
-        let proxy_auth = if let InboundAuthentication::UsernamePassword { username, password } =
-            auth
-        {
+        let cached = cached_identity(auth, peer_ip);
+        let proxy_auth = if cached.is_some() {
+            None
+        } else if let Some((username, password, _)) = auth_credentials(auth) {
             let mut found_auth = None;
             for line in head_str.split("\r\n") {
                 if let Some((name, value)) = parse_header_line_str(line) {
@@ -755,10 +925,13 @@ async fn accept_http(
         } else {
             None
         };
-        let identity = match &proxy_auth {
+        let identity = cached.unwrap_or_else(|| match &proxy_auth {
             Some((user, _)) => ClientIdentity::Username(user.clone()),
             None => ClientIdentity::Anonymous,
-        };
+        });
+        if matches!(identity, ClientIdentity::Username(_)) {
+            record_authenticated(auth, peer_ip, &identity);
+        }
         let _ = proxy_auth; // Auth already validated above
 
         // Reconstruct stream for forward_request
@@ -786,6 +959,7 @@ struct ConnectRequest {
 async fn read_connect_request_from_stream(
     stream: &mut BoxStream,
     auth: &InboundAuthentication,
+    peer_ip: Option<IpAddr>,
 ) -> Result<ConnectRequest, AcceptError> {
     let mut head_buf = Vec::with_capacity(1024);
     let mut temp = [0u8; 1];
@@ -869,29 +1043,37 @@ async fn read_connect_request_from_stream(
         }
     }
 
-    // Validate auth if required
-    if let InboundAuthentication::UsernamePassword { username, password } = auth {
-        match proxy_auth {
-            Some((user, pass)) => {
-                use subtle::ConstantTimeEq;
-                let user_ok: bool = user.as_bytes().ct_eq(username.as_bytes()).into();
-                let pass_ok: bool = pass.as_bytes().ct_eq(password.as_bytes()).into();
-                if !user_ok || !pass_ok {
+    // Validate auth if required. A compatibility cache hit is sufficient and
+    // intentionally ignores credentials on the new connection, matching the
+    // pproxy AuthTable behavior.
+    let cached = cached_identity(auth, peer_ip);
+    if cached.is_none() {
+        if let Some((username, password, _)) = auth_credentials(auth) {
+            match proxy_auth {
+                Some((user, pass)) => {
+                    use subtle::ConstantTimeEq;
+                    let user_ok: bool = user.as_bytes().ct_eq(username.as_bytes()).into();
+                    let pass_ok: bool = pass.as_bytes().ct_eq(password.as_bytes()).into();
+                    if !user_ok || !pass_ok {
+                        let _ = write_proxy_auth_required(stream).await;
+                        return Err(AcceptError::AuthenticationFailed);
+                    }
+                }
+                None => {
                     let _ = write_proxy_auth_required(stream).await;
                     return Err(AcceptError::AuthenticationFailed);
                 }
             }
-            None => {
-                let _ = write_proxy_auth_required(stream).await;
-                return Err(AcceptError::AuthenticationFailed);
-            }
         }
     }
 
-    let identity = match parsed_username {
+    let identity = cached.unwrap_or(match parsed_username {
         Some(user) => ClientIdentity::Username(user),
         None => ClientIdentity::Anonymous,
-    };
+    });
+    if matches!(identity, ClientIdentity::Username(_)) {
+        record_authenticated(auth, peer_ip, &identity);
+    }
 
     Ok(ConnectRequest { target, identity })
 }
@@ -2481,5 +2663,30 @@ mod tests {
 
         client_jh2.await.unwrap();
         server_jh2.await.unwrap();
+    }
+
+    #[test]
+    fn auth_reuse_is_ip_scoped_and_bounded() {
+        let cache = AuthReuseCache::new(Duration::from_secs(60));
+        let first: IpAddr = "127.0.0.1".parse().unwrap();
+        let second: IpAddr = "127.0.0.2".parse().unwrap();
+        cache.record(first, ClientIdentity::Username("alice".to_string()));
+        assert_eq!(
+            cache.lookup(first),
+            Some(ClientIdentity::Username("alice".to_string()))
+        );
+        assert_eq!(cache.lookup(second), None);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn zero_timeout_expires_after_authentication() {
+        let cache = AuthReuseCache::new(Duration::ZERO);
+        let peer: IpAddr = "127.0.0.1".parse().unwrap();
+        cache.record(peer, ClientIdentity::Username("alice".to_string()));
+        while cache.lookup(peer).is_some() {
+            std::hint::spin_loop();
+        }
+        assert_eq!(cache.len(), 0);
     }
 }

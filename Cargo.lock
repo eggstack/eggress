@@ -830,6 +830,7 @@ dependencies = [
 name = "eggress-server"
 version = "1.0.1"
 dependencies = [
+ "bytes",
  "eggress-core",
  "eggress-protocol-http",
  "eggress-protocol-shadowsocks",
@@ -841,11 +842,15 @@ dependencies = [
  "eggress-transport-tls",
  "eggress-udp",
  "eggress-uri",
+ "futures-util",
+ "h2",
+ "http",
  "libc",
  "rustls",
  "subtle",
  "thiserror",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "tracing",
 ]

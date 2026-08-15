@@ -88,8 +88,8 @@ table, severity order, or intentional-exclusion set.
 | `-a seconds` | Native health interval with a compatibility warning |
 | `--pac path` | PAC serving configuration at the supplied admin path, with a compatibility warning |
 | `--get path,file` | Native admin static content |
-| `--auth seconds` | Parsed, then refused because per-client-IP reuse is not implemented |
-| `--sys` | Unsupported and fatal before startup; use native `eggress system-proxy inspect` for read-only inspection |
+| `--auth seconds` | Enables bounded source-IP authentication reuse for compatibility listeners |
+| `--sys` | Applies the selected bound SOCKS5/HTTP listener through `eggress-system-proxy`, then restores prior settings |
 | `--reuse` / `--daemon` / `--test` | Socket reuse, process-model refusal, and in-process URL testing |
 
 The tagged parser does not declare `--log`, `-f/--config`, or `--rulefile`.
@@ -98,7 +98,8 @@ Eggress may accept those names as extensions (`--config` is native TOML mode;
 available through the Eggress bridge), but they are not pproxy 2.7.9 flags.
 
 The translator parses combined protocols, fragment auth, local binding, canonical
-`tunnel{host:port}://listener` fixed targets, the retained legacy raw fixed-target
+`tunnel{host:port}://listener`, `ws{host:port}://listener`, and
+`wss{host:port}://listener` fixed targets, the retained legacy raw fixed-target
 extension, and canonical raw rule suffixes. Plugin metadata is parsed for
 diagnostic purposes but plugin execution is explicitly unsupported — the
 Python compatibility factory rejects plugin-bearing URIs with
@@ -108,6 +109,14 @@ same native URI/config path. H2 and WSS normalize to the native `+tls` form;
 raw/tunnel brace-delimited targets become the native raw endpoint. Bounded
 listener forms include TCP/UDP echo and fixed-target forwarding; Unix upstreams
 are TCP-only and platform-gated.
+
+Compatibility advanced listeners include `h2://listener` and fixed-target
+`ws{host:port}://listener` / `wss{host:port}://listener` forms. H2 multiplexes
+CONNECT streams; WS/WSS completes an HTTP upgrade and relays binary frames.
+`--auth` is consulted by HTTP, SOCKS4, SOCKS5, H2, and WS handshakes when
+listener credentials are configured. The cache is keyed only by normalized
+peer IP, uses monotonic expiry, is bounded, and is never created for native
+mode.
 
 TCP fixed-target configuration remains on the listener's TCP field. UDP echo or
 fixed-target mode is added only for an explicit `-ul` URI, so enabling one role

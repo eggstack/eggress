@@ -9,7 +9,10 @@
 
 ## Superseded
 
-This ADR is partially superseded by Phase B3 (WebSocket and raw runtime promotion).
+This ADR is partially superseded by Phase B3 (WebSocket and raw runtime promotion)
+and Phase 2 (H2 plus fixed-target WS/WSS compatibility listener promotion).
+The crate-boundary and upstream-composition guidance remains applicable; the
+listener-role refusal statements are historical.
 - WS/WSS and Raw/Tunnel upstreams are now promoted to `drop_in` tier.
 - H2 CONNECT remains `intentional_non_parity` per the original decision.
 - See `docs/adr/ADR_b3_ws_raw_runtime_promotion.md` for the promotion ADR.

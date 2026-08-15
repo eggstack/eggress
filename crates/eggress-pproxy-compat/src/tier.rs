@@ -55,7 +55,9 @@ pub fn manifest_tier_for_category(category: &str) -> ManifestTier {
         | "log-file"
         | "config-schema"
         | "reverse-proxy-warning"
-        | "socks5_udp_framing_divergence" => ManifestTier::CompatibleWithWarning,
+        | "socks5_udp_framing_divergence"
+        | "system-proxy"
+        | "auth-timeout" => ManifestTier::CompatibleWithWarning,
         // Unsupported: feature or operation not implemented.
         "socks4_bind_unsupported" | "socks5_bind_unsupported" => ManifestTier::Unsupported,
         // Unknown categories default to "unsupported" to surface new gaps.

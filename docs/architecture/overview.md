@@ -150,7 +150,7 @@ These crates provide the runtime machinery, configuration, routing, metrics, and
 
 | Crate | Purpose | Deep Dive |
 |---|---|---|
-| **eggress-cli** | CLI binary targets `eggress` (native) and `pproxy` (compatibility). Modes: config file, direct args, route-explain, upstream-test, system-proxy inspect. | [cli.md](cli.md) |
+| **eggress-cli** | CLI binary targets `eggress` (native) and `pproxy` (compatibility). Modes: config file, direct args, route-explain, upstream-test, system-proxy inspect, compatibility auth reuse, and lifecycle-safe `--sys`. | [cli.md](cli.md) |
 | **eggress-embed** | Stable Rust in-process API. `EggressConfig::from_toml_str()`, `EggressService::new().start().await` (async) or `.start_blocking()` (blocking). `EggressHandle` for bound addresses, status, metrics, hot-reload, shutdown. Also provides `OutboundConnector` for native outbound TCP connections. | [embed.md](embed.md) |
 | **eggress-python** | PyO3 bindings wrapping the embed API. Classes: `Config`, `Service`, `Handle`, `Connection`, `OutboundConnector`, `OutboundStream`. pproxy-compatible `Server` class. Protocol client classes (`HTTP`, `Socks4`, `Socks5`). URI helpers, diagnostics, route explanation. GIL release on all blocking Rust calls. | [python.md](python.md) |
 
@@ -198,7 +198,7 @@ eggress/
 │   ├── eggress-python/        # PyO3 Python bindings
 │   ├── eggress-pproxy-compat/ # pproxy compatibility layer
 │   ├── eggress-cli/           # CLI binary targets
-│   ├── eggress-system-proxy/  # System proxy inspection
+│   ├── eggress-system-proxy/  # System proxy inspection and structured apply/rollback
 │   └── eggress-testkit/       # Test utilities and oracle
 ├── python/                    # Python package (eggress/ + pproxy/)
 ├── fuzz/                      # Standalone fuzz workspace

@@ -266,10 +266,19 @@ impl From<&CompatWarning> for StructuredDiagnostic {
             "system-proxy" => StructuredDiagnostic {
                 code: DiagnosticCode::UnsupportedFlag,
                 feature_id: Some("sys".to_string()),
-                tier: Some("unsupported".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
                 message: warn.message.clone(),
                 suggestion: Some(
-                    "use 'eggress system-proxy inspect' for read-only inspection".to_string(),
+                    "compatibility mode restores prior settings after --sys".to_string(),
+                ),
+            },
+            "auth-timeout" => StructuredDiagnostic {
+                code: DiagnosticCode::UnsupportedFlag,
+                feature_id: Some("auth".to_string()),
+                tier: Some("compatible_with_warning".to_string()),
+                message: warn.message.clone(),
+                suggestion: Some(
+                    "configure listener credentials to enable source-IP reuse".to_string(),
                 ),
             },
             "log-file" => StructuredDiagnostic {
@@ -381,13 +390,13 @@ fn classify_unsupported_feature(
         ),
         "system-proxy" => (
             DiagnosticCode::UnsupportedFlag,
-            "unsupported",
-            Some("use 'eggress system-proxy inspect' for read-only inspection"),
+            "compatible_with_warning",
+            Some("compatibility mode restores prior settings after --sys"),
         ),
         "auth-timeout" => (
             DiagnosticCode::UnsupportedFlag,
-            "unsupported",
-            Some("eggress authenticates per-connection; --auth per-client reuse is not available"),
+            "compatible_with_warning",
+            Some("configure listener credentials to enable source-IP reuse"),
         ),
         "chain-unsupported-hop" | "chain-backward-composition" => (
             DiagnosticCode::UnsupportedProtocol,

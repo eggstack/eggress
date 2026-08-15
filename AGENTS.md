@@ -173,6 +173,10 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 
 - Streams are boxed at protocol/transport boundaries; never propagate generic stream types through the architecture.
 - Credentials and secret-bearing URIs must be redacted before logging, diagnostics, or evidence output.
+- Compatibility `--auth` reuse is source-IP keyed, bounded, monotonic, and must
+  never be enabled for native listeners implicitly.
+- Compatibility `--sys` applies only after listener bind succeeds and restores
+  captured settings on every normal or failed startup/shutdown path.
 - Listener topology is not hot-reloaded; routing, upstream, group, and health state may be replaced atomically.
 - Shutdown ordering: readiness false, listener stop, connection drain/cancellation, then admin shutdown.
 - Runtime routing, health, admin, and metrics share the same compiled runtime snapshot.
@@ -199,7 +203,9 @@ When a compatibility claim changes, update the applicable manifest and run the c
 
 Key compatibility notes:
 - `--pac`, `--get`, `--test` are value-taking options; their values are not positional listeners.
-- H2/WS/WSS remain upstream-only; bounded raw/tunnel listener forms are supported.
+- H2 listeners accept independent CONNECT streams; WS/WSS compatibility
+  listeners require a fixed target (`ws{host:port}://listener`) and use the
+  existing TLS transport for WSS. H2/WS/WSS upstream behavior remains supported.
 - QUIC/HTTP/3 is intentionally deferred.
 
 ## Change discipline
