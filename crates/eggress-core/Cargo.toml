@@ -12,6 +12,7 @@ thiserror.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+socket2.workspace = true
 bytes.workspace = true
 pin-project-lite.workspace = true
 trait-variant.workspace = true

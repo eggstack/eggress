@@ -55,7 +55,7 @@ impl ExecutionGate {
 /// 3. benign warnings that do not block startup.
 pub fn evaluate(args: &PproxyArgs, output: &TranslationOutput) -> ExecutionGate {
     let mut blockers: Vec<BlockReason> = Vec::new();
-    for flag in &args.unknown_flags {
+    for flag in args.strict_parser_violations() {
         blockers.push(BlockReason::UnknownFlag(flag.clone()));
     }
     for u in &output.unsupported {

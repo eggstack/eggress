@@ -10,9 +10,17 @@ fn take_required_value(
     flag: &str,
 ) -> Result<String, CompatError> {
     *index += 1;
-    raw.get(*index)
+    let value = raw
+        .get(*index)
         .cloned()
-        .ok_or_else(|| CompatError::MissingArgument(format!("{flag} requires a value")))
+        .ok_or_else(|| CompatError::MissingArgument(format!("{flag} requires a value")))?;
+    if value.starts_with('-') && !(matches!(flag, "-a" | "--auth") && value.parse::<i64>().is_ok())
+    {
+        return Err(CompatError::MissingArgument(format!(
+            "{flag} requires a value"
+        )));
+    }
+    Ok(value)
 }
 
 fn parse_auth_duration(value: &str) -> Result<Duration, CompatError> {
@@ -34,14 +42,16 @@ fn parse_auth_duration(value: &str) -> Result<Duration, CompatError> {
 /// Parsed pproxy-compatible CLI arguments.
 #[derive(Debug, Clone)]
 pub struct PproxyArgs {
-    /// Local listener URIs (from `-l` flags or positional args).
+    /// Local listener URIs (from `-l` flags).
     pub local: Vec<String>,
-    /// Remote/upstream URIs (from `-r` flags or positional args).
+    /// Remote/upstream URIs (from `-r` flags).
     pub remotes: Vec<String>,
     /// Verbosity level derived from `-v`/`-vv`/`-vvv` flags.
     pub verbose_level: u8,
     /// `-d` flag: debug-level compatibility diagnostics.
     pub debug: bool,
+    /// Number of `-d` occurrences, including clustered short options.
+    pub debug_level: u8,
     /// `--daemon` flag: daemon mode request (unsupported).
     pub daemon: bool,
     /// `--reuse` flag: listener SO_REUSEPORT.
@@ -54,6 +64,10 @@ pub struct PproxyArgs {
     pub known_unsupported: Vec<String>,
     /// Unknown flags that are not recognized.
     pub unknown_flags: Vec<String>,
+    /// Options accepted by the migration translator but not by the frozen
+    /// pproxy 2.7.9 parser, plus positional arguments and long aliases.
+    /// Compatibility execution treats these as parser errors.
+    pub strict_violations: Vec<String>,
 }
 
 impl PproxyArgs {
@@ -80,12 +94,14 @@ impl PproxyArgs {
             remotes: vec![],
             verbose_level: 0,
             debug: false,
+            debug_level: 0,
             daemon: false,
             reuse_port: false,
             auth_timeout: None,
             system_proxy: false,
             known_unsupported: vec![],
             unknown_flags: vec![],
+            strict_violations: vec![],
         }
     }
 
@@ -95,21 +111,29 @@ impl PproxyArgs {
         let mut remotes = Vec::new();
         let mut verbose_level: u8 = 0;
         let mut debug = false;
+        let mut debug_level: u8 = 0;
         let mut daemon = false;
         let mut reuse_port = false;
         let mut auth_timeout: Option<Duration> = None;
         let mut system_proxy = false;
         let mut known_unsupported = Vec::new();
         let mut unknown_flags = Vec::new();
+        let mut strict_violations = Vec::new();
         let mut i = 0;
 
         while i < raw.len() {
             let arg = &raw[i];
             match arg.as_str() {
                 "-l" | "--listen" => {
+                    if arg == "--listen" {
+                        strict_violations.push(arg.clone());
+                    }
                     local.push(take_required_value(raw, &mut i, arg)?);
                 }
                 "-r" | "--remote" => {
+                    if arg == "--remote" {
+                        strict_violations.push(arg.clone());
+                    }
                     remotes.push(take_required_value(raw, &mut i, arg)?);
                 }
                 "--daemon" => {
@@ -117,28 +141,68 @@ impl PproxyArgs {
                 }
                 "-d" => {
                     debug = true;
+                    debug_level = debug_level.saturating_add(1);
                 }
                 "--log" | "-log" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("log={value}"));
+                    strict_violations.push(arg.clone());
                 }
                 "-ul" | "--udp-listen" => {
+                    if arg == "--udp-listen" {
+                        strict_violations.push(arg.clone());
+                    }
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("udp-listen={value}"));
                 }
                 "-ur" | "--udp-remote" => {
+                    if arg == "--udp-remote" {
+                        strict_violations.push(arg.clone());
+                    }
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("udp-remote={value}"));
                 }
                 "--rulefile" | "-rulefile" => {
                     let value = take_required_value(raw, &mut i, arg)?;
                     known_unsupported.push(format!("rulefile={value}"));
+                    strict_violations.push(arg.clone());
                 }
                 "-v" | "-vv" | "-vvv" => {
-                    verbose_level = verbose_level.max(arg.len() as u8 - 1);
+                    verbose_level = verbose_level.saturating_add(arg.len() as u8 - 1);
+                }
+                short
+                    if short.len() > 2
+                        && short.starts_with('-')
+                        && short[1..].chars().all(|c| c == 'd' || c == 'v') =>
+                {
+                    for flag in short[1..].chars() {
+                        if flag == 'd' {
+                            debug = true;
+                            debug_level = debug_level.saturating_add(1);
+                        } else {
+                            verbose_level = verbose_level.saturating_add(1);
+                        }
+                    }
                 }
                 "-s" => {
                     let value = take_required_value(raw, &mut i, arg)?;
+                    if !matches!(
+                        value.as_str(),
+                        "fa" | "rr"
+                            | "rc"
+                            | "lc"
+                            | "first_available"
+                            | "round_robin"
+                            | "random_choice"
+                            | "least_connection"
+                    ) {
+                        return Err(CompatError::InvalidArgs {
+                            message: format!(
+                                "invalid choice: '{}' (choose from fa, rr, rc, lc)",
+                                value
+                            ),
+                        });
+                    }
                     known_unsupported.push(format!("scheduler={value}"));
                 }
                 "-a" => {
@@ -179,12 +243,16 @@ impl PproxyArgs {
                     unknown_flags.push(other.to_string());
                 }
                 other => {
-                    // Positional: treat as local if no locals yet, else remote
+                    // The migration translator historically accepted positional
+                    // URIs. Keep parsing them for API callers, but mark them so
+                    // strict executable entry points can reject them like
+                    // argparse does.
                     if local.is_empty() {
                         local.push(other.to_string());
                     } else {
                         remotes.push(other.to_string());
                     }
+                    strict_violations.push(other.to_string());
                 }
             }
             i += 1;
@@ -195,12 +263,14 @@ impl PproxyArgs {
             remotes,
             verbose_level,
             debug,
+            debug_level,
             daemon,
             reuse_port,
             auth_timeout,
             system_proxy,
             known_unsupported,
             unknown_flags,
+            strict_violations,
         })
     }
 
@@ -225,6 +295,74 @@ impl PproxyArgs {
     /// Check if there are any unknown or unsupported flags.
     pub fn has_unknown_or_unsupported(&self) -> bool {
         !self.unknown_flags.is_empty() || !self.known_unsupported.is_empty() || self.daemon
+    }
+
+    /// Return parser violations against the exact 2.7.9 command surface.
+    pub fn strict_parser_violations(&self) -> Vec<String> {
+        self.unknown_flags
+            .iter()
+            .cloned()
+            .chain(self.strict_violations.iter().cloned())
+            .collect()
+    }
+
+    /// Validate values whose upstream argparse `type=` callbacks run during
+    /// parsing. URI failures therefore stay in the CLI-parse category rather
+    /// than being reported as a later runtime/configuration failure.
+    pub fn validate_strict_values(&self) -> Result<(), CompatError> {
+        self.parse_local_uris()
+            .map_err(|error| CompatError::InvalidArgs {
+                message: format!("invalid -l URI: {error}"),
+            })?;
+        self.parse_remote_chains()
+            .map_err(|error| CompatError::InvalidArgs {
+                message: format!("invalid -r URI: {error}"),
+            })?;
+        if let Some(scheduler) = self
+            .known_unsupported
+            .iter()
+            .find_map(|flag| flag.strip_prefix("scheduler="))
+        {
+            if !matches!(scheduler, "fa" | "rr" | "rc" | "lc") {
+                return Err(CompatError::InvalidArgs {
+                    message: format!(
+                        "invalid choice: '{}' (choose from fa, rr, rc, lc)",
+                        scheduler
+                    ),
+                });
+            }
+        }
+        if let Some(interval) = self
+            .known_unsupported
+            .iter()
+            .find_map(|flag| flag.strip_prefix("alive="))
+        {
+            interval
+                .parse::<i64>()
+                .map_err(|_| CompatError::InvalidArgs {
+                    message: format!("-a value '{}' is not a valid integer", interval),
+                })?;
+        }
+        for kind in ["udp-listen=", "udp-remote="] {
+            for value in self
+                .known_unsupported
+                .iter()
+                .filter_map(|flag| flag.strip_prefix(kind))
+            {
+                crate::uri::parse_pproxy_uri(value).map_err(|error| CompatError::InvalidArgs {
+                    message: format!("invalid {} URI: {error}", kind.trim_end_matches('=')),
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Return the pproxy default re-authentication interval when `--auth` was
+    /// omitted. The field remains optional so translation/API callers can
+    /// distinguish an explicit compatibility option from the parser default.
+    pub fn effective_auth_timeout(&self) -> Duration {
+        self.auth_timeout
+            .unwrap_or_else(|| Duration::from_secs(86_400 * 30))
     }
 
     /// Default tracing log level chosen from `-d` and `-v` verbosity flags.
@@ -343,7 +481,45 @@ mod tests {
         let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into(), "-d".into()])
             .unwrap();
         assert!(args.debug);
+        assert_eq!(args.debug_level, 1);
         assert!(!args.daemon);
+    }
+
+    #[test]
+    fn test_count_actions_and_short_clusters() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-dd".into(),
+            "-v".into(),
+            "-vv".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.debug_level, 2);
+        assert_eq!(args.verbose_level, 3);
+
+        let clustered =
+            PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-dv".into()]).unwrap();
+        assert_eq!(clustered.debug_level, 1);
+        assert_eq!(clustered.verbose_level, 1);
+    }
+
+    #[test]
+    fn test_strict_parser_rejects_extensions_and_positionals() {
+        let args = PproxyArgs::parse(&[
+            "--log".into(),
+            "access.log".into(),
+            "proxy://listener".into(),
+        ])
+        .unwrap();
+        assert!(args
+            .strict_parser_violations()
+            .iter()
+            .any(|value| value == "--log"));
+        assert!(args
+            .strict_parser_violations()
+            .iter()
+            .any(|value| value == "proxy://listener"));
     }
 
     #[test]
@@ -657,7 +833,7 @@ mod tests {
             "-vvv".into(),
         ])
         .unwrap();
-        assert_eq!(args.verbose_level, 3);
+        assert_eq!(args.verbose_level, 4);
     }
 
     #[test]

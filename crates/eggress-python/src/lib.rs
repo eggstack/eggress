@@ -1373,6 +1373,71 @@ fn check_pproxy_args(
     translate_pproxy_args(py, args)
 }
 
+/// Validate the frozen executable parser contract without starting a service.
+/// Migration helpers intentionally retain their broader translation-only
+/// extension surface.
+#[pyfunction]
+fn validate_pproxy_args(args: &Bound<'_, PySequence>) -> PyResult<()> {
+    let len = args.len()?;
+    let raw: Vec<String> = (0..len)
+        .map(|i| args.get_item(i)?.extract::<String>())
+        .collect::<PyResult<_>>()?;
+    let parsed = if raw.is_empty() {
+        eggress_pproxy_compat::PproxyArgs::default_args()
+    } else {
+        eggress_pproxy_compat::PproxyArgs::parse(&raw)
+            .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))?
+    };
+    if let Some(flag) = parsed.strict_parser_violations().first() {
+        return Err(PyValueError::new_err(format!(
+            "pproxy: unknown option or positional argument '{flag}'"
+        )));
+    }
+    parsed
+        .validate_strict_values()
+        .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))
+}
+
+/// Run the native compatibility upstream test without starting listeners.
+#[pyfunction]
+fn run_pproxy_test(py: Python<'_>, args: &Bound<'_, PySequence>, target: &str) -> PyResult<i32> {
+    let len = args.len()?;
+    let raw: Vec<String> = (0..len)
+        .map(|i| args.get_item(i)?.extract::<String>())
+        .collect::<PyResult<_>>()?;
+    let parsed = if raw.is_empty() {
+        eggress_pproxy_compat::PproxyArgs::default_args()
+    } else {
+        eggress_pproxy_compat::PproxyArgs::parse(&raw)
+            .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))?
+    };
+    if let Some(flag) = parsed.strict_parser_violations().first() {
+        return Err(PyValueError::new_err(format!(
+            "pproxy: unknown option or positional argument '{flag}'"
+        )));
+    }
+    parsed
+        .validate_strict_values()
+        .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))?;
+    let output = eggress_pproxy_compat::translate_pproxy_args(&parsed)
+        .map_err(|e| PyValueError::new_err(format!("pproxy translation error: {e}")))?;
+    let gate = eggress_pproxy_compat::evaluate_execution_gate(&parsed, &output);
+    if !gate.allows_start() {
+        return Err(UnsupportedFeatureError::new_err(gate.blocker_summary()));
+    }
+    let (config, _) = eggress_config::validate_and_compile_toml_with_warnings(&output.toml)
+        .map_err(|e| ConfigError::new_err(format!("pproxy config error: {e}")))?;
+    let target = eggress_cli::parse_pproxy_test_target(target)
+        .map_err(PyValueError::new_err)?
+        .to_string();
+    if config.upstreams.is_empty() {
+        return Ok(0);
+    }
+    Ok(py.detach(|| {
+        eggress_cli::run_upstream_test(&config, Some(&target), Duration::from_secs(10), false)
+    }))
+}
+
 #[pyclass]
 struct PyReverseUriSummary {
     /// "server" or "client" or "unknown"
@@ -1797,6 +1862,8 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(translate_pproxy_args, m)?)?;
     m.add_function(wrap_pyfunction!(translate_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_args, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_pproxy_args, m)?)?;
+    m.add_function(wrap_pyfunction!(run_pproxy_test, m)?)?;
     m.add_function(wrap_pyfunction!(describe_reverse_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(redact_pproxy_uri, m)?)?;

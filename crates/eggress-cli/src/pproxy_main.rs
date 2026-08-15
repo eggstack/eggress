@@ -14,22 +14,19 @@ Unsupported options cause startup to fail with a non-zero exit code.
 Run 'eggress pproxy check -- <args>' to inspect all classifications.
 
 USAGE:
-    pproxy [OPTIONS] <LISTENER_URI> <UPSTREAM_URI>
-    pproxy [OPTIONS] -l <URI> -r <URI>
+    pproxy [OPTIONS]
 
 OPTIONS:
-    -l, --listen <URI>     Local listener URI (e.g., http://0.0.0.0:8080)
-    -r, --remote <URI>     Remote/upstream URI (e.g., socks5://127.0.0.1:1080)
-    -ul, --udp-listen <A>  UDP listener address (e.g., socks5://:1081)
-    -ur, --udp-remote <U>  UDP upstream URI
+    -l <URI>                Local listener URI (repeatable)
+    -r <URI>                Remote/upstream URI (repeatable)
+    -ul <URI>               UDP listener URI (repeatable)
+    -ur <URI>               UDP upstream URI (repeatable)
     -b <PATTERN>           Block rule pattern (regex)
     -a <SECONDS>           Alive/health check interval
     -s <SCHEDULER>         Scheduler (rr, fa, rc, lc)
-    -d                     Debug-level tracing diagnostics (differs from Python traceback behavior)
-    -v                     Verbose mode (sets RUST_LOG=debug)
+    -d                     Debug traceback/error visibility (repeatable)
+    -v                     Verbose connection output (repeatable; -vv adds traffic stats)
     --ssl <CERT,KEY>       Enable TLS on listeners
-    --rulefile <PATH>      Load routing rules from file
-    --log <PATH>           Log file path (recognized for compat; logs remain on stderr)
     --pac <PATH>           Serve PAC content at PATH
     --test <URL>           Test the supplied target and exit
     --sys                  Apply the selected local HTTP/SOCKS5 listener as system proxy
@@ -88,6 +85,16 @@ fn main() -> ExitCode {
         eggress_pproxy_compat::PproxyArgs::default_args()
     };
 
+    if let Some(flag) = pproxy_args.strict_parser_violations().first() {
+        eprintln!("pproxy: error: unknown option or positional argument '{flag}'");
+        std::process::exit(2);
+    }
+
+    if let Err(e) = pproxy_args.validate_strict_values() {
+        eprintln!("pproxy: error: {e}");
+        std::process::exit(2);
+    }
+
     let output = match eggress_pproxy_compat::translate_pproxy_args(&pproxy_args) {
         Ok(o) => o,
         Err(e) => {
@@ -131,7 +138,9 @@ fn main() -> ExitCode {
 
     let test_target = pproxy_args.test_target();
 
-    print_startup_banner(&pproxy_args, &output);
+    if test_target.is_none() {
+        print_startup_banner(&pproxy_args, &output);
+    }
 
     // Parse translated TOML into a validated RuntimeConfig in-memory.
     // No temporary file is created; the config lives entirely in process memory.
@@ -146,7 +155,17 @@ fn main() -> ExitCode {
 
     if let Some(target) = test_target {
         let timeout = Duration::from_secs(10);
-        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(target), timeout, false);
+        let target = match eggress_cli::parse_pproxy_test_target(target) {
+            Ok(target) => target.to_string(),
+            Err(error) => {
+                eprintln!("pproxy: error: {error}");
+                std::process::exit(2);
+            }
+        };
+        if rt_config.upstreams.is_empty() {
+            std::process::exit(0);
+        }
+        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(&target), timeout, false);
         std::process::exit(exit_code);
     }
 
@@ -158,8 +177,10 @@ fn main() -> ExitCode {
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
     let compatibility_options = eggress_runtime::CompatibilityOptions {
-        auth_timeout: pproxy_args.auth_timeout,
+        auth_timeout: Some(pproxy_args.effective_auth_timeout()),
         system_proxy: pproxy_args.system_proxy,
+        debug: pproxy_args.debug,
+        verbose_level: pproxy_args.verbose_level,
     };
     match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
         rt_config,

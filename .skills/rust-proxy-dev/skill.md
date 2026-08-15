@@ -166,23 +166,25 @@ The contract and minimal listener smoke tests live in
 
 - `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; strict CLI parity is not claimed
 - Source: `crates/eggress-cli/src/pproxy_main.rs` — raw arg parsing (not clap), delegates to `PproxyArgs::parse()` → `translate_pproxy_args()`
-- Flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-v/-vv/-vvv`, `-d`, `--ssl`, `--pac <path>`, `--test <target>`, `--sys`, `--daemon`, `--reuse`, `--get <path,file>`, `--log`, `--rulefile`, `--auth <seconds>`, `--version`, `-h/--help`
+- Strict executable flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-d`, `-v`, `--ssl`, `--pac <path>`, `--test <target>`, `--sys`, `--daemon`, `--reuse`, `--get <path,file>`, `--auth <seconds>`, `--version`, `-h/--help`. `-d` and `-v` are repeatable count actions, including clustered forms.
+- Positional URIs, `--listen`/`--remote` aliases, `--log`, and `--rulefile` are not pproxy 2.7.9 executable options and must fail before startup. Migration-only translation helpers may retain separate extension handling.
 - `--help` prints comprehensive flag reference; `--version` prints `eggress-pproxy-compat {VERSION}`
 - The compatibility URI AST preserves combined protocol tokens, modifiers,
   fragment auth, local binding, fixed targets, plugins, raw rules, and the
   original URI. Translation must diagnose fields that are parsed but not
   runtime-supported, and must redact credentials in all diagnostics.
-- `--pac`, `--test`, and `--get` consume exactly one value. Their values must
-  not become positional listeners or remotes. PAC and valid `PATH,FILE` GET
-  values use the admin server; TEST passes its exact target to native upstream
-  testing from both compatibility execution entry points.
+- `--pac`, `--test`, and `--get` consume exactly one value. Their values remain
+  owned by the option. PAC and valid `PATH,FILE` GET values use the admin
+  server; TEST passes its exact URL-shaped target to the native upstream test
+  from both compatibility execution entry points and never starts listeners.
 - PAC and `-v/-vv/-vvv` are supported with compatibility warnings: PAC maps to
   the admin route, while verbosity selects Rust tracing defaults (`debug` for
   one or two occurrences, `trace` for three or more) unless `RUST_LOG` is set.
 - `-d` selects a debug-level default tracing filter via the shared
-  `PproxyArgs::default_log_level` helper and reports the Python traceback
-  difference as `debug-mode` at `compatible_with_warning`. It is independent
-  of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative.
+  `PproxyArgs::default_log_level` helper and promotes compatibility session
+  failures to visible error diagnostics. It is independent of `-v` and
+  `--daemon`; Python traceback bytes are not reproduced. Explicit `RUST_LOG`
+  remains authoritative.
 - `--sys` is supported in pproxy compatibility mode through the existing
   system-proxy backend. It applies after listener bind, prefers a local
   SOCKS5 listener over HTTP, and restores captured settings on shutdown or
@@ -192,7 +194,9 @@ The contract and minimal listener smoke tests live in
 - `--auth <seconds>` enables bounded, process-local source-IP authentication
   reuse when listener credentials are configured. Native mode never enables
   this cache implicitly.
-- `-v/-vv/-vvv` maps to RUST_LOG levels: 0→info, 1-2→debug, 3+→trace
+- `-v/-vv/-vvv` maps to RUST_LOG defaults: 0→info, 1-2→debug, 3+→trace, and
+  compatibility session reports add connection events at `-v` and byte totals
+  at `-vv` without a duplicate metrics store.
 - Both the standalone `pproxy` binary and `eggress pproxy run` apply the
   same fail-closed policy through the shared gate. Unknown, unsupported,
   and non-equivalent options cannot start a partial service from either

@@ -551,6 +551,11 @@ pub struct ServiceSupervisor {
 pub struct CompatibilityOptions {
     pub auth_timeout: Option<Duration>,
     pub system_proxy: bool,
+    /// Compatibility-only debug propagation. Native Eggress never enables it.
+    pub debug: bool,
+    /// Compatibility verbosity count, used for human-readable session and
+    /// traffic events backed by the normal session reports.
+    pub verbose_level: u8,
 }
 
 impl ServiceSupervisor {
@@ -1069,12 +1074,16 @@ impl ServiceSupervisor {
                     connection_limit,
                 };
 
-                let listener = TcpListener::new(&config, listener_cancel.clone())
-                    .await
-                    .map_err(|e| RuntimeError::ListenerBind {
-                        addr: lcfg.bind.clone(),
-                        source: e,
-                    })?;
+                let listener = TcpListener::new_with_reuse_port(
+                    &config,
+                    listener_cancel.clone(),
+                    lcfg.reuse_port.unwrap_or(false),
+                )
+                .await
+                .map_err(|e| RuntimeError::ListenerBind {
+                    addr: lcfg.bind.clone(),
+                    source: e,
+                })?;
                 let local_addr = listener
                     .local_addr()
                     .map_err(|e| RuntimeError::ListenerBind {
@@ -1968,16 +1977,42 @@ impl ServiceSupervisor {
 
                             active.fetch_sub(1, Ordering::Relaxed);
 
-                            tracing::info!(
-                                protocol = ?report.protocol,
-                                target = ?report.target,
-                                route = %report.route,
-                                outcome = ?report.outcome,
-                                bytes_upstream = report.bytes_upstream,
-                                bytes_downstream = report.bytes_downstream,
-                                duration_ms = started.elapsed().as_millis() as u64,
-                                "connection completed",
-                            );
+                            if compatibility_options.debug && report.failure.is_some() {
+                                tracing::error!(
+                                    protocol = ?report.protocol,
+                                    target = ?report.target,
+                                    route = %report.route,
+                                    outcome = ?report.outcome,
+                                    failure = ?report.failure,
+                                    "pproxy debug connection failure",
+                                );
+                            } else {
+                                tracing::info!(
+                                    protocol = ?report.protocol,
+                                    target = ?report.target,
+                                    route = %report.route,
+                                    outcome = ?report.outcome,
+                                    bytes_upstream = report.bytes_upstream,
+                                    bytes_downstream = report.bytes_downstream,
+                                    duration_ms = started.elapsed().as_millis() as u64,
+                                    "connection completed",
+                                );
+                            }
+                            if compatibility_options.verbose_level >= 1 {
+                                tracing::info!(
+                                    protocol = ?report.protocol,
+                                    target = ?report.target,
+                                    route = %report.route,
+                                    "pproxy connection event",
+                                );
+                            }
+                            if compatibility_options.verbose_level >= 2 {
+                                tracing::info!(
+                                    bytes_upstream = report.bytes_upstream,
+                                    bytes_downstream = report.bytes_downstream,
+                                    "pproxy traffic stats",
+                                );
+                            }
                         });
                     }
                 });

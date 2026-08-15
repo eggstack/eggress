@@ -666,13 +666,27 @@ fn handle_pproxy_check(args: &PproxyCheck) {
 
 #[cfg(feature = "pproxy-compat")]
 fn handle_pproxy_run(args: &PproxyRun) {
-    let pproxy_args = match eggress_pproxy_compat::PproxyArgs::parse(&args.args) {
+    let pproxy_args = match if args.args.is_empty() {
+        Ok(eggress_pproxy_compat::PproxyArgs::default_args())
+    } else {
+        eggress_pproxy_compat::PproxyArgs::parse(&args.args)
+    } {
         Ok(a) => a,
         Err(e) => {
             eprintln!("error: {e}");
             std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
     };
+
+    if let Some(flag) = pproxy_args.strict_parser_violations().first() {
+        eprintln!("error: unknown option or positional argument '{flag}'");
+        std::process::exit(EXIT_CLI_PARSE_ERROR);
+    }
+
+    if let Err(e) = pproxy_args.validate_strict_values() {
+        eprintln!("error: {e}");
+        std::process::exit(EXIT_CLI_PARSE_ERROR);
+    }
 
     let output = match eggress_pproxy_compat::translate_pproxy_args(&pproxy_args) {
         Ok(o) => o,
@@ -730,7 +744,17 @@ fn handle_pproxy_run(args: &PproxyRun) {
 
     if let Some(target) = test_target {
         let timeout = Duration::from_secs(10);
-        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(target), timeout, false);
+        let target = match eggress_cli::parse_pproxy_test_target(target) {
+            Ok(target) => target.to_string(),
+            Err(error) => {
+                eprintln!("error: {error}");
+                std::process::exit(EXIT_CLI_PARSE_ERROR);
+            }
+        };
+        if rt_config.upstreams.is_empty() {
+            std::process::exit(EXIT_SUCCESS);
+        }
+        let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(&target), timeout, false);
         std::process::exit(exit_code);
     }
 
@@ -740,8 +764,10 @@ fn handle_pproxy_run(args: &PproxyRun) {
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
     let compatibility_options = eggress_runtime::CompatibilityOptions {
-        auth_timeout: pproxy_args.auth_timeout,
+        auth_timeout: Some(pproxy_args.effective_auth_timeout()),
         system_proxy: pproxy_args.system_proxy,
+        debug: pproxy_args.debug,
+        verbose_level: pproxy_args.verbose_level,
     };
     match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
         rt_config,

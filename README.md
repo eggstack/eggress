@@ -101,15 +101,16 @@ pproxy check -- -l socks5://:1080 -r http://proxy:8080
 ```
 
 The compatibility binary follows pproxy's no-argument default:
-`http+socks4+socks5://:8080` with direct routing. Compatibility URIs preserve
-combined protocols, fragment authentication, local outbound binding, plugins,
-fixed targets, and raw rule suffixes for translation diagnostics. `--pac
-<path>`, `--get <path,file>`, and `--test <target>` each consume their value;
-they are not positional proxy URIs. PAC and valid GET values lower through the
-admin server, while TEST delegates the exact target to native upstream testing.
-PAC serving and verbosity are supported with compatibility warnings: PAC is
-served through the mapped admin route, and `-v/-vv/-vvv` select Rust tracing
-defaults while explicit `RUST_LOG` remains authoritative.
+`http+socks4+socks5://:8080` with direct routing. Its strict executable parser
+accepts the frozen 2.7.9 surface: repeatable `-l`, `-r`, `-ul`, `-ur`, `-d`,
+and `-v`, plus `-b`, `-a`, `-s`, `--ssl`, `--pac`, `--get`, `--auth`, `--sys`,
+`--reuse`, `--daemon`, `--test`, and `--version`. `--pac`, `--get`, and
+`--test` each consume exactly one value; positional URIs, long listener aliases,
+`--log`, and `--rulefile` fail as parser errors and cannot start a service.
+`--test` runs native upstream checks and exits before listener startup.
+`-d` makes compatibility task failures visible at error level, while `-v` logs
+connection events and `-vv` adds traffic totals using the existing metrics
+reports. Explicit `RUST_LOG` remains authoritative.
 Canonical fixed-target listeners use
 `tunnel{host:port}://:listen-port`; the legacy `raw://{host:port}` extension
 remains accepted. UDP fixed-target and echo listeners require an explicit
@@ -333,7 +334,8 @@ Python bindings; it is not a separate Python distribution. The bundled
 `eggress.pproxy` module provides:
 
 - URI-mode command translation from `pproxy` to `eggress` syntax (including `socks4a`, `https`, `direct`, `ss` scheme aliases)
-- CLI flag translation with structured warnings for unsupported features
+- CLI flag translation with structured warnings for unsupported features; the
+  standalone executable applies a stricter frozen-parser gate
 - Phase 1 URI grammar and CLI ownership coverage, including mixed listeners,
   redaction, fixed-target metadata, and value-taking options
 - Compatibility routing: first-available declaration order, explicit

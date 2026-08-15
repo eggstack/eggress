@@ -83,9 +83,9 @@ table, severity order, or intentional-exclusion set.
 | `-l uri` | `[[listeners]]` with parsed URI |
 | `-r uri` | `[[upstreams]]` and `[[upstream_groups]]` |
 | `-ul uri` / `-ur uri` | Standalone UDP listener/upstream configuration |
-| `-s` | Server mode |
-| `-v/-vv/-vvv` | Verbose logging defaults (`debug`/`trace`) with a compatibility warning |
-| `-d` | Debug-level default tracing filter via shared `default_log_level` helper |
+| `-s` | Scheduler choice (`fa`, `rr`, `rc`, `lc`) |
+| `-v` | Counted connection events; `-vv` also reports traffic totals |
+| `-d` | Counted debug mode; compatibility task failures become visible errors |
 | `--ssl` | TLS configuration |
 | `-b regex` | Native reject rule |
 | `-a seconds` | Native health interval with a compatibility warning |
@@ -93,12 +93,15 @@ table, severity order, or intentional-exclusion set.
 | `--get path,file` | Native admin static content |
 | `--auth seconds` | Enables bounded source-IP authentication reuse for compatibility listeners |
 | `--sys` | Applies the selected bound SOCKS5/HTTP listener through `eggress-system-proxy`, then restores prior settings |
-| `--reuse` / `--daemon` / `--test` | Socket reuse, process-model refusal, and in-process URL testing |
+| `--reuse` | SO_REUSEPORT before TCP bind where supported |
+| `--daemon` | Parsed, then rejected before startup (Phase 9 daemonization remains out of scope) |
+| `--test` | Native URL test for each remote, then exit before listener startup |
 
-The tagged parser does not declare `--log`, `-f/--config`, or `--rulefile`.
-Eggress may accept those names as extensions (`--config` is native TOML mode;
-`--log` is a stderr/log-format compatibility extension; rule files are
-available through the Eggress bridge), but they are not pproxy 2.7.9 flags.
+The tagged parser does not declare `--log`, `-f/--config`, `--rulefile`,
+positional URIs, or long listener aliases such as `--listen` and `--remote`.
+Native Eggress configuration and migration-only translation helpers may accept
+separate extension names, but the executable parser rejects them before any
+listener, system-proxy, or runtime side effect.
 
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener`, `ws{host:port}://listener`, and
@@ -146,12 +149,27 @@ groups retain their own configured defaults.
 `--pac <path>`, `--get <path,file>`, and `--test <target>` are value-taking
 options. PAC and valid static content use the existing admin server; malformed
 or unreadable static-content values fail closed. Both the standalone `pproxy`
-binary and `eggress pproxy run` pass the supplied test target to the existing
-upstream test command.
+binary and `eggress pproxy run` pass the supplied URL-shaped test target to the
+native upstream test command and do not print a startup banner or bind a
+listener in test mode.
 
 PAC and verbosity are supported with compatibility warnings. PAC is served at
-the mapped Eggress admin route, and `-v/-vv/-vvv` select Rust tracing defaults;
-an explicit `RUST_LOG` value takes precedence.
+the mapped Eggress admin route. `-d` and `-v` use argparse count semantics,
+including short clusters; `RUST_LOG` controls the final tracing filter.
+
+## Compatibility process lifecycle
+
+The shared execution gate runs after parsing/translation and before temporary
+configuration, system-proxy mutation, or runtime startup. It rejects unknown
+options, unsupported features, and non-equivalent extensions. `--auth` uses
+the oracle default of 2,592,000 seconds and is passed to the bounded source-IP
+reuse cache only for authenticated compatibility listeners.
+
+TCP sockets are created with SO_REUSEPORT before bind when `--reuse` is set;
+Unix socket tests verify that two listeners can share an address. Unsupported
+platforms return a clear startup error. Runtime shutdown preserves the existing
+ordering: readiness false, listener stop, UDP closure, reverse/task
+cancellation, connection drain, admin shutdown, and system-proxy rollback.
 
 ## Regex and rule trust model
 

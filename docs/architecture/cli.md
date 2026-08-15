@@ -80,30 +80,41 @@ pproxy -l http://0.0.0.0:8080 -r socks5://127.0.0.1:1080
 Accepts pproxy-style arguments and translates them internally to eggress configuration.
 
 `--pac <PATH>`, `--get <PATH,FILE>`, and `--test <TARGET>` consume one required
-value each. Values remain owned by the option rather than becoming positional
-listener or remote URIs. PAC and static files use the existing admin server;
-`--test` runs the shared Rust upstream-test implementation in-process.
+value each. Values remain owned by the option. The strict compatibility parser
+does not accept positional URIs or long listener aliases. PAC and static files
+use the existing admin server; `--test` runs the shared Rust upstream-test
+implementation in-process and exits before listener startup.
 
 ## Key Arguments
 
 | Flag | Description |
 |---|---|
-| `-l, --listen` | Listener URIs (multiple allowed) |
-| `-r, --remote` | Upstream proxy URIs (chains with `__`) |
+| `-l` | Listener URIs (repeatable) |
+| `-r` | Upstream proxy URIs (repeatable; chains use `__`) |
+| `-ul`, `-ur` | UDP listener/upstream URIs (repeatable) |
+| `-b`, `-a`, `-s` | Block regex, alive interval, scheduler (`fa`, `rr`, `rc`, `lc`) |
+| `-d`, `-v` | Repeatable debug/verbosity count actions; `-vv` adds traffic statistics |
+| `--ssl`, `--pac`, `--get` | Listener TLS, PAC path, and static content |
+| `--auth`, `--sys`, `--reuse` | Auth reuse, system proxy, and SO_REUSEPORT |
+| `--daemon`, `--test`, `--version` | Daemon refusal, test-and-exit, and version |
 | `--config` | TOML configuration file |
 | `--admin` | Admin endpoint address |
 
 The compatibility `pproxy` binary defaults, with no arguments, to
-`http+socks4+socks5://:8080` and direct routing. Repeated `-l`, `-r`, `-ul`, and
-`-ur` options retain input order. `--auth` enables bounded source-IP
-authentication reuse for compatibility listeners, and `--sys` applies the
-selected local listener through the system-proxy backend with rollback on
-shutdown or failed startup. `--daemon` remains fatal with exit code 5 before
-the service starts; unknown flags are fatal with exit code 2. `-d` selects a
-debug-level default tracing filter and emits a compatibility warning because
-Python traceback semantics are not reproduced. It is separate from `-v` and
-`--daemon`; explicit `RUST_LOG` remains authoritative. `--reuse` configures
-SO_REUSEPORT on listener sockets (not connection pooling).
+`http+socks4+socks5://:8080` and direct routing. Repeated options retain
+declaration order. `--auth` defaults to 30 days and enables bounded source-IP
+reuse only for listeners with credentials. `--sys` applies after all listeners
+bind and restores captured settings on shutdown or failed startup. `--daemon`
+is fatal with exit code 5 before startup; parser errors are exit code 2. `-d`
+adds compatibility error visibility, `-v` emits connection events, and `-vv`
+emits traffic statistics from normal session reports. `--reuse` applies
+SO_REUSEPORT before TCP bind on supported Unix platforms and fails clearly on
+unsupported platforms. `RUST_LOG` remains authoritative.
+
+The frozen parser does not advertise or accept `--log`, `-f/--config`,
+`--rulefile`, positional URIs, or `--listen`/`--remote` aliases. Native Eggress
+configuration and migration-only translation helpers may expose separate
+options, but those are not pproxy 2.7.9 executable options.
 
 ## Dependencies
 

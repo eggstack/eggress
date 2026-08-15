@@ -11,6 +11,9 @@ Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI targ
 cargo test -p eggress-routing
 cargo test -p eggress-runtime retry_fallback
 cargo test -p eggress-cli --test cli_exit_codes
+cargo test -p eggress-pproxy-compat --lib
+cargo test -p eggress-core --lib reuse_port
+cargo test -p eggress-cli --test pproxy_binary --test pproxy_run_process
 cargo test -p eggress-runtime --test reverse_runtime --test udp --test udp_upstream --test reverse_interop
 python3 -m pytest python/tests/test_pproxy_phase4_contract.py -q
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
@@ -225,6 +228,17 @@ fail during parsing.
 
 Key compatibility notes:
 - `--pac`, `--get`, `--test` are value-taking options; their values are not positional listeners.
+- The strict `pproxy` executable parser accepts only the frozen Phase 0 option
+  surface. Positional URIs, `--listen`/`--remote` aliases, `--log`, and
+  `--rulefile` are parser errors; native config/migration helpers must not be
+  documented as pproxy 2.7.9 executable options.
+- `-d` and `-v` are count actions, including clustered forms (`-dd`, `-vv`).
+  Compatibility `-d` changes failure visibility and `-v/-vv` use existing
+  session reports for connection/traffic output; do not add a second metrics
+  backend.
+- `--test` must compile and test remotes in declaration order, then exit before
+  listener startup. `--reuse` must set SO_REUSEPORT before TCP bind only where
+  the platform supports it.
 - H2 listeners accept independent CONNECT streams; WS/WSS compatibility
   listeners require a fixed target (`ws{host:port}://listener`) and use the
   existing TLS transport for WSS. H2/WS/WSS upstream behavior remains supported.

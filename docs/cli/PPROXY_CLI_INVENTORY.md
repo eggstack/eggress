@@ -1,514 +1,76 @@
-# pproxy CLI Inventory
-
-> **Contract note:** This older inventory is retained for migration history.
-> The active exact-parser inventory is
-> [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](../parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md).
-> The frozen 2.7.9 parser does not declare `--log`, `-f/--config`, or
-> `--rulefile`; similarly named Eggress options are extensions.
-
-Comprehensive inventory of pproxy 2.7.9 CLI flags and invocation forms,
-with eggress handling status and migration notes.
-
-## 1. pproxy CLI Flags Inventory
-
-### Core Listener/Upstream Flags
-
-#### `-l` / `--listen` — TCP Listen URI(s)
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Bind to one or more TCP listener URIs. Supports `http://`, `socks4://`, `socks4a://`, `socks5://`, `ss://`, `trojan://`, `redir://`, `unix://`. Multiple `-l` flags bind multiple listeners. |
-| Eggress handling | **Supported** — translates to `[[listeners]]` entries in TOML. Scheme maps to `protocols` field. Credentials embedded in URI become auth config. |
-| Example | `pproxy -l socks5://127.0.0.1:1080` |
-
-#### `-r` / `--remote` — TCP Remote/Upstream URI(s)
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Specify upstream proxy URIs. Supports `http://`, `socks4://`, `socks4a://`, `socks5://`, `ss://`, `trojan://`, `ssh://`, `direct://`. Multiple `-r` flags create upstream groups. Chaining via `__` separator. |
-| Eggress handling | **Supported** — translates to `[[upstreams]]` and `[[upstream_groups]]`. Multiple remotes generate a group with round-robin (default for 2+) or first-available (single). SSH intentionally non-parity (use OpenSSH `ssh -D` instead). `__` jump chains rejected with diagnostic. |
-| Example | `pproxy -l socks5://:1080 -r http://proxy:8080` |
-
-#### `-ul` / `--udp-listen` — UDP Listen URI(s)
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Bind a standalone UDP relay socket. Accepts a URI or plain `host:port` / `:port` / port number. No TCP control connection required (standalone mode). |
-| Eggress handling | **Supported** — generates `mode = "standalone_pproxy_udp"` config on the first listener. Accepts URI, `:port`, `host:port`, and plain port formats. If no compatible `-l` is present, adds a default SOCKS5 listener on `:1080`. |
-| Example | `pproxy -l http://:8080 -ul socks5://:1081` |
-
-#### `-ur` / `--udp-remote` — UDP Remote/Upstream URI(s)
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Specify upstream for UDP traffic relayed via `-ul`. Supports same schemes as `-r`. |
-| Eggress handling | **Supported** — generates a UDP upstream group (`pproxy-udp-chain`) with a transport-matching rule (`transport = "udp"`). |
-| Example | `pproxy -l http://:8080 -ul :1081 -ur socks5://proxy:1080` |
-
-### Scheduling and Load Balancing
-
-#### `-s` / `--scheduler` — Scheduler
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Set the load-balancing algorithm. Values: `rr` (round-robin, default), `fa` (first-available), `rc` (random-choice), `lc` (least-connections). |
-| Eggress handling | **Supported** — maps to `scheduler` in upstream group TOML. Recognized values: `rr`/`round_robin` → `round-robin`, `fa`/`first_available` → `first-available`, `rc`/`random_choice` → `random-choice`, `lc`/`least_connection` → `least-connections`. Unrecognized values emit a warning and default to `first-available`. |
-| Example | `pproxy -l socks5://:1080 -r a://host1 -r b://host2 -s rr` |
-
-### Authentication
-
-#### `-a` / `--alive` — Alive Check Interval
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Set alive check interval in seconds. pproxy probes upstreams periodically and removes failed ones temporarily. |
-| Eggress handling | **Supported** — generates `[health] interval = "Ns"` in the translated TOML config, where N is the seconds value from `-a`. |
-| Example | `pproxy -l socks5://:1080 -r http://proxy:8080 -a 10` |
-
-### TLS/SSL
-
-#### `--ssl` — SSL Listener
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Enable TLS on the listener. Takes `certfile[,keyfile]` as value. Wraps the inbound connection in TLS. |
-| Eggress handling | **Partial** — generates TLS listener config in TOML from `cert[,key]` value. The `--ssl` flag translates to a `listeners.tls` block with the provided certificate and key paths. |
-| Example | `pproxy -l socks5://:1080 --ssl cert.pem,key.pem` |
-
-### Traffic Filtering
-
-#### `-b` / `--block` — Block Rules
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Block connections matching regex patterns against the target hostname. |
-| Eggress handling | **Partial** — generates reject rules with host-regex matcher in TOML. The `-b <pattern>` flag is translated to a `[[rules]]` entry with `action = "reject"` and a `host_regex` matcher. |
-| Example | `pproxy -l http://:8080 -b ".*\\.example\\.com"` |
-
-### Routing Rules
-
-#### `--rulefile` — Rule File
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Load routing rules from a file (line-based format with regex patterns and destination actions). |
-| Eggress handling | **Partial** — parses line-based rulefile format; generates reject rules for simple patterns, warnings for complex rules. Simple host-regex patterns are translated to TOML `[[rules]]` entries; unsupported patterns emit a warning. |
-| Example | `pproxy -l http://:8080 --rulefile rules.txt` |
-
-### Process Management
-
-#### `--daemon` — Daemonize
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Fork into background and run as a daemon. |
-| Eggress handling | **Unsupported** — emits unsupported feature diagnostic ("--daemon mode is not supported; use systemd or process manager"). Use systemd, supervisord, or another process manager. |
-| Example | `pproxy -l socks5://:1080 -r direct --daemon` |
-
-#### `-d` — Debug Tracebacks
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Enable debug tracebacks on exception. |
-| Eggress handling | **Compatible with warning** — selects a debug-level default tracing filter when `RUST_LOG` is unset; Python traceback semantics are not reproduced. |
-| Example | `pproxy -l socks5://:1080 -d` |
-
-### Logging
-
-#### `-v` / `--verbose` — Verbose Logging
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Enable verbose/debug logging output. |
-| Eggress handling | **Supported with warning** — maps `-v/-vv/-vvv` to `debug`/`trace` Rust tracing defaults. Explicit `RUST_LOG` remains authoritative. |
-| Example | `pproxy -l socks5://:1080 -v` |
-
-#### `--log` / `-log` — Log File
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Write log output to a file instead of stderr. |
-| Eggress handling | **Partial** — emits diagnostic about tracing-subscriber; redirect stderr for file logging. The `--log` flag is acknowledged with a message explaining that eggress uses `tracing-subscriber` and stderr can be redirected for log file output. |
-| Example | `pproxy -l socks5://:1080 --log access.log` |
-
-### Connection Behavior
-
-#### `--reuse` — SO_REUSEPORT
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Enable SO_REUSEPORT on listener sockets (Linux). |
-| Eggress handling | **Supported with warning** — configures SO_REUSEPORT on listener sockets. Not connection pooling. |
-| Example | `pproxy -l socks5://:1080 -r http://proxy:8080 --reuse` |
-
-### PAC and System Proxy
-
-#### `--pac` — PAC File Serving
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Serve a PAC (Proxy Auto-Configuration) file for browser auto-configuration. |
-| Eggress handling | **Supported with warning** — generates `[admin.pac] enabled = true` in the translated TOML config. The PAC endpoint is served by the eggress admin HTTP server at the mapped path. |
-| Example | `pproxy -l http://:8080 --pac /path/to/proxy.pac` |
-
-#### `--sys` — Set System Proxy
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Automatically configure system proxy settings (macOS/Windows). |
-| Eggress handling | **Supported with warning** — after listener bind, `--sys` applies the selected local SOCKS5/HTTP listener through `eggress-system-proxy` and restores captured settings on shutdown or startup failure. |
-| Example | `pproxy -l http://:8080 --sys` → applies the bound HTTP listener and restores prior settings on exit. |
-
-#### `--get` — Custom Static Content
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Serve custom HTTP content from the supplied `PATH,FILE` value. |
-| Eggress handling | **Supported with warning** — consumes `PATH,FILE`, validates and reads the file, and serves it through the existing admin server. Invalid or unreadable values fail closed. |
-| Example | `pproxy -l http://:8080 --get /index.html,index.html` |
-
-### Testing
-
-#### `--test` — Test Mode
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Test all remote proxies and exit. Verifies upstream connectivity. |
-| Eggress handling | **Supported** — translates the pproxy args to TOML config in memory, compiles the config, and calls the shared Rust upstream-test implementation. Does not start the service or write a temporary config file. |
-| Example | `pproxy -l http://:8080 -r http://proxy:8080 --test https://example.com/` |
-
-### Config and Help
-
-#### `-f` / `--config` — Config File
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Load configuration from a TOML/YAML/JSON config file (alternative to CLI flags). |
-| Eggress handling | **Supported** — eggress uses `eggress --config path/to/config.toml` natively. Different schema. |
-| Example | `pproxy -f /etc/pproxy/config.toml` |
-
-#### `--version` — Version Display
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Print version information and exit. |
-| Eggress handling | **Supported** — `eggress --version` shows version info. |
-| Example | `pproxy --version` |
-
-#### `--help` — Help Output
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | Print usage information and exit. |
-| Eggress handling | **Supported** — `eggress --help` shows help for all subcommands. |
-| Example | `pproxy --help` |
-
-### Positional Arguments
-
-#### Positional URIs (alternative to `-l`/`-r`)
-
-| Property | Value |
-|----------|-------|
-| pproxy behavior | First positional arg is treated as `-l` (listen), second as `-r` (remote). Subsequent positionals alternate. |
-| Eggress handling | **Supported** — the compat parser handles positional args the same way. First positional → local, subsequent → remote. |
-| Example | `pproxy socks5://127.0.0.1:1080 http://proxy:8080` |
-
-## 2. Summary Table
-
-| Flag | Aliases | pproxy Behavior | Eggress Status | Diagnostic |
-|------|---------|-----------------|----------------|------------|
-| `-l` | `--listen` | TCP listen URI | Compatible | — |
-| `-r` | `--remote` | TCP upstream URI | Compatible | — |
-| `-ul` | `--udp-listen` | UDP listen URI | Compatible | — |
-| `-ur` | `--udp-remote` | UDP upstream URI | Compatible | — |
-| `-s` | (none) | Scheduler algorithm | Compatible | Warning for unrecognized values |
-| `-a` | (none) | Alive check interval | Partial | Maps to health probe config in TOML |
-| `--ssl` | (none) | TLS listener cert/key | Partial | Generates TLS listener config in TOML |
-| `-b` | (none) | Block regex rules | Partial | Generates reject rules with host-regex matcher |
-| `--rulefile` | `-rulefile` | Rule file path | Partial | Parses rulefile; generates reject rules for simple patterns |
-| `--daemon` | — | Daemonize | Unsupported | Use systemd/process manager |
-| `-d` | (none) | Debug tracebacks | Compatible with warning | Debug-level default tracing; Python traceback semantics are not reproduced |
-| `-v` | (none) | Verbose logging | Compatible with warning | Maps verbosity to Rust tracing defaults; explicit `RUST_LOG` wins |
-| `--log` | `-log` | Log file path | Partial | Warning: use tracing-subscriber; redirect stderr |
-| `--reuse` | (none) | SO_REUSEPORT | Supported with warning | Configures SO_REUSEPORT on listener sockets |
-| `--pac` | (path) | PAC file serving | Supported with warning | Consumes path and maps it to the admin PAC route |
-| `--sys` | (none) | System proxy | Supported with warning | Applies after bind and restores prior settings; macOS/Windows are strict parity targets |
-| `--get` | (PATH,FILE) | Static content | Supported with warning | Validates and serves through the admin server; invalid values fail closed |
-| `--test` | (URL) | Test upstreams | Supported | Runs eggress upstream test for the exact supplied target and exits |
-| `-f` | `--config` | Config file | Supported | Different schema |
-| `--version` | (none) | Version | Supported | — |
-| `--help` | (none) | Help | Supported | — |
-| Positional | — | Alt for -l/-r | Compatible | — |
-
-## 3. Eggress CLI Structure
-
-### Top-Level Commands
-
-```
-eggress [--config PATH] [-l URI...] [-r URI...] [OPTIONS]
-eggress route <TARGET> [OPTIONS]
-eggress upstream test [OPTIONS]
-eggress pproxy translate [--annotate] -- <pproxy args...>
-eggress pproxy check [--json] -- <pproxy args...>
-eggress pproxy run [--log-format FORMAT] -- <pproxy args...>
+# pproxy CLI inventory
+
+This file records the executable contract for the frozen `pproxy==2.7.9`
+parser. The source evidence is `compat/pproxy-2.7.9/cli-baseline.json`, based
+on `pproxy.server.main` at the pinned oracle commit.
+
+## Strict executable surface
+
+| Option | Arity | Repetition/default | Eggress process behavior |
+|---|---:|---|---|
+| `-l LISTEN` | one | repeatable; default mixed `http+socks4+socks5://:8080` when no listener is supplied | TCP listener URI |
+| `-r RSERVER` | one | repeatable; default direct routing | upstream URI, declaration order preserved |
+| `-ul ULISTEN` | one | repeatable; default none | UDP listener URI |
+| `-ur URSERVER` | one | repeatable; default direct | UDP upstream URI |
+| `-b BLOCK` | one | optional | block regex/rule bridge |
+| `-a ALIVED` | integer | default `0` | positive values enable native health probes |
+| `-s {fa,rr,rc,lc}` | one of four choices | default `fa` | native scheduler mapping |
+| `-d` | flag | `count`; `-dd` is two | compatibility task failures are surfaced as error diagnostics |
+| `-v` | flag | `count`; `-vv` adds traffic totals | connection events at `-v`, byte statistics at `-vv` |
+| `--ssl SSLFILE` | one | optional | listener certificate/key configuration |
+| `--pac PAC` | one | optional | admin PAC route |
+| `--get GETS` | one | repeatable | admin static content (`PATH,FILE`) |
+| `--auth AUTHTIME` | integer | default `2592000` | bounded source-IP auth reuse when listener credentials exist |
+| `--sys` | flag | false | apply after bind and restore on shutdown/failure |
+| `--reuse` | flag | false | set SO_REUSEPORT before TCP bind where supported |
+| `--daemon` | flag | false | parsed, then rejected before startup (exit 5) |
+| `--test TEST` | one | optional | test every remote in order and exit before listeners start |
+| `--version` | flag | false | print version and exit |
+| `-h/--help` | flag | — | print help and exit |
+
+The Rust compatibility executable and `eggress pproxy run` share the same
+execution gate. Missing values, invalid integers, invalid scheduler choices,
+unknown options, malformed URI values, and unsupported options fail before any
+listener or system-proxy side effect. Parser errors use exit code 2;
+unsupported features use exit code 5.
+
+`-d` and `-v` follow argparse count semantics, including repeated separate
+flags and short clusters such as `-dd`, `-vv`, and `-dv`. Explicit `RUST_LOG`
+controls tracing filtering; compatibility verbosity events use the existing
+session reports and do not create a parallel counter system.
+
+## Deliberate non-surface options
+
+The pinned parser does not declare `--log`, `-f/--config`, `--rulefile`,
+`--listen`, `--remote`, `--udp-listen`, or `--udp-remote`. Positional URIs are
+also rejected. Native Eggress config flags and migration-only Python
+translation helpers may support similarly named extensions, but the standalone
+`pproxy` executable must not advertise or accept them as 2.7.9 options.
+
+## Entry points and verification
+
+```text
+pproxy [OPTIONS]
+eggress pproxy run -- [OPTIONS]
+eggress pproxy check -- [OPTIONS]
+eggress pproxy translate -- [OPTIONS]
+python -m pproxy [OPTIONS]
 ```
 
-### `eggress` (direct mode)
+`python -m pproxy` validates through the native parser and uses the native
+upstream-test bridge for `--test`. Normal service startup installs SIGINT and
+SIGTERM cleanup through the Rust-backed service handle. None of these entry
+points should start a partial service after a parser, translation, bind, or
+optional-feature failure.
 
-| Flag | Description |
-|------|-------------|
-| `--config PATH` | Load TOML config file |
-| `-l URI`, `--listen URI` | TCP listen URI (repeatable) |
-| `-r URI`, `--remote URI` | TCP upstream URI (repeatable) |
-| `--log-format FORMAT` | Log format: `pretty` (default), `json`, `compact` |
-| `--rules-file PATH` | Host-regex rules file (alternative to TOML rules) |
-
-When `--config` is provided, `-l` and `-r` are rejected (mutually exclusive).
-
-### `eggress route <TARGET>`
-
-Explain which upstream a target would be routed to.
-
-| Flag | Description |
-|------|-------------|
-| `-c`, `--config PATH` | TOML config file |
-| `--listener NAME` | Listener name context |
-| `--protocol PROTO` | Inbound protocol: `http`, `socks4`, `socks5` |
-| `--json` | Output as JSON |
-| `--admin URL` | Query a running eggress admin API instead of local config |
-
-### `eggress upstream test`
-
-Test upstream connectivity.
-
-| Flag | Description |
-|------|-------------|
-| `-i`, `--id ID` | Test a specific upstream by ID |
-| `-t`, `--target HOST:PORT` | Target address for proxy-mode test (default: `example.com:443`) |
-| `-c`, `--config PATH` | TOML config file (required) |
-| `--timeout SECS` | Connection timeout in seconds (default: 5) |
-| `--mode MODE` | `proxy` (default) or `tcp` |
-| `--json` | Output as JSON |
-
-### `eggress pproxy translate`
-
-Translate pproxy CLI arguments to eggress TOML configuration.
-
-| Flag | Description |
-|------|-------------|
-| `--annotate` | Add explanatory comments to generated TOML |
-| `--` | Separator before pproxy-style arguments |
-
-**Example:**
-```bash
-eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
-eggress pproxy translate --annotate -- -l socks5://:1080 -r http://proxy:8080
-```
-
-### `eggress pproxy check`
-
-Check pproxy arguments and report parity tier.
-
-| Flag | Description |
-|------|-------------|
-| `--json` | Output as JSON with structured diagnostics |
-| `--` | Separator before pproxy-style arguments |
-
-**Example:**
-```bash
-eggress pproxy check -- -l socks5://:1080 -r http://proxy:8080
-eggress pproxy check --json -- -l socks5://:1080 -r ssh://rejected
-```
-
-### `eggress pproxy run`
-
-Translate pproxy arguments and start the service.
-
-| Flag | Description |
-|------|-------------|
-| `--log-format FORMAT` | Log format: `pretty` (default), `json`, `compact` |
-| `--` | Separator before pproxy-style arguments |
-
-**Example:**
-```bash
-eggress pproxy run -- -l socks5://:1080 -r http://proxy:8080
-```
-
-## 4. Exit Code Reference
-
-| Code | Constant | Meaning |
-|------|----------|---------|
-| 0 | `EXIT_SUCCESS` | Successful execution |
-| 1 | `EXIT_RUNTIME_FAILURE` | Runtime error (failed to start, IO error, admin failure) |
-| 2 | `EXIT_CLI_PARSE_ERROR` | CLI argument parse error (missing value, invalid URI, missing config) |
-| 3 | `EXIT_CONFIG_VALIDATION` | Config file validation failed (load or compile error) |
-| 4 | `EXIT_BIND_FAILURE` | Listener bind failure (address in use) |
-| 5 | `EXIT_UNSUPPORTED_FEATURE` | Unsupported feature encountered during pproxy translation |
-| 6 | `EXIT_PLATFORM_MISSING` | Platform capability missing (e.g., transparent proxy on non-Linux) |
-| 7 | `EXIT_EXTERNAL_DEPENDENCY` | External dependency required but unavailable (e.g., pproxy for differential tests) |
-| 130 | `EXIT_SIGINT` | Interrupted (SIGINT / Ctrl-C) |
-| 143 | `EXIT_SIGTERM` | Terminated (SIGTERM) |
-
-## 5. pproxy Chaining Syntax
-
-pproxy supports chaining multiple upstream proxies with the `__` (double underscore) separator:
+Focused tests:
 
 ```bash
-# Single-hop (equivalent to no chain)
-pproxy -l http://:8080 -r direct://
-
-# Two-hop chain: SOCKS5 → HTTP → direct
-pproxy -l http://:8080 -r socks5://hop1:1080__http://hop2:8080__direct://
-
-# Equivalent using multiple -r flags (for load balancing, not chaining)
-pproxy -l http://:8080 -r socks5://hop1:1080 -r http://hop2:8080
+cargo test -p eggress-pproxy-compat --lib
+cargo test -p eggress-cli --test pproxy_binary --test pproxy_run_process
+cargo test -p eggress-core --lib reuse_port
 ```
 
-Eggress handles these differently:
-- **`__` separator** within a single `-r` value: parsed as a multi-hop chain via `ProxyHopSpec`.
-- **Multiple `-r` flags**: parsed as separate upstreams in an upstream group with load balancing.
-
-The pproxy compat layer rejects `__` jump chains in backward/upstream URIs with an
-unsupported feature diagnostic ("backward-jump-chain"). Each hop must be a separate
-`-r` argument for backward proxying.
-
-## 6. pproxy Reverse Proxy URI Forms
-
-pproxy supports reverse proxying via special URI forms:
-
-| URI Scheme | Role | Description |
-|------------|------|-------------|
-| `bind://` | Acceptor | Listen on a port and accept connections |
-| `listen://` | Acceptor | Alias for bind |
-| `backward://` | Control client | Dial out to acceptor; receive streams |
-| `rebind://` | Control client | Alias for backward |
-
-The `+in` modifier on any protocol scheme activates reverse/backward mode:
-```
-scheme+in://[auth@]host:port
-```
-
-Multiple `+in` tokens stack for parallel connections:
-```
-socks5+in+in://acceptor:1080    # 2 parallel backward connections
-```
-
-Eggress translates these to `[[reverse_servers]]` (for bind/listen/backward/rebind listeners)
-and `[[reverse_clients]]` (for backward/upstream with `+in` modifier). TLS on backward
-connections (`+ssl`) is not supported; jump chains (`__`) are rejected.
-
-## 7. Logging and Verbosity
-
-### pproxy Logging Flags
-
-#### `-v` / `--verbose`
-
-pproxy's `-v` flag enables verbose/debug logging. When set, pproxy writes
-detailed debug output to stderr including connection events, protocol
-negotiation, and upstream health.
-
-#### `--log FILE` / `-log FILE`
-
-pproxy's `--log` flag redirects log output to a file instead of stderr.
-Accepts a file path as value (e.g., `--log access.log`).
-
-### Eggress Logging
-
-#### `--log-format FORMAT`
-
-Eggress natively supports `--log-format` with three values:
-
-| Format | Behavior |
-|--------|----------|
-| `pretty` (default) | Compact human-readable output |
-| `json` | Structured JSON log lines |
-| `compact` | Compact single-line format |
-
-#### `RUST_LOG` Environment Variable
-
-Eggress uses `tracing-subscriber` with `EnvFilter`. The `RUST_LOG`
-environment variable controls log verbosity directly:
-
-```bash
-RUST_LOG=info  eggress --config config.toml   # default behavior
-RUST_LOG=debug eggress --config config.toml   # debug-level output
-RUST_LOG=trace eggress --config config.toml   # trace-level (max verbosity)
-```
-
-Default level when `RUST_LOG` is unset: `info`.
-
-### Compatibility Notes
-
-| pproxy Flag | Eggress Equivalent | Notes |
-|-------------|-------------------|-------|
-| `-v` | `RUST_LOG=debug` | pproxy `-v` maps to debug-level tracing via a compat warning |
-| `--log FILE` | Not supported | Eggress logs to stderr only; redirect with shell `>` if needed |
-| (none) | `--log-format FORMAT` | Eggress-native format control (pretty/json/compact) |
-| (none) | `RUST_LOG=<level>` | Standard Rust/tracing log level control |
-
-**Credential safety**: Neither pproxy nor eggress log credentials at any
-verbosity level. pproxy redacts `user:pass` in URI display; eggress uses
-`****:****@` redaction in all log output. Debug-level tracing does not
-expose authentication material.
-
-**Migration path**: Replace `pproxy -v` with `RUST_LOG=debug` in
-invocation scripts. For log-to-file behavior, use shell redirection:
-`RUST_LOG=debug eggress --config config.toml > access.log 2>&1`.
-
-## 8. Examples
-
-### Common pproxy Invocations → Eggress Equivalents
-
-**HTTP forward proxy:**
-```bash
-pproxy -l http://:8080 -r direct
-# → eggress pproxy translate -- -l http://:8080 -r direct
-```
-
-**SOCKS5 proxy through HTTP upstream:**
-```bash
-pproxy -l socks5://:1080 -r http://proxy:8080
-# → eggress pproxy translate -- -l socks5://:1080 -r http://proxy:8080
-```
-
-**SOCKS5 with auth:**
-```bash
-pproxy -l socks5://user:pass@:1080 -r direct
-# → eggress pproxy translate -- -l socks5://user:pass@:1080 -r direct
-```
-
-**UDP relay alongside SOCKS5:**
-```bash
-pproxy -l http://:8080 -ul socks5://:1081 -ur socks5://proxy:1080
-# → eggress pproxy translate -- -l http://:8080 -ul :1081 -ur socks5://proxy:1080
-```
-
-**Shadowsocks server:**
-```bash
-pproxy -l ss://aes-256-gcm:pass@:8388 -r direct
-# → eggress pproxy translate -- -l ss://aes-256-gcm:pass@:8388 -r direct
-```
-
-**Round-robin load balancing:**
-```bash
-pproxy -l socks5://:1080 -r http://a:8080 -r socks5://b:1080 -s rr
-# → eggress pproxy translate -- -l socks5://:1080 -r http://a:8080 -r socks5://b:1080 -s rr
-```
-
-**Transparent proxy (Linux):**
-```bash
-pproxy -l redir://0.0.0.0:8080 -r direct
-# → eggress pproxy translate -- -l redir://0.0.0.0:8080 -r direct
-```
-
-**Unix domain socket listener:**
-```bash
-pproxy -l unix:///var/run/proxy.sock -r direct
-# → eggress pproxy translate -- -l unix:///var/run/proxy.sock -r direct
-```
-
-**Reverse proxy (backward client):**
-```bash
-pproxy -l socks5://:1080 -r socks5+in://acceptor:8080
-# → eggress pproxy translate -- -l socks5://:1080 -r socks5+in://acceptor:8080
-```
+The checked-in oracle baseline is intentionally small and records output
+categories rather than nondeterministic full banners. Differential tests that
+need the external oracle are gated by `EGRESS_REQUIRE_EXTERNAL_INTEROP=1`.

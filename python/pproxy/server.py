@@ -18,6 +18,7 @@ from eggress._pproxy_proxy import (
 from eggress.cipher import get_cipher
 from pproxy.plugin import get_plugin
 from eggress.protocol import BaseProtocol, accept, get_protos, netloc_split, udp_accept
+from eggress._eggress import run_pproxy_test, validate_pproxy_args
 
 SOCKET_TIMEOUT = 60
 UDP_LIMIT = 30
@@ -330,12 +331,38 @@ def main(args=None):
         return 0
     if "-h" in argv or "--help" in argv:
         print("pproxy compatibility binary (eggress-pproxy-compat)")
-        print("Use -l/--listen and -r/--remote with pproxy-compatible URIs.")
+        print("Use -l and -r with pproxy-compatible URIs.")
         return 0
 
-    from eggress.pproxy import PPProxyService
+    try:
+        validate_pproxy_args(argv)
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    service = PPProxyService.from_args(argv)
+    if "--test" in argv:
+        index = argv.index("--test")
+        target = argv[index + 1] if index + 1 < len(argv) else ""
+        try:
+            return int(run_pproxy_test(argv, target))
+        except Exception as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+
+    from eggress.pproxy import PPProxyService, translate_pproxy_args
+
+    service_args = argv or ["-l", "http+socks4+socks5://:8080"]
+    translation = translate_pproxy_args(service_args)
+    if not translation.ok:
+        for feature in translation.unsupported:
+            print(f"pproxy: unsupported: {feature.message}", file=sys.stderr)
+        return 5
+
+    try:
+        service = PPProxyService.from_args(service_args)
+    except Exception as exc:
+        print(f"pproxy: startup error: {exc}", file=sys.stderr)
+        return 1
     handle = service.start()
     stopped = threading.Event()
 

@@ -458,6 +458,32 @@ fn unknown_flag_fails() {
     );
 }
 
+#[test]
+fn strict_parser_surface_fails_closed_before_startup() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["--log", "/tmp/pproxy.log"], "--log"),
+        (&["--rulefile", "/tmp/rules"], "--rulefile"),
+        (&["--listen", "http://:19814"], "--listen"),
+        (&["proxy://:19814"], "proxy://:19814"),
+        (&["-s", "invalid"], "invalid choice"),
+        (&["-a", "invalid"], "valid integer"),
+    ];
+
+    for (args, expected) in cases {
+        let output = pproxy_bin()
+            .args(*args)
+            .output()
+            .expect("failed to run pproxy");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "args={args:?}: {stderr}");
+        assert!(stderr.contains(expected), "args={args:?}: {stderr}");
+        assert!(
+            !stderr.contains("pproxy started") && !stderr.contains("listen:"),
+            "parser failure must not start a listener: {stderr}"
+        );
+    }
+}
+
 /// Inner helper that does NOT acquire the mutex (caller is responsible).
 fn spawn_and_collect_inner(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, String) {
     let tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
@@ -502,6 +528,11 @@ fn test_mode_runs_in_process_no_sibling_binary() {
         output.status.code(),
         Some(0),
         "expected non-zero exit for unreachable upstream test"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("pproxy started") && !stderr.contains("listen:"),
+        "--test must not start or advertise a listener: {stderr}"
     );
 }
 

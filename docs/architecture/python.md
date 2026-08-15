@@ -23,13 +23,13 @@ the core modules) from `python/pproxy/`. `Connection` and `Server` are aliases f
 `proxies_by_uri` (pproxy-shaped URI factories, NOT the native
 `eggress.pproxy.Server` lifecycle class), `Rule` compiles public regex
 rule inputs, and `DIRECT` is the direct proxy sentinel. The
-top-level compatibility server path is a Python adapter that opens
-`python -m pproxy` and the wheel's `pproxy` console script share the same
-compatibility entry point. The top-level compatibility server path is a Python
-adapter that opens the underlying direct/upstream transport and invokes the
-`prepare_connection()` hook once per supported chain; it is not
-backed by the Rust `EggressService` lifecycle. Use
-`eggress.pproxy.Server` for the native Rust-backed service lifecycle.
+top-level compatibility server path is a Python adapter that opens the
+Rust-backed service. `python -m pproxy` and the wheel's `pproxy` console script
+share this entry point; argument validation and `--test` call the native strict
+parser and test bridge. The public `pproxy.server` protocol and connection
+helpers remain Python adapters and invoke `prepare_connection()` once per
+supported chain. Use `eggress.pproxy.Server` for the programmatic Rust-backed
+service lifecycle.
 TCP connection methods return asyncio reader/writer-compatible objects.
 Unsupported listener roles, UDP over non-UDP protocols, and excluded protocol
 families fail with explicit ``UnsupportedPProxyFeature`` exceptions

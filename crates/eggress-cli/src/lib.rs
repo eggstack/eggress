@@ -17,6 +17,48 @@ pub struct UpstreamTestResult {
     pub failed_hop: Option<usize>,
 }
 
+/// Parse the URL-shaped `pproxy --test` value into the target address used by
+/// the shared native upstream tester. The regular `eggress upstream test`
+/// command continues to accept its existing `host:port` form.
+pub fn parse_pproxy_test_target(value: &str) -> Result<TargetAddr, String> {
+    if let Ok(target) = value.parse::<TargetAddr>() {
+        return Ok(target);
+    }
+
+    let uri: http::Uri = value
+        .parse()
+        .map_err(|e| format!("invalid test URL '{value}': {e}"))?;
+    let scheme = uri
+        .scheme_str()
+        .ok_or_else(|| format!("invalid test URL '{value}': missing scheme"))?;
+    if !matches!(scheme, "http" | "https") {
+        return Err(format!(
+            "invalid test URL '{value}': unsupported scheme '{scheme}'"
+        ));
+    }
+    let authority = uri
+        .authority()
+        .ok_or_else(|| format!("invalid test URL '{value}': missing host"))?;
+    let host = authority.host();
+    if host.is_empty() {
+        return Err(format!("invalid test URL '{value}': missing host"));
+    }
+    let port = authority
+        .port_u16()
+        .unwrap_or_else(|| if scheme == "https" { 443 } else { 80 });
+    let host = if host.contains(':') {
+        TargetHost::Ip(
+            host.parse()
+                .map_err(|e| format!("invalid test URL '{value}': invalid IPv6 host: {e}"))?,
+        )
+    } else if let Ok(ip) = host.parse() {
+        TargetHost::Ip(ip)
+    } else {
+        TargetHost::Domain(host.to_string())
+    };
+    Ok(TargetAddr { host, port })
+}
+
 /// Run upstream tests against a compiled config and return the exit code.
 ///
 /// This is the shared implementation used by both `eggress upstream test`

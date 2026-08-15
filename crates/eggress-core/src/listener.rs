@@ -81,7 +81,36 @@ impl TcpListener {
         config: &TcpListenerConfig,
         cancel_token: CancellationToken,
     ) -> std::io::Result<Self> {
-        let listener = TokioTcpListener::bind(config.bind_addr).await?;
+        Self::new_with_reuse_port(config, cancel_token, false).await
+    }
+
+    /// Bind a listener, optionally enabling SO_REUSEPORT before bind.
+    pub async fn new_with_reuse_port(
+        config: &TcpListenerConfig,
+        cancel_token: CancellationToken,
+        reuse_port: bool,
+    ) -> std::io::Result<Self> {
+        let domain = if config.bind_addr.is_ipv4() {
+            socket2::Domain::IPV4
+        } else {
+            socket2::Domain::IPV6
+        };
+        let socket =
+            socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
+        socket.set_reuse_address(true)?;
+        if reuse_port {
+            #[cfg(unix)]
+            socket.set_reuse_port(true)?;
+            #[cfg(not(unix))]
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "SO_REUSEPORT is not supported on this platform",
+            ));
+        }
+        socket.set_nonblocking(true)?;
+        socket.bind(&socket2::SockAddr::from(config.bind_addr))?;
+        socket.listen(1024)?;
+        let listener = TokioTcpListener::from_std(socket.into())?;
         Ok(Self {
             listener,
             semaphore: Arc::new(Semaphore::new(config.connection_limit)),
@@ -222,5 +251,29 @@ mod tests {
         drop(second);
         drop(second_client);
         cancel_token.cancel();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reuse_port_is_applied_before_bind() {
+        let config = TcpListenerConfig {
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            protocols: vec![],
+            auth_required: false,
+            handshake_timeout: std::time::Duration::from_secs(10),
+            connection_limit: 10,
+        };
+        let cancel = CancellationToken::new();
+        let first = TcpListener::new_with_reuse_port(&config, cancel.clone(), true)
+            .await
+            .unwrap();
+        let mut second_config = config.clone();
+        second_config.bind_addr = first.local_addr().unwrap();
+        let second = TcpListener::new_with_reuse_port(&second_config, cancel.clone(), true)
+            .await
+            .expect("SO_REUSEPORT should permit a second listener on Unix");
+        drop(first);
+        drop(second);
+        cancel.cancel();
     }
 }
