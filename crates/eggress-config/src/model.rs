@@ -110,6 +110,8 @@ pub struct ListenerConfig {
     #[serde(default)]
     pub shadowsocks: Option<ShadowsocksListenerConfig>,
     #[serde(default)]
+    pub ssr: Option<SsrListenerConfig>,
+    #[serde(default)]
     pub trojan: Option<ListenerTrojanConfig>,
     #[serde(default)]
     pub transparent: Option<TransparentConfig>,
@@ -145,6 +147,19 @@ pub struct UnixListenerConfig {
 pub struct ShadowsocksListenerConfig {
     pub method: String,
     pub password: String,
+    #[serde(default)]
+    pub auth_prefix: Option<String>,
+    #[serde(default)]
+    pub plugins: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SsrListenerConfig {
+    #[serde(default)]
+    pub auth_prefix: Option<String>,
+    #[serde(default)]
+    pub plugins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

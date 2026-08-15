@@ -435,6 +435,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }
     }
 
@@ -459,6 +461,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }
     }
 
@@ -508,6 +512,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         };
         let executor = ChainExecutor::new(vec![]);
         let target = make_target("example.com", 80);
@@ -547,6 +553,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         };
         let executor = ChainExecutor::new(vec![]);
         let target = make_target("example.com", 80);
@@ -937,6 +945,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         };
         let target = make_target("example.com", 80);
         let result = executor.execute(&[hop], &target).await;
@@ -1294,6 +1304,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }];
         assert!(executor.validate_chain(&chain).is_err());
     }
@@ -1319,6 +1331,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }];
         assert!(executor.validate_chain(&chain).is_err());
     }

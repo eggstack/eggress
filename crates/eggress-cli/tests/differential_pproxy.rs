@@ -991,6 +991,8 @@ async fn differential_socks5_through_http_upstream() {
                             credentials: None,
                             rule: None,
                             local_bind: None,
+                            plugins: Vec::new(),
+                            auth_prefix: None,
                             tls: false,
                             server_name: None,
                         }];
@@ -1117,6 +1119,8 @@ async fn differential_socks5_through_socks5_upstream() {
                             credentials: None,
                             rule: None,
                             local_bind: None,
+                            plugins: Vec::new(),
+                            auth_prefix: None,
                             tls: false,
                             server_name: None,
                         }];

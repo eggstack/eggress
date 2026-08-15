@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while SSH, QUIC/HTTP/3, SSR/legacy Shadowsocks, plugin replication, daemonization, and cross-session reuse remain intentional exclusions. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
+> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while SSH, QUIC/HTTP/3, SSR families outside the bounded TCP compatibility path, daemonization, and cross-session reuse remain intentional exclusions. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -347,6 +347,7 @@ Python bindings; it is not a separate Python distribution. The bundled
 - A bounded top-level `pproxy` package (`Connection`, `Server`, `Rule`, `DIRECT`, `proto`, `cipher`, and `server`) backed by Eggress adapters
 - Python migration helpers (`PPProxyService`, `start_pproxy`, translation and diagnostics APIs) under `eggress.pproxy`
 - Structural protocol, cipher, and plugin facades where documented; construction or importability does not imply wire compatibility
+- Functional bounded pproxy SSR compatibility: the exact six built-in plugin names (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are supported in compatibility mode; this is obfuscation compatibility, not TLS security
 - Native outbound API (`OutboundConnector.connect_tcp()`) with GIL-releasing sync and asyncio wrappers
 - `.pyi` type stubs for all public modules
 
@@ -354,7 +355,7 @@ Python bindings; it is not a separate Python distribution. The bundled
 
 - **SSH** upstream transport — rejected with a recommendation to use OpenSSH dynamic forwarding (`ssh -D`)
 - **QUIC/HTTP/3** — deferred by ADR; URI schemes `quic://` and `h3://` are rejected
-- **SSR/legacy Shadowsocks** — non-standard extensions rejected with clear diagnostics
+- **Other SSR/auth families and legacy stream ciphers** — outside the bounded pproxy 2.7.9 SSR surface; legacy ciphers remain rejected with clear diagnostics
 - **SOCKS4/SOCKS5 BIND** — pproxy 2.7.9 also requires CONNECT (`0x01`); the
   matching refusal is not an Eggress-specific strict gap
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
@@ -493,6 +494,9 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] AEAD cipher support (aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305)
 - [x] Legacy stream cipher diagnostics (rejected with clear error)
 - [x] Interoperability with `shadowsocks-rust`
+- [x] pproxy 2.7.9 SSR address framing with IPv4, IPv6, domain, and optional auth prefix
+- [x] Bounded pproxy SSR plugin codecs behind the `pproxy-legacy` feature
+- [x] Ordered `plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate` plugin names
 
 ### Trojan
 

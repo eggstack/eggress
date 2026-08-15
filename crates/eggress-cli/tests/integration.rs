@@ -562,6 +562,8 @@ async fn test_http_to_socks5_chain() {
                         credentials: None,
                         rule: None,
                         local_bind: None,
+                        plugins: Vec::new(),
+                        auth_prefix: None,
                         tls: false,
                         server_name: None,
                     }];
@@ -698,6 +700,8 @@ async fn test_socks5_to_http_chain() {
                             credentials: None,
                             rule: None,
                             local_bind: None,
+                            plugins: Vec::new(),
+                            auth_prefix: None,
                             tls: false,
                             server_name: None,
                         }];

@@ -252,7 +252,7 @@ protocol://[user:pass@]host:port[/rule][+tls]
 
 **Shadowsocks URI:** `shadowsocks://method:password@host:port`
 
-Supported AEAD methods: `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`. Legacy stream ciphers are not supported and produce clear error messages (e.g., `LegacyMethodUnsupported`). ShadowsocksR (SSR) is not supported; SSR URIs (`ssr://`) are rejected with a clear `SsrUnsupported` error.
+Supported AEAD methods are `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`. Legacy stream ciphers remain rejected. The compatibility translator also accepts the bounded pproxy 2.7.9 `ssr://` surface; SSR requires the `pproxy-legacy` feature and uses a closed plugin list.
 
 ```toml
 # Shadowsocks upstream (TCP)

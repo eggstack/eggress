@@ -58,6 +58,8 @@ fn socks5_upstream_chain(tcp_addr: std::net::SocketAddr) -> ProxyChainSpec {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }],
     }
 }
@@ -82,6 +84,8 @@ fn socks5_upstream_chain_with_auth(
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }],
     }
 }
@@ -99,6 +103,8 @@ fn http_upstream_chain(tcp_addr: std::net::SocketAddr) -> ProxyChainSpec {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }],
     }
 }
@@ -117,6 +123,8 @@ fn multi_hop_chain(addr1: std::net::SocketAddr, addr2: std::net::SocketAddr) -> 
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                plugins: Vec::new(),
+                auth_prefix: None,
             },
             ProxyHopSpec {
                 protocols: vec![ProtocolSpec::Socks5],
@@ -129,6 +137,8 @@ fn multi_hop_chain(addr1: std::net::SocketAddr, addr2: std::net::SocketAddr) -> 
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                plugins: Vec::new(),
+                auth_prefix: None,
             },
         ],
     }
@@ -570,6 +580,8 @@ fn upstream_config_for_timeout_test(
         local_bind: None,
         tls: false,
         server_name: None,
+        plugins: Vec::new(),
+        auth_prefix: None,
     };
     Socks5UdpUpstreamConfig {
         upstream_id: UpstreamId::new("timeout-test"),

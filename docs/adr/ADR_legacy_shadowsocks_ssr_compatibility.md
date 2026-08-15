@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Superseded in part by Phase 3 |
 | Date | Phase 22 |
 | Decision makers | Eggress maintainers |
 | Related | `docs/PPROXY_PARITY_SPEC.md`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, `docs/protocols/SHADOWSOCKS.md` |
@@ -23,17 +23,21 @@ pproxy 2.7.9 supports the following legacy Shadowsocks features:
 eggress must decide whether to implement these features for pproxy compatibility,
 or intentionally exclude them.
 
-## Decision
+## Decision (original)
 
-**SSR and legacy stream ciphers are NOT implemented in eggress.**
+The original decision excluded SSR and legacy stream ciphers from native
+security-critical paths. Phase 3 supersedes the SSR portion only for a bounded
+`pproxy-legacy` compatibility module; legacy stream ciphers remain excluded.
 
 eggress will:
 
 1. Recognize SSR URIs (`ssr://`) and legacy stream cipher method names during
    URI parsing and translation.
-2. Reject them with clear, structured `UnsupportedFeature` diagnostics.
-3. Not provide a feature gate (since nothing is implemented to gate).
-4. Track rejection counts via metrics.
+2. Execute raw SSR TCP framing and pproxy's six built-in plugin codecs only
+   when the explicit `pproxy-legacy` feature is enabled.
+3. Reject legacy stream ciphers, SSR UDP, external plugins, and unsupported
+   plugin options with clear structured diagnostics.
+4. Keep the compatibility implementation isolated from native AEAD and TLS.
 
 ## Rationale
 
@@ -91,27 +95,27 @@ This adds significant code complexity with no security benefit over standard AEA
 
 - **Security posture preserved**: Default remains modern AEAD only. No downgrade
   path from authenticated encryption.
-- **Reduced code surface**: No protocol/obfs layer code to maintain, test, or
-  audit.
-- **Clear diagnostics**: Users who attempt SSR or legacy cipher usage receive
-  structured error messages explaining why and suggesting AEAD alternatives.
+- **Reduced default code surface**: The bounded protocol/obfs codecs are
+  feature-gated and isolated from native paths.
+- **Clear diagnostics**: Users who attempt legacy ciphers or out-of-scope SSR
+  combinations receive structured error messages.
 - **Metrics visibility**: Rejection counts are tracked, providing visibility into
   attempted usage of unsupported features.
 
 ### Negative
 
-- **pproxy compatibility gap**: Users who rely on SSR or legacy stream ciphers
-  cannot use eggress as a drop-in replacement for pproxy.
+- **pproxy compatibility gap**: Users who rely on SSR legacy encryption, UDP,
+  or external plugins cannot use eggress as a drop-in replacement for pproxy.
 - **Migration friction**: Users with existing SSR configurations must migrate to
   AEAD ciphers before adopting eggress.
 
 ### Neutral
 
-- **URI recognition**: SSR URIs are recognized during parsing but rejected
-  immediately. This prevents confusing "unknown protocol" errors and provides
-  targeted guidance.
-- **No feature gate needed**: Since nothing is implemented, there is no need for
-  a compile-time or runtime feature gate.
+- **URI recognition**: SSR URIs are recognized during parsing and lowered to
+  the bounded compatibility path; unsupported combinations fail with targeted
+  diagnostics.
+- **Explicit feature gate**: Deprecated obfuscation code is absent from
+  default native builds.
 
 ## Alternatives Considered
 
@@ -134,13 +138,14 @@ Allow SSR and legacy ciphers via a configuration flag (e.g.,
 Users could inadvertently enable insecure ciphers. The security posture of the
 project is better served by a hard exclusion.
 
-### 3. Full Implementation
+### 3. Full SSR/legacy implementation
 
 Implement SSR and legacy stream ciphers for full pproxy compatibility.
 
 **Rejected because**: The security, maintenance, and specification concerns
-outlined above outweigh the compatibility benefit. eggress targets modern proxy
-deployments, not legacy configurations.
+outlined above outweigh the compatibility benefit. Phase 3 therefore implements
+only the exact bounded pproxy surface and leaves legacy encryption to later
+explicit work.
 
 ## Security Posture
 
@@ -149,7 +154,7 @@ eggress's security posture remains:
 - **Default**: Modern AEAD ciphers only (`aes-128-gcm`, `aes-256-gcm`,
   `chacha20-ietf-poly1305`).
 - **No downgrade path**: There is no configuration option to enable legacy
-  ciphers.
+  ciphers; `pproxy-legacy` provides framing/obfuscation compatibility only.
 - **Authenticated encryption**: All Shadowsocks traffic uses AEAD with 16-byte
   authentication tags.
 - **Standard wire format**: SIP003 AEAD framing is interoperable with standard

@@ -168,9 +168,8 @@ class TestProtocolClasses:
         with pytest.raises(UnsupportedFeatureError):
             SSH()
 
-    def test_ssr_raises_unsupported(self) -> None:
-        with pytest.raises(UnsupportedFeatureError):
-            SSR()
+    def test_ssr_is_functional_compatibility_surface(self) -> None:
+        assert SSR().name == "ssr"
 
 
 # ---------------------------------------------------------------------------
@@ -848,8 +847,8 @@ class TestProtocolMetadata:
     def test_ssh_unsupported(self) -> None:
         assert SSH._SUPPORTED_IN_EGRESS is False
 
-    def test_ssr_unsupported(self) -> None:
-        assert SSR._SUPPORTED_IN_EGRESS is False
+    def test_ssr_metadata(self) -> None:
+        assert SSR._SUPPORTED_IN_EGRESS is True
 
     def test_h2_metadata(self) -> None:
         assert H2._SUPPORTED_IN_EGRESS is True
@@ -1618,9 +1617,8 @@ class TestCipherAeadEncryptDecryptComprehensive:
 class TestProtocolConstructorErrors:
     """Unsupported protocol constructors raise UnsupportedFeatureError."""
 
-    def test_ssr_init_raises_with_message(self) -> None:
-        with pytest.raises(UnsupportedFeatureError, match="ShadowsocksR"):
-            SSR()
+    def test_ssr_init_is_available(self) -> None:
+        assert SSR().name == "ssr"
 
     def test_h3_init_raises_with_message(self) -> None:
         with pytest.raises(UnsupportedFeatureError, match="HTTP/3"):
@@ -1630,9 +1628,10 @@ class TestProtocolConstructorErrors:
         with pytest.raises(UnsupportedFeatureError, match="SSH"):
             SSH()
 
-    def test_ssr_not_instantiable_via_get_protos(self) -> None:
-        with pytest.raises(UnsupportedFeatureError, match="ShadowsocksR"):
-            get_protos(["ssr"])
+    def test_ssr_instantiable_via_get_protos(self) -> None:
+        error, protos = get_protos(["ssr"])
+        assert error is None
+        assert isinstance(protos[0], SSR)
 
     def test_h3_not_instantiable_via_get_protos(self) -> None:
         with pytest.raises(UnsupportedFeatureError, match="HTTP/3"):

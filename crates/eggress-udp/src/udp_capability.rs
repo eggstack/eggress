@@ -54,6 +54,9 @@ pub fn udp_capability(chain: &ProxyChainSpec) -> UdpRelayCapability {
                             }
                         }
                     }
+                    ProtocolSpec::ShadowsocksR => UdpRelayCapability::UnsupportedProtocol {
+                        protocol: "ShadowsocksR".to_string(),
+                    },
                     #[cfg(not(feature = "shadowsocks"))]
                     ProtocolSpec::Shadowsocks => UdpRelayCapability::UnsupportedProtocol {
                         protocol: "Shadowsocks".to_string(),
@@ -90,6 +93,9 @@ pub fn udp_capability_from_chain(chain: &ProxyChainSpec) -> UdpRelayCapability {
                             }
                         }
                     }
+                    ProtocolSpec::ShadowsocksR => UdpRelayCapability::UnsupportedProtocol {
+                        protocol: "ShadowsocksR".to_string(),
+                    },
                     #[cfg(not(feature = "shadowsocks"))]
                     ProtocolSpec::Shadowsocks => UdpRelayCapability::UnsupportedProtocol {
                         protocol: "Shadowsocks".to_string(),
@@ -142,6 +148,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }
     }
 
@@ -160,6 +168,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }
     }
 

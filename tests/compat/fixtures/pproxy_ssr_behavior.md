@@ -115,17 +115,11 @@ will fail:
 
 ## eggress Handling
 
-When an SSR URI is encountered in eggress:
-
-1. The `ssr://` scheme is recognized during URI parsing.
-2. eggress produces a structured `UnsupportedFeature` diagnostic:
-   ```
-   unsupported feature: ShadowsocksR (SSR) is not supported
-   ```
-3. The connection or configuration is rejected.
-
-eggress does not attempt to parse SSR query parameters or apply protocol/obfs
-layers. The rejection is immediate and clear.
+The `ssr://` scheme is recognized and lowered to the bounded
+`pproxy-legacy` TCP compatibility path. It applies the optional auth prefix,
+preserves plugin order, and supports pproxy's six built-in plugin codecs.
+Legacy stream-cipher encryption, SSR UDP, and external plugins remain outside
+the supported surface and produce structured diagnostics.
 
 ## Source
 

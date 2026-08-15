@@ -212,6 +212,7 @@ pub enum TunnelProtocol {
     Socks4,
     Socks5,
     Shadowsocks,
+    ShadowsocksR,
     Trojan,
     Raw,
 }
@@ -233,6 +234,10 @@ pub enum ReplyContext {
 pub struct InboundShadowsocksConfig {
     pub method: String,
     pub password: String,
+    #[cfg(feature = "pproxy-legacy")]
+    pub auth_prefix: Option<Vec<u8>>,
+    #[cfg(feature = "pproxy-legacy")]
+    pub plugins: Vec<String>,
 }
 
 /// Configuration for Trojan inbound listener.
@@ -509,6 +514,39 @@ pub async fn accept_with_fixed_target_for_peer(
         }
         return Err(AcceptError::Protocol(
             "shadowsocks listener requires shadowsocks config".into(),
+        ));
+    }
+
+    #[cfg(feature = "pproxy-legacy")]
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::ShadowsocksR) {
+        let ssr_config = shadowsocks_config
+            .filter(|config| config.method == "ssr")
+            .ok_or_else(|| AcceptError::Protocol("SSR listener requires SSR config".into()))?;
+        let plugins =
+            eggress_protocol_shadowsocks::compat::plugin::parse_plugins(&ssr_config.plugins)
+                .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+        let stream: BoxStream = Box::new(PrefixedStream::new(first_byte.to_vec(), stream));
+        let (ss_stream, target_addr) = eggress_protocol_shadowsocks::compat::ssr::ssr_accept(
+            stream,
+            &eggress_protocol_shadowsocks::compat::ssr::SsrConfig {
+                auth_prefix: ssr_config.auth_prefix.clone(),
+                plugins,
+            },
+        )
+        .await
+        .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+        return Ok(AcceptedSession::Tunnel(PendingTunnel {
+            target: target_addr,
+            client: ss_stream,
+            protocol: TunnelProtocol::ShadowsocksR,
+            reply_context: ReplyContext::Shadowsocks,
+            identity: ClientIdentity::Anonymous,
+        }));
+    }
+    #[cfg(not(feature = "pproxy-legacy"))]
+    if protocols.len() == 1 && protocols.contains(&ProtocolId::ShadowsocksR) {
+        return Err(AcceptError::Protocol(
+            "SSR compatibility support is not included in this build".into(),
         ));
     }
     #[cfg(not(feature = "extended"))]

@@ -39,28 +39,28 @@ fn test_exit_code_config_validation() {
 }
 
 #[test]
-fn test_exit_code_unsupported_feature() {
+fn test_exit_code_unsupported_legacy_cipher() {
     let output = eggress_bin()
         .args([
             "pproxy",
             "translate",
             "--",
             "-l",
-            "ssr://aes-256-ctr:secret@proxy:8388",
+            "ss://aes-256-ctr:secret@proxy:8388",
         ])
         .output()
         .expect("failed to run eggress");
     assert_eq!(
         output.status.code(),
         Some(5),
-        "expected exit code 5 (unsupported feature), got {:?}\nstderr: {}",
+        "expected exit code 5 (unsupported legacy cipher), got {:?}\nstderr: {}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr),
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("unsupported") || stderr.contains("ssr"),
-        "expected unsupported/ssr message in stderr, got: {stderr}",
+        "expected unsupported/cipher message in stderr, got: {stderr}",
     );
 }
 
@@ -93,7 +93,7 @@ fn test_exit_code_success() {
 }
 
 #[test]
-fn test_exit_code_check_unsupported_still_zero() {
+fn test_exit_code_check_bounded_ssr_still_zero() {
     let output = eggress_bin()
         .args([
             "pproxy",
@@ -113,7 +113,7 @@ fn test_exit_code_check_unsupported_still_zero() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Partial") || stdout.contains("unsupported"),
-        "expected parity report mentioning unsupported, got: {stdout}",
+        stdout.contains("Compatible") || stdout.contains("warning"),
+        "expected parity report mentioning bounded SSR compatibility, got: {stdout}",
     );
 }

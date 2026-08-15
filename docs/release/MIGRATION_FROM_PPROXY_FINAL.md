@@ -228,13 +228,13 @@ standard Shadowsocks implementations (ssserver, sslocal, shadowsocks-rust).
 | Standalone Shadowsocks UDP listener | Yes (`PacketCipher`) | Yes (pproxy `PacketCipher`) |
 | Shadowsocks inbound listener | Yes | Yes (explicit protocol mode) |
 | Legacy stream ciphers | Yes | **Not supported** (security) |
-| ShadowsocksR (SSR) | Yes | **Not supported** (non-standard) |
+| ShadowsocksR (SSR) | Yes | Bounded TCP framing/plugins behind `pproxy-legacy`; UDP, external plugins, and legacy encryption remain unsupported |
 
 **Migration notes:**
 - **Only AEAD methods** are supported: `aes-128-gcm`, `aes-192-gcm`,
   `aes-256-gcm`, `chacha20-ietf-poly1305`. Legacy stream ciphers produce
   `LegacyMethodUnsupported` errors.
-- SSR URIs (`ssr://`) are rejected with `SsrUnsupported` errors.
+- The bounded Phase 3 SSR surface supports raw TCP framing and pproxy's six built-in plugins behind `pproxy-legacy`; UDP SSR, external plugins, and legacy stream-cipher encryption remain unsupported.
 - Shadowsocks TCP framing uses standard SIP003 AEAD (two AEAD
   operations per chunk, encrypted length). This is a change from
   earlier eggress versions that used non-standard framing.
@@ -290,7 +290,7 @@ These pproxy features are deliberately not replicated in eggress:
 | Multi-hop UDP chains | Architecture | Single-hop only |
 | SSH transport | Out of scope | SSH is not a proxy protocol |
 | Legacy stream ciphers | Security | Use AEAD methods only |
-| ShadowsocksR (SSR) | Non-standard | Use standard Shadowsocks |
+| ShadowsocksR extensions outside Phase 3 | Non-standard / legacy encryption | Use bounded `pproxy-legacy` TCP support or standard Shadowsocks |
 | QUIC / HTTP/3 | Deferred | See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md` |
 | Persistent connection pooling | Design choice | One upstream connection per session |
 | macOS PF transparent proxy | Not implemented | Use pfctl with standard listener |

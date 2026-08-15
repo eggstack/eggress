@@ -16,6 +16,7 @@ extended = [
     "eggress-metrics/extended",
     "eggress-udp/shadowsocks",
 ]
+pproxy-legacy = ["extended", "eggress-server/pproxy-legacy", "eggress-protocol-shadowsocks/pproxy-legacy"]
 operations = [
     "dep:eggress-admin",
     "dep:eggress-system-proxy",

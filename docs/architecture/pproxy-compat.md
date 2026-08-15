@@ -62,7 +62,9 @@ unsupported feature id via `manifest_tier_for_unsupported_feature()`
 `classify_unsupported_feature_tier()`), so a known intentional
 exclusion (SSH listener/upstream, SSR listener/upstream, legacy
 Shadowsocks ciphers) reports as `intentional_non_parity` rather than
-being collapsed into generic `unsupported`. Unknown warning
+being collapsed into generic `unsupported`. The old SSR listener/upstream
+category names are retained only for diagnostic read compatibility; new
+unsupported SSR output is limited to SSR UDP. Unknown warning
 categories and unknown unsupported feature ids fail closed to
 `unsupported`.
 
@@ -100,10 +102,10 @@ available through the Eggress bridge), but they are not pproxy 2.7.9 flags.
 The translator parses combined protocols, fragment auth, local binding, canonical
 `tunnel{host:port}://listener`, `ws{host:port}://listener`, and
 `wss{host:port}://listener` fixed targets, the retained legacy raw fixed-target
-extension, and canonical raw rule suffixes. Plugin metadata is parsed for
-diagnostic purposes but plugin execution is explicitly unsupported — the
-Python compatibility factory rejects plugin-bearing URIs with
-`UnsupportedPProxyFeature`. Unsupported fields are reported after parsing. Common HTTP/SOCKS, HTTP-only,
+extension, canonical raw rule suffixes, and the bounded pproxy SSR plugin
+list. Unknown plugins fail during URI parsing; plugin-bearing SSR
+configuration requires the `pproxy-legacy` feature and unsupported contexts
+fail before startup. Unsupported fields are reported after parsing. Common HTTP/SOCKS, HTTP-only,
 AEAD Shadowsocks, H2, WS/WSS, raw, tunnel, and Unix-domain TCP upstream flows lower through the
 same native URI/config path. H2 and WSS normalize to the native `+tls` form;
 raw/tunnel brace-delimited targets become the native raw endpoint. Bounded

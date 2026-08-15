@@ -927,18 +927,16 @@ fn cross_surface_aggregate_tier_unsupported_for_hard_unsupported_feature() {
 }
 
 #[test]
-fn cross_surface_aggregate_tier_intentional_non_parity_for_ssr_listener() {
-    // SSR listener (not in a chain) is classified as `intentional_non_parity`
-    // and remains non-runnable.
+fn cross_surface_aggregate_tier_drop_in_for_ssr_listener() {
     let raw: Vec<String> = ["-l", "ssr://aes-256-ctr:secret@proxy:8388"]
         .iter()
         .map(|s| s.to_string())
         .collect();
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
-    assert!(output.has_unsupported());
+    assert!(!output.has_unsupported());
     let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
-    assert_eq!(tier, crate::ManifestTier::IntentionalNonParity);
+    assert_eq!(tier, crate::ManifestTier::CompatibleWithWarning);
 }
 
 #[test]

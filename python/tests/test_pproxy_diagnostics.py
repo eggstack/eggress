@@ -160,7 +160,7 @@ class TestDiagnosticsForUri:
         assert "test msg" in r
 
     def test_unsupported_uri_has_diagnostic(self) -> None:
-        # SSR is unsupported and should produce a diagnostic
+        # SSR UDP remains outside the bounded TCP compatibility surface.
         diags = diagnostics_for_uri("ssr://aes-256-ctr:secret@proxy:8388")
         assert len(diags) > 0
         assert any(d.code for d in diags)

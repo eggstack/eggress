@@ -177,7 +177,12 @@ Adversaries may include malicious clients on the network, compromised upstream p
 - Only AEAD methods are supported (`aes-128-gcm`, `aes-192-gcm`,
   `aes-256-gcm`, `chacha20-ietf-poly1305`); legacy stream cipher URIs produce
   `LegacyMethodUnsupported` errors with a message suggesting AEAD methods.
-- SSR URIs (`ssr://`) produce `SsrUnsupported` errors. The pproxy compat layer produces `UnsupportedFeature` diagnostics for both legacy stream ciphers and SSR URIs.
+- SSR is available only through the bounded `pproxy-legacy` compatibility path:
+  raw TCP address framing and the six pproxy built-in plugin codecs. UDP SSR,
+  external plugins, and legacy stream-cipher encryption remain unsupported.
+  SSR/plugin obfuscation is not a security boundary; the
+  `tls1.2_ticket_auth` codec is not real TLS. Unsupported combinations produce
+  structured diagnostics.
 - Password is never logged; URI display uses the redacted `****:****@` format.
 
 **Shadowsocks UDP Security Properties** (`eggress-protocol-shadowsocks/src/udp.rs`):

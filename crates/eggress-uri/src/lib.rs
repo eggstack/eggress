@@ -31,6 +31,12 @@ pub struct ProxyHopSpec {
     /// Optional SNI override for TLS (defaults to endpoint host).
     #[serde(default)]
     pub server_name: Option<String>,
+    /// Ordered pproxy SSR plugin names.
+    #[serde(default)]
+    pub plugins: Vec<String>,
+    /// Optional pproxy SSR user/auth prefix from the URI fragment.
+    #[serde(default)]
+    pub auth_prefix: Option<String>,
 }
 
 /// Supported proxy protocols.
@@ -41,6 +47,7 @@ pub enum ProtocolSpec {
     Socks4,
     Socks5,
     Shadowsocks,
+    ShadowsocksR,
     Trojan,
     Http2,
     WebSocket,
@@ -109,6 +116,7 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::Socks4 => "socks4",
                         ProtocolSpec::Socks5 => "socks5",
                         ProtocolSpec::Shadowsocks => "shadowsocks",
+                        ProtocolSpec::ShadowsocksR => "ssr",
                         ProtocolSpec::Trojan => "trojan",
                         ProtocolSpec::Http2 => "h2",
                         ProtocolSpec::WebSocket => "ws",
@@ -285,6 +293,12 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         });
     };
 
+    let (after_scheme, auth_prefix) = after_scheme
+        .split_once('#')
+        .map_or((after_scheme, None), |(value, auth)| {
+            (value, Some(auth.to_string()))
+        });
+
     // Check for empty host
     if after_scheme.is_empty() {
         return Err(UriParseError::MissingHost);
@@ -302,6 +316,8 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
             local_bind,
             tls,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix,
         });
     }
 
@@ -315,6 +331,19 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         } else {
             (None, after_scheme)
         };
+
+    let (endpoint_and_query, plugin_path) = endpoint_and_query
+        .split_once('/')
+        .map_or((endpoint_and_query, None), |(endpoint, path)| {
+            (endpoint, Some(path))
+        });
+    let plugins = plugin_path
+        .unwrap_or_default()
+        .trim_start_matches(',')
+        .split(',')
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
 
     // Split endpoint from query string
     let (endpoint_str, query_str) = if let Some(q_pos) = endpoint_and_query.find('?') {
@@ -344,6 +373,8 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         local_bind,
         tls,
         server_name: None,
+        plugins,
+        auth_prefix,
     })
 }
 
@@ -366,6 +397,7 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
             "socks4" | "socks4a" => protocols.push(ProtocolSpec::Socks4),
             "socks5" => protocols.push(ProtocolSpec::Socks5),
             "shadowsocks" | "ss" => protocols.push(ProtocolSpec::Shadowsocks),
+            "ssr" => protocols.push(ProtocolSpec::ShadowsocksR),
             "trojan" => protocols.push(ProtocolSpec::Trojan),
             "h2" => protocols.push(ProtocolSpec::Http2),
             "ws" | "wss" => protocols.push(ProtocolSpec::WebSocket),
@@ -821,6 +853,8 @@ mod tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                plugins: Vec::new(),
+                auth_prefix: None,
             }],
         };
         let redacted = RedactedUri::new(&spec);
@@ -843,6 +877,8 @@ mod tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                plugins: Vec::new(),
+                auth_prefix: None,
             }],
         };
         let redacted = RedactedUri::new(&spec);
@@ -1054,6 +1090,8 @@ mod proptest_tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                plugins: Vec::new(),
+                auth_prefix: None,
             })
     }
 

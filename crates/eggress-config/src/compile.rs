@@ -282,6 +282,7 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "socks4" => Ok(ProtocolId::Socks4),
         "socks5" => Ok(ProtocolId::Socks5),
         "shadowsocks" => Ok(ProtocolId::Shadowsocks),
+        "ssr" => Ok(ProtocolId::ShadowsocksR),
         "trojan" => Ok(ProtocolId::Trojan),
         "h2" => Ok(ProtocolId::Http2),
         "websocket" | "ws" | "wss" => Ok(ProtocolId::WebSocket),
@@ -689,6 +690,31 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 ));
             }
 
+            if protocols.contains(&ProtocolId::ShadowsocksR) {
+                let ssr = l.ssr.as_ref().ok_or_else(|| {
+                    ConfigError::validation(
+                        &format!("{}.ssr", path),
+                        "ssr protocol requires an [listeners.ssr] section",
+                    )
+                })?;
+                for (plugin_index, plugin) in ssr.plugins.iter().enumerate() {
+                    if !matches!(
+                        plugin.as_str(),
+                        "plain"
+                            | "origin"
+                            | "http_simple"
+                            | "tls1.2_ticket_auth"
+                            | "verify_simple"
+                            | "verify_deflate"
+                    ) {
+                        return Err(ConfigError::validation(
+                            &format!("{}.ssr.plugins[{}]", path, plugin_index),
+                            "unknown pproxy plugin; expected plain, origin, http_simple, tls1.2_ticket_auth, verify_simple, or verify_deflate",
+                        ));
+                    }
+                }
+            }
+
             let udp = match (l.udp_enabled, l.udp.as_ref()) {
                 (None, None) => None,
                 (None, Some(udp_cfg)) => {
@@ -805,7 +831,14 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 auth,
                 udp,
                 tls,
-                shadowsocks: l.shadowsocks.clone(),
+                shadowsocks: l.shadowsocks.clone().or_else(|| {
+                    l.ssr.as_ref().map(|ssr| crate::model::ShadowsocksListenerConfig {
+                        method: "ssr".to_string(),
+                        password: String::new(),
+                        auth_prefix: ssr.auth_prefix.clone(),
+                        plugins: ssr.plugins.clone(),
+                    })
+                }),
                 trojan: l.trojan.clone(),
                 transparent,
                 unix,

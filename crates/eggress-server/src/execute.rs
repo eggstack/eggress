@@ -172,6 +172,7 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
                 crate::accept::TunnelProtocol::Socks4 => "socks4".to_string(),
                 crate::accept::TunnelProtocol::Socks5 => "socks5".to_string(),
                 crate::accept::TunnelProtocol::Shadowsocks => "shadowsocks".to_string(),
+                crate::accept::TunnelProtocol::ShadowsocksR => "ssr".to_string(),
                 crate::accept::TunnelProtocol::Trojan => "trojan".to_string(),
                 crate::accept::TunnelProtocol::Raw => "raw".to_string(),
             });
@@ -288,6 +289,7 @@ fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str 
             eggress_uri::ProtocolSpec::Socks4 => "socks4",
             eggress_uri::ProtocolSpec::Socks5 => "socks5",
             eggress_uri::ProtocolSpec::Shadowsocks => "shadowsocks",
+            eggress_uri::ProtocolSpec::ShadowsocksR => "ssr",
             eggress_uri::ProtocolSpec::Trojan => "trojan",
             eggress_uri::ProtocolSpec::Http2 => "h2",
             eggress_uri::ProtocolSpec::WebSocket => "websocket",
@@ -430,6 +432,7 @@ async fn execute_tunnel(
             crate::accept::TunnelProtocol::Socks4 => eggress_core::ProtocolId::Socks4,
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
             crate::accept::TunnelProtocol::Shadowsocks => eggress_core::ProtocolId::Shadowsocks,
+            crate::accept::TunnelProtocol::ShadowsocksR => eggress_core::ProtocolId::ShadowsocksR,
             crate::accept::TunnelProtocol::Trojan => eggress_core::ProtocolId::Trojan,
             crate::accept::TunnelProtocol::Raw => eggress_core::ProtocolId::Raw,
         },
@@ -1018,6 +1021,9 @@ pub fn build_chain_executor(
         handlers.push(Box::new(WebSocketHopHandler));
     }
 
+    #[cfg(feature = "pproxy-legacy")]
+    handlers.push(Box::new(ShadowsocksRHopHandler));
+
     handlers.push(Box::new(RawHopHandler));
     handlers.push(Box::new(H2HopHandler));
 
@@ -1275,6 +1281,39 @@ impl HopHandler for ShadowsocksHopHandler {
                 method,
                 &creds.password,
                 metrics,
+            )
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+}
+
+#[cfg(feature = "pproxy-legacy")]
+struct ShadowsocksRHopHandler;
+
+#[cfg(feature = "pproxy-legacy")]
+impl HopHandler for ShadowsocksRHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::ShadowsocksR
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        target: &'a TargetAddr,
+        hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
+    ) -> HandshakeFuture<'a> {
+        Box::pin(async move {
+            let plugins = eggress_protocol_shadowsocks::compat::plugin::parse_plugins(&hop.plugins)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+            eggress_protocol_shadowsocks::compat::ssr::ssr_connect(
+                stream,
+                target,
+                &eggress_protocol_shadowsocks::compat::ssr::SsrConfig {
+                    auth_prefix: hop.auth_prefix.as_deref().map(str::as_bytes).map(Vec::from),
+                    plugins,
+                },
             )
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)

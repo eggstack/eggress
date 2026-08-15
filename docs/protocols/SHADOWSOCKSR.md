@@ -8,9 +8,11 @@ third-party SSR documentation.
 
 ShadowsocksR (SSR) is a fork of Shadowsocks that adds protocol obfuscation
 layers and additional cipher modes. pproxy supports SSR as both a listener and
-an upstream protocol. eggress intentionally does not implement SSR.
+an upstream protocol. eggress implements the bounded Phase 3 raw TCP framing
+and six built-in pproxy plugin codecs behind `pproxy-legacy`; it is not a
+general SSR implementation.
 
-**Classification**: Intentional non-parity for eggress.
+**Classification**: Compatible with warning for the bounded TCP surface.
 
 ## URI Scheme and Aliases
 
@@ -197,27 +199,29 @@ When an SSR connection fails due to incorrect password or method:
 
 ## Eggress Status
 
-**Intentional non-parity**: SSR is not implemented in eggress.
+The bounded implementation is enabled by `pproxy-legacy` and exposes:
 
-When an `ssr://` URI is encountered, eggress:
+1. pproxy's SOCKS-style TCP destination framing with an optional auth prefix;
+2. the exact six built-in plugin names and their bounded stream codecs;
+3. listener and upstream integration through the pproxy compatibility path.
 
-1. Recognizes the `ssr` scheme during URI parsing
-2. Rejects it with a structured `UnsupportedFeature` diagnostic
-3. The diagnostic message includes: "ShadowsocksR (SSR) is not supported"
-
-No feature gate is needed since nothing is implemented.
+It deliberately does not provide legacy stream-cipher encryption, SSR UDP,
+external/SIP003 plugins, or other SSR protocol/obfs families. The
+`tls1.2_ticket_auth` implementation is compatibility obfuscation, not a real
+TLS handshake and must not be treated as a security boundary.
 
 ### Rationale
 
 1. **Security**: SSR protocol and obfs layers provide obfuscation, not
-   authentication. The underlying ciphers are stream ciphers with no
-   authentication tags, making them vulnerable to bit-flipping attacks.
+   authentication. Legacy stream-cipher encryption is intentionally excluded;
+   callers must not infer confidentiality or integrity from the plugin layer.
 
 2. **No RFC**: SSR has no formal specification or RFC. The protocol is
    defined by implementation (a fork of a fork).
 
-3. **Maintenance burden**: Implementing protocol + obfs layers adds significant
-   code complexity with no security benefit over standard AEAD.
+3. **Maintenance burden**: Only the exact pproxy 2.7.9 surface is isolated in
+   the compatibility feature; adding unrelated SSR families would add
+   significant code complexity with no security benefit over standard AEAD.
 
 4. **No clear use case**: Modern proxy deployments should use AEAD ciphers
    with authenticated encryption. SSR's obfuscation layers are a historical

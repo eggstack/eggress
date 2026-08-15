@@ -522,7 +522,7 @@ fn format_markdown(
                 ids.join(", ")
             }
             "not_applicable" => "Internal details, daemon, Rule".to_string(),
-            "intentional_non_parity" => "SSH, SSR".to_string(),
+            "intentional_non_parity" => "SSH, legacy Shadowsocks".to_string(),
             _ => String::new(),
         };
         out.push_str(&format!("| {status} | {count} | {notes} |\n"));

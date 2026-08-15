@@ -11,10 +11,14 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 
 ## SSR/legacy Shadowsocks handling
 
-SSR and legacy stream ciphers are intentionally unsupported. The codebase provides clear diagnostic errors:
+Legacy stream ciphers remain unsupported. The feature-gated `pproxy-legacy`
+path implements the bounded pproxy 2.7.9 SSR surface in
+`eggress-protocol-shadowsocks::compat`; native Shadowsocks AEAD and rustls TLS
+must remain separate:
 
 - `LegacyMethodUnsupported` error variant — produced when a legacy stream cipher method (e.g., `aes-*-ctr`, `aes-*-cfb`, `rc4`, `rc4-md5`, `chacha20-ietf`) is detected at parse time. Modern AEAD coverage is `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`; these methods have pproxy-specific salt/IV sizes of 16, 24, 32, and 32 bytes.
-- `SsrUnsupported` error variant — produced when an SSR URI (`ssr://`) is encountered.
+- `PproxyPlugin` — closed enum for `plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`.
+- `ssr_connect()` / `ssr_accept()` — SOCKS-address framing with optional prefix and ordered plugin adapters.
 - `is_legacy_method()` in `eggress-protocol-shadowsocks::method` — detects known legacy methods.
 
 ## SSH upstream parity

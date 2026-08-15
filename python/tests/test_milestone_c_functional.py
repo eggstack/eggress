@@ -653,10 +653,10 @@ class TestProtocolNamespace:
             assert proto.param == "test"
 
     def test_unsupported_protocols_raise(self):
-        from eggress.protocol import SSR, SSH, H3
+        from eggress.protocol import SSH, H3
         from eggress.protocol import UnsupportedFeatureError
 
-        for cls in [SSR, SSH, H3]:
+        for cls in [SSH, H3]:
             with pytest.raises(UnsupportedFeatureError):
                 cls("test")
 

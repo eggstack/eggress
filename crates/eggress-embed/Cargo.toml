@@ -9,9 +9,10 @@ publish = false
 
 [features]
 default = ["full"]
-full = ["common", "extended", "operations", "reverse", "pproxy-compat"]
+full = ["common", "extended", "operations", "reverse", "pproxy-compat", "pproxy-legacy"]
 common = ["eggress-runtime/common"]
 extended = ["eggress-runtime/extended"]
+pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
 operations = ["eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]

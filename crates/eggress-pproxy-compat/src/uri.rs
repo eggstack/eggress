@@ -37,7 +37,7 @@ pub struct PproxyUri {
     pub local_bind: Option<String>,
     /// Fixed destination used by tunnel-style protocols.
     pub fixed_target: Option<String>,
-    /// Comma-delimited plugin metadata. Plugins are parsed but not executed here.
+    /// Comma-delimited plugin metadata, retained in source order.
     pub plugins: Vec<PproxyPluginSpec>,
     /// Fragment authentication, kept separately from URL userinfo.
     pub auth_fragment: Option<String>,
@@ -387,6 +387,24 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     }
 
     let (local_bind, plugins) = parse_path_metadata(path_part);
+    for plugin in &plugins {
+        if !matches!(
+            plugin.name.as_str(),
+            "plain"
+                | "origin"
+                | "http_simple"
+                | "tls1.2_ticket_auth"
+                | "verify_simple"
+                | "verify_deflate"
+        ) {
+            return Err(CompatError::InvalidUri {
+                message: format!(
+                    "unknown pproxy plugin '{}'; existing plugins: plain, origin, http_simple, tls1.2_ticket_auth, verify_simple, verify_deflate",
+                    plugin.name
+                ),
+            });
+        }
+    }
     let (rule, rules_file, rule_suffix) = query
         .map(extract_query_params)
         .unwrap_or((None, None, None));
@@ -750,10 +768,10 @@ pub fn validate_chain_hops(chain: &PproxyChain) -> Vec<(usize, String)> {
     let mut unsupported = Vec::new();
     for (idx, hop) in chain.hops.iter().enumerate() {
         match hop.scheme.as_str() {
-            "ssh" | "ssr" | "redir" | "direct" => {
+            "ssh" | "redir" | "direct" => {
                 unsupported.push((idx, hop.scheme.clone()));
             }
-            _ => {} // http, https, socks4, socks4a, socks5, trojan, ss, shadowsocks are supported
+            _ => {} // http, https, socks4, socks4a, socks5, trojan, ss, ssr, shadowsocks are supported
         }
     }
     unsupported
@@ -1125,8 +1143,8 @@ mod tests {
 
     #[test]
     fn test_parse_chain_plugin_comma_preserved() {
-        let chain = parse_pproxy_chain("http://h1:80/,plugin").unwrap();
-        assert_eq!(chain.hops[0].plugins[0].name, "plugin");
+        let chain = parse_pproxy_chain("http://h1:80/,verify_simple").unwrap();
+        assert_eq!(chain.hops[0].plugins[0].name, "verify_simple");
     }
 
     #[test]
@@ -1187,11 +1205,10 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_chain_hops_ssr_unsupported() {
+    fn test_validate_chain_hops_ssr_supported() {
         let chain = parse_pproxy_chain("http://h1:80__ssr://h2:8388").unwrap();
         let unsupported = validate_chain_hops(&chain);
-        assert_eq!(unsupported.len(), 1);
-        assert_eq!(unsupported[0], (1, "ssr".to_string()));
+        assert!(unsupported.is_empty());
     }
 
     #[test]
@@ -1378,10 +1395,10 @@ mod tests {
     #[test]
     fn test_fragment_auth_local_bind_and_plugins() {
         let uri =
-            parse_pproxy_uri("http://proxy:8080/@192.0.2.1,obfs=secret,plain#user:pass").unwrap();
+            parse_pproxy_uri("http://proxy:8080/@192.0.2.1,verify_simple,plain#user:pass").unwrap();
         assert_eq!(uri.local_bind.as_deref(), Some("192.0.2.1"));
         assert_eq!(uri.plugins.len(), 2);
-        assert_eq!(uri.plugins[0].name, "obfs");
+        assert_eq!(uri.plugins[0].name, "verify_simple");
         assert_eq!(uri.auth_fragment.as_deref(), Some("user:pass"));
         assert_eq!(uri.username.as_deref(), Some("user"));
         assert!(!uri.redacted_display().contains("secret"));

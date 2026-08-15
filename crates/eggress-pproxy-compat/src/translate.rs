@@ -1,6 +1,6 @@
 use crate::args::PproxyArgs;
 use crate::error::CompatError;
-use crate::uri::{PproxyChain, PproxyUri};
+use crate::uri::{PproxyChain, PproxyPluginSpec, PproxyUri};
 use crate::warnings::TranslationOutput;
 
 /// Translate pproxy-style arguments into Eggress TOML configuration.
@@ -296,14 +296,10 @@ pub fn translate_from_uris(
                     );
                 }
                 "ssr" => {
-                    output = output.with_unsupported(
-                    "ssr-listener",
-                    format!(
-                        "ShadowsocksR (SSR) listener '{}': SSR protocol, obfs, and legacy features are not supported",
-                        local.redacted_display()
-                    ),
-                );
-                    reject_listener = true;
+                    if let Err(error) = validate_pproxy_plugins(&local.plugins) {
+                        output = output.with_unsupported("plugin", error);
+                        reject_listener = true;
+                    }
                 }
                 "trojan" => {
                     tracing::debug!(
@@ -392,6 +388,7 @@ pub fn translate_from_uris(
                     "httponly" => "httponly",
                     "socks4a" => "socks4",
                     "ss" | "shadowsocks" => "shadowsocks",
+                    "ssr" => "ssr",
                     "redir" => "http",
                     "unix" => "socks5",
                     "echo" => "echo",
@@ -404,19 +401,17 @@ pub fn translate_from_uris(
             .collect::<Vec<_>>();
         let has_non_sniffable = protocols
             .iter()
-            .any(|p| matches!(p.as_str(), "shadowsocks" | "trojan"));
+            .any(|p| matches!(p.as_str(), "shadowsocks" | "ssr" | "trojan"));
         if protocols.len() > 1 && has_non_sniffable {
             output = output.with_unsupported("mixed-listener", format!("mixed listener '{}' includes a non-sniffable protocol; use only http+socks4+socks5", local.redacted_display()));
             continue;
         }
-        if !local.plugins.is_empty() {
-            output = output.with_unsupported(
-                "plugin",
-                format!(
-                    "plugins in '{}' are parsed but plugin execution is not supported",
-                    local.redacted_display()
-                ),
-            );
+        if let Err(error) = validate_pproxy_plugins(&local.plugins) {
+            output = output.with_unsupported("plugin", error);
+            reject_listener = true;
+        }
+        if reject_listener {
+            continue;
         }
 
         let listener_name = format!("pproxy-local-{}", idx);
@@ -431,6 +426,7 @@ pub fn translate_from_uris(
             auth: None,
             udp: None,
             shadowsocks: None,
+            ssr: None,
             trojan: None,
             transparent: None,
             unix: None,
@@ -488,6 +484,15 @@ pub fn translate_from_uris(
                     );
                 }
             }
+        } else if local.scheme.as_str() == "ssr" {
+            listener_entry.ssr = Some(SsrToml {
+                auth_prefix: local.auth_fragment.clone(),
+                plugins: local
+                    .plugins
+                    .iter()
+                    .map(|plugin| plugin.name.clone())
+                    .collect(),
+            });
         } else if local.scheme.as_str() == "trojan" {
             // Trojan: password-only format — password = trojan password, username unused
             // Trojan requires TLS; auto-generate TLS config if not already set (--ssl)
@@ -649,6 +654,7 @@ pub fn translate_from_uris(
                     fixed_target: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
@@ -752,28 +758,12 @@ pub fn translate_from_uris(
             // compatibility parser keeps the brace-delimited target in
             // `fixed_target`; build_config_uri lowers it back to the same
             // endpoint URI consumed by the native raw handler.
-            if !hop.plugins.is_empty() {
-                output = output.with_unsupported(
-                    "plugin",
-                    format!(
-                        "plugins in '{}' are parsed but plugin execution is not supported",
-                        hop.redacted_display()
-                    ),
-                );
+            if let Err(error) = validate_pproxy_plugins(&hop.plugins) {
+                output = output.with_unsupported("plugin", error);
                 hop_unsupported = true;
             }
             match hop.scheme.as_str() {
-                "ss" | "shadowsocks" => {}
-                "ssr" => {
-                    output = output.with_unsupported(
-                        "ssr-upstream",
-                        format!(
-                            "ShadowsocksR (SSR) upstream '{}': SSR protocol, obfs, and legacy features are not supported",
-                            hop.redacted_display()
-                        ),
-                    );
-                    hop_unsupported = true;
-                }
+                "ss" | "shadowsocks" | "ssr" => {}
                 "http" | "https" | "httponly" | "socks4" | "socks4a" | "socks5" | "trojan"
                 | "direct" | "h2" | "ws" | "wss" | "raw" | "tunnel" => {}
                 "ssh" => {
@@ -855,9 +845,9 @@ pub fn translate_from_uris(
             "ss" | "shadowsocks" => {}
             "ssr" => {
                 output = output.with_unsupported(
-                    "ssr-upstream",
+                    "ssr-udp",
                     format!(
-                        "ShadowsocksR (SSR) UDP upstream '{}': SSR protocol, obfs, and legacy features are not supported",
+                        "ShadowsocksR (SSR) UDP upstream '{}': only bounded SSR TCP framing/plugins are supported; SSR UDP is not implemented",
                         remote_uri.redacted_display()
                     ),
                 );
@@ -1277,6 +1267,32 @@ fn percent_encode(s: &str) -> String {
     result
 }
 
+fn validate_pproxy_plugins(plugins: &[PproxyPluginSpec]) -> Result<(), String> {
+    for plugin in plugins {
+        if !matches!(
+            plugin.name.as_str(),
+            "plain"
+                | "origin"
+                | "http_simple"
+                | "tls1.2_ticket_auth"
+                | "verify_simple"
+                | "verify_deflate"
+        ) {
+            return Err(format!(
+                "unknown pproxy plugin '{}'; existing plugins: plain, origin, http_simple, tls1.2_ticket_auth, verify_simple, verify_deflate",
+                plugin.name
+            ));
+        }
+        if plugin.options.is_some() {
+            return Err(format!(
+                "pproxy plugin '{}' options are not supported by the bounded compatibility implementation",
+                plugin.name
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn build_chain_config_uri(chain: &PproxyChain) -> String {
     if chain.hops.len() == 1 {
         return build_config_uri(&chain.hops[0]);
@@ -1333,6 +1349,24 @@ fn build_config_uri(remote: &PproxyUri) -> String {
         .fixed_target
         .clone()
         .unwrap_or_else(|| remote.endpoint_display());
+    let plugin_str = if remote.plugins.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "/,{}",
+            remote
+                .plugins
+                .iter()
+                .map(|plugin| plugin.name.clone())
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    };
+    let auth_str = remote
+        .auth_fragment
+        .as_deref()
+        .map(|auth| format!("#{auth}"))
+        .unwrap_or_default();
     let rule_str = match &remote.rule {
         Some(r) => format!("?rule={}", r),
         None => String::new(),
@@ -1342,7 +1376,10 @@ fn build_config_uri(remote: &PproxyUri) -> String {
         .as_deref()
         .map(|v| format!("@{v}"))
         .unwrap_or_default();
-    format!("{}://{}{}{}{}", scheme, cred_str, endpoint, rule_str, bind)
+    format!(
+        "{}://{}{}{}{}{}{}",
+        scheme, cred_str, endpoint, plugin_str, rule_str, bind, auth_str
+    )
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -1367,6 +1404,8 @@ struct ListenerToml {
     udp: Option<UdpToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     shadowsocks: Option<ShadowsocksToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ssr: Option<SsrToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
     trojan: Option<TrojanToml>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1397,6 +1436,14 @@ struct UnixToml {
 struct ShadowsocksToml {
     method: String,
     password: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct SsrToml {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    plugins: Vec<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -1971,19 +2018,16 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_ssr_listener_unsupported() {
+    fn test_translate_ssr_listener_supported() {
         let args = PproxyArgs::parse(&["-l".into(), "ssr://aes-256-ctr:secret@proxy:8388".into()])
             .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "ssr-listener"));
+        assert!(!output.has_unsupported());
+        assert!(output.toml.contains("protocols = [\"ssr\"]"));
     }
 
     #[test]
-    fn test_translate_ssr_upstream_unsupported() {
+    fn test_translate_ssr_upstream_supported() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -1992,11 +2036,8 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "ssr-upstream"));
+        assert!(!output.has_unsupported());
+        assert!(output.toml.contains("ssr://"));
     }
 
     #[test]
@@ -2663,7 +2704,7 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_chain_ssr_hop_unsupported() {
+    fn test_translate_chain_ssr_hop_supported() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -2672,11 +2713,8 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "ssr-upstream" || u.feature == "chain-unsupported-hop"));
+        assert!(!output.has_unsupported());
+        assert!(output.toml.contains("__ssr://"));
     }
 
     #[test]

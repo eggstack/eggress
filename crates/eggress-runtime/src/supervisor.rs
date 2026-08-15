@@ -1437,6 +1437,10 @@ impl ServiceSupervisor {
                                     |ss| eggress_server::accept::InboundShadowsocksConfig {
                                         method: ss.method,
                                         password: ss.password,
+                                        #[cfg(feature = "pproxy-legacy")]
+                                        auth_prefix: ss.auth_prefix.map(String::into_bytes),
+                                        #[cfg(feature = "pproxy-legacy")]
+                                        plugins: ss.plugins,
                                     },
                                 ),
                                 #[cfg(feature = "extended")]
@@ -1647,6 +1651,10 @@ impl ServiceSupervisor {
                                     |ss| eggress_server::accept::InboundShadowsocksConfig {
                                         method: ss.method,
                                         password: ss.password,
+                                        #[cfg(feature = "pproxy-legacy")]
+                                        auth_prefix: ss.auth_prefix.map(String::into_bytes),
+                                        #[cfg(feature = "pproxy-legacy")]
+                                        plugins: ss.plugins,
                                     },
                                 ),
                                 #[cfg(feature = "extended")]
@@ -1888,6 +1896,10 @@ impl ServiceSupervisor {
                                     eggress_server::accept::InboundShadowsocksConfig {
                                         method: ss.method,
                                         password: ss.password,
+                                        #[cfg(feature = "pproxy-legacy")]
+                                        auth_prefix: ss.auth_prefix.map(String::into_bytes),
+                                        #[cfg(feature = "pproxy-legacy")]
+                                        plugins: ss.plugins,
                                     }
                                 }),
                                 #[cfg(feature = "extended")]

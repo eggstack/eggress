@@ -909,21 +909,58 @@ class Socks5(BaseProtocol):
 
 
 class SSR(BaseProtocol):
-    """ShadowsocksR (legacy) -- intentionally unsupported by eggress.
+    """The pproxy 2.7.9 SSR address/prefix protocol surface."""
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. ShadowsocksR is rejected with
-    UnsupportedFeatureError on construction.
-    """
+    _SUPPORTED_IN_EGRESS: bool = True
 
-    _SUPPORTED_IN_EGRESS: bool = False
+    async def guess(self, reader: Any, users: Any = None, **kw: Any) -> Any:
+        if users:
+            size = max(len(user) for user in users)
+            header = await reader.readexactly(size)
+            if hasattr(reader, "rollback"):
+                reader.rollback(header)
+            for user in users:
+                if header.startswith(user):
+                    if hasattr(reader, "readexactly"):
+                        await reader.readexactly(len(user))
+                    return user
+            return None
+        header = await reader.readexactly(1)
+        if hasattr(reader, "rollback"):
+            reader.rollback(header)
+        return header[0] in (1, 3, 4, 17, 19, 20)
 
-    def __init__(self, param: str = "") -> None:
-        raise UnsupportedFeatureError(
-            "ShadowsocksR (ssr://) is not supported by eggress. "
-            "Use Shadowsocks (ss://) with standard AEAD methods instead. "
-            "See docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md"
-        )
+    async def accept(self, reader: Any, user: Any, **kw: Any) -> tuple[Any, str, int]:
+        atyp = (await reader.readexactly(1))[0]
+        if atyp == 1:
+            host = ".".join(str(value) for value in await reader.readexactly(4))
+        elif atyp == 3:
+            length = (await reader.readexactly(1))[0]
+            host = (await reader.readexactly(length)).decode("ascii")
+        elif atyp == 4:
+            host = ":".join(
+                f"{chunk[0]:02x}{chunk[1]:02x}"
+                for chunk in zip(*[iter(await reader.readexactly(16))] * 2)
+            )
+        else:
+            raise ValueError(f"unknown SSR address type: {atyp}")
+        port = int.from_bytes(await reader.readexactly(2), "big")
+        return user, host, port
+
+    async def connect(self, reader_remote: Any, writer_remote: Any, rauth: bytes | None,
+                      host_name: str, port: int, **kw: Any) -> None:
+        prefix = rauth or b""
+        if "." in host_name and all(part.isdigit() for part in host_name.split(".")):
+            address = b"\x01" + bytes(int(part) for part in host_name.split("."))
+        elif ":" in host_name:
+            import ipaddress
+            address = b"\x04" + ipaddress.IPv6Address(host_name).packed
+        else:
+            encoded = host_name.encode("ascii")
+            if len(encoded) > 255:
+                raise ValueError("SSR domain is longer than 255 bytes")
+            address = b"\x03" + bytes([len(encoded)]) + encoded
+        writer_remote.write(prefix + address + port.to_bytes(2, "big"))
 
 
 class SS(SSR):
@@ -939,7 +976,7 @@ class SS(SSR):
     _TRAFFIC_KINDS: tuple[str, ...] = ("tcp", "udp")
 
     def __init__(self, param: str = "") -> None:
-        # Bypass SSR.__init__ (which raises UnsupportedFeatureError) and
+        # Bypass SSR construction details because standard SS has its own
         # initialise directly from BaseProtocol.
         BaseProtocol.__init__(self, param)
         self.cipher: str | None = None

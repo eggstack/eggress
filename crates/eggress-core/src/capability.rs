@@ -99,6 +99,12 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::Supported,
         },
+        ProtocolSpec::ShadowsocksR => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "ShadowsocksR".to_string(),
+            },
+        },
         ProtocolSpec::Trojan => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::UnsupportedProtocol {
@@ -147,6 +153,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }
     }
 
@@ -165,6 +173,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         }
     }
 

@@ -138,7 +138,7 @@ path has no listener bind to discover or clean up; UDP remains listener-based.
 | `proto.*` protocol class access | Not supported — config-driven only |
 | Custom cipher configuration | Not supported — AEAD methods only |
 | Legacy stream ciphers | Not supported — rejected with diagnostic (see ADR) |
-| SSR (`ssr://`) | Not supported — rejected with diagnostic (see ADR) |
+| SSR (`ssr://`) | Bounded TCP framing/plugins behind `pproxy-legacy`; UDP and legacy encryption remain unsupported |
 | `--sys` (system proxy) | Unsupported in pproxy compatibility mode; use `eggress system-proxy inspect` for read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands |
 | `--get URL` (repeatable URL fetch) | Recognized but URL argument is not consumed; use curl |
 | `--pac PATH` (PAC file path) | Recognized as a boolean; path argument is not consumed; serves `/proxy.pac` |

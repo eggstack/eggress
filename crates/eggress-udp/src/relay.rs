@@ -1629,6 +1629,8 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            plugins: Vec::new(),
+            auth_prefix: None,
         };
 
         let chain = eggress_uri::ProxyChainSpec {

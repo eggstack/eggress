@@ -1128,8 +1128,9 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
             if !is_loopback_bind(&listener.bind) {
                 let has_auth = listener.auth.is_some();
                 let has_shadowsocks = listener.shadowsocks.is_some();
+                let has_ssr = listener.ssr.is_some();
                 let has_trojan = listener.trojan.is_some();
-                if !has_auth && !has_shadowsocks && !has_trojan {
+                if !has_auth && !has_shadowsocks && !has_ssr && !has_trojan {
                     warnings.push(ConfigWarning {
                         path,
                         message: format!(
@@ -1214,6 +1215,7 @@ mod tests {
                 udp: None,
                 tls: None,
                 shadowsocks: None,
+                ssr: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
@@ -1251,6 +1253,7 @@ mod tests {
                 udp: None,
                 tls: None,
                 shadowsocks: None,
+                ssr: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
@@ -1289,7 +1292,10 @@ mod tests {
                 shadowsocks: Some(crate::model::ShadowsocksListenerConfig {
                     method: "aes-256-gcm".to_string(),
                     password: "secret".to_string(),
+                    auth_prefix: None,
+                    plugins: Vec::new(),
                 }),
+                ssr: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
@@ -1474,6 +1480,7 @@ mod tests {
                     alpn: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "secret".to_string(),
                     fallback: None,
@@ -1514,6 +1521,7 @@ mod tests {
                 udp: None,
                 tls: None,
                 shadowsocks: None,
+                ssr: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "secret".to_string(),
                     fallback: None,
@@ -1561,6 +1569,7 @@ mod tests {
                     alpn: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
@@ -1605,6 +1614,7 @@ mod tests {
                     alpn: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: String::new(),
                     fallback: None,
@@ -1648,6 +1658,7 @@ mod tests {
                 udp: None,
                 tls: None,
                 shadowsocks: None,
+                ssr: None,
                 trojan: None,
                 transparent: None,
                 unix: None,
@@ -1692,6 +1703,7 @@ mod tests {
                     alpn: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "my-secret".to_string(),
                     fallback: None,
@@ -1739,6 +1751,7 @@ mod tests {
                     alpn: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "secret".to_string(),
                     fallback: Some("not-a-valid-address".to_string()),
@@ -1786,6 +1799,7 @@ mod tests {
                     alpn: None,
                 }),
                 shadowsocks: None,
+                ssr: None,
                 trojan: Some(crate::model::ListenerTrojanConfig {
                     password: "secret".to_string(),
                     fallback: Some("127.0.0.1:443".to_string()),

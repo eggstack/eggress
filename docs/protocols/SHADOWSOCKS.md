@@ -206,4 +206,9 @@ Standard Shadowsocks clients can connect to the inbound listener:
 - No multi-hop UDP (single Shadowsocks hop only)
 - Shadowsocks is not auto-detected in mixed-protocol listeners (encrypted
   wire format has no detectable signature; must be declared explicitly)
-- ShadowsocksR (SSR) is intentionally unsupported. SSR URIs (`ssr://`) are parsed and rejected with a clear `SsrUnsupported` error. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
+- ShadowsocksR (SSR) has a bounded pproxy compatibility path behind the
+  `pproxy-legacy` feature. It implements pproxy's raw TCP address framing and
+  six built-in plugin codecs: `plain`, `origin`, `http_simple`,
+  `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`. UDP SSR,
+  external/SIP003 plugins, and legacy stream-cipher encryption remain
+  unsupported. The TLS-ticket plugin is an obfuscation codec, not TLS.

@@ -988,30 +988,30 @@ protocols = ["socks5"]
 '''
 
 # ============================================================================
-# 18. SSR (unsupported)
+# 18. SSR (bounded pproxy-legacy TCP compatibility)
 # ============================================================================
 
 [[cases]]
-id = "ssr_listener_unsupported"
+id = "ssr_listener_bounded"
 raw_uri = "ssr://aes-256-ctr:secret@proxy:8388"
 pproxy_interpretation = "SSR listener with obfs and protocol layers"
-expected_interpretation = "SSR protocol is not supported"
-compatibility_tier = "intentional_non_parity"
+expected_interpretation = "Bounded SSR TCP listener framing"
+compatibility_tier = "compatible"
 has_credentials = true
 expected_redacted_display = "ssr://****:****@proxy:8388"
 expected_warnings = []
-expected_unsupported = "ssr-listener"
+expected_unsupported = ""
 
 [[cases]]
-id = "ssr_upstream_unsupported"
+id = "ssr_upstream_bounded"
 raw_uri = "ssr://aes-256-ctr:secret@proxy:8388"
 pproxy_interpretation = "SSR upstream with obfs and protocol layers"
-expected_interpretation = "SSR upstream is not supported"
-compatibility_tier = "intentional_non_parity"
+expected_interpretation = "Bounded SSR TCP upstream framing"
+compatibility_tier = "compatible"
 has_credentials = true
 expected_redacted_display = "ssr://****:****@proxy:8388"
 expected_warnings = []
-expected_unsupported = "ssr-upstream"
+expected_unsupported = ""
 
 # ============================================================================
 # 19. SSH (unsupported)

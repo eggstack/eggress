@@ -20,7 +20,7 @@ pub enum DiagnosticCode {
     UnsupportedFlag,
     /// The feature requires platform-specific capabilities not available.
     UnsupportedPlatform,
-    /// A legacy or security-sensitive feature (e.g. SSR obfs, stream ciphers) is intentionally unsupported.
+    /// A legacy or security-sensitive feature (e.g. SSR UDP, stream ciphers) is intentionally unsupported.
     UnsupportedSecuritySensitiveLegacyFeature,
     /// The pproxy URI or argument syntax is malformed.
     InvalidUriSyntax,
@@ -403,7 +403,10 @@ fn classify_unsupported_feature(
             "unsupported",
             Some("remove unsupported hops or use multi-r flag for alternatives"),
         ),
-        "ssr-listener" | "ssr-upstream" => (
+        // Retain the old SSR category aliases for callers that persisted
+        // diagnostics before Phase 3. New translation uses `ssr-udp` for the
+        // remaining unsupported SSR path.
+        "ssr-listener" | "ssr-upstream" | "ssr-udp" => (
             DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature,
             "intentional_non_parity",
             Some("use standard Shadowsocks (ss://) with AEAD methods"),
@@ -489,7 +492,7 @@ fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {
         "chain-unsupported-hop" | "chain-backward-composition" => {
             DiagnosticCode::UnsupportedProtocol
         }
-        "ssr-listener" | "ssr-upstream" => {
+        "ssr-listener" | "ssr-upstream" | "ssr-udp" => {
             DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature
         }
         "trojan-listener" | "ssh-listener" | "ssh-upstream" | "unix-upstream"

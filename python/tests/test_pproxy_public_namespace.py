@@ -204,11 +204,11 @@ class TestUnsupportedClassFallback:
         with pytest.raises(UnsupportedPProxyFeature, match="start_backward_client"):
             proxy.start_backward_client(args={})
 
-    def test_plugin_get_plugin_raises(self):
+    def test_plugin_get_plugin_reports_unknown_name(self):
         from pproxy.plugin import get_plugin
-        from eggress.pproxy import UnsupportedPProxyFeature
-        with pytest.raises(UnsupportedPProxyFeature, match="plugin"):
-            get_plugin("test_plugin")
+        error, plugin = get_plugin("test_plugin")
+        assert plugin is None
+        assert "existing plugins" in error
 
     def test_proto_sslwrap_raises(self):
         from pproxy.proto import sslwrap
@@ -471,9 +471,9 @@ class TestPluginRejection:
     """Plugin-bearing URIs fail explicitly."""
 
     def test_plugin_in_path_raises(self):
-        from eggress.pproxy import UnsupportedPProxyFeature
+        import argparse
         from pproxy.server import proxy_by_uri
-        with pytest.raises(UnsupportedPProxyFeature, match="plugin"):
+        with pytest.raises(argparse.ArgumentTypeError, match="plugin"):
             proxy_by_uri("socks5://:1080/,plugin_name")
 
     def test_plugin_free_uri_succeeds(self):
@@ -482,8 +482,7 @@ class TestPluginRejection:
         assert proxy is not None
 
     def test_plugin_with_options_raises(self):
-        from eggress.pproxy import UnsupportedPProxyFeature
+        import argparse
         from pproxy.server import proxy_by_uri
-        with pytest.raises(UnsupportedPProxyFeature, match="plugin"):
+        with pytest.raises(argparse.ArgumentTypeError, match="plugin"):
             proxy_by_uri("socks5://:1080/,plugin,option1")
-

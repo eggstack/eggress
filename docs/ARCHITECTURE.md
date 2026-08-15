@@ -146,7 +146,9 @@ Shadowsocks protocol implementation:
 - TCP CONNECT with encrypted address header
 - UDP packet encode/decode with random nonce
 - Legacy method detection (`is_legacy_method()`) producing `LegacyMethodUnsupported` errors
-- SSR detection producing `SsrUnsupported` errors
+- A feature-gated, isolated pproxy 2.7.9 SSR compatibility path with bounded
+  address framing and closed plugin codecs; native Shadowsocks AEAD and rustls
+  TLS paths remain separate
 - Synthetic server tests for all methods
 
 ### eggress-protocol-trojan

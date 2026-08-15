@@ -492,17 +492,16 @@ The following behaviors are confirmed by the 7 differential tests in
 - **Details**: pproxy with auth configured rejects HTTP connections without valid
   credentials. Eggress with `auth_required: true` rejects the same.
 
-## 14. Behaviors Eggress Will Intentionally Reject
+## 14. Behaviors Eggress Will Intentionally Reject or Bound
 
-The following pproxy features are explicitly out of scope for Eggress. These
-are not gaps to be filled — they are deliberate exclusions based on security
-policy, architecture, or scope.
+The following pproxy features are explicitly rejected or deliberately bounded
+in Eggress based on security policy, architecture, or scope.
 
 | Feature | pproxy support | Reason for rejection |
 |---------|---------------|---------------------|
 | macOS PF transparent proxy | `redir://` on macOS | Not implemented. Use pfctl with a standard listener instead. Linux transparent proxy via `SO_ORIGINAL_DST` is supported. |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | No authentication. Vulnerable to bit-flipping and replay attacks. Deprecated by the Shadowsocks community. Produces `LegacyMethodUnsupported` error with a message suggesting AEAD methods. |
-| ShadowsocksR (SSR) | Supported in some forks | Non-standard extension. No RFC. Conflicts with upstream Shadowsocks design. SSR URIs are parsed by the pproxy compat layer and produce `UnsupportedFeature` diagnostics. See ADR at `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`. |
+| ShadowsocksR (SSR) | Supported in some forks | Bounded Phase 3 pproxy compatibility: raw TCP framing and six built-in plugins behind `pproxy-legacy`; UDP, external plugins, and legacy encryption remain excluded. |
 | HTTP/2 CONNECT | pproxy h2 scheme | **Supported** — synthetic tests. H2 CONNECT server and client implemented. |
 | WebSocket tunnels | pproxy ws/wss schemes | **Supported** — synthetic tests. WS/WSS tunnel server and client implemented. |
 | Raw tunnels | pproxy raw/tunnel schemes | **Supported** — synthetic tests. Fixed-target TCP tunnel implemented. |
@@ -510,7 +509,7 @@ policy, architecture, or scope.
 | HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
 | SSH transport | `ssh://` | Intentional non-parity. SSH is a general-purpose encrypted tunnel, not a proxy protocol. URIs recognized for clean diagnostics. See ADR at `docs/adr/ADR_ssh_upstream_parity.md`. |
 | Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with raw-relay control channel (Phase 27). TCP only; one session per control channel; no multiplexing. |
-| Plugin system | pproxy has plugin hooks | Out of scope. Eggress uses a fixed protocol set with TOML configuration. |
+| Plugin system | pproxy has six built-in plugin hooks | Bounded closed plugin set behind `pproxy-legacy`; arbitrary/external plugins remain out of scope. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
 | Insecure TLS defaults | `--insecure` flag | Eggress requires TLS verification by default. Insecure mode is API-only, not configurable via TOML. |
 

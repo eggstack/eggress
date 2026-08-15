@@ -47,7 +47,19 @@ not a claim that legacy stream ciphers or OTA are supported.
 ## Legacy Detection
 
 - `is_legacy_method()` detects unsupported legacy ciphers → `LegacyMethodUnsupported` error
-- SSR detection → `SsrUnsupported` error
+- Feature-gated pproxy SSR compatibility is isolated under `compat/` and
+  implements only pproxy 2.7.9 address framing plus the six built-in plugin
+  names. It is not native Shadowsocks AEAD and `tls1.2_ticket_auth` is not
+  real TLS.
+
+## SSR compatibility
+
+`ssr://` uses the SOCKS-style IPv4/domain/IPv6 address tags, big-endian port,
+and an optional configured user prefix. Plugin metadata is retained in source
+order and validated against `plain`, `origin`, `http_simple`,
+`tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`. The code is behind
+the `pproxy-legacy` feature; UDP SSR and external SIP003 plugins are not
+implemented.
 
 ## Dependencies
 

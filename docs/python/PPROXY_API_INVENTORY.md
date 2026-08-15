@@ -120,9 +120,9 @@ classification against eggress (Rust).
 
 | Method | Tier | Rationale |
 |--------|------|-----------|
-| All methods | **N/A** | SSR is intentionally unsupported; eggress rejects SSR URIs with diagnostic |
+| All methods | **B** | Bounded raw TCP SSR framing is available behind `pproxy-legacy`; legacy encryption and UDP SSR remain outside scope |
 
-**eggress support:** Inbound: **No** | Upstream: **No**
+**eggress support:** Inbound: **Yes (feature-gated)** | Upstream: **Yes (feature-gated)**
 
 ### 2.9 Trojan (scheme: `trojan`)
 
@@ -320,12 +320,12 @@ classification against eggress (Rust).
 
 | Name | Purpose | Tier | Rationale |
 |------|---------|------|-----------|
-| `Plain_Plugin` | No-op plugin | **N/A** | Not needed |
-| `Origin_Plugin` | No-op plugin (alias) | **N/A** | Not needed |
-| `Http_Simple_Plugin` | HTTP-obfuscated transport (hex-encoded payload in GET path) | **N/A** | Obfuscation plugin; not in eggress design |
-| `Tls1__2_Ticket_Auth_Plugin` | TLS 1.2 ticket auth obfuscation | **N/A** | Obfuscation plugin; not in eggress design |
-| `Verify_Simple_Plugin` | CRC32 frame verification | **N/A** | Obfuscation plugin; not in eggress design |
-| `Verify_Deflate_Plugin` | zlib compression + CRC verification | **N/A** | Obfuscation plugin; not in eggress design |
+| `Plain_Plugin` | No-op plugin | **B** | Functional bounded pproxy compatibility class |
+| `Origin_Plugin` | No-op plugin (alias) | **B** | Functional bounded pproxy compatibility class |
+| `Http_Simple_Plugin` | HTTP-obfuscated transport | **B** | Functional bounded pproxy compatibility class |
+| `Tls1__2_Ticket_Auth_Plugin` | TLS-looking ticket-auth obfuscation | **B** | Functional obfuscation compatibility; not real TLS |
+| `Verify_Simple_Plugin` | CRC32 frame verification | **B** | Incremental framing implementation |
+| `Verify_Deflate_Plugin` | zlib compression framing | **B** | Incremental compression implementation |
 
 ---
 
@@ -422,7 +422,7 @@ scheme[+scheme...][!param]://[user:pass@]host:port[/path][?rule][#fragment][,plu
 | Protocol classes | 18 | 7 | 7 | 0 | 3 | 1 |
 | Cipher classes | 43 | 3 | 1 | 1 | 0 | 38 |
 | Scheduling algorithms | 4 | 4 | 0 | 0 | 0 | 0 |
-| Plugins | 6 | 0 | 0 | 0 | 0 | 6 |
+| Plugins | 6 | 6 | 0 | 0 | 0 | 0 |
 | Server functions | 11 | 2 | 6 | 0 | 0 | 3 |
 | CLI arguments | 16 | 2 | 9 | 0 | 0 | 5 |
 | URI components | 12 | 1 | 8 | 0 | 2 | 1 |

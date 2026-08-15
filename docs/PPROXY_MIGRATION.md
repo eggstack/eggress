@@ -154,7 +154,7 @@ The following pproxy features are explicitly unsupported:
 - **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
 - **H3/QUIC transport** -- Deferred; pproxy H3 behavior is experimental and unstable. See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`.
 - **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
-- **ShadowsocksR** -- Not supported (non-standard extension). `ssr://` URIs are recognized and rejected with structured `UnsupportedFeature` diagnostics (categories: `ssr-listener`, `ssr-upstream`). See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
+- **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind `pproxy-legacy`. UDP SSR, SIP003/external plugins, and legacy stream-cipher encryption remain unsupported and produce structured diagnostics.
 
 Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
 

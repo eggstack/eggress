@@ -16,6 +16,7 @@ extended = [
     "dep:eggress-protocol-websocket",
     "eggress-udp/shadowsocks",
 ]
+pproxy-legacy = ["extended", "eggress-protocol-shadowsocks/pproxy-legacy"]
 
 [dev-dependencies]
 eggress-testkit.workspace = true

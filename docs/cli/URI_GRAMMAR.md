@@ -16,7 +16,7 @@ protocol     = "http" | "https"
              | "socks4" | "socks4a" | "socks5"
              | "ss" | "shadowsocks"
              | "trojan"
-             | "ssr"                          # recognized → rejected
+             | "ssr"                          # bounded compatibility protocol
              | "ssh"                          # recognized → intentional non-parity
              | "direct"
              | "unix"
@@ -142,14 +142,13 @@ socks5+in://acceptor:1080        # backward client (+in modifier)
 | `unix` | Yes | No | Supported |
 | `redir` | Yes (Linux only) | No | Supported |
 | `bind` / `listen` / `backward` / `rebind` | Yes | No | Supported |
-| `ssr` | Rejected | Rejected | Intentional non-parity |
+| `ssr` | Accepted | Feature-gated | Compatible with warning |
 | `ssh` | Rejected | Rejected | Intentional non-parity |
 
 ## Unsupported Schemes (Rejected with Diagnostics)
 
 | Scheme | Diagnostic | Reason |
 |--------|-----------|--------|
-| `ssr` | `unsupported_security_sensitive_legacy_feature` | Legacy non-standard extension |
 | `ssh` | `unsupported_protocol` | SSH transport out-of-scope for proxy |
 | `ftp` (or any other) | `unsupported_protocol` | Not implemented |
 

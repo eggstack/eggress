@@ -40,10 +40,10 @@ scheme[+scheme...][+tls|+ssl|+in...]://[cipher-or-userinfo@]netloc[/@localbind][
 ```
 
 The compatibility parser retains protocol tokens, modifiers, raw input,
-fragment authentication, local binding, brace-delimited fixed targets, plugin
-metadata (for diagnostic purposes), and raw rule suffixes. Plugin execution is
-explicitly unsupported — the Python compatibility factory rejects
-plugin-bearing URIs. Combined
+fragment authentication, local binding, brace-delimited fixed targets, ordered
+plugin metadata, and raw rule suffixes. Unknown plugin names fail parsing;
+the six pproxy SSR plugins execute only in the feature-gated compatibility
+path. Combined
 `http+socks4+socks5://:8080` listeners translate to one listener with three
 protocol detectors. Unsupported fields produce explicit diagnostics after
 parsing.

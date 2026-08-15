@@ -66,7 +66,7 @@ Principal crates:
 
 The `operations` feature gates the admin HTTP server, Prometheus metrics export, and system-proxy integration. The `reverse` feature requires `operations`. Lean builds (`--no-default-features --features common`) exclude extended protocols (Shadowsocks, Trojan, WebSocket), reverse runtime, system-proxy, and compatibility layers.
 
-The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP.
+The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP. The `pproxy-legacy` feature enables the isolated SSR/plugin compatibility path; native builds do not need it.
 
 Shadowsocks strict AEAD coverage includes `aes-128-gcm`, `aes-192-gcm`,
 `aes-256-gcm`, and `chacha20-ietf-poly1305`. Their pproxy 2.7.9 salt/IV sizes
@@ -181,6 +181,11 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 - Shutdown ordering: readiness false, listener stop, connection drain/cancellation, then admin shutdown.
 - Runtime routing, health, admin, and metrics share the same compiled runtime snapshot.
 - Protocol and transport composition must be validated before execution.
+- SSR compatibility is limited to pproxy 2.7.9 address framing and six built-in
+  plugins; plugin names are closed, ordered, and fail closed when the
+  `pproxy-legacy` feature is unavailable.
+- `tls1.2_ticket_auth` is obfuscation compatibility, never native rustls TLS or
+  a security claim; UDP SSR and external plugins are unsupported.
 - Shadowsocks compatibility evidence must include pproxy 2.7.9 and a maintained
   Shadowsocks implementation; Eggress-to-Eggress roundtrips alone are not
   wire-compatibility evidence.
@@ -200,6 +205,10 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 The active compatibility target is practical parity with `pproxy==2.7.9`. Claims must distinguish behavioral match, compatible with warning, native equivalent, intentional non-parity, and unsupported. Do not upgrade a tier based only on API shape or successful construction.
 
 When a compatibility claim changes, update the applicable manifest and run the corresponding oracle or interoperability suite. Unsupported transports/roles should fail with structured diagnostics, not silent fallback.
+
+The strict Phase 3 `ssr://` surface accepts `plain`, `origin`, `http_simple`,
+`tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`; unknown plugins
+fail during parsing.
 
 Key compatibility notes:
 - `--pac`, `--get`, `--test` are value-taking options; their values are not positional listeners.

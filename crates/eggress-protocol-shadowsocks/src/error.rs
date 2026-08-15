@@ -10,7 +10,10 @@ pub enum ShadowsocksError {
     #[error("legacy stream cipher '{0}' is not supported; use an AEAD method (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)")]
     LegacyMethodUnsupported(String),
 
-    #[error("ShadowsocksR (SSR) is not supported; SSR protocol, obfs, and legacy features are intentionally excluded")]
+    #[deprecated(
+        note = "use the feature-gated SSR compatibility path or a structured runtime diagnostic"
+    )]
+    #[error("ShadowsocksR (SSR) compatibility is unavailable in this build")]
     SsrUnsupported,
 
     #[error("decryption failed: {0}")]

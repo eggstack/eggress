@@ -1,5 +1,6 @@
 pub mod address;
 pub mod aead;
+pub mod compat;
 pub mod error;
 pub mod method;
 pub mod metrics;

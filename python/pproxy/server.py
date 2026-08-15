@@ -11,6 +11,7 @@ from eggress._pproxy_proxy import (
     ProxyQUIC, ProxySSH, ProxySimple,
 )
 from eggress.cipher import get_cipher
+from pproxy.plugin import get_plugin
 from eggress.pproxy import PProxyCompatibilityError, UnsupportedPProxyFeature
 from eggress.protocol import get_protos, netloc_split
 
@@ -65,11 +66,7 @@ def _proxy_by_uri(uri, jump):
     if err:
         raise argparse.ArgumentTypeError(err)
     path, _, _plugins = url.path.partition(",")
-    if _plugins:
-        raise UnsupportedPProxyFeature(
-            "plugin",
-            alternative="pproxy plugin execution is not supported by eggress",
-        )
+    plugin_names = [name for name in _plugins.split(",") if name] if _plugins else []
     path, _, lbind = path.partition("@")
     cipher, _, location = url.netloc.rpartition("@")
     host, port = (
@@ -84,6 +81,15 @@ def _proxy_by_uri(uri, jump):
         error, cipher_apply = get_cipher(cipher)
         if error:
             raise argparse.ArgumentTypeError(error)
+        for plugin_name in plugin_names:
+            error, plugin = get_plugin(plugin_name)
+            if error:
+                raise argparse.ArgumentTypeError(error)
+            cipher_apply.plugins.append(plugin)
+    elif plugin_names:
+        raise argparse.ArgumentTypeError(
+            "pproxy plugins require a cipher/protocol context"
+        )
     if "direct" in [p.name for p in protos]:
         return ProxyDirect(lbind=lbind or None)
     params = dict(
@@ -151,8 +157,8 @@ async def prepare_ciphers(cipher, reader, writer, bind=None, server_side=True):
     raise UnsupportedPProxyFeature(
         "prepare_ciphers",
         alternative=(
-            "pproxy's internal Python stream-cipher/plugin wrapper is not replicated; "
-            "use Eggress native Shadowsocks AEAD or managed runtime APIs"
+            "legacy stream-cipher encryption is not replicated; use the bounded "
+            "pproxy-legacy SSR framing/plugins or Eggress native Shadowsocks AEAD"
         ),
     )
 
