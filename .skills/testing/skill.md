@@ -226,6 +226,7 @@ EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differe
 EGRESS_PPROXY_CERTIFY=1 cargo test -p eggress-cli --test oracle -- --ignored
 
 # Python tests
+python -m pytest python/tests/test_pproxy_phase4_contract.py -v
 python -m pytest python/tests/test_pproxy_dropin.py -v
 python -m pytest python/tests/test_pproxy_differential.py -v
 python -m pytest python/tests/test_pproxy_compat.py -v
@@ -234,6 +235,11 @@ python -m pytest python/tests/test_pproxy_concurrency.py -v
 python -m pytest python/tests/test_performance_smoke.py -v
 python -m pytest python/tests/test_protocol_cipher.py -v
 python -m pytest python/tests -v  # all Python tests
+
+# Clean-wheel Phase 4 smoke (run without the source checkout on PYTHONPATH)
+python -c 'import pproxy, pproxy.server, pproxy.proto, pproxy.cipher, pproxy.plugin'
+python -c 'import pproxy.__doc__, pproxy.__main__, pproxy.cipherpy, pproxy.sysproxy, pproxy.verbose'
+python -m pproxy --version
 
 # Optional pproxy oracle tests (requires pproxy==2.7.9)
 cargo test -p eggress-testkit pproxy_oracle -- --ignored

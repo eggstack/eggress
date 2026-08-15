@@ -17,13 +17,16 @@ namespace (there is no separate compatibility distribution).
 | `OutboundConnector` | `OutboundConnector` | Native Rust outbound connections |
 | `OutboundStream` | `PyOutboundStream` | Read/write/half-close on outbound streams |
 
-The top-level `pproxy` package re-exports the bounded adapters in
-`python/pproxy/`. `Connection` and `Server` are aliases for
+The top-level `pproxy` package installs the complete Phase 0 module namespace
+(`__doc__`, `__main__`, `cipherpy`, `sysproxy`, and `verbose` in addition to
+the core modules) from `python/pproxy/`. `Connection` and `Server` are aliases for
 `proxies_by_uri` (pproxy-shaped URI factories, NOT the native
 `eggress.pproxy.Server` lifecycle class), `Rule` compiles public regex
 rule inputs, and `DIRECT` is the direct proxy sentinel. The
 top-level compatibility server path is a Python adapter that opens
-the underlying direct/upstream transport and invokes the
+`python -m pproxy` and the wheel's `pproxy` console script share the same
+compatibility entry point. The top-level compatibility server path is a Python
+adapter that opens the underlying direct/upstream transport and invokes the
 `prepare_connection()` hook once per supported chain; it is not
 backed by the Rust `EggressService` lifecycle. Use
 `eggress.pproxy.Server` for the native Rust-backed service lifecycle.
@@ -31,6 +34,11 @@ TCP connection methods return asyncio reader/writer-compatible objects.
 Unsupported listener roles, multi-hop UDP, and excluded protocol
 families fail with explicit ``UnsupportedPProxyFeature`` exceptions
 (a subclass of ``PProxyCompatibilityError(RuntimeError)``).
+
+`pproxy.server` health, cipher preparation, URL testing, stream, and datagram
+helpers are thin adapters over the existing protocol/proxy objects. The
+`pproxy.sysproxy` classes delegate apply/rollback to the native
+`eggress-system-proxy` backend; unsupported platforms retain a clear refusal.
 
 The compatibility server path follows pproxy's connection lifecycle by opening
 the raw direct or upstream transport first and invoking `prepare_connection()`

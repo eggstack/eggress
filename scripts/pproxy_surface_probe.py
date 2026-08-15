@@ -22,6 +22,8 @@ from typing import Any
 
 TRACKED_SYMBOLS = {
     "pproxy": ("Connection", "DIRECT", "Rule", "Server"),
+    "pproxy.__doc__": ("__title__", "__description__", "__url__", "__version__"),
+    "pproxy.__main__": ("main",),
     "pproxy.proto": (
         "BaseProtocol", "Direct", "HTTP", "HTTPOnly", "H2", "H3", "SS",
         "SSR", "SSH", "Socks4", "Socks5", "Trojan", "WS", "accept",
@@ -35,7 +37,7 @@ TRACKED_SYMBOLS = {
         "datagram_handler", "test_url",
     ),
     "pproxy.cipher": ("AEADCipher", "PacketCipher", "get_cipher"),
-    "pproxy.cipherpy": ("AEADCipher", "get_cipher"),
+    "pproxy.cipherpy": ("AEADCipher", "get_cipher", "Table_Cipher"),
     "pproxy.plugin": (
         "BasePlugin", "Plain_Plugin", "Origin_Plugin", "Http_Simple_Plugin",
         "Tls1__2_Ticket_Auth_Plugin", "Verify_Simple_Plugin",

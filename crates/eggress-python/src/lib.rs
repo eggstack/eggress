@@ -25,6 +25,58 @@ use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyModule, PyModuleMethods, PySequence, PyString};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+#[pyclass]
+struct PyAppliedSystemProxy {
+    inner: Option<eggress_system_proxy::AppliedProxy>,
+}
+
+#[pymethods]
+impl PyAppliedSystemProxy {
+    fn restore(&mut self, py: Python<'_>) -> PyResult<()> {
+        if let Some(mut applied) = self.inner.take() {
+            py.detach(|| applied.restore())
+                .map_err(PyValueError::new_err)?;
+        }
+        Ok(())
+    }
+
+    fn __enter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    fn __exit__(
+        &mut self,
+        py: Python<'_>,
+        _exc_type: &Bound<'_, PyAny>,
+        _exc_value: &Bound<'_, PyAny>,
+        _traceback: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
+        self.restore(py)?;
+        Ok(false)
+    }
+}
+
+#[pyfunction]
+fn apply_system_proxy(py: Python<'_>, kind: &str, address: &str) -> PyResult<PyAppliedSystemProxy> {
+    let kind = match kind {
+        "http" => eggress_system_proxy::CompatibilityProxyKind::Http,
+        "socks5" => eggress_system_proxy::CompatibilityProxyKind::Socks5,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown proxy kind: {other}"
+            )))
+        }
+    };
+    let address = address
+        .parse()
+        .map_err(|e| PyValueError::new_err(format!("invalid proxy address: {e}")))?;
+    let inner = py
+        .detach(|| eggress_system_proxy::apply_compatibility_proxy(kind, address))
+        .map_err(PyValueError::new_err)?;
+    Ok(PyAppliedSystemProxy { inner: Some(inner) })
+}
+
 pyo3::create_exception!(_eggress, EggressError, PyException);
 pyo3::create_exception!(_eggress, ConfigError, EggressError);
 pyo3::create_exception!(_eggress, StartupError, EggressError);
@@ -1732,6 +1784,7 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEggressConfig>()?;
     m.add_class::<PyEggressService>()?;
     m.add_class::<PyEggressHandle>()?;
+    m.add_class::<PyAppliedSystemProxy>()?;
     m.add_class::<PyTranslationWarning>()?;
     m.add_class::<PyUnsupportedFeature>()?;
     m.add_class::<PyTranslationResult>()?;
@@ -1754,6 +1807,7 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(explain_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(route_explain, m)?)?;
     m.add_function(wrap_pyfunction!(test_upstream_connect, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_system_proxy, m)?)?;
     m.add("EggressError", m.py().get_type::<EggressError>())?;
     m.add("ConfigError", m.py().get_type::<ConfigError>())?;
     m.add("StartupError", m.py().get_type::<StartupError>())?;

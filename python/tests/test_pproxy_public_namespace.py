@@ -119,24 +119,31 @@ class TestExceptionHierarchy:
 
 
 class TestNoSilentNoOpGuard:
-    """Operational methods must not silently succeed with None/empty."""
+    """Operational methods use adapters or clear input-boundary errors."""
 
-    @pytest.mark.parametrize("method_name,args,kwargs", [
-        ("check_server_alive", (1, [], None), {}),
-        ("stream_handler", (None, None, None, None, (), [], None, None), {}),
-        ("datagram_handler", (None, b"", None, (), [], None, None, "fa"), {}),
-        ("test_url", (), {}),
-    ])
-    def test_server_module_methods_raise(self, method_name, args, kwargs):
-        """pproxy.server operational methods raise UnsupportedPProxyFeature."""
-        from eggress.pproxy import UnsupportedPProxyFeature
-        from pproxy import server
-        method = getattr(server, method_name)
-        with pytest.raises(UnsupportedPProxyFeature):
-            if asyncio.iscoroutinefunction(method):
-                asyncio.run(method(*args, **kwargs))
-            else:
-                method(*args, **kwargs)
+    def test_health_probe_is_cancellable(self):
+        from pproxy.server import check_server_alive
+
+        async def run_probe():
+            task = asyncio.create_task(check_server_alive(0, [], lambda *_: None))
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(run_probe())
+
+    def test_handlers_fail_closed_without_unsupported_stub(self):
+        from pproxy.server import datagram_handler, stream_handler
+
+        asyncio.run(stream_handler(None, None, None, None, (), [], None, None))
+        asyncio.run(datagram_handler(None, b"", None, (), [], None, None, "fa"))
+
+    def test_url_requires_its_public_arguments(self):
+        from pproxy.server import test_url
+
+        with pytest.raises(TypeError):
+            asyncio.run(test_url())
 
     def test_check_server_alive_is_coroutine(self):
         """check_server_alive is an async function."""
@@ -428,8 +435,8 @@ class TestUDPLimit:
         assert UDP_LIMIT == 30
 
 
-class TestPrepareCiphersHonesty:
-    """prepare_ciphers raises for non-None cipher (unsupported operation)."""
+class TestPrepareCiphers:
+    """prepare_ciphers delegates cipher/plugin setup to the adapter."""
 
     @pytest.mark.asyncio
     async def test_prepare_ciphers_none_returns_none_pair(self):
@@ -438,33 +445,27 @@ class TestPrepareCiphersHonesty:
         assert result == (None, None)
 
     @pytest.mark.asyncio
-    async def test_prepare_ciphers_non_none_raises(self):
-        from eggress.pproxy import UnsupportedPProxyFeature
+    async def test_prepare_ciphers_non_none_returns_stream_pair(self):
         from pproxy.server import prepare_ciphers
-        fake_cipher = object()
-        with pytest.raises(UnsupportedPProxyFeature, match="prepare_ciphers"):
-            await prepare_ciphers(fake_cipher, None, None)
+        from pproxy.cipher import get_cipher
+
+        error, apply_fn = get_cipher("aes-256-gcm:test")
+        assert error is None
+        reader = object()
+        writer = object()
+        assert await prepare_ciphers(apply_fn, reader, writer) == (reader, writer)
 
     @pytest.mark.asyncio
-    async def test_prepare_ciphers_non_none_no_mutation(self):
-        """No mutation of inputs before the exception is raised."""
-        from eggress.pproxy import UnsupportedPProxyFeature
+    async def test_prepare_ciphers_runs_plugins(self):
+        from pproxy.cipher import get_cipher
+        from pproxy.plugin import Plain_Plugin
         from pproxy.server import prepare_ciphers
 
-        class Spy:
-            mutated = False
-            def __setattr__(self, name, value):
-                if name == "mutated":
-                    object.__setattr__(self, name, value)
-                else:
-                    object.__setattr__(self, name, value)
-                    self.mutated = True
-
-        spy = Spy()
-        fake_cipher = object()
-        with pytest.raises(UnsupportedPProxyFeature):
-            await prepare_ciphers(fake_cipher, spy, spy)
-        assert not spy.mutated
+        error, apply_fn = get_cipher("aes-256-gcm:test")
+        assert error is None
+        apply_fn.plugins.append(Plain_Plugin())
+        reader, writer = object(), object()
+        assert await prepare_ciphers(apply_fn, reader, writer) == (reader, writer)
 
 
 class TestPluginRejection:

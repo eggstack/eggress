@@ -64,10 +64,11 @@ contract.
 
 The exact tagged package contains ten module files: `__init__`, `__doc__`,
 `__main__`, `cipher`, `cipherpy`, `plugin`, `proto`, `server`, `sysproxy`, and
-`verbose`. The bundled Eggress wheel currently ships the bounded `pproxy`,
-`proto`, `server`, `cipher`, and `plugin` modules. The remaining modules are
-explicit Phase 4 inventory gaps; importability is not silently inferred from
-the top-level package.
+`verbose`. The Eggress wheel ships all ten modules. The adapters preserve the
+tracked imports and callable shapes while keeping networking, cipher
+execution, and system-proxy mutation in the existing native/runtime paths.
+Legacy pure-Python cipher names remain import-compatible but fail explicitly
+when constructed; they are not silently substituted.
 
 Run the compact comparison probe with an isolated oracle interpreter and then
 with the interpreter containing the Eggress wheel:
@@ -76,6 +77,10 @@ with the interpreter containing the Eggress wheel:
 .venv-oracle/bin/python scripts/pproxy_surface_probe.py > /tmp/pproxy-2.7.9.json
 .venv/bin/python scripts/pproxy_surface_probe.py > /tmp/eggress-pproxy.json
 ```
+
+The focused source/wheel contract is covered by
+`python/tests/test_pproxy_phase4_contract.py`, including `python -m pproxy
+--version` and the native system-proxy bridge boundary.
 
 See [`pproxy_capability_manifest.toml`](pproxy_capability_manifest.toml) for
 the per-module, per-capability status, source evidence, implementation path,

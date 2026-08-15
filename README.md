@@ -64,8 +64,10 @@ pip install "eggress[cipher-api]"
 Programs using the bounded public `pproxy` API can keep `import pproxy` after
 installing Eggress. The distribution is still named `eggress`; uninstall the
 upstream `pproxy` distribution first because both wheels provide the same import
-namespace. The explicit `from eggress import pproxy` translation helpers remain
-available for migration-oriented code.
+namespace. The wheel includes the complete Phase 0 module namespace, and both
+`python -m pproxy` and the installed `pproxy` console script use the same
+Rust-backed compatibility entry point. The explicit `from eggress import pproxy`
+translation helpers remain available for migration-oriented code.
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13.
 

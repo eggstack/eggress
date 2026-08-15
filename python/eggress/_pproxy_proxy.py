@@ -397,6 +397,7 @@ class ProxySimple(ProxyDirect):
         sslserver: Any = None,
     ) -> None:
         super().__init__(lbind=lbind)
+        self._alive = 1
         self._jump = jump
         self._protos = tuple(protos)
         self._cipher = cipher
@@ -428,6 +429,11 @@ class ProxySimple(ProxyDirect):
     def direct(self) -> bool:
         """``False`` — simple proxies route through an upstream."""
         return False
+
+    @property
+    def alive(self) -> bool:
+        """Health state used by the compatibility scheduler and probes."""
+        return bool(self._alive)
 
     @property
     def jump(self) -> Any:

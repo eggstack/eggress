@@ -777,6 +777,7 @@ dependencies = [
  "eggress-embed",
  "eggress-pproxy-compat",
  "eggress-routing",
+ "eggress-system-proxy",
  "pyo3",
  "serde_json",
  "tokio",

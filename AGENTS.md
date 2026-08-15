@@ -11,6 +11,7 @@ Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI targ
 cargo test -p eggress-routing
 cargo test -p eggress-runtime retry_fallback
 cargo test -p eggress-cli --test cli_exit_codes
+python3 -m pytest python/tests/test_pproxy_phase4_contract.py -q
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml --check-matrix docs/parity/composition_matrix.toml
 ```
@@ -61,6 +62,10 @@ Principal crates:
 - `eggress-testkit`: oracle, manifest, corpus, compatibility test utilities
 - `eggress-pproxy-compat`: Rust-side URI translation and diagnostics
 - `python/eggress`, `python/pproxy`: Python packages bundled in the wheel
+
+The wheel ships the complete Phase 0 `pproxy` module namespace: all ten tracked
+modules, the shared `python -m pproxy`/console entry point, and adapters for
+verbose helpers and platform system-proxy behavior.
 
 ## Feature gates
 
@@ -205,6 +210,13 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 The active compatibility target is practical parity with `pproxy==2.7.9`. Claims must distinguish behavioral match, compatible with warning, native equivalent, intentional non-parity, and unsupported. Do not upgrade a tier based only on API shape or successful construction.
 
 When a compatibility claim changes, update the applicable manifest and run the corresponding oracle or interoperability suite. Unsupported transports/roles should fail with structured diagnostics, not silent fallback.
+
+The strict Phase 4 Python package claim covers the ten tracked modules and
+their recorded symbols/signatures. Modern `cipherpy` AEAD names delegate to
+native implementations; legacy pure-Python cipher names remain importable but
+fail explicitly when constructed. `pproxy.__main__` and the installed
+`pproxy` script share the in-process Eggress adapter, and `sysproxy` delegates
+mutation/rollback to the native backend on supported platforms.
 
 The strict Phase 3 `ssr://` surface accepts `plain`, `origin`, `http_simple`,
 `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`; unknown plugins

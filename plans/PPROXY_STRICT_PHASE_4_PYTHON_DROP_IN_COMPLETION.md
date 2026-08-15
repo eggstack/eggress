@@ -164,3 +164,14 @@ Adjust the imports to the final Phase 0 inventory if any module is intentionally
 6. Optional transport/cipher requests fail clearly when their compiled feature is absent.
 7. Python tests run against a built wheel without relying on repository-local imports.
 8. No new duplicate Python proxy engine is introduced.
+
+## Completion record
+
+Phase 4 is complete in the current Eggress wheel. The ten tracked modules are
+installed, tracked symbols and callable shapes have a dedicated contract
+suite, the Python/native entry points share lifecycle semantics, and the
+operational helpers use native Eggress adapters or explicit feature-boundary
+errors. The strict manifest and compatibility documentation record the
+remaining intentional differences: truthful Eggress version metadata,
+native-runtime diagnostics, unsupported legacy pure-Python ciphers, and
+platform-specific system-proxy availability.

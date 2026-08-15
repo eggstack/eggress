@@ -149,6 +149,19 @@ When adding features to Connection, follow the pattern: Rust handles networking,
 
 `eggress.protocol` provides pproxy-compatible protocol objects (`Socks5`, `HTTP`, `SS`, etc.) with `MAPPINGS` dict and `get_protos()` parser. `eggress.cipher` provides AEAD cipher objects (`AES_256_GCM_Cipher`, etc.) that delegate to Rust. `eggress.plugin` provides a bounded callback bridge (`PluginBridge`) between Rust async tasks and Python callbacks. Tests: `python/tests/test_protocol_cipher.py`.
 
+#### Strict Python package surface (Phase 4)
+
+The wheel includes all ten Phase 0 `pproxy` modules: the package metadata and
+entry-point modules, protocol/cipher/plugin modules, `server`, `cipherpy`,
+`sysproxy`, and `verbose`. `python -m pproxy` and the installed `pproxy`
+console script call the same Python/native compatibility entry point. Modern
+`cipherpy` AEAD classes reuse `eggress.cipher`; legacy pure-Python names are
+import-compatible but fail explicitly when constructed. `sysproxy` uses the
+native system-proxy bridge and reports unsupported host platforms clearly.
+
+The contract and minimal listener smoke tests live in
+`python/tests/test_pproxy_phase4_contract.py`.
+
 ### pproxy-style binary
 
 - `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; strict CLI parity is not claimed

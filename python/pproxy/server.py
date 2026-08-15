@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import random
 import re
+import signal
+import sys
+import threading
+import urllib.parse
 
 from eggress._pproxy_proxy import (
     AuthTable, DIRECT, ProxyBackward, ProxyDirect, ProxyH2, ProxyH3,
@@ -12,8 +17,7 @@ from eggress._pproxy_proxy import (
 )
 from eggress.cipher import get_cipher
 from pproxy.plugin import get_plugin
-from eggress.pproxy import PProxyCompatibilityError, UnsupportedPProxyFeature
-from eggress.protocol import get_protos, netloc_split
+from eggress.protocol import BaseProtocol, accept, get_protos, netloc_split, udp_accept
 
 SOCKET_TIMEOUT = 60
 UDP_LIMIT = 30
@@ -145,39 +149,122 @@ Rule = compile_rule
 
 
 async def check_server_alive(interval, rserver, verbose):
-    raise UnsupportedPProxyFeature(
-        "check_server_alive",
-        alternative="use Eggress runtime health checks via EggressHandle.status()",
-    )
+    """Probe configured proxy endpoints until the task is cancelled."""
+    while True:
+        await asyncio.sleep(interval)
+        for remote in rserver:
+            if isinstance(remote, ProxyDirect):
+                continue
+            try:
+                _, writer = await remote.open_connection(
+                    None, None, None, None, timeout=3
+                )
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                if getattr(remote, "_alive", True):
+                    remote._alive = 0
+                    verbose(
+                        f"{getattr(getattr(remote, 'rproto', None), 'name', 'proxy')} "
+                        f"{remote.bind} -> OFFLINE"
+                    )
+            else:
+                remote._alive = 1
+                verbose(
+                    f"{getattr(getattr(remote, 'rproto', None), 'name', 'proxy')} "
+                    f"{remote.bind} -> ONLINE"
+                )
+                writer.close()
+                wait_closed = getattr(writer, "wait_closed", None)
+                if wait_closed is not None:
+                    await wait_closed()
 
 
 async def prepare_ciphers(cipher, reader, writer, bind=None, server_side=True):
     if cipher is None:
         return None, None
-    raise UnsupportedPProxyFeature(
-        "prepare_ciphers",
-        alternative=(
-            "legacy stream-cipher encryption is not replicated; use the bounded "
-            "pproxy-legacy SSR framing/plugins or Eggress native Shadowsocks AEAD"
-        ),
+    cipher.pdecrypt = cipher.pdecrypt2 = cipher.pencrypt = cipher.pencrypt2 = DUMMY
+    for plugin in cipher.plugins:
+        if server_side:
+            await plugin.init_server_data(reader, writer, cipher, bind)
+        else:
+            await plugin.init_client_data(reader, writer, cipher)
+        plugin.add_cipher(cipher)
+    return cipher(
+        reader,
+        writer,
+        cipher.pdecrypt,
+        cipher.pdecrypt2,
+        cipher.pencrypt,
+        cipher.pencrypt2,
     )
 
 
 async def datagram_handler(writer, data, addr, protos, urserver, block, cipher, salgorithm,
                            verbose=lambda *args: None, **kwargs):
-    raise UnsupportedPProxyFeature(
-        "datagram_handler",
-        alternative="UDP listener handling is owned by Eggress runtime",
-    )
+    try:
+        if cipher is not None and cipher.datagram is not None:
+            data = cipher.datagram.decrypt(data)
+        lproto, _user, host, port, payload = udp_accept(protos, data, **kwargs)
+        if block is not None and block(host):
+            raise ValueError(f"BLOCK {host}")
+        roption = schedule(urserver, salgorithm, host, port) or DIRECT
+        prepared = roption.udp_prepare_connection(host, port, payload)
+
+        def reply(response):
+            packed = lproto.udp_pack(host, port, response)
+            if cipher is not None and cipher.datagram is not None:
+                packed = cipher.datagram.encrypt(packed)
+            writer.sendto(packed, addr)
+
+        await roption.udp_open_connection(host, port, prepared, addr, reply)
+    except Exception as exc:
+        verbose(str(exc) or "Unsupported protocol")
 
 
 async def stream_handler(reader, writer, unix, lbind, protos, rserver, cipher, sslserver,
                          debug=0, authtime=2592000, block=None, salgorithm="fa",
-                         verbose=lambda *args: None, modstat=lambda *args: None, **kwargs):
-    raise UnsupportedPProxyFeature(
-        "stream_handler",
-        alternative="server stream handling is owned by Eggress runtime",
-    )
+                         verbose=lambda *args: None,
+                         modstat=lambda *args: (lambda *_: DUMMY), **kwargs):
+    remote_writer = None
+    try:
+        reader_cipher, _ = await prepare_ciphers(
+            cipher, reader, writer, server_side=False
+        )
+        lproto, user, host, port, _ = await accept(
+            protos, reader=reader, writer=writer, reader_cipher=reader_cipher, **kwargs
+        )
+        if block is not None and block(host):
+            raise ValueError(f"BLOCK {host}")
+        roption = schedule(rserver, salgorithm, host, port) or DIRECT
+        reader_remote, remote_writer = await roption.open_connection(
+            host, port, None, lbind, timeout=SOCKET_TIMEOUT
+        )
+        reader_remote, remote_writer = await roption.prepare_connection(
+            reader_remote, remote_writer, host, port
+        )
+        rproto = getattr(roption, "rproto", None) or BaseProtocol("")
+        stats = modstat(user, "unknown", host)
+        await asyncio.gather(
+            lproto.channel(reader, remote_writer, stats(0), stats(1)),
+            rproto.channel(reader_remote, writer, stats(2), stats(3)),
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        if debug:
+            raise
+        verbose(str(exc) or "Unsupported protocol")
+    finally:
+        for stream in (writer, remote_writer):
+            if stream is not None:
+                stream.close()
+                wait_closed = getattr(stream, "wait_closed", None)
+                if wait_closed is not None:
+                    try:
+                        await wait_closed()
+                    except Exception:
+                        pass
 
 
 def print_server_started(*args, **kwargs):
@@ -200,15 +287,78 @@ def print_server_started(*args, **kwargs):
     return " ".join(parts) if parts else None
 
 
-def test_url(*args, **kwargs):
-    raise UnsupportedPProxyFeature(
-        "test_url",
-        alternative="use check_upstream() from eggress.pproxy or the CLI 'eggress pproxy check' command",
-    )
+async def test_url(url, rserver):
+    """Issue a bounded HTTP request per configured remote proxy."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unknown scheme {parsed.scheme}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError(f"missing host in URL: {url!r}")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    target = parsed.path or "/"
+    if parsed.query:
+        target += "?" + parsed.query
+    request = (
+        f"GET {target} HTTP/1.1\r\nHost: {host}\r\n"
+        f"User-Agent: pproxy-{__import__('eggress').__version__}\r\n"
+        "Accept: */*\r\nConnection: close\r\n\r\n"
+    ).encode()
+    for remote in rserver:
+        reader, writer = await remote.tcp_connect(host, port)
+        try:
+            writer.write(request)
+            await writer.drain()
+            await reader.read(1)
+        finally:
+            writer.close()
+            wait_closed = getattr(writer, "wait_closed", None)
+            if wait_closed is not None:
+                await wait_closed()
 
 sslcontexts = []
 compile_rule.__module__ = __name__
 
+
+def main(args=None):
+    """Run the compatibility service through the Python/native adapter."""
+    argv = list(sys.argv[1:] if args is None else args)
+    if "--version" in argv:
+        from eggress import __version__
+
+        print(f"eggress-pproxy-compat {__version__}")
+        return 0
+    if "-h" in argv or "--help" in argv:
+        print("pproxy compatibility binary (eggress-pproxy-compat)")
+        print("Use -l/--listen and -r/--remote with pproxy-compatible URIs.")
+        return 0
+
+    from eggress.pproxy import PPProxyService
+
+    service = PPProxyService.from_args(argv)
+    handle = service.start()
+    stopped = threading.Event()
+
+    def stop(_signum, _frame):
+        stopped.set()
+        handle.shutdown()
+
+    previous = {}
+    for name in ("SIGINT", "SIGTERM"):
+        signal_name = getattr(signal, name, None)
+        if signal_name is not None:
+            previous[signal_name] = signal.signal(signal_name, stop)
+    try:
+        stopped.wait()
+    except KeyboardInterrupt:
+        stop(signal.SIGINT, None)
+    finally:
+        for signal_name, old_handler in previous.items():
+            signal.signal(signal_name, old_handler)
+    return 0
+
 __all__ = ["AuthTable", "DIRECT", "DUMMY", "ProxyBackward", "ProxyDirect", "ProxyH2",
            "ProxyH3", "ProxyQUIC", "ProxySSH", "ProxySimple", "Rule", "Connection",
-           "Server", "compile_rule", "proxy_by_uri", "proxies_by_uri", "schedule"]
+           "Server", "compile_rule", "proxy_by_uri", "proxies_by_uri", "schedule",
+           "check_server_alive", "datagram_handler", "main", "prepare_ciphers",
+           "print_server_started", "sslcontexts", "stream_handler", "test_url"]

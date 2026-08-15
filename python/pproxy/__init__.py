@@ -13,7 +13,19 @@ the upstream ``pproxy`` distribution in one environment.
 """
 
 from eggress import __version__
-from . import cipher, plugin, proto, server
+from . import __doc__, cipher, cipherpy, plugin, proto, server, sysproxy, verbose
 from .server import DIRECT, Rule, Server, Connection
 
-__all__ = ["Connection", "DIRECT", "Rule", "Server", "cipher", "plugin", "proto", "server"]
+__all__ = [
+    "Connection",
+    "DIRECT",
+    "Rule",
+    "Server",
+    "cipher",
+    "cipherpy",
+    "plugin",
+    "proto",
+    "server",
+    "sysproxy",
+    "verbose",
+]

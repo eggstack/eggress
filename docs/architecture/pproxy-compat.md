@@ -9,8 +9,9 @@ and parity classification. The oracle is frozen to tag commit
 
 This is an internal Rust crate, not a separately published Python package.
 The Python compatibility surface is bundled in the `eggress` distribution as
-`eggress.pproxy` for translation helpers, a bounded top-level `pproxy`
-package for the documented public factory/protocol/cipher surface, and
+`eggress.pproxy` for translation helpers, and a complete Phase 0 top-level
+`pproxy` module namespace for the documented public factory/protocol/cipher,
+metadata, entry-point, verbose, and system-proxy surfaces, and
 a stable exception hierarchy (`PProxyCompatibilityError`,
 `UnsupportedPProxyFeature`) for unsupported operations. The
 upstream `pproxy` distribution must not be installed alongside Eggress.

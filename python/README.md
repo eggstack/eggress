@@ -75,8 +75,10 @@ best-effort fallback, not the lifecycle API.
 
 ## pproxy Compatibility
 
-Eggress provides a pproxy compatibility subset validated against pproxy==2.7.9
-(111 capabilities classified as `drop_in` per the strict compatibility manifest):
+Eggress provides a pproxy compatibility surface validated against pproxy==2.7.9
+and bounded by the canonical capability manifest. The wheel includes all ten
+Phase 0 package modules; legacy cipher implementations and unsupported native
+transports still fail explicitly rather than being silently substituted:
 
 - **URI Translation**: `translate_pproxy_args()` converts pproxy CLI arguments to eggress TOML
 - **Same Protocols**: HTTP, SOCKS4/4a, SOCKS5, Shadowsocks (AEAD), Trojan
@@ -106,6 +108,12 @@ with PPProxyService.from_uri("socks5://127.0.0.1:0") as handle:
 with PPProxyService.from_toml(toml_str) as handle:
     print(handle.bound_addresses)
 ```
+
+The package also supports `python -m pproxy` and installs a `pproxy` console
+script with the same compatibility entry point. `pproxy.server` helper calls
+reuse the existing protocol/proxy adapters, while `pproxy.sysproxy` delegates
+system-proxy apply/rollback to the native backend where the platform supports
+it.
 
 ## API Contract (Phase C1)
 
