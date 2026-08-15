@@ -142,7 +142,10 @@ impl PproxyUri {
         } else {
             self.protocol_chain.clone()
         };
-        if self.tls && !parts.iter().any(|p| p == "tls") {
+        // `wss` already carries the TLS scheme semantics. Keep its stable
+        // redacted display as `wss://...` while retaining `self.tls` for
+        // translation and listener transport setup.
+        if self.tls && !parts.iter().any(|p| p == "tls") && !parts.iter().any(|p| p == "wss") {
             parts.push("tls".to_string());
         }
         if self.ssl && !parts.iter().any(|p| p == "ssl") {
