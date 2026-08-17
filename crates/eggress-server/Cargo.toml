@@ -17,6 +17,7 @@ extended = [
     "eggress-udp/shadowsocks",
 ]
 pproxy-legacy = ["extended", "eggress-protocol-shadowsocks/pproxy-legacy"]
+ssh = ["dep:eggress-transport-ssh"]
 
 [dev-dependencies]
 eggress-testkit.workspace = true
@@ -37,6 +38,7 @@ bytes.workspace = true
 h2.workspace = true
 http.workspace = true
 eggress-transport-tls.workspace = true
+eggress-transport-ssh = { workspace = true, optional = true }
 eggress-udp.workspace = true
 rustls.workspace = true
 tokio.workspace = true

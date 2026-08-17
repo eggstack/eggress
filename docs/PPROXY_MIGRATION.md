@@ -151,7 +151,9 @@ The following pproxy features are explicitly unsupported:
 - **UDP over non-UDP chains** -- Not supported; composed UDP chains are limited to SOCKS5 and standard Shadowsocks hops
 - **macOS PF transparent destination recovery** -- Intentional non-parity; requires privileged `/dev/pf` ioctl access
 - **Backward TLS/mixed reverse chains** -- Intentional partial compatibility; reverse framing is not a normal chain stream
-- **SSH protocol** -- Not supported (SSH transport is out-of-scope for a proxy)
+- **SSH listeners** -- Not supported; SSH upstreams are available only with
+  the opt-in `ssh` feature and intentionally match pproxy's permissive
+  `known_hosts=None` behavior
 - **H3/QUIC transport** -- Deferred; pproxy H3 behavior is experimental and unstable. See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`.
 - **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
 - **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind `pproxy-legacy`. UDP SSR, SIP003/external plugins, and legacy stream-cipher encryption remain unsupported and produce structured diagnostics.

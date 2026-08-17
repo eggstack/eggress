@@ -44,7 +44,7 @@ aggregate classification never disagree.
 warnings and unsupported features, with the severity order
 (worst first): `unsupported` > `intentional_non_parity` >
 `compatible_with_warning` > `native_equivalent` > `drop_in`. Known
-intentional exclusions (SSH listener/upstream, SSR listener/upstream,
+intentional exclusions (SSH listeners, SSR listener/upstream,
 legacy Shadowsocks ciphers) aggregate to `intentional_non_parity`
 rather than generic `unsupported`; unknown warning categories and
 unknown unsupported feature ids fail closed to `unsupported`.

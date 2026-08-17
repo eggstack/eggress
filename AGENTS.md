@@ -50,7 +50,7 @@ cargo fuzz run uri_parse -- -runs=1000
 
 ## Workspace structure
 
-Root `Cargo.toml` defines a workspace with 23 member crates under `crates/`. A non-member `eggress-bench` package with Criterion benchmarks lives at the workspace root — run `cargo bench` from root.
+Root `Cargo.toml` defines a workspace with 24 member crates under `crates/`. A non-member `eggress-bench` package with Criterion benchmarks lives at the workspace root — run `cargo bench` from root.
 
 Principal crates:
 - `eggress-core`: shared types, traits, `BoxStream`, relay abstractions
@@ -63,6 +63,7 @@ Principal crates:
 - `eggress-routing`: rules, schedulers, health state, route selection
 - `eggress-protocol-*`: HTTP, SOCKS, Shadowsocks, Trojan, WebSocket, raw, reverse
 - `eggress-transport-tls`: rustls client/server transport
+- `eggress-transport-ssh`: optional russh client transport for pproxy SSH upstreams
 - `eggress-testkit`: oracle, manifest, corpus, compatibility test utilities
 - `eggress-pproxy-compat`: Rust-side URI translation and diagnostics
 - `python/eggress`, `python/pproxy`: Python packages bundled in the wheel
@@ -77,6 +78,17 @@ The `operations` feature gates the admin HTTP server, Prometheus metrics export,
 
 The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP. UDP composition is closed over SOCKS5 and, in extended builds, Shadowsocks; HTTP/SOCKS4/Trojan/H2/WS/QUIC UDP paths must fail validation. The `pproxy-legacy` feature enables the isolated SSR/plugin compatibility path; native builds do not need it.
 
+The `ssh` feature is opt-in on the CLI, embed, runtime, server, Python, and
+compatibility layers. It adds `eggress-transport-ssh` and `russh` only when
+enabled; default and `common` builds do not expose SSH upstream execution.
+SSH is upstream-only: listeners reject `ssh://` with a structured diagnostic.
+The compatibility transport matches pproxy's password and `:private-key-path`
+credential convention, direct TCP/Unix channels, chained SSH hops, cached
+sessions, keepalives, and remote TCP forwarding. Host keys are deliberately not
+verified in this compatibility path because pproxy passes `known_hosts=None`;
+the warning is emitted at connection time. Native secure SSH configuration is
+not implied by this feature.
+
 Shadowsocks strict AEAD coverage includes `aes-128-gcm`, `aes-192-gcm`,
 `aes-256-gcm`, and `chacha20-ietf-poly1305`. Their pproxy 2.7.9 salt/IV sizes
 are respectively 16, 24, 32, and 32 bytes; all use 12-byte nonces and
@@ -88,6 +100,7 @@ limit. Keep the method inventory and wire-format claims synchronized with
 
 - Unit tests: in each crate's `src/` files
 - Integration tests: `crates/eggress-runtime/tests/` (startup, routing, health, admin, reload, shutdown, UDP, upstream protocols, load)
+- SSH integration tests: `crates/eggress-transport-ssh/tests/openssh.rs` (OpenSSH TCP, Unix, chain, password, cache, and remote-forward coverage)
 - Property tests: per-crate `tests/` (proptest round-trips for SOCKS, HTTP, Trojan, routing)
 - Fuzz targets: `fuzz/fuzz_targets/` (standalone workspace)
 - Python tests: `python/tests/` and `tests/compat/`
@@ -195,6 +208,10 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
   `pproxy-legacy` feature is unavailable.
 - `tls1.2_ticket_auth` is obfuscation compatibility, never native rustls TLS or
   a security claim; UDP SSR and external plugins are unsupported.
+- SSH compatibility disables host-key verification to match pproxy and must
+  remain visibly warning-bearing; redact passwords and private-key paths from
+  diagnostics, never enable agent/command/SFTP features, and keep remote-forward
+  exposure explicit and bounded.
 - Shadowsocks compatibility evidence must include pproxy 2.7.9 and a maintained
   Shadowsocks implementation; Eggress-to-Eggress roundtrips alone are not
   wire-compatibility evidence.
@@ -203,7 +220,7 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 
 ## Code conventions
 
-- Rust edition 2021, MSRV 1.75 (`workspace.package.rust-version`). `rust-toolchain.toml` pins stable with `clippy` + `rustfmt`.
+- Rust edition 2021, MSRV 1.85 (`workspace.package.rust-version`). `rust-toolchain.toml` pins stable with `clippy` + `rustfmt`.
 - Tokio async runtime; `thiserror` for errors; `tracing` for logging; `clap` derive for CLI.
 - Prefer deterministic tests over fixed sleeps; use retry loops or readiness signals.
 - Preserve stable diagnostic and exit-code semantics (part of the compatibility surface).

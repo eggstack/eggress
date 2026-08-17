@@ -1,4 +1,4 @@
-FROM rust:1.75-slim AS builder
+FROM rust:1.85-slim AS builder
 
 ARG TARGETARCH
 ARG VERSION=0.1.0

@@ -300,7 +300,7 @@ mod tests {
         let mut stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
         use tokio::io::AsyncWriteExt;
         let mut payload = vec![0x04, 0x01, 0x00, 0x50, 127, 0, 0, 1];
-        payload.extend(std::iter::repeat(b'A').take(256));
+        payload.extend(std::iter::repeat_n(b'A', 256));
         payload.push(0x00);
         stream.write_all(&payload).await.unwrap();
 

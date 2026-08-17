@@ -61,7 +61,7 @@ Eggress support status:
 | Trojan | **supported** | `eggress-protocol-trojan` for both inbound and upstream |
 | Redir | **supported** | Linux only; transparent TCP proxy via `SO_ORIGINAL_DST` (requires iptables/nftables REDIRECT) |
 | Unix socket | **supported** | Unix only; listen on Unix domain socket path |
-| SSH | **rejected** | Not in scope |
+| SSH | **listener rejected** | Upstream is available through the opt-in `ssh` feature |
 
 ## 3. Remote/Upstream Protocols
 
@@ -88,7 +88,7 @@ Eggress support status:
 | SOCKS5 | supported | `eggress-protocol-socks` client |
 | Shadowsocks | supported | `eggress-protocol-shadowsocks` client (AEAD methods only; standard TCP framing) |
 | Trojan | supported | `eggress-protocol-trojan` client |
-| SSH | **rejected** | Not in scope (SSH transport is out-of-scope for a proxy) |
+| SSH | **feature-gated** | `eggress-transport-ssh` provides pproxy-compatible upstream channels; listeners remain rejected |
 | Direct | supported | `DirectConnector` |
 
 ## 4. Supported URI Schemes
@@ -105,7 +105,7 @@ pproxy URIs follow the pattern: `scheme://[user:pass@]host:port`
 | `ss://` | `ss://aes-256-gcm:pass@:8388` | Shadowsocks, cipher:password in userinfo |
 | `trojan://` | `trojan://pass@server:443` | Trojan, password is the auth token |
 | `direct://` | `direct://` | Direct connection, no proxy |
-| `ssh://` | `ssh://user@host:22` | SSH tunnel (not supported) |
+| `ssh://` | `ssh://user:pass@host[:22]` | Optional SSH upstream tunnel; `user::/path/to/key` selects a private key |
 | `unix://` | `unix:///path/to/socket` | Unix domain socket listener (Unix only) |
 
 **Shadowsocks URI format**: `ss://method:password@host:port`
@@ -507,7 +507,7 @@ in Eggress based on security policy, architecture, or scope.
 | Raw tunnels | pproxy raw/tunnel schemes | **Supported** — synthetic tests. Fixed-target TCP tunnel implemented. |
 | QUIC transport | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. pproxy behavior experimental, dependency significant. |
 | HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
-| SSH transport | `ssh://` | Intentional non-parity. SSH is a general-purpose encrypted tunnel, not a proxy protocol. URIs recognized for clean diagnostics. See ADR at `docs/adr/ADR_ssh_upstream_parity.md`. |
+| SSH listeners | `ssh://` | Upstream-only by design. The optional `ssh` feature provides direct TCP/Unix channels, chaining, and explicit remote forwarding; host-key acceptance is warning-bearing. |
 | Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with raw-relay control channel (Phase 27). TCP only; one session per control channel; no multiplexing. |
 | Plugin system | pproxy has six built-in plugin hooks | Bounded closed plugin set behind `pproxy-legacy`; arbitrary/external plugins remain out of scope. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
@@ -602,7 +602,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as runtime-integrated upstream (Phase B3)**: WebSocket tunnels (`ws://`, `wss://`), Raw fixed-target tunnels (`raw://`, `tunnel://`)
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
-- **Intentional non-parity**: SSH, macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, UDP chains containing non-UDP protocols
+- **Intentional non-parity**: macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, UDP chains containing non-UDP protocols
 - **Implemented**: Trojan inbound listener and upstream
 
 ### Diagnostic behavior

@@ -875,10 +875,10 @@ class ProxyH2(ProxySimple):
 class ProxySSH(ProxySimple):
     """pproxy-compatible SSH proxy handler.
 
-    **Structural-only.** SSH is not supported by eggress.  This class
-    exists for API compatibility with pproxy 2.7.9's class hierarchy.
-    Construction is allowed for parsing compatibility, but network and
-    lifecycle methods raise :class:`UnsupportedPProxyFeature`.
+    **Structural facade.** Native URI/CLI execution uses the Rust `ssh`
+    feature when that feature is compiled. This pproxy-shaped class remains
+    available for API compatibility and does not expose a second SSH packet
+    implementation; listener use remains unsupported.
 
     Args:
         **kw: Forwarded to :class:`ProxySimple`.
@@ -896,13 +896,14 @@ class ProxySSH(ProxySimple):
     ) -> None:
         """Patch a stream for SSH tunneling.
 
-        Structural-only; SSH is not supported by eggress.
+        Structural-only; native SSH URI execution is owned by the Rust
+        transport.
         """
 
     async def tcp_connect(self, *args: Any, **kwargs: Any) -> Any:
         raise UnsupportedPProxyFeature(
             "ProxySSH.tcp_connect",
-            alternative="SSH tunnels are not supported by eggress",
+            alternative="Use the native OutboundConnector with the optional ssh feature",
         )
 
     async def start_server(
@@ -932,7 +933,7 @@ class ProxySSH(ProxySimple):
     ) -> Any:
         raise UnsupportedPProxyFeature(
             "ProxySSH.wait_open_connection",
-            alternative="SSH connection pooling is not supported by eggress",
+            alternative="Use the native OutboundConnector with the optional ssh feature",
         )
 
     async def wait_ssh_connection(
@@ -947,7 +948,7 @@ class ProxySSH(ProxySimple):
         """
         raise UnsupportedPProxyFeature(
             "ProxySSH.wait_ssh_connection",
-            alternative="SSH connections are not supported by eggress",
+            alternative="Use the native OutboundConnector with the optional ssh feature",
         )
 
     def __repr__(self) -> str:

@@ -83,9 +83,8 @@ impl EggressProcess {
 
         wait_ready(port, config.startup_timeout)
             .await
-            .map_err(|e| {
+            .inspect_err(|_| {
                 let _ = child.kill();
-                e
             })?;
 
         let addr: SocketAddr = format!("127.0.0.1:{port}").parse().map_err(|_| {
@@ -117,9 +116,8 @@ impl EggressProcess {
 
         wait_ready(port, config.startup_timeout)
             .await
-            .map_err(|e| {
+            .inspect_err(|_| {
                 let _ = child.kill();
-                e
             })?;
 
         let addr: SocketAddr = format!("127.0.0.1:{port}").parse().map_err(|_| {

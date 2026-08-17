@@ -566,7 +566,7 @@ from eggress import supported_features
 features = supported_features()
 print("socks5" in features)  # True
 print("http" in features)    # True
-print("ssh" in features)     # False
+print("ssh" in features)     # True when the wheel is built with the optional ssh feature
 ```
 
 ## Reverse URI inspection (Phase 31)
@@ -907,7 +907,8 @@ and comprehensive API inventory documents under `docs/python/`.
   Shadowsocks listeners are available via the Rust binary; the embed API
   (which the Python bindings wrap) exposes TCP/UDP upstream Shadowsocks and
   inbound listeners for SOCKS5/HTTP only in the current release. No Trojan
-  inbound listeners. No legacy stream ciphers. No SSH/unix/redir transport.
+  inbound listeners. No legacy stream ciphers. SSH upstreams are available only
+  in wheels built with the optional ssh feature; SSH remains upstream-only.
   No pproxy daemon mode. Multiple remotes default to round-robin.
 - **mypy**: PyO3 native types (`_inner` attribute) are invisible to mypy,
   producing ~20 expected false-positive errors. This is known pre-release
@@ -1124,7 +1125,7 @@ wire protocol.
 |-------|--------|
 | `SSR` | Legacy Shadowsocks — rejected with clear diagnostics |
 | `H3` | HTTP/3/QUIC — deferred by ADR |
-| `SSH` | Intentional non-parity — use OpenSSH `-D` |
+| `SSH` | Optional native upstream transport; protocol-class facade remains structural |
 
 ### Usage
 
@@ -1296,7 +1297,7 @@ Milestone C makes the Python internals exposed by `pproxy==2.7.9` behaviorally f
 
 ### Out of scope (Milestone D)
 
-- SSH, QUIC/H3 transport implementation
+- QUIC/H3 transport implementation (SSH is available behind the optional feature)
 - Salsa20, Blowfish, CAST5, DES ciphers (no `cryptography` backend)
 - UDP chains containing non-UDP protocols and reverse composition beyond the documented compatibility adapter
 - Full CLI/process parity

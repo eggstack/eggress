@@ -89,6 +89,9 @@ impl OutboundConnector {
             return Err(EggressError::Config("upstream chain is empty".to_string()));
         }
 
+        #[cfg(feature = "ssh")]
+        let chain_executor = eggress_server::build_chain_executor(None, None, None);
+        #[cfg(not(feature = "ssh"))]
         let chain_executor = eggress_server::build_chain_executor(None, None);
 
         Ok(Self {
@@ -104,6 +107,9 @@ impl OutboundConnector {
         let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
             .map_err(|e| EggressError::Config(e.to_string()))?;
         if parsed.scheme == "direct" {
+            #[cfg(feature = "ssh")]
+            let executor = eggress_server::build_chain_executor(None, None, None);
+            #[cfg(not(feature = "ssh"))]
             let executor = eggress_server::build_chain_executor(None, None);
             return Ok(Self {
                 runtime_config: None,

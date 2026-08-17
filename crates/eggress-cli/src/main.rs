@@ -1035,6 +1035,9 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
             eggress_uri::ProtocolSpec::WebSocket => eggress_core::ProtocolId::WebSocket,
             eggress_uri::ProtocolSpec::Raw => eggress_core::ProtocolId::Raw,
             eggress_uri::ProtocolSpec::Unix => eggress_core::ProtocolId::Raw,
+            eggress_uri::ProtocolSpec::Ssh => {
+                return Err("SSH is an upstream-only transport, not a listener protocol".into())
+            }
         };
         protocols.push(id);
     }
@@ -1421,6 +1424,8 @@ async fn run_listener(
                 trojan: None,
                 fixed_target: None,
                 local_bind: None,
+                #[cfg(feature = "ssh")]
+                ssh_sessions: None,
             };
 
             let report = eggress_server::serve_connection(conn.stream, config)
@@ -1506,6 +1511,8 @@ mod tests {
                     trojan: None,
                     fixed_target: None,
                     local_bind: None,
+                    #[cfg(feature = "ssh")]
+                    ssh_sessions: None,
                 };
                 tokio::spawn(async move {
                     let _ = eggress_server::serve_connection(conn.stream, config).await;

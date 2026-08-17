@@ -411,10 +411,15 @@ fn classify_unsupported_feature(
             "intentional_non_parity",
             Some("use standard Shadowsocks (ss://) with AEAD methods"),
         ),
-        "ssh-listener" | "ssh-upstream" => (
+        "ssh-listener" => (
             DiagnosticCode::UnsupportedProtocol,
             "intentional_non_parity",
-            Some("SSH is not a proxy protocol; use OpenSSH dynamic forwarding (ssh -D) or an external SOCKS proxy"),
+            Some("SSH is upstream-only; enable the ssh feature for pproxy-compatible transport or use OpenSSH dynamic forwarding (ssh -D)"),
+        ),
+        "ssh-upstream" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "intentional_non_parity",
+            Some("SSH upstream transport requires the optional ssh feature"),
         ),
         "unix-upstream" | "redir-upstream"
         | "direct-listener" => (DiagnosticCode::UnsupportedProtocol, "unsupported", None),

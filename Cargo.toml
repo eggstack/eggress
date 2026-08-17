@@ -16,6 +16,7 @@ members = [
     "crates/eggress-runtime",
     "crates/eggress-server",
     "crates/eggress-transport-tls",
+    "crates/eggress-transport-ssh",
     "crates/eggress-udp",
     "crates/eggress-uri",
     "crates/eggress-routing",
@@ -36,7 +37,7 @@ members = [
 [workspace.package]
 version = "1.0.1"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/eggstack/eggress"
 
@@ -84,6 +85,7 @@ webpki-roots = "0.26"
 pkcs8 = "0.11"
 rcgen = "0.13"
 criterion = { version = "0.5", features = ["html_reports"] }
+russh = { version = "0.62.6", default-features = false, features = ["ring", "flate2", "rsa"] }
 
 # Internal crates
 eggress-admin = { path = "crates/eggress-admin", default-features = false }
@@ -97,6 +99,7 @@ eggress-protocol-shadowsocks = { path = "crates/eggress-protocol-shadowsocks" }
 eggress-protocol-trojan = { path = "crates/eggress-protocol-trojan" }
 eggress-protocol-raw = { path = "crates/eggress-protocol-raw" }
 eggress-transport-tls = { path = "crates/eggress-transport-tls" }
+eggress-transport-ssh = { path = "crates/eggress-transport-ssh" }
 eggress-testkit = { path = "crates/eggress-testkit" }
 eggress-config = { path = "crates/eggress-config" }
 eggress-server = { path = "crates/eggress-server", default-features = false }

@@ -13,7 +13,7 @@ configuration.
 | `ProxyChainSpec` | A complete proxy chain: one or more `ProxyHopSpec` entries joined by `__` |
 | `ProxyHopSpec` | A single hop: protocol(s), endpoint, credentials, TLS flag, rule, local bind |
 | `ProtocolSpec` | Protocol identifier within a hop (e.g., `socks5`, `http`, `ss`) |
-| `EndpointSpec` | `host:port` endpoint specification |
+| `EndpointSpec` | `host:port` endpoint specification (`ssh://host` defaults to port 22) |
 | `CredentialSpec` | `user:password` credentials (may be absent) |
 | `RedactedUri` | Wrapper that redacts credentials in `Display` output |
 
@@ -30,6 +30,8 @@ protocol+protocol://user:password@host:port?rule#local
   such as `___` are rejected.
 - URI endpoint ports must be in `1..=65535`. Port `0` is reserved for TOML
   listener binds where the operating system assigns a port.
+- SSH upstreams accept the pproxy-compatible shorthand `ssh://host` and use
+  port 22; explicit ports remain preferred in configuration.
 - `?` introduces route rule expressions
 - `#` introduces local bind address
 
@@ -58,6 +60,8 @@ parsing.
 
 - `RedactedUri` replaces credentials with `****` in display output
 - Credentials are never logged by any crate that holds a `ProxyChainSpec`
+- SSH credentials use `user:password@host[:port]`; a password beginning with
+  `:` denotes a private-key path in the optional compatibility transport.
 
 ## Dependencies
 

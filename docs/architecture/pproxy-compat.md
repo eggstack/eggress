@@ -60,13 +60,14 @@ and unsupported features with this dominance order (worst first):
 The aggregate classifier consults the native per-diagnostic tier of every
 unsupported feature id via `manifest_tier_for_unsupported_feature()`
 (which reuses the per-diagnostic tier owned by
-`classify_unsupported_feature_tier()`), so a known intentional
-exclusion (SSH listener/upstream, SSR listener/upstream, legacy
-Shadowsocks ciphers) reports as `intentional_non_parity` rather than
-being collapsed into generic `unsupported`. The old SSR listener/upstream
-category names are retained only for diagnostic read compatibility; new
-unsupported SSR output is limited to SSR UDP. Unknown warning
-categories and unknown unsupported feature ids fail closed to
+`classify_unsupported_feature_tier()`), so known intentional exclusions
+(SSR listener/upstream, legacy Shadowsocks ciphers) report as
+`intentional_non_parity` rather than being collapsed into generic
+`unsupported`. SSH upstreams are now feature-gated compatibility support;
+SSH listener use remains an upstream-only structured refusal. The old SSR
+listener/upstream category names are retained only for diagnostic read
+compatibility; new unsupported SSR output is limited to SSR UDP. Unknown
+warning categories and unknown unsupported feature ids fail closed to
 `unsupported`.
 
 The classifier is the single executable source of truth for both

@@ -1089,19 +1089,19 @@ class H3(H2):
 
 
 class SSH(BaseProtocol):
-    """SSH proxy protocol -- intentionally unsupported by eggress.
+    """Structural SSH protocol facade for the pproxy namespace.
 
-    Note: This class is construction-only. It does not implement functional
-    encrypt/decrypt methods. SSH is rejected with UnsupportedFeatureError
-    on construction.
+    Native URI/CLI execution uses the optional Rust ``ssh`` feature. This
+    Python protocol-class facade remains construction-incompatible because
+    packet-level SSH operations are owned by the native transport.
     """
 
     _SUPPORTED_IN_EGRESS: bool = False
 
     def __init__(self, param: str = "") -> None:
         raise UnsupportedFeatureError(
-            "SSH (ssh://) is not supported by eggress. "
-            "Use OpenSSH dynamic forwarding (ssh -D) instead."
+            "SSH protocol-class operations require the optional native ssh "
+            "feature; use the native URI/CLI path for SSH upstreams."
         )
 
 

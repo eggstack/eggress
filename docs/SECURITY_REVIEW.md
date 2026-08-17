@@ -314,7 +314,7 @@ Adversaries may include malicious clients on the network, compromised upstream p
 10. **No `unsafe` code**: Workspace-wide `unsafe_code = "deny"` prevents memory safety issues.
 11. **No OpenSSL dependency**: Uses `rustls` with `ring` crypto provider, eliminating C FFI attack surface.
 12. **Atomic config reload**: `ArcSwap<Router>` for lock-free reads; only hot-reloadable fields are swapped.
-13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH, Unix (upstream), and other unsupported protocols. No silent fallback to direct or different protocols.
+13. **Unsupported protocol diagnostics**: pproxy compat layer produces structured `UnsupportedFeature` errors for SSH listeners, SSH upstreams when the optional feature is absent, Unix (upstream), and other unsupported protocols. No silent fallback to direct or different protocols. The optional SSH compatibility path accepts host keys only to match pproxy and emits a warning.
 14. **Python binding security**: Exception strings do not leak raw Rust errors; `repr()` uses Python class names; translation warnings redact credentials; no import-time side effects; context manager ensures cleanup.
 15. **Transparent proxy privilege separation**: Transparent proxy requires explicit `CAP_NET_ADMIN` or root; the listener validates `SO_ORIGINAL_DST` availability at startup and fails fast if unavailable.
 16. **Transparent proxy loop prevention**: Connections destined to the proxy's own listen address are rejected to prevent forwarding loops.

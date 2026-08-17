@@ -14,6 +14,7 @@ pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
 operations = ["dep:eggress-system-proxy", "eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
+ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
 
 [[bin]]
 name = "eggress"

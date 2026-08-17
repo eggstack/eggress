@@ -52,6 +52,7 @@ pub enum ProtocolSpec {
     Http2,
     WebSocket,
     Raw,
+    Ssh,
     Unix,
 }
 
@@ -121,6 +122,7 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::Http2 => "h2",
                         ProtocolSpec::WebSocket => "ws",
                         ProtocolSpec::Raw => "raw",
+                        ProtocolSpec::Ssh => "ssh",
                         ProtocolSpec::Unix => "unix",
                     })
                     .collect();
@@ -354,8 +356,20 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         (endpoint_and_query, None)
     };
 
-    // Parse endpoint
-    let endpoint = parse_endpoint(endpoint_str)?;
+    // pproxy defaults SSH's endpoint port to 22. Keep the native shorthand
+    // aligned with that compatibility form while retaining strict host:port
+    // parsing for every other protocol.
+    let endpoint = if protocols == [ProtocolSpec::Ssh]
+        && !endpoint_str.starts_with('[')
+        && !endpoint_str.contains(':')
+    {
+        EndpointSpec {
+            host: endpoint_str.to_string(),
+            port: 22,
+        }
+    } else {
+        parse_endpoint(endpoint_str)?
+    };
 
     // Parse query parameters
     let rule = parse_query_rule(query_str);
@@ -402,6 +416,7 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
             "h2" => protocols.push(ProtocolSpec::Http2),
             "ws" | "wss" => protocols.push(ProtocolSpec::WebSocket),
             "raw" | "tunnel" => protocols.push(ProtocolSpec::Raw),
+            "ssh" => protocols.push(ProtocolSpec::Ssh),
             "unix" => protocols.push(ProtocolSpec::Unix),
             "tls" => tls = true,
             _ => return Err(UriParseError::UnsupportedProtocol(p.to_string())),
@@ -733,6 +748,14 @@ mod tests {
         assert_eq!(result.hops.len(), 1);
         assert_eq!(result.hops[0].endpoint.host, "proxy.example");
         assert_eq!(result.hops[0].endpoint.port, 1080);
+    }
+
+    #[test]
+    fn test_ssh_defaults_to_port_22() {
+        let result = parse_proxy_chain("ssh://user:pass@proxy.example").unwrap();
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Ssh]);
+        assert_eq!(result.hops[0].endpoint.host, "proxy.example");
+        assert_eq!(result.hops[0].endpoint.port, 22);
     }
 
     #[test]

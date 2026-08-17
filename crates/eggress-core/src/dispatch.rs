@@ -107,7 +107,7 @@ impl ProtocolDispatcher {
                             return Ok((detector.id(), replay));
                         }
                         DetectResult::NeedMore { minimum } => {
-                            if need_more_min.map_or(true, |m| minimum < m) {
+                            if need_more_min.is_none_or(|m| minimum < m) {
                                 need_more_min = Some(minimum);
                             }
                         }

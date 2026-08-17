@@ -137,7 +137,7 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
                 protocol: "WebSocket".to_string(),
             },
         },
-        ProtocolSpec::Raw | ProtocolSpec::Unix => UpstreamCapabilities {
+        ProtocolSpec::Raw | ProtocolSpec::Ssh | ProtocolSpec::Unix => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::UnsupportedProtocol {
                 protocol: "Raw".to_string(),

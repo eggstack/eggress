@@ -117,6 +117,20 @@ Protocol-specific tests live alongside the implementation:
   TLS happy-path test that calls `trojan_connect()` directly and asserts the
   server-observed request bytes
 
+### SSH interoperability tests
+
+`crates/eggress-transport-ssh/tests/openssh.rs` uses a temporary local OpenSSH
+server and is the required evidence for the optional `ssh` feature. It covers
+public-key auth, direct TCP echo, concurrent cached channels, chained SSH hops,
+remote Unix sockets, remote TCP forwarding, invalid-password redaction, and
+explicit reconnect. Password-success coverage is enabled only when
+`EGRESS_SSH_TEST_PASSWORD` is set to the fixture user's password; never commit
+or print that value.
+
+```bash
+cargo test -p eggress-transport-ssh --test openssh -- --nocapture
+```
+
 ### UDP-specific tests
 - `crates/eggress-udp/tests/socks5_upstream.rs` — upstream relay scenarios
 - `crates/eggress-runtime/tests/udp_upstream.rs` — runtime UDP upstream

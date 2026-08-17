@@ -22,6 +22,7 @@ operations = [
     "dep:eggress-system-proxy",
 ]
 reverse = ["dep:eggress-protocol-reverse", "operations"]
+ssh = ["eggress-server/ssh", "dep:eggress-transport-ssh"]
 
 [dependencies]
 eggress-core.workspace = true
@@ -33,6 +34,7 @@ eggress-metrics.workspace = true
 eggress-uri.workspace = true
 eggress-udp.workspace = true
 eggress-transport-tls.workspace = true
+eggress-transport-ssh = { workspace = true, optional = true }
 eggress-protocol-shadowsocks = { workspace = true, optional = true }
 eggress-protocol-reverse = { workspace = true, optional = true }
 eggress-system-proxy = { workspace = true, optional = true }

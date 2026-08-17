@@ -108,6 +108,7 @@ These crates define the shared types and abstractions used everywhere.
 | **eggress-core** | Core types, traits, stream abstractions, protocol identifiers, error types. Defines `BoxStream`, `TargetAddr`, `ProtocolId`, `SessionContext`, `RouteAction`, relay, chain execution, protocol detection, and dispatch. Every other crate depends on it. | [core.md](core.md) |
 | **eggress-uri** | URI parsing with typed AST. Parses `protocol+protocol://user:pass@host:port?rule#local` syntax with `__` hop separator. Produces `ProxyChainSpec` → `ProxyHopSpec` → `ProtocolSpec`/`EndpointSpec`/`CredentialSpec`. `RedactedUri` replaces credentials for safe logging. | [uri.md](uri.md) |
 | **eggress-transport-tls** | Shared TLS transport layer using rustls. `TlsClientConfigBuilder` (system roots, custom CA, ALPN, insecure mode) and `TlsServerConfigBuilder` (cert/key PEM). `tls_connect()` / `tls_accept()` wrap `BoxStream` in TLS. Used by listener TLS, upstream chain hops, and Trojan. | [transport-tls.md](transport-tls.md) |
+| **eggress-transport-ssh** | Optional `ssh`-feature russh client transport for pproxy-compatible upstream direct TCP/Unix channels, session reuse, chained hops, and explicit remote TCP forwarding. Compatibility host-key behavior is warning-bearing and not a native secure API. | [transport-ssh.md](transport-ssh.md) |
 
 ### Protocol Crates
 
@@ -266,7 +267,7 @@ eggress/
 
 ## Platform Constraints
 
-- Rust edition 2021, MSRV 1.75
+- Rust edition 2021, MSRV 1.85
 - `unsafe_code = "deny"` at workspace level
 - No OpenSSL, no C dependencies (`deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, `cmake`)
 - TLS via rustls only
@@ -282,6 +283,7 @@ The workspace defines bounded feature groups that control which protocol familie
 | `operations` | runtime, cli | System proxy |
 | `reverse` | runtime, cli | Reverse/backward proxy control-channel |
 | `pproxy-compat` | cli, embed | pproxy compatibility translator and binary |
+| `ssh` | cli, embed, runtime, server, Python | Optional pproxy-compatible SSH upstream transport; disabled by default |
 | `full` | all | Union of all (default) |
 
 Admin and metrics remain required dependencies for the snapshot invariant. The

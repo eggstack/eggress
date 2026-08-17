@@ -768,6 +768,7 @@ pub fn validate_chain_hops(chain: &PproxyChain) -> Vec<(usize, String)> {
     let mut unsupported = Vec::new();
     for (idx, hop) in chain.hops.iter().enumerate() {
         match hop.scheme.as_str() {
+            "ssh" if cfg!(feature = "ssh") => {}
             "ssh" | "redir" | "direct" => {
                 unsupported.push((idx, hop.scheme.clone()));
             }
@@ -1200,8 +1201,13 @@ mod tests {
     fn test_validate_chain_hops_ssh_unsupported() {
         let chain = parse_pproxy_chain("http://h1:80__ssh://h2:22").unwrap();
         let unsupported = validate_chain_hops(&chain);
-        assert_eq!(unsupported.len(), 1);
-        assert_eq!(unsupported[0], (1, "ssh".to_string()));
+        #[cfg(feature = "ssh")]
+        assert!(unsupported.is_empty());
+        #[cfg(not(feature = "ssh"))]
+        {
+            assert_eq!(unsupported.len(), 1);
+            assert_eq!(unsupported[0], (1, "ssh".to_string()));
+        }
     }
 
     #[test]

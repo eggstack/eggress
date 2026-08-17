@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while SSH, QUIC/HTTP/3, SSR families outside the bounded TCP compatibility path, daemonization, and cross-session reuse remain intentional exclusions. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
+> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while QUIC/HTTP/3, SSR families outside the bounded TCP compatibility path, daemonization, and cross-session reuse remain intentional exclusions. SSH upstream compatibility is available only through the opt-in `ssh` feature. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -90,6 +90,19 @@ eggress -l http+socks5://user:pass@:8080
 eggress -r http://proxy.example:8080
 eggress -r socks5://proxy.example:1080
 eggress -r socks5://hop1:1080__http://hop2:8080
+```
+
+SSH upstreams are opt-in and preserve pproxy's `user:password` or
+`user::private-key-path` convention. The feature uses direct TCP/Unix SSH
+channels, cached sessions, chained hops, and explicit remote TCP forwarding;
+SSH is not a listener protocol. Host-key verification is intentionally disabled
+to match pproxy's `known_hosts=None`, and a warning is emitted for each new
+session.
+
+```bash
+cargo run -p eggress-cli --features ssh -- -r ssh://user:password@ssh.example:22
+# private key form (the leading colon is part of the pproxy convention)
+cargo run -p eggress-cli --features ssh -- -r ssh://user::/path/to/id_ed25519@ssh.example
 ```
 
 For pproxy users, a drop-in `pproxy` binary is also available:
@@ -350,7 +363,8 @@ Python bindings; it is not a separate Python distribution. The bundled
   `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, the
   `-b` block bridge, and direct unmatched fallback. Eggress's optional rule
   file bridge is an extension; pproxy 2.7.9 has no `--rulefile` flag.
-- Structured diagnostics for unsupported protocols (SSH and deferred transports)
+- Structured diagnostics for unsupported protocols and deferred transports;
+  SSH listener use remains an explicit upstream-only error
 - Phase 5 and corrective-pass runtime coverage for `httponly` upstreams,
   TCP/UDP `echo`, canonical fixed-target
   TCP/UDP tunnels, Unix-domain TCP upstreams on Unix, and per-connection local
@@ -365,7 +379,8 @@ Python bindings; it is not a separate Python distribution. The bundled
 
 ### What is not supported
 
-- **SSH** upstream transport — rejected with a recommendation to use OpenSSH dynamic forwarding (`ssh -D`)
+- **SSH listeners** — upstream-only; SSH upstreams require the opt-in `ssh`
+  feature and intentionally match pproxy's permissive host-key behavior
 - **QUIC/HTTP/3** — deferred by ADR; URI schemes `quic://` and `h3://` are rejected
 - **Other SSR/auth families and legacy stream ciphers** — outside the bounded pproxy 2.7.9 SSR surface; legacy ciphers remain rejected with clear diagnostics
 - **SOCKS4/SOCKS5 BIND** — pproxy 2.7.9 also requires CONNECT (`0x01`); the

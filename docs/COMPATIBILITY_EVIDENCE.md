@@ -139,7 +139,7 @@ different exit codes, different CLI structure, and different error formatting.
 | `cli_translate_reverse` | Supported | Synthetic (backward/reverse mode translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
 | `cli_translate_standalone_udp` | Supported | Synthetic (standalone UDP translation) | `cargo test -p eggress-cli pproxy_translation_golden` |
 | `cli_translate_ssr_rejection` | Intentional non-parity | Synthetic (SSR URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
-| `cli_translate_ssh_rejection` | Intentional non-parity | Synthetic (SSH URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_ssh_rejection` | Default-build boundary | Synthetic (SSH listeners/default builds reject with diagnostics) | `cargo test -p eggress-pproxy-compat` |
 | `cli_run_process_behavior` | Supported | Synthetic (signal handling, clean shutdown) | `cargo test -p eggress-cli pproxy_run_process` |
 | `cli_inventory_complete` | Supported | Synthetic (full flag inventory documented) | docs review |
 
@@ -225,7 +225,7 @@ documented place for that work.
 | `cli_run_process_behavior` | Supported | Synthetic (signal handling, clean shutdown, readiness) | `cargo test -p eggress-cli pproxy_run_process` |
 | `cli_inventory_complete` | Supported | Synthetic (full flag inventory documented) | docs review |
 | `cli_translate_ssr_rejection` | Intentional non-parity | Synthetic (SSR URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
-| `cli_translate_ssh_rejection` | Intentional non-parity | Synthetic (SSH URIs rejected with diagnostics) | `cargo test -p eggress-pproxy-compat` |
+| `cli_translate_ssh_rejection` | Default-build boundary | Synthetic (SSH listeners/default builds reject with diagnostics) | `cargo test -p eggress-pproxy-compat` |
 
 **Note:** Phase 28 CLI features use **Supported** tier (not Compatible) because evidence
 is synthetic — these verify eggress behavior, not pproxy behavioral parity. pproxy uses

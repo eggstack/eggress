@@ -402,10 +402,10 @@ notes = "Raw fixed-target TCP tunnel upstream only; direct connect to target. No
 protocol = "ssh"
 role = "upstream"
 traffic_kind = "tcp"
-tier = "intentional_non_parity"
-evidence = "docs_only"
-capability_ids = []
-rationale = "SSH upstream rejected; recommend OpenSSH dynamic forwarding (ssh -D)"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = ["protocol.ssh_upstream"]
+notes = "Optional ssh feature: direct TCP channels, chained hops, cached sessions, password/key auth, and explicit remote TCP forwarding. SSH listeners remain rejected and host-key acceptance is warning-bearing."
 
 [[cell]]
 protocol = "quic"

@@ -109,7 +109,7 @@ fn encode_verify_simple(payload: &[u8]) -> Vec<u8> {
         let padding_len = (rand::random::<u8>() % 16) as usize;
         let mut frame = Vec::with_capacity(2 + 1 + padding_len + chunk.len() + 4);
         frame.push((padding_len + 1) as u8);
-        frame.extend(std::iter::repeat(0).take(padding_len));
+        frame.extend(std::iter::repeat_n(0, padding_len));
         frame.extend_from_slice(chunk);
         let length = frame.len() + 6;
         frame.splice(0..0, (length as u16).to_be_bytes());

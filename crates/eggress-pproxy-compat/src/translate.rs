@@ -768,6 +768,7 @@ pub fn translate_from_uris(
                 "ss" | "shadowsocks" | "ssr" => {}
                 "http" | "https" | "httponly" | "socks4" | "socks4a" | "socks5" | "trojan"
                 | "direct" | "h2" | "ws" | "wss" | "raw" | "tunnel" => {}
+                "ssh" if cfg!(feature = "ssh") => {}
                 "ssh" => {
                     output = output.with_unsupported(
                         "ssh-upstream",
@@ -1366,11 +1367,19 @@ fn build_config_uri(remote: &PproxyUri) -> String {
                 .join(",")
         )
     };
-    let auth_str = remote
-        .auth_fragment
-        .as_deref()
-        .map(|auth| format!("#{auth}"))
-        .unwrap_or_default();
+    // SSH uses the pproxy fragment as its login/password source. The parser
+    // has already promoted that fragment into username/password credentials;
+    // retaining it would duplicate the authentication material in the native
+    // URI and leak a second credential-bearing suffix into diagnostics.
+    let auth_str = if remote.scheme == "ssh" {
+        String::new()
+    } else {
+        remote
+            .auth_fragment
+            .as_deref()
+            .map(|auth| format!("#{auth}"))
+            .unwrap_or_default()
+    };
     let rule_str = match &remote.rule {
         Some(r) => format!("?rule={}", r),
         None => String::new(),
@@ -1743,6 +1752,25 @@ mod tests {
             .warnings
             .iter()
             .any(|w| w.category == "credential-in-toml"));
+    }
+
+    #[cfg(feature = "ssh")]
+    #[test]
+    fn test_translate_ssh_fragment_credentials_to_native_uri() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            "ssh://host/#login:password".into(),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        assert!(output.toml.contains("ssh://login:password@host:22"));
+        assert!(!output.toml.contains("#login:password"));
+        assert!(!output
+            .unsupported
+            .iter()
+            .any(|unsupported| unsupported.feature == "ssh-upstream"));
     }
 
     #[test]
@@ -2275,9 +2303,7 @@ mod tests {
         // Should NOT appear in regular upstreams
         assert!(
             parsed.get("upstreams").is_none()
-                || parsed["upstreams"]
-                    .as_array()
-                    .map_or(true, |a| a.is_empty())
+                || parsed["upstreams"].as_array().is_none_or(|a| a.is_empty())
         );
     }
 
@@ -2695,11 +2721,16 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        assert!(output.has_unsupported());
-        assert!(output
-            .unsupported
-            .iter()
-            .any(|u| u.feature == "ssh-upstream" || u.feature == "chain-unsupported-hop"));
+        #[cfg(feature = "ssh")]
+        assert!(!output.has_unsupported());
+        #[cfg(not(feature = "ssh"))]
+        {
+            assert!(output.has_unsupported());
+            assert!(output
+                .unsupported
+                .iter()
+                .any(|u| u.feature == "ssh-upstream" || u.feature == "chain-unsupported-hop"));
+        }
     }
 
     #[test]

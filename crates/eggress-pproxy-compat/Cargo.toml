@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "pproxy-compatible CLI and URI translation layer for Eggress"
 
+[features]
+default = []
+ssh = []
+
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true

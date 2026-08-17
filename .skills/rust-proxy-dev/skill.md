@@ -4,7 +4,7 @@
 Use when implementing new proxy protocols, transport wrappers, or modifying core relay/chain behavior.
 
 ## Key conventions
-- Edition 2021, MSRV 1.75, `unsafe_code = "deny"` everywhere
+- Edition 2021, MSRV 1.85, `unsafe_code = "deny"` everywhere
 - Async runtime: Tokio. Errors: `thiserror`. CLI: `clap` derive.
 - Streams are boxed at protocol/transport boundaries (`BoxStream`) — never propagate generic stream types
 - No C deps, no OpenSSL, no `build.rs` files
@@ -21,9 +21,22 @@ must remain separate:
 - `ssr_connect()` / `ssr_accept()` — SOCKS-address framing with optional prefix and ordered plugin adapters.
 - `is_legacy_method()` in `eggress-protocol-shadowsocks::method` — detects known legacy methods.
 
-## SSH upstream parity
+## SSH upstream transport
 
-SSH upstream transport is intentional non-parity (Phase 47 ADR). SSH URIs are recognized at parse time for clean diagnostics but rejected with an actionable recommendation to use OpenSSH dynamic forwarding (`ssh -D`). See `docs/adr/ADR_ssh_upstream_parity.md`.
+SSH is an optional, compatibility-only upstream transport behind the `ssh`
+feature. It uses `eggress-transport-ssh` and `russh` with no C/OpenSSL
+dependency; the workspace MSRV is therefore 1.85. Default and `common` builds
+must remain SSH-free, and SSH remains upstream-only (listener forms fail with a
+structured diagnostic).
+
+The transport implements pproxy 2.7.9's password and `:private-key-path`
+credentials, direct TCP and Unix channels, chained SSH hops, cached sessions,
+keepalive, and explicit remote TCP forwarding. It accepts all server host keys
+to match pproxy's `known_hosts=None`; keep this behavior isolated, warning
+visible, and never describe it as a native security feature. Do not add remote
+commands, SFTP, agent forwarding, or unbounded forwarding. Redact passwords in
+errors and diagnostics. Verify against the OpenSSH fixture with:
+`cargo test -p eggress-transport-ssh --test openssh`.
 
 ## Adding a new protocol
 

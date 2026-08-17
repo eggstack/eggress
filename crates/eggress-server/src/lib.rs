@@ -103,6 +103,9 @@ pub struct ConnectionConfig {
     pub trojan: Option<accept::InboundTrojanConfig>,
     pub fixed_target: Option<eggress_core::TargetAddr>,
     pub local_bind: Option<String>,
+    /// Shared optional SSH session cache for compatibility upstreams.
+    #[cfg(feature = "ssh")]
+    pub ssh_sessions: Option<Arc<eggress_transport_ssh::SshSessionCache>>,
     /// Optional Shadowsocks-specific metrics for observability.
     #[cfg(feature = "extended")]
     pub shadowsocks_metrics: Option<Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>>,

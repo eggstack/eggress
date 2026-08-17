@@ -346,11 +346,16 @@ fn test_ssh_upstream_unsupported() {
     ])
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(output.has_unsupported());
-    assert!(output
-        .unsupported
-        .iter()
-        .any(|u| u.feature == "ssh-upstream"));
+    #[cfg(feature = "ssh")]
+    assert!(!output.has_unsupported());
+    #[cfg(not(feature = "ssh"))]
+    {
+        assert!(output.has_unsupported());
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "ssh-upstream"));
+    }
 }
 
 #[test]
@@ -953,7 +958,15 @@ fn cross_surface_aggregate_tier_unsupported_for_ssh_upstream_in_chain() {
         .collect();
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
-    assert!(output.has_unsupported());
-    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
-    assert_eq!(tier, crate::ManifestTier::Unsupported);
+    #[cfg(feature = "ssh")]
+    {
+        assert!(!output.has_unsupported());
+        return;
+    }
+    #[cfg(not(feature = "ssh"))]
+    {
+        assert!(output.has_unsupported());
+        let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+        assert_eq!(tier, crate::ManifestTier::Unsupported);
+    }
 }

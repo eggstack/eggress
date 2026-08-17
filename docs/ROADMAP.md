@@ -6,7 +6,7 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 Milestones A–C are under corrective review. Local closure gates pass but hosted evidence is pending.
 Two capabilities (`cli.get`, `process.reload.routing`) remain honest `gap` records.
-Unsupported transports (SSH, QUIC/HTTP/3, and legacy Shadowsocks encryption) are intentional non-parity. The bounded pproxy SSR TCP framing/plugin path is feature-gated compatibility work.
+Unsupported transports (QUIC/HTTP/3 and legacy Shadowsocks encryption) are intentional non-parity. SSH upstream compatibility is optional and feature-gated; SSH listeners remain unsupported. The bounded pproxy SSR TCP framing/plugin path is feature-gated compatibility work.
 See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 
 ## Completed Milestones

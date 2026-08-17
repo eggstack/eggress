@@ -2,7 +2,7 @@
 name = "eggress-embed"
 version = "1.0.1"
 edition = "2021"
-rust-version = "1.75"
+rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Stable Rust embed API for eggress proxy"
 publish = false
@@ -16,6 +16,7 @@ pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
 operations = ["eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
+ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
 
 [dependencies]
 eggress-config = { workspace = true }

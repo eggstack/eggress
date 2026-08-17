@@ -17,7 +17,7 @@ protocol     = "http" | "https"
              | "ss" | "shadowsocks"
              | "trojan"
              | "ssr"                          # bounded compatibility protocol
-             | "ssh"                          # recognized → intentional non-parity
+             | "ssh"                          # optional upstream transport
              | "direct"
              | "unix"
              | "redir"
@@ -33,6 +33,7 @@ endpoint     = host ":" port
              | "[" ipv6 "]" ":" port
              | ":" port                        # empty host = bind all interfaces
              | host ":" port                   # host may be empty
+             | host                             # SSH only; defaults to port 22
 
 host         = hostname | ipv4 | empty
 ipv6         = hex_seq (":" hex_seq)*
@@ -143,13 +144,13 @@ socks5+in://acceptor:1080        # backward client (+in modifier)
 | `redir` | Yes (Linux only) | No | Supported |
 | `bind` / `listen` / `backward` / `rebind` | Yes | No | Supported |
 | `ssr` | Accepted | Feature-gated | Compatible with warning |
-| `ssh` | Rejected | Rejected | Intentional non-parity |
+| `ssh` | Rejected | Feature-gated | Optional pproxy-compatible SSH upstream; host keys are warning-bearing |
 
 ## Unsupported Schemes (Rejected with Diagnostics)
 
 | Scheme | Diagnostic | Reason |
 |--------|-----------|--------|
-| `ssh` | `unsupported_protocol` | SSH transport out-of-scope for proxy |
+| `ssh` listener | `unsupported_protocol` | SSH is upstream-only |
 | `ftp` (or any other) | `unsupported_protocol` | Not implemented |
 
 ## Query Parameters
@@ -166,6 +167,7 @@ socks5+in://acceptor:1080        # backward client (+in modifier)
 | `trojan` | `password@host:port` (password-only) | `trojan://mypassword@server:443` |
 | `bind`, `listen`, `backward` | `user:pass@host:port` | `bind://user:pass@0.0.0.0:8080` |
 | `redir` | `user:pass@host:port` | `redir://user:pass@127.0.0.1:12345` |
+| `ssh` | `user:pass@host[:22]` or `user::/path/to/key@host` | Optional SSH upstream; leading `:` selects a private key |
 
 Credentials are always redacted in display and diagnostic output.
 

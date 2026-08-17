@@ -63,7 +63,8 @@ Server(
 
 - `listen` and `remote` use pproxy URI syntax (e.g., `socks5://:1080`, `http://proxy:8080`)
 - `config` accepts a pre-built `EggressConfig` (mutually exclusive with `listen`/`remote`)
-- `allow_partial=True` starts the service even when some features are unsupported (e.g., SSH upstreams)
+- `allow_partial=True` starts the service even when some features are unsupported
+  (for example SSH upstreams when the optional `ssh` feature is absent)
 
 ## Lifecycle Methods
 

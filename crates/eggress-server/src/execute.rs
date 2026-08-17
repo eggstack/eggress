@@ -294,6 +294,7 @@ fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str 
             eggress_uri::ProtocolSpec::Http2 => "h2",
             eggress_uri::ProtocolSpec::WebSocket => "websocket",
             eggress_uri::ProtocolSpec::Raw => "raw",
+            eggress_uri::ProtocolSpec::Ssh => "ssh",
             eggress_uri::ProtocolSpec::Unix => "unix",
         })
         .unwrap_or("unknown")
@@ -371,6 +372,13 @@ async fn open_route(
                 let shadowsocks_metrics = config.shadowsocks_metrics.clone();
                 #[cfg(not(feature = "extended"))]
                 let shadowsocks_metrics = config.shadowsocks_metrics;
+                #[cfg(feature = "ssh")]
+                let executor = build_chain_executor(
+                    tls_override,
+                    shadowsocks_metrics,
+                    config.ssh_sessions.clone(),
+                );
+                #[cfg(not(feature = "ssh"))]
                 let executor = build_chain_executor(tls_override, shadowsocks_metrics);
                 let stream = executor.execute(&chain.hops, request.target).await?;
                 let active_lease = pending_lease.established();
@@ -982,6 +990,9 @@ pub fn build_chain_executor(
         std::sync::Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
     >,
     #[cfg(not(feature = "extended"))] _shadowsocks_metrics: Option<()>,
+    #[cfg(feature = "ssh")] ssh_sessions: Option<
+        std::sync::Arc<eggress_transport_ssh::SshSessionCache>,
+    >,
 ) -> ChainExecutor {
     // Build shared TLS client config for upstream hops
     let shared_tls_config = match tls_override {
@@ -1025,6 +1036,11 @@ pub fn build_chain_executor(
     handlers.push(Box::new(ShadowsocksRHopHandler));
 
     handlers.push(Box::new(RawHopHandler));
+    handlers.push(Box::new(UnixHopHandler));
+    #[cfg(feature = "ssh")]
+    if let Some(sessions) = ssh_sessions {
+        handlers.push(Box::new(SshHopHandler { sessions }));
+    }
     handlers.push(Box::new(H2HopHandler));
 
     // Set up TLS wrapper using system roots by default, or the override if provided
@@ -1399,6 +1415,89 @@ struct RawHopHandler;
 impl HopHandler for RawHopHandler {
     fn protocol(&self) -> eggress_uri::ProtocolSpec {
         eggress_uri::ProtocolSpec::Raw
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        _target: &'a TargetAddr,
+        _hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
+    ) -> HandshakeFuture<'a> {
+        Box::pin(async move { Ok(stream) })
+    }
+}
+
+#[cfg(feature = "ssh")]
+struct SshHopHandler {
+    sessions: std::sync::Arc<eggress_transport_ssh::SshSessionCache>,
+}
+
+#[cfg(feature = "ssh")]
+impl HopHandler for SshHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Ssh
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        target: &'a TargetAddr,
+        hop: &'a eggress_uri::ProxyHopSpec,
+        hop_index: usize,
+    ) -> HandshakeFuture<'a> {
+        let sessions = self.sessions.clone();
+        let target = target.clone();
+        let endpoint = hop.endpoint.clone();
+        let credentials = hop.credentials.clone();
+        Box::pin(async move {
+            let credentials = credentials.ok_or_else(|| {
+                Box::new(eggress_transport_ssh::SshTransportError::MissingUsername)
+                    as Box<dyn std::error::Error + Send + Sync>
+            })?;
+            if credentials.username.is_empty() {
+                return Err(
+                    Box::new(eggress_transport_ssh::SshTransportError::MissingUsername)
+                        as Box<dyn std::error::Error + Send + Sync>,
+                );
+            }
+            let auth = if let Some(path) = credentials.password.strip_prefix(':') {
+                if path.is_empty() {
+                    return Err(Box::new(
+                        eggress_transport_ssh::SshTransportError::EmptyPrivateKeyPath,
+                    )
+                        as Box<dyn std::error::Error + Send + Sync>);
+                }
+                eggress_transport_ssh::SshAuth::PrivateKey(path.to_string())
+            } else {
+                eggress_transport_ssh::SshAuth::Password(credentials.password)
+            };
+            let key = eggress_transport_ssh::SshSessionKey {
+                host: endpoint.host,
+                port: endpoint.port,
+                username: credentials.username,
+                auth,
+                hop_index,
+            };
+            let result = if target.port == 0 {
+                sessions
+                    .open_unix_channel(key, stream, &target.host.to_string())
+                    .await
+            } else {
+                sessions
+                    .open_tcp_channel(key, stream, &target.host.to_string(), target.port)
+                    .await
+            };
+            result.map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+}
+
+struct UnixHopHandler;
+
+impl HopHandler for UnixHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Unix
     }
 
     fn handshake<'a>(

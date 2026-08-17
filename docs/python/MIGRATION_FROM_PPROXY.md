@@ -128,7 +128,7 @@ path has no listener bind to discover or clean up; UDP remains listener-based.
 
 | Feature | Status |
 |---------|--------|
-| SSH transport | Not supported — rejected with diagnostic |
+| SSH listener | Not supported — SSH upstreams are optional behind the `ssh` feature and listeners remain rejected |
 | Unix socket listeners (`unix://`) | Supported in Rust binary; embed API (Python) deferred |
 | Transparent proxy (`redir://`) | Supported in Rust binary; Linux only; embed API deferred |
 | Daemon mode (`--daemon`) | Not supported |

@@ -138,9 +138,9 @@ classification against eggress (Rust).
 
 | Method | Tier | Rationale |
 |--------|------|-----------|
-| `connect(reader, writer, rauth, host, port, myhost)` | **D** | SSH tunnel mode requires `asyncssh`; deferred |
+| `connect(reader, writer, rauth, host, port, myhost)` | **B** | Optional `ssh` feature uses russh direct-tcpip channels; host-key acceptance is warning-bearing to match pproxy |
 
-**eggress support:** Inbound: **No** | Upstream: **No**
+**eggress support:** Inbound: **No** | Upstream: **Yes, feature-gated**
 
 ### 2.11 Transparent (base for Redir/Pf/Tunnel/Echo)
 
@@ -341,7 +341,7 @@ classification against eggress (Rust).
 | `ProxyH2` | HTTP/2 connection multiplexer proxy | **D** | H2 CONNECT is protocol-crate only |
 | `ProxyQUIC` | QUIC transport proxy | **N/A** | QUIC/HTTP3 deferred by ADR |
 | `ProxyH3` | HTTP/3 over QUIC proxy | **N/A** | QUIC/HTTP3 deferred by ADR |
-| `ProxySSH` | SSH tunnel proxy | **D** | SSH tunnel deferred |
+| `ProxySSH` | SSH tunnel proxy facade | **B** | Native URI/CLI execution is feature-gated; this Python class remains structural |
 | `ProxyBackward` | Reverse/backward proxy (inbound connections) | **B** | eggress reverse protocol crate; different shape |
 
 ### 6.2 Functions

@@ -27,6 +27,26 @@ Incremented at:
 
 This enables monitoring for brute-force attempts and auth misconfigurations.
 
+## SSH compatibility boundary
+
+The optional `ssh` feature uses `eggress-transport-ssh` to match pproxy 2.7.9.
+Because pproxy passes `known_hosts=None`, the compatibility client accepts any
+server key and emits a warning on new sessions. Keep this behavior isolated from
+native APIs and never describe it as secure host authentication. Test and review
+that:
+
+- passwords never occur in `Debug`, errors, diagnostics, or evidence output;
+- private-key paths are not echoed by authentication failures;
+- only direct TCP, remote Unix-socket, and explicitly requested remote TCP
+  forwarding are exposed;
+- remote command, SFTP, agent forwarding, and implicit listener exposure remain
+  unavailable;
+- cached sessions are scoped to one service lifetime and cleared during
+  shutdown.
+
+The OpenSSH regression suite is:
+`cargo test -p eggress-transport-ssh --test openssh -- --nocapture`.
+
 ## Standalone UDP security
 
 `validate_standalone_target()` in `crates/eggress-udp/src/security.rs` validates UDP relay targets against private/reserved IP ranges (same ranges as DNS rebinding protection). Called from standalone UDP relay paths instead of the weaker `validate_target()`.

@@ -542,6 +542,8 @@ pub struct ServiceSupervisor {
     shutdown_grace: Duration,
     rt_config: eggress_config::compile::RuntimeConfig,
     tls_client_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    #[cfg(feature = "ssh")]
+    ssh_sessions: Arc<eggress_transport_ssh::SshSessionCache>,
     compatibility_options: CompatibilityOptions,
 }
 
@@ -701,6 +703,8 @@ impl ServiceSupervisor {
         let connection_cancel = CancellationToken::new();
         let health_cancel = CancellationToken::new();
         let admin_cancel = CancellationToken::new();
+        #[cfg(feature = "ssh")]
+        let ssh_sessions = Arc::new(eggress_transport_ssh::SshSessionCache::new());
 
         let tasks = TaskTracker::new();
         let connection_tasks = TaskTracker::new();
@@ -735,6 +739,8 @@ impl ServiceSupervisor {
             shutdown_grace,
             rt_config,
             tls_client_config: None,
+            #[cfg(feature = "ssh")]
+            ssh_sessions,
             compatibility_options,
         })
     }
@@ -856,6 +862,8 @@ impl ServiceSupervisor {
         let rt_config = self.rt_config.clone();
         let tls_client_config = self.tls_client_config.clone();
         let compatibility_options = self.compatibility_options.clone();
+        #[cfg(feature = "ssh")]
+        let ssh_sessions = self.ssh_sessions.clone();
 
         let handshake_timeout = rt_config.timeouts.handshake;
         let connect_timeout = rt_config.timeouts.connect;
@@ -1287,6 +1295,9 @@ impl ServiceSupervisor {
                 let tls_client_config = tls_client_config.clone();
                 let listener_cancel = listener_cancel.clone();
 
+                #[cfg(feature = "ssh")]
+                let listener_ssh_sessions = ssh_sessions.clone();
+
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
                     let transparent_listener_inner = transparent_listener.inner();
@@ -1396,6 +1407,8 @@ impl ServiceSupervisor {
 
                         active.fetch_add(1, Ordering::Relaxed);
 
+                        #[cfg(feature = "ssh")]
+                        let conn_ssh_sessions = listener_ssh_sessions.clone();
                         conn_tasks.spawn(async move {
                             let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
@@ -1464,6 +1477,8 @@ impl ServiceSupervisor {
                                 ),
                                 fixed_target: None,
                                 local_bind: None,
+                                #[cfg(feature = "ssh")]
+                                ssh_sessions: Some(conn_ssh_sessions),
                             };
 
                             let report = tokio::select! {
@@ -1529,6 +1544,8 @@ impl ServiceSupervisor {
 
                 let socket_path = unix_listener.path().display().to_string();
 
+                #[cfg(feature = "ssh")]
+                let listener_ssh_sessions = ssh_sessions.clone();
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> = protocols.clone().into();
                     let listener_active = Arc::new(AtomicU64::new(0));
@@ -1605,6 +1622,8 @@ impl ServiceSupervisor {
 
                         active.fetch_add(1, Ordering::Relaxed);
 
+                        #[cfg(feature = "ssh")]
+                        let conn_ssh_sessions = listener_ssh_sessions.clone();
                         conn_tasks.spawn(async move {
                             let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
@@ -1678,6 +1697,8 @@ impl ServiceSupervisor {
                                 ),
                                 fixed_target: None,
                                 local_bind: None,
+                                #[cfg(feature = "ssh")]
+                                ssh_sessions: Some(conn_ssh_sessions),
                             };
 
                             let report = tokio::select! {
@@ -1788,6 +1809,8 @@ impl ServiceSupervisor {
                 let conn_cancel = connection_cancel.clone();
                 let tls_client_config = tls_client_config.clone();
 
+                #[cfg(feature = "ssh")]
+                let listener_ssh_sessions = ssh_sessions.clone();
                 tasks.spawn(async move {
                     let proto_slice: Arc<[ProtocolId]> = prepared_listener.protocols.clone().into();
 
@@ -1839,6 +1862,8 @@ impl ServiceSupervisor {
                         } else {
                             None
                         };
+                        #[cfg(feature = "ssh")]
+                        let conn_ssh_sessions = listener_ssh_sessions.clone();
                         conn_tasks.spawn(async move {
                             let started = std::time::Instant::now();
 
@@ -1923,6 +1948,8 @@ impl ServiceSupervisor {
                                 }),
                                 fixed_target,
                                 local_bind,
+                                #[cfg(feature = "ssh")]
+                                ssh_sessions: Some(conn_ssh_sessions),
                             };
 
                             #[cfg(feature = "extended")]
@@ -2436,6 +2463,9 @@ impl ServiceSupervisor {
             // 8. Wait for connection tasks (either drained naturally or force-cancelled)
             connection_tasks.close();
             connection_tasks.wait().await;
+
+            #[cfg(feature = "ssh")]
+            ssh_sessions.shutdown().await;
 
             // 9. Now that the proxy has fully stopped accepting and serving
             //    traffic, stop the admin server. /-/ready has been reporting

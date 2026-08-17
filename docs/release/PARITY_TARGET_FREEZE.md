@@ -31,7 +31,7 @@ validator (`PINNED_PPROXY_VERSION`).
 
 | Component | Version | Notes |
 |---|---|---|
-| MSRV | `1.75` | `crates/*/Cargo.toml` `rust-version` |
+| MSRV | `1.85` | `crates/*/Cargo.toml` `rust-version` |
 | Stable tested | `1.96.0` | Local verification on 2026-07-03 (Phase 36) |
 | Edition | `2021` | All workspace crates |
 | Unsafe policy | `deny` | `unsafe_code = "deny"` everywhere |
