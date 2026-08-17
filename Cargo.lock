@@ -781,11 +781,13 @@ dependencies = [
  "eggress-embed",
  "eggress-pproxy-compat",
  "eggress-routing",
+ "eggress-runtime",
  "eggress-system-proxy",
  "pyo3",
  "serde_json",
  "tokio",
  "toml",
+ "tracing-subscriber",
  "url",
 ]
 

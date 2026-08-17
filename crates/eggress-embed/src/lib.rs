@@ -303,6 +303,89 @@ impl EggressService {
             reload_mutex: std::sync::Mutex::new(()),
         })
     }
+
+    /// Start a compatibility service from the validated in-memory config.
+    ///
+    /// This variant is used by the Python `pproxy` entry point so compatibility
+    /// options such as `--auth`, `--sys`, `-d`, and `-v` reach the runtime
+    /// without going through a temporary config file or the native defaults.
+    #[cfg(feature = "pproxy-compat")]
+    pub fn start_blocking_with_compatibility_options(
+        self,
+        compatibility_options: eggress_runtime::CompatibilityOptions,
+    ) -> Result<EggressHandle, EggressError> {
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+        let source_toml = self.config.source_toml.clone();
+        let rt_config = eggress_config::validate_and_compile_toml_with_warnings(&source_toml)
+            .map(|(config, _)| config)
+            .map_err(|e| EggressError::Config(e.to_string()))?;
+
+        std::thread::Builder::new()
+            .name("eggress-embed-rt".into())
+            .spawn(move || {
+                let mut supervisor =
+                    match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
+                        rt_config,
+                        None,
+                        compatibility_options,
+                    ) {
+                        Ok(supervisor) => supervisor,
+                        Err(error) => {
+                            let _ = ready_tx.send(Err(EggressError::Startup(error.to_string())));
+                            return;
+                        }
+                    };
+
+                let state = supervisor.state().clone();
+                let token = supervisor.shutdown_token();
+                let run_handle = std::thread::Builder::new()
+                    .name("eggress-embed-run".into())
+                    .spawn(move || {
+                        if let Err(error) = supervisor.run() {
+                            tracing::error!("supervisor exited with error: {error}");
+                        }
+                    });
+
+                let run_handle = match run_handle {
+                    Ok(handle) => handle,
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(EggressError::Startup(error.to_string())));
+                        return;
+                    }
+                };
+
+                let started = std::time::Instant::now();
+                let timeout = Duration::from_secs(30);
+                loop {
+                    if state.readiness.load(Ordering::Acquire) {
+                        let _ = ready_tx.send(Ok((state, token, run_handle)));
+                        break;
+                    }
+                    if started.elapsed() > timeout {
+                        token.cancel();
+                        let _ = run_handle.join();
+                        let _ =
+                            ready_tx.send(Err(EggressError::Startup("readiness timeout".into())));
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            })
+            .map_err(|e| EggressError::Startup(e.to_string()))?;
+
+        let (state, token, run_handle) = ready_rx
+            .recv()
+            .map_err(|_| EggressError::Startup("startup channel dropped".into()))??;
+
+        Ok(EggressHandle {
+            state,
+            token: Some(token),
+            _run_handle: Some(run_handle),
+            _config_path: None,
+            _runtime_task: None,
+            reload_mutex: std::sync::Mutex::new(()),
+        })
+    }
 }
 
 /// Handle to a running eggress service.

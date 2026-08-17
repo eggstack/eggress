@@ -63,16 +63,6 @@ fn main() -> ExitCode {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
 
-    if args.iter().any(|a| a == "--version") {
-        print_version();
-        return ExitCode::SUCCESS;
-    }
-
-    if args.iter().any(|a| a == "-h" || a == "--help") {
-        print_help();
-        return ExitCode::SUCCESS;
-    }
-
     let pproxy_args = if eggress_pproxy_compat::PproxyArgs::has_args(&args) {
         match eggress_pproxy_compat::PproxyArgs::parse(&args) {
             Ok(a) => a,
@@ -84,6 +74,18 @@ fn main() -> ExitCode {
     } else {
         eggress_pproxy_compat::PproxyArgs::default_args()
     };
+
+    // Handle actions through the same parsed compatibility IR used by the
+    // nested and Python entry points. This preserves parser ordering for
+    // malformed values that precede an action flag.
+    if pproxy_args.version {
+        print_version();
+        return ExitCode::SUCCESS;
+    }
+    if pproxy_args.help {
+        print_help();
+        return ExitCode::SUCCESS;
+    }
 
     if let Some(flag) = pproxy_args.strict_parser_violations().first() {
         eprintln!("pproxy: error: unknown option or positional argument '{flag}'");

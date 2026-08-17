@@ -9,6 +9,7 @@ from eggress._eggress import (
     PyEggressService,
     PyEggressHandle,
     UnsupportedFeatureError,
+    pproxy_runtime_options,
 )
 from eggress.config import EggressConfig
 
@@ -16,12 +17,13 @@ from eggress.config import EggressConfig
 class EggressService:
     """Pre-start service builder."""
 
-    __slots__ = ("_inner",)
+    __slots__ = ("_inner", "_compatibility_options")
 
-    def __init__(self, config: EggressConfig) -> None:
+    def __init__(self, config: EggressConfig, compatibility_options=None) -> None:
         object.__setattr__(
             self, "_inner", PyEggressService(config._inner)
         )
+        object.__setattr__(self, "_compatibility_options", compatibility_options)
 
     @classmethod
     def from_toml(cls, toml: str) -> EggressService:
@@ -66,11 +68,21 @@ class EggressService:
             raise UnsupportedFeatureError(
                 f"unsupported pproxy features: {features}"
             )
-        return cls(result.config())
+        options = pproxy_runtime_options(args)
+        return cls(result.config(), compatibility_options=options)
 
     def start(self) -> EggressHandle:
         """Start the service and return a handle."""
-        handle = self._inner.start()
+        if self._compatibility_options is None:
+            handle = self._inner.start()
+        else:
+            options = self._compatibility_options
+            handle = self._inner.start_with_compatibility_options(
+                int(options["auth_timeout_seconds"]),
+                bool(options["system_proxy"]),
+                bool(options["debug"]),
+                int(options["verbose_level"]),
+            )
         return EggressHandle(handle)
 
     async def astart(self) -> AsyncEggressHandle:

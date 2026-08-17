@@ -678,6 +678,17 @@ fn handle_pproxy_run(args: &PproxyRun) {
         }
     };
 
+    if pproxy_args.version {
+        println!("{}", eggress_pproxy_compat::PproxyArgs::version_string());
+        return;
+    }
+    if pproxy_args.help {
+        println!("pproxy compatibility binary (eggress-pproxy-compat)");
+        println!("Use -l and -r with pproxy-compatible URIs.");
+        println!("Run standalone `pproxy --help` for the complete option reference.");
+        return;
+    }
+
     if let Some(flag) = pproxy_args.strict_parser_violations().first() {
         eprintln!("error: unknown option or positional argument '{flag}'");
         std::process::exit(EXIT_CLI_PARSE_ERROR);
@@ -728,6 +739,10 @@ fn handle_pproxy_run(args: &PproxyRun) {
     for w in &gate.warnings {
         eprintln!("warning: {w}");
     }
+
+    // Compatibility verbosity/debug defaults come from the parsed pproxy
+    // flags. An explicit RUST_LOG remains authoritative.
+    init_pproxy_logging(&pproxy_args, &args.log_format);
 
     let test_target = pproxy_args.test_target();
 
@@ -784,6 +799,20 @@ fn handle_pproxy_run(args: &PproxyRun) {
             eprintln!("runtime error: {e}");
             std::process::exit(EXIT_RUNTIME_FAILURE);
         }
+    }
+}
+
+#[cfg(feature = "pproxy-compat")]
+fn init_pproxy_logging(pproxy_args: &eggress_pproxy_compat::PproxyArgs, format: &str) {
+    let builder = fmt().with_env_filter(
+        EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new(pproxy_args.default_log_level())),
+    );
+
+    match format {
+        "json" => builder.json().init(),
+        "compact" => builder.compact().init(),
+        _ => builder.compact().init(),
     }
 }
 
@@ -1060,7 +1089,6 @@ async fn run() -> i32 {
                 return EXIT_SUCCESS;
             }
             PproxyAction::Run(run_args) => {
-                init_logging(&run_args.log_format);
                 handle_pproxy_run(&run_args);
                 return EXIT_SUCCESS;
             }

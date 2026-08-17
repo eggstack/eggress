@@ -19,6 +19,7 @@ from eggress._eggress import (
     explain_pproxy_uri as _explain_pproxy_uri,
     route_explain as _route_explain,
     test_upstream_connect as _test_upstream_connect,
+    pproxy_runtime_options as _pproxy_runtime_options,
 )
 
 _PPROXY_COMPATIBILITY_VERSION = "2.7.9"
@@ -858,7 +859,10 @@ class PPProxyService:
         # --test, --sys, --log, --reuse, and --get semantics.
         eggress_config: EggressConfig = result.config()
         instance = cls.__new__(cls)
-        instance._service = EggressService(eggress_config)
+        instance._service = EggressService(
+            eggress_config,
+            compatibility_options=_pproxy_runtime_options(list(args)),
+        )
         instance._config = eggress_config
         instance._handle = None
         return instance

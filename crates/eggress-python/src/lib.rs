@@ -181,6 +181,34 @@ impl PyEggressService {
             inner: Some(handle),
         })
     }
+
+    /// Start with the compatibility-only runtime options parsed from pproxy
+    /// arguments. Native Eggress service startup never uses this path.
+    fn start_with_compatibility_options(
+        &mut self,
+        py: Python<'_>,
+        auth_timeout_seconds: u64,
+        system_proxy: bool,
+        debug: bool,
+        verbose_level: u8,
+    ) -> PyResult<PyEggressHandle> {
+        let svc = self
+            .inner
+            .take()
+            .ok_or_else(|| EggressError::new_err("service already started"))?;
+        let options = eggress_runtime::CompatibilityOptions {
+            auth_timeout: Some(Duration::from_secs(auth_timeout_seconds)),
+            system_proxy,
+            debug,
+            verbose_level,
+        };
+        let handle = py
+            .detach(|| svc.start_blocking_with_compatibility_options(options))
+            .map_err(|e| map_error(py, e))?;
+        Ok(PyEggressHandle {
+            inner: Some(handle),
+        })
+    }
 }
 
 #[pyclass]
@@ -1398,6 +1426,46 @@ fn validate_pproxy_args(args: &Bound<'_, PySequence>) -> PyResult<()> {
         .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))
 }
 
+/// Return compatibility runtime options using the canonical Rust parser.
+/// Migration callers may still use the broader translation surface; strict
+/// executable entry points perform their separate parser-gate validation.
+#[pyfunction]
+fn pproxy_runtime_options(args: &Bound<'_, PySequence>) -> PyResult<Py<PyDict>> {
+    let len = args.len()?;
+    let raw: Vec<String> = (0..len)
+        .map(|i| args.get_item(i)?.extract::<String>())
+        .collect::<PyResult<_>>()?;
+    let parsed = if raw.is_empty() {
+        eggress_pproxy_compat::PproxyArgs::default_args()
+    } else {
+        eggress_pproxy_compat::PproxyArgs::parse(&raw)
+            .map_err(|e| PyValueError::new_err(format!("pproxy argument error: {e}")))?
+    };
+    let dict = PyDict::new(args.py());
+    dict.set_item(
+        "auth_timeout_seconds",
+        parsed.effective_auth_timeout().as_secs(),
+    )?;
+    dict.set_item("system_proxy", parsed.system_proxy)?;
+    dict.set_item("debug", parsed.debug)?;
+    dict.set_item("verbose_level", parsed.verbose_level)?;
+    dict.set_item("default_log_level", parsed.default_log_level())?;
+    Ok(dict.into())
+}
+
+/// Install compatibility-process logging for `python -m pproxy` while
+/// respecting an existing embedded application's tracing subscriber.
+#[pyfunction]
+fn init_pproxy_logging(default_level: &str) -> PyResult<()> {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_level));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .compact()
+        .try_init();
+    Ok(())
+}
+
 /// Run the native compatibility upstream test without starting listeners.
 #[pyfunction]
 fn run_pproxy_test(py: Python<'_>, args: &Bound<'_, PySequence>, target: &str) -> PyResult<i32> {
@@ -1863,6 +1931,8 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(translate_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_args, m)?)?;
     m.add_function(wrap_pyfunction!(validate_pproxy_args, m)?)?;
+    m.add_function(wrap_pyfunction!(pproxy_runtime_options, m)?)?;
+    m.add_function(wrap_pyfunction!(init_pproxy_logging, m)?)?;
     m.add_function(wrap_pyfunction!(run_pproxy_test, m)?)?;
     m.add_function(wrap_pyfunction!(describe_reverse_pproxy_uri, m)?)?;
     m.add_function(wrap_pyfunction!(check_pproxy_uri, m)?)?;

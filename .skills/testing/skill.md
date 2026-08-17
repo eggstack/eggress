@@ -159,6 +159,13 @@ Black-box probe tests document pproxy behavior for ambiguous scenarios (refused 
 - `crates/eggress-cli/tests/pproxy_translation_golden.rs` — pproxy URI → TOML golden tests
 - `crates/eggress-cli/tests/reply_order.rs` — deferred success reply ordering
 
+For strict pproxy CLI changes, keep a compact table-driven matrix for every
+frozen flag covering arity, repetition/default behavior, parse category, and
+whether startup was reached. Exercise standalone `pproxy`, `eggress pproxy
+run`, and `python -m pproxy` for shared action flags (`--help`, `--version`)
+and value-taking options. Use local fixtures for `--test`; assert remotes are
+checked in declaration order and no listener is bound.
+
 ## Test utilities (`eggress-testkit`)
 - Echo server, half-close server
 - Temporary port allocator

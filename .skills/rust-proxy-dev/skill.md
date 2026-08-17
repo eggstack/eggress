@@ -164,7 +164,7 @@ The contract and minimal listener smoke tests live in
 
 ### pproxy-style binary
 
-- `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; strict CLI parity is not claimed
+- `pproxy` binary target in `eggress-cli` — pproxy-style translator and runtime wrapper; the frozen executable surface is strictly gated before startup
 - Source: `crates/eggress-cli/src/pproxy_main.rs` — raw arg parsing (not clap), delegates to `PproxyArgs::parse()` → `translate_pproxy_args()`
 - Strict executable flags: `-l`, `-r`, `-ul`, `-ur`, `-b`, `-a`, `-s`, `-d`, `-v`, `--ssl`, `--pac <path>`, `--test <target>`, `--sys`, `--daemon`, `--reuse`, `--get <path,file>`, `--auth <seconds>`, `--version`, `-h/--help`. `-d` and `-v` are repeatable count actions, including clustered forms.
 - Positional URIs, `--listen`/`--remote` aliases, `--log`, and `--rulefile` are not pproxy 2.7.9 executable options and must fail before startup. Migration-only translation helpers may retain separate extension handling.
@@ -201,6 +201,9 @@ The contract and minimal listener smoke tests live in
   same fail-closed policy through the shared gate. Unknown, unsupported,
   and non-equivalent options cannot start a partial service from either
   entry point.
+- `python -m pproxy` and the installed console script use the same native
+  parser/action contract and pass `--auth`, `--sys`, `-d`, and `-v` to the
+  compatibility supervisor. Do not reimplement those semantics in Python.
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
 - Tests: `cargo test -p eggress-cli --test pproxy_binary` and
   `cargo test -p eggress-cli --test pproxy_run_process`

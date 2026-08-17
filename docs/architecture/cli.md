@@ -96,8 +96,8 @@ implementation in-process and exits before listener startup.
 | `-d`, `-v` | Repeatable debug/verbosity count actions; `-vv` adds traffic statistics |
 | `--ssl`, `--pac`, `--get` | Listener TLS, PAC path, and static content |
 | `--auth`, `--sys`, `--reuse` | Auth reuse, system proxy, and SO_REUSEPORT |
-| `--daemon`, `--test`, `--version` | Daemon refusal, test-and-exit, and version |
-| `--config` | TOML configuration file |
+| `--daemon`, `--test`, `--version`, `-h/--help` | Daemon refusal, test-and-exit, version, and compatibility help |
+| `--config` | Native Eggress TOML configuration file (not a pproxy 2.7.9 option) |
 | `--admin` | Admin endpoint address |
 
 The compatibility `pproxy` binary defaults, with no arguments, to
@@ -115,6 +115,12 @@ The frozen parser does not advertise or accept `--log`, `-f/--config`,
 `--rulefile`, positional URIs, or `--listen`/`--remote` aliases. Native Eggress
 configuration and migration-only translation helpers may expose separate
 options, but those are not pproxy 2.7.9 executable options.
+
+The standalone `pproxy` binary, `eggress pproxy run`, and `python -m pproxy`
+share the Rust compatibility parser for action flags and value-taking options.
+`--test` compiles and probes remotes in declaration order without binding a
+listener. The Python entry point starts through the compatibility runtime
+options path, so `--auth`, `--sys`, `-d`, and `-v` are not silently discarded.
 
 ## Dependencies
 

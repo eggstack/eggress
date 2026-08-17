@@ -60,6 +60,10 @@ pub struct PproxyArgs {
     pub auth_timeout: Option<Duration>,
     /// `--sys` flag: apply the selected compatibility listener as the system proxy.
     pub system_proxy: bool,
+    /// `-h`/`--help` was requested.
+    pub help: bool,
+    /// `--version` was requested.
+    pub version: bool,
     /// Known-but-unsupported flags that require a translation decision.
     pub known_unsupported: Vec<String>,
     /// Unknown flags that are not recognized.
@@ -99,6 +103,8 @@ impl PproxyArgs {
             reuse_port: false,
             auth_timeout: None,
             system_proxy: false,
+            help: false,
+            version: false,
             known_unsupported: vec![],
             unknown_flags: vec![],
             strict_violations: vec![],
@@ -116,6 +122,8 @@ impl PproxyArgs {
         let mut reuse_port = false;
         let mut auth_timeout: Option<Duration> = None;
         let mut system_proxy = false;
+        let mut help = false;
+        let mut version = false;
         let mut known_unsupported = Vec::new();
         let mut unknown_flags = Vec::new();
         let mut strict_violations = Vec::new();
@@ -124,6 +132,12 @@ impl PproxyArgs {
         while i < raw.len() {
             let arg = &raw[i];
             match arg.as_str() {
+                "-h" | "--help" => {
+                    help = true;
+                }
+                "--version" => {
+                    version = true;
+                }
                 "-l" | "--listen" => {
                     if arg == "--listen" {
                         strict_violations.push(arg.clone());
@@ -203,6 +217,11 @@ impl PproxyArgs {
                             ),
                         });
                     }
+                    if !matches!(value.as_str(), "fa" | "rr" | "rc" | "lc") {
+                        // Keep migration-only scheduler aliases parseable, but
+                        // make strict executable validation reject them.
+                        strict_violations.push(format!("-s {value}"));
+                    }
                     known_unsupported.push(format!("scheduler={value}"));
                 }
                 "-a" => {
@@ -268,6 +287,8 @@ impl PproxyArgs {
             reuse_port,
             auth_timeout,
             system_proxy,
+            help,
+            version,
             known_unsupported,
             unknown_flags,
             strict_violations,
@@ -304,6 +325,11 @@ impl PproxyArgs {
             .cloned()
             .chain(self.strict_violations.iter().cloned())
             .collect()
+    }
+
+    /// Version string used by all compatibility entry points.
+    pub fn version_string() -> String {
+        format!("eggress-pproxy-compat {}", env!("CARGO_PKG_VERSION"))
     }
 
     /// Validate values whose upstream argparse `type=` callbacks run during
@@ -433,6 +459,22 @@ mod tests {
         assert_eq!(args.remotes.len(), 1);
         assert_eq!(args.local[0], "socks5://127.0.0.1:1080");
         assert_eq!(args.remotes[0], "http://proxy:8080");
+    }
+
+    #[test]
+    fn test_parse_help_and_version_actions() {
+        let help = PproxyArgs::parse(&["--help".into()]).unwrap();
+        assert!(help.help);
+        assert!(!help.version);
+        assert!(help.strict_parser_violations().is_empty());
+
+        let version = PproxyArgs::parse(&["--version".into()]).unwrap();
+        assert!(version.version);
+        assert!(!version.help);
+        assert_eq!(
+            PproxyArgs::version_string(),
+            format!("eggress-pproxy-compat {}", env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
@@ -579,6 +621,22 @@ mod tests {
         ])
         .unwrap();
         assert!(args.known_unsupported.contains(&"scheduler=rr".to_string()));
+    }
+
+    #[test]
+    fn test_scheduler_migration_alias_is_not_strict_executable_surface() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-s".into(),
+            "round_robin".into(),
+        ])
+        .unwrap();
+        assert!(args
+            .strict_parser_violations()
+            .iter()
+            .any(|value| value == "-s round_robin"));
+        assert!(args.validate_strict_values().is_err());
     }
 
     #[test]

@@ -102,6 +102,24 @@ fn test_pproxy_run_invalid_args() {
 }
 
 #[test]
+fn test_pproxy_run_version_uses_compatibility_action() {
+    let output = run_with_timeout(&["pproxy", "run", "--", "--version"], 5000);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        format!("eggress-pproxy-compat {}", env!("CARGO_PKG_VERSION"))
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("started"));
+}
+
+#[test]
+fn test_pproxy_run_help_uses_compatibility_action() {
+    let output = run_with_timeout(&["pproxy", "run", "--", "--help"], 5000);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("pproxy compatibility binary"));
+}
+
+#[test]
 fn test_pproxy_run_bind_failure() {
     let output = run_with_timeout(
         &[

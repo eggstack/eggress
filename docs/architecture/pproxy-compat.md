@@ -97,6 +97,12 @@ table, severity order, or intentional-exclusion set.
 | `--daemon` | Parsed, then rejected before startup (Phase 9 daemonization remains out of scope) |
 | `--test` | Native URL test for each remote, then exit before listener startup |
 
+`-h/--help` and `--version` are parsed actions, not listener arguments. The
+standalone binary, `eggress pproxy run`, and `python -m pproxy` use the same
+Rust `PproxyArgs` action/value model. The Python entry point also passes the
+compatibility runtime options for `--auth`, `--sys`, `-d`, and `-v` into the
+native supervisor before waiting for SIGINT/SIGTERM.
+
 The tagged parser does not declare `--log`, `-f/--config`, `--rulefile`,
 positional URIs, or long listener aliases such as `--listen` and `--remote`.
 Native Eggress configuration and migration-only translation helpers may accept
@@ -155,7 +161,9 @@ listener in test mode.
 
 PAC and verbosity are supported with compatibility warnings. PAC is served at
 the mapped Eggress admin route. `-d` and `-v` use argparse count semantics,
-including short clusters; `RUST_LOG` controls the final tracing filter.
+including short clusters; `RUST_LOG` controls the final tracing filter. The
+Python process installs the same default filter only when no explicit
+`RUST_LOG` is present and leaves an existing embedded subscriber untouched.
 
 ## Compatibility process lifecycle
 

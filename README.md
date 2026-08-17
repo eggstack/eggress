@@ -107,6 +107,9 @@ and `-v`, plus `-b`, `-a`, `-s`, `--ssl`, `--pac`, `--get`, `--auth`, `--sys`,
 `--reuse`, `--daemon`, `--test`, and `--version`. `--pac`, `--get`, and
 `--test` each consume exactly one value; positional URIs, long listener aliases,
 `--log`, and `--rulefile` fail as parser errors and cannot start a service.
+`-h/--help` is the compatibility help action. The standalone binary,
+`eggress pproxy run`, and `python -m pproxy` share the native parser for these
+actions and value-taking flags.
 `--test` runs native upstream checks and exits before listener startup.
 `-d` makes compatibility task failures visible at error level, while `-v` logs
 connection events and `-vv` adds traffic totals using the existing metrics
@@ -115,6 +118,11 @@ Canonical fixed-target listeners use
 `tunnel{host:port}://:listen-port`; the legacy `raw://{host:port}` extension
 remains accepted. UDP fixed-target and echo listeners require an explicit
 `-ul` URI, keeping TCP and UDP listener roles independent.
+
+The Python module entry point passes `--auth`, `--sys`, `-d`, and `-v` through
+the same compatibility runtime options as the Rust binaries. Its shutdown
+handler delegates to the native runtime so listener, UDP, reverse-worker, and
+system-proxy cleanup follows the same ordering.
 
 ## Rust library
 

@@ -59,7 +59,8 @@ python -m pproxy [OPTIONS]
 
 `python -m pproxy` validates through the native parser and uses the native
 upstream-test bridge for `--test`. Normal service startup installs SIGINT and
-SIGTERM cleanup through the Rust-backed service handle. None of these entry
+SIGTERM cleanup through the Rust-backed service handle and passes `--auth`,
+`--sys`, `-d`, and `-v` through the compatibility runtime options path. None of these entry
 points should start a partial service after a parser, translation, bind, or
 optional-feature failure.
 

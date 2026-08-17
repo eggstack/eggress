@@ -128,6 +128,30 @@ def test_console_adapter_starts_a_minimal_listener():
         handle.shutdown()
 
 
+def test_python_compat_runtime_options_use_native_parser_and_supervisor():
+    from eggress._eggress import pproxy_runtime_options
+    from eggress.pproxy import PPProxyService
+
+    options = pproxy_runtime_options(
+        ["-l", "socks5://127.0.0.1:0", "--auth", "30", "--sys", "-vv"]
+    )
+    assert options["auth_timeout_seconds"] == 30
+    assert options["system_proxy"] is True
+    assert options["verbose_level"] == 2
+    assert options["default_log_level"] == "debug"
+
+    # --auth and -vv must be carried into the native compatibility supervisor
+    # instead of being accepted and silently dropped by the Python wrapper.
+    service = PPProxyService.from_args(
+        ["-l", "socks5://127.0.0.1:0", "--auth", "30", "-vv"]
+    )
+    handle = service.start()
+    try:
+        assert handle.bound_addresses
+    finally:
+        handle.shutdown()
+
+
 def test_system_proxy_uses_native_bridge_or_platform_refusal():
     import pproxy.sysproxy as sysproxy
 

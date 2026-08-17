@@ -18,7 +18,12 @@ from eggress._pproxy_proxy import (
 from eggress.cipher import get_cipher
 from pproxy.plugin import get_plugin
 from eggress.protocol import BaseProtocol, accept, get_protos, netloc_split, udp_accept
-from eggress._eggress import run_pproxy_test, validate_pproxy_args
+from eggress._eggress import (
+    init_pproxy_logging,
+    pproxy_runtime_options,
+    run_pproxy_test,
+    validate_pproxy_args,
+)
 
 SOCKET_TIMEOUT = 60
 UDP_LIMIT = 30
@@ -324,6 +329,12 @@ compile_rule.__module__ = __name__
 def main(args=None):
     """Run the compatibility service through the Python/native adapter."""
     argv = list(sys.argv[1:] if args is None else args)
+    try:
+        validate_pproxy_args(argv)
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
     if "--version" in argv:
         from eggress import __version__
 
@@ -331,14 +342,14 @@ def main(args=None):
         return 0
     if "-h" in argv or "--help" in argv:
         print("pproxy compatibility binary (eggress-pproxy-compat)")
-        print("Use -l and -r with pproxy-compatible URIs.")
+        print("USAGE: pproxy [OPTIONS]")
+        print("  -l URI, -r URI, -ul URI, -ur URI   repeatable listener/remote options")
+        print("  -b PATTERN  -a SECONDS  -s {fa,rr,rc,lc}")
+        print("  -d, -v       repeatable debug/verbose actions (-vv adds traffic stats)")
+        print("  --ssl FILE  --pac PATH  --get PATH,FILE  --auth SECONDS")
+        print("  --sys  --reuse  --daemon  --test URL  --version  -h/--help")
+        print("Positional URIs, --log, --rulefile, and long listener aliases are rejected.")
         return 0
-
-    try:
-        validate_pproxy_args(argv)
-    except Exception as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
 
     if "--test" in argv:
         index = argv.index("--test")
@@ -352,6 +363,8 @@ def main(args=None):
     from eggress.pproxy import PPProxyService, translate_pproxy_args
 
     service_args = argv or ["-l", "http+socks4+socks5://:8080"]
+    options = pproxy_runtime_options(service_args)
+    init_pproxy_logging(options["default_log_level"])
     translation = translate_pproxy_args(service_args)
     if not translation.ok:
         for feature in translation.unsupported:

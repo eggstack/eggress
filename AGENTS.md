@@ -239,6 +239,11 @@ Key compatibility notes:
 - `--test` must compile and test remotes in declaration order, then exit before
   listener startup. `--reuse` must set SO_REUSEPORT before TCP bind only where
   the platform supports it.
+- Standalone `pproxy`, `eggress pproxy run`, and `python -m pproxy` must use
+  the same parsed action/value contract. Compatibility runtime options
+  (`--auth`, `--sys`, `-d`, and `-v`) must reach the runtime in the Python
+  bridge as well as the Rust binaries; native service startup keeps its own
+  defaults.
 - H2 listeners accept independent CONNECT streams; WS/WSS compatibility
   listeners require a fixed target (`ws{host:port}://listener`) and use the
   existing TLS transport for WSS. H2/WS/WSS upstream behavior remains supported.
