@@ -7,6 +7,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "quic")]
+use std::fs;
+
 use eggress_core::chain::{ChainExecutor, HopHandler};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
@@ -18,6 +21,15 @@ use eggress_routing::{RouteActionSpec, RouteService, Router};
 use eggress_uri::{EndpointSpec, ProtocolSpec, ProxyHopSpec};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
+
+#[cfg(feature = "quic")]
+use eggress_protocol_h3::H3Client;
+#[cfg(feature = "quic")]
+use eggress_transport_quic::{QuicClient, QuicClientConfig, QuicListener, QuicServerConfig};
+#[cfg(feature = "quic")]
+use rcgen::{CertificateParams, KeyPair};
+#[cfg(feature = "quic")]
+use tempfile::TempDir;
 
 type HandshakeFuture<'a> = std::pin::Pin<
     Box<
@@ -139,6 +151,169 @@ async fn start_pproxy_server(protocol: &str, port: u16) -> std::process::Child {
         .stderr(std::process::Stdio::null())
         .spawn()
         .expect("failed to start pproxy")
+}
+
+#[cfg(feature = "quic")]
+async fn start_pproxy_quic_server(protocol: &str, port: u16) -> (std::process::Child, TempDir) {
+    let directory = TempDir::new().expect("create QUIC certificate directory");
+    let params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    let key = KeyPair::generate().unwrap();
+    let certificate = params.self_signed(&key).unwrap();
+    let cert_path = directory.path().join("cert.pem");
+    let key_path = directory.path().join("key.pem");
+    fs::write(&cert_path, certificate.pem()).unwrap();
+    fs::write(&key_path, key.serialize_pem()).unwrap();
+    let listen = format!("{protocol}://127.0.0.1:{port}");
+    let ssl = format!("{},{}", cert_path.display(), key_path.display());
+    let child = std::process::Command::new(pproxy_python())
+        .args(["-m", "pproxy", "-l", &listen, "-r", "direct", "--ssl", &ssl])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to start pproxy QUIC server");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    (child, directory)
+}
+
+#[cfg(feature = "quic")]
+async fn exercise_pproxy_quic_listener(protocol: &str) {
+    skip_if_unavailable();
+    let (echo_addr, echo_task) = eggress_testkit::start_echo_server().await;
+    let port = eggress_testkit::get_free_port().await;
+    let (mut pproxy_child, _certificates) = start_pproxy_quic_server(protocol, port).await;
+    let client = QuicClient::connect(
+        "127.0.0.1",
+        port,
+        QuicClientConfig {
+            insecure: true,
+            alpn_protocols: if protocol == "h3" {
+                vec![b"h3".to_vec()]
+            } else {
+                Vec::new()
+            },
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("Eggress QUIC client could not connect to pproxy");
+    let target = TargetAddr {
+        host: TargetHost::Ip(echo_addr.ip()),
+        port: echo_addr.port(),
+    };
+    let mut stream = if protocol == "h3" {
+        H3Client::new(client, None)
+            .connect(&target)
+            .await
+            .expect("H3 CONNECT failed")
+    } else {
+        let stream = client.open_stream().await.expect("QUIC stream failed");
+        http_connect(stream, &target, None, &Default::default())
+            .await
+            .expect("HTTP CONNECT over raw QUIC failed")
+    };
+    stream
+        .write_all(b"eggress pproxy QUIC interop")
+        .await
+        .unwrap();
+    let mut output = [0u8; 27];
+    stream.read_exact(&mut output).await.unwrap();
+    assert_eq!(&output, b"eggress pproxy QUIC interop");
+    let _ = pproxy_child.kill();
+    echo_task.abort();
+}
+
+#[cfg(feature = "quic")]
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn test_pproxy_h3_client_eggress_listener() {
+    skip_if_unavailable();
+    let directory = TempDir::new().unwrap();
+    let params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    let key = KeyPair::generate().unwrap();
+    let certificate = params.self_signed(&key).unwrap();
+    let listener = QuicListener::bind(
+        "127.0.0.1:0".parse().unwrap(),
+        QuicServerConfig {
+            certificate_pem: certificate.pem().into_bytes(),
+            private_key_pem: key.serialize_pem().into_bytes(),
+            idle_timeout: Duration::from_secs(60),
+            max_concurrent_streams: 16,
+            alpn_protocols: vec![b"h3".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+    let listener_addr = listener.local_addr().unwrap();
+    let cancel = CancellationToken::new();
+    let server_cancel = cancel.clone();
+    let server = tokio::spawn(async move {
+        let connection = listener
+            .accept_connection(&server_cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        eggress_protocol_h3::serve_connection(
+            connection,
+            server_cancel,
+            None,
+            |_, mut stream, _| async move {
+                let mut payload = vec![0u8; 20];
+                stream.read_exact(&mut payload).await.unwrap();
+                stream.write_all(&payload).await.unwrap();
+            },
+        )
+        .await
+        .unwrap();
+    });
+
+    let local_port = eggress_testkit::get_free_port().await;
+    let mut pproxy = std::process::Command::new(pproxy_python())
+        .args([
+            "-m",
+            "pproxy",
+            "-l",
+            &format!("http://127.0.0.1:{local_port}"),
+            "-r",
+            &format!("h3://127.0.0.1:{}", listener_addr.port()),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    assert!(wait_for_port(local_port, Duration::from_secs(5)).await);
+    let tcp = tokio::net::TcpStream::connect(("127.0.0.1", local_port))
+        .await
+        .unwrap();
+    let target = TargetAddr {
+        host: TargetHost::Domain("example.com".to_string()),
+        port: 443,
+    };
+    let mut stream = http_connect(Box::new(tcp), &target, None, &Default::default())
+        .await
+        .expect("pproxy H3 client did not establish CONNECT");
+    stream.write_all(b"pproxy to eggress h3").await.unwrap();
+    let mut output = vec![0u8; 20];
+    stream.read_exact(&mut output).await.unwrap();
+    assert_eq!(&output, b"pproxy to eggress h3");
+    cancel.cancel();
+    let _ = pproxy.kill();
+    let _ = pproxy.wait();
+    let _ = directory;
+    server.abort();
+}
+
+#[cfg(feature = "quic")]
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn test_pproxy_raw_quic_listener_eggress_client() {
+    exercise_pproxy_quic_listener("quic+http").await;
+}
+
+#[cfg(feature = "quic")]
+#[tokio::test]
+#[ignore = "requires EGRESS_REQUIRE_EXTERNAL_INTEROP=1 and pproxy"]
+async fn test_pproxy_h3_listener_eggress_client() {
+    exercise_pproxy_quic_listener("h3").await;
 }
 
 async fn wait_for_port(port: u16, timeout: Duration) -> bool {
@@ -428,6 +603,7 @@ async fn test_pproxy_http_server_eggress_client() {
         auth_prefix: None,
         tls: false,
         server_name: None,
+        insecure: false,
     }];
 
     let target = TargetAddr {
@@ -488,6 +664,7 @@ async fn test_pproxy_socks5_server_eggress_client() {
         auth_prefix: None,
         tls: false,
         server_name: None,
+        insecure: false,
     }];
 
     let target = TargetAddr {

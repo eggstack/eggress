@@ -291,7 +291,7 @@ These pproxy features are deliberately not replicated in eggress:
 | SSH transport | Out of scope | SSH is not a proxy protocol |
 | Legacy stream ciphers | Security | Use AEAD methods only |
 | ShadowsocksR extensions outside Phase 3 | Non-standard / legacy encryption | Use bounded `pproxy-legacy` TCP support or standard Shadowsocks |
-| QUIC / HTTP/3 | Deferred | See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md` |
+| QUIC / HTTP/3 | Optional | Enable the `quic` feature; H3 listeners require certificate/key material and UDP association mode is unsupported |
 | Persistent connection pooling | Design choice | One upstream connection per session |
 | macOS PF transparent proxy | Not implemented | Use pfctl with standard listener |
 
@@ -451,7 +451,7 @@ benchmarking. No regression from Phase 34 baselines is expected.
    restart.
 5. **Trojan** is upstream-only (no server/listener).
 6. **macOS PF transparent proxy** not implemented.
-7. **QUIC/HTTP/3** deferred by ADR.
+7. **QUIC/HTTP/3** is optional behind the `quic` feature; UDP association mode remains unsupported.
 8. **mypy false positives** (~20 expected errors from PyO3 native types).
 9. **Hosted CI** is non-functional (billing issues); local verification
    is the source of truth.

@@ -31,6 +31,9 @@ pub struct ProxyHopSpec {
     /// Optional SNI override for TLS (defaults to endpoint host).
     #[serde(default)]
     pub server_name: Option<String>,
+    /// Explicit certificate bypass for compatibility transports.
+    #[serde(default)]
+    pub insecure: bool,
     /// Ordered pproxy SSR plugin names.
     #[serde(default)]
     pub plugins: Vec<String>,
@@ -50,6 +53,8 @@ pub enum ProtocolSpec {
     ShadowsocksR,
     Trojan,
     Http2,
+    Http3,
+    Quic,
     WebSocket,
     Raw,
     Ssh,
@@ -120,6 +125,8 @@ impl<'a> fmt::Display for RedactedUri<'a> {
                         ProtocolSpec::ShadowsocksR => "ssr",
                         ProtocolSpec::Trojan => "trojan",
                         ProtocolSpec::Http2 => "h2",
+                        ProtocolSpec::Http3 => "h3",
+                        ProtocolSpec::Quic => "quic",
                         ProtocolSpec::WebSocket => "ws",
                         ProtocolSpec::Raw => "raw",
                         ProtocolSpec::Ssh => "ssh",
@@ -318,6 +325,7 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
             local_bind,
             tls,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix,
         });
@@ -373,6 +381,11 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
 
     // Parse query parameters
     let rule = parse_query_rule(query_str);
+    let insecure = query_str.is_some_and(|query| {
+        query
+            .split('&')
+            .any(|param| param == "insecure" || param == "insecure=true")
+    });
 
     // Validate port range
     if endpoint.port == 0 {
@@ -387,6 +400,7 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         local_bind,
         tls,
         server_name: None,
+        insecure,
         plugins,
         auth_prefix,
     })
@@ -414,6 +428,8 @@ fn parse_protocols(scheme: &str) -> Result<(Vec<ProtocolSpec>, bool), UriParseEr
             "ssr" => protocols.push(ProtocolSpec::ShadowsocksR),
             "trojan" => protocols.push(ProtocolSpec::Trojan),
             "h2" => protocols.push(ProtocolSpec::Http2),
+            "h3" => protocols.push(ProtocolSpec::Http3),
+            "quic" => protocols.push(ProtocolSpec::Quic),
             "ws" | "wss" => protocols.push(ProtocolSpec::WebSocket),
             "raw" | "tunnel" => protocols.push(ProtocolSpec::Raw),
             "ssh" => protocols.push(ProtocolSpec::Ssh),
@@ -805,21 +821,18 @@ mod tests {
     }
 
     #[test]
-    fn test_quic_scheme_rejected_with_structured_diagnostic() {
-        let result = parse_proxy_chain("quic://host:443");
-        match result {
-            Err(UriParseError::UnsupportedProtocol(p)) => assert_eq!(p, "quic"),
-            other => panic!("expected UnsupportedProtocol for quic, got {other:?}"),
-        }
+    fn test_quic_scheme_is_accepted() {
+        let result = parse_proxy_chain("quic+http://host:443").unwrap();
+        assert_eq!(
+            result.hops[0].protocols,
+            vec![ProtocolSpec::Quic, ProtocolSpec::Http]
+        );
     }
 
     #[test]
-    fn test_h3_scheme_rejected_with_structured_diagnostic() {
-        let result = parse_proxy_chain("h3://host:443");
-        match result {
-            Err(UriParseError::UnsupportedProtocol(p)) => assert_eq!(p, "h3"),
-            other => panic!("expected UnsupportedProtocol for h3, got {other:?}"),
-        }
+    fn test_h3_scheme_is_accepted() {
+        let result = parse_proxy_chain("h3://host:443").unwrap();
+        assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Http3]);
     }
 
     #[test]
@@ -876,6 +889,7 @@ mod tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
                 plugins: Vec::new(),
                 auth_prefix: None,
             }],
@@ -900,6 +914,7 @@ mod tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
                 plugins: Vec::new(),
                 auth_prefix: None,
             }],
@@ -1113,6 +1128,7 @@ mod proptest_tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
                 plugins: Vec::new(),
                 auth_prefix: None,
             })

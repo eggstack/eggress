@@ -284,6 +284,17 @@ struct PreparedListener {
     local_bind: Option<String>,
 }
 
+#[cfg(feature = "quic")]
+struct PreparedQuicListener {
+    name: String,
+    protocols: Vec<ProtocolId>,
+    listener: Arc<eggress_transport_quic::QuicListener>,
+    local_addr: std::net::SocketAddr,
+    auth: eggress_server::accept::InboundAuthentication,
+    handshake_timeout: Duration,
+    connection_limit: u64,
+}
+
 #[cfg(feature = "extended")]
 type PreparedShadowsocksUdpRelay = (
     Arc<tokio::net::UdpSocket>,
@@ -908,6 +919,8 @@ impl ServiceSupervisor {
             }
 
             let mut prepared = Vec::new();
+            #[cfg(feature = "quic")]
+            let mut prepared_quic = Vec::<PreparedQuicListener>::new();
             let compatibility_auth_reuse = compatibility_options
                 .auth_timeout
                 .map(eggress_server::accept::AuthReuseCache::new)
@@ -1067,6 +1080,58 @@ impl ServiceSupervisor {
                     }
                 }
 
+                #[cfg(feature = "quic")]
+                if protocols.contains(&ProtocolId::Quic) || protocols.contains(&ProtocolId::Http3) {
+                    let tls = lcfg.tls.clone().ok_or_else(|| {
+                        RuntimeError::Other(format!(
+                            "QUIC/HTTP3 listener '{}' requires certificate and key material",
+                            lcfg.name
+                        ))
+                    })?;
+                    let bind_addr: std::net::SocketAddr =
+                        lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
+                            addr: lcfg.bind.clone(),
+                            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                        })?;
+                    let listener = eggress_transport_quic::QuicListener::bind(
+                        bind_addr,
+                        eggress_transport_quic::QuicServerConfig {
+                            certificate_pem: tls.cert_pem.clone(),
+                            private_key_pem: tls.key_pem.clone(),
+                            idle_timeout: Duration::from_secs(60),
+                            max_concurrent_streams: lcfg.connection_limit.unwrap_or(1024).max(1),
+                            alpn_protocols: if protocols.contains(&ProtocolId::Http3) {
+                                vec![b"h3".to_vec()]
+                            } else {
+                                Vec::new()
+                            },
+                        },
+                    )
+                    .await
+                    .map_err(|e| RuntimeError::ListenerBind {
+                        addr: lcfg.bind.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })?;
+                    let local_addr =
+                        listener
+                            .local_addr()
+                            .map_err(|e| RuntimeError::ListenerBind {
+                                addr: lcfg.bind.clone(),
+                                source: std::io::Error::other(e.to_string()),
+                            })?;
+                    tracing::info!("QUIC listening on {local_addr} ({})", lcfg.name);
+                    prepared_quic.push(PreparedQuicListener {
+                        name: lcfg.name.clone(),
+                        protocols,
+                        listener,
+                        local_addr,
+                        auth,
+                        handshake_timeout,
+                        connection_limit: lcfg.connection_limit.unwrap_or(1024) as u64,
+                    });
+                    continue;
+                }
+
                 // Standard TCP listener path
                 let bind_addr: std::net::SocketAddr =
                     lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
@@ -1143,6 +1208,10 @@ impl ServiceSupervisor {
                 let mut addr_map: std::collections::HashMap<String, Option<std::net::SocketAddr>> =
                     std::collections::HashMap::new();
                 for p in &prepared {
+                    addr_map.insert(p.name.clone(), Some(p.local_addr));
+                }
+                #[cfg(feature = "quic")]
+                for p in &prepared_quic {
                     addr_map.insert(p.name.clone(), Some(p.local_addr));
                 }
                 for (name, transparent_listener, _, _, _, _, _, _, _, _) in
@@ -1799,6 +1868,206 @@ impl ServiceSupervisor {
                     return Err(RuntimeError::Other(
                         "--sys requires the operations feature".to_string(),
                     ));
+                }
+            }
+
+            #[cfg(feature = "quic")]
+            for prepared_listener in prepared_quic {
+                let listener_name = prepared_listener.name.clone();
+                let listener_protocols: Arc<[ProtocolId]> = prepared_listener
+                    .protocols
+                    .iter()
+                    .copied()
+                    .filter(|protocol| !matches!(protocol, ProtocolId::Quic | ProtocolId::Http3))
+                    .collect::<Vec<_>>()
+                    .into();
+                let routing = routing.clone();
+                let state = state_ref.clone();
+                let conn_tasks = connection_tasks.clone();
+                let conn_cancel = connection_cancel.clone();
+                let listener_cancel = listener_cancel.clone();
+                let is_h3 = prepared_listener.protocols.contains(&ProtocolId::Http3);
+                let auth = prepared_listener.auth.clone();
+                let handshake_timeout_for_listener = prepared_listener.handshake_timeout;
+                let connection_limit = prepared_listener.connection_limit;
+
+                #[cfg(feature = "ssh")]
+                let listener_ssh_sessions = ssh_sessions.clone();
+
+                if is_h3 {
+                    let listener = prepared_listener.listener.clone();
+                    let tls_client_config_for_listener = tls_client_config.clone();
+                    tasks.spawn(async move {
+                        let active_streams = Arc::new(AtomicU64::new(0));
+                        loop {
+                            let connection = match listener.accept_connection(&listener_cancel).await {
+                                Ok(Some(connection)) => connection,
+                                Ok(None) => break,
+                                Err(error) => {
+                                    tracing::debug!(%error, listener = %listener_name, "H3 connection failed");
+                                    continue;
+                                }
+                            };
+                            let routing = routing.clone();
+                            let state = state.clone();
+                            let conn_tasks = conn_tasks.clone();
+                            let conn_cancel = conn_cancel.child_token();
+                            let listener_name = listener_name.clone();
+                            let auth = auth.clone();
+                            let authorization = match &auth {
+                                eggress_server::accept::InboundAuthentication::None => None,
+                                eggress_server::accept::InboundAuthentication::UsernamePassword { username, password }
+                                | eggress_server::accept::InboundAuthentication::UsernamePasswordWithReuse { username, password, .. } => {
+                                    Some((username.clone(), password.clone()))
+                                }
+                            };
+                            let active_streams = active_streams.clone();
+                            let protocols = listener_protocols.clone();
+                            let connection_limit = connection_limit;
+                            let tls_client_config_for_connection = tls_client_config_for_listener.clone();
+                            conn_tasks.spawn(async move {
+                                let result = eggress_protocol_h3::serve_connection(
+                                    connection,
+                                    conn_cancel.clone(),
+                                    authorization,
+                                    move |request, stream, peer| {
+                                        let routing = routing.clone();
+                                        let state = state.clone();
+                                        let listener_name = listener_name.clone();
+                                        let auth = auth.clone();
+                                        let protocols = protocols.clone();
+                                        let active_streams = active_streams.clone();
+                                        let tls_client_config = tls_client_config_for_connection.clone();
+                                        async move {
+                                            let slot = match ListenerConnectionSlot::try_acquire(&active_streams, connection_limit) {
+                                                Some(slot) => slot,
+                                                None => return,
+                                            };
+                                            let target = match request.target() {
+                                                Ok(target) => target,
+                                                Err(error) => {
+                                                    tracing::debug!(%error, "invalid H3 CONNECT authority");
+                                                    drop(slot);
+                                                    return;
+                                                }
+                                            };
+                                            let generation = state.snapshot.load().generation;
+                                            let config = eggress_server::ConnectionConfig {
+                                                routing: routing as Arc<dyn RouteService>,
+                                                context: eggress_server::ConnectionContext {
+                                                    source: Some(peer),
+                                                    listener: listener_name,
+                                                    generation,
+                                                },
+                                                handshake_timeout: handshake_timeout_for_listener,
+                                                connect_timeout,
+                                                protocols,
+                                                authentication: auth,
+                                                metrics: Some(state.metrics.clone()),
+                                                udp: None,
+                                                tls_client_config,
+                                                shadowsocks: None,
+                                                #[cfg(feature = "extended")]
+                                                shadowsocks_metrics: Some(state.shadowsocks_metrics.clone()),
+                                                #[cfg(not(feature = "extended"))]
+                                                shadowsocks_metrics: None,
+                                                trojan: None,
+                                                fixed_target: None,
+                                                local_bind: None,
+                                                #[cfg(feature = "ssh")]
+                                                ssh_sessions: Some(listener_ssh_sessions.clone()),
+                                            };
+                                            let pending = eggress_server::accept::PendingTunnel {
+                                                target: target.clone(),
+                                                client: stream,
+                                                protocol: eggress_server::accept::TunnelProtocol::Http3,
+                                                reply_context: eggress_server::accept::ReplyContext::Http3,
+                                                identity: eggress_core::ClientIdentity::Anonymous,
+                                            };
+                                            state.metrics.record_session_start();
+                                            let report = eggress_server::execute::execute(
+                                                eggress_server::accept::AcceptedSession::Tunnel(pending),
+                                                &config,
+                                            ).await;
+                                            state.metrics.record_session(&report);
+                                            drop(slot);
+                                        }
+                                    },
+                                ).await;
+                                if let Err(error) = result {
+                                    tracing::debug!(%error, "H3 connection ended");
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    let listener = prepared_listener.listener.clone();
+                    let auth = prepared_listener.auth.clone();
+                    let tls_client_config_for_listener = tls_client_config.clone();
+                    tasks.spawn(async move {
+                        let active_streams = Arc::new(AtomicU64::new(0));
+                        let listener_name_for_handler = listener_name.clone();
+                        let protocols_for_handler = listener_protocols.clone();
+                        let routing_for_handler = routing.clone();
+                        let state_for_handler = state.clone();
+                        let auth_for_handler = auth.clone();
+                        #[cfg(feature = "ssh")]
+                        let listener_ssh_sessions_for_handler = Some(listener_ssh_sessions.clone());
+                        let result = listener
+                            .run(listener_cancel, move |stream, peer| {
+                                let routing = routing_for_handler.clone();
+                                let state = state_for_handler.clone();
+                                let listener_name = listener_name_for_handler.clone();
+                                let protocols = protocols_for_handler.clone();
+                                let auth = auth_for_handler.clone();
+                                let active_streams = active_streams.clone();
+                                #[cfg(feature = "ssh")]
+                                let ssh_sessions = listener_ssh_sessions_for_handler.clone();
+                                let tls_client_config = tls_client_config_for_listener.clone();
+                                async move {
+                                    let Some(slot) = ListenerConnectionSlot::try_acquire(
+                                        &active_streams,
+                                        connection_limit,
+                                    ) else {
+                                        return;
+                                    };
+                                    let generation = state.snapshot.load().generation;
+                                    let config = eggress_server::ConnectionConfig {
+                                        routing: routing as Arc<dyn RouteService>,
+                                        context: eggress_server::ConnectionContext {
+                                            source: Some(peer),
+                                            listener: listener_name,
+                                            generation,
+                                        },
+                                        handshake_timeout: handshake_timeout_for_listener,
+                                        connect_timeout,
+                                        protocols,
+                                        authentication: auth,
+                                        metrics: Some(state.metrics.clone()),
+                                        udp: None,
+                                        tls_client_config,
+                                        shadowsocks: None,
+                                        #[cfg(feature = "extended")]
+                                        shadowsocks_metrics: Some(
+                                            state.shadowsocks_metrics.clone(),
+                                        ),
+                                        #[cfg(not(feature = "extended"))]
+                                        shadowsocks_metrics: None,
+                                        trojan: None,
+                                        fixed_target: None,
+                                        local_bind: None,
+                                        #[cfg(feature = "ssh")]
+                                        ssh_sessions,
+                                    };
+                                    let _ = eggress_server::serve_connection(stream, config).await;
+                                    drop(slot);
+                                }
+                            })
+                            .await;
+                        if let Err(error) = result {
+                            tracing::debug!(%error, "QUIC listener ended");
+                        }
+                    });
                 }
             }
 

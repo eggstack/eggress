@@ -474,7 +474,7 @@ Route rules can match on `transport` to distinguish UDP from TCP traffic. Route 
 
 Phase 5 supports recursive UDP framing for SOCKS5 and Shadowsocks chains.
 HTTP, SOCKS4, Trojan, H2, WebSocket, and QUIC-specific transports remain
-explicitly rejected or deferred. No silent fallback is performed.
+explicitly rejected for UDP. No silent fallback is performed.
 
 ### UDP task tracking
 

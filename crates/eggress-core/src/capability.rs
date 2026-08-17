@@ -58,6 +58,24 @@ pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
             let hop = &chain.hops[0];
             if hop.protocols.len() == 1 {
                 classify_single_protocol(hop.protocols[0])
+            } else if hop.protocols.contains(&ProtocolSpec::Quic)
+                && hop.protocols.iter().any(|protocol| {
+                    matches!(
+                        protocol,
+                        ProtocolSpec::Http
+                            | ProtocolSpec::HttpOnly
+                            | ProtocolSpec::Socks4
+                            | ProtocolSpec::Socks5
+                            | ProtocolSpec::Raw
+                    )
+                })
+            {
+                UpstreamCapabilities {
+                    tcp_connect: CapabilityResult::Supported,
+                    udp_associate: CapabilityResult::UnsupportedProtocol {
+                        protocol: "QUIC UDP stream mapping".to_string(),
+                    },
+                }
             } else {
                 UpstreamCapabilities {
                     tcp_connect: CapabilityResult::UnsupportedChain {
@@ -67,6 +85,15 @@ pub fn classify_upstream_chain(chain: &ProxyChainSpec) -> UpstreamCapabilities {
                         reason: "multi-protocol".to_string(),
                     },
                 }
+            }
+        }
+        _ if chain.hops.len() > 1 && chain.hops[0].protocols.contains(&ProtocolSpec::Quic) => {
+            UpstreamCapabilities {
+                tcp_connect: CapabilityResult::Supported,
+                udp_associate: CapabilityResult::UnsupportedChain {
+                    reason: "QUIC UDP stream mapping is only supported at the first hop"
+                        .to_string(),
+                },
             }
         }
         _ => {
@@ -131,6 +158,20 @@ fn classify_single_protocol(protocol: ProtocolSpec) -> UpstreamCapabilities {
                 protocol: "Http2".to_string(),
             },
         },
+        ProtocolSpec::Http3 => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::Supported,
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "Http3".to_string(),
+            },
+        },
+        ProtocolSpec::Quic => UpstreamCapabilities {
+            tcp_connect: CapabilityResult::UnsupportedChain {
+                reason: "QUIC requires an application protocol".to_string(),
+            },
+            udp_associate: CapabilityResult::UnsupportedProtocol {
+                protocol: "Quic".to_string(),
+            },
+        },
         ProtocolSpec::WebSocket => UpstreamCapabilities {
             tcp_connect: CapabilityResult::Supported,
             udp_associate: CapabilityResult::UnsupportedProtocol {
@@ -167,6 +208,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }
@@ -187,6 +229,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }

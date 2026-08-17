@@ -15,6 +15,7 @@ extended = ["eggress-runtime/extended"]
 pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
 operations = ["eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
+quic = ["eggress-config/quic", "eggress-runtime/quic"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
 ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
 

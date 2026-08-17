@@ -505,8 +505,8 @@ in Eggress based on security policy, architecture, or scope.
 | HTTP/2 CONNECT | pproxy h2 scheme | **Supported** — synthetic tests. H2 CONNECT server and client implemented. |
 | WebSocket tunnels | pproxy ws/wss schemes | **Supported** — synthetic tests. WS/WSS tunnel server and client implemented. |
 | Raw tunnels | pproxy raw/tunnel schemes | **Supported** — synthetic tests. Fixed-target TCP tunnel implemented. |
-| QUIC transport | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. pproxy behavior experimental, dependency significant. |
-| HTTP/3 | Not in pproxy | **Deferred** — ADR at docs/adr/ADR_quic_h3_pproxy_parity.md. |
+| QUIC transport | pproxy `quic` modifier | **Supported with warning** behind the optional `quic` feature; UDP association mode is unsupported. |
+| HTTP/3 | pproxy `h3` protocol | **Supported with warning** behind the optional `quic` feature; listeners require certificate/key material. |
 | SSH listeners | `ssh://` | Upstream-only by design. The optional `ssh` feature provides direct TCP/Unix channels, chaining, and explicit remote forwarding; host-key acceptance is warning-bearing. |
 | Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with raw-relay control channel (Phase 27). TCP only; one session per control channel; no multiplexing. |
 | Plugin system | pproxy has six built-in plugin hooks | Bounded closed plugin set behind `pproxy-legacy`; arbitrary/external plugins remain out of scope. |
@@ -601,7 +601,7 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as supported (Phase 26)**: HTTP/2 CONNECT, TLS ALPN negotiation
 - **Implemented as runtime-integrated upstream (Phase B3)**: WebSocket tunnels (`ws://`, `wss://`), Raw fixed-target tunnels (`raw://`, `tunnel://`)
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
-- **Deferred**: QUIC, HTTP/3 (ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`)
+- **Optional**: QUIC and HTTP/3 behind the `quic` feature; UDP-over-QUIC is an explicit unsupported composition.
 - **Intentional non-parity**: macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, UDP chains containing non-UDP protocols
 - **Implemented**: Trojan inbound listener and upstream
 

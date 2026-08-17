@@ -9,6 +9,12 @@ const VALID_PROTOCOLS: &[&str] = &[
     "socks5",
     "shadowsocks",
     "trojan",
+    "h2",
+    "h3",
+    "quic",
+    "websocket",
+    "ws",
+    "wss",
     "raw",
     "echo",
 ];

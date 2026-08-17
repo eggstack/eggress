@@ -208,6 +208,7 @@ pub struct PendingUdpAssociate {
 pub enum TunnelProtocol {
     HttpConnect,
     Http2,
+    Http3,
     WebSocket,
     Socks4,
     Socks5,
@@ -221,6 +222,7 @@ pub enum TunnelProtocol {
 pub enum ReplyContext {
     Http,
     Http2,
+    Http3,
     WebSocket,
     Socks4,
     Socks5,

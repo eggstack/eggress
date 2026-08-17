@@ -70,6 +70,17 @@ pub trait HopHandler: Send + Sync {
     /// Returns the protocol this handler supports.
     fn protocol(&self) -> ProtocolSpec;
 
+    /// Establish the transport for a hop whose protocol is not carried over
+    /// a TCP socket (for example QUIC). TCP-backed handlers use the default.
+    fn open<'a>(
+        &'a self,
+        _endpoint: &'a EndpointSpec,
+        _hop: &'a ProxyHopSpec,
+        _target: &'a TargetAddr,
+    ) -> Option<HandshakeFuture<'a>> {
+        None
+    }
+
     /// Perform the protocol handshake over the given stream.
     ///
     /// The handler should:
@@ -182,25 +193,55 @@ impl ChainExecutor {
 
         self.validate_chain(chain)?;
 
-        // Pre-flight: verify handlers exist for all protocols before connecting
+        // Pre-flight: verify handlers exist for all application protocols before connecting.
         for (i, hop) in chain.iter().enumerate() {
-            find_handler(&self.handlers, &hop.protocols).map_err(|_| ChainError::InvalidChain {
-                reason: format!(
-                    "hop {i}: no handler for protocols: [{}]",
-                    hop.protocols
-                        .iter()
-                        .map(|p| format!("{p:?}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-            })?;
+            let application_protocols = application_protocols(&hop.protocols);
+            if !application_protocols.is_empty() {
+                find_handler(&self.handlers, &application_protocols).map_err(|_| {
+                    ChainError::InvalidChain {
+                        reason: format!(
+                            "hop {i}: no handler for protocols: [{}]",
+                            application_protocols
+                                .iter()
+                                .map(|p| format!("{p:?}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    }
+                })?;
+            }
         }
 
         // Step 1: Connect to the first hop's endpoint
         let first_hop = &chain[0];
+        let first_target = if chain.len() > 1 {
+            endpoint_to_target_addr(&chain[1].endpoint)?
+        } else {
+            target.clone()
+        };
         let first_hop_addr = endpoint_to_target_addr(&first_hop.endpoint)?;
 
-        let mut current_stream: BoxStream = if first_hop.protocols.contains(&ProtocolSpec::Unix) {
+        let mut current_stream: BoxStream = if first_hop.protocols.contains(&ProtocolSpec::Http3)
+            || first_hop.protocols.contains(&ProtocolSpec::Quic)
+        {
+            let transport_protocol = if first_hop.protocols.contains(&ProtocolSpec::Http3) {
+                ProtocolSpec::Http3
+            } else {
+                ProtocolSpec::Quic
+            };
+            let handler = find_handler(&self.handlers, &[transport_protocol])?;
+            handler
+                .open(&first_hop.endpoint, first_hop, &first_target)
+                .ok_or_else(|| ChainError::InvalidChain {
+                    reason: format!("hop 0: transport {transport_protocol:?} cannot be opened"),
+                })?
+                .await
+                .map_err(|e| ChainError::HandshakeFailed {
+                    hop_index: 0,
+                    protocol: format!("{transport_protocol:?}"),
+                    source: e,
+                })?
+        } else if first_hop.protocols.contains(&ProtocolSpec::Unix) {
             #[cfg(unix)]
             {
                 Box::new(
@@ -273,7 +314,14 @@ impl ChainExecutor {
                 target.clone()
             };
 
-            let handler = find_handler(&self.handlers, &hop.protocols)?;
+            // QUIC/H3 opening already performs the application handshake. For
+            // raw QUIC, continue with the ordinary proxy application handler
+            // (e.g. quic+http) over the newly opened stream.
+            let application_protocols = application_protocols(&hop.protocols);
+            if application_protocols.is_empty() {
+                continue;
+            }
+            let handler = find_handler(&self.handlers, &application_protocols)?;
 
             current_stream = handler
                 .handshake(current_stream, &next_target, hop, i)
@@ -344,6 +392,14 @@ fn find_handler<'a>(
                 .join(", ")
         ),
     })
+}
+
+fn application_protocols(protocols: &[ProtocolSpec]) -> Vec<ProtocolSpec> {
+    protocols
+        .iter()
+        .copied()
+        .filter(|protocol| !matches!(protocol, ProtocolSpec::Http3 | ProtocolSpec::Quic))
+        .collect()
 }
 
 /// Format a list of protocols as a string.
@@ -435,6 +491,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }
@@ -461,6 +518,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }
@@ -512,6 +570,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         };
@@ -553,6 +612,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         };
@@ -945,6 +1005,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         };
@@ -1304,6 +1365,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }];
@@ -1331,6 +1393,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }];

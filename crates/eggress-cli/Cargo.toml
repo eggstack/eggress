@@ -13,6 +13,13 @@ extended = ["eggress-runtime/extended"]
 pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
 operations = ["dep:eggress-system-proxy", "eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
+quic = [
+    "eggress-config/quic",
+    "eggress-runtime/quic",
+    "eggress-pproxy-compat/quic",
+    "dep:eggress-transport-quic",
+    "dep:eggress-protocol-h3",
+]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
 ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
 
@@ -35,6 +42,8 @@ eggress-runtime.workspace = true
 eggress-metrics.workspace = true
 eggress-protocol-http.workspace = true
 eggress-protocol-socks.workspace = true
+eggress-transport-quic = { workspace = true, optional = true }
+eggress-protocol-h3 = { workspace = true, optional = true }
 eggress-pproxy-compat = { workspace = true, optional = true }
 eggress-system-proxy = { workspace = true, optional = true }
 clap.workspace = true

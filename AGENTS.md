@@ -50,7 +50,7 @@ cargo fuzz run uri_parse -- -runs=1000
 
 ## Workspace structure
 
-Root `Cargo.toml` defines a workspace with 24 member crates under `crates/`. A non-member `eggress-bench` package with Criterion benchmarks lives at the workspace root — run `cargo bench` from root.
+Root `Cargo.toml` defines a workspace with 26 member crates under `crates/`. A non-member `eggress-bench` package with Criterion benchmarks lives at the workspace root — run `cargo bench` from root.
 
 Principal crates:
 - `eggress-core`: shared types, traits, `BoxStream`, relay abstractions
@@ -62,7 +62,9 @@ Principal crates:
 - `eggress-config`: TOML config and validation
 - `eggress-routing`: rules, schedulers, health state, route selection
 - `eggress-protocol-*`: HTTP, SOCKS, Shadowsocks, Trojan, WebSocket, raw, reverse
+- `eggress-protocol-h3`: optional HTTP/3 CONNECT over QUIC
 - `eggress-transport-tls`: rustls client/server transport
+- `eggress-transport-quic`: optional Quinn connection and stream transport
 - `eggress-transport-ssh`: optional russh client transport for pproxy SSH upstreams
 - `eggress-testkit`: oracle, manifest, corpus, compatibility test utilities
 - `eggress-pproxy-compat`: Rust-side URI translation and diagnostics
@@ -88,6 +90,15 @@ sessions, keepalives, and remote TCP forwarding. Host keys are deliberately not
 verified in this compatibility path because pproxy passes `known_hosts=None`;
 the warning is emitted at connection time. Native secure SSH configuration is
 not implied by this feature.
+
+The `quic` feature is opt-in on the CLI, embed, runtime, server, Python, and
+compatibility layers. It adds `eggress-transport-quic`, `eggress-protocol-h3`,
+`quinn`, and `h3`/`h3-quinn` only when enabled; default and `common` builds do
+not expose QUIC or HTTP/3. `h3://` is HTTP/3 CONNECT, while
+`quic+http://` is raw QUIC carrying an ordinary application protocol. QUIC
+listeners require certificate/key material, use ALPN `h3` for HTTP/3, and do
+not provide UDP association mode. Native clients verify certificates; the
+compatibility-only insecure client path must remain explicit and warning-bearing.
 
 Shadowsocks strict AEAD coverage includes `aes-128-gcm`, `aes-192-gcm`,
 `aes-256-gcm`, and `chacha20-ietf-poly1305`. Their pproxy 2.7.9 salt/IV sizes
@@ -264,7 +275,10 @@ Key compatibility notes:
 - H2 listeners accept independent CONNECT streams; WS/WSS compatibility
   listeners require a fixed target (`ws{host:port}://listener`) and use the
   existing TLS transport for WSS. H2/WS/WSS upstream behavior remains supported.
-- QUIC/HTTP/3 is intentionally deferred.
+- QUIC/HTTP/3 is optional behind `quic`; run
+  `cargo test -p eggress-transport-quic -p eggress-protocol-h3` for focused
+  transport/protocol coverage. UDP-over-QUIC remains an explicit unsupported
+  composition and must not silently fall back.
 
 ## Change discipline
 

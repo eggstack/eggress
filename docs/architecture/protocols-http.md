@@ -44,6 +44,14 @@ CONNECT stream independently, validating `:authority` and
 and GOAWAY or transport loss ends the parent without cancelling unrelated
 streams that have already been handed to the relay executor.
 
+## Optional HTTP/3 CONNECT
+
+The `quic` feature provides `eggress-protocol-h3` for `h3://` upstreams and
+listeners. It uses the same CONNECT authority and Basic proxy-auth contract
+as H2, but runs each request stream over the QUIC transport. HTTP/3 listeners
+require certificate/key material and ALPN `h3`; UDP association mode is not
+supported.
+
 ## Body Framing
 
 - `Content-Length` body copying with bounded buffers

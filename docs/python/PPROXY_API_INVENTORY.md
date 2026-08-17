@@ -198,7 +198,7 @@ classification against eggress (Rust).
 
 | Method | Tier | Rationale |
 |--------|------|-----------|
-| All methods | **N/A** | QUIC/HTTP3 deferred by ADR |
+| All methods | **D** | HTTP/3 CONNECT is available through the optional native `quic` runtime feature; the Python facade remains structural |
 
 **eggress support:** Inbound: **No** | Upstream: **No**
 
@@ -339,8 +339,8 @@ classification against eggress (Rust).
 | `ProxyDirect` | Direct connection (no proxy) | **A** | eggress `direct` action |
 | `ProxySimple` | Single-hop proxy with protocol + cipher | **B** | eggress upstream config; different shape |
 | `ProxyH2` | HTTP/2 connection multiplexer proxy | **D** | H2 CONNECT is protocol-crate only |
-| `ProxyQUIC` | QUIC transport proxy | **N/A** | QUIC/HTTP3 deferred by ADR |
-| `ProxyH3` | HTTP/3 over QUIC proxy | **N/A** | QUIC/HTTP3 deferred by ADR |
+| `ProxyQUIC` | QUIC transport proxy | **D** | Optional native `quic` runtime feature; Python facade remains structural |
+| `ProxyH3` | HTTP/3 over QUIC proxy | **D** | Optional native `quic` runtime feature; Python facade remains structural |
 | `ProxySSH` | SSH tunnel proxy facade | **B** | Native URI/CLI execution is feature-gated; this Python class remains structural |
 | `ProxyBackward` | Reverse/backward proxy (inbound connections) | **B** | eggress reverse protocol crate; different shape |
 
@@ -400,7 +400,7 @@ scheme[+scheme...][!param]://[user:pass@]host:port[/path][?rule][#fragment][,plu
 | `+scheme` | `http+socks5` | Multi-protocol listener | **B** | eggress supports mixed-protocol listeners via detection chain |
 | `ssl` / `secure` | `ss+ssl://` | TLS transport wrapper | **B** | eggress TLS in `transport.tls` TOML section |
 | `h2` | `http+h2://` | HTTP/2 transport | **D** | Protocol-crate only |
-| `quic` / `h3` | `ss+quic://` | QUIC transport | **N/A** | Deferred by ADR |
+| `quic` / `h3` | `ss+quic://` | QUIC transport | **D** | Optional native `quic` feature; UDP association mode is unsupported |
 | `ssh` | `ssh://` | SSH transport | **D** | Deferred |
 | `in` | `socks5+in://` | Reverse (backward) proxy mode | **B** | eggress reverse protocol crate |
 | `!param` | `socks5!timeout://` | Protocol parameter | **D** | eggress handles via config struct fields |

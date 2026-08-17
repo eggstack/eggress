@@ -123,6 +123,18 @@ pub fn translate_from_uris(
             "pproxy --reuse enables SO_REUSEPORT on listener sockets (platform-dependent)",
         );
     }
+    if remote_chains.iter().any(|chain| {
+        chain.hops.iter().any(|hop| {
+            hop.protocol_chain
+                .iter()
+                .any(|protocol| matches!(protocol.as_str(), "quic" | "h3"))
+        })
+    }) {
+        output = output.with_warning(
+            "quic-insecure",
+            "pproxy QUIC/H3 compatibility uses an explicit insecure certificate verifier; generated upstream URIs carry insecure=true",
+        );
+    }
 
     // Process known-but-unsupported flags
     for flag in &args.known_unsupported {
@@ -354,7 +366,7 @@ pub fn translate_from_uris(
                     reject_listener = true;
                 }
                 "raw" | "tunnel" if local.fixed_target.is_some() => {}
-                "h2" => {}
+                "h2" | "h3" | "quic" => {}
                 "ws" | "wss" if local.fixed_target.is_some() => {}
                 "ws" | "wss" => {
                     output = output.with_unsupported(
@@ -418,6 +430,8 @@ pub fn translate_from_uris(
         let listener_name = format!("pproxy-local-{}", idx);
         let bind = local.bind_display();
         let is_h2_listener = protocols.len() == 1 && protocols[0] == "h2";
+        let is_h3_listener = protocols.len() == 1 && protocols[0] == "h3";
+        let is_quic_listener = protocols.iter().any(|protocol| protocol == "quic");
 
         let mut listener_entry = ListenerToml {
             name: listener_name.clone(),
@@ -453,6 +467,12 @@ pub fn translate_from_uris(
         if is_h2_listener {
             if let Some(ref mut tls) = listener_entry.tls {
                 tls.alpn = Some(vec!["h2".to_string()]);
+            }
+        }
+
+        if is_h3_listener || is_quic_listener {
+            if let Some(ref mut tls) = listener_entry.tls {
+                tls.alpn = None;
             }
         }
 
@@ -767,7 +787,8 @@ pub fn translate_from_uris(
             match hop.scheme.as_str() {
                 "ss" | "shadowsocks" | "ssr" => {}
                 "http" | "https" | "httponly" | "socks4" | "socks4a" | "socks5" | "trojan"
-                | "direct" | "h2" | "ws" | "wss" | "raw" | "tunnel" => {}
+                | "direct" | "h2" | "h3" | "quic" | "quic+http" | "http+quic" | "ws" | "wss"
+                | "raw" | "tunnel" => {}
                 "ssh" if cfg!(feature = "ssh") => {}
                 "ssh" => {
                     output = output.with_unsupported(
@@ -890,7 +911,7 @@ pub fn translate_from_uris(
                     ),
                 );
                 }
-                "h2" | "ws" | "wss" | "raw" | "tunnel" => {
+                "h2" | "h3" | "quic" | "ws" | "wss" | "raw" | "tunnel" => {
                     output = output.with_unsupported(
                         "unsupported-role",
                         format!(
@@ -1380,9 +1401,21 @@ fn build_config_uri(remote: &PproxyUri) -> String {
             .map(|auth| format!("#{auth}"))
             .unwrap_or_default()
     };
-    let rule_str = match &remote.rule {
-        Some(r) => format!("?rule={}", r),
-        None => String::new(),
+    let mut query = Vec::new();
+    if let Some(rule) = &remote.rule {
+        query.push(format!("rule={rule}"));
+    }
+    if remote
+        .protocol_chain
+        .iter()
+        .any(|protocol| matches!(protocol.as_str(), "quic" | "h3"))
+    {
+        query.push("insecure=true".to_string());
+    }
+    let rule_str = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", query.join("&"))
     };
     let bind = remote
         .local_bind

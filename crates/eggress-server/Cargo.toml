@@ -18,6 +18,7 @@ extended = [
 ]
 pproxy-legacy = ["extended", "eggress-protocol-shadowsocks/pproxy-legacy"]
 ssh = ["dep:eggress-transport-ssh"]
+quic = ["dep:eggress-transport-quic", "dep:eggress-protocol-h3"]
 
 [dev-dependencies]
 eggress-testkit.workspace = true
@@ -39,6 +40,8 @@ h2.workspace = true
 http.workspace = true
 eggress-transport-tls.workspace = true
 eggress-transport-ssh = { workspace = true, optional = true }
+eggress-transport-quic = { workspace = true, optional = true }
+eggress-protocol-h3 = { workspace = true, optional = true }
 eggress-udp.workspace = true
 rustls.workspace = true
 tokio.workspace = true

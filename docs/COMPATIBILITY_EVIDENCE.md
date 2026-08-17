@@ -180,7 +180,7 @@ After running differential tests, a machine-readable parity report is generated 
 | Raw fixed-target tunnel | Supported | Synthetic (bind + relay test) |
 | TLS ALPN config | Supported | Synthetic (config compilation test) |
 | H2/WS/Raw URI schemes | Supported | Synthetic (parser tests) |
-| QUIC/H3 | Deferred | ADR (no implementation) |
+| QUIC/H3 | Supported | Phase 8 optional transport tests; UDP association mode explicitly unsupported |
 
 ## Phase 27: Reverse / Backward Proxying
 

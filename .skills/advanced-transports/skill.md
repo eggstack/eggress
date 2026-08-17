@@ -1,10 +1,21 @@
 # Advanced Transport Development
 
 ## When to use
-Use when implementing or modifying HTTP/2 CONNECT, WebSocket tunnels, raw fixed-target tunnels, or TLS/ALPN negotiation.
+Use when implementing or modifying HTTP/2 CONNECT, HTTP/3 CONNECT, WebSocket
+tunnels, raw fixed-target tunnels, QUIC streams, or TLS/ALPN negotiation.
 
 ## QUIC/HTTP/3 status
-QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`). The URI schemes `quic://` and `h3://` are rejected with `UnsupportedProtocol` at parse time. No `quinn`/`h3`/`h3-quinn` dependencies exist in the workspace. Do not add QUIC/H3 code without re-evaluation of the ADR conditions.
+QUIC and HTTP/3 are implemented behind the opt-in `quic` feature. The
+`eggress-transport-quic` crate owns Quinn endpoint and stream lifecycle, and
+`eggress-protocol-h3` owns HTTP/3 CONNECT. `h3://` is the multiplexed HTTP/3
+form; `quic+http://` is raw QUIC carrying the HTTP protocol. Default and
+`common` builds remain dependency-free. Native clients verify certificates;
+the compatibility-only insecure mode must be explicit and warning-bearing.
+
+QUIC listeners require certificate/key material and advertise ALPN `h3` for
+HTTP/3. UDP association mode is rejected because UDP-over-QUIC stream mapping
+is not part of the current supported composition matrix. Do not add
+WebTransport or MASQUE as an implicit extension.
 
 ## Architecture
 - Three protocol crates: `eggress-protocol-http` (H2 CONNECT module), `eggress-protocol-websocket`, `eggress-protocol-raw`
@@ -14,7 +25,8 @@ QUIC and HTTP/3 are **deferred by ADR** (`docs/adr/ADR_quic_h3_pproxy_parity.md`
 
 ## Tier classification
 
-WebSocket, Raw, and H2 CONNECT are native runtime transports. The
+WebSocket, Raw, H2 CONNECT, and optional H3/QUIC transports are native runtime
+transports. The
 compatibility translator bridges upstream forms through the native URI/config
 path and also exposes bounded H2 listener and fixed-target WS/WSS listener
 roles. WS/WSS listeners require a fixed target; H2 listeners multiplex one
@@ -26,8 +38,13 @@ CONNECT request per stream.
   `--ssl` supplies the WSS certificate and `http/1.1` ALPN.
 - `echo` is an explicit compatibility listener utility, including a bounded
   UDP echo mode.
+- `h3://` listeners require TLS certificate/key material and multiplex
+  independent CONNECT streams; `quic+http://` listeners multiplex raw QUIC
+  streams into the selected application protocol.
 - Tests: `cargo test -p eggress-config` and the protocol/runtime tests cover
   the native paths and refusal boundaries.
+- Focused QUIC tests: `cargo test -p eggress-transport-quic` and
+  `cargo test -p eggress-protocol-h3`.
 
 ## Chain composition behavior (stream-native, Track B hard closure)
 

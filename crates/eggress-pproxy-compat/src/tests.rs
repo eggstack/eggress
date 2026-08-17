@@ -79,6 +79,31 @@ fn test_translate_advanced_upstream_protocols_to_native_uris() {
     }
 }
 
+#[cfg(feature = "quic")]
+#[test]
+fn test_translate_quic_compatibility_marks_insecure_explicitly() {
+    for (scheme, expected) in [
+        ("h3", "h3://proxy:443?insecure=true"),
+        ("quic+http", "quic+http://proxy:443?insecure=true"),
+    ] {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "socks5://127.0.0.1:1080".into(),
+            "-r".into(),
+            format!("{scheme}://proxy:443"),
+        ])
+        .unwrap();
+        let output = translate_pproxy_args(&args).unwrap();
+        let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
+        assert!(parsed.get("upstreams").is_some(), "{}", output.toml);
+        assert_eq!(parsed["upstreams"][0]["uri"].as_str(), Some(expected));
+        assert!(output
+            .warnings
+            .iter()
+            .any(|warning| warning.category == "quic-insecure"));
+    }
+}
+
 #[test]
 fn test_raw_fixed_target_is_lowered_to_native_endpoint() {
     let args = PproxyArgs::parse(&[

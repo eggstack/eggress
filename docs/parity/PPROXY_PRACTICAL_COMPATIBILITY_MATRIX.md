@@ -48,7 +48,7 @@ contract.
 | SOCKS5 username/password authentication | `matched` | Success and failure differential cases |
 | SOCKS5 UDP ASSOCIATE | `supported_difference` | Public framing/relay boundary is narrower |
 | Direct TCP/UDP and HTTP/SOCKS upstreams | `matched` | Runtime and differential tests |
-| pproxy backward/reverse raw channels | `supported_difference` | Separate raw-auth adapter, reconnect and jump tests; QUIC marker deferred |
+| pproxy backward/reverse raw channels | `supported_difference` | Separate raw-auth adapter, reconnect and jump tests; QUIC remains a separate optional transport |
 | UDP chains of SOCKS5/Shadowsocks hops | `supported_difference` | Composable codecs and runtime flow tests; unsupported protocols fail validation |
 | TCP `__` chains and routing predicates | `supported_difference` | Native chain model preserves supported compositions |
 | Shadowsocks AEAD TCP/UDP | `supported_difference` | Four modern methods with method-specific salts; standard UDP upstream plus exact pproxy PacketCipher standalone inbound path |
@@ -56,7 +56,7 @@ contract.
 | H2 and WS/WSS | `supported_difference` | Upstream and compatibility listener roles; H2 multiplexes CONNECT streams, WS/WSS use fixed targets |
 | SSR framing and built-in plugins | `gap` | Exact tagged behavior is Phase 3 |
 | SSH upstream/jump/remote-forward | `gap` | Phase 7 optional transport |
-| QUIC/H3 listener/client/UDP roles | `gap` | Phase 8 optional transport |
+| QUIC/H3 listener/client roles | `supported_difference` | Phase 8 optional `quic` transport; UDP association mode is an explicit unsupported composition |
 | Legacy stream ciphers and OTA | `gap` | Phase 9 legacy tail |
 | SOCKS4/SOCKS5 BIND | `unsupported` by both | Tagged accept paths require CONNECT (`0x01`); not Eggress-specific strict work |
 | Linux redir | `platform_limited` | Requires original-destination facilities and privileges |
@@ -90,7 +90,7 @@ strict phase, and focused test references.
 
 ## Stable exclusions and boundaries
 
-SSH, QUIC/HTTP/3, SSR, exact plugin transforms, legacy Shadowsocks ciphers and
+SSH, SSR, exact plugin transforms, legacy Shadowsocks ciphers and
 OTA, daemonization, UDP over non-UDP protocols, and unavailable platform transparent facilities remain
 explicit strict gaps or exclusions according to their phase records. Unknown
 flags and unsupported options fail with structured diagnostics; known Eggress

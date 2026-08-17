@@ -31,6 +31,8 @@ members = [
     "crates/eggress-python",
     "crates/eggress-protocol-websocket",
     "crates/eggress-protocol-reverse",
+    "crates/eggress-protocol-h3",
+    "crates/eggress-transport-quic",
     "crates/eggress-system-proxy",
 ]
 
@@ -86,6 +88,10 @@ pkcs8 = "0.11"
 rcgen = "0.13"
 criterion = { version = "0.5", features = ["html_reports"] }
 russh = { version = "0.62.6", default-features = false, features = ["ring", "flate2", "rsa"] }
+quinn = { version = "0.11.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "platform-verifier"] }
+h3 = { version = "0.0.8", default-features = false }
+h3-quinn = { version = "0.0.10", default-features = false }
+rustls-platform-verifier = "0.7.0"
 
 # Internal crates
 eggress-admin = { path = "crates/eggress-admin", default-features = false }
@@ -110,6 +116,8 @@ eggress-pproxy-compat = { path = "crates/eggress-pproxy-compat" }
 eggress-embed = { path = "crates/eggress-embed", default-features = false }
 eggress-protocol-websocket = { path = "crates/eggress-protocol-websocket" }
 eggress-protocol-reverse = { path = "crates/eggress-protocol-reverse" }
+eggress-protocol-h3 = { path = "crates/eggress-protocol-h3", default-features = false }
+eggress-transport-quic = { path = "crates/eggress-transport-quic", default-features = false }
 eggress-system-proxy = { path = "crates/eggress-system-proxy" }
 
 [dependencies]

@@ -30,6 +30,7 @@ url = "2"
 [features]
 default = []
 ssh = ["eggress-embed/ssh", "eggress-pproxy-compat/ssh", "eggress-cli/ssh", "eggress-runtime/ssh"]
+quic = ["eggress-embed/quic", "eggress-cli/quic", "eggress-runtime/quic"]
 
 [lints]
 workspace = true

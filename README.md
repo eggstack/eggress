@@ -363,7 +363,7 @@ Python bindings; it is not a separate Python distribution. The bundled
   `fa`/`rr`/`rc`/`lc` scheduler mappings, per-remote regex predicates, the
   `-b` block bridge, and direct unmatched fallback. Eggress's optional rule
   file bridge is an extension; pproxy 2.7.9 has no `--rulefile` flag.
-- Structured diagnostics for unsupported protocols and deferred transports;
+- Structured diagnostics for unsupported protocols and optional transports;
   SSH listener use remains an explicit upstream-only error
 - Phase 5 and corrective-pass runtime coverage for `httponly` upstreams,
   TCP/UDP `echo`, canonical fixed-target
@@ -381,7 +381,10 @@ Python bindings; it is not a separate Python distribution. The bundled
 
 - **SSH listeners** — upstream-only; SSH upstreams require the opt-in `ssh`
   feature and intentionally match pproxy's permissive host-key behavior
-- **QUIC/HTTP/3** — deferred by ADR; URI schemes `quic://` and `h3://` are rejected
+- **QUIC/HTTP/3** — optional behind the `quic` feature; `h3://` provides HTTP/3
+  CONNECT and `quic+http://` provides raw QUIC carrying HTTP. QUIC listeners
+  require certificate/key material and UDP association mode is intentionally
+  unsupported.
 - **Other SSR/auth families and legacy stream ciphers** — outside the bounded pproxy 2.7.9 SSR surface; legacy ciphers remain rejected with clear diagnostics
 - **SOCKS4/SOCKS5 BIND** — pproxy 2.7.9 also requires CONNECT (`0x01`); the
   matching refusal is not an Eggress-specific strict gap

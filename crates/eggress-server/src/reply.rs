@@ -17,6 +17,7 @@ pub async fn send_tunnel_success(
                 .await?;
         }
         (TunnelProtocol::Http2, ReplyContext::Http2)
+        | (TunnelProtocol::Http3, ReplyContext::Http3)
         | (TunnelProtocol::WebSocket, ReplyContext::WebSocket) => {}
         (TunnelProtocol::Socks4, ReplyContext::Socks4) => {
             eggress_protocol_socks::socks4::server::write_socks4_reply(
@@ -60,6 +61,7 @@ pub async fn send_tunnel_failure(
             pending.client.write_all(status).await?;
         }
         (TunnelProtocol::Http2, ReplyContext::Http2)
+        | (TunnelProtocol::Http3, ReplyContext::Http3)
         | (TunnelProtocol::WebSocket, ReplyContext::WebSocket) => {
             pending.client.shutdown().await.ok();
         }

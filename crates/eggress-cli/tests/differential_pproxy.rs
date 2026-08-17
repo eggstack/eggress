@@ -995,6 +995,7 @@ async fn differential_socks5_through_http_upstream() {
                             auth_prefix: None,
                             tls: false,
                             server_name: None,
+                            insecure: false,
                         }];
                         if let Ok(server_stream) = executor.execute(&chain, &target).await {
                             let _ = relay(client_stream, server_stream).await;
@@ -1123,6 +1124,7 @@ async fn differential_socks5_through_socks5_upstream() {
                             auth_prefix: None,
                             tls: false,
                             server_name: None,
+                            insecure: false,
                         }];
                         if let Ok(server_stream) = executor.execute(&chain, &target).await {
                             let _ = relay(client_stream, server_stream).await;

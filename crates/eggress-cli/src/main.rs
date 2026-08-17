@@ -1032,6 +1032,8 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
             eggress_uri::ProtocolSpec::ShadowsocksR => eggress_core::ProtocolId::ShadowsocksR,
             eggress_uri::ProtocolSpec::Trojan => eggress_core::ProtocolId::Trojan,
             eggress_uri::ProtocolSpec::Http2 => eggress_core::ProtocolId::Http2,
+            eggress_uri::ProtocolSpec::Http3 => eggress_core::ProtocolId::Http3,
+            eggress_uri::ProtocolSpec::Quic => eggress_core::ProtocolId::Quic,
             eggress_uri::ProtocolSpec::WebSocket => eggress_core::ProtocolId::WebSocket,
             eggress_uri::ProtocolSpec::Raw => eggress_core::ProtocolId::Raw,
             eggress_uri::ProtocolSpec::Unix => eggress_core::ProtocolId::Raw,

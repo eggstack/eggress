@@ -127,6 +127,7 @@ mod tests {
                 local_bind: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
                 plugins: vec![],
                 auth_prefix: None,
             }],

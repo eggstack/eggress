@@ -1,13 +1,28 @@
-# ADR: HTTP/3/QUIC Deferral
+# ADR: HTTP/3/QUIC Deferral (Superseded)
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted (Deferred) |
-| Date | Phase 26 |
+| Status | Superseded by Phase 8 implementation |
+| Date | Phase 26; superseded Phase 8 |
 | Decision makers | Eggress maintainers |
 | Related | `docs/protocols/H2_H3_QUIC.md`, `docs/protocols/ADVANCED_TRANSPORTS.md`, `docs/PPROXY_PARITY_SPEC.md` |
 
-## Context
+## Superseding decision
+
+Phase 8 implements the bounded pproxy 2.7.9 transport surface behind the
+optional `quic` feature. `h3://` provides HTTP/3 CONNECT and `quic+http://`
+provides raw QUIC carrying an application protocol. The implementation uses
+`quinn`, `h3`, and `h3-quinn`, keeps those dependencies out of default builds,
+requires listener certificate/key material, and rejects UDP association mode
+explicitly. Native clients verify certificates; compatibility-only insecure
+connections remain explicit and warning-bearing.
+
+The remaining scope is deliberate: WebTransport, MASQUE, HTTP/3 datagrams,
+0-RTT application data, and UDP-over-QUIC stream mapping are not claimed.
+See [`docs/architecture/transport-quic.md`](../architecture/transport-quic.md)
+for the active design and tests.
+
+## Historical context
 
 pproxy mentions HTTP/3 over QUIC as a transport option. QUIC provides
 multiplexed streams over UDP with built-in TLS 1.3, offering benefits for
@@ -29,7 +44,7 @@ However, pproxy's H3/QUIC behavior in version 2.7.9 is:
 eggress must decide whether to implement H3/QUIC for pproxy parity or defer
 implementation.
 
-## Decision
+## Historical decision (superseded)
 
 **HTTP/3/QUIC implementation is DEFERRED.**
 

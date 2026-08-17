@@ -290,7 +290,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
             "http" | "https" | "socks4" | "socks4a" | "socks5" | "trojan" | "ss"
             | "shadowsocks" | "ssr" | "direct" | "ssh" | "unix" | "redir" | "h2" | "ws" | "wss"
             | "raw" | "tunnel" | "bind" | "listen" | "backward" | "rebind" | "httponly"
-            | "echo" => {}
+            | "echo" | "quic" | "h3" => {}
             other => {
                 return Err(CompatError::UnsupportedProtocol(other.to_string()));
             }

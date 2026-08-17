@@ -246,6 +246,7 @@ mod tests {
             local_bind: None,
             tls: false,
             server_name: None,
+            insecure: false,
             plugins: Vec::new(),
             auth_prefix: None,
         }

@@ -566,6 +566,7 @@ async fn test_http_to_socks5_chain() {
                         auth_prefix: None,
                         tls: false,
                         server_name: None,
+                        insecure: false,
                     }];
                     if let Ok(server_stream) = executor.execute(&chain, &request.target).await {
                         let _ = relay(client_stream, server_stream).await;
@@ -704,6 +705,7 @@ async fn test_socks5_to_http_chain() {
                             auth_prefix: None,
                             tls: false,
                             server_name: None,
+                            insecure: false,
                         }];
                         if let Ok(server_stream) = executor.execute(&chain, &target).await {
                             let _ = relay(client_stream, server_stream).await;

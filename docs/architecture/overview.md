@@ -92,12 +92,14 @@ Client connects
 | `MatchExpr` | [`eggress-routing`](routing.md) | Composite matcher: host, port, CIDR, protocol, identity, transport |
 | `CompiledRule` | [`eggress-routing`](routing.md) | First-match-wins routing rule with upstream group binding |
 | `SessionContext` | [`eggress-core`](core.md) | Per-connection metadata (target, client identity, listener) |
+| `QuicClient` / `QuicListener` | [`transport-quic`](transport-quic.md) | Optional multiplexed QUIC stream transport |
+| `H3Client` / `serve_connection` | [`transport-quic`](transport-quic.md) | Optional HTTP/3 CONNECT stream adapter |
 
 ---
 
 ## Module Overview
 
-The workspace contains 24 crates organized into six categories: foundation, protocols, infrastructure, entry points, compatibility, and tooling. Each crate has a detailed architecture document linked in the [Deep Dive Index](#deep-dive-index).
+The workspace contains 26 crates organized into six categories: foundation, protocols, infrastructure, entry points, compatibility, and tooling. Each crate has a detailed architecture document linked in the [Deep Dive Index](#deep-dive-index).
 
 ### Foundation Layer
 
@@ -108,6 +110,7 @@ These crates define the shared types and abstractions used everywhere.
 | **eggress-core** | Core types, traits, stream abstractions, protocol identifiers, error types. Defines `BoxStream`, `TargetAddr`, `ProtocolId`, `SessionContext`, `RouteAction`, relay, chain execution, protocol detection, and dispatch. Every other crate depends on it. | [core.md](core.md) |
 | **eggress-uri** | URI parsing with typed AST. Parses `protocol+protocol://user:pass@host:port?rule#local` syntax with `__` hop separator. Produces `ProxyChainSpec` → `ProxyHopSpec` → `ProtocolSpec`/`EndpointSpec`/`CredentialSpec`. `RedactedUri` replaces credentials for safe logging. | [uri.md](uri.md) |
 | **eggress-transport-tls** | Shared TLS transport layer using rustls. `TlsClientConfigBuilder` (system roots, custom CA, ALPN, insecure mode) and `TlsServerConfigBuilder` (cert/key PEM). `tls_connect()` / `tls_accept()` wrap `BoxStream` in TLS. Used by listener TLS, upstream chain hops, and Trojan. | [transport-tls.md](transport-tls.md) |
+| **eggress-transport-quic** / **eggress-protocol-h3** | Optional Quinn QUIC streams and HTTP/3 CONNECT adapters. | [transport-quic.md](transport-quic.md) |
 | **eggress-transport-ssh** | Optional `ssh`-feature russh client transport for pproxy-compatible upstream direct TCP/Unix channels, session reuse, chained hops, and explicit remote TCP forwarding. Compatibility host-key behavior is warning-bearing and not a native secure API. | [transport-ssh.md](transport-ssh.md) |
 
 ### Protocol Crates

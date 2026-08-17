@@ -6,9 +6,9 @@ HTTP/2 CONNECT provides a multiplexed tunnel transport using the HTTP/2
 CONNECT method. Each tunneled stream is an independent HTTP/2 stream within
 a single TLS connection, enabling connection multiplexing.
 
-HTTP/3 over QUIC is deferred pending pproxy behavioral stability and
-dependency evaluation. See `docs/adr/ADR_quic_h3_pproxy_parity.md` for the
-decision rationale.
+HTTP/3 over QUIC is available behind the optional `quic` feature. The
+implementation follows the pproxy 2.7.9 CONNECT contract while keeping Quinn
+and H3 dependencies out of default builds.
 
 Source: `crates/eggress-protocol-h2/src/`
 
@@ -133,32 +133,19 @@ Negotiated: h2
 If ALPN negotiation fails or the server does not support `h2`, the TLS
 handshake fails with `NoApplicationProtocol`.
 
-## H3/QUIC (Deferred)
+## H3/QUIC
 
-### Investigation Findings
+### Wire behavior
 
-pproxy mentions H3/QUIC as a transport option but:
+- `h3://` uses HTTP/3 CONNECT with `:method CONNECT`, HTTPS `:scheme`, `/`
+  `:path`, destination `:authority`, and optional Basic proxy auth.
+- `quic+http://` carries ordinary HTTP proxy streams over raw QUIC; each
+  stream is independent and several streams share one connection.
+- H3 uses ALPN `h3`; raw QUIC intentionally does not advertise an application
+  ALPN. Listeners require certificate/key material.
+- UDP association mode is rejected explicitly; no direct-UDP fallback occurs.
 
-- pproxy's H3/QUIC behavior is **experimental and unstable** in version 2.7.9.
-- No documented interop evidence between pproxy's H3/QUIC and standard QUIC
-  implementations.
-- The `aioquic` Python library (pproxy's QUIC backend) has limited deployment
-  and is not the reference QUIC implementation.
-
-### Deferral Decision
-
-H3/QUIC implementation is deferred. See `docs/adr/ADR_quic_h3_pproxy_parity.md`
-for the full rationale.
-
-Key factors:
-- **Dependency weight**: `quinn` crate adds a significant dependency tree
-  (rustls,ring, etc.) for a transport with uncertain pproxy interop.
-- **No clear use case**: H3/QUIC is primarily beneficial for lossy networks
-  (mobile, satellite). Proxy deployments typically have stable TCP connections.
-- **pproxy instability**: The H3 behavior in pproxy is not stable enough to
-  serve as a differential testing oracle.
-
-### Dependencies (if implemented)
+### Dependencies
 
 | Crate | Purpose | Size |
 |-------|---------|------|
@@ -166,7 +153,11 @@ Key factors:
 | `h3` | HTTP/3 protocol | Small |
 | `h3-quinn` | h3 + quinn integration | Small |
 
-ALPN values: `h3` (HTTP/3 over QUIC).
+ALPN value: `h3` (HTTP/3 over QUIC).
+
+The compatibility-only insecure client verifier is explicit and warning-bearing;
+native clients use platform certificate verification. WebTransport, MASQUE,
+HTTP/3 datagrams, and 0-RTT application data are out of scope.
 
 ## Test Coverage
 

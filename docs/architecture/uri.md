@@ -25,6 +25,8 @@ protocol+protocol://user:password@host:port?rule#local
 ```
 
 - `+` separates multiple protocols within a single hop (e.g., `socks5+tls`)
+- `h3` selects HTTP/3 CONNECT over QUIC; `quic+http` selects raw QUIC carrying
+  HTTP. These protocols require the optional `quic` feature.
 - `__` separates proxy hops in a chain
 - A hop separator must contain exactly two underscores; repeated separators
   such as `___` are rejected.

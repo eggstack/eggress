@@ -168,6 +168,7 @@ pub async fn execute(session: AcceptedSession, config: &ConnectionConfig) -> Ses
             let protocol = Some(match pending.protocol {
                 crate::accept::TunnelProtocol::HttpConnect => "http".to_string(),
                 crate::accept::TunnelProtocol::Http2 => "h2".to_string(),
+                crate::accept::TunnelProtocol::Http3 => "h3".to_string(),
                 crate::accept::TunnelProtocol::WebSocket => "websocket".to_string(),
                 crate::accept::TunnelProtocol::Socks4 => "socks4".to_string(),
                 crate::accept::TunnelProtocol::Socks5 => "socks5".to_string(),
@@ -292,6 +293,8 @@ fn upstream_protocol_label(chain: &eggress_uri::ProxyChainSpec) -> &'static str 
             eggress_uri::ProtocolSpec::ShadowsocksR => "ssr",
             eggress_uri::ProtocolSpec::Trojan => "trojan",
             eggress_uri::ProtocolSpec::Http2 => "h2",
+            eggress_uri::ProtocolSpec::Http3 => "h3",
+            eggress_uri::ProtocolSpec::Quic => "quic",
             eggress_uri::ProtocolSpec::WebSocket => "websocket",
             eggress_uri::ProtocolSpec::Raw => "raw",
             eggress_uri::ProtocolSpec::Ssh => "ssh",
@@ -436,6 +439,7 @@ async fn execute_tunnel(
         inbound_protocol: match pending.protocol {
             crate::accept::TunnelProtocol::HttpConnect => eggress_core::ProtocolId::Http,
             crate::accept::TunnelProtocol::Http2 => eggress_core::ProtocolId::Http2,
+            crate::accept::TunnelProtocol::Http3 => eggress_core::ProtocolId::Http3,
             crate::accept::TunnelProtocol::WebSocket => eggress_core::ProtocolId::WebSocket,
             crate::accept::TunnelProtocol::Socks4 => eggress_core::ProtocolId::Socks4,
             crate::accept::TunnelProtocol::Socks5 => eggress_core::ProtocolId::Socks5,
@@ -1043,6 +1047,12 @@ pub fn build_chain_executor(
     }
     handlers.push(Box::new(H2HopHandler));
 
+    #[cfg(feature = "quic")]
+    {
+        handlers.push(Box::new(QuicHopHandler));
+        handlers.push(Box::new(H3HopHandler));
+    }
+
     // Set up TLS wrapper using system roots by default, or the override if provided
     let tls_wrapper_override = tls_override.cloned();
     let tls_wrapper: eggress_core::chain::TlsWrapper =
@@ -1512,6 +1522,111 @@ impl HopHandler for UnixHopHandler {
 }
 
 struct H2HopHandler;
+
+#[cfg(feature = "quic")]
+struct QuicHopHandler;
+
+#[cfg(feature = "quic")]
+impl HopHandler for QuicHopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Quic
+    }
+
+    fn open<'a>(
+        &'a self,
+        endpoint: &'a eggress_uri::EndpointSpec,
+        hop: &'a eggress_uri::ProxyHopSpec,
+        _target: &'a TargetAddr,
+    ) -> Option<HandshakeFuture<'a>> {
+        let endpoint = endpoint.clone();
+        let server_name = hop
+            .server_name
+            .clone()
+            .unwrap_or_else(|| endpoint.host.clone());
+        Some(Box::pin(async move {
+            let client = eggress_transport_quic::QuicClient::connect(
+                &endpoint.host,
+                endpoint.port,
+                eggress_transport_quic::QuicClientConfig {
+                    server_name,
+                    insecure: hop.insecure,
+                    alpn_protocols: Vec::new(),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            client
+                .open_stream()
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }))
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        _target: &'a TargetAddr,
+        _hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
+    ) -> HandshakeFuture<'a> {
+        Box::pin(async move { Ok(stream) })
+    }
+}
+
+#[cfg(feature = "quic")]
+struct H3HopHandler;
+
+#[cfg(feature = "quic")]
+impl HopHandler for H3HopHandler {
+    fn protocol(&self) -> eggress_uri::ProtocolSpec {
+        eggress_uri::ProtocolSpec::Http3
+    }
+
+    fn open<'a>(
+        &'a self,
+        endpoint: &'a eggress_uri::EndpointSpec,
+        hop: &'a eggress_uri::ProxyHopSpec,
+        target: &'a TargetAddr,
+    ) -> Option<HandshakeFuture<'a>> {
+        let endpoint = endpoint.clone();
+        let target = target.clone();
+        let server_name = hop
+            .server_name
+            .clone()
+            .unwrap_or_else(|| endpoint.host.clone());
+        let authorization = hop
+            .credentials
+            .as_ref()
+            .map(|credentials| (credentials.username.clone(), credentials.password.clone()));
+        Some(Box::pin(async move {
+            let client = eggress_transport_quic::QuicClient::connect(
+                &endpoint.host,
+                endpoint.port,
+                eggress_transport_quic::QuicClientConfig {
+                    server_name,
+                    insecure: hop.insecure,
+                    alpn_protocols: vec![b"h3".to_vec()],
+                    ..Default::default()
+                },
+            )
+            .await?;
+            eggress_protocol_h3::H3Client::new(client, authorization)
+                .connect(&target)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }))
+    }
+
+    fn handshake<'a>(
+        &'a self,
+        stream: BoxStream,
+        _target: &'a TargetAddr,
+        _hop: &'a eggress_uri::ProxyHopSpec,
+        _hop_index: usize,
+    ) -> HandshakeFuture<'a> {
+        Box::pin(async move { Ok(stream) })
+    }
+}
 
 /// Wrapper that holds an H2PoolGuard alongside the bidirectional stream,
 /// ensuring the pooled connection is released back to the pool only when

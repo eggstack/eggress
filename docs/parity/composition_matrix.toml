@@ -410,20 +410,38 @@ notes = "Optional ssh feature: direct TCP channels, chained hops, cached session
 [[cell]]
 protocol = "quic"
 role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = ["protocol.quic"]
+rationale = "Optional raw QUIC stream transport."
+
+[[cell]]
+protocol = "quic"
+role = "upstream"
 traffic_kind = "udp"
-tier = "intentional_non_parity"
+tier = "unsupported"
 evidence = "docs_only"
 capability_ids = []
-rationale = "QUIC/HTTP3 deferred by ADR"
+rationale = "UDP-over-QUIC stream mapping is explicitly unsupported."
+
+[[cell]]
+protocol = "h3"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = ["protocol.http3"]
+rationale = "Optional HTTP/3 CONNECT over QUIC."
 
 [[cell]]
 protocol = "h3"
 role = "upstream"
 traffic_kind = "udp"
-tier = "intentional_non_parity"
+tier = "unsupported"
 evidence = "docs_only"
 capability_ids = []
-rationale = "HTTP/3 deferred by ADR"
+rationale = "HTTP/3 UDP association mode is explicitly unsupported."
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Reverse Proxy Compositions

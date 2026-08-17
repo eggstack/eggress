@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+quic = []
+
 [dependencies]
 eggress-core.workspace = true
 eggress-udp.workspace = true

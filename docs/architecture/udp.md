@@ -57,7 +57,8 @@ For a one-hop SOCKS5 upstream, the pipeline is:
 
 HTTP, SOCKS4, Trojan, H2, WebSocket, and mixed chains containing any of those
 protocols are rejected for UDP (no silent fallback). QUIC-specific UDP
-transport remains deferred until Phase 8. A composed chain is accepted only
+transport is also rejected because UDP-over-QUIC stream mapping is not in the
+supported composition matrix. A composed chain is accepted only
 when every hop has a real codec and the runtime can establish its UDP
 transport.
 

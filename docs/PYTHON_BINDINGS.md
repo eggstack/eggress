@@ -1124,7 +1124,7 @@ wire protocol.
 | Class | Reason |
 |-------|--------|
 | `SSR` | Legacy Shadowsocks — rejected with clear diagnostics |
-| `H3` | HTTP/3/QUIC — deferred by ADR |
+| `H3` | HTTP/3/QUIC — optional behind the `quic` feature |
 | `SSH` | Optional native upstream transport; protocol-class facade remains structural |
 
 ### Usage
@@ -1297,7 +1297,8 @@ Milestone C makes the Python internals exposed by `pproxy==2.7.9` behaviorally f
 
 ### Out of scope (Milestone D)
 
-- QUIC/H3 transport implementation (SSH is available behind the optional feature)
+- QUIC/H3 transport is optional behind the `quic` feature; SSH remains
+  available behind its own optional feature.
 - Salsa20, Blowfish, CAST5, DES ciphers (no `cryptography` backend)
 - UDP chains containing non-UDP protocols and reverse composition beyond the documented compatibility adapter
 - Full CLI/process parity

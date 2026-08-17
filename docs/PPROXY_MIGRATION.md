@@ -154,7 +154,10 @@ The following pproxy features are explicitly unsupported:
 - **SSH listeners** -- Not supported; SSH upstreams are available only with
   the opt-in `ssh` feature and intentionally match pproxy's permissive
   `known_hosts=None` behavior
-- **H3/QUIC transport** -- Deferred; pproxy H3 behavior is experimental and unstable. See ADR at `docs/adr/ADR_quic_h3_pproxy_parity.md`.
+- **H3/QUIC transport** -- Available behind the optional `quic` feature.
+  `h3://` provides HTTP/3 CONNECT and `quic+http://` provides raw QUIC
+  streams; listeners require certificate/key material and UDP association mode
+  remains unsupported.
 - **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
 - **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind `pproxy-legacy`. UDP SSR, SIP003/external plugins, and legacy stream-cipher encryption remain unsupported and produce structured diagnostics.
 

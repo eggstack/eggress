@@ -288,6 +288,32 @@ fn compile_protocol(s: &str) -> Result<ProtocolId, ConfigError> {
         "ssr" => Ok(ProtocolId::ShadowsocksR),
         "trojan" => Ok(ProtocolId::Trojan),
         "h2" => Ok(ProtocolId::Http2),
+        "h3" => {
+            #[cfg(feature = "quic")]
+            {
+                Ok(ProtocolId::Http3)
+            }
+            #[cfg(not(feature = "quic"))]
+            {
+                Err(ConfigError::validation(
+                    "protocols",
+                    "HTTP/3 requires the optional 'quic' feature",
+                ))
+            }
+        }
+        "quic" => {
+            #[cfg(feature = "quic")]
+            {
+                Ok(ProtocolId::Quic)
+            }
+            #[cfg(not(feature = "quic"))]
+            {
+                Err(ConfigError::validation(
+                    "protocols",
+                    "QUIC requires the optional 'quic' feature",
+                ))
+            }
+        }
         "websocket" | "ws" | "wss" => Ok(ProtocolId::WebSocket),
         "raw" | "tunnel" => Ok(ProtocolId::Raw),
         "echo" => Ok(ProtocolId::Echo),
@@ -804,6 +830,49 @@ fn compile_listeners(config: &ConfigFile) -> Result<Vec<ListenerConfig>, ConfigE
                 }
                 None => None,
             };
+
+            if protocols.contains(&ProtocolId::Quic) || protocols.contains(&ProtocolId::Http3) {
+                if tls.is_none() {
+                    return Err(ConfigError::validation(
+                        &format!("{}.tls", path),
+                        "QUIC/HTTP3 listeners require certificate and key material",
+                    ));
+                }
+                if l.unix.is_some() || l.transparent.as_ref().is_some_and(|t| t.enabled.unwrap_or(false)) {
+                    return Err(ConfigError::validation(
+                        &path,
+                        "QUIC/HTTP3 listeners cannot use unix or transparent listener modes",
+                    ));
+                }
+                let application_protocols = protocols
+                    .iter()
+                    .filter(|protocol| !matches!(protocol, ProtocolId::Quic | ProtocolId::Http3))
+                    .count();
+                if protocols.contains(&ProtocolId::Http3) && protocols.len() != 1 {
+                    return Err(ConfigError::validation(
+                        &format!("{}.protocols", path),
+                        "HTTP/3 listeners must use exactly the h3 protocol",
+                    ));
+                }
+                if protocols.contains(&ProtocolId::Quic) && application_protocols == 0 {
+                    return Err(ConfigError::validation(
+                        &format!("{}.protocols", path),
+                        "raw QUIC listeners require an application protocol such as http or socks5",
+                    ));
+                }
+                if udp.is_some() {
+                    return Err(ConfigError::validation(
+                        &format!("{}.udp", path),
+                        "QUIC and HTTP/3 listeners do not provide UDP association mode",
+                    ));
+                }
+                if l.fixed_target.is_some() && protocols.contains(&ProtocolId::Http3) {
+                    return Err(ConfigError::validation(
+                        &format!("{}.fixed_target", path),
+                        "HTTP/3 CONNECT uses the request authority instead of a fixed target",
+                    ));
+                }
+            }
 
             let transparent = compile_transparent_config(l.transparent.as_ref())?;
 

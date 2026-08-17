@@ -2,8 +2,7 @@
 
 Phase 26 of the pproxy parity roadmap. This document describes advanced
 transport wrappers available in eggress: WebSocket tunnels, H2 CONNECT
-tunnels, and raw fixed-target tunnels. H3/QUIC is deferred pending
-pproxy behavioral stability (see `docs/adr/ADR_quic_h3_pproxy_parity.md`).
+tunnels, raw fixed-target tunnels, and optional H3/QUIC streams.
 
 ## 1. Summary Table
 
@@ -14,7 +13,7 @@ pproxy behavioral stability (see `docs/adr/ADR_quic_h3_pproxy_parity.md`).
 | HTTP/2 CONNECT | `h2://` | `H2ConnectTunnel` | Phase 26 | required | `h2` |
 | Raw tunnel | `raw://` | `RawTunnel` | Phase 26 | optional | none |
 | Tunnel (alias) | `tunnel://` | `RawTunnel` | Phase 26 | optional | none |
-| H3/QUIC | `h3://` | deferred | deferred | required | `h3` |
+| H3/QUIC | `h3://` | `H3ConnectTunnel` | optional `quic` | required | `h3` |
 
 ## 2. Architecture Overview
 
@@ -76,7 +75,7 @@ pproxy schemes map to eggress internal types as follows:
 | `h2://` | HTTP/2 CONNECT | `H2ConnectTunnel` | TLS required; ALPN `h2` |
 | `raw://` | Raw TCP tunnel | `RawTunnel` | No protocol negotiation; fixed target |
 | `tunnel://` | Raw TCP tunnel (alias) | `RawTunnel` | Alias for `raw://` |
-| `h3://` | HTTP/3 over QUIC | deferred | See ADR |
+| `h3://` | HTTP/3 over QUIC | `H3ConnectTunnel` | Optional `quic` feature; ALPN `h3` |
 
 ## 4. TLS/ALPN Requirements
 
@@ -87,7 +86,7 @@ pproxy schemes map to eggress internal types as follows:
 | `h2://` | Yes | `h2` | TLS mandatory; HTTP/2 requires TLS |
 | `raw://` | No | none | No ALPN needed; raw TCP |
 | `tunnel://` | No | none | Alias for `raw://` |
-| `h3://` | Yes | `h3` | Deferred; QUIC transport |
+| `h3://` | Yes | `h3` | Optional `quic` feature; certificate/key required |
 
 TLS configuration uses the shared `eggress-transport-tls` layer:
 
@@ -150,7 +149,7 @@ See `docs/adr/ADR_b3_ws_raw_runtime_promotion.md` and
 
 ## 9. Limitations
 
-- No HTTP/3 or QUIC transport (deferred — see ADR)
+- HTTP/3 and raw QUIC require the optional `quic` feature
 - No WebSocket subprotocol negotiation beyond binary framing
 - No WebSocket compression (permessage-deflate)
 - Raw tunnels have no authentication or encryption — target must be trusted

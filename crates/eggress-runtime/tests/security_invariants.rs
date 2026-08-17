@@ -29,6 +29,7 @@ fn redacted_uri_never_includes_credentials() {
             auth_prefix: None,
             tls: false,
             server_name: None,
+            insecure: false,
         }],
     };
     let redacted = eggress_uri::RedactedUri::new(&spec);
@@ -72,6 +73,7 @@ fn redacted_uri_multi_hop_all_credentials_hidden() {
                 auth_prefix: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
             },
             eggress_uri::ProxyHopSpec {
                 protocols: vec![eggress_uri::ProtocolSpec::Http],
@@ -89,6 +91,7 @@ fn redacted_uri_multi_hop_all_credentials_hidden() {
                 auth_prefix: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
             },
         ],
     };
@@ -204,6 +207,7 @@ fn http_connect_credentials_with_control_chars_rejected() {
                 auth_prefix: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
             }],
         };
         let display = format!("{}", eggress_uri::RedactedUri::new(&spec));
@@ -233,6 +237,7 @@ fn http_connect_credentials_with_control_chars_rejected() {
                 auth_prefix: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
             }],
         };
         let display = format!("{}", eggress_uri::RedactedUri::new(&spec));
@@ -322,6 +327,7 @@ fn unsupported_protocol_combinations_not_silent() {
             auth_prefix: None,
             tls: false,
             server_name: None,
+            insecure: false,
         }],
     };
     let caps = classify_upstream_chain(&chain);
@@ -345,6 +351,7 @@ fn unsupported_protocol_combinations_not_silent() {
             auth_prefix: None,
             tls: false,
             server_name: None,
+            insecure: false,
         }],
     };
     let caps = classify_upstream_chain(&chain);
@@ -370,6 +377,7 @@ fn unsupported_protocol_combinations_not_silent() {
             auth_prefix: None,
             tls: false,
             server_name: None,
+            insecure: false,
         }],
     };
     let caps = classify_upstream_chain(&chain);
@@ -392,6 +400,7 @@ fn unsupported_protocol_combinations_not_silent() {
                 auth_prefix: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
             },
             ProxyHopSpec {
                 protocols: vec![ProtocolSpec::Http],
@@ -406,6 +415,7 @@ fn unsupported_protocol_combinations_not_silent() {
                 auth_prefix: None,
                 tls: false,
                 server_name: None,
+                insecure: false,
             },
         ],
     };
@@ -433,6 +443,7 @@ fn unsupported_protocol_combinations_not_silent() {
             auth_prefix: None,
             tls: false,
             server_name: None,
+            insecure: false,
         }],
     };
     let caps = classify_upstream_chain(&chain);
