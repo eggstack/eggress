@@ -933,7 +933,7 @@ class ProxySSH(ProxySimple):
     ) -> Any:
         raise UnsupportedPProxyFeature(
             "ProxySSH.wait_open_connection",
-            alternative="Use the native OutboundConnector with the optional ssh feature",
+            alternative="SSH connection pooling is owned by the native OutboundConnector; build with the optional ssh feature",
         )
 
     async def wait_ssh_connection(
