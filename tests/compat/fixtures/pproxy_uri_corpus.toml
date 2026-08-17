@@ -1040,19 +1040,18 @@ expected_warnings = []
 expected_unsupported = "ssh-upstream"
 
 # ============================================================================
-# 20. QUIC (not in pproxy; deferred for eggress)
+# 20. QUIC (pproxy transport; optional in eggress)
 # ============================================================================
 
 [[cases]]
-id = "quic_scheme_not_in_pproxy"
+id = "quic_scheme_optional"
 raw_uri = "quic://host:443"
 pproxy_interpretation = "Error: unknown scheme 'quic' (not in pproxy)"
-expected_interpretation = "Unsupported protocol: quic"
-compatibility_tier = "unsupported"
+expected_interpretation = "Optional QUIC transport behind the quic feature"
+compatibility_tier = "supported_difference"
 has_credentials = false
-expected_redacted_display = ""
+expected_redacted_display = "quic://host:443"
 expected_warnings = []
-expected_error = "UnsupportedProtocol"
 
 # ============================================================================
 # 21. Legacy SS methods (intentional non-parity)
@@ -1474,12 +1473,11 @@ expected_warnings = []
 expected_error = "UnsupportedTransportWrapper"
 
 [[cases]]
-id = "h3_listener_unsupported"
+id = "h3_listener_optional"
 raw_uri = "h3://0.0.0.0:8443"
 pproxy_interpretation = "Error: 'h3' is not a valid listener protocol in pproxy"
-expected_interpretation = "Unsupported: h3 (QUIC/HTTP3) is deferred"
-compatibility_tier = "unsupported"
+expected_interpretation = "Optional HTTP/3 CONNECT behind the quic feature"
+compatibility_tier = "supported_difference"
 has_credentials = false
 expected_redacted_display = "h3://0.0.0.0:8443"
 expected_warnings = []
-expected_error = "UnsupportedProtocol"

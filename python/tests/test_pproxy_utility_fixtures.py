@@ -64,7 +64,7 @@ class TestCheckPproxyUri:
     def test_error_cases_have_error(self, case: dict) -> None:
         """Corpus cases with expected_error should have parse errors.
 
-        Note: h2, ws, wss, raw, h3 parse successfully at the URI level;
+        Note: h2, ws, wss, raw, quic, and h3 parse successfully at the URI level;
         they are rejected at the runtime/compiler level, not by the parser.
         Only URIs with truly malformed syntax (missing scheme, bad port, etc.)
         produce parse errors.
@@ -72,7 +72,7 @@ class TestCheckPproxyUri:
         uri = case["raw_uri"]
         info = check_pproxy_uri(uri)
         # h2, ws, wss, raw, h3 are valid URI schemes; parse succeeds
-        known_valid_schemes = {"h2", "ws", "wss", "raw", "h3"}
+        known_valid_schemes = {"h2", "ws", "wss", "raw", "quic", "h3"}
         if info.scheme in known_valid_schemes:
             assert info.ok, f"unexpected error for known-valid scheme {uri}"
         else:
@@ -139,12 +139,6 @@ class TestRedactPproxyUri:
         expected = case.get("expected_redacted_display", "")
         if not expected:
             return  # error cases have no expected display
-
-        # h3 is an unsupported protocol that raises at the URI level
-        if case.get("id") == "h3_listener_unsupported":
-            with pytest.raises(Exception):
-                redact_pproxy_uri(uri)
-            return
 
         redacted = redact_pproxy_uri(uri)
         # Normalize: the URI parser normalizes +ssl to +tls in redacted display,

@@ -401,7 +401,7 @@ mod tests {
 
         let address = listener.local_addr().unwrap();
         let client = QuicClient::connect(
-            "localhost",
+            "127.0.0.1",
             address.port(),
             QuicClientConfig {
                 insecure: true,
