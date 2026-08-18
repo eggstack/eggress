@@ -193,15 +193,14 @@ mod tests {
 
     #[test]
     fn intentional_non_parity_unsupported_feature_only() {
-        // SSH, SSR, and legacy-cipher are intentional non-parity. With no
-        // harder feature present, the aggregate must be intentional_non_parity
-        // and NOT generic unsupported.
+        // SSH and SSR remain intentional non-parity. Legacy-cipher is a
+        // feature-off refusal because an opt-in compatibility implementation
+        // now exists.
         for feature in [
             "ssh-listener",
             "ssh-upstream",
             "ssr-listener",
             "ssr-upstream",
-            "legacy-cipher",
         ] {
             let tier = classify_aggregate_tier(&[], &[unsupported(feature)]);
             assert_eq!(
@@ -318,7 +317,7 @@ mod tests {
         );
         assert_eq!(
             manifest_tier_for_unsupported_feature("legacy-cipher"),
-            ManifestTier::IntentionalNonParity
+            ManifestTier::Unsupported
         );
         assert_eq!(
             manifest_tier_for_unsupported_feature("daemon"),
