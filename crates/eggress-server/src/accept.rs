@@ -591,8 +591,12 @@ pub async fn accept_with_fixed_target_for_peer(
             // the rest of the handshake. This enables fallback routing on auth
             // failure without consuming bytes needed by the fallback target.
             let mut hash_prefix = [0u8; 56];
+            // The protocol detector already consumed the first hash byte.
+            // Preserve it so password verification and the full Trojan parser
+            // see the original 56-byte hash.
+            hash_prefix[0] = first_byte[0];
             stream
-                .read_exact(&mut hash_prefix)
+                .read_exact(&mut hash_prefix[1..])
                 .await
                 .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
 

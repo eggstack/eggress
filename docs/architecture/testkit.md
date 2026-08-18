@@ -39,7 +39,10 @@ Test utilities, oracle harnesses, and compatibility validation for the workspace
 | `canonical_manifest` | Canonical manifest data |
 | `strict_manifest` | Strict behavioral manifest |
 
-Validates the parity contract encoded in `docs/parity/pproxy_capability_manifest.toml` (canonical) and `docs/parity/pproxy_2_7_9_strict_manifest.toml` (strict behavioral contract).
+Validates the active parity contract encoded in
+`docs/parity/pproxy_capability_manifest.toml`. The older
+`docs/parity/pproxy_2_7_9_strict_manifest.toml` remains available to run
+historical strict comparators, but is not an active compatibility claim.
 
 ## Composition and Corpus
 

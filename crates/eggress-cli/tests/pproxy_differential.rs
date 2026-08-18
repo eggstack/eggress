@@ -128,6 +128,9 @@ async fn send_through_socks5(
     conn.write_all(payload)
         .await
         .map_err(|e| format!("write failed: {e}"))?;
+    conn.flush()
+        .await
+        .map_err(|e| format!("flush failed: {e}"))?;
     // Use timeout-based read instead of half-close + read_to_end.
     // pproxy closes the connection on half-close, losing echo responses.
     Ok(read_with_timeout(&mut conn, Duration::from_secs(3)).await)
@@ -151,6 +154,9 @@ async fn send_through_socks5_with_auth(
     conn.write_all(payload)
         .await
         .map_err(|e| format!("write failed: {e}"))?;
+    conn.flush()
+        .await
+        .map_err(|e| format!("flush failed: {e}"))?;
     Ok(read_with_timeout(&mut conn, Duration::from_secs(3)).await)
 }
 
@@ -1120,15 +1126,15 @@ bind = "127.0.0.1:{egress_port}"
 protocols = ["http"]
 
 [[upstreams]]
-name = "pproxy-socks5"
+    id = "pproxy-socks5"
 uri = "socks5://127.0.0.1:{pproxy_port}"
 
 [[upstream_groups]]
-name = "default"
-upstreams = ["pproxy-socks5"]
+id = "default"
+members = ["pproxy-socks5"]
 
 [routing]
-default = "pproxy-socks5"
+default = "default"
 "#,
     );
     let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
@@ -1198,15 +1204,15 @@ bind = "127.0.0.1:{egress_port}"
 protocols = ["http"]
 
 [[upstreams]]
-name = "pproxy-http"
+    id = "pproxy-http"
 uri = "http://127.0.0.1:{pproxy_port}"
 
 [[upstream_groups]]
-name = "default"
-upstreams = ["pproxy-http"]
+id = "default"
+members = ["pproxy-http"]
 
 [routing]
-default = "pproxy-http"
+default = "default"
 "#,
     );
     let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
@@ -1275,6 +1281,9 @@ async fn send_through_trojan(
     conn.write_all(payload)
         .await
         .map_err(|e| format!("write failed: {e}"))?;
+    conn.flush()
+        .await
+        .map_err(|e| format!("flush failed: {e}"))?;
     Ok(read_with_timeout(&mut conn, Duration::from_secs(3)).await)
 }
 
@@ -1349,6 +1358,7 @@ default = "direct"
 "#,
     );
     let (egress_addr, cancel, jh) = start_eggress_from_toml_running(&toml).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Send payload through pproxy Trojan
     let pproxy_result = send_through_trojan(
@@ -1584,8 +1594,8 @@ async fn differential_cli_pproxy_check() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stdout.contains("compatible") || stdout.contains("Compatible"),
-        "check should report compatibility status"
+        stdout.contains("parity tier:"),
+        "check should report compatibility status: {stdout}"
     );
 }
 

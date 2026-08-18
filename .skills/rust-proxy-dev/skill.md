@@ -109,7 +109,8 @@ Listens on a filesystem socket path for local-only deployments.
 - [ ] Credentials never logged (use redacted Display)
 - [ ] Bounded parsers/handshake timeouts
 - [ ] Capability classifier reflects actual wire compatibility (not just internal code existence)
-- [ ] Strict manifest `certification_scope` field set for any new capability records
+- [ ] Active capability manifest status/evidence and the practical matrix are
+      updated together when a compatibility claim changes
 
 ## Embed API (eggress-embed)
 
@@ -166,7 +167,7 @@ When adding features to Connection, follow the pattern: Rust handles networking,
 
 `eggress.protocol` provides pproxy-compatible protocol objects (`Socks5`, `HTTP`, `SS`, etc.) with `MAPPINGS` dict and `get_protos()` parser. `eggress.cipher` provides AEAD cipher objects (`AES_256_GCM_Cipher`, etc.) that delegate to Rust. `eggress.plugin` provides a bounded callback bridge (`PluginBridge`) between Rust async tasks and Python callbacks. Tests: `python/tests/test_protocol_cipher.py`.
 
-#### Strict Python package surface (Phase 4)
+#### Final Python package surface
 
 The wheel includes all ten Phase 0 `pproxy` modules: the package metadata and
 entry-point modules, protocol/cipher/plugin modules, `server`, `cipherpy`,
@@ -228,7 +229,7 @@ The contract and minimal listener smoke tests live in
 - Tests: `cargo test -p eggress-cli --test pproxy_binary` and
   `cargo test -p eggress-cli --test pproxy_run_process`
 
-Phase 5 compatibility runtime notes:
+Compatibility runtime notes:
 - `httponly` is an upstream HTTP request adapter, not a listener protocol.
 - `echo` is an explicit TCP/UDP listener mode and is not enabled by unrelated
   native listener defaults.
@@ -349,9 +350,11 @@ environment. It contains both the `eggress` namespace and the bounded top-level
 `pproxy` package; there is no separate compatibility wheel. Never validate it
 by mutating `sys.modules` in the test process.
 
-Use `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` for current claims
-and `docs/parity/PPROXY_CLOSURE_SCENARIOS.md` for the optional paired oracle
-surface. Do not report aggregate parity percentages.
+Use `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` for current claims,
+`docs/parity/pproxy_capability_manifest.toml` for detailed evidence, and
+`docs/parity/PPROXY_CLOSURE_SCENARIOS.md` for the compact final oracle surface.
+The older strict manifest is historical provenance. Do not report aggregate
+parity percentages or call skipped external tests passes.
 
 See `docs/adr/ADR_python_import_and_distribution_strategy.md` for the ADR.
 See `docs/python/PACKAGING.md` and `docs/python/INSTALLATION.md` for packaging and installation details.

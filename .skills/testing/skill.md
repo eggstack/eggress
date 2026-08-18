@@ -267,17 +267,15 @@ python -m pproxy --version
 # Optional pproxy oracle tests (requires pproxy==2.7.9)
 cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
-# Parity manifest validation (Phase 37)
-python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
+# Final pproxy parity manifest validation
+python3 scripts/validate_pproxy_parity_manifest.py \
+  docs/parity/pproxy_capability_manifest.toml
 python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
 
-# The maintained public matrix is reviewed manually; no aggregate report is a
-# current compatibility claim. Validate the detailed manifest when it changes.
-python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
-
-# Composition matrix validation (Phase A2)
-cargo test -p eggress-testkit composition
-python3 scripts/validate_pproxy_parity_manifest.py --check-matrix docs/parity/composition_matrix.toml docs/parity/pproxy_capability_manifest.toml
+# Composition matrix validation
+python3 scripts/validate_pproxy_parity_manifest.py \
+  docs/parity/pproxy_capability_manifest.toml \
+  --check-matrix docs/parity/composition_matrix.toml
 
 # Fuzz targets (requires cargo-fuzz)
 cargo fuzz run uri_parse
@@ -362,12 +360,13 @@ python -m pytest --import-mode=importlib python/tests/test_proxy_connection.py p
 
 ## pproxy compatibility harness
 
-Compatibility evidence is tracked in `docs/parity/pproxy_capability_manifest.toml` (canonical) and `docs/parity/pproxy_2_7_9_strict_manifest.toml` (strict behavioral contract). Each feature
-has an evidence level: `unimplemented`, `implemented_synthetic`, `implemented_differential`,
-`implemented_interop`, `compatible`, or `intentional_non_parity`.
-
-Only `compatible` or `implemented_interop` evidence levels support compatibility claims.
-`implemented_synthetic` means tested without real pproxy.
+Compatibility evidence is tracked in `docs/parity/pproxy_capability_manifest.toml`
+and summarized in `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`. The
+active manifest status vocabulary is `matched`, `supported_difference`,
+`platform_limited`, `intentional_non_parity`, and `gap`. Evidence is classified
+as source/oracle structural, paired pproxy differential, or external
+interoperability; an Eggress-to-Eggress roundtrip is regression evidence only.
+The older strict manifest is historical provenance, not an active claim.
 
 ### pproxy compat unit tests
 - `crates/eggress-pproxy-compat/src/tests.rs` — protocol aliases, diagnostics, credential redaction
@@ -386,62 +385,27 @@ Only `compatible` or `implemented_interop` evidence levels support compatibility
 - Capture stdout/stderr for exit code and output validation
 - Clean up child processes via `Drop` guards or explicit `kill()`
 
-### Manifest validation (Phase 24)
+### Active manifest validation
 
-Manifest validation enforces:
-- `egress_status = "compatible"` requires `evidence_level = "compatible"`
-- Compatible entries with differential tests (`differential_*`) require `external_dependency`
-- `implemented_interop` requires `external_dependency` or `divergence` explaining interop
-- `implemented_synthetic` cannot pair with `compatible` status
-- `intentional_non_parity` requires non-empty `divergence`
+The validator enforces the frozen 2.7.9 source contract, required fields,
+status/tier vocabulary, evidence strength, diagnostics for warning-bearing
+entries, and explicit rationale for intentional non-parity. It also checks
+that the composition matrix remains valid. The active status vocabulary is
+`matched`, `supported_difference`, `platform_limited`,
+`intentional_non_parity`, and `gap`.
 
-The `last_updated` field was removed in Phase 24; stale warnings are no longer emitted.
-
-Run the oracle harness:
+Run the manifest validation suite:
 ```bash
-cargo test -p eggress-testkit pproxy_oracle -- --ignored
-```
-
-Parity reports are generated at:
-- `target/compat/pproxy-parity-report.json`
-
-### Manifest validation (Phase 36)
-
-Phase 36 tightened the manifest validator. New invariants:
-
-- `category` must be one of the 15 allowed values (enumerated in
-  `manifest::ALLOWED_CATEGORIES`).
-- `intentional_non_parity` status must pair with `intentional_non_parity` or
-  `implemented_synthetic` evidence (not `unimplemented`).
-- `unsupported` and `experimental` statuses require non-empty `divergence`.
-- `platform` category entries must mention a platform keyword in
-  `divergence` (Linux, macOS, Windows, FreeBSD, Unix, Solaris, BSD, Android, iOS).
-- `tests` entries must not be bare file paths or CI workflow references.
-  Use either a group alias (e.g. `cli_tests`, `integration_tests`,
-  `deny_audit_gate`, `python_wheel_ci_workflow`) or `file::test_function`
-  form.
-
-CLI tier tightened: 17 CLI entries that previously claimed `compatible` with
-synthetic evidence are now `supported` with `implemented_synthetic` evidence.
-
-Run the full manifest validation suite:
-```bash
-cargo test -p eggress-testkit --lib manifest
-```
-
-Validate the pproxy parity capability manifest (Phase 37):
-```bash
-python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
-python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
+python3 scripts/validate_pproxy_parity_manifest.py --strict \
+  docs/parity/pproxy_capability_manifest.toml
+python3 scripts/validate_pproxy_parity_manifest.py \
+  docs/parity/pproxy_capability_manifest.toml \
+  --check-matrix docs/parity/composition_matrix.toml
+cargo test -p eggress-testkit --lib canonical_manifest
 ```
 
 The maintained public matrix is reviewed manually; no aggregate report is a
-current compatibility claim. Validate the detailed manifest when it changes:
-```bash
-python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml
-```
-
-Phase 6 closure references are maintained in
+current compatibility claim. Final closure references are maintained in
 `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md` and
 `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`. The external pproxy oracle is
 optional and is not a hosted-CI gate.
@@ -488,41 +452,15 @@ python3.11 -m pytest tests/compat/test_pproxy_api_contract.py -v
 - `intentional_non_parity`: with explicit rationale
 - `internal_observed`: publicly reachable but not stable API
 
-## Milestone A: Strict Compatibility Testing
+## Final pproxy compatibility closure
 
-### Strict Manifest
+The Phase 10 closure is governed by the active manifest and practical matrix,
+with the compact paired scenarios in `docs/parity/PPROXY_CLOSURE_SCENARIOS.md`.
+The legacy strict-manifest/comparator modules remain in the testkit only as
+historical diagnostic tooling; they are not active release claims or required
+for routine CI.
 
-The strict manifest (`docs/parity/pproxy_2_7_9_strict_manifest.toml`) is a
-diagnostic behavioral contract for paired oracle/candidate testing. It is not a
-routine hosted-CI or release-certification gate.
-
-### Validation Commands
-
-```bash
-# Validate strict manifest structure and constraints
-cargo test -p eggress-testkit --lib strict_manifest
-
-# Run all strict comparators (11 comparators, 44 tests)
-cargo test -p eggress-testkit --lib strict_comparators
-
-# Run strict observation schema tests
-cargo test -p eggress-testkit --lib strict_observations
-```
-
-### Bootstrap Oracle Environment
-
-```bash
-python3.11 -m venv .venv-oracle
-.venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-oracle.txt
-.venv-oracle/bin/pip install -r compat/pproxy-2.7.9/requirements-optional.txt
-.venv-oracle/bin/python -c "import pproxy; print(pproxy.__version__)"
-```
-
-### Strict Manifest Validation Rules
-
-1. No duplicate record IDs
-2. All IDs non-empty
-3. All enum fields validated against allowed values
-4. Every `drop_in` has non-empty evidence or test refs
-5. No `drop_in` without oracle_probe
-6. No unresolved progress states at or below current milestone
+When compatibility evidence changes, run the active manifest and matrix
+validators, the canonical-manifest test, and the relevant paired pproxy or
+external interoperability suite. Skipped optional or external tests are not
+evidence of a pass.

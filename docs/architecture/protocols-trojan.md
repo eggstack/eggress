@@ -36,6 +36,11 @@ CONNECT host:port HTTP/1.1\r\n
 - Hash compared to expected hash from config
 - Domain length validated (1-255 bytes)
 
+Trojan clients may encode a literal IPv4/IPv6 target in the domain-form address
+field, as pproxy does. The accept path normalizes numeric literals back to
+`TargetHost::Ip` before routing, preserving literal-IP compatibility while
+keeping DNS-rebinding checks for actual hostnames.
+
 ## TLS Transport
 
 Trojan always uses TLS. Uses `eggress-transport-tls` for TLS handshake:

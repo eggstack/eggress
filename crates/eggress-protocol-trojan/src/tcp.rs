@@ -160,10 +160,11 @@ pub async fn trojan_accept(
             let domain = String::from_utf8(domain_buf[..domain_len].to_vec())
                 .map_err(|_| TrojanError::Protocol("invalid domain UTF-8".into()))?;
             let port = u16::from_be_bytes([domain_buf[domain_len], domain_buf[domain_len + 1]]);
-            TargetAddr {
-                host: TargetHost::Domain(domain),
-                port,
-            }
+            let host = domain
+                .parse::<std::net::IpAddr>()
+                .map(TargetHost::Ip)
+                .unwrap_or(TargetHost::Domain(domain));
+            TargetAddr { host, port }
         }
         // IPv6
         0x04 => {
@@ -639,10 +640,11 @@ mod tests {
         let stream: BoxStream = Box::new(std::io::Cursor::new(request));
 
         let (mut stream, result) = trojan_accept(stream, password).await.unwrap();
-        // IPs encoded as domain (ATYP 0x03) — decoded as domain string
+        // IPs encoded as domain (ATYP 0x03) are normalized back to literals
+        // so direct connectors retain pproxy-compatible literal-IP behavior.
         assert_eq!(
             result.target.host,
-            TargetHost::Domain("93.184.216.34".to_string())
+            TargetHost::Ip("93.184.216.34".parse().unwrap())
         );
         assert_eq!(result.target.port, 80);
 
@@ -681,8 +683,8 @@ mod tests {
         let stream: BoxStream = Box::new(std::io::Cursor::new(request));
 
         let (_, result) = trojan_accept(stream, password).await.unwrap();
-        // IPv6 encoded as domain (ATYP 0x03) — decoded as domain string
-        assert_eq!(result.target.host, TargetHost::Domain("::1".to_string()));
+        // IPv6 encoded as domain (ATYP 0x03) is normalized back to a literal.
+        assert_eq!(result.target.host, TargetHost::Ip("::1".parse().unwrap()));
         assert_eq!(result.target.port, 8080);
     }
 

@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported. Legacy stream ciphers and Linux daemon-compatible startup are available only through explicit opt-in features; macOS PF transparent original-destination recovery remains unavailable. SSH upstream compatibility is available only through the opt-in `ssh` feature. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
+> **Status:** The Rust-native CLI and runtime are production-ready. Eggress provides broad, behavior-oriented compatibility with `pproxy==2.7.9` across documented HTTP/SOCKS, modern encrypted-proxy, routing, CLI, UDP, reverse, optional SSH/QUIC, and Python workflows. Legacy crypto and Linux daemon-compatible startup require explicit opt-in features; macOS PF original-destination recovery and four unavailable legacy cipher names remain intentional exclusions. See the active [compatibility matrix](docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and [capability manifest](docs/parity/pproxy_capability_manifest.toml).
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -385,17 +385,17 @@ Python bindings; it is not a separate Python distribution. The bundled
 - Native outbound API (`OutboundConnector.connect_tcp()`) with GIL-releasing sync and asyncio wrappers
 - `.pyi` type stubs for all public modules
 
-### What is not supported
+### Compatibility boundaries
 
 - **SSH listeners** — upstream-only; SSH upstreams require the opt-in `ssh`
   feature and intentionally match pproxy's permissive host-key behavior
-- **QUIC/HTTP/3** — optional behind the `quic` feature; `h3://` provides HTTP/3
+- **QUIC/HTTP/3** — supported with differences behind the `quic` feature; `h3://` provides HTTP/3
   CONNECT and `quic+http://` provides raw QUIC carrying HTTP. QUIC listeners
   require certificate/key material and UDP association mode is intentionally
   unsupported.
-- **Unimplemented legacy cipher inventory members** — `cast5-cfb`, `idea-cfb`,
-  `rc2-cfb`, and `seed-cfb` remain rejected because no maintained safe primitive
-  is included. Other pproxy legacy stream ciphers and OTA require the explicit
+- **Intentional legacy-cipher exclusions** — `cast5-cfb`, `idea-cfb`, `rc2-cfb`,
+  and `seed-cfb` remain rejected because no maintained safe primitive is
+  included. Other pproxy legacy stream ciphers and OTA require the explicit
   `legacy-crypto` compatibility feature and are never native secure defaults.
 - **SOCKS4/SOCKS5 BIND** — pproxy 2.7.9 also requires CONNECT (`0x01`); the
   matching refusal is not an Eggress-specific strict gap
@@ -403,6 +403,9 @@ Python bindings; it is not a separate Python distribution. The bundled
 - **Certificate reload** — requires restart
 - **Private pproxy internals** — only the documented bounded public surface is supported; private implementation details and unsupported protocol families fail explicitly
 - **Advanced compatibility transports** — H2 listeners accept independent CONNECT streams; WS/WSS listeners use a fixed target (`ws{host:port}://listener`), with WSS over configured TLS; bounded raw/tunnel fixed-target TCP/UDP and `echo` listener forms remain supported
+- **macOS PF transparent proxy** — intentional non-parity; use `pfctl` with a
+  standard listener because privileged `/dev/pf` original-destination recovery
+  has no maintained safe wrapper.
 
 ### Compatibility manifests
 
@@ -416,7 +419,7 @@ startup.
 - [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) — maintained observable compatibility matrix and exclusions
 - [`docs/parity/PPROXY_CLOSURE_SCENARIOS.md`](docs/parity/PPROXY_CLOSURE_SCENARIOS.md) — optional representative oracle and public smoke scenarios
 - [`docs/parity/pproxy_capability_manifest.toml`](docs/parity/pproxy_capability_manifest.toml) — active phase-0 inventory with frozen-source evidence and strict-phase status
-- [`docs/parity/pproxy_2_7_9_strict_manifest.toml`](docs/parity/pproxy_2_7_9_strict_manifest.toml) — 194 behavioral capability records
+- [`docs/parity/pproxy_2_7_9_strict_manifest.toml`](docs/parity/pproxy_2_7_9_strict_manifest.toml) — historical behavioral records, not an active claim
 - [`docs/parity/PPROXY_COMPATIBILITY_POLICY.md`](docs/parity/PPROXY_COMPATIBILITY_POLICY.md) — historical strict-manifest policy and provenance
 
 ## Capability status

@@ -5,7 +5,7 @@ Eggress targets practical, behavior-oriented compatibility with
 the compatibility translator are separate surfaces, and a matching name or
 successful import does not establish full pproxy parity.
 
-The strict contract is pinned to the `2.7.9` tag at commit
+The final strict contract is pinned to the `2.7.9` tag at commit
 `09d4752f17ed6787e1a073c93980eec019887ee3` in
 [`qwj/python-proxy`](https://github.com/qwj/python-proxy). Source locations in
 the manifest are evidence references to that frozen tree; upstream `master`
@@ -13,21 +13,24 @@ and later releases are out of scope.
 
 The maintained user-facing summary is
 [`PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md).
-It uses these labels:
+The active manifest uses these status labels:
 
 | Label | Meaning |
 |---|---|
 | `matched` | Representative oracle comparison or direct interoperability confirms the defined behavior. |
 | `supported_difference` | Usable, with a documented observable difference or narrower boundary. |
 | `intentional_non_parity` | Explicitly excluded from the practical compatibility target. |
-| `native_extension` | Eggress-only functionality with no pproxy claim. |
 | `platform_limited` | Available where the required operating-system facility exists. |
 
-The machine-readable manifest also records a per-entry `status` using the
-strict inventory vocabulary `matched`, `supported_difference`, `gap`,
-`intentional_non_parity`, or `platform_limited`, plus `strict_phase` and
-`strict_closure_required`. `tier` remains the practical compatibility reporter
-vocabulary; it is not a parity percentage.
+`gap` means an intended target is not implemented. `intentional_non_parity`
+means the project deliberately declines that upstream behavior and records the
+reason. The active manifest has no unresolved `gap` entries after Phase 10.
+Runtime diagnostics use the separate five-level `tier` vocabulary below; that
+diagnostic vocabulary is not a compatibility percentage or certification.
+
+The machine-readable manifest also records `strict_phase`, evidence references,
+and `strict_closure_required` for each entry. `tier` remains the practical
+compatibility reporter vocabulary; it is not a parity percentage.
 
 ### Tier classification rules
 
@@ -79,9 +82,9 @@ These rules govern how capabilities are classified:
 - [`../PYTHON_BINDINGS.md`](../PYTHON_BINDINGS.md) — native and pproxy-compatible Python workflows.
 - [`../PPROXY_PARITY_SPEC.md`](../PPROXY_PARITY_SPEC.md) — compatibility vocabulary and boundaries.
 
-The strict manifest, evidence inventories, and phase completion records are
-historical or diagnostic inputs. They are not a release claim and must not be
-used to infer aggregate parity percentages. External oracle checks remain
+The older strict manifest, evidence inventories, and phase completion records
+are historical or diagnostic inputs. They are not a release claim and must not
+be used to infer aggregate parity percentages. External oracle checks remain
 optional and are not part of routine hosted CI.
 
 Phase 0 specifically removes `--log`, `-f/--config`, and `--rulefile` from the
@@ -89,6 +92,12 @@ upstream flag inventory because none is declared by the tagged parser. Eggress
 may still accept some of these as native or compatibility extensions. SOCKS4
 and SOCKS5 BIND are likewise not pproxy 2.7.9 capabilities: their refusal is
 not a strict Eggress gap.
+
+The final qualified claim is: Eggress provides broad pproxy 2.7.9 compatibility
+for documented HTTP/SOCKS, modern encrypted-proxy, routing, CLI, UDP, reverse,
+optional SSH/QUIC, and Python workflows, subject to the matrix boundaries. The
+deliberate exclusions are macOS PF original-destination recovery and the four
+legacy cipher names `cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb`.
 
 The Python distribution is `eggress`. Its wheel contains the bounded top-level
 `pproxy` package as well as the `eggress` namespace; there is no separately

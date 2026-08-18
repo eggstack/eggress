@@ -1,6 +1,6 @@
 # Practical pproxy 2.7.9 compatibility matrix
 
-This maintained matrix describes observable Eggress compatibility with the
+This maintained final matrix describes observable Eggress compatibility with the
 frozen `pproxy==2.7.9` tag at commit
 `09d4752f17ed6787e1a073c93980eec019887ee3`. It makes no aggregate parity
 claim. Status vocabulary is defined in [`README.md`](README.md), and the
@@ -54,13 +54,13 @@ contract.
 | Shadowsocks AEAD TCP/UDP | `supported_difference` | Four modern methods with method-specific salts; standard UDP upstream plus exact pproxy PacketCipher standalone inbound path |
 | Trojan client/server roles | `supported_difference` | Native implementation; no private pproxy API claim |
 | H2 and WS/WSS | `supported_difference` | Upstream and compatibility listener roles; H2 multiplexes CONNECT streams, WS/WSS use fixed targets |
-| SSR framing and built-in plugins | `gap` | Exact tagged behavior is Phase 3 |
-| SSH upstream/jump/remote-forward | `gap` | Phase 7 optional transport |
+| SSR framing and built-in plugins | `supported_difference` | Bounded TCP framing and six built-in plugins behind `pproxy-legacy`; UDP and external plugins remain excluded |
+| SSH upstream/jump/remote-forward | `supported_difference` | Optional `ssh` transport; upstream-only and warning-bearing host-key behavior |
 | QUIC/H3 listener/client roles | `supported_difference` | Phase 8 optional `quic` transport; UDP association mode is an explicit unsupported composition |
-| Legacy stream ciphers and OTA | `supported_difference` | Optional `legacy-crypto` path implements the maintained RustCrypto subset, OTA HMAC, and PacketCipher UDP framing; unsupported inventory members remain explicit refusals |
+| Legacy stream ciphers and OTA | `supported_difference` | Optional `legacy-crypto` path implements the maintained RustCrypto subset, OTA HMAC, and PacketCipher UDP framing; four unavailable names are explicit intentional non-parity |
 | SOCKS4/SOCKS5 BIND | `unsupported` by both | Tagged accept paths require CONNECT (`0x01`); not Eggress-specific strict work |
 | Linux redir | `platform_limited` | Requires original-destination facilities and privileges |
-| macOS PF | `gap` | Phase 9 platform tail |
+| macOS PF | `intentional_non_parity` | Declined optional tail; privileged `/dev/pf` recovery has no maintained safe wrapper or disposable interop environment |
 
 ## Python package inventory
 
@@ -90,9 +90,12 @@ strict phase, and focused test references.
 
 ## Stable exclusions and boundaries
 
-SSH, SSR, exact plugin transforms, unavailable legacy cipher inventory members,
-macOS PF, UDP over non-UDP protocols, and unavailable platform transparent
-facilities remain explicit strict gaps or exclusions according to their phase
-records. Legacy crypto and daemon behavior require opt-in features. Unknown
-flags and unsupported options fail with structured diagnostics; known Eggress
-extensions do not alter the frozen upstream inventory.
+The final qualified claim is: Eggress provides broad pproxy 2.7.9 compatibility
+for documented HTTP/SOCKS, modern encrypted-proxy, routing, CLI, UDP, reverse,
+optional SSH/QUIC, and Python workflows, subject to the platform and feature
+boundaries above. The deliberate exclusions are macOS PF original-destination
+recovery and the four unavailable legacy cipher names: `cast5-cfb`,
+`idea-cfb`, `rc2-cfb`, and `seed-cfb`. Legacy crypto, daemonization, SSH, SSR,
+and QUIC behavior require their documented opt-in features or platform support.
+Unknown flags and unsupported compositions fail with structured diagnostics;
+known Eggress extensions do not alter the frozen upstream inventory.

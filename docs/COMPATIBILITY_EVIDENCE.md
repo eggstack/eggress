@@ -1,6 +1,11 @@
-# Compatibility Evidence Table
+# Historical Compatibility Evidence Table
 
-Canonical evidence source for pproxy compatibility claims. Derived from
+> This table is retained for provenance and is not the current compatibility
+> claim. Use [`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+> and [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml)
+> for the final Phase 10 classification.
+
+This historical evidence table was derived from
 the parity manifest at [`docs/parity/pproxy_capability_manifest.toml`](parity/pproxy_capability_manifest.toml).
 Keep this document in sync with the manifest.
 

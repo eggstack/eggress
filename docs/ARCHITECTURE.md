@@ -666,8 +666,10 @@ reconnect_max = "30s"
 
 ### Current compatibility boundary
 
-Eggress provides practical pproxy 2.7.9 compatibility for documented HTTP,
-SOCKS, modern encrypted-proxy, routing, CLI, and public Python-library
-workflows, with explicit exclusions for legacy and high-cost transports. See
+Eggress provides broad pproxy 2.7.9 compatibility for documented HTTP/SOCKS,
+modern encrypted-proxy, routing, CLI, UDP, reverse, optional SSH/QUIC, and
+public Python-library workflows, with explicit feature and platform boundaries.
+The deliberate exclusions are macOS PF original-destination recovery and the
+four unavailable legacy cipher names. See the active
 `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`; this is not a claim of
 universal full pproxy parity or compatibility with private internals.

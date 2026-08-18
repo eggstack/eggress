@@ -19,6 +19,16 @@ and `chacha20-ietf-poly1305` 32 bytes. These values come from the frozen
 | AES-256-GCM | 32 bytes | 32 bytes | 12 bytes | 16 bytes |
 | ChaCha20-IETF-Poly1305 | 32 bytes | 32 bytes | 12 bytes | 16 bytes |
 
+## Compatibility evidence
+
+The four modern methods have pproxy 2.7.9 bidirectional coverage in the
+all-method TCP tests and pproxy PacketCipher UDP tests. Maintained Shadowsocks
+interoperability covers the standard AEAD framing; the gated suites are the
+claim evidence, while local Eggress-to-Eggress tests remain regression checks.
+Legacy stream ciphers, OTA, and PacketCipher compatibility are isolated behind
+`legacy-crypto`, warning-bearing, and limited to the maintained subset. The
+`cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb` names fail explicitly.
+
 ## Key Functions
 
 | Function | Description |

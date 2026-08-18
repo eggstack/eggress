@@ -207,12 +207,15 @@ After translation, rule-file patterns are lowered to native
 engine matches against bounded destination attributes (hostname string,
 decimal port string), not arbitrary network payload data.
 
-## Phase 5 boundary decisions
+## Final compatibility boundaries
 
 macOS PF transparent-destination recovery remains intentional non-parity: it
 requires privileged `/dev/pf` ioctl access and has no maintained safe wrapper or
-disposable test in the current platform abstraction. Backward TLS and mixed reverse chains likewise
-remain unsupported because they require composing TLS around reverse framing.
+disposable test in the current platform abstraction. Advanced H2, WebSocket,
+raw/tunnel, reverse, SSH, and QUIC paths are supported only within the roles
+and feature gates documented by the active compatibility matrix; unsupported
+compositions fail before execution. The unavailable legacy cipher names are
+also explicit intentional non-parity rather than silent substitutions.
 
 ## Diagnostics
 

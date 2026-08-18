@@ -190,7 +190,7 @@ Per-subsystem architecture lives under `docs/architecture/`:
 | System proxy | `docs/architecture/system-proxy.md` |
 | Testkit | `docs/architecture/testkit.md` |
 
-Key source-of-truth docs: `docs/CI_STATUS.md`, `docs/TESTING.md`, `docs/release/RELEASE_PROCESS.md`, `docs/ARCHITECTURE.md`, `docs/parity/pproxy_capability_manifest.toml`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`.
+Key source-of-truth docs: `docs/CI_STATUS.md`, `docs/TESTING.md`, `docs/release/RELEASE_PROCESS.md`, `docs/ARCHITECTURE.md`, `docs/parity/pproxy_capability_manifest.toml`, and `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`. The latter two are the active Phase 10 compatibility sources; older strict manifests, evidence inventories, and phase reports are provenance only.
 
 The active strict-oracle contract is pinned to the `pproxy==2.7.9` tag at
 `09d4752f17ed6787e1a073c93980eec019887ee3` from
@@ -254,11 +254,11 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
 
 ## Compatibility discipline
 
-The active compatibility target is practical parity with `pproxy==2.7.9`. Claims must distinguish behavioral match, compatible with warning, native equivalent, intentional non-parity, and unsupported. Do not upgrade a tier based only on API shape or successful construction.
+The active compatibility target is practical parity with `pproxy==2.7.9`. Manifest status uses `matched`, `supported_difference`, `platform_limited`, `intentional_non_parity`, and `gap`; runtime diagnostics retain their separate tier vocabulary. Do not upgrade a status based only on API shape or successful construction.
 
 When a compatibility claim changes, update the applicable manifest and run the corresponding oracle or interoperability suite. Unsupported transports/roles should fail with structured diagnostics, not silent fallback.
 
-The strict Phase 4 Python package claim covers the ten tracked modules and
+The final qualified Python package claim covers the ten tracked modules and
 their recorded symbols/signatures. Modern `cipherpy` AEAD names delegate to
 native implementations; legacy pure-Python cipher names remain importable but
 fail explicitly when constructed unless the Rust compatibility feature is
@@ -269,6 +269,12 @@ mutation/rollback to the native backend on supported platforms.
 The strict Phase 3 `ssr://` surface accepts `plain`, `origin`, `http_simple`,
 `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`; unknown plugins
 fail during parsing.
+
+The remaining intentional exclusions are macOS PF original-destination
+recovery and the unavailable `cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb`
+legacy cipher names. SSH, SSR, QUIC/H3, legacy crypto, and daemon behavior are
+feature- or platform-gated and must retain their documented warnings and
+boundaries.
 
 Key compatibility notes:
 - `--pac`, `--get`, `--test` are value-taking options; their values are not positional listeners.

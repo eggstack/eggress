@@ -1,5 +1,11 @@
 # pproxy Strict Phase 10 — Final Differential Closure and Claim Reset
 
+## Status
+
+Complete — the active manifest and compatibility matrix now reconcile the
+implemented optional tails and record the remaining macOS PF and unavailable
+legacy-cipher exclusions explicitly.
+
 ## Objective
 
 Produce one evidence-backed final answer to the question: which `pproxy==2.7.9` behaviors can Eggress now claim as strict-compatible, and which exclusions remain?
