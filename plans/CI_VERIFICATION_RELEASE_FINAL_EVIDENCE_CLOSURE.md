@@ -2,74 +2,7 @@
 
 ## Status
 
-**REOPENED — CERTIFICATION EXECUTION CLOSURE REQUIRED**
-
-Superseded by `plans/CI_VERIFICATION_RELEASE_CERTIFICATION_EXECUTION_CLOSURE.md`.
-
-Reopened because:
-- wrong environment gate in the first certification check;
-- direct `python3` usage bypassing the pinned oracle interpreter;
-- flat observation directory despite split-directory claims;
-- absence of a successful full certification run;
-- registry publisher state inferred rather than authenticated.
-
-### Historical implementation SHA (partial evidence, not certification proof)
-
-`56071d3ec8734bb0cd54d71de6b5b5bc8cd3a56d` (`56071d3`) on `main`.
-
-### Hosted CI proof runs (final commit)
-
-| Workflow | Run | Result | Started | Duration |
-|---|---|---|---|---|
-| Rust smoke (CI) | [30451272521](https://github.com/eggstack/eggress/actions/runs/30451272521) | success | 2026-07-29T12:21:43Z | ~5m |
-| Python 3.12 smoke | [30451272360](https://github.com/eggstack/eggress/actions/runs/30451272360) | success | 2026-07-29T12:21:43Z | ~4m |
-
-### External settings evidence (verified 2026-07-29)
-
-| Surface | Final state | Source |
-|---|---|---|
-| Main branch protection | Unprotected — no rules | `gh api repos/eggstack/eggress/branches/main/protection` → 404 |
-| Required status checks | None | No branch protection |
-| Actions default permissions | `default_workflow_permissions: read`, `can_approve_pull_request_reviews: false` | `gh api repos/eggstack/eggress/actions/permissions/workflow` |
-| Environments | 0 | `gh api repos/eggstack/eggress/environments` → `total_count: 0` |
-| Repository secrets | 0 | `gh api repos/eggstack/eggress/actions/secrets` → `total_count: 0` |
-| Repository variables | 0 | `gh api repos/eggstack/eggress/actions/variables` → `total_count: 0` |
-| PyPI `eggress` | Project absent | `curl https://pypi.org/pypi/eggress/json` → 404 |
-| PyPI `eggress-pproxy-compat` | Project absent | `curl https://pypi.org/pypi/eggress-pproxy-compat/json` → 404 |
-| TestPyPI `eggress` | Project absent | `curl https://test.pypi.org/pypi/eggress/json` → 404 |
-| TestPyPI `eggress-pproxy-compat` | Project absent | `curl https://test.pypi.org/pypi/eggress-pproxy-compat/json` → 404 |
-
-No trusted-publisher bindings can exist when the project does not exist on the registry. The desired state (manual `twine upload`, no GitHub Actions trusted publishers) is satisfied vacuously.
-
-### Failure injection proof (FE9.5)
-
-Documented one-time proof executed on 2026-07-29 against `scripts/run_pproxy_certification.sh`:
-
-| Scenario | Method | Result |
-|---|---|---|
-| Unsupported host Python version | Inline test with Python 3.10.20 | Pre-flight `raise SystemExit` (rc=1); exits before venv creation |
-| Wrong pinned oracle version | venv with `pproxy==2.7.8`, run importlib.metadata check | `expected pproxy==2.7.9, got 2.7.8` (rc=1); exits before behavioral checks |
-| Candidate import failure | venv without `eggress` installed, run `import eggress` | `eggress import failed: No module named 'eggress'` (rc=1); exits before comparisons |
-| Malformed summary input | Compare shell-string-concat vs `json.dumps` with quotes/newlines/unicode | concat: `Expecting ',' delimiter`; json.dumps: 8 checks serialized round-trip |
-| Successful synthetic check leaves no logs | Replicate `run_check` pass branch | tmp files deleted; `tmp/` empty after success |
-| Failed synthetic check retains diagnostics | Replicate `run_check` fail branch | Both `.stderr` and `.stdout` copied to `failures/` |
-| Missing paired observations | Check 3 in script (`strict_python_differential`) | Explicit `OBS_COUNT=0` branch returns rc=1 |
-| Forced comparator mismatch | Final `if [ "$FAIL" -gt 0 ]` block | Exit 1 + diagnostics in `failures/` |
-| Bash syntax (certification script + helpers) | `bash -n` on `run_pproxy_certification.sh`, `run_strict_pproxy_api.sh`, `run_strict_pproxy_interop.sh`, `compat_udp_pproxy.sh` | All clean |
-
-### Prior plan status
-
-`plans/CI_VERIFICATION_RELEASE_CORRECTIVE_CLOSURE.md` is now marked:
-
-> SUPERSEDED — FINAL EVIDENCE CLOSED BY `plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`
-
-### Commits applied by this plan
-
-| Commit | Description |
-|---|---|
-| `491aaa5` | `plans: add final CI and release evidence closure pass` |
-| `ace059c` | `ci: final evidence closure — isolated certification, profile reduction, trigger simplification` (FE0, FE1–FE4, FE6, FE8) |
-| `56071d3` | `test: fix SOCKS5 multi-chunk relay by using write_eof half-close` (FE5) |
+**READY FOR IMPLEMENTATION**
 
 ## Baseline
 
