@@ -10,9 +10,19 @@ description = "Shadowsocks protocol implementation for eggress"
 [features]
 default = []
 pproxy-legacy = ["dep:flate2"]
+legacy-crypto = [
+    "dep:aes",
+    "dep:blowfish",
+    "dep:camellia",
+    "dep:chacha20",
+    "dep:des",
+    "dep:hmac",
+    "dep:salsa20",
+]
 
 [dependencies]
 thiserror.workspace = true
+tracing.workspace = true
 tokio.workspace = true
 bytes.workspace = true
 eggress-core.workspace = true
@@ -25,6 +35,13 @@ sha1 = "0.10"
 md-5 = "0.10"
 rand = "0.8"
 flate2 = { workspace = true, optional = true }
+aes = { version = "0.8", optional = true }
+blowfish = { version = "0.10", optional = true }
+camellia = { version = "0.1", optional = true }
+chacha20 = { version = "0.9", optional = true }
+des = { version = "0.8", optional = true }
+hmac = { version = "0.12", optional = true }
+salsa20 = { version = "0.11", optional = true }
 
 [dev-dependencies]
 tokio.workspace = true

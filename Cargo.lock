@@ -329,6 +329,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 
 [[package]]
+name = "camellia"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3264e2574e9ef2b53ce6f536dea83a69ac0bc600b762d1523ff83fe07230ce30"
+dependencies = [
+ "byteorder",
+ "cipher 0.4.4",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -790,6 +800,15 @@ checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
 name = "des"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffdd80ce8ce993de27e9f063a444a4d53ce8e8db4c1f00cc03af5ad5a9867a1e"
+dependencies = [
+ "cipher 0.4.4",
+]
+
+[[package]]
+name = "des"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "916a94e407b54f9034d71dd748234cd1e516ced6284009906ae246f177eafe5a"
@@ -1115,20 +1134,28 @@ dependencies = [
 name = "eggress-protocol-shadowsocks"
 version = "1.0.1"
 dependencies = [
+ "aes 0.8.4",
  "aes-gcm 0.10.3",
+ "blowfish",
  "bytes",
+ "camellia",
+ "chacha20 0.9.1",
  "chacha20poly1305",
+ "des 0.8.1",
  "eggress-core",
  "eggress-testkit",
  "eggress-uri",
  "flate2",
  "hkdf 0.12.4",
+ "hmac 0.12.1",
  "md-5",
  "rand 0.8.6",
+ "salsa20",
  "sha1 0.10.6",
  "sha2 0.10.9",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3337,7 +3364,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3708,7 +3735,7 @@ dependencies = [
  "chacha20 0.10.1",
  "cipher 0.5.2",
  "ctutils",
- "des",
+ "des 0.9.0",
  "poly1305 0.9.1",
  "ssh-encoding",
  "zeroize",

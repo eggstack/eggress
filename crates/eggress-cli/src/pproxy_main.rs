@@ -33,7 +33,7 @@ OPTIONS:
     --reuse                Listener SO_REUSEPORT (Linux only)
     --auth <SECONDS>       Per-client source-IP auth reuse interval
     --get <PATH,FILE>      Serve FILE at PATH through the admin server
-    --daemon               Daemon mode (unsupported; use systemd)
+    --daemon               Linux daemon-compatible re-exec (optional feature)
     --version              Print version and exit
     -h, --help             Print this help and exit
 
@@ -169,6 +169,12 @@ fn main() -> ExitCode {
         }
         let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(&target), timeout, false);
         std::process::exit(exit_code);
+    }
+
+    #[cfg(feature = "pproxy-daemon")]
+    if let Err(error) = eggress_cli::maybe_daemonize(pproxy_args.daemon) {
+        eprintln!("pproxy: error: {error}");
+        std::process::exit(5);
     }
 
     init_logging(&pproxy_args);

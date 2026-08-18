@@ -17,6 +17,7 @@ extended = [
     "eggress-udp/shadowsocks",
 ]
 pproxy-legacy = ["extended", "eggress-protocol-shadowsocks/pproxy-legacy"]
+legacy-crypto = ["extended", "eggress-protocol-shadowsocks/legacy-crypto"]
 ssh = ["dep:eggress-transport-ssh"]
 quic = ["dep:eggress-transport-quic", "dep:eggress-protocol-h3"]
 

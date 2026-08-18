@@ -201,7 +201,10 @@ Standard Shadowsocks clients can connect to the inbound listener:
 
 ## Limitations
 
-- No legacy stream ciphers (RC4, etc.) -- only AEAD methods. Legacy stream cipher methods (aes-*-ctr, aes-*-cfb, rc4, rc4-md5, chacha20-ietf, etc.) are detected at parse time via `is_legacy_method()` and produce a `LegacyMethodUnsupported` error with a helpful message suggesting AEAD methods.
+- Legacy stream ciphers are separate from native AEAD. The maintained pproxy
+  subset is available only behind `legacy-crypto`, with warnings and no native
+  secure-default claim; feature-off builds detect them via `is_legacy_method()`
+  and produce `LegacyMethodUnsupported`.
 - No plugin transport modes (simple-obfs, v2ray-plugin, etc.)
 - UDP framing composes with other proven UDP hops; non-UDP protocols remain
   rejected during validation
@@ -211,5 +214,6 @@ Standard Shadowsocks clients can connect to the inbound listener:
   `pproxy-legacy` feature. It implements pproxy's raw TCP address framing and
   six built-in plugin codecs: `plain`, `origin`, `http_simple`,
   `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`. UDP SSR,
-  external/SIP003 plugins, and legacy stream-cipher encryption remain
-  unsupported. The TLS-ticket plugin is an obfuscation codec, not TLS.
+  external/SIP003 plugins remain unsupported. Legacy stream-cipher encryption
+  is a separate `legacy-crypto` compatibility path. The TLS-ticket plugin is an
+  obfuscation codec, not TLS.

@@ -2,8 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Superseded in part by Phase 3 |
-| Date | Phase 22 |
+| Status | Superseded in part by Phases 3 and 9 |
+| Date | Phase 9 review (original decision retained for native paths) |
 | Decision makers | Eggress maintainers |
 | Related | `docs/PPROXY_PARITY_SPEC.md`, `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`, `docs/protocols/SHADOWSOCKS.md` |
 
@@ -27,7 +27,9 @@ or intentionally exclude them.
 
 The original decision excluded SSR and legacy stream ciphers from native
 security-critical paths. Phase 3 supersedes the SSR portion only for a bounded
-`pproxy-legacy` compatibility module; legacy stream ciphers remain excluded.
+`pproxy-legacy` compatibility module. Phase 9 adds a separate, opt-in
+`legacy-crypto` compatibility module using maintained RustCrypto primitives;
+native paths and default builds remain excluded.
 
 eggress will:
 
@@ -35,8 +37,10 @@ eggress will:
    URI parsing and translation.
 2. Execute raw SSR TCP framing and pproxy's six built-in plugin codecs only
    when the explicit `pproxy-legacy` feature is enabled.
-3. Reject legacy stream ciphers, SSR UDP, external plugins, and unsupported
-   plugin options with clear structured diagnostics.
+3. Reject unsupported legacy inventory members, SSR UDP, external plugins, and
+   unsupported plugin options with clear structured diagnostics. The maintained
+   legacy-cipher subset is available only behind `legacy-crypto` and remains
+   warning-bearing.
 4. Keep the compatibility implementation isolated from native AEAD and TLS.
 
 ## Rationale

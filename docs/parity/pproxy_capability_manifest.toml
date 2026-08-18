@@ -210,23 +210,23 @@ id = "cli.daemon"
 category = "cli"
 pproxy_surface = "--daemon"
 pproxy_behavior = "Fork into background and run as daemon."
-eggress_behavior = "Emits unsupported feature diagnostic; fatal before startup."
-tier = "unsupported"
+eggress_behavior = "With the optional pproxy-daemon feature, performs a safe Linux re-exec after validation; without it emits a fatal unsupported diagnostic."
+tier = "compatible_with_warning"
 parser = "complete"
 translator = "complete"
-config = "refused"
-runtime = "refused"
+config = "complete"
+runtime = "complete"
 cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "unit"
-tests = ["cli_exit_code_unsupported_daemon"]
+tests = ["cli_exit_code_unsupported_daemon", "pproxy_daemon_feature_translation"]
 upstream_evidence = "pproxy/server.py:895-913 (main argparse declarations)"
 implementation = "crates/eggress-pproxy-compat/src/args.rs and src/translate.rs"
 status = "gap"
 strict_closure_required = true
 strict_phase = "9"
-notes = "Separate from -d (debug). Use systemd, supervisord, or process manager."
+notes = "Separate from -d (debug). Linux uses safe re-exec under the optional pproxy-daemon feature; non-Linux and feature-off builds fail closed."
 caveat_class = "cli_process_model"
 
 [[capability]]
@@ -677,7 +677,7 @@ implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs
 status = "supported_difference"
 strict_closure_required = true
 strict_phase = "3"
-notes = "Bounded to pproxy's raw TCP address framing and six built-in plugins; UDP SSR, external plugins, and legacy stream-cipher encryption remain unsupported."
+notes = "Bounded to pproxy's raw TCP address framing and six built-in plugins; UDP SSR and external plugins remain unsupported. Legacy stream-cipher encryption is a separate legacy-crypto feature."
 
 [[capability]]
 id = "uri.scheme_trojan"
@@ -2360,6 +2360,29 @@ strict_phase = "1"
 notes = "Standard clients may coalesce the address and first payload; the receiver preserves trailing plaintext. Exact pproxy 2.7.9 TCP vectors and all-method pproxy integration cover the strict path."
 
 [[capability]]
+id = "protocol.shadowsocks_legacy_crypto"
+category = "protocol"
+pproxy_surface = "Legacy Shadowsocks stream ciphers, OTA, and PacketCipher UDP"
+pproxy_behavior = "EVP_BytesToKey stream ciphers with optional OTA HMAC and packet-local UDP encryption."
+eggress_behavior = "Optional legacy-crypto feature implements the maintained RustCrypto subset, stateful TCP/OTA framing, and packet-local UDP codecs; unsupported inventory members fail explicitly."
+tier = "compatible_with_warning"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "unit"
+tests = ["crates/eggress-protocol-shadowsocks/src/legacy.rs::inventory_parses_supported_and_rejects_unimplemented", "crates/eggress-protocol-shadowsocks/src/legacy.rs::ota_roundtrip_rejects_bad_hmac", "crates/eggress-protocol-shadowsocks/src/legacy.rs::udp_packet_roundtrip_is_packet_local"]
+upstream_evidence = "pproxy/cipher.py:BaseCipher, PacketCipher; pproxy/proto.py:SS.connect/accept"
+implementation = "crates/eggress-protocol-shadowsocks/src/legacy.rs and src/udp.rs"
+status = "supported_difference"
+strict_closure_required = true
+strict_phase = "9"
+notes = "Unauthenticated compatibility only; disabled by default and always warning-bearing. CAST5, IDEA, RC2, and SEED remain unsupported without maintained safe primitives."
+
+[[capability]]
 id = "protocol.shadowsocks_udp"
 category = "protocol"
 pproxy_surface = "Shadowsocks UDP (AEAD)"
@@ -2403,7 +2426,7 @@ implementation = "crates/eggress-server and crates/eggress-runtime"
 status = "supported_difference"
 strict_closure_required = true
 strict_phase = "3"
-notes = "The implementation is deliberately not a general SSR stack: UDP, external plugins, and legacy stream-cipher encryption are outside scope."
+notes = "The implementation is deliberately not a general SSR stack: UDP and external plugins are outside scope. Legacy stream-cipher encryption is a separate compatibility feature."
 
 [[capability]]
 id = "protocol.trojan_client"
@@ -3417,7 +3440,7 @@ id = "python.cipher_dependency_policy"
 category = "python"
 pproxy_surface = "pproxy.cipher AEAD operations"
 pproxy_behavior = "Functional AES-GCM and ChaCha20-Poly1305 operations require the cipher implementation dependency."
-eggress_behavior = "eggress[cipher-api] and eggress-pproxy-compat declare cryptography>=42,<47; legacy stream ciphers remain rejected."
+eggress_behavior = "eggress[cipher-api] and eggress-pproxy-compat declare cryptography>=42,<47; legacy stream ciphers remain rejected by the default Python facade unless an opt-in native compatibility build is selected."
 tier = "drop_in"
 parser = "complete"
 translator = "not_applicable"
@@ -3529,7 +3552,7 @@ implementation = "python/pproxy and crates/eggress-python"
 status = "supported_difference"
 strict_closure_required = true
 strict_phase = "4"
-notes = "The facade intentionally does not claim legacy stream-cipher wire parity."
+notes = "The default facade intentionally does not claim legacy stream-cipher wire parity; the native legacy-crypto feature is separately warning-bearing and bounded."
 
 [[capability]]
 id = "python.module.pproxy_plugin"

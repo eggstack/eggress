@@ -11,6 +11,8 @@ description = "pproxy-compatible CLI and URI translation layer for Eggress"
 default = []
 ssh = []
 quic = ["eggress-config/quic"]
+legacy-crypto = []
+daemon = []
 
 [dependencies]
 thiserror.workspace = true

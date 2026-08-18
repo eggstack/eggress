@@ -368,7 +368,7 @@ pproxy -l socks5://user:pass@:1080 -r direct
 | `-a` | Alive check interval (seconds) | Health probe config in TOML |
 | `-v` | Verbose logging | `RUST_LOG=debug` environment variable |
 | `--ssl` | TLS cert/key file (`certfile[,keyfile]`) | TLS config in eggress TOML |
-| `--daemon` | Run as daemon | Fatal (exit code 5); use a process manager |
+| `--daemon` | Run as daemon | Optional Linux safe re-exec with `pproxy-daemon`; feature-off exit code 5 |
 | `--log` | Log file path | Not supported (use tracing-subscriber) |
 | `--pac` | PAC file path argument | Consumes the path and maps it to the Eggress admin PAC route; emits a compatibility warning |
 | `--sys` | Set system proxy (mac/windows) | Supported with warning in compatibility mode; applies the bound local SOCKS5/HTTP listener through the existing backend and restores prior settings. |
@@ -602,7 +602,9 @@ Phase 11 classified every remaining pproxy protocol/scheme. The complete audit i
 - **Implemented as runtime-integrated upstream (Phase B3)**: WebSocket tunnels (`ws://`, `wss://`), Raw fixed-target tunnels (`raw://`, `tunnel://`)
 - **Implemented as supported (Phase 27)**: Reverse/backward proxying (raw-relay control channel, `bind://`/`listen://`/`backward://`/`rebind://` URI forms, `+in` modifier, auth, reconnect with backoff)
 - **Optional**: QUIC and HTTP/3 behind the `quic` feature; UDP-over-QUIC is an explicit unsupported composition.
-- **Intentional non-parity**: macOS PF transparent proxy, Shadowsocks stream ciphers, ShadowsocksR, `--daemon`, `--ssl` listener, `--log`, UDP chains containing non-UDP protocols
+- **Intentional non-parity**: macOS PF transparent proxy, unsupported legacy
+  cipher inventory members, ShadowsocksR outside its bounded surface, `--ssl`
+  listener, `--log`, UDP chains containing non-UDP protocols
 - **Implemented**: Trojan inbound listener and upstream
 
 ### Diagnostic behavior

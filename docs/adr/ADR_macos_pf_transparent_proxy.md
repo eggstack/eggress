@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | Accepted (Intentional Non-Parity) |
-| Date | Phase 25 |
+| Date | Phase 9 review (original decision retained) |
 | Decision makers | Eggress maintainers |
 | Related | `crates/eggress-server/src/listener/transparent.rs`, `crates/eggress-runtime/src/platform.rs` |
 
@@ -27,6 +27,10 @@ to honestly reflect that no PF integration exists, rather than reporting
 ## Decision
 
 **Eggress will NOT implement macOS PF transparent proxy in this phase.**
+
+Phase 9 specifically considered `/dev/pf` ioctl support and retained this
+decision: no maintained safe Rust wrapper is available, and adding handwritten
+platform FFI would violate the project's security and dependency boundary.
 
 The reasons are:
 

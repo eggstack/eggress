@@ -11,12 +11,16 @@ Use when implementing new proxy protocols, transport wrappers, or modifying core
 
 ## SSR/legacy Shadowsocks handling
 
-Legacy stream ciphers remain unsupported. The feature-gated `pproxy-legacy`
-path implements the bounded pproxy 2.7.9 SSR surface in
-`eggress-protocol-shadowsocks::compat`; native Shadowsocks AEAD and rustls TLS
-must remain separate:
+Legacy stream ciphers are an explicit compatibility-only path. The
+feature-gated `legacy-crypto` implementation uses maintained RustCrypto
+primitives for the supported pproxy 2.7.9 inventory subset, EVP_BytesToKey,
+stateful TCP framing, OTA HMAC framing, and PacketCipher-style UDP packets.
+It is separate from native Shadowsocks AEAD and rustls TLS:
 
-- `LegacyMethodUnsupported` error variant — produced when a legacy stream cipher method (e.g., `aes-*-ctr`, `aes-*-cfb`, `rc4`, `rc4-md5`, `chacha20-ietf`) is detected at parse time. Modern AEAD coverage is `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`; these methods have pproxy-specific salt/IV sizes of 16, 24, 32, and 32 bytes.
+- `LegacyMethodUnsupported` error variant — produced when the optional path is
+  off, or when an inventory member without a maintained primitive (`cast5-cfb`,
+  `idea-cfb`, `rc2-cfb`, `seed-cfb`) is requested. Modern AEAD coverage is
+  `aes-128-gcm`, `aes-192-gcm`, `aes-256-gcm`, and `chacha20-ietf-poly1305`.
 - `PproxyPlugin` — closed enum for `plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`.
 - `ssr_connect()` / `ssr_accept()` — SOCKS-address framing with optional prefix and ordered plugin adapters.
 - `is_legacy_method()` in `eggress-protocol-shadowsocks::method` — detects known legacy methods.
@@ -203,7 +207,10 @@ The contract and minimal listener smoke tests live in
   SOCKS5 listener over HTTP, and restores captured settings on shutdown or
   failed startup. Native `eggress system-proxy` commands retain their own
   explicit semantics.
-- `--daemon` is unsupported and fatal before startup.
+- `--daemon` is fatal unless the optional `pproxy-daemon` feature is enabled;
+  that feature uses a Linux safe re-exec after validation, with the child
+  owning runtime signals and system-proxy rollback. Do not add unsafe daemon
+  forks or a second lifecycle manager.
 - `--auth <seconds>` enables bounded, process-local source-IP authentication
   reuse when listener credentials are configured. Native mode never enables
   this cache implicitly.

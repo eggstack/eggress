@@ -158,8 +158,11 @@ The following pproxy features are explicitly unsupported:
   `h3://` provides HTTP/3 CONNECT and `quic+http://` provides raw QUIC
   streams; listeners require certificate/key material and UDP association mode
   remains unsupported.
-- **Shadowsocks stream ciphers** -- Not supported (insecure; use AEAD methods). Detected during URI parsing; produces `LegacyMethodUnsupported` error. See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md`.
-- **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind `pproxy-legacy`. UDP SSR, SIP003/external plugins, and legacy stream-cipher encryption remain unsupported and produce structured diagnostics.
+- **Shadowsocks stream ciphers** -- Available only behind the explicit
+  `legacy-crypto` feature, with an insecure compatibility warning; feature-off
+  builds produce `LegacyMethodUnsupported`. See
+  `docs/protocols/SHADOWSOCKS_LEGACY.md`.
+- **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind `pproxy-legacy`. UDP SSR and SIP003/external plugins remain unsupported; legacy stream ciphers are a separate `legacy-crypto` feature.
 
 Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
 

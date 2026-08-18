@@ -106,7 +106,7 @@ evidence = "integration"
 capability_ids = [
     "protocol.shadowsocks_tcp",
 ]
-notes = "Shadowsocks TCP inbound; AEAD-only, legacy stream ciphers rejected"
+notes = "Shadowsocks TCP inbound; AEAD by default, with the unauthenticated legacy-crypto compatibility feature explicitly opt-in"
 
 [[cell]]
 protocol = "shadowsocks"

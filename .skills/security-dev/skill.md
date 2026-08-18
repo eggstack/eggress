@@ -53,6 +53,17 @@ The OpenSSH regression suite is:
 
 Uses `allow_private_egress = true` (pproxy compat default) to allow private targets when explicitly configured.
 
+## Legacy Shadowsocks boundary
+
+The `legacy-crypto` feature is compatibility-only and disabled by default.
+Its stream ciphers are unauthenticated; OTA HMAC is verified incrementally and
+wrong or truncated tags must fail closed. Keep the warning visible, bound OTA
+chunk sizes, preserve monotonic per-direction sequence numbers, and never
+reuse this implementation for native secure defaults. The maintained subset
+must have oracle vectors, fragmented TCP/UDP tests, feature-off rejection, and
+wrong-HMAC coverage. Do not add CAST5, IDEA, RC2, or SEED without a maintained
+safe primitive and independent wire evidence.
+
 ## Security testing patterns
 
 ### Credential leak tests

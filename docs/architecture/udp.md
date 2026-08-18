@@ -44,9 +44,12 @@ UDP upstreams are built from a closed set of composable hop codecs:
 3. Send through the first hop's UDP transport.
 4. Decode the response in outer-to-inner order.
 
-The supported hop set is SOCKS5 UDP and standard Shadowsocks UDP. Each SOCKS5
-hop owns a bounded TCP UDP-ASSOCIATE control session; Shadowsocks hops use
-their configured AEAD packet codec. Domain, IPv4, and IPv6 destination
+The supported runtime hop set is SOCKS5 UDP and standard Shadowsocks UDP. Each
+SOCKS5 hop owns a bounded TCP UDP-ASSOCIATE control session; Shadowsocks hops
+use their configured AEAD packet codec. The protocol crate also exposes a
+feature-gated `legacy-crypto` PacketCipher codec for pproxy compatibility
+vectors and standalone integration; it is not selected by native routing.
+Domain, IPv4, and IPv6 destination
 metadata remains inside the innermost frame.
 
 For a one-hop SOCKS5 upstream, the pipeline is:

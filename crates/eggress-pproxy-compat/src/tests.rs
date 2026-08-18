@@ -951,9 +951,17 @@ fn cross_surface_aggregate_tier_unsupported_for_hard_unsupported_feature() {
     .collect();
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
-    assert!(output.has_unsupported());
-    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
-    assert_eq!(tier, crate::ManifestTier::Unsupported);
+    #[cfg(feature = "daemon")]
+    {
+        assert!(!output.has_unsupported());
+        return;
+    }
+    #[cfg(not(feature = "daemon"))]
+    {
+        assert!(output.has_unsupported());
+        let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+        assert_eq!(tier, crate::ManifestTier::Unsupported);
+    }
 }
 
 #[test]

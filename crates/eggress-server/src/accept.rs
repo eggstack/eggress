@@ -487,32 +487,55 @@ pub async fn accept_with_fixed_target_for_peer(
     #[cfg(feature = "extended")]
     if protocols.len() == 1 && protocols.contains(&ProtocolId::Shadowsocks) {
         if let Some(ss_config) = shadowsocks_config {
-            let method =
-                eggress_protocol_shadowsocks::CipherMethod::parse_method(&ss_config.method)
-                    .map_err(|e| {
-                        if let Some(m) = shadowsocks_metrics {
-                            m.record_tcp_unsupported_method_reject();
-                        }
-                        AcceptError::Protocol(Box::new(e))
-                    })?;
-
             let stream: BoxStream = Box::new(PrefixedStream::new(first_byte.to_vec(), stream));
-            let (ss_stream, target_addr) = eggress_protocol_shadowsocks::tcp::shadowsocks_accept(
-                stream,
-                &ss_config.password,
-                method,
-                shadows_metrics(shadowsocks_metrics),
-            )
-            .await
-            .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+            match eggress_protocol_shadowsocks::CipherMethod::parse_method(&ss_config.method) {
+                Ok(method) => {
+                    let (ss_stream, target_addr) =
+                        eggress_protocol_shadowsocks::tcp::shadowsocks_accept(
+                            stream,
+                            &ss_config.password,
+                            method,
+                            shadows_metrics(shadowsocks_metrics),
+                        )
+                        .await
+                        .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
 
-            return Ok(AcceptedSession::Tunnel(PendingTunnel {
-                target: target_addr,
-                client: ss_stream,
-                protocol: TunnelProtocol::Shadowsocks,
-                reply_context: ReplyContext::Shadowsocks,
-                identity: ClientIdentity::Anonymous,
-            }));
+                    return Ok(AcceptedSession::Tunnel(PendingTunnel {
+                        target: target_addr,
+                        client: ss_stream,
+                        protocol: TunnelProtocol::Shadowsocks,
+                        reply_context: ReplyContext::Shadowsocks,
+                        identity: ClientIdentity::Anonymous,
+                    }));
+                }
+                Err(modern_error) => {
+                    #[cfg(feature = "legacy-crypto")]
+                    if let Ok(legacy_method) =
+                        eggress_protocol_shadowsocks::legacy::LegacyMethod::parse(&ss_config.method)
+                    {
+                        let (ss_stream, target_addr) =
+                            eggress_protocol_shadowsocks::legacy::legacy_accept(
+                                stream,
+                                legacy_method,
+                                ss_config.password.as_bytes(),
+                            )
+                            .await
+                            .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+
+                        return Ok(AcceptedSession::Tunnel(PendingTunnel {
+                            target: target_addr,
+                            client: ss_stream,
+                            protocol: TunnelProtocol::Shadowsocks,
+                            reply_context: ReplyContext::Shadowsocks,
+                            identity: ClientIdentity::Anonymous,
+                        }));
+                    }
+                    if let Some(m) = shadowsocks_metrics {
+                        m.record_tcp_unsupported_method_reject();
+                    }
+                    return Err(AcceptError::Protocol(Box::new(modern_error)));
+                }
+            }
         }
         return Err(AcceptError::Protocol(
             "shadowsocks listener requires shadowsocks config".into(),

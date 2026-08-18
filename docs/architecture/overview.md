@@ -287,6 +287,8 @@ The workspace defines bounded feature groups that control which protocol familie
 | `reverse` | runtime, cli | Reverse/backward proxy control-channel |
 | `pproxy-compat` | cli, embed | pproxy compatibility translator and binary |
 | `ssh` | cli, embed, runtime, server, Python | Optional pproxy-compatible SSH upstream transport; disabled by default |
+| `legacy-crypto` | cli, embed, runtime, server, Python | Optional unauthenticated pproxy legacy Shadowsocks subset, OTA, and PacketCipher UDP codecs |
+| `pproxy-daemon` | cli, Python | Optional Linux safe re-exec daemon startup; disabled by default |
 | `full` | all | Union of all (default) |
 
 Admin and metrics remain required dependencies for the snapshot invariant. The

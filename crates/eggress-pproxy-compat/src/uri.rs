@@ -783,17 +783,44 @@ pub fn validate_chain_hops(chain: &PproxyChain) -> Vec<(usize, String)> {
 /// Legacy stream ciphers lack authentication and are not supported by eggress.
 /// This function is used for diagnostic purposes in the pproxy compat layer.
 pub fn is_legacy_ss_method(method: &str) -> bool {
+    let method = method.to_ascii_lowercase();
+    let method = method.strip_suffix('!').unwrap_or(&method);
+    let method = method.strip_suffix("-py").unwrap_or(method);
     matches!(
-        method.to_lowercase().as_str(),
-        "aes-128-ctr"
+        method,
+        "table"
+            | "aes-128-cfb1"
+            | "aes-192-cfb1"
+            | "aes-256-cfb1"
+            | "aes-128-cfb8"
+            | "aes-192-cfb8"
+            | "aes-256-cfb8"
+            | "aes-128-ctr"
             | "aes-192-ctr"
             | "aes-256-ctr"
             | "aes-128-cfb"
             | "aes-192-cfb"
             | "aes-256-cfb"
+            | "aes-128-ofb"
+            | "aes-192-ofb"
+            | "aes-256-ofb"
             | "rc4"
             | "rc4-md5"
+            | "bf-cfb"
+            | "cast5-cfb"
+            | "des-cfb"
+            | "camellia-128-cfb"
+            | "camellia-192-cfb"
+            | "camellia-256-cfb"
+            | "idea-cfb"
+            | "rc2-cfb"
+            | "seed-cfb"
             | "chacha20-ietf"
+            | "chacha20"
+            | "xchacha20"
+            | "xchacha20-ietf"
+            | "salsa20"
+            | "xsalsa20"
     )
 }
 

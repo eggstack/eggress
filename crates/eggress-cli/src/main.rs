@@ -773,6 +773,12 @@ fn handle_pproxy_run(args: &PproxyRun) {
         std::process::exit(exit_code);
     }
 
+    #[cfg(feature = "pproxy-daemon")]
+    if let Err(error) = eggress_cli::maybe_daemonize(pproxy_args.daemon) {
+        eprintln!("error: {error}");
+        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
+    }
+
     tracing::info!("starting eggress with pproxy-compatible config");
 
     // Start from the in-memory RuntimeConfig. No config file path is provided,

@@ -235,6 +235,8 @@ cargo test -p eggress-runtime --test load -- --ignored
 
 # SSR/legacy compatibility tests
 cargo test -p eggress-protocol-shadowsocks legacy
+cargo test -p eggress-protocol-shadowsocks --features legacy-crypto legacy
+cargo test -p eggress-pproxy-compat --features legacy-crypto,daemon
 cargo test -p eggress-protocol-shadowsocks --features pproxy-legacy compat
 cargo test -p eggress-pproxy-compat ssr
 

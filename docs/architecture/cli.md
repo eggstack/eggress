@@ -96,7 +96,7 @@ implementation in-process and exits before listener startup.
 | `-d`, `-v` | Repeatable debug/verbosity count actions; `-vv` adds traffic statistics |
 | `--ssl`, `--pac`, `--get` | Listener TLS, PAC path, and static content |
 | `--auth`, `--sys`, `--reuse` | Auth reuse, system proxy, and SO_REUSEPORT |
-| `--daemon`, `--test`, `--version`, `-h/--help` | Daemon refusal, test-and-exit, version, and compatibility help |
+| `--daemon`, `--test`, `--version`, `-h/--help` | Optional Linux daemon re-exec, test-and-exit, version, and compatibility help |
 | `--config` | Native Eggress TOML configuration file (not a pproxy 2.7.9 option) |
 | `--admin` | Admin endpoint address |
 
@@ -105,7 +105,9 @@ The compatibility `pproxy` binary defaults, with no arguments, to
 declaration order. `--auth` defaults to 30 days and enables bounded source-IP
 reuse only for listeners with credentials. `--sys` applies after all listeners
 bind and restores captured settings on shutdown or failed startup. `--daemon`
-is fatal with exit code 5 before startup; parser errors are exit code 2. `-d`
+is fatal with exit code 5 before startup unless the optional `pproxy-daemon`
+feature is enabled. That feature performs a safe Linux re-exec only after
+parse, validation, and `--test`; parser errors are exit code 2. `-d`
 adds compatibility error visibility, `-v` emits connection events, and `-vv`
 emits traffic statistics from normal session reports. `--reuse` applies
 SO_REUSEPORT before TCP bind on supported Unix platforms and fails clearly on

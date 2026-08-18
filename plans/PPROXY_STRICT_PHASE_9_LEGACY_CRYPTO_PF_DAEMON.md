@@ -168,3 +168,16 @@ If exact daemon semantics conflict with reliable modern process management, keep
 8. `--daemon` is either functional behind an optional compatibility feature with oracle-aligned parent/child behavior, or remains a final explicit non-parity item.
 9. Daemon mode preserves clean signal shutdown and `--sys` rollback.
 10. None of these work packages increase default runtime scope without an explicit feature enable.
+
+## Phase 9 outcome
+
+- Work package A is implemented behind `legacy-crypto`. The maintained
+  RustCrypto subset has pproxy 2.7.9 known-answer vectors, fragmented stream
+  coverage, OTA HMAC rejection, and packet-local UDP coverage. `cast5-cfb`,
+  `idea-cfb`, `rc2-cfb`, and `seed-cfb` remain explicit refusals.
+- Work package B remains intentionally unimplemented. Phase 9 found no
+  maintained safe `/dev/pf` ioctl wrapper; the existing macOS capability refusal
+  and ADR remain the honest boundary.
+- Work package C is implemented behind `pproxy-daemon` on Linux using safe
+  re-exec after validation and `--test`. Feature-off, non-Linux, and launch
+  failures remain fail-closed; the child owns signals and `--sys` rollback.

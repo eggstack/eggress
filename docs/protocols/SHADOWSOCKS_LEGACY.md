@@ -6,7 +6,8 @@ third-party SSR or Shadowsocks community documentation.
 
 ## Supported Legacy Stream Ciphers
 
-pproxy supports the following stream ciphers for Shadowsocks:
+pproxy exposes the following exact legacy inventory across `cipher.py` and
+`cipherpy.py`. Eggress implements the maintained subset behind `legacy-crypto`:
 
 | Cipher | Key Size | IV Size | Mode |
 |--------|----------|---------|------|
@@ -17,7 +18,14 @@ pproxy supports the following stream ciphers for Shadowsocks:
 | `aes-192-cfb` | 24 bytes | 16 bytes | CFB |
 | `aes-256-cfb` | 32 bytes | 16 bytes | CFB |
 | `rc4-md5` | 16 bytes | 16 bytes | RC4-MD5 |
-| `chacha20-ietf` | 32 bytes | 12 bytes | Stream |
+| `chacha20-ietf`, `chacha20`, `xchacha20` | 32 bytes | 8/12/24 bytes | Stream |
+| `salsa20` | 32 bytes | 8 bytes | Stream |
+| `aes-*-cfb1`, `aes-*-cfb8`, `aes-*-ofb` | method-specific | 16 bytes | CFB/OFB |
+| `bf-cfb`, `des-cfb`, `camellia-*-cfb` | method-specific | 8/16 bytes | CFB |
+
+`cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb` are recognized inventory
+members but remain unsupported because no maintained safe Rust primitive is
+included. The exact `-py` aliases and `!` OTA suffix are recognized.
 
 Method names are case-insensitive in pproxy.
 
@@ -42,11 +50,11 @@ The method name appears in the userinfo section before the colon separator.
 
 ## OTA (One-Time Authentication) Behavior
 
-pproxy 2.7.9 does not appear to implement Shadowsocks OTA (One-Time Authentication)
-for stream ciphers. OTA was an older authentication mechanism used with stream ciphers
-that was deprecated in favor of AEAD. pproxy's stream cipher connections use the
-plaintext method identifier and password for key derivation without additional
-authentication.
+pproxy 2.7.9 implements OTA when the method has a `!` suffix. The destination
+header carries the OTA flag and a truncated HMAC-SHA1 keyed by `IV + derived
+key`; each later chunk carries a two-byte length, a truncated HMAC-SHA1 keyed
+by `IV + big-endian sequence`, and the data. Eggress verifies this framing
+incrementally and hard-fails malformed or incorrectly authenticated chunks.
 
 ## TCP Behavior
 
@@ -104,19 +112,19 @@ Legacy stream ciphers have significant security weaknesses:
 
 ## Eggress Status
 
-**Rejected**: Legacy stream ciphers are intentionally not implemented in eggress.
-
-When a legacy stream cipher method is used in a pproxy URI, eggress recognizes the
-method name and rejects it with a clear diagnostic:
+**Optional compatibility**: Legacy stream ciphers are implemented only with the
+explicit `legacy-crypto` feature and always emit an insecure compatibility
+warning. Default/common builds recognize the method and reject it with a clear
+diagnostic:
 
 ```
-unsupported feature: Legacy stream ciphers are not supported; use AEAD methods
+unsupported feature: legacy stream cipher requires the optional legacy-crypto feature
 ```
 
 See `docs/adr/ADR_legacy_shadowsocks_ssr_compatibility.md` for the decision record.
 
 ## Source
 
-All behavior captured from pproxy 2.7.9 (Python package) during Phase 7 parity
-audit and subsequent phases. This is not derived from third-party SSR documentation
-or community wikis.
+All behavior captured from pproxy 2.7.9 (Python package) during the Phase 9
+parity audit. This is not derived from third-party SSR documentation or
+community wikis.

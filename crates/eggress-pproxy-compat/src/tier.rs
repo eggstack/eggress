@@ -95,7 +95,7 @@ pub fn manifest_tier_for_unsupported_feature(feature: &'static str) -> ManifestT
 ///
 /// The aggregate classifier consults the native per-diagnostic tier of
 /// every unsupported feature id, so a known intentional exclusion
-/// (e.g. SSH, legacy cipher, or retained pre-Phase-3 SSR aliases) reports as
+/// (e.g. SSH or retained pre-Phase-3 SSR aliases) reports as
 /// `intentional_non_parity`
 /// rather than being collapsed into generic `unsupported`. Unknown
 /// unsupported feature ids and unknown warning categories fail closed

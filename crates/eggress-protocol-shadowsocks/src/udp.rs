@@ -174,6 +174,28 @@ pub fn decode_pproxy_udp_packet(
     Ok((target, plaintext[addr_len..].to_vec()))
 }
 
+/// Encode a legacy stream-cipher pproxy UDP packet.
+#[cfg(feature = "legacy-crypto")]
+pub fn encode_legacy_udp_packet(
+    method: crate::legacy::LegacyMethod,
+    password: &[u8],
+    target: &TargetAddr,
+    payload: &[u8],
+    iv: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
+    crate::legacy::legacy_udp_encode(method, password, target, payload, iv)
+}
+
+/// Decode a legacy stream-cipher pproxy UDP packet.
+#[cfg(feature = "legacy-crypto")]
+pub fn decode_legacy_udp_packet(
+    method: crate::legacy::LegacyMethod,
+    password: &[u8],
+    packet: &[u8],
+) -> Result<(TargetAddr, Vec<u8>), ShadowsocksError> {
+    crate::legacy::legacy_udp_decode(method, password, packet)
+}
+
 fn udp_plaintext(target: &TargetAddr, payload: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
     if let TargetHost::Domain(ref domain) = target.host {
         if domain.len() > MAX_DOMAIN_LEN {

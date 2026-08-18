@@ -103,11 +103,16 @@ mod tests {
         let args = parse(&["-l", "http://:8080", "--daemon"]);
         let output = crate::translate::translate_pproxy_args(&args).unwrap();
         let gate = evaluate(&args, &output);
-        assert!(!gate.allows_start());
-        assert!(gate
-            .blockers
-            .iter()
-            .any(|b| matches!(b, BlockReason::Unsupported(u) if u.feature == "daemon")));
+        #[cfg(feature = "daemon")]
+        assert!(gate.allows_start());
+        #[cfg(not(feature = "daemon"))]
+        {
+            assert!(!gate.allows_start());
+            assert!(gate
+                .blockers
+                .iter()
+                .any(|b| matches!(b, BlockReason::Unsupported(u) if u.feature == "daemon")));
+        }
     }
 
     #[test]
@@ -155,6 +160,7 @@ mod tests {
         let gate = evaluate(&args, &output);
         let summary = gate.blocker_summary();
         assert!(summary.contains("--bogus-flag"));
+        #[cfg(not(feature = "daemon"))]
         assert!(summary.contains("daemon"));
     }
 }

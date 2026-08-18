@@ -11,6 +11,11 @@ full = ["common", "extended", "operations", "reverse", "pproxy-compat", "pproxy-
 common = ["eggress-runtime/common"]
 extended = ["eggress-runtime/extended"]
 pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
+legacy-crypto = [
+    "eggress-runtime/legacy-crypto",
+    "eggress-pproxy-compat/legacy-crypto",
+]
+pproxy-daemon = ["pproxy-compat", "eggress-pproxy-compat/daemon"]
 operations = ["dep:eggress-system-proxy", "eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
 quic = [

@@ -31,6 +31,13 @@ url = "2"
 default = []
 ssh = ["eggress-embed/ssh", "eggress-pproxy-compat/ssh", "eggress-cli/ssh", "eggress-runtime/ssh"]
 quic = ["eggress-embed/quic", "eggress-cli/quic", "eggress-runtime/quic"]
+legacy-crypto = [
+    "eggress-embed/legacy-crypto",
+    "eggress-cli/legacy-crypto",
+    "eggress-runtime/legacy-crypto",
+    "eggress-pproxy-compat/legacy-crypto",
+]
+pproxy-daemon = ["eggress-cli/pproxy-daemon", "eggress-pproxy-compat/daemon"]
 
 [lints]
 workspace = true

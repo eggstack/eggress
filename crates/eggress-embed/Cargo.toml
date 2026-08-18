@@ -13,6 +13,7 @@ full = ["common", "extended", "operations", "reverse", "pproxy-compat", "pproxy-
 common = ["eggress-runtime/common"]
 extended = ["eggress-runtime/extended"]
 pproxy-legacy = ["eggress-runtime/pproxy-legacy"]
+legacy-crypto = ["eggress-runtime/legacy-crypto"]
 operations = ["eggress-runtime/operations"]
 reverse = ["eggress-runtime/reverse"]
 quic = ["eggress-config/quic", "eggress-runtime/quic"]

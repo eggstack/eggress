@@ -28,6 +28,9 @@ pub enum ShadowsocksError {
     #[error("invalid key length")]
     InvalidKeyLength,
 
+    #[error("invalid legacy Shadowsocks OTA HMAC")]
+    InvalidOtaHmac,
+
     #[error("password too long")]
     PasswordTooLong,
 

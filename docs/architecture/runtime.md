@@ -93,6 +93,12 @@ The runtime crate uses feature flags to conditionally compile optional protocol 
 - **`extended`**: Enables Shadowsocks metrics initialization, UDP relay, and chain executor handler registration. Gates `eggress-protocol-shadowsocks` and forwards to `eggress-server/extended` and `eggress-metrics/extended`.
 - **`reverse`**: Enables reverse server/client spawning in the supervisor. Gates `eggress-protocol-reverse`.
 - **`operations`**: Enables system proxy inspection. Gates `eggress-system-proxy`.
+- **`legacy-crypto`**: Opt-in pproxy legacy Shadowsocks stream ciphers, TCP OTA,
+  and PacketCipher-style UDP codecs. It is unauthenticated compatibility code,
+  emits warnings, and is excluded from default and `common` builds.
+- **`pproxy-daemon`** (CLI): Enables Linux-only safe re-exec daemon startup after
+  compatibility parsing, validation, and `--test`; the child owns runtime
+  signals and system-proxy rollback.
 
 Admin and metrics remain required dependencies because they are tightly coupled to the runtime snapshot invariant. The `RuntimeState` struct conditionally includes `shadowsocks_metrics` and `reverse_registry`/`reverse_metrics` fields based on these features.
 

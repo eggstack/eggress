@@ -1293,23 +1293,36 @@ impl HopHandler for ShadowsocksHopHandler {
                 )) as Box<dyn std::error::Error + Send + Sync>
             })?;
 
-            let method = eggress_protocol_shadowsocks::CipherMethod::parse_method(&creds.username)
-                .map_err(|e| {
+            match eggress_protocol_shadowsocks::CipherMethod::parse_method(&creds.username) {
+                Ok(method) => eggress_protocol_shadowsocks::shadowsocks_connect(
+                    stream,
+                    target,
+                    method,
+                    &creds.password,
+                    metrics,
+                )
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
+                Err(modern_error) => {
+                    #[cfg(feature = "legacy-crypto")]
+                    if let Ok(legacy_method) =
+                        eggress_protocol_shadowsocks::legacy::LegacyMethod::parse(&creds.username)
+                    {
+                        return eggress_protocol_shadowsocks::legacy::legacy_connect(
+                            stream,
+                            target,
+                            legacy_method,
+                            creds.password.as_bytes(),
+                        )
+                        .await
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
+                    }
                     if let Some(m) = metrics.as_ref() {
                         m.record_tcp_unsupported_method_reject();
                     }
-                    Box::new(e) as Box<dyn std::error::Error + Send + Sync>
-                })?;
-
-            eggress_protocol_shadowsocks::shadowsocks_connect(
-                stream,
-                target,
-                method,
-                &creds.password,
-                metrics,
-            )
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                    Err(Box::new(modern_error) as Box<dyn std::error::Error + Send + Sync>)
+                }
+            }
         })
     }
 }

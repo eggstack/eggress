@@ -907,9 +907,11 @@ and comprehensive API inventory documents under `docs/python/`.
   Shadowsocks listeners are available via the Rust binary; the embed API
   (which the Python bindings wrap) exposes TCP/UDP upstream Shadowsocks and
   inbound listeners for SOCKS5/HTTP only in the current release. No Trojan
-  inbound listeners. No legacy stream ciphers. SSH upstreams are available only
-  in wheels built with the optional ssh feature; SSH remains upstream-only.
-  No pproxy daemon mode. Multiple remotes default to round-robin.
+  inbound listeners. Legacy stream ciphers require a wheel built with the
+  optional `legacy-crypto` feature and remain compatibility-only. SSH upstreams
+  are available only in wheels built with the optional ssh feature; SSH remains
+  upstream-only. Linux pproxy daemon mode requires the optional
+  `pproxy-daemon` feature. Multiple remotes default to round-robin.
 - **mypy**: PyO3 native types (`_inner` attribute) are invisible to mypy,
   producing ~20 expected false-positive errors. This is known pre-release
   typing debt. A future release will add `.pyi` stubs or type wrappers.

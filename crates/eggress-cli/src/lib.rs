@@ -1,5 +1,36 @@
 use std::time::{Duration, Instant};
 
+/// Apply the optional Linux pproxy daemon transition after compatibility
+/// parsing and configuration validation. Re-exec keeps the transition safe
+/// under the workspace's `unsafe_code = "deny"` policy and leaves signal,
+/// listener, and system-proxy rollback ownership with the child process.
+#[cfg(feature = "pproxy-daemon")]
+pub fn maybe_daemonize(requested: bool) -> Result<(), String> {
+    const CHILD_MARKER: &str = "EGGRESS_PPROXY_DAEMON_CHILD";
+    if !requested || std::env::var_os(CHILD_MARKER).is_some() {
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("cannot resolve executable for --daemon: {error}"))?;
+        std::process::Command::new(executable)
+            .args(std::env::args_os().skip(1))
+            .env(CHILD_MARKER, "1")
+            .current_dir("/")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|error| format!("cannot start --daemon child: {error}"))?;
+        std::process::exit(0);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err("--daemon compatibility is only available on Linux".to_string())
+    }
+}
+
 use eggress_core::chain::{ChainExecutor, HopHandler};
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
 

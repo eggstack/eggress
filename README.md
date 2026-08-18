@@ -2,7 +2,7 @@
 
 A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical and behavioral parity with Python `pproxy`.
 
-> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported, while QUIC/HTTP/3, SSR families outside the bounded TCP compatibility path, daemonization, and cross-session reuse remain intentional exclusions. SSH upstream compatibility is available only through the opt-in `ssh` feature. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
+> **Status:** The Rust-native CLI and runtime are production-ready. The Python compatibility surface is a bounded drop-in subset for `pproxy==2.7.9`; strict full parity is not claimed. Eggress ships one Python distribution, `eggress`, which also installs a real top-level `pproxy` compatibility package. Common HTTP/SOCKS and modern encrypted-proxy workflows are supported. Legacy stream ciphers and Linux daemon-compatible startup are available only through explicit opt-in features; macOS PF transparent original-destination recovery remains unavailable. SSH upstream compatibility is available only through the opt-in `ssh` feature. See `docs/PPROXY_PARITY_SPEC.md` and `docs/parity/pproxy_capability_manifest.toml`.
 
 eggress preserves the compact URI-driven workflow of `pproxy` while using explicit Rust abstractions for listeners, application proxy protocols, transport wrappers, routing, proxy chains, UDP associations, and platform integration.
 
@@ -41,6 +41,9 @@ cargo build -p eggress-cli --release --no-default-features --features common
 
 # Optional smallest optimization profile
 cargo build -p eggress-cli --profile release-small --no-default-features --features common
+
+# Optional pproxy legacy crypto and Linux daemon compatibility
+cargo build -p eggress-cli --features legacy-crypto,pproxy-daemon
 ```
 
 ### Rust library
@@ -127,6 +130,11 @@ actions and value-taking flags.
 `-d` makes compatibility task failures visible at error level, while `-v` logs
 connection events and `-vv` adds traffic totals using the existing metrics
 reports. Explicit `RUST_LOG` remains authoritative.
+Legacy Shadowsocks stream ciphers and OTA are fail-closed by default; enable
+`legacy-crypto` explicitly for the bounded RustCrypto compatibility path. The
+`pproxy-daemon` feature enables Linux-only safe re-exec daemon startup after
+parsing, validation, and `--test`; the child owns signal handling and `--sys`
+rollback.
 Canonical fixed-target listeners use
 `tunnel{host:port}://:listen-port`; the legacy `raw://{host:port}` extension
 remains accepted. UDP fixed-target and echo listeners require an explicit
@@ -385,7 +393,10 @@ Python bindings; it is not a separate Python distribution. The bundled
   CONNECT and `quic+http://` provides raw QUIC carrying HTTP. QUIC listeners
   require certificate/key material and UDP association mode is intentionally
   unsupported.
-- **Other SSR/auth families and legacy stream ciphers** — outside the bounded pproxy 2.7.9 SSR surface; legacy ciphers remain rejected with clear diagnostics
+- **Unimplemented legacy cipher inventory members** — `cast5-cfb`, `idea-cfb`,
+  `rc2-cfb`, and `seed-cfb` remain rejected because no maintained safe primitive
+  is included. Other pproxy legacy stream ciphers and OTA require the explicit
+  `legacy-crypto` compatibility feature and are never native secure defaults.
 - **SOCKS4/SOCKS5 BIND** — pproxy 2.7.9 also requires CONNECT (`0x01`); the
   matching refusal is not an Eggress-specific strict gap
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
@@ -522,7 +533,8 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] TCP client and server (standard SIP003 AEAD framing)
 - [x] UDP client and server (standard upstream AEAD plus pproxy-compatible standalone inbound format)
 - [x] AEAD cipher support (aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305)
-- [x] Legacy stream cipher diagnostics (rejected with clear error)
+- [x] Legacy stream ciphers and OTA behind the opt-in `legacy-crypto` feature
+      (unauthenticated compatibility path with warnings and fail-closed HMAC)
 - [x] Interoperability with `shadowsocks-rust`
 - [x] pproxy 2.7.9 SSR address framing with IPv4, IPv6, domain, and optional auth prefix
 - [x] Bounded pproxy SSR plugin codecs behind the `pproxy-legacy` feature
@@ -580,7 +592,8 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Startup capability checks
 - [ ] Linux IPv6 original destination
 - [ ] Linux TPROXY workflow
-- [ ] macOS PF original-destination recovery
+- [ ] macOS PF original-destination recovery (requires a future maintained safe
+      `/dev/pf` wrapper; external `pfctl` setup remains the workaround)
 
 ### Administration and operations
 

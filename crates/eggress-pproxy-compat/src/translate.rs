@@ -85,10 +85,20 @@ pub fn translate_from_uris(
 
     // Handle typed fields first
     if args.daemon {
-        output = output.with_unsupported(
-            "daemon",
-            "--daemon mode is not supported; use systemd or process manager",
-        );
+        #[cfg(feature = "daemon")]
+        {
+            output = output.with_warning(
+                "daemon",
+                "--daemon uses a safe Linux re-exec compatibility mode; the child owns runtime and --sys rollback",
+            );
+        }
+        #[cfg(not(feature = "daemon"))]
+        {
+            output = output.with_unsupported(
+                "daemon",
+                "--daemon mode requires the optional daemon compatibility feature",
+            );
+        }
     }
     if args.system_proxy {
         output = output.with_warning(
@@ -482,14 +492,28 @@ pub fn translate_from_uris(
             if let Some(ref method) = local.username {
                 // Check for legacy stream cipher methods
                 if crate::uri::is_legacy_ss_method(method) {
-                    output = output.with_unsupported(
-                        "legacy-cipher",
-                        format!(
-                            "Shadowsocks listener '{}': legacy stream cipher method '{}' is not supported; use an AEAD method (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305)",
-                            local.redacted_display(),
-                            method
-                        ),
-                    );
+                    #[cfg(feature = "legacy-crypto")]
+                    {
+                        output = output.with_warning(
+                            "legacy-cipher",
+                            format!(
+                                "Shadowsocks listener '{}': legacy stream cipher '{}' is unauthenticated and requires the optional compatibility feature",
+                                local.redacted_display(),
+                                method
+                            ),
+                        );
+                    }
+                    #[cfg(not(feature = "legacy-crypto"))]
+                    {
+                        output = output.with_unsupported(
+                            "legacy-cipher",
+                            format!(
+                                "Shadowsocks listener '{}': legacy stream cipher method '{}' requires the optional legacy-crypto feature; use an AEAD method otherwise",
+                                local.redacted_display(),
+                                method
+                            ),
+                        );
+                    }
                 }
                 if let Some(ref pass) = local.password {
                     listener_entry.shadowsocks = Some(ShadowsocksToml {
@@ -1821,7 +1845,7 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_daemon_unsupported() {
+    fn test_translate_daemon_feature_state() {
         let args = PproxyArgs::parse(&[
             "-l".into(),
             "socks5://127.0.0.1:1080".into(),
@@ -1829,6 +1853,9 @@ mod tests {
         ])
         .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
+        #[cfg(feature = "daemon")]
+        assert!(!output.has_unsupported());
+        #[cfg(not(feature = "daemon"))]
         assert!(output.has_unsupported());
     }
 
@@ -2110,11 +2137,15 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_legacy_cipher_listener_unsupported() {
+    fn test_translate_legacy_cipher_feature_state() {
         let args =
             PproxyArgs::parse(&["-l".into(), "ss://aes-128-ctr:secret@proxy:8388".into()]).unwrap();
         let output = translate_pproxy_args(&args).unwrap();
+        #[cfg(feature = "legacy-crypto")]
+        assert!(!output.has_unsupported());
+        #[cfg(not(feature = "legacy-crypto"))]
         assert!(output.has_unsupported());
+        #[cfg(not(feature = "legacy-crypto"))]
         assert!(output
             .unsupported
             .iter()

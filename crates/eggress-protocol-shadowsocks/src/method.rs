@@ -73,14 +73,18 @@ impl CipherMethod {
     }
 }
 
-/// Known legacy Shadowsocks stream cipher method names.
-///
-/// These are recognized for diagnostic purposes but NOT supported.
-/// Legacy stream ciphers lack authentication and are vulnerable to bit-flipping attacks.
+/// Exact legacy method inventory exposed by pproxy 2.7.9's `cipher.py` and
+/// `cipherpy.py`. The names remain recognized even when the optional
+/// `legacy-crypto` feature is disabled so callers get a stable compatibility
+/// diagnostic instead of an unknown-method error.
 pub fn is_legacy_method(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let without_ota = lower.strip_suffix('!').unwrap_or(&lower);
+    let normalized = without_ota.strip_suffix("-py").unwrap_or(without_ota);
     matches!(
-        name.to_lowercase().as_str(),
-        "aes-128-ctr"
+        normalized,
+        "table"
+            | "aes-128-ctr"
             | "aes-192-ctr"
             | "aes-256-ctr"
             | "aes-128-cfb"
@@ -92,26 +96,26 @@ pub fn is_legacy_method(name: &str) -> bool {
             | "aes-128-cfb8"
             | "aes-192-cfb8"
             | "aes-256-cfb8"
-            | "aes-128-cfb11"
-            | "aes-192-cfb11"
-            | "aes-256-cfb11"
+            | "aes-128-ofb"
+            | "aes-192-ofb"
+            | "aes-256-ofb"
             | "rc4"
             | "rc4-md5"
-            | "rc4-md5-6"
+            | "chacha20"
             | "chacha20-ietf"
             | "xchacha20"
+            | "xchacha20-ietf"
             | "salsa20"
             | "xsalsa20"
-            | "seed-cfb"
-            | "camellia-128-cfb"
-            | "camellia-192-cfb"
-            | "camellia-256-cfb"
             | "bf-cfb"
             | "cast5-cfb"
             | "des-cfb"
+            | "camellia-128-cfb"
+            | "camellia-192-cfb"
+            | "camellia-256-cfb"
             | "idea-cfb"
             | "rc2-cfb"
-            | "blowfish-cfb"
+            | "seed-cfb"
     )
 }
 

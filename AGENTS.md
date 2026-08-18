@@ -80,6 +80,17 @@ The `operations` feature gates the admin HTTP server, Prometheus metrics export,
 
 The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP. UDP composition is closed over SOCKS5 and, in extended builds, Shadowsocks; HTTP/SOCKS4/Trojan/H2/WS/QUIC UDP paths must fail validation. The `pproxy-legacy` feature enables the isolated SSR/plugin compatibility path; native builds do not need it.
 
+The `legacy-crypto` feature is opt-in on the CLI, embed, runtime, server, and
+Python layers. It implements the maintained RustCrypto subset of pproxy 2.7.9
+legacy stream ciphers, EVP_BytesToKey derivation, TCP OTA framing/HMAC, and
+PacketCipher-style UDP packets. It is unauthenticated compatibility behavior,
+emits a warning, and remains disabled in default/common builds. `cast5-cfb`,
+`idea-cfb`, `rc2-cfb`, and `seed-cfb` are recognized but fail explicitly.
+The `pproxy-daemon` feature enables Linux-only safe re-exec daemon startup;
+without it `--daemon` remains a fatal unsupported diagnostic. macOS PF remains
+an explicit capability refusal because no maintained safe `/dev/pf` wrapper is
+available.
+
 The `ssh` feature is opt-in on the CLI, embed, runtime, server, Python, and
 compatibility layers. It adds `eggress-transport-ssh` and `russh` only when
 enabled; default and `common` builds do not expose SSH upstream execution.
@@ -223,9 +234,13 @@ Hosted CI is a smoke signal, not a release engine. Do not duplicate every local 
   remain visibly warning-bearing; redact passwords and private-key paths from
   diagnostics, never enable agent/command/SFTP features, and keep remote-forward
   exposure explicit and bounded.
-- Shadowsocks compatibility evidence must include pproxy 2.7.9 and a maintained
+- Shadowsocks AEAD compatibility evidence must include pproxy 2.7.9 and a maintained
   Shadowsocks implementation; Eggress-to-Eggress roundtrips alone are not
   wire-compatibility evidence.
+- Legacy stream-cipher changes require pproxy 2.7.9 oracle vectors for every
+  claimed method, fragmented TCP and UDP packet tests, OTA wrong-HMAC tests,
+  and an explicit warning/feature-off test. Do not describe the path as secure
+  encryption or silently enable it through `full`.
 - `unsafe_code = "deny"` at workspace level; do not add unsafe without justification.
 - No OpenSSL, no C dependencies, no `build.rs` without explicit reason. `deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, and `cmake`.
 
@@ -246,7 +261,8 @@ When a compatibility claim changes, update the applicable manifest and run the c
 The strict Phase 4 Python package claim covers the ten tracked modules and
 their recorded symbols/signatures. Modern `cipherpy` AEAD names delegate to
 native implementations; legacy pure-Python cipher names remain importable but
-fail explicitly when constructed. `pproxy.__main__` and the installed
+fail explicitly when constructed unless the Rust compatibility feature is
+deliberately selected by the embedding build. `pproxy.__main__` and the installed
 `pproxy` script share the in-process Eggress adapter, and `sysproxy` delegates
 mutation/rollback to the native backend on supported platforms.
 

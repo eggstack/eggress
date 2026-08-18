@@ -61,7 +61,7 @@ The aggregate classifier consults the native per-diagnostic tier of every
 unsupported feature id via `manifest_tier_for_unsupported_feature()`
 (which reuses the per-diagnostic tier owned by
 `classify_unsupported_feature_tier()`), so known intentional exclusions
-(SSR listener/upstream, legacy Shadowsocks ciphers) report as
+(SSR listener/upstream) report as
 `intentional_non_parity` rather than being collapsed into generic
 `unsupported`. SSH upstreams are now feature-gated compatibility support;
 SSH listener use remains an upstream-only structured refusal. The old SSR
@@ -95,7 +95,7 @@ table, severity order, or intentional-exclusion set.
 | `--auth seconds` | Enables bounded source-IP authentication reuse for compatibility listeners |
 | `--sys` | Applies the selected bound SOCKS5/HTTP listener through `eggress-system-proxy`, then restores prior settings |
 | `--reuse` | SO_REUSEPORT before TCP bind where supported |
-| `--daemon` | Parsed, then rejected before startup (Phase 9 daemonization remains out of scope) |
+| `--daemon` | Optional Linux safe re-exec after validation; rejected before startup without `pproxy-daemon` |
 | `--test` | Native URL test for each remote, then exit before listener startup |
 
 `-h/--help` and `--version` are parsed actions, not listener arguments. The
@@ -210,8 +210,8 @@ decimal port string), not arbitrary network payload data.
 ## Phase 5 boundary decisions
 
 macOS PF transparent-destination recovery remains intentional non-parity: it
-requires privileged `/dev/pf` ioctl access and has no disposable test in the
-current platform abstraction. Backward TLS and mixed reverse chains likewise
+requires privileged `/dev/pf` ioctl access and has no maintained safe wrapper or
+disposable test in the current platform abstraction. Backward TLS and mixed reverse chains likewise
 remain unsupported because they require composing TLS around reverse framing.
 
 ## Diagnostics

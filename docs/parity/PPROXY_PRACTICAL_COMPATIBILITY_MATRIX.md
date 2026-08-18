@@ -30,7 +30,7 @@ extensions with similar names, but those do not become pproxy claims.
 | `--auth` | Per-source-IP re-auth interval | `supported_difference` | `cli.auth`; bounded process-local IP cache with monotonic expiry |
 | `--sys` | Apply system proxy settings | `supported_difference` | `cli.sys`; existing backend, post-bind apply, in-memory rollback; macOS/Windows strict targets |
 | `--reuse` | `SO_REUSEPORT` | `matched` | `cli.reuse`; platform behavior is documented |
-| `--daemon` | Daemonize process | `gap` | `cli.daemon`; Phase 9 process-model work |
+| `--daemon` | Daemonize process | `supported_difference` | `cli.daemon`; optional Linux safe re-exec feature, fail-closed otherwise |
 | `--test` | Test supplied URL and exit | `supported_difference` | `cli.test`; in-process native upstream test |
 | `--version` | Print version and exit | `matched` | `cli.version` |
 | `-h / --help` | Argparse help | `matched` | `cli.help` |
@@ -57,7 +57,7 @@ contract.
 | SSR framing and built-in plugins | `gap` | Exact tagged behavior is Phase 3 |
 | SSH upstream/jump/remote-forward | `gap` | Phase 7 optional transport |
 | QUIC/H3 listener/client roles | `supported_difference` | Phase 8 optional `quic` transport; UDP association mode is an explicit unsupported composition |
-| Legacy stream ciphers and OTA | `gap` | Phase 9 legacy tail |
+| Legacy stream ciphers and OTA | `supported_difference` | Optional `legacy-crypto` path implements the maintained RustCrypto subset, OTA HMAC, and PacketCipher UDP framing; unsupported inventory members remain explicit refusals |
 | SOCKS4/SOCKS5 BIND | `unsupported` by both | Tagged accept paths require CONNECT (`0x01`); not Eggress-specific strict work |
 | Linux redir | `platform_limited` | Requires original-destination facilities and privileges |
 | macOS PF | `gap` | Phase 9 platform tail |
@@ -90,8 +90,9 @@ strict phase, and focused test references.
 
 ## Stable exclusions and boundaries
 
-SSH, SSR, exact plugin transforms, legacy Shadowsocks ciphers and
-OTA, daemonization, UDP over non-UDP protocols, and unavailable platform transparent facilities remain
-explicit strict gaps or exclusions according to their phase records. Unknown
+SSH, SSR, exact plugin transforms, unavailable legacy cipher inventory members,
+macOS PF, UDP over non-UDP protocols, and unavailable platform transparent
+facilities remain explicit strict gaps or exclusions according to their phase
+records. Legacy crypto and daemon behavior require opt-in features. Unknown
 flags and unsupported options fail with structured diagnostics; known Eggress
 extensions do not alter the frozen upstream inventory.

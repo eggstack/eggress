@@ -465,8 +465,8 @@ fn classify_unsupported_feature(
         ),
         "legacy-cipher" => (
             DiagnosticCode::InvalidCipherMethod,
-            "intentional_non_parity",
-            Some("use an AEAD method: aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305"),
+            "unsupported",
+            Some("enable the optional legacy-crypto feature or use an AEAD method: aes-128-gcm, aes-192-gcm, aes-256-gcm, chacha20-ietf-poly1305"),
         ),
         _ => (DiagnosticCode::UnsupportedFlag, "unsupported", None),
     }

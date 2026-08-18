@@ -2,6 +2,8 @@ pub mod address;
 pub mod aead;
 pub mod compat;
 pub mod error;
+#[cfg(feature = "legacy-crypto")]
+pub mod legacy;
 pub mod method;
 pub mod metrics;
 pub mod nonce;

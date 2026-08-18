@@ -2,13 +2,13 @@
 
 `crates/eggress-protocol-shadowsocks/`
 
-Shadowsocks proxy protocol with AEAD cipher support.
+Shadowsocks proxy protocol with AEAD cipher support and an explicit,
+feature-gated pproxy legacy compatibility path.
 
 The strict pproxy 2.7.9 oracle uses these modern AEAD method-specific salt/IV
 sizes: `aes-128-gcm` 16 bytes, `aes-192-gcm` 24 bytes, `aes-256-gcm` 32 bytes,
 and `chacha20-ietf-poly1305` 32 bytes. These values come from the frozen
-`pproxy/cipher.py` classes and are tracked in the phase-0 manifest; they are
-not a claim that legacy stream ciphers or OTA are supported.
+`pproxy/cipher.py` classes and are tracked in the phase-0 manifest.
 
 ## Supported Ciphers
 
@@ -46,7 +46,21 @@ not a claim that legacy stream ciphers or OTA are supported.
 
 ## Legacy Detection
 
-- `is_legacy_method()` detects unsupported legacy ciphers → `LegacyMethodUnsupported` error
+- `is_legacy_method()` recognizes the exact pproxy `cipher.py`/`cipherpy.py`
+  legacy inventory, including the `!` OTA suffix and `-py` aliases.
+- With `legacy-crypto`, `legacy_connect()`/`legacy_accept()` implement the
+  maintained RustCrypto subset using EVP_BytesToKey and stateful stream
+  ciphers. The path emits an insecure-compatibility warning and is never
+  enabled by default.
+- TCP OTA uses the pproxy address tag, truncated HMAC-SHA1, incremental
+  two-byte length/HMAC/data chunks, and monotonic per-direction sequence
+  numbers. Wrong or truncated HMACs fail closed.
+- `udp::encode_legacy_udp_packet()` and `decode_legacy_udp_packet()` implement
+  packet-local pproxy `PacketCipher` framing. OTA is stream-only, matching
+  pproxy.
+- `cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb` remain recognized but
+  unsupported because no maintained safe Rust primitive is included. Without
+  `legacy-crypto`, all legacy methods fail with `LegacyMethodUnsupported`.
 - Feature-gated pproxy SSR compatibility is isolated under `compat/` and
   implements only pproxy 2.7.9 address framing plus the six built-in plugin
   names. It is not native Shadowsocks AEAD and `tls1.2_ticket_auth` is not
