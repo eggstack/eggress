@@ -29,7 +29,6 @@ Before merging a substantial Rust change, run:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
-cargo check -p eggress-cli --no-default-features --features common
 ```
 
 `cargo check` is not a separate required gate because Clippy and the test build already compile the workspace. It remains useful interactively when a faster compile-only pass is desired.
@@ -43,6 +42,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
 (cd crates/eggress-python && ../../.venv/bin/maturin develop)
+.venv/bin/python -m pip install --no-deps ./python-pproxy-compat
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
 
@@ -80,19 +80,13 @@ cargo test -p eggress-testkit pproxy_oracle -- --ignored
 
 Run these when changing pproxy behavior, URI translation, compatibility manifests, process behavior, or the top-level `pproxy` namespace. See `docs/DIFFERENTIAL_TESTING.md` for the full harness.
 
-The pproxy behavioral certification uses isolated oracle and candidate environments and is reserved for explicit compatibility-certification work:
+The strict certification audit is reserved for explicit closure or release evaluation:
 
 ```bash
-EGRESS_RUN_PPROXY_DIFFERENTIAL=1 cargo test -p eggress-cli --test pproxy_differential -- --ignored --test-threads=1
+./scripts/run_strict_pproxy_closure_audit.sh
 ```
 
-It performs only pproxy-specific behavioral validation: paired oracle/candidate observations, differential tests, interoperability tests, cipher KAT, plugin probes, and process lifecycle probes. It does not run formatting, linting, workspace tests, dependency audits, or release packaging. Its output is a compact JSON summary.
-
-The certification runner creates isolated environments under `target/pproxy-certification/`:
-- `oracle-venv/`: pproxy==2.7.9 only
-- `candidate-venv/`: locally built eggress + compatibility package
-
-All pproxy subprocesses use the oracle interpreter via `EGRESS_ORACLE_PYTHON`. Candidate Python probes use `EGRESS_CANDIDATE_PYTHON`. Observations are written to separate `observations/oracle/` and `observations/candidate/` directories.
+Its generated reports are evidence for compatibility claims. They are not routine merge artifacts.
 
 ## Protocol interoperability
 

@@ -6,13 +6,12 @@ This document is the source of truth for repository verification. It supersedes 
 
 Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for ordinary development, not a release engine, compatibility evidence archive, or substitute for focused local testing.
 
-The repository has two automatic smoke workflows and one manual publish workflow:
+The repository has two automatic workflows:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the workspace test suite, and a lean-build compile check. Triggers on push to `main` and manual dispatch.
-- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages. Triggers on Python-relevant pushes to `main` and manual dispatch.
-- `.github/workflows/publish-python.yml`: Python package publication to PyPI/TestPyPI using OIDC trusted publishers. Triggers on tag push (`v*`) or manual dispatch. Requires `id-token: write` permission and repository environments `pypi`/`testpypi`.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite.
+- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 
-Pull requests do not automatically trigger duplicate smoke runs. The two smoke workflows use read-only permissions (`permissions: contents: read`). The publish workflow uses `id-token: write` only for OIDC token exchange with PyPI.
+There are no tag-triggered release workflows, artifact assembly workflows, publishing workflows, cross-platform release matrices, or mandatory compatibility-evidence uploads.
 
 ## Routine development
 
@@ -40,7 +39,6 @@ For a normal Rust change, the expected broad local check is:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
-cargo check -p eggress-cli --no-default-features --features common
 ```
 
 For a Python-facing change, also build the extension and run the relevant Python tests:
@@ -49,6 +47,7 @@ For a Python-facing change, also build the extension and run the relevant Python
 python3 -m venv .venv
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
 (cd crates/eggress-python && ../../.venv/bin/maturin develop)
+.venv/bin/python -m pip install --no-deps ./python-pproxy-compat
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
 
@@ -64,7 +63,7 @@ Run these only when their trigger condition applies:
 | `cargo audit --ignore RUSTSEC-2025-0134` | Dependency changes; release preparation |
 | pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
 | Shadowsocks external interoperability | Shadowsocks wire-format, cipher, or relay changes |
-| pproxy behavioral certification | Explicit compatibility-certification work |
+| strict closure audit | Explicit compatibility-certification work |
 | benchmarks, load, soak, or fuzzing | Performance, concurrency, parser, or hardening work |
 | cross-platform local/hosted checks | Platform-specific code or release preparation |
 
@@ -78,9 +77,9 @@ Compatibility claims must still be backed by the applicable oracle or interopera
 
 ## Release boundary
 
-Python package publication to PyPI uses OIDC trusted publishers via `.github/workflows/publish-python.yml`. Push a `v*` tag or use manual dispatch to trigger publication. The workflow requires repository environments `pypi` and `testpypi` to be configured.
+Release cadence is entirely manual. GitHub Actions must not publish crates, create GitHub Releases, push container images, build release bundles, or react to version tags.
 
-Rust crate publication to crates.io remains entirely manual. The release operator performs release checks and `cargo publish` locally. See `docs/release/RELEASE_PROCESS.md`.
+The release operator performs release checks and `cargo publish` locally. See `docs/release/RELEASE_PROCESS.md`.
 
 ## Design rationale
 

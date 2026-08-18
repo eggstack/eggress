@@ -1,9 +1,6 @@
 # Manual Release Process
 
-Egress releases are operator-driven. GitHub Actions publishes the Python
-distribution only through the bounded release workflow; Rust crates remain
-manual. GitHub Actions does not build native archives, create GitHub Releases,
-push container images, or publish Rust crates.
+Egress releases are operator-driven. GitHub Actions does not publish crates, build release bundles, create GitHub Releases, push container images, publish Python packages, or react to version tags.
 
 No release cadence is encoded in the repository. A maintainer releases when the code and version are ready.
 
@@ -11,10 +8,7 @@ No release cadence is encoded in the repository. A maintainer releases when the 
 
 The primary release channel is crates.io using local `cargo publish` commands. Git tags and GitHub Releases are optional bookkeeping performed manually after crates.io publication; they are not release prerequisites or automation triggers.
 
-**Current publication status:** Crates.io publication is blocked. The CLI (`eggress-cli`) is the only intended public product, but it depends on ~20 internal crates by workspace path. All internal crates are marked `publish = false`. Publishing the CLI requires either publishing the internal dependency closure or restructuring crate boundaries. This is a deliberate architectural decision, not an oversight. Publication will resume when a crate-boundary consolidation plan is completed.
-
-Python/PyPI distribution is a separate release-only operation. It is not part
-of routine CI and is not coupled to crates.io publication.
+Python/PyPI distribution is a separate manual operation and must not be coupled to the Rust release workflow.
 
 ## Prerequisites
 
@@ -57,12 +51,10 @@ For every crate intended for publication, verify:
 Use a dry run for each public crate:
 
 ```bash
-cargo publish --dry-run -p eggress-cli
+cargo publish --dry-run -p <crate-name>
 ```
 
 A dry-run failure is a packaging defect. Fix it before publishing rather than adding CI automation around it.
-
-> **Note:** `cargo publish --dry-run` currently fails because `eggress-cli` depends on internal crates marked `publish = false`. This is expected until crate boundaries are restructured.
 
 ## 3. Publish dependency-first
 
@@ -71,7 +63,7 @@ Publish crates in dependency order. Leaf libraries must be available in the crat
 For each crate:
 
 ```bash
-cargo publish -p eggress-cli
+cargo publish -p <crate-name>
 ```
 
 Wait for crates.io index propagation before publishing the next dependent crate. Re-run that dependent crate's dry run if resolution is uncertain.
@@ -109,27 +101,13 @@ gh release create v<version> \
   --notes-file <release-notes-file>
 ```
 
-These commands are optional and must remain manual. Pushing a tag may trigger
-the bounded Python publication workflow, but must not publish Rust crates,
-build native archives, sign artifacts, push containers, or create a GitHub
-Release.
+These commands are optional and must remain manual. Pushing a tag must not start publishing, artifact construction, signing, container pushes, or release creation in GitHub Actions.
 
 ## Python distribution
 
-Python publication to PyPI is automated through `.github/workflows/publish-python.yml`. Pushing a `v*` tag triggers production publication after exact TOML-field version coherence validation. Manual dispatch targets TestPyPI by default. Linux builds use manylinux2014 (glibc 2.17); the workflow requires exactly five `cp39-abi3` wheels for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64, plus one sdist. The collector is a hard gate, not a warning-only check.
+When the Python packages are ready for a separate release, build and publish them locally with maturin and the chosen Python package repository credentials. Verify canonical `eggress` and `eggress-pproxy-compat` packages together in a clean environment before upload.
 
-Every installed wheel and the sdist are smoke-tested with
-`scripts/release_artifact_smoke.py`. The smoke imports `eggress` and the
-separately resolved top-level `pproxy` package, starts an `EggressService`
-listener on `127.0.0.1:0`, verifies readiness and a bound address, shuts down
-cleanly, and verifies readiness is false.
-
-Before production use, manually dispatch TestPyPI with a safe version, confirm
-all build, collection, smoke, and publish jobs succeed, install one artifact
-from TestPyPI in a clean environment, and run the same smoke script. Do not
-push a production tag solely to test the workflow.
-
-Crates.io publication remains manual and is not coupled to the Python release workflow.
+Python publishing is intentionally outside the crates.io release procedure. Removing GitHub publishing workflows does not imply that Python packaging is abandoned; it means packaging cadence and credentials remain under explicit operator control.
 
 ## Roll-forward policy
 
@@ -147,7 +125,8 @@ Do not delete or retag an existing version to simulate replacement.
 
 The following must not be added back without an explicit project-level decision:
 
-- crates.io token storage or trusted-publishing configuration in GitHub Actions;
+- publishing on a tag or branch push;
+- crates.io tokens or trusted-publishing configuration in GitHub Actions;
 - automated GitHub Release creation;
 - mandatory release artifact, checksum, SBOM, signature, or container jobs;
 - a release workflow that repeats the ordinary CI suite;
