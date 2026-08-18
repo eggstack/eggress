@@ -2,306 +2,157 @@
 
 ## Repository purpose
 
-Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical behavioral parity with Python `pproxy==2.7.9`. One Python distribution (`eggress`) ships both `eggress.*` and a bounded `pproxy.*` compatibility namespace; uninstall upstream `pproxy` before installing.
+Egress is a Rust-native, embeddable, multi-protocol proxy framework and CLI. It targets practical and behavioral compatibility with Python `pproxy`, including a Rust CLI, an embed API, PyO3 bindings, and a separate opt-in Python compatibility distribution.
 
-## Quick reference commands
+Compatibility claims must remain explicit and evidence-backed. Strict full drop-in parity is not assumed merely because a symbol, protocol name, or structural wrapper exists.
 
-**Focused test during iteration:**
+## Source-of-truth documents
+
+Use these current documents before relying on historical phase or completion records:
+
+- `docs/CI_STATUS.md`: CI and verification policy.
+- `docs/TESTING.md`: local, specialized, interoperability, performance, and fuzz testing.
+- `docs/release/RELEASE_PROCESS.md`: manual release policy.
+- `docs/ARCHITECTURE.md`: system architecture.
+- `docs/DIFFERENTIAL_TESTING.md`: pproxy oracle and differential harness.
+- `docs/parity/pproxy_capability_manifest.toml`: canonical capability contract.
+- `docs/parity/pproxy_2_7_9_strict_manifest.toml`: strict behavioral contract.
+- `docs/PPROXY_PARITY_SPEC.md`: compatibility vocabulary and tier definitions.
+
+Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.
+
+## Verification policy
+
+Use focused local tests during iteration. Run the narrowest command that exercises the changed code, for example:
+
 ```bash
 cargo test -p eggress-routing
 cargo test -p eggress-runtime retry_fallback
 cargo test -p eggress-cli --test cli_exit_codes
-cargo test -p eggress-pproxy-compat --lib
-cargo test -p eggress-core --lib reuse_port
-cargo test -p eggress-cli --test pproxy_binary --test pproxy_run_process
-cargo test -p eggress-runtime --test reverse_runtime --test udp --test udp_upstream --test reverse_interop
-python3 -m pytest python/tests/test_pproxy_phase4_contract.py -q
-python3 scripts/validate_pproxy_parity_manifest.py --strict docs/parity/pproxy_capability_manifest.toml
-python3 scripts/validate_pproxy_parity_manifest.py docs/parity/pproxy_capability_manifest.toml --check-matrix docs/parity/composition_matrix.toml
 ```
 
-**Broad pre-merge gate:**
+Before merging a substantial Rust change, run the broad workspace gate:
+
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
-cargo check -p eggress-cli --no-default-features --features common
 ```
 
-**Python changes (build + test):**
+For Python-facing changes, build the native wheel in a clean environment and run the relevant Python tests:
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
-(cd crates/eggress-python && ../../.venv/bin/maturin develop)
+(cd crates/eggress-python && ../../.venv/bin/maturin build --release --out ../../target/wheels)
+.venv/bin/python -m pip install target/wheels/eggress-*.whl
+.venv/bin/python -m pip install --no-deps ./python-pproxy-compat
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
 
-**Dependency/advisory checks (dependency changes or release prep only):**
+Do not automatically run security audits, operating-system matrices, ignored interoperability suites, benchmarks, fuzzing, soak tests, parity-report generation, or release-evidence scripts for an unrelated change. Run specialized checks only when the affected subsystem or compatibility claim requires them.
+
+Dependency and advisory checks are expected for dependency changes and release preparation:
+
 ```bash
 cargo deny check
 cargo audit --ignore RUSTSEC-2025-0134
 ```
 
-**Fuzz targets (standalone `fuzz/` workspace):**
-```bash
-cargo check --manifest-path fuzz/Cargo.toml --bins
-cargo fuzz run uri_parse -- -runs=1000
-```
-
-## Workspace structure
-
-Root `Cargo.toml` defines a workspace with 26 member crates under `crates/`. A non-member `eggress-bench` package with Criterion benchmarks lives at the workspace root — run `cargo bench` from root.
-
-Principal crates:
-- `eggress-core`: shared types, traits, `BoxStream`, relay abstractions
-- `eggress-cli`: `eggress` and `pproxy` binary targets
-- `eggress-embed`: stable in-process Rust API (`EggressService`, `EggressConfig`)
-- `eggress-python`: PyO3 bindings (builds the Python wheel)
-- `eggress-runtime`: supervisor, lifecycle, reload, shutdown
-- `eggress-server`: listener and connection orchestration
-- `eggress-config`: TOML config and validation
-- `eggress-routing`: rules, schedulers, health state, route selection
-- `eggress-protocol-*`: HTTP, SOCKS, Shadowsocks, Trojan, WebSocket, raw, reverse
-- `eggress-protocol-h3`: optional HTTP/3 CONNECT over QUIC
-- `eggress-transport-tls`: rustls client/server transport
-- `eggress-transport-quic`: optional Quinn connection and stream transport
-- `eggress-transport-ssh`: optional russh client transport for pproxy SSH upstreams
-- `eggress-testkit`: oracle, manifest, corpus, compatibility test utilities
-- `eggress-pproxy-compat`: Rust-side URI translation and diagnostics
-- `python/eggress`, `python/pproxy`: Python packages bundled in the wheel
-
-The wheel ships the complete Phase 0 `pproxy` module namespace: all ten tracked
-modules, the shared `python -m pproxy`/console entry point, and adapters for
-verbose helpers and platform system-proxy behavior.
-
-## Feature gates
-
-The `operations` feature gates the admin HTTP server, Prometheus metrics export, and system-proxy integration. The `reverse` feature requires `operations`. Lean builds (`--no-default-features --features common`) exclude extended protocols (Shadowsocks, Trojan, WebSocket), reverse runtime, system-proxy, and compatibility layers.
-
-The `eggress-udp/shadowsocks` gate is enabled by `extended`; common builds report Shadowsocks as unsupported instead of falling back to direct UDP. UDP composition is closed over SOCKS5 and, in extended builds, Shadowsocks; HTTP/SOCKS4/Trojan/H2/WS/QUIC UDP paths must fail validation. The `pproxy-legacy` feature enables the isolated SSR/plugin compatibility path; native builds do not need it.
-
-The `legacy-crypto` feature is opt-in on the CLI, embed, runtime, server, and
-Python layers. It implements the maintained RustCrypto subset of pproxy 2.7.9
-legacy stream ciphers, EVP_BytesToKey derivation, TCP OTA framing/HMAC, and
-PacketCipher-style UDP packets. It is unauthenticated compatibility behavior,
-emits a warning, and remains disabled in default/common builds. `cast5-cfb`,
-`idea-cfb`, `rc2-cfb`, and `seed-cfb` are recognized but fail explicitly.
-The `pproxy-daemon` feature enables Linux-only safe re-exec daemon startup;
-without it `--daemon` remains a fatal unsupported diagnostic. macOS PF remains
-an explicit capability refusal because no maintained safe `/dev/pf` wrapper is
-available.
-
-The `ssh` feature is opt-in on the CLI, embed, runtime, server, Python, and
-compatibility layers. It adds `eggress-transport-ssh` and `russh` only when
-enabled; default and `common` builds do not expose SSH upstream execution.
-SSH is upstream-only: listeners reject `ssh://` with a structured diagnostic.
-The compatibility transport matches pproxy's password and `:private-key-path`
-credential convention, direct TCP/Unix channels, chained SSH hops, cached
-sessions, keepalives, and remote TCP forwarding. Host keys are deliberately not
-verified in this compatibility path because pproxy passes `known_hosts=None`;
-the warning is emitted at connection time. Native secure SSH configuration is
-not implied by this feature.
-
-The `quic` feature is opt-in on the CLI, embed, runtime, server, Python, and
-compatibility layers. It adds `eggress-transport-quic`, `eggress-protocol-h3`,
-`quinn`, and `h3`/`h3-quinn` only when enabled; default and `common` builds do
-not expose QUIC or HTTP/3. `h3://` is HTTP/3 CONNECT, while
-`quic+http://` is raw QUIC carrying an ordinary application protocol. QUIC
-listeners require certificate/key material, use ALPN `h3` for HTTP/3, and do
-not provide UDP association mode. Native clients verify certificates; the
-compatibility-only insecure client path must remain explicit and warning-bearing.
-
-Shadowsocks strict AEAD coverage includes `aes-128-gcm`, `aes-192-gcm`,
-`aes-256-gcm`, and `chacha20-ietf-poly1305`. Their pproxy 2.7.9 salt/IV sizes
-are respectively 16, 24, 32, and 32 bytes; all use 12-byte nonces and
-16-byte tags. The TCP chunk limit follows pproxy's 16 KiB - 1 byte packet
-limit. Keep the method inventory and wire-format claims synchronized with
-`docs/architecture/protocols-shadowsocks.md` and the phase-0 parity manifest.
-
-## Test locations
-
-- Unit tests: in each crate's `src/` files
-- Integration tests: `crates/eggress-runtime/tests/` (startup, routing, health, admin, reload, shutdown, UDP, upstream protocols, load)
-- SSH integration tests: `crates/eggress-transport-ssh/tests/openssh.rs` (OpenSSH TCP, Unix, chain, password, cache, and remote-forward coverage)
-- Property tests: per-crate `tests/` (proptest round-trips for SOCKS, HTTP, Trojan, routing)
-- Fuzz targets: `fuzz/fuzz_targets/` (standalone workspace)
-- Python tests: `python/tests/` and `tests/compat/`
-
-## Test-gating environment variables
-
-| Variable | Purpose |
-|----------|---------|
-| `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` | Enable pproxy differential tests |
-| `EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1` | Enable Shadowsocks wire-format interop |
-| `EGRESS_REQUIRE_REVERSE_INTEROP=1` | Enable reverse proxy pproxy interop |
-| `EGRESS_REQUIRE_SOAK=1` | Enable soak/performance tests |
-| `EGRESS_RUN_PPROXY_DIFFERENTIAL=1` | Enable differential parity harness |
-
-Before changing Shadowsocks compatibility claims, run the gated oracle and
-maintained-implementation suites locally:
+External compatibility checks are opt-in. Examples:
 
 ```bash
-EGRESS_REQUIRE_EXTERNAL_INTEROP=1 cargo test -p eggress-cli --test interoperability_pproxy -- --ignored --test-threads=1
-EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
+EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
+  cargo test -p eggress-cli --test differential_pproxy -- --ignored --test-threads=1
+
+EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
+  cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
+
+./scripts/run_strict_pproxy_closure_audit.sh
 ```
 
-## Skills
+Ordinary changes do not require generated evidence bundles, uploaded artifacts, screenshots, copied command transcripts, or new completion documents. Record the relevant tests in the commit or pull-request summary when useful.
 
-Agent skills live in `.skills/` (canonical) and are symlinked from `.agents/skills/`. The OpenCode config mirrors a subset under `.opencode/skills/`. Use the `skill` tool when a task matches:
+## Hosted CI boundary
 
-| Skill | When to use |
-|-------|-------------|
-| `rust-proxy-dev` | New protocols, transport wrappers, core relay/chain, Python bindings |
-| `config-reload` | Config schema, TOML parsing, hot-reload, supervisor lifecycle |
-| `routing-rules` | Routing rules, matchers, schedulers, route selection |
-| `testing` | Writing tests, test infrastructure, fuzz, differential, oracle |
-| `udp-protocol` | UDP associations, datagram relay, upstream SOCKS5 relay |
-| `advanced-transports` | H2 CONNECT, WebSocket tunnels, raw tunnels, TLS/ALPN |
-| `release` | Version bumps, PyPI/crates.io publication, release verification |
-| `reverse-proxy` | Reverse/backward proxy, NAT traversal, control-channel proxying |
-| `security-dev` | Security features, hardening, fuzz targets, invariant tests |
+The repository intentionally has two automatic workflows:
 
-## Architecture docs
+- `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, and workspace tests.
+- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job.
 
-Per-subsystem architecture lives under `docs/architecture/`:
+Do not recreate tag-triggered publishing, release artifact matrices, automated GitHub Releases, container publishing, continuous parity evidence generation, or mandatory external interoperability workflows without an explicit project-level decision.
 
-| Subsystem | Document |
-|-----------|----------|
-| System overview | `docs/architecture/overview.md` |
-| Core types | `docs/architecture/core.md` |
-| Routing | `docs/architecture/routing.md` |
-| Config | `docs/architecture/config.md` |
-| Runtime | `docs/architecture/runtime.md` |
-| Server | `docs/architecture/server.md` |
-| HTTP protocols | `docs/architecture/protocols-http.md` |
-| SOCKS protocols | `docs/architecture/protocols-socks.md` |
-| Shadowsocks | `docs/architecture/protocols-shadowsocks.md` |
-| Trojan | `docs/architecture/protocols-trojan.md` |
-| WebSocket | `docs/architecture/protocols-websocket.md` |
-| Raw | `docs/architecture/protocols-raw.md` |
-| Reverse | `docs/architecture/protocols-reverse.md` |
-| TLS transport | `docs/architecture/transport-tls.md` |
-| UDP | `docs/architecture/udp.md` |
-| URI parsing | `docs/architecture/uri.md` |
-| Embed API | `docs/architecture/embed.md` |
-| Python bindings | `docs/architecture/python.md` |
-| pproxy compat | `docs/architecture/pproxy-compat.md` |
-| CLI | `docs/architecture/cli.md` |
-| System proxy | `docs/architecture/system-proxy.md` |
-| Testkit | `docs/architecture/testkit.md` |
+Hosted CI is a smoke signal. It is not the release mechanism and is not a reason to duplicate every available local check.
 
-Key source-of-truth docs: `docs/CI_STATUS.md`, `docs/TESTING.md`, `docs/release/RELEASE_PROCESS.md`, `docs/ARCHITECTURE.md`, `docs/parity/pproxy_capability_manifest.toml`, and `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`. The latter two are the active Phase 10 compatibility sources; older strict manifests, evidence inventories, and phase reports are provenance only.
+## Release policy
 
-The active strict-oracle contract is pinned to the `pproxy==2.7.9` tag at
-`09d4752f17ed6787e1a073c93980eec019887ee3` from
-`https://github.com/qwj/python-proxy`. The phase-0 manifest and matrix are the
-only active strict-target authorities. In particular, `--log`,
-`-f/--config`, and `--rulefile` are not tagged-parser flags, and SOCKS4/SOCKS5
-BIND are not implemented by the oracle; Eggress extensions or matching
-refusals must not be recorded as strict gaps. Use
-`scripts/pproxy_surface_probe.py` against isolated oracle and wheel
-interpreters when updating the Python module inventory.
+Release cadence is manual. The release operator performs local verification, package dry runs, and `cargo publish` directly to crates.io.
 
-Files under `plans/` are historical records; they explain why code exists but do not override current policy or source behavior.
+Git tags and GitHub Releases are optional manual bookkeeping after crates.io publication. Pushing a tag must not publish packages or create artifacts through GitHub Actions.
 
-## CI boundary
+Crates.io versions are immutable. If a release is defective or partially published, increment the version and roll forward; do not attempt to replace an existing version.
 
-Two automatic smoke workflows and one manual publish workflow:
-- `.github/workflows/ci.yml`: Ubuntu Rust smoke (format, clippy, tests, lean-build check). Push to `main` + manual.
-- `.github/workflows/python-test.yml`: path-scoped Ubuntu/Python 3.12 smoke. Push to `main` + manual.
-- `.github/workflows/publish-python.yml`: multi-platform wheels + PyPI/TestPyPI via OIDC. Tag push (`v*`) or manual.
+Python/PyPI publication is a separate manual process and is not coupled to the Rust release workflow.
 
-Hosted CI is a smoke signal, not a release engine. Do not duplicate every local check in CI, and do not recreate release artifact matrices, automated GitHub Releases, or container publishing without an explicit decision.
+## Workspace map
+
+The principal crates are:
+
+- `eggress-core`: shared types, traits, relay abstractions, and stream boundaries.
+- `eggress-uri`: URI parsing and compatibility grammar.
+- `eggress-routing`: rules, schedulers, health state, and route selection.
+- `eggress-config`: TOML configuration and validation.
+- `eggress-server`: listener and connection orchestration.
+- `eggress-runtime`: supervisor, lifecycle, composition, reload, and shutdown.
+- `eggress-udp`: UDP associations and relays.
+- `eggress-protocol-*`: HTTP, SOCKS, Shadowsocks, Trojan, WebSocket, raw, and reverse protocols.
+- `eggress-transport-tls`: shared TLS client/server transport.
+- `eggress-cli`: `eggress` and compatibility `pproxy` binaries.
+- `eggress-pproxy-compat`: Rust-side URI translation and compatibility diagnostics.
+- `eggress-embed`: stable in-process Rust API.
+- `eggress-python`: PyO3 binding crate.
+- `python/eggress`: canonical Python package.
+- `python-pproxy-compat`: separate package providing the top-level `pproxy` namespace.
+- `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
 
 ## Architectural invariants
 
-- Streams are boxed at protocol/transport boundaries; never propagate generic stream types through the architecture.
+Preserve these invariants unless a focused design change explicitly replaces them:
+
+- Streams are boxed at protocol and transport boundaries; avoid propagating generic stream types through the architecture.
 - Credentials and secret-bearing URIs must be redacted before logging, diagnostics, or evidence output.
-- Compatibility `--auth` reuse is source-IP keyed, bounded, monotonic, and must
-  never be enabled for native listeners implicitly.
-- Compatibility `--sys` applies only after listener bind succeeds and restores
-  captured settings on every normal or failed startup/shutdown path.
 - Listener topology is not hot-reloaded; routing, upstream, group, and health state may be replaced atomically.
-- Shutdown ordering: readiness false, listener stop, connection drain/cancellation, then admin shutdown.
-- Runtime routing, health, admin, and metrics share the same compiled runtime snapshot.
+- Shutdown ordering is readiness false, listener stop, connection drain/cancellation, then admin shutdown.
+- Runtime routing, health, admin, and metrics should share the same compiled runtime snapshot rather than duplicate state.
 - Protocol and transport composition must be validated before execution.
-- SSR compatibility is limited to pproxy 2.7.9 address framing and six built-in
-  plugins; plugin names are closed, ordered, and fail closed when the
-  `pproxy-legacy` feature is unavailable.
-- `tls1.2_ticket_auth` is obfuscation compatibility, never native rustls TLS or
-  a security claim; UDP SSR and external plugins are unsupported.
-- SSH compatibility disables host-key verification to match pproxy and must
-  remain visibly warning-bearing; redact passwords and private-key paths from
-  diagnostics, never enable agent/command/SFTP features, and keep remote-forward
-  exposure explicit and bounded.
-- Shadowsocks AEAD compatibility evidence must include pproxy 2.7.9 and a maintained
-  Shadowsocks implementation; Eggress-to-Eggress roundtrips alone are not
-  wire-compatibility evidence.
-- Legacy stream-cipher changes require pproxy 2.7.9 oracle vectors for every
-  claimed method, fragmented TCP and UDP packet tests, OTA wrong-HMAC tests,
-  and an explicit warning/feature-off test. Do not describe the path as secure
-  encryption or silently enable it through `full`.
-- `unsafe_code = "deny"` at workspace level; do not add unsafe without justification.
-- No OpenSSL, no C dependencies, no `build.rs` without explicit reason. `deny.toml` bans `openssl-sys`, `native-tls`, `aws-lc-sys`, and `cmake`.
-
-## Code conventions
-
-- Rust edition 2021, MSRV 1.85 (`workspace.package.rust-version`). `rust-toolchain.toml` pins stable with `clippy` + `rustfmt`.
-- Tokio async runtime; `thiserror` for errors; `tracing` for logging; `clap` derive for CLI.
-- Prefer deterministic tests over fixed sleeps; use retry loops or readiness signals.
-- Preserve stable diagnostic and exit-code semantics (part of the compatibility surface).
-- `cargo check` is not a required gate but useful interactively for fast compile feedback.
+- Platform-specific behavior must remain explicit and honestly classified.
+- Workspace unsafe-code restrictions must not be weakened casually.
 
 ## Compatibility discipline
 
-The active compatibility target is practical parity with `pproxy==2.7.9`. Manifest status uses `matched`, `supported_difference`, `platform_limited`, `intentional_non_parity`, and `gap`; runtime diagnostics retain their separate tier vocabulary. Do not upgrade a status based only on API shape or successful construction.
+The reference implementation is pinned Python `pproxy==2.7.9` where oracle comparison is required.
 
-When a compatibility claim changes, update the applicable manifest and run the corresponding oracle or interoperability suite. Unsupported transports/roles should fail with structured diagnostics, not silent fallback.
+A compatibility claim should distinguish among behavioral match, compatible with warning, native equivalent, intentional non-parity, and unsupported behavior. Do not upgrade a tier based only on API shape, type names, imports, or successful construction.
 
-The final qualified Python package claim covers the ten tracked modules and
-their recorded symbols/signatures. Modern `cipherpy` AEAD names delegate to
-native implementations; legacy pure-Python cipher names remain importable but
-fail explicitly when constructed unless the Rust compatibility feature is
-deliberately selected by the embedding build. `pproxy.__main__` and the installed
-`pproxy` script share the in-process Eggress adapter, and `sysproxy` delegates
-mutation/rollback to the native backend on supported platforms.
+When a compatibility claim changes, update the applicable manifest and run the corresponding oracle, differential, or interoperability suite. Generated reports are consequences of the manifest and evidence; they are not independent sources of truth.
 
-The strict Phase 3 `ssr://` surface accepts `plain`, `origin`, `http_simple`,
-`tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate`; unknown plugins
-fail during parsing.
+Unsupported transports or roles should fail with structured, actionable diagnostics rather than silent fallback.
 
-The remaining intentional exclusions are macOS PF original-destination
-recovery and the unavailable `cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb`
-legacy cipher names. SSH, SSR, QUIC/H3, legacy crypto, and daemon behavior are
-feature- or platform-gated and must retain their documented warnings and
-boundaries.
+The canonical `eggress` Python package must not silently install or alias the top-level `pproxy` namespace. That namespace belongs to the separate `eggress-pproxy-compat` distribution.
 
-Key compatibility notes:
-- `--pac`, `--get`, `--test` are value-taking options; their values are not positional listeners.
-- The strict `pproxy` executable parser accepts only the frozen Phase 0 option
-  surface. Positional URIs, `--listen`/`--remote` aliases, `--log`, and
-  `--rulefile` are parser errors; native config/migration helpers must not be
-  documented as pproxy 2.7.9 executable options.
-- `-d` and `-v` are count actions, including clustered forms (`-dd`, `-vv`).
-  Compatibility `-d` changes failure visibility and `-v/-vv` use existing
-  session reports for connection/traffic output; do not add a second metrics
-  backend.
-- `--test` must compile and test remotes in declaration order, then exit before
-  listener startup. `--reuse` must set SO_REUSEPORT before TCP bind only where
-  the platform supports it.
-- Standalone `pproxy`, `eggress pproxy run`, and `python -m pproxy` must use
-  the same parsed action/value contract. Compatibility runtime options
-  (`--auth`, `--sys`, `-d`, and `-v`) must reach the runtime in the Python
-  bridge as well as the Rust binaries; native service startup keeps its own
-  defaults.
-- H2 listeners accept independent CONNECT streams; WS/WSS compatibility
-  listeners require a fixed target (`ws{host:port}://listener`) and use the
-  existing TLS transport for WSS. H2/WS/WSS upstream behavior remains supported.
-- QUIC/HTTP/3 is optional behind `quic`; run
-  `cargo test -p eggress-transport-quic -p eggress-protocol-h3` for focused
-  transport/protocol coverage. UDP-over-QUIC remains an explicit unsupported
-  composition and must not silently fall back.
+## Code conventions
+
+- Rust edition 2021; MSRV is declared in the workspace manifest.
+- Tokio is the async runtime.
+- Use `thiserror` for structured errors and `tracing` for logging.
+- Keep protocol parsing bounded and defensive.
+- Prefer deterministic tests over fixed sleeps; use retry loops or readiness signals for process/network startup.
+- Preserve stable diagnostic and exit-code semantics where they are part of the compatibility surface.
+- Add dependencies only when the maintenance and binary-size cost is justified.
+- Do not add OpenSSL, C dependencies, or build scripts without an explicit architectural reason.
 
 ## Change discipline
 
-Keep changes narrowly scoped. Avoid mixing capability implementation, test-infrastructure redesign, documentation mass-generation, and release-process changes in one patch. Do not run security audits, interoperability suites, benchmarks, fuzzing, or parity-report generation for unrelated changes.
+Keep changes narrowly scoped. Avoid mixing capability implementation, test-infrastructure redesign, documentation mass-generation, and release-process changes in one patch unless they are inseparable.
+
+Do not interpret a historical plan as a mandate to recreate removed verification machinery. Current policy favors fast local iteration, proportional verification, honest compatibility claims, and explicit manual release control.
