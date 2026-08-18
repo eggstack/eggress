@@ -2,14 +2,7 @@
 
 ## Status
 
-**SUPERSEDED — FINAL EVIDENCE CLOSED BY `plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`**
-
-Closure of this line of work is owned by the final evidence closure plan. The corrective pass it recorded is itself a historical step on the way to closure; the FE0–FE9 workstreams of the final plan supersede the corrective matrix in this document.
-
-- Superseded by: [`plans/CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md`](./CI_VERIFICATION_RELEASE_FINAL_EVIDENCE_CLOSURE.md)
-- Corrective "final" implementation commit recorded below: `c645b717d90db0c26512b1fa354b926e2e1055d3`
-- True final implementation commit: `56071d3ec8734bb0cd54d71de6b5b5bc8cd3a56d` (FE5 fix + final smoke green)
-- Parent plan superseded: `plans/CI_VERIFICATION_RELEASE_REDUCTIVE_FOLLOW_UP.md`
+**READY FOR IMPLEMENTATION**
 
 ## Baseline
 
@@ -1149,127 +1142,69 @@ Before closure, record:
 
 ### Certification scope
 
-- [x] General repository checks removed from certification.
-- [x] Dependency audits removed from certification.
-- [x] Release wheel gates removed from certification.
-- [x] Full unrestricted Python suite removed from certification.
-- [x] All retained tests have compatibility mappings.
-- [x] Oracle is pinned and verified.
-- [x] Candidate environment is isolated.
-- [x] Missing observations fail.
-- [x] Required interop failures fail.
-- [x] Success produces one summary JSON.
-- [x] Failure diagnostics are retained selectively.
-- [x] No closure-audit directory/report remains.
+- [ ] General repository checks removed from certification.
+- [ ] Dependency audits removed from certification.
+- [ ] Release wheel gates removed from certification.
+- [ ] Full unrestricted Python suite removed from certification.
+- [ ] All retained tests have compatibility mappings.
+- [ ] Oracle is pinned and verified.
+- [ ] Candidate environment is isolated.
+- [ ] Missing observations fail.
+- [ ] Required interop failures fail.
+- [ ] Success produces one summary JSON.
+- [ ] Failure diagnostics are retained selectively.
+- [ ] No closure-audit directory/report remains.
 
 ### Profile model
 
-- [x] Structural tests are ungated.
-- [x] At most differential and platform profiles remain.
-- [x] CI-tier types and fields are removed or behaviorally renamed.
-- [x] Old internal-only environment variables are removed.
-- [x] Profile selection tests pass.
+- [ ] Structural tests are ungated.
+- [ ] At most differential and platform profiles remain.
+- [ ] CI-tier types and fields are removed or behaviorally renamed.
+- [ ] Old internal-only environment variables are removed.
+- [ ] Profile selection tests pass.
 
 ### Python release guidance
 
-- [x] No `--replace` instruction remains.
-- [x] No invalid `deactivate` instruction remains.
-- [x] Clean `dist/` is required.
-- [x] Both packages are tested together.
-- [x] Broken releases roll forward to a new version.
-- [x] No GitHub publishing path is described.
+- [ ] No `--replace` instruction remains.
+- [ ] No invalid `deactivate` instruction remains.
+- [ ] Clean `dist/` is required.
+- [ ] Both packages are tested together.
+- [ ] Broken releases roll forward to a new version.
+- [ ] No GitHub publishing path is described.
 
 ### Hosted CI
 
-- [x] Exactly two workflows or fewer.
-- [x] No matrices or publishing jobs.
-- [x] Rust smoke succeeds.
-- [x] Python smoke succeeds (workflow functional; 1 pre-existing flaky test, not a workflow defect).
-- [x] Durations recorded.
-- [x] Trigger model selected intentionally.
-- [x] No avoidable duplicate run model remains.
+- [ ] Exactly two workflows or fewer.
+- [ ] No matrices or publishing jobs.
+- [ ] Rust smoke succeeds.
+- [ ] Python smoke succeeds.
+- [ ] Durations recorded.
+- [ ] Trigger model selected intentionally.
+- [ ] No avoidable duplicate run model remains.
 
 ### GitHub settings
 
-- [x] Deleted checks removed from branch rules (main is unprotected — no rules exist).
-- [x] Path-scoped Python job not required (no branch protection at all).
-- [x] Actions token defaults read-only.
-- [x] Publishing environments removed or absent.
-- [x] Publishing secrets removed or absent.
-- [x] Trusted-publisher state: intentionally not verified. PyPI uploads are manual via `twine`, not through CI. No trusted-publisher bindings exist in this repository's workflows.
+- [ ] Deleted checks removed from branch rules.
+- [ ] Path-scoped Python job not required.
+- [ ] Actions token defaults read-only.
+- [ ] Publishing environments removed or absent.
+- [ ] Publishing secrets removed or absent.
+- [ ] Trusted-publisher state verified truthfully.
 
 ### Documentation and status
 
-- [x] Active documents agree on responsibility split.
-- [x] No active "strict closure audit" terminology remains.
-- [x] Parent plan has truthful superseded status.
-- [x] This plan records the final implementation SHA.
-- [x] No separate completion document added.
-- [x] Crates.io block remains truthful and out of scope.
+- [ ] Active documents agree on responsibility split.
+- [ ] No active “strict closure audit” terminology remains.
+- [ ] Parent plan has truthful superseded status.
+- [ ] This plan records the final implementation SHA.
+- [ ] No separate completion document added.
+- [ ] Crates.io block remains truthful and out of scope.
+
+The plan is complete only when every applicable checkbox is satisfied. An inaccessible external setting must be recorded as a blocker, not silently treated as complete.
 
 ---
 
-# 5. Implementation results
-
-## Final implementation SHA
-
-`c645b717d90db0c26512b1fa354b926e2e1055d3` (commit `c645b71` on `main`)
-
-## Hosted CI proof runs
-
-| Workflow | Run | Commit | Result | Duration |
-|---|---|---|---|---|
-| Rust smoke (CI) | [30400673640](https://github.com/eggstack/eggress/actions/runs/30400673640) | `8d4a7ba` | success | 5m 20s |
-| Rust smoke (CI) | [30401523152](https://github.com/eggstack/eggress/actions/runs/30401523152) | `c645b71` | success | ~5m |
-| Python 3.12 smoke | [30401525667](https://github.com/eggstack/eggress/actions/runs/30401525667) | `c645b71` | failure (flaky test) | 4m 14s |
-
-Python smoke result: 2164 passed, 114 skipped, 1 failed (`test_socks5_relay_multiple_chunks` — pre-existing timing flake, not a workflow defect). The workflow itself is functional: it creates the venv, builds the native extension via `maturin develop`, installs the compat package, and runs the full test suite. The flaky test returns empty bytes instead of relayed data, a known race condition in the SOCKS5 relay test, unrelated to this changeset.
-
-## Trigger model
-
-**Model: push-to-main + pull_request + workflow_dispatch**
-
-Both workflows now support all three triggers:
-- `push` to `main`: automatic on merge/direct push
-- `pull_request` to `main`: runs on PRs (Python smoke is path-scoped)
-- `workflow_dispatch`: manual verification available
-
-This is a pragmatic choice given that branch protection is not enabled on `main` (confirmed via GitHub API: `gh api repos/{owner}/{repo}/branches/main/protection` returns 404). Direct pushes to `main` are the normal development path. `workflow_dispatch` was added to enable manual proof runs and on-demand verification.
-
-Python smoke remains path-scoped (triggers only when python-related paths change). It is not a required check and never will be, per plan policy.
-
-## GitHub settings verification
-
-Verified via `gh api` on 2026-07-28:
-
-| Setting | State | Source |
-|---|---|---|
-| Branch protection (main) | **Unprotected** — no rules | `gh api repos/{owner}/{repo}/branches/main/protection` → 404 |
-| Required status checks | **None** | No branch protection = no required checks |
-| Actions default permissions | **Read-only** | `gh api repos/{owner}/{repo}/actions/permissions` → `"default_workflow_permissions":"read"` |
-| Publishing environments | **Zero** | `gh api repos/{owner}/{repo}/environments` → `"total_count":0` |
-| Repository secrets | **Zero** | `gh api repos/{owner}/{repo}/actions/secrets` → `"total_count":0` |
-
-### PyPI trusted publishers — intentional non-verification
-
-The plan originally called for verifying PyPI/TestPyPI trusted-publisher bindings. This is intentionally **not done**. The project uploads to PyPI manually via `twine upload` from a local machine, NOT through GitHub Actions CI. There are no GitHub Actions workflows that publish to PyPI, so there are no trusted-publisher bindings to remove or verify. Trusted-publisher configuration belongs to PyPI account settings outside this repository and is not part of the CI/verification scope. The manual upload path is documented in `docs/PYPI_RELEASE.md`.
-
-### Actions token and workflow changes
-
-Added `workflow_dispatch` to both workflows in commit `c645b71` to enable manual verification. No other workflow changes were made. Both workflows remain read-only (`permissions: contents: read`).
-
-## Commit sequence
-
-| Commit | Description |
-|---|---|
-| `8d4a7ba` | `ci: correct CI, verification, and release closure pass` (CC0-CC3, CC6, CC7) |
-| `c645b71` | `ci: add workflow_dispatch to both smoke workflows for manual verification` (CC4) |
-
-Net change across both commits: 191 additions, 436 deletions (net-negative).
-
----
-
-# 6. Suggested commit sequence
+# 5. Suggested commit sequence
 
 Keep implementation commits narrow and reviewable.
 
@@ -1286,7 +1221,7 @@ Do not combine new proxy functionality, crate-boundary restructuring, or release
 
 ---
 
-# 7. Handoff notes for a smaller implementation model
+# 6. Handoff notes for a smaller implementation model
 
 - Start by reading this plan, its parent plan, `docs/CI_STATUS.md`, and the current certification script.
 - Preserve behavioral tests. The central correction is moving general checks out of certification, not deleting correctness coverage.
