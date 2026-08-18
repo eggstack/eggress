@@ -173,9 +173,10 @@ pub async fn relay_bidirectional(
     relay_bidirectional_with_timeout(stream_a, stream_b, None).await
 }
 
-/// Relay data bidirectionally, ending the session when neither side produces
-/// data for `idle_timeout`. A `None` timeout preserves the unbounded behavior
-/// used by callers that manage liveness elsewhere.
+/// Relay data bidirectionally, ending the session when both sides reach
+/// end-of-stream. Neither direction is cancelled when the other observes
+/// EOF — half-close is preserved so the still-open direction can drain
+/// any application bytes the peer already produced.
 pub async fn relay_bidirectional_with_timeout(
     stream_a: TcpStream,
     stream_b: TcpStream,
@@ -186,16 +187,23 @@ pub async fn relay_bidirectional_with_timeout(
 
     let a_to_b = async {
         let mut buf = [0u8; 8192];
+        let mut ended = false;
         loop {
             let read_result = match idle_timeout {
                 Some(timeout) => match tokio::time::timeout(timeout, a_read.read(&mut buf)).await {
                     Ok(result) => result,
-                    Err(_) => break,
+                    Err(_) => {
+                        ended = true;
+                        break;
+                    }
                 },
                 None => a_read.read(&mut buf).await,
             };
             match read_result {
-                Ok(0) => break,
+                Ok(0) => {
+                    ended = true;
+                    break;
+                }
                 Ok(n) => {
                     if b_write.write_all(&buf[..n]).await.is_err() {
                         break;
@@ -204,20 +212,29 @@ pub async fn relay_bidirectional_with_timeout(
                 Err(_) => break,
             }
         }
+        let _ = b_write.shutdown().await;
+        ended
     };
 
     let b_to_a = async {
         let mut buf = [0u8; 8192];
+        let mut ended = false;
         loop {
             let read_result = match idle_timeout {
                 Some(timeout) => match tokio::time::timeout(timeout, b_read.read(&mut buf)).await {
                     Ok(result) => result,
-                    Err(_) => break,
+                    Err(_) => {
+                        ended = true;
+                        break;
+                    }
                 },
                 None => b_read.read(&mut buf).await,
             };
             match read_result {
-                Ok(0) => break,
+                Ok(0) => {
+                    ended = true;
+                    break;
+                }
                 Ok(n) => {
                     if a_write.write_all(&buf[..n]).await.is_err() {
                         break;
@@ -226,14 +243,16 @@ pub async fn relay_bidirectional_with_timeout(
                 Err(_) => break,
             }
         }
+        let _ = a_write.shutdown().await;
+        ended
     };
 
-    tokio::select! {
-        _ = a_to_b => {}
-        _ = b_to_a => {}
+    let (a_done, b_done) = tokio::join!(a_to_b, b_to_a);
+    if a_done && b_done {
+        Ok(())
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

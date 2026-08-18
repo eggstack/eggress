@@ -32,6 +32,25 @@ pub enum PproxyBackwardState {
     Closed,
 }
 
+/// Channel framing applied between the compatibility adapter and the
+/// peer `pproxy 2.7.9` process after the auth handshake completes.
+///
+/// pproxy's `+in` worker runs the SOCKS5 server side after auth, expecting
+/// the listener side to send a SOCKS5 hello. The `Raw` framing keeps the
+/// older byte-pipe model for Eggress-internal use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PproxyBackwardFraming {
+    /// Bytes flow between the queued channel and the configured target with
+    /// no protocol framing. Used for Eggress-internal reverse tests where
+    /// the channel is paired with a plain TCP external client.
+    #[default]
+    Raw,
+    /// SOCKS5 server (worker side) or client (listener side) framing matches
+    /// pproxy 2.7.9 `+in` semantics so payload-level interop with the real
+    /// pproxy interpreter can be verified byte-for-byte.
+    Socks5,
+}
+
 /// Configuration for one pproxy backward worker.
 #[derive(Debug, Clone)]
 pub struct PproxyBackwardClientConfig {
@@ -45,6 +64,8 @@ pub struct PproxyBackwardClientConfig {
     pub reconnect_max_ms: u64,
     pub read_timeout_ms: u64,
     pub target_connect_timeout_ms: u64,
+    /// Channel framing used after the auth handshake. Defaults to `Raw`.
+    pub server_framing: PproxyBackwardFraming,
 }
 
 impl Default for PproxyBackwardClientConfig {
@@ -57,6 +78,7 @@ impl Default for PproxyBackwardClientConfig {
             reconnect_max_ms: 30_000,
             read_timeout_ms: 60_000,
             target_connect_timeout_ms: 10_000,
+            server_framing: PproxyBackwardFraming::default(),
         }
     }
 }
@@ -120,6 +142,17 @@ impl PproxyBackwardClient {
             stream.flush().await?;
         }
 
+        match self.config.server_framing {
+            PproxyBackwardFraming::Raw => self.run_connection_raw(stream).await,
+            PproxyBackwardFraming::Socks5 => self.run_connection_socks5(stream).await,
+        }
+    }
+
+    /// Raw byte-pipe mode: connect to the configured resolver target and
+    /// relay bytes between the channel and that target. Used by
+    /// Eggress-internal reverse tests where the external side is a plain
+    /// TCP client.
+    async fn run_connection_raw(&self, stream: TcpStream) -> Result<(), ProtocolError> {
         let (host, port) = match self.resolver.resolve() {
             crate::client::TargetResolution::Connect { host, port } => (host, port),
             crate::client::TargetResolution::Reject { reason } => {
@@ -138,6 +171,173 @@ impl PproxyBackwardClient {
                     "pproxy backward target connect timed out",
                 ))
             })??;
+
+        relay_bidirectional_with_timeout(
+            stream,
+            target,
+            (self.config.read_timeout_ms > 0)
+                .then(|| Duration::from_millis(self.config.read_timeout_ms)),
+        )
+        .await
+    }
+
+/// SOCKS5 server mode. pproxy 2.7.9 `+in` workers run the SOCKS5 server
+/// side after the auth handshake, sending `[0x05, n, ...methods]` and
+/// expecting a methods selection back. Reading the resulting CONNECT
+/// target gives this worker the local echo target, matching the byte
+/// payload relayed end-to-end through the real pproxy interpreter.
+async fn run_connection_socks5(&self, mut stream: TcpStream) -> Result<(), ProtocolError> {
+    const SOCKS5_VERSION: u8 = 0x05;
+    const SOCKS5_METHOD_NONE: u8 = 0x00;
+    const SOCKS5_CMD_CONNECT: u8 = 0x01;
+    const SOCKS5_RSV: u8 = 0x00;
+    const SOCKS5_ATYP_IPV4: u8 = 0x01;
+    const SOCKS5_ATYP_DOMAIN: u8 = 0x03;
+    const SOCKS5_ATYP_IPV6: u8 = 0x04;
+    const SOCKS5_REP_SUCCESS: u8 = 0x00;
+
+        // SOCKS5 hello: [version, nmethods, methods...]
+        let mut header = [0u8; 2];
+        stream.read_exact(&mut header).await?;
+        if header[0] != SOCKS5_VERSION {
+            return Err(ProtocolError::ConfigInvalid(format!(
+                "pproxy backward SOCKS5 hello version mismatch: {}",
+                header[0]
+            )));
+        }
+        let nmethods = header[1] as usize;
+        let mut methods = vec![0u8; nmethods];
+        if nmethods > 0 {
+            stream.read_exact(&mut methods).await?;
+        }
+        if !methods.contains(&SOCKS5_METHOD_NONE) {
+            stream
+                .write_all(&[SOCKS5_VERSION, 0xff])
+                .await?;
+            stream.flush().await?;
+            return Err(ProtocolError::AuthFailed);
+        }
+        stream
+            .write_all(&[SOCKS5_VERSION, SOCKS5_METHOD_NONE])
+            .await?;
+        stream.flush().await?;
+
+        // SOCKS5 CONNECT request: [version, cmd, rsv, atyp, ...]
+        let mut req_header = [0u8; 4];
+        stream.read_exact(&mut req_header).await?;
+        if req_header[0] != SOCKS5_VERSION || req_header[1] != SOCKS5_CMD_CONNECT {
+            return Err(ProtocolError::ConfigInvalid(format!(
+                "pproxy backward SOCKS5 request header invalid: {:?}",
+                &req_header[..]
+            )));
+        }
+        let _rsv = req_header[2];
+        if req_header[2] != SOCKS5_RSV {
+            return Err(ProtocolError::ConfigInvalid(format!(
+                "pproxy backward SOCKS5 RSV must be zero, got {}",
+                req_header[2]
+            )));
+        }
+        let atyp = req_header[3];
+        let host = match atyp {
+            SOCKS5_ATYP_IPV4 => {
+                let mut addr = [0u8; 4];
+                stream.read_exact(&mut addr).await?;
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3]))
+                    .to_string()
+            }
+            SOCKS5_ATYP_DOMAIN => {
+                let mut len = [0u8; 1];
+                stream.read_exact(&mut len).await?;
+                let n = len[0] as usize;
+                if n == 0 {
+                    return Err(ProtocolError::ConfigInvalid(
+                        "pproxy backward SOCKS5 domain length zero".into(),
+                    ));
+                }
+                let mut domain = vec![0u8; n];
+                stream.read_exact(&mut domain).await?;
+                String::from_utf8(domain)
+                    .map_err(|_| ProtocolError::ConfigInvalid("invalid SOCKS5 domain".into()))?
+            }
+            SOCKS5_ATYP_IPV6 => {
+                let mut addr = [0u8; 16];
+                stream.read_exact(&mut addr).await?;
+                std::net::IpAddr::V6(std::net::Ipv6Addr::from(addr)).to_string()
+            }
+            _ => {
+                stream
+                    .write_all(&[
+                        SOCKS5_VERSION,
+                        0x08,
+                        SOCKS5_RSV,
+                        SOCKS5_ATYP_IPV4,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ])
+                    .await?;
+                stream.flush().await?;
+                return Err(ProtocolError::ConfigInvalid(format!(
+                    "pproxy backward SOCKS5 ATYP {atyp} unsupported"
+                )));
+            }
+        };
+        let mut port_bytes = [0u8; 2];
+        stream.read_exact(&mut port_bytes).await?;
+        let port = u16::from_be_bytes(port_bytes);
+
+        let timeout = Duration::from_millis(self.config.target_connect_timeout_ms.max(1));
+        let target = tokio::time::timeout(timeout, TcpStream::connect((host.as_str(), port)))
+            .await
+            .map_err(|_| {
+                ProtocolError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "pproxy backward SOCKS5 target connect timed out",
+                ))
+            })?;
+        let target = match target {
+            Ok(t) => t,
+            Err(error) => {
+                // Reply with a connection refused-style SOCKS5 response so
+                // the peer closes the channel cleanly.
+                let _ = stream
+                    .write_all(&[
+                        SOCKS5_VERSION,
+                        0x05,
+                        SOCKS5_RSV,
+                        SOCKS5_ATYP_IPV4,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ])
+                    .await;
+                let _ = stream.flush().await;
+                return Err(ProtocolError::Io(error));
+            }
+        };
+
+        stream
+            .write_all(&[
+                SOCKS5_VERSION,
+                SOCKS5_REP_SUCCESS,
+                SOCKS5_RSV,
+                SOCKS5_ATYP_IPV4,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ])
+            .await?;
+        stream.flush().await?;
 
         relay_bidirectional_with_timeout(
             stream,
@@ -195,6 +395,16 @@ pub struct PproxyBackwardServerConfig {
     pub max_control_connections: usize,
     pub max_pending_external: usize,
     pub read_timeout_ms: u64,
+    /// Optional fixed target the server forwards each external client to
+    /// after the SOCKS5 CONNECT handshake. The SOCKS5 framing negotiates a
+    /// destination with the pproxy worker side and uses it for the channel.
+    pub socks5_target: Option<(String, u16)>,
+    /// Channel framing applied between the listener and pproxy worker
+    /// channels. The `Raw` framing keeps the older byte-pipe model for
+    /// Eggress-internal reverse tests; `Socks5` matches pproxy 2.7.9 `+in`
+    /// so payload-level interop with the real pproxy interpreter can be
+    /// verified byte-for-byte.
+    pub client_framing: PproxyBackwardFraming,
 }
 
 impl Default for PproxyBackwardServerConfig {
@@ -206,6 +416,8 @@ impl Default for PproxyBackwardServerConfig {
             max_control_connections: 256,
             max_pending_external: 1024,
             read_timeout_ms: 300_000,
+            socks5_target: None,
+            client_framing: PproxyBackwardFraming::default(),
         }
     }
 }
@@ -258,6 +470,8 @@ impl PproxyBackwardServer {
                         let auth = accept_config.auth.clone();
                         let tx = control_tx.clone();
                         let timeout = accept_config.read_timeout_ms;
+                        let framing = accept_config.client_framing;
+                        let socks5_target = accept_config.socks5_target.clone();
                         tokio::spawn(async move {
                             if !auth.is_empty() {
                                 let mut received = vec![0u8; auth.len()];
@@ -270,6 +484,38 @@ impl PproxyBackwardServer {
                                     return;
                                 }
                             }
+                            if matches!(framing, PproxyBackwardFraming::Socks5) {
+                                if let Err(error) = proxy_socks5_setup(&mut stream).await {
+                                    debug!(%peer, %error, "pproxy backward SOCKS5 setup failed");
+                                    return;
+                                }
+                                if let Some((host, port)) = socks5_target {
+                                    if let Err(error) =
+                                        reply_socks5_connect(&mut stream, &host, port).await
+                                    {
+                                        debug!(
+                                            %peer,
+                                            %error,
+                                            "pproxy backward SOCKS5 CONNECT reply failed"
+                                        );
+                                        return;
+                                    }
+                                    // The worker dials the target and sends a
+                                    // SOCKS5 CONNECT reply. Drain it here so the
+                                    // channel only carries application bytes
+                                    // once it is paired with an external client.
+                                    if let Err(error) =
+                                        read_socks5_connect_reply(&mut stream).await
+                                    {
+                                        debug!(
+                                            %peer,
+                                            %error,
+                                            "pproxy backward SOCKS5 CONNECT reply read failed"
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
                             let _ = tx.send(QueuedChannel { stream }).await;
                         });
                     }
@@ -279,6 +525,8 @@ impl PproxyBackwardServer {
         });
 
         let external_cancel = cancel.clone();
+        let external_framing = config.client_framing;
+        let external_target = config.socks5_target.clone();
         tasks.spawn(async move {
             let mut relays = JoinSet::new();
             loop {
@@ -297,13 +545,20 @@ impl PproxyBackwardServer {
                         };
                         let Some(control) = control else { break };
                         let timeout = config.read_timeout_ms;
+                        let target = external_target.clone();
                         relays.spawn(async move {
                             debug!(%peer, "relaying pproxy backward channel");
-                            relay_bidirectional_with_timeout(
+                            let result = relay_pproxy_pair(
                                 external,
                                 control.stream,
-                                (timeout > 0).then(|| Duration::from_millis(timeout)),
-                            ).await
+                                target,
+                                external_framing,
+                                timeout,
+                            )
+                            .await;
+                            if let Err(error) = result {
+                                debug!(%peer, %error, "pproxy backward relay finished with error");
+                            }
                         });
                     }
                     _ = external_cancel.cancelled() => break,
@@ -332,6 +587,124 @@ pub fn raw_auth(username: Option<&str>, password: Option<&str>) -> Vec<u8> {
         (Some(user), None) => user.as_bytes().to_vec(),
         (None, Some(pass)) => pass.as_bytes().to_vec(),
         (None, None) => Vec::new(),
+    }
+}
+
+/// Drive the SOCKS5 hello + methods selection half of the channel handshake
+/// from the server side. pproxy 2.7.9 `+in` workers act as SOCKS5 servers
+/// after auth and wait for a SOCKS5 client hello. The listener (this side)
+/// acts as the SOCKS5 client, sends the hello, then waits for the worker
+/// to choose a method.
+async fn proxy_socks5_setup(stream: &mut TcpStream) -> Result<(), ProtocolError> {
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+    stream.flush().await?;
+    let mut header = [0u8; 2];
+    stream.read_exact(&mut header).await?;
+    if header[0] != 0x05 {
+        return Err(ProtocolError::ConfigInvalid(format!(
+            "SOCKS5 methods selection version mismatch: {}",
+            header[0]
+        )));
+    }
+    if header[1] != 0x00 {
+        return Err(ProtocolError::AuthFailed);
+    }
+    Ok(())
+}
+
+/// Drain the SOCKS5 CONNECT reply from the worker after it has dialed the
+/// target. The reply header has the same shape as a SOCKS5 reply to a
+/// CONNECT request: `[version, rep, rsv, atyp, ...bound addr..., port]`.
+async fn read_socks5_connect_reply(stream: &mut TcpStream) -> Result<(), ProtocolError> {
+    let mut header = [0u8; 4];
+    stream.read_exact(&mut header).await?;
+    if header[0] != 0x05 {
+        return Err(ProtocolError::ConfigInvalid(format!(
+            "SOCKS5 CONNECT reply version mismatch: {}",
+            header[0]
+        )));
+    }
+    if header[1] != 0x00 {
+        return Err(ProtocolError::ConfigInvalid(format!(
+            "SOCKS5 CONNECT reply rep non-success: {}",
+            header[1]
+        )));
+    }
+    match header[3] {
+        0x01 => {
+            let mut tail = [0u8; 6];
+            stream.read_exact(&mut tail).await?;
+        }
+        0x04 => {
+            let mut tail = [0u8; 18];
+            stream.read_exact(&mut tail).await?;
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut tail = vec![0u8; len[0] as usize + 2];
+            stream.read_exact(&mut tail).await?;
+        }
+        other => {
+            return Err(ProtocolError::ConfigInvalid(format!(
+                "SOCKS5 CONNECT reply ATYP {other} unsupported"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Send a SOCKS5 CONNECT request through the channel to inform the worker
+/// of the destination it should reach. The worker dials that target via its
+/// `-r` upstream chain and relays bytes back through the channel.
+async fn reply_socks5_connect(
+    stream: &mut TcpStream,
+    host: &str,
+    port: u16,
+) -> Result<(), ProtocolError> {
+    // CONNECT request header
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+    // ATYP + address
+    let parsed_host: std::net::IpAddr = host.parse().unwrap_or(std::net::IpAddr::V4(
+        std::net::Ipv4Addr::UNSPECIFIED,
+    ));
+    if let std::net::IpAddr::V4(ipv4) = parsed_host {
+        stream.write_all(&[0x01]).await?;
+        stream.write_all(&ipv4.octets()).await?;
+    } else if let std::net::IpAddr::V6(ipv6) = parsed_host {
+        stream.write_all(&[0x04]).await?;
+        stream.write_all(&ipv6.octets()).await?;
+    } else {
+        let bytes = host.as_bytes();
+        if bytes.len() > 255 {
+            return Err(ProtocolError::ConfigInvalid(format!(
+                "SOCKS5 target host too long: {}",
+                bytes.len()
+            )));
+        }
+        stream.write_all(&[0x03, bytes.len() as u8]).await?;
+        stream.write_all(bytes).await?;
+    }
+    stream.write_all(&port.to_be_bytes()).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+/// Pair an external TCP client with a queued pproxy worker channel. Under
+/// the `Raw` framing this is a plain byte relay; under `Socks5` the
+/// listener already drove the channel CONNECT during the worker's
+/// initial handshake, so this only forwards the application bytes.
+async fn relay_pproxy_pair(
+    external: TcpStream,
+    control: TcpStream,
+    _target: Option<(String, u16)>,
+    framing: PproxyBackwardFraming,
+    timeout_ms: u64,
+) -> Result<(), ProtocolError> {
+    let timeout = (timeout_ms > 0).then(|| Duration::from_millis(timeout_ms));
+    match framing {
+        PproxyBackwardFraming::Raw => relay_bidirectional_with_timeout(external, control, timeout).await,
+        PproxyBackwardFraming::Socks5 => relay_bidirectional_with_timeout(external, control, timeout).await,
     }
 }
 

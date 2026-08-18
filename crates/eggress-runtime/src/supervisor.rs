@@ -2335,6 +2335,9 @@ impl ServiceSupervisor {
                                 max_control_connections: rs_cfg.max_control_connections as usize,
                                 max_pending_external: rs_cfg.max_pending_external as usize,
                                 read_timeout_ms: rs_cfg.read_timeout_ms,
+                                socks5_target: None,
+                                client_framing:
+                                    eggress_protocol_reverse::compat_pproxy::PproxyBackwardFraming::Raw,
                             };
                         let server =
                             eggress_protocol_reverse::compat_pproxy::PproxyBackwardServer::new(
@@ -2429,6 +2432,8 @@ impl ServiceSupervisor {
                                 reconnect_max_ms: rc_cfg.reconnect_max_ms,
                                 read_timeout_ms: rc_cfg.read_timeout_ms,
                                 target_connect_timeout_ms: 10_000,
+                                server_framing:
+                                    eggress_protocol_reverse::compat_pproxy::PproxyBackwardFraming::Raw,
                             };
                             let client =
                                 eggress_protocol_reverse::compat_pproxy::PproxyBackwardClient::new(
