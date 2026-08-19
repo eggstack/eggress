@@ -56,7 +56,7 @@ Dependency and advisory checks are expected for dependency changes and release p
 
 ```bash
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134
+cargo audit
 ```
 
 External compatibility checks are opt-in. Examples:
@@ -73,16 +73,9 @@ EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
 
 Ordinary changes do not require generated evidence bundles, uploaded artifacts, screenshots, copied command transcripts, or new completion documents. Record the relevant tests in the commit or pull-request summary when useful.
 
-## Hosted CI boundary
+## CI boundary
 
-The repository intentionally has two automatic workflows:
-
-- `.github/workflows/ci.yml`: one Ubuntu Rust smoke job running format, Clippy, and workspace tests.
-- `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job.
-
-Do not recreate tag-triggered publishing, release artifact matrices, automated GitHub Releases, container publishing, continuous parity evidence generation, or mandatory external interoperability workflows without an explicit project-level decision.
-
-Hosted CI is a smoke signal. It is not the release mechanism and is not a reason to duplicate every available local check.
+There is no hosted CI workflow in this repository. All verification is local. Do not create GitHub Actions workflows, release artifact matrices, automated releases, or container publishing without an explicit project-level decision.
 
 ## Release policy
 
