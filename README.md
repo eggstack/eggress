@@ -29,6 +29,11 @@ cargo install --path crates/eggress-cli
 
 This installs both the `eggress` and `pproxy` binaries.
 
+The workspace declares Rust **MSRV 1.85** (see `Cargo.toml` `[workspace.package]`).
+The toolchain version was raised when the maintained SSH stack (`russh`)
+replaced the legacy dependency; the documented toolchain floor is part of the
+release contract, not an incidental dependency side effect.
+
 ### Lean local build
 
 For a smaller binary without the extended protocol families (Shadowsocks, Trojan,
@@ -540,7 +545,9 @@ Legend: `[x]` complete, `[ ]` not complete.
       (unauthenticated compatibility path with warnings and fail-closed HMAC)
 - [x] Interoperability with `shadowsocks-rust`
 - [x] pproxy 2.7.9 SSR address framing with IPv4, IPv6, domain, and optional auth prefix
-- [x] Bounded pproxy SSR plugin codecs behind the `pproxy-legacy` feature
+- [x] Bounded pproxy SSR plugin codecs behind the opt-in `pproxy-legacy`
+      feature (default CLI `full` no longer enables it; build with
+      `--features pproxy-legacy` to opt in)
 - [x] Ordered `plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, and `verify_deflate` plugin names
 
 ### Trojan
@@ -586,7 +593,11 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] TOML `[reverse_servers]` / `[reverse_clients]` config model
 - [x] Reverse listener access policy (allowlist)
 - [x] Reverse admin endpoints
+- [x] Real pproxy 2.7.9 oracle payload evidence for raw and SOCKS5 `+in`
+      backward compositions via the gated `reverse_interop` tests
 - [ ] Built-in TLS for control channel (use stunnel or external TLS)
+- [ ] Reverse/backward TLS composition (unsupported; reuse the native
+      access-policy and listener topology)
 - [ ] Reverse UDP (intentional — pproxy does not support UDP reverse)
 
 ### Transparent proxying

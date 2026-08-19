@@ -2,7 +2,13 @@
 
 ## Status
 
-Ready for implementation.
+Completed on the closure branch.
+
+All six bounded work packages (WP1–WP6) have been executed and the
+recorded evidence matches the acceptance criteria below. This document
+is preserved as the historical implementation record for the
+`pproxy==2.7.9` compatibility line; future work should open a new plan
+rather than amending this one.
 
 This is the final bounded closure pass for the current `pproxy==2.7.9` compatibility line of work. It is intentionally not a new roadmap. Do not reopen completed protocol phases, add new protocol families, expand the verification framework, or introduce a broad feature-matrix CI system unless a concrete failing acceptance test proves that additional implementation is required.
 

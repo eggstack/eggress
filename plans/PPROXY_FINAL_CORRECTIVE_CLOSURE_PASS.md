@@ -2,7 +2,12 @@
 
 ## Status
 
-Ready for implementation.
+Historical/superseded.
+
+This corrective pass has been completed and its remaining items were
+folded into [`PPROXY_FINAL_CLOSURE_EXECUTION_PLAN.md`](PPROXY_FINAL_CLOSURE_EXECUTION_PLAN.md),
+which has itself been executed to closure. This file is preserved as a
+historical implementation record; do not reopen it for new work.
 
 ## Baseline
 

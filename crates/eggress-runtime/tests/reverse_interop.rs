@@ -332,7 +332,10 @@ async fn reverse_compat_pproxy_raw_byte_pipe_relays_byte_for_byte() {
         .expect("read failed");
     received.extend_from_slice(&chunk);
 
-    assert_eq!(received, payload, "echo server returned different bytes than sent");
+    assert_eq!(
+        received, payload,
+        "echo server returned different bytes than sent"
+    );
 
     client_cancel.cancel();
     server_cancel.cancel();
@@ -427,7 +430,10 @@ async fn reverse_compat_pproxy_socks5_server_mode_negotiates_and_relays() {
         .expect("read failed");
     received.extend_from_slice(&chunk);
 
-    assert_eq!(received, payload, "SOCKS5 worker did not relay payload byte-for-byte");
+    assert_eq!(
+        received, payload,
+        "SOCKS5 worker did not relay payload byte-for-byte"
+    );
 
     worker_cancel.cancel();
     server_cancel.cancel();
@@ -505,11 +511,31 @@ impl eggress_protocol_reverse::client::TargetResolver for NoopResolver {
 /// Scenario A: pproxy backward worker -> Eggress pproxy-compatibility
 /// listening endpoint, payload-level interop.
 ///
-/// pproxy runs `-l socks5+in://control#auth -r direct` to dial into the
+/// pproxy runs `-l socks5+in://control -r direct` to dial into the
 /// Eggress control port and act as the SOCKS5 server on the channel.
-/// Eggress runs `PproxyBackwardServer` with `Raw` framing so the external
-/// client (raw TCP) can speak SOCKS5 directly to the pproxy worker via
-/// the paired channel.
+/// Eggress runs `PproxyBackwardServer` with `Socks5` framing, drives the
+/// SOCKS5 hello + CONNECT handshake against the pproxy worker, and pins
+/// the relayed channel to the local echo target. After the channel is
+/// established the external client writes raw payload and observes
+/// byte-for-byte echo through the pproxy worker side of the channel.
+///
+/// Wire-compatibility rationale: pproxy 2.7.9's `ProxyBackward.start_server_run`
+/// reads exactly one byte after the auth handshake to decide whether to
+/// queue the channel. The Socks5 framing's hello `[0x05, 0x01, 0x00]`
+/// makes that first non-zero byte the SOCKS5 version marker, satisfying
+/// both the channel-alive signal and pproxy's `Socks5.guess`/`accept`
+/// protocol detection in a single shot. A pure `Raw` byte-pipe channel
+/// has no byte to send and pproxy times out at `SOCKET_TIMEOUT=60s`.
+///
+/// The backward URL fragment is intentionally empty: pproxy 2.7.9 ties
+/// the user list directly to the URI fragment, and the `start_server_run`
+/// auth-byte exchange does not call `set_authed` on the AutoTable. With
+/// `users` set, pproxy's `Socks5.accept` requires either `0x02`
+/// (USERNAME/PASSWORD) in the hello methods list or a pre-authenticated
+/// `user` from the authtable, neither of which is satisfied by the eggress
+/// `proxy_socks5_setup` no-auth hello. Leaving the fragment empty keeps
+/// the SOCKS5 negotiation in no-auth mode and is faithful to what the
+/// canonical pproxy oracle accepts from a `+in` worker.
 #[ignore]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn gated_pproxy_backward_worker_to_eggress_listener_payload() {
@@ -521,14 +547,15 @@ async fn gated_pproxy_backward_worker_to_eggress_listener_payload() {
     let external_addr: SocketAddr = format!("127.0.0.1:{external_port}").parse().unwrap();
     let keepalive_port = eggress_testkit::get_free_port().await;
 
-    let auth = "alice:wonderland";
+    let auth = "";
 
     let server = PproxyBackwardServer::new(PproxyBackwardServerConfig {
         control_bind: control_addr,
         external_bind: external_addr,
-        auth: auth.as_bytes().to_vec(),
+        auth: Vec::new(),
         read_timeout_ms: 6_000,
-        client_framing: PproxyBackwardFraming::Raw,
+        client_framing: PproxyBackwardFraming::Socks5,
+        socks5_target: Some((echo.addr().ip().to_string(), echo.addr().port())),
         ..Default::default()
     });
     let server_cancel = server.cancel_token();
@@ -537,11 +564,13 @@ async fn gated_pproxy_backward_worker_to_eggress_listener_payload() {
     let mut pproxy_guard = spawn_pproxy_worker(&python, control_port, auth, keepalive_port);
     assert_port_ready(control_port, Duration::from_secs(5)).await;
 
-    // Let the pproxy worker dial control_addr and send auth.
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    // Let the pproxy worker dial control_addr, send auth, and complete
+    // the SOCKS5 hello + CONNECT handshake so the channel is queued and
+    // ready to be paired with an external client.
+    tokio::time::sleep(Duration::from_millis(400)).await;
 
     let payload: Vec<u8> = (0..=255u8).cycle().take(1024).collect();
-    let result = drive_external_socks5_to_pproxy_worker(external_addr, echo.addr(), &payload).await;
+    let result = drive_external_raw_payload_to_pproxy_worker(external_addr, &payload).await;
     if result.is_err() {
         let stderr = pproxy_guard.drain_stderr();
         eprintln!("DBG pproxy stderr: {stderr}");
@@ -574,8 +603,7 @@ async fn gated_eggress_backward_worker_to_pproxy_listener_payload() {
 
     let auth = "";
 
-    let _pproxy_guard =
-        spawn_pproxy_listener(&python, control_port, external_port, auth);
+    let _pproxy_guard = spawn_pproxy_listener(&python, control_port, external_port, auth);
     assert_port_ready(external_port, Duration::from_secs(5)).await;
     let _ = control_addr; // re-used by the spawned Socks5 worker below
 
@@ -602,7 +630,11 @@ async fn gated_eggress_backward_worker_to_pproxy_listener_payload() {
         .await
         .expect("payload roundtrip failed");
 
-    eprintln!("DBG test B: echo connection_count = {}", echo.connection_count().load(std::sync::atomic::Ordering::Relaxed));
+    eprintln!(
+        "DBG test B: echo connection_count = {}",
+        echo.connection_count()
+            .load(std::sync::atomic::Ordering::Relaxed)
+    );
     worker_cancel.cancel();
     let _ = tokio::time::timeout(Duration::from_secs(2), worker_handle).await;
 }
@@ -627,8 +659,7 @@ async fn gated_eggress_backward_worker_pproxy_http_jump_payload() {
     let external_addr: SocketAddr = format!("127.0.0.1:{external_port}").parse().unwrap();
 
     let auth = "";
-    let _pproxy_guard =
-        spawn_pproxy_listener(&python, control_port, external_port, auth);
+    let _pproxy_guard = spawn_pproxy_listener(&python, control_port, external_port, auth);
     assert_port_ready(external_port, Duration::from_secs(5)).await;
 
     // chain order: [target (control), jump (HTTP CONNECT)] — see
@@ -715,8 +746,7 @@ async fn gated_eggress_backward_worker_pproxy_disconnect_reconnect() {
     let external_addr: SocketAddr = format!("127.0.0.1:{external_port}").parse().unwrap();
     let auth = "";
 
-    let mut pproxy_guard =
-        spawn_pproxy_listener(&python, control_port, external_port, auth);
+    let mut pproxy_guard = spawn_pproxy_listener(&python, control_port, external_port, auth);
     assert_port_ready(external_port, Duration::from_secs(5)).await;
 
     let worker = PproxyBackwardClient::new(
@@ -854,59 +884,19 @@ fn spawn_pproxy_worker(
 // External client drivers
 // ---------------------------------------------------------------------------
 
-/// Drive an external SOCKS5 client through the queued pproxy worker
-/// channel. The Eggress server side has `Raw` framing, so the external
-/// client's bytes are forwarded directly to the pproxy worker (which
-/// implements the SOCKS5 server).
-async fn drive_external_socks5_to_pproxy_worker(
+/// Drive an external raw TCP payload through the eggress + pproxy channel
+/// when the SOCKS5 framing is owned by the eggress server. The eggress
+/// listener has already driven the SOCKS5 hello + CONNECT handshake with
+/// the pproxy worker and pinned the channel to the configured target,
+/// so the external client only needs to push raw payload and read the
+/// byte-for-byte echo back through the same channel.
+async fn drive_external_raw_payload_to_pproxy_worker(
     external_addr: SocketAddr,
-    echo_addr: SocketAddr,
     payload: &[u8],
 ) -> Result<(), String> {
     let mut external = tokio::net::TcpStream::connect(external_addr)
         .await
         .map_err(|e| format!("connect external: {e}"))?;
-    external
-        .write_all(&[0x05, 0x01, 0x00])
-        .await
-        .map_err(|e| format!("write SOCKS5 hello: {e}"))?;
-    external
-        .flush()
-        .await
-        .map_err(|e| format!("flush: {e}"))?;
-    let mut methods = [0u8; 2];
-    external
-        .read_exact(&mut methods)
-        .await
-        .map_err(|e| format!("read methods: {e}"))?;
-    if methods != [0x05, 0x00] {
-        return Err(format!("unexpected SOCKS5 selection: {methods:?}"));
-    }
-
-    let octets = match echo_addr.ip() {
-        std::net::IpAddr::V4(v4) => v4.octets().to_vec(),
-        std::net::IpAddr::V6(_) => return Err("IPv6 echo not supported".into()),
-    };
-    let mut connect = vec![0x05, 0x01, 0x00, 0x01];
-    connect.extend_from_slice(&octets);
-    connect.extend_from_slice(&echo_addr.port().to_be_bytes());
-    external
-        .write_all(&connect)
-        .await
-        .map_err(|e| format!("write SOCKS5 CONNECT: {e}"))?;
-    external
-        .flush()
-        .await
-        .map_err(|e| format!("flush: {e}"))?;
-    let mut reply = [0u8; 10];
-    external
-        .read_exact(&mut reply)
-        .await
-        .map_err(|e| format!("read SOCKS5 reply: {e}"))?;
-    if reply[0] != 0x05 || reply[1] != 0x00 {
-        return Err(format!("SOCKS5 CONNECT reply not success: {reply:?}"));
-    }
-
     external
         .write_all(payload)
         .await

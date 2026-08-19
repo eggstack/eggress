@@ -204,16 +204,16 @@ After running differential tests, a machine-readable parity report is generated 
 | `reverse_admin_endpoint` | Supported | Synthetic (`/-/reverse` admin route integration tests) | `cargo test -p eggress-admin` |
 | `reverse_python_helper` | Supported | Synthetic (Python `describe_reverse_pproxy_uri` tests) | `python -m pytest python/tests/test_reverse_uri_helper.py` |
 | `reverse_eggress_self_interop` | Supported | Synthetic (loopback self-interop test) | `cargo test -p eggress-runtime --test reverse_interop -- reverse_eggress_self_interop_loopback` |
-| `reverse_pproxy_interop` | Supported | Synthetic (gated pproxy handshake smoke tests) | `EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored` |
+| `reverse_pproxy_interop` | Supported (raw and SOCKS5 `+in`) | Differential (real pproxy 2.7.9 oracle, byte-for-byte payload roundtrip in both directions) | `EGRESS_REQUIRE_REVERSE_INTEROP=1 cargo test -p eggress-runtime --test reverse_interop -- --ignored` |
 
-**Note on differential evidence:** Phase 27 does not yet claim pproxy-compatible
-status for reverse mode. The two gated tests (`reverse_pproxy_interop`) verify
-handshake wiring in both directions but do not compare wire-format byte-for-byte
-behavior against pproxy==2.7.9. To upgrade to **Compatible**, additional
-differential tests must be added that run a real pproxy 2.7.9 instance against an
-eggress reverse server/client, exchange a known payload through a relay, and
-assert byte equality. The `EGRESS_REQUIRE_REVERSE_INTEROP` test scaffold is the
-documented place for that work.
+**Note on differential evidence:** Phase 27 (reverse mode) now has real
+pproxy 2.7.9 oracle payload evidence for raw and SOCKS5 `+in` backward
+compositions in both directions, plus the HTTP CONNECT jump and
+disconnect/reconnect scenarios. All four gated `reverse_interop` tests
+relay a deterministic 1 KiB payload through a real pproxy worker or
+listener and assert byte equality against the local echo target. The
+native reverse listener topology remains a separate stronger protocol and
+reverse/backward TLS composition remains unsupported.
 
 ## Phase 28: CLI Exit Codes, JSON Output, and Structured Diagnostics
 

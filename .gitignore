@@ -16,3 +16,5 @@ python-pproxy-compat/build/
 .venv-pproxy/
 .venv-oracle-api/
 .venv-candidate-api/
+.venv-pproxy-279/
+.venv-oracle/

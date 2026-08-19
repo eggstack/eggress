@@ -162,7 +162,7 @@ The following pproxy features are explicitly unsupported:
   `legacy-crypto` feature, with an insecure compatibility warning; feature-off
   builds produce `LegacyMethodUnsupported`. See
   `docs/protocols/SHADOWSOCKS_LEGACY.md`.
-- **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind `pproxy-legacy`. UDP SSR and SIP003/external plugins remain unsupported; legacy stream ciphers are a separate `legacy-crypto` feature.
+- **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind the opt-in `pproxy-legacy` feature (no longer pulled in by the default CLI `full`). UDP SSR and SIP003/external plugins remain unsupported; legacy stream ciphers are a separate `legacy-crypto` feature.
 
 Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
 

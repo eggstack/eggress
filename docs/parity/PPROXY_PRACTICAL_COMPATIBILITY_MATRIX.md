@@ -49,12 +49,13 @@ contract.
 | SOCKS5 UDP ASSOCIATE | `supported_difference` | Public framing/relay boundary is narrower |
 | Direct TCP/UDP and HTTP/SOCKS upstreams | `matched` | Runtime and differential tests |
 | pproxy backward/reverse raw channels | `supported_difference` | Separate raw-auth adapter, reconnect and jump tests; QUIC remains a separate optional transport |
+| pproxy backward/reverse SOCKS5 `+in` | `supported_difference` | Real pproxy 2.7.9 oracle payload evidence via the gated `reverse_interop` tests; reverse/backward TLS composition remains unsupported; the native reverse listener topology is a distinct stronger protocol |
 | UDP chains of SOCKS5/Shadowsocks hops | `supported_difference` | Composable codecs and runtime flow tests; unsupported protocols fail validation |
 | TCP `__` chains and routing predicates | `supported_difference` | Native chain model preserves supported compositions |
 | Shadowsocks AEAD TCP/UDP | `supported_difference` | Four modern methods with method-specific salts; standard UDP upstream plus exact pproxy PacketCipher standalone inbound path |
 | Trojan client/server roles | `supported_difference` | Native implementation; no private pproxy API claim |
 | H2 and WS/WSS | `supported_difference` | Upstream and compatibility listener roles; H2 multiplexes CONNECT streams, WS/WSS use fixed targets |
-| SSR framing and built-in plugins | `supported_difference` | Bounded TCP framing and six built-in plugins behind `pproxy-legacy`; UDP and external plugins remain excluded |
+| SSR framing and built-in plugins | `supported_difference` | Bounded TCP framing and six built-in plugins behind the opt-in `pproxy-legacy` feature (removed from the default CLI `full`); UDP and external plugins remain excluded |
 | SSH upstream/jump/remote-forward | `supported_difference` | Optional `ssh` transport; upstream-only and warning-bearing host-key behavior |
 | QUIC/H3 listener/client roles | `supported_difference` | Phase 8 optional `quic` transport; UDP association mode is an explicit unsupported composition |
 | Legacy stream ciphers and OTA | `supported_difference` | Optional `legacy-crypto` path implements the maintained RustCrypto subset, OTA HMAC, and PacketCipher UDP framing; four unavailable names are explicit intentional non-parity |

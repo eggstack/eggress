@@ -6,7 +6,6 @@ on:
       - 'crates/eggress-embed/**'
       - 'crates/eggress-python/**'
       - 'python/**'
-      - 'python-pproxy-compat/**'
       - 'tests/compat/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -17,7 +16,6 @@ on:
       - 'crates/eggress-embed/**'
       - 'crates/eggress-python/**'
       - 'python/**'
-      - 'python-pproxy-compat/**'
       - 'tests/compat/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -53,6 +51,5 @@ jobs:
       - name: Install packages
         run: |
           .venv/bin/python -m pip install target/wheels/eggress-*.whl
-          .venv/bin/python -m pip install --no-deps ./python-pproxy-compat
       - name: Run Python smoke suite
         run: .venv/bin/python -m pytest python/tests tests/compat -q

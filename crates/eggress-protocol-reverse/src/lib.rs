@@ -248,11 +248,8 @@ pub async fn relay_bidirectional_with_timeout(
     };
 
     let (a_done, b_done) = tokio::join!(a_to_b, b_to_a);
-    if a_done && b_done {
-        Ok(())
-    } else {
-        Ok(())
-    }
+    let _ = (a_done, b_done);
+    Ok(())
 }
 
 #[cfg(test)]

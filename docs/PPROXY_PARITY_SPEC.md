@@ -501,15 +501,15 @@ in Eggress based on security policy, architecture, or scope.
 |---------|---------------|---------------------|
 | macOS PF transparent proxy | `redir://` on macOS | Not implemented. Use pfctl with a standard listener instead. Linux transparent proxy via `SO_ORIGINAL_DST` is supported. |
 | Shadowsocks stream ciphers | `aes-*-ctr`, `aes-*-cfb`, `rc4-md5`, etc. | No authentication. Vulnerable to bit-flipping and replay attacks. Deprecated by the Shadowsocks community. Produces `LegacyMethodUnsupported` error with a message suggesting AEAD methods. |
-| ShadowsocksR (SSR) | Supported in some forks | Bounded Phase 3 pproxy compatibility: raw TCP framing and six built-in plugins behind `pproxy-legacy`; UDP, external plugins, and legacy encryption remain excluded. |
+| ShadowsocksR (SSR) | Supported in some forks | Bounded Phase 3 pproxy compatibility: raw TCP framing and six built-in plugins behind the opt-in `pproxy-legacy` feature (removed from the default CLI `full`); UDP, external plugins, and legacy encryption remain excluded. |
 | HTTP/2 CONNECT | pproxy h2 scheme | **Supported** — synthetic tests. H2 CONNECT server and client implemented. |
 | WebSocket tunnels | pproxy ws/wss schemes | **Supported** — synthetic tests. WS/WSS tunnel server and client implemented. |
 | Raw tunnels | pproxy raw/tunnel schemes | **Supported** — synthetic tests. Fixed-target TCP tunnel implemented. |
 | QUIC transport | pproxy `quic` modifier | **Supported with warning** behind the optional `quic` feature; UDP association mode is unsupported. |
 | HTTP/3 | pproxy `h3` protocol | **Supported with warning** behind the optional `quic` feature; listeners require certificate/key material. |
 | SSH listeners | `ssh://` | Upstream-only by design. The optional `ssh` feature provides direct TCP/Unix channels, chaining, and explicit remote forwarding; host-key acceptance is warning-bearing. |
-| Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — reverse control channel with raw-relay control channel (Phase 27). TCP only; one session per control channel; no multiplexing. |
-| Plugin system | pproxy has six built-in plugin hooks | Bounded closed plugin set behind `pproxy-legacy`; arbitrary/external plugins remain out of scope. |
+| Reverse/backward proxying | pproxy `bind`, `listen`, backward URI forms | **Supported** — Phase 27 reverse control channel with raw-relay control channel. TCP only; one session per control channel; no multiplexing. Raw and SOCKS5 `+in` compositions have real pproxy 2.7.9 oracle payload evidence; reverse/backward TLS composition remains unsupported. |
+| Plugin system | pproxy has six built-in plugin hooks | Bounded closed plugin set behind the opt-in `pproxy-legacy` feature; arbitrary/external plugins remain out of scope. |
 | Malformed input leniency | pproxy may accept some malformed inputs | Eggress rejects malformed inputs strictly. Security over compatibility. |
 | Insecure TLS defaults | `--insecure` flag | Eggress requires TLS verification by default. Insecure mode is API-only, not configurable via TOML. |
 

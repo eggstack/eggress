@@ -228,13 +228,13 @@ standard Shadowsocks implementations (ssserver, sslocal, shadowsocks-rust).
 | Standalone Shadowsocks UDP listener | Yes (`PacketCipher`) | Yes (pproxy `PacketCipher`) |
 | Shadowsocks inbound listener | Yes | Yes (explicit protocol mode) |
 | Legacy stream ciphers | Yes | **Not supported** (security) |
-| ShadowsocksR (SSR) | Yes | Bounded TCP framing/plugins behind `pproxy-legacy`; UDP, external plugins, and legacy encryption remain unsupported |
+| ShadowsocksR (SSR) | Yes | Bounded TCP framing/plugins behind the opt-in `pproxy-legacy` feature (removed from the default CLI `full`); UDP, external plugins, and legacy encryption remain unsupported |
 
 **Migration notes:**
 - **Only AEAD methods** are supported: `aes-128-gcm`, `aes-192-gcm`,
   `aes-256-gcm`, `chacha20-ietf-poly1305`. Legacy stream ciphers produce
   `LegacyMethodUnsupported` errors.
-- The bounded Phase 3 SSR surface supports raw TCP framing and pproxy's six built-in plugins behind `pproxy-legacy`; UDP SSR, external plugins, and legacy stream-cipher encryption remain unsupported.
+- The bounded Phase 3 SSR surface supports raw TCP framing and pproxy's six built-in plugins behind the opt-in `pproxy-legacy` feature (no longer pulled in by the default CLI `full`); UDP SSR, external plugins, and legacy stream-cipher encryption remain unsupported.
 - Shadowsocks TCP framing uses standard SIP003 AEAD (two AEAD
   operations per chunk, encrypted length). This is a change from
   earlier eggress versions that used non-standard framing.
@@ -405,7 +405,9 @@ Python 3.14. The eggress Python package itself runs on Python 3.9+.
 
 2. **Reverse control channel is plaintext**: The backward/reverse control
    channel sends auth as raw `user:pass` bytes. Use TLS via stunnel or
-   equivalent when traversing untrusted networks.
+   equivalent when traversing untrusted networks. Reverse/backward TLS
+   composition is not implemented; pproxy 2.7.9 also does not provide one
+   natively, so reach for an external TLS wrapper if you need it.
 
 3. **Shadowsocks AEAD only**: Legacy stream ciphers are intentionally
    rejected. They have no authentication and are vulnerable to

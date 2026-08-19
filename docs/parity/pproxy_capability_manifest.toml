@@ -1043,14 +1043,14 @@ cli = "complete"
 python = "not_applicable"
 docs = "complete"
 evidence = "integration"
-tests = ["test_server_accepts_control_connection"]
+tests = ["test_server_accepts_control_connection", "crates/eggress-runtime/tests/reverse_interop.rs::gated_eggress_backward_worker_to_pproxy_listener_payload", "crates/eggress-runtime/tests/reverse_interop.rs::gated_eggress_backward_worker_pproxy_http_jump_payload", "crates/eggress-runtime/tests/reverse_interop.rs::gated_eggress_backward_worker_pproxy_disconnect_reconnect", "crates/eggress-runtime/tests/reverse_interop.rs::gated_pproxy_backward_worker_to_eggress_listener_payload"]
 upstream_evidence = "pproxy/server.py:proxies_by_uri/proxy_by_uri and pproxy/proto.py:get_protos"
 implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs"
 status = "supported_difference"
 strict_closure_required = false
 strict_phase = "10"
 diagnostic = "reverse-proxy-warning"
-notes = "Activates reverse/backward mode; inherits reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal)."
+notes = "Activates reverse/backward mode; inherits reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal). Raw and SOCKS5 +in compositions have real pproxy 2.7.9 oracle payload evidence via the gated reverse_interop tests; reverse/backward TLS composition remains unsupported."
 
 [[capability]]
 id = "uri.chain_separator"
@@ -2665,6 +2665,31 @@ status = "supported_difference"
 strict_closure_required = true
 strict_phase = "2"
 notes = "Upstream and compatibility listener forms are supported; listener CONNECT streams release H2 flow-control capacity as data is consumed."
+
+[[capability]]
+id = "protocol.reverse_backward_pproxy_compat"
+category = "protocol"
+pproxy_surface = "pproxy backward/reverse +in raw and SOCKS5 channels"
+pproxy_behavior = "pproxy 2.7.9 ProxyBackward binds and queues channels; SOCKS5 implementations accept hello and CONNECT inside the channel."
+eggress_behavior = "PproxyBackwardServer and PproxyBackwardClient implement raw and SOCKS5 framed +in channels; the eggress side drives the SOCKS5 hello + CONNECT handshake when the configured channel framing is Socks5, and the worker side dials the resolved target via its -r chain."
+tier = "compatible_with_warning"
+parser = "complete"
+translator = "complete"
+config = "complete"
+runtime = "complete"
+cli = "complete"
+python = "not_applicable"
+docs = "complete"
+evidence = "differential"
+tests = ["crates/eggress-runtime/tests/reverse_interop.rs::gated_pproxy_backward_worker_to_eggress_listener_payload", "crates/eggress-runtime/tests/reverse_interop.rs::gated_eggress_backward_worker_to_pproxy_listener_payload", "crates/eggress-runtime/tests/reverse_interop.rs::gated_eggress_backward_worker_pproxy_http_jump_payload", "crates/eggress-runtime/tests/reverse_interop.rs::gated_eggress_backward_worker_pproxy_disconnect_reconnect", "crates/eggress-runtime/tests/reverse_interop.rs::reverse_compat_pproxy_raw_byte_pipe_relays_byte_for_byte", "crates/eggress-runtime/tests/reverse_interop.rs::reverse_compat_pproxy_socks5_server_mode_negotiates_and_relays"]
+upstream_evidence = "pproxy/server.py:ProxyBackward.start_server/start_server_run/start_backward_client and pproxy/proto.py:Socks5.accept/connect"
+implementation = "crates/eggress-protocol-reverse/src/compat_pproxy.rs"
+status = "supported_difference"
+strict_closure_required = false
+strict_phase = "10"
+diagnostic = "reverse-proxy-warning"
+notes = "Raw and SOCKS5 +in compositions have real pproxy 2.7.9 oracle payload evidence; reverse/backward TLS composition remains unsupported; QUIC reverse behavior is separately feature-qualified behind the quic feature; the native reverse listener topology remains a distinct stronger protocol."
+caveat_class = "translator_scope_gap"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Routing and Operations

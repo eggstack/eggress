@@ -142,7 +142,12 @@ The canonical `eggress` Python package must not silently install or alias the to
 
 ## Code conventions
 
-- Rust edition 2021; MSRV is declared in the workspace manifest.
+- Rust edition 2021. The workspace MSRV is **1.85** (declared in
+  `[workspace.package]` `rust-version`); treat it as a release contract.
+  The raised floor follows the maintained `russh` release and is not an
+  incidental dependency side effect; do not reopen dependency pinning or
+  split-toolchain architecture to recover an older floor without an
+  explicit user-requirement or build-failure reason.
 - Tokio is the async runtime.
 - Use `thiserror` for structured errors and `tracing` for logging.
 - Keep protocol parsing bounded and defensive.

@@ -181,20 +181,20 @@ impl PproxyBackwardClient {
         .await
     }
 
-/// SOCKS5 server mode. pproxy 2.7.9 `+in` workers run the SOCKS5 server
-/// side after the auth handshake, sending `[0x05, n, ...methods]` and
-/// expecting a methods selection back. Reading the resulting CONNECT
-/// target gives this worker the local echo target, matching the byte
-/// payload relayed end-to-end through the real pproxy interpreter.
-async fn run_connection_socks5(&self, mut stream: TcpStream) -> Result<(), ProtocolError> {
-    const SOCKS5_VERSION: u8 = 0x05;
-    const SOCKS5_METHOD_NONE: u8 = 0x00;
-    const SOCKS5_CMD_CONNECT: u8 = 0x01;
-    const SOCKS5_RSV: u8 = 0x00;
-    const SOCKS5_ATYP_IPV4: u8 = 0x01;
-    const SOCKS5_ATYP_DOMAIN: u8 = 0x03;
-    const SOCKS5_ATYP_IPV6: u8 = 0x04;
-    const SOCKS5_REP_SUCCESS: u8 = 0x00;
+    /// SOCKS5 server mode. pproxy 2.7.9 `+in` workers run the SOCKS5 server
+    /// side after the auth handshake, sending `[0x05, n, ...methods]` and
+    /// expecting a methods selection back. Reading the resulting CONNECT
+    /// target gives this worker the local echo target, matching the byte
+    /// payload relayed end-to-end through the real pproxy interpreter.
+    async fn run_connection_socks5(&self, mut stream: TcpStream) -> Result<(), ProtocolError> {
+        const SOCKS5_VERSION: u8 = 0x05;
+        const SOCKS5_METHOD_NONE: u8 = 0x00;
+        const SOCKS5_CMD_CONNECT: u8 = 0x01;
+        const SOCKS5_RSV: u8 = 0x00;
+        const SOCKS5_ATYP_IPV4: u8 = 0x01;
+        const SOCKS5_ATYP_DOMAIN: u8 = 0x03;
+        const SOCKS5_ATYP_IPV6: u8 = 0x04;
+        const SOCKS5_REP_SUCCESS: u8 = 0x00;
 
         // SOCKS5 hello: [version, nmethods, methods...]
         let mut header = [0u8; 2];
@@ -211,9 +211,7 @@ async fn run_connection_socks5(&self, mut stream: TcpStream) -> Result<(), Proto
             stream.read_exact(&mut methods).await?;
         }
         if !methods.contains(&SOCKS5_METHOD_NONE) {
-            stream
-                .write_all(&[SOCKS5_VERSION, 0xff])
-                .await?;
+            stream.write_all(&[SOCKS5_VERSION, 0xff]).await?;
             stream.flush().await?;
             return Err(ProtocolError::AuthFailed);
         }
@@ -665,9 +663,9 @@ async fn reply_socks5_connect(
     // CONNECT request header
     stream.write_all(&[0x05, 0x01, 0x00]).await?;
     // ATYP + address
-    let parsed_host: std::net::IpAddr = host.parse().unwrap_or(std::net::IpAddr::V4(
-        std::net::Ipv4Addr::UNSPECIFIED,
-    ));
+    let parsed_host: std::net::IpAddr = host
+        .parse()
+        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
     if let std::net::IpAddr::V4(ipv4) = parsed_host {
         stream.write_all(&[0x01]).await?;
         stream.write_all(&ipv4.octets()).await?;
@@ -703,8 +701,12 @@ async fn relay_pproxy_pair(
 ) -> Result<(), ProtocolError> {
     let timeout = (timeout_ms > 0).then(|| Duration::from_millis(timeout_ms));
     match framing {
-        PproxyBackwardFraming::Raw => relay_bidirectional_with_timeout(external, control, timeout).await,
-        PproxyBackwardFraming::Socks5 => relay_bidirectional_with_timeout(external, control, timeout).await,
+        PproxyBackwardFraming::Raw => {
+            relay_bidirectional_with_timeout(external, control, timeout).await
+        }
+        PproxyBackwardFraming::Socks5 => {
+            relay_bidirectional_with_timeout(external, control, timeout).await
+        }
     }
 }
 
