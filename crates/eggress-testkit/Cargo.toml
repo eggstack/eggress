@@ -1,10 +1,11 @@
 [package]
 name = "eggress-testkit"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Test utilities for eggress proxy"
 
 [[bin]]
 name = "strict-report"

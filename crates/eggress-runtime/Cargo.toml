@@ -1,10 +1,11 @@
 [package]
 name = "eggress-runtime"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Service supervisor and composition layer for eggress"
 
 [features]
 default = ["full"]

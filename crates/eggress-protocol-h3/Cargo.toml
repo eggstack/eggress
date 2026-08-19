@@ -1,10 +1,11 @@
 [package]
 name = "eggress-protocol-h3"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "HTTP/3 CONNECT protocol for eggress proxy"
 
 [features]
 default = []

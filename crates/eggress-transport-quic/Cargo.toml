@@ -1,10 +1,11 @@
 [package]
 name = "eggress-transport-quic"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "QUIC transport for eggress proxy"
 
 [features]
 default = []

@@ -1,10 +1,10 @@
 [package]
 name = "eggress-pproxy-compat"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "pproxy-compatible CLI and URI translation layer for Eggress"
 
 [features]

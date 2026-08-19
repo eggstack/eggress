@@ -1,10 +1,11 @@
 [package]
 name = "eggress-protocol-http"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "HTTP/1.1 CONNECT protocol for eggress proxy"
 
 [dependencies]
 eggress-core.workspace = true

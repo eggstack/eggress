@@ -1,10 +1,11 @@
 [package]
 name = "eggress-uri"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "URI parsing for eggress proxy"
 
 [dependencies]
 thiserror.workspace = true

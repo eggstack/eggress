@@ -1,10 +1,11 @@
 [package]
 name = "eggress-core"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Core types, traits, and infrastructure for eggress proxy"
 
 [dependencies]
 eggress-uri.workspace = true

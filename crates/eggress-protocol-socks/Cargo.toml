@@ -1,10 +1,11 @@
 [package]
 name = "eggress-protocol-socks"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "SOCKS4/4a and SOCKS5 protocol for eggress proxy"
 
 [dependencies]
 eggress-core.workspace = true

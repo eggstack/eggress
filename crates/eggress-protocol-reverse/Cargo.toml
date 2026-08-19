@@ -1,10 +1,10 @@
 [package]
 name = "eggress-protocol-reverse"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Reverse/backward proxy protocol for eggress (pproxy-compatible)"
 
 [dependencies]

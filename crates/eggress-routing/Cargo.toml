@@ -1,10 +1,11 @@
 [package]
 name = "eggress-routing"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Rule-based routing and upstream selection for eggress"
 
 [dependencies]
 eggress-core.workspace = true

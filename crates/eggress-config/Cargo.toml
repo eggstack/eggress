@@ -1,10 +1,11 @@
 [package]
 name = "eggress-config"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "TOML configuration and validation for eggress proxy"
 
 [features]
 default = []

@@ -1,10 +1,10 @@
 [package]
 name = "eggress-protocol-shadowsocks"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Shadowsocks protocol implementation for eggress"
 
 [features]

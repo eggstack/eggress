@@ -5,7 +5,6 @@ edition = "2021"
 rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Python bindings for the eggress proxy embed API"
-publish = false
 
 [lib]
 name = "_eggress"

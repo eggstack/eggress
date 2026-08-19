@@ -1,10 +1,11 @@
 [package]
 name = "eggress-metrics"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Prometheus-compatible metrics for eggress proxy"
 
 [features]
 default = ["full"]

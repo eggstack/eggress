@@ -1,10 +1,10 @@
 [package]
 name = "eggress-transport-tls"
 version.workspace = true
-publish = false
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Shared TLS transport layer for eggress"
 
 [dependencies]
