@@ -2,7 +2,12 @@
 targets = []
 
 [advisories]
-ignore = []
+ignore = [
+    # `rsa` (RUSTSEC-2023-0071, Marvin Attack): pulled transitively by the
+    # optional `russh` `rsa` feature for SSH host-key parsing. No fixed
+    # upstream release is available; tracked against the rustsec advisory.
+    "RUSTSEC-2023-0071",
+]
 
 # `rustls-pemfile` (RUSTSEC-2025-0134) was replaced by `rustls-pki-types` PEM
 # APIs (`CertificateDer::pem_slice_iter`, `PrivatePkcs8KeyDer::from_pem_slice`)

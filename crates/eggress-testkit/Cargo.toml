@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Test utilities for eggress proxy"
+keywords = ["proxy", "testing", "testkit", "fixtures"]
+categories = ["development-tools::testing"]
+readme = "README.md"
 
 [[bin]]
 name = "strict-report"
@@ -25,9 +28,9 @@ regex.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
-eggress-config = { path = "../eggress-config" }
-eggress-runtime = { path = "../eggress-runtime" }
-eggress-pproxy-compat = { path = "../eggress-pproxy-compat" }
+eggress-config.workspace = true
+eggress-runtime.workspace = true
+eggress-pproxy-compat.workspace = true
 
 [lints]
 workspace = true

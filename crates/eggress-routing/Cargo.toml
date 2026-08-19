@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Rule-based routing and upstream selection for eggress"
+keywords = ["proxy", "routing", "rules", "scheduler"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
 eggress-core.workspace = true

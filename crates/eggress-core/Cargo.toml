@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core types, traits, and infrastructure for eggress proxy"
+keywords = ["proxy", "core", "network"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
 eggress-uri.workspace = true

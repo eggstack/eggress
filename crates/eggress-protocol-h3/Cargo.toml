@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "HTTP/3 CONNECT protocol for eggress proxy"
+keywords = ["proxy", "http3", "quic", "connect"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [features]
 default = []

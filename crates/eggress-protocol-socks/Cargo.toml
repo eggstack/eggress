@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "SOCKS4/4a and SOCKS5 protocol for eggress proxy"
+keywords = ["proxy", "socks", "socks4", "socks5"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
 eggress-core.workspace = true

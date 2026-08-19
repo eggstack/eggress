@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Optional SSH transport for Eggress proxy chains"
+keywords = ["proxy", "ssh", "transport"]
+categories = ["network-programming", "cryptography"]
+readme = "README.md"
 
 [dependencies]
 eggress-core.workspace = true

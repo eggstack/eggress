@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Shadowsocks protocol implementation for eggress"
+keywords = ["proxy", "shadowsocks", "aead", "cipher"]
+categories = ["network-programming", "cryptography"]
+readme = "README.md"
 
 [features]
 default = []

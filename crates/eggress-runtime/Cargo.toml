@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Service supervisor and composition layer for eggress"
+keywords = ["proxy", "runtime", "supervisor", "lifecycle"]
+categories = ["network-programming", "asynchronous"]
+readme = "README.md"
 
 [features]
 default = ["full"]

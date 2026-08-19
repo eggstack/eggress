@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "CLI binary for the eggress multi-protocol proxy"
+keywords = ["proxy", "cli", "pproxy", "command-line"]
+categories = ["network-programming", "command-line-utilities"]
+readme = "README.md"
 
 [features]
 default = ["full"]

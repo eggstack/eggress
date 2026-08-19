@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "UDP association management for eggress proxy"
+keywords = ["proxy", "udp", "association"]
+categories = ["network-programming", "asynchronous"]
+readme = "README.md"
 
 [features]
 default = ["shadowsocks"]

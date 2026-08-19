@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "HTTP/1.1 CONNECT protocol for eggress proxy"
+keywords = ["proxy", "http", "connect", "forward-proxy"]
+categories = ["network-programming", "web-programming"]
+readme = "README.md"
 
 [dependencies]
 eggress-core.workspace = true

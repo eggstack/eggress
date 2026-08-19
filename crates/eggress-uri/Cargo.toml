@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "URI parsing for eggress proxy"
+keywords = ["proxy", "uri", "parsing"]
+categories = ["parsing"]
+readme = "README.md"
 
 [dependencies]
 thiserror.workspace = true

@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Local admin HTTP server for eggress proxy"
+keywords = ["proxy", "admin", "http", "pac"]
+categories = ["network-programming", "web-programming"]
+readme = "README.md"
 
 [dependencies]
 hyper = { workspace = true }

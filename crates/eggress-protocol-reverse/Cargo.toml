@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Reverse/backward proxy protocol for eggress (pproxy-compatible)"
+keywords = ["proxy", "reverse", "backward", "nat-traversal"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
 tokio.workspace = true

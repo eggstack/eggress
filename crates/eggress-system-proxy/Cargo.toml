@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "System proxy inspection and configuration helpers for Eggress"
+keywords = ["proxy", "system-proxy", "platform"]
+categories = ["network-programming", "api-bindings"]
+readme = "README.md"
 
 [dependencies]
 serde.workspace = true

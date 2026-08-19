@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Connection handling and server orchestration for eggress"
+keywords = ["proxy", "server", "listener"]
+categories = ["network-programming", "asynchronous"]
+readme = "README.md"
 
 [features]
 default = ["full"]

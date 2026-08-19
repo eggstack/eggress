@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Prometheus-compatible metrics for eggress proxy"
+keywords = ["proxy", "metrics", "prometheus", "observability"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [features]
 default = ["full"]

@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "WebSocket tunnel protocol implementation for eggress"
+keywords = ["proxy", "websocket", "tunnel"]
+categories = ["network-programming"]
+readme = "README.md"
 
 [dependencies]
 tokio.workspace = true

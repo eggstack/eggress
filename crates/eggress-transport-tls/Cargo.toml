@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Shared TLS transport layer for eggress"
+keywords = ["proxy", "tls", "rustls", "transport"]
+categories = ["network-programming", "cryptography"]
+readme = "README.md"
 
 [dependencies]
 eggress-core.workspace = true

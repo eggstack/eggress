@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "TOML configuration and validation for eggress proxy"
+keywords = ["proxy", "config", "toml"]
+categories = ["config"]
+readme = "README.md"
 
 [features]
 default = []
