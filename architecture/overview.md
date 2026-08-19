@@ -288,6 +288,7 @@ eggress/
 ├── tests/                     # Integration tests
 ├── docs/                      # Documentation
 │   └── architecture/          # Per-component deep dives (26 files)
+├── .skills/                   # Agent skills (task-specific guidance)
 ├── plans/                     # Historical phase plans
 ├── compat/                    # Compatibility test assets
 └── example-config.toml        # Example TOML configuration
@@ -298,6 +299,7 @@ eggress/
 ## Further Reading
 
 - [Existing architecture docs](../docs/architecture/) — 26 detailed per-component documents
+- [Agent skills](../.skills/) — task-specific development guidance (proxy dev, testing, security, config, routing, transports, reverse proxy, release)
 - [pproxy parity spec](../docs/PPROXY_PARITY_SPEC.md) — compatibility vocabulary and tier definitions
 - [Embed API reference](../docs/EMBED_API.md) — Rust in-process API
 - [Python bindings reference](../docs/PYTHON_BINDINGS.md) — PyO3 API surface

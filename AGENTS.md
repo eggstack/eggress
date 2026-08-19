@@ -87,9 +87,30 @@ Crates.io versions are immutable. If a release is defective or partially publish
 
 Python/PyPI publication is a separate manual process and is not coupled to the Rust release workflow.
 
+## Skills
+
+Agent skills live under `.skills/` and provide focused, task-specific guidance.
+Each skill contains a `skill.md` with when-to-use context, architecture, key
+types, verification commands, and common pitfalls.
+
+| Skill | Purpose |
+|-------|---------|
+| `rust-proxy-dev` | New proxy protocols, transport wrappers, core relay/chain, embed API, Python bindings, pproxy binary |
+| `testing` | Test layers, fuzz harnesses, differential/oracle harnesses, Python tests, benchmarking |
+| `security-dev` | DNS rebinding, auth metrics, SSH boundary, legacy crypto, fuzz targets, security invariants |
+| `config-reload` | TOML schema, hot-reload behavior, supervisor lifecycle, adding config fields |
+| `routing-rules` | Rule matchers, schedulers, route selection, adding new matchers |
+| `udp-protocol` | UDP associations, datagram relay, upstream SOCKS5 relay |
+| `advanced-transports` | H2 CONNECT, WebSocket, raw tunnels, QUIC/H3, TLS/ALPN |
+| `reverse-proxy` | Reverse/backward proxy, control channels, NAT traversal |
+| `release` | Version bumps, verification, PyPI/crates.io publishing |
+
+Load a skill with the `skill` tool when a task matches its description. The
+`rust-proxy-dev` and `testing` skills are the most broadly applicable.
+
 ## Workspace map
 
-The principal crates are:
+The workspace contains 26 Rust crates. The principal crates are:
 
 - `eggress-core`: shared types, traits, relay abstractions, and stream boundaries.
 - `eggress-uri`: URI parsing and compatibility grammar.
@@ -97,16 +118,28 @@ The principal crates are:
 - `eggress-config`: TOML configuration and validation.
 - `eggress-server`: listener and connection orchestration.
 - `eggress-runtime`: supervisor, lifecycle, composition, reload, and shutdown.
+- `eggress-admin`: local admin HTTP server (PAC, metrics, status, route explanation).
+- `eggress-metrics`: Prometheus-compatible metrics registry and bridging.
 - `eggress-udp`: UDP associations and relays.
-- `eggress-protocol-*`: HTTP, SOCKS, Shadowsocks, Trojan, WebSocket, raw, and reverse protocols.
-- `eggress-transport-tls`: shared TLS client/server transport.
+- `eggress-protocol-http`: HTTP/1.1 CONNECT and forward proxy, H2 CONNECT.
+- `eggress-protocol-socks`: SOCKS4/4a and SOCKS5 protocol implementations.
+- `eggress-protocol-shadowsocks`: Shadowsocks AEAD and legacy cipher support.
+- `eggress-protocol-trojan`: Trojan protocol with rustls.
+- `eggress-protocol-websocket`: WebSocket tunnel client and server.
+- `eggress-protocol-raw`: Raw TCP passthrough and fixed-target forwarding.
+- `eggress-protocol-reverse`: Reverse/backward proxy control-channel protocol.
+- `eggress-protocol-h3`: HTTP/3 CONNECT (optional, QUIC-based).
+- `eggress-transport-tls`: shared rustls client/server TLS transport.
+- `eggress-transport-ssh`: optional russh SSH upstream transport.
+- `eggress-transport-quic`: optional Quinn QUIC transport.
+- `eggress-system-proxy`: platform system-proxy inspection and configuration.
 - `eggress-cli`: `eggress` and compatibility `pproxy` binaries.
 - `eggress-pproxy-compat`: Rust-side URI translation and compatibility diagnostics.
 - `eggress-embed`: stable in-process Rust API.
 - `eggress-python`: PyO3 binding crate.
+- `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
 - `python/eggress`: canonical Python package.
 - `python-pproxy-compat`: separate package providing the top-level `pproxy` namespace.
-- `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
 
 ## Architectural invariants
 

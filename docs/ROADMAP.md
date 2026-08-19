@@ -4,12 +4,18 @@ This document references the main roadmap in [EGGRESS_ROADMAP.md](../EGGRESS_ROA
 
 ## Current Status
 
-Milestones A–C are under corrective review. Local closure gates pass but hosted evidence is pending.
-Two capabilities (`cli.get`, `process.reload.routing`) remain honest `gap` records.
-Legacy Shadowsocks encryption remains intentional non-parity. QUIC/HTTP/3 is
-optional and feature-gated; SSH upstream compatibility is also optional and
-feature-gated, while SSH listeners remain unsupported. The bounded pproxy SSR
-TCP framing/plugin path is feature-gated compatibility work.
+All core milestones are complete. The Rust-native CLI and runtime are
+production-ready with broad pproxy 2.7.9 behavioral compatibility. See the
+active [compatibility matrix](../docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+and [capability manifest](../docs/parity/pproxy_capability_manifest.toml).
+
+Known boundaries:
+- Legacy Shadowsocks stream ciphers remain intentional non-parity (opt-in via `legacy-crypto` feature).
+- QUIC/HTTP/3 is optional and feature-gated (`quic` feature).
+- SSH upstream compatibility is optional and feature-gated (`ssh` feature); SSH listeners remain unsupported.
+- Bounded pproxy SSR TCP framing/plugin path is feature-gated compatibility work.
+- macOS PF original-destination recovery and four unavailable legacy cipher names are intentional exclusions.
+
 See `docs/PPROXY_PARITY_SPEC.md` for the tier taxonomy.
 
 ## Completed Milestones
@@ -168,10 +174,12 @@ Current acceptance is governed by the practical parity roadmap and manifest.
 
 ## Remaining Work
 
-Phases 43+ are defined in `plans/pproxy_parity_python_dropin_roadmap.md` and cover advanced transport hardening, Python async API, CI integration, and release automation. These are post-release scope.
-
-Post-Phase 54 milestones (Track B/C) completed structural and behavioral evidence collection. The current state is corrective review of Milestones A–C.
+Post-milestone work covers advanced transport hardening, Python async API
+refinements, and release automation. These are ongoing improvements rather than
+blocking milestones.
 
 ## Next Phase
 
-Post-release scope — see `plans/pproxy_parity_python_dropin_roadmap.md`.
+See the active [compatibility matrix](../docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+for current claims and the [capability manifest](../docs/parity/pproxy_capability_manifest.toml)
+for detailed evidence.
