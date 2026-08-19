@@ -28,9 +28,14 @@ regex.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
-eggress-config.workspace = true
-eggress-runtime.workspace = true
-eggress-pproxy-compat.workspace = true
+# Internal dev-deps kept path-only on purpose: they form a dev-dep cycle
+# (eggress-testkit <-> eggress-runtime <-> eggress-testkit) that cannot be
+# resolved against crates.io at publish time. The eggress-testkit library
+# itself does not need these to compile, only the workspace integration
+# tests do, and those run only from a local checkout.
+eggress-config = { path = "../eggress-config" }
+eggress-runtime = { path = "../eggress-runtime" }
+eggress-pproxy-compat = { path = "../eggress-pproxy-compat" }
 
 [lints]
 workspace = true
