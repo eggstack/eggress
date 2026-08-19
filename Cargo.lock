@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-admin"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "base64",
  "bytes",
@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-bench"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "criterion",
  "eggress-core",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-cli"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-config"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-core",
  "eggress-routing",
@@ -1002,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-uri",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-embed"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-config",
  "eggress-core",
@@ -1040,7 +1040,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-metrics"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-protocol-http",
  "eggress-protocol-shadowsocks",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-pproxy-compat"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "assert_cmd",
  "eggress-config",
@@ -1071,7 +1071,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-h3"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-http"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-raw"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-core",
  "thiserror",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-reverse"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1132,7 +1132,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-shadowsocks"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm 0.10.3",
@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-socks"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1173,7 +1173,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-trojan"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1191,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-websocket"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-python"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-cli",
  "eggress-config",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-routing"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arc-swap",
  "eggress-core",
@@ -1244,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-runtime"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -1285,7 +1285,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-server"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1317,7 +1317,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-system-proxy"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1328,7 +1328,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-testkit"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-config",
  "eggress-pproxy-compat",
@@ -1348,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-quic"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1366,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-ssh"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-core",
  "russh",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-transport-tls"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1393,7 +1393,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-udp"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -1413,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-uri"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "proptest",
  "serde",

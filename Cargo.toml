@@ -1,6 +1,6 @@
 [package]
 name = "eggress-bench"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
@@ -37,7 +37,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
