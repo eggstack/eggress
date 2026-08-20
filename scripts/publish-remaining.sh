@@ -2,9 +2,9 @@
 # Publish the remaining 24 eggress-* crates to crates.io in dependency order.
 #
 # Prerequisites:
-#   - eggress-uri cooldown has cleared (was 2026-08-20T08:01:26Z).
 #   - crates.io credentials configured (`cargo login` or $CARGO_REGISTRY_TOKEN`).
 #   - Working tree is on the published commit (clean, no uncommitted changes).
+#   - Any eggress-uri name-deletion cooldown has cleared.
 #
 # Usage: scripts/publish-remaining.sh [--dry-run]
 #
@@ -12,7 +12,8 @@
 #   eggress-system-proxy 1.0.2
 #   eggress-testkit     1.0.2
 #
-# Total: 24 crates. Expected duration with index-propagation waits: 30-45 min.
+# Total: 24 crates. crates.io rate-limits new publishes to roughly one per 10
+# minutes, so expect ~4h of wall time plus index-propagation waits.
 
 set -euo pipefail
 
@@ -26,9 +27,7 @@ if [[ "${1:-}" == "--dry-run" ]]; then
 fi
 
 # Tiered publish order. Every required internal dep appears in an earlier tier
-# than the crate that depends on it. The eggress-uri cooldown means tier 1
-# cannot run until ~20h after the name was deleted; this script assumes the
-# cooldown has cleared.
+# than the crate that depends on it.
 TIERS=(
     "eggress-uri"
     "eggress-core"
@@ -41,12 +40,18 @@ TIERS=(
     "eggress-python"
 )
 
+# crates.io enforces a ~10-minute cooldown between new crate publishes.
+# Respect it to avoid HTTP 429 rate-limit responses. Override with
+# EGGRESS_PUBLISH_DELAY_SECONDS for dry-runs or local testing.
+PUBLISH_DELAY_SECONDS="${EGGRESS_PUBLISH_DELAY_SECONDS:-660}"
+
 # Wait for the crates.io index to see a freshly-published crate version.
-# Polls the index endpoint with a 5s ceiling between attempts.
+# Polls the index endpoint; the inter-publish delay above is the dominant
+# wait, so this is mostly a sanity check.
 wait_for_index() {
     local crate="$1"
     local version="$2"
-    local attempts="${3:-30}"
+    local attempts="${3:-6}"
     for ((i=1; i<=attempts; i++)); do
         local resp
         resp=$(curl -fsS -H "User-Agent: eggress-release/1.0" \
@@ -54,9 +59,9 @@ wait_for_index() {
         if echo "$resp" | grep -q '"version"'; then
             return 0
         fi
-        sleep 5
+        sleep 10
     done
-    echo "WARN: index did not propagate for ${crate} ${version} after $((attempts * 5))s; proceeding anyway" >&2
+    echo "WARN: index did not propagate for ${crate} ${version}; proceeding anyway" >&2
     return 0
 }
 
@@ -64,16 +69,16 @@ publish_one() {
     local crate="$1"
     echo ""
     echo "=================================================================="
-    echo "Publishing $crate"
+    echo "Publishing $crate (delay ${PUBLISH_DELAY_SECONDS}s)"
     echo "=================================================================="
     cargo publish $DRY_RUN -p "$crate" --no-verify
     if [[ -z "$DRY_RUN" ]]; then
-        # Pull the version from the just-published manifest; cargo's --no-verify
-        # path doesn't print it, so we infer from the workspace.
         local version
         version=$(cargo read-manifest --manifest-path "crates/${crate}/Cargo.toml" 2>/dev/null \
             | python3 -c "import sys, json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "1.0.2")
         wait_for_index "$crate" "$version"
+        # Sleep between publishes to stay under the crates.io rate limit.
+        sleep "$PUBLISH_DELAY_SECONDS"
     fi
 }
 
