@@ -192,7 +192,7 @@ See the [Python bindings reference](https://github.com/eggstack/eggress/blob/mai
 
 ## pproxy compatibility
 
-eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The bundled `eggress.pproxy` module provides URI-mode translation, CLI flag translation, compatibility routing, structured diagnostics, differential tests, and a bounded top-level `pproxy` package backed by Eggress adapters.
+eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The bundled `eggress.pproxy` module provides URI-mode translation, CLI flag translation, compatibility routing, structured diagnostics, and differential tests. The optional `eggress-pproxy-compat` distribution provides the bounded top-level `pproxy` package backed by Eggress adapters.
 
 ### Key boundaries
 

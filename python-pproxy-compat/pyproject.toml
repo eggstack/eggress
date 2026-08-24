@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eggress-pproxy-compat"
+version = "1.0.2"
+requires-python = ">=3.9"
+description = "Opt-in top-level pproxy compatibility package for eggress"
+readme = "README.md"
+license = {text = "MIT OR Apache-2.0"}
+authors = [{name = "eggstack"}]
+dependencies = [
+    "eggress==1.0.2",
+    "cryptography>=42,<47",
+]
+
+[project.scripts]
+pproxy = "pproxy.__main__:main"
+
+[tool.setuptools]
+packages = ["pproxy"]
+package-dir = {pproxy = "../python/pproxy"}

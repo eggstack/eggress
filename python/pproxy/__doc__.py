@@ -1,6 +1,6 @@
 """Metadata exposed by the pinned pproxy 2.7.9 package.
 
-The compatibility distribution remains named ``eggress``.  In particular,
+The compatibility distribution is named ``eggress-pproxy-compat``.
 ``__version__`` is the Eggress distribution version, not a false packaging
 claim that this wheel is the upstream pproxy release.
 """

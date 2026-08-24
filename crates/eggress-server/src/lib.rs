@@ -223,7 +223,7 @@ pub async fn serve_connection(
 mod tests {
     use super::*;
     use eggress_routing::{RouteActionSpec, Router};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
     fn all_protocols() -> Arc<[eggress_core::ProtocolId]> {
         Arc::from([
@@ -1169,12 +1169,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_http_body_upload_timeout_closes_session() {
+    async fn test_http_body_upload_is_not_limited_by_connect_timeout() {
         let origin_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin_addr = origin_listener.local_addr().unwrap();
         let origin_jh = tokio::spawn(async move {
-            let (_stream, _) = origin_listener.accept().await.unwrap();
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            let (stream, _) = origin_listener.accept().await.unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                reader.read_until(b'\n', &mut line).await.unwrap();
+                if line == b"\r\n" {
+                    break;
+                }
+            }
+            let mut body = [0u8; 16];
+            reader.read_exact(&mut body).await.unwrap();
+            let mut stream = reader.into_inner();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
         });
 
         let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1196,17 +1211,16 @@ mod tests {
             origin_addr.port()
         );
         stream.write_all(request.as_bytes()).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        stream.write_all(b"delayed-body-123").await.unwrap();
 
         let mut response = Vec::new();
         tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut response))
             .await
-            .expect("body upload timeout must close the client")
+            .expect("body upload must not inherit the connect timeout")
             .unwrap();
         let report = proxy_jh.await.unwrap();
-        assert!(matches!(
-            report.outcome,
-            execute::SessionOutcome::RelayFailed
-        ));
+        assert!(matches!(report.outcome, execute::SessionOutcome::Completed));
 
         origin_jh.abort();
     }

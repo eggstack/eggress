@@ -149,11 +149,12 @@ python3.11 python/compat/behavioral_probes.py
 
 ### Namespace strategy
 
-The `eggress` wheel installs one bounded top-level `pproxy` package containing
-the documented connection/server factories and protocol/cipher submodules. It
-also retains `eggress.pproxy` and `eggress.start_pproxy()` for translation and
-managed-service workflows. Do not install the upstream `pproxy` wheel in the
-same environment; uninstall it before replacing it with Eggress.
+The optional `eggress-pproxy-compat` distribution installs a bounded top-level
+`pproxy` package containing the documented connection/server factories and
+protocol/cipher submodules. The canonical `eggress` distribution retains
+`eggress.pproxy` and `eggress.start_pproxy()` for translation and managed-service
+workflows. Do not install the compatibility distribution alongside upstream
+`pproxy` in the same environment.
 See `docs/python/PPROXY_NAMESPACE_STRATEGY.md` for the compatibility boundary.
 
 ## Migrating from pproxy

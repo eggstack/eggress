@@ -10,9 +10,10 @@ The package is published on PyPI as `eggress`.
 pip install eggress
 ```
 
-The `eggress` wheel also provides a bounded top-level `pproxy` package. There
-is no separate compatibility distribution. Uninstall upstream `pproxy` before
-installing Eggress because both distributions provide the same namespace.
+The canonical `eggress` wheel provides the `eggress` namespace. Install the
+optional `eggress-pproxy-compat` distribution when the bounded top-level
+`pproxy` namespace is required. Do not install that compatibility distribution
+alongside upstream `pproxy` because both distributions provide the same namespace.
 
 ## Install from a wheel file
 

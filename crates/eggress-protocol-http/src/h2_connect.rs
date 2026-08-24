@@ -19,6 +19,8 @@ use crate::error::HttpError;
 use eggress_core::connector::is_dns_rebinding_risk;
 use eggress_core::{TargetAddr, TargetHost};
 
+const H2_RELAY_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 // ===== H2 Protocol Metrics (atomic counters for bridging into MetricsRegistry) =====
 
 /// Atomic counters for H2 protocol-level metrics. The `MetricsRegistry`
@@ -195,6 +197,7 @@ pub async fn h2_connect_relay(
         loop {
             let n = tcp_read.read(&mut buf).await?;
             if n == 0 {
+                h2_write.shutdown().await?;
                 break;
             }
             h2_write.write_all(&buf[..n]).await?;
@@ -207,7 +210,19 @@ pub async fn h2_connect_relay(
 
     let h2_task = tokio::spawn(h2_to_tcp);
     let tcp_result = tcp_to_h2.await;
-    let h2_result = h2_task.await.unwrap();
+    let mut h2_task = h2_task;
+    let h2_result = match tokio::time::timeout(H2_RELAY_DRAIN_TIMEOUT, &mut h2_task).await {
+        Ok(result) => {
+            result.map_err(|error| H2ConnectError::H2(format!("H2 relay task failed: {error}")))?
+        }
+        Err(_) => {
+            h2_task.abort();
+            let _ = h2_task.await;
+            return Err(H2ConnectError::H2(
+                "H2 relay drain timed out after target close".into(),
+            ));
+        }
+    };
 
     h2_result?;
     tcp_result?;

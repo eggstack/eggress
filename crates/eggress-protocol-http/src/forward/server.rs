@@ -348,6 +348,9 @@ const MAX_INFORMATIONAL_RESPONSES: usize = 8;
 /// Maximum number of header lines.
 const MAX_HEADER_LINES: usize = 128;
 
+/// Bound a response chunk before converting it to a platform `usize`.
+const MAX_RESPONSE_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
+
 /// Headers that must not be forwarded across a proxy (RFC 2616 §13.5.1).
 ///
 /// `Transfer-Encoding: chunked` is preserved because the chunked body is
@@ -510,9 +513,14 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
     let mut is_chunked = false;
     let mut connection_close = false;
 
+    let mut header_count = 0;
     for line in lines {
         if line.is_empty() {
             break;
+        }
+        header_count += 1;
+        if header_count > MAX_HEADER_LINES {
+            return Err(HttpError::TooManyHeaders);
         }
         if let Some((name, value)) = parse_header_line(line) {
             if name.eq_ignore_ascii_case("Content-Length") {
@@ -662,9 +670,14 @@ pub async fn forward_response(
                 let size_str = String::from_utf8_lossy(&size_line_buf);
                 let size_str = size_str.trim_end_matches("\r\n");
                 let size_str = size_str.split(';').next().unwrap_or("").trim();
-                let chunk_size = usize::from_str_radix(size_str, 16).map_err(|e| {
+                let chunk_size = u64::from_str_radix(size_str, 16).map_err(|e| {
                     HttpError::MalformedResponse(format!("invalid chunk size: {}", e))
                 })?;
+                if chunk_size > MAX_RESPONSE_CHUNK_SIZE {
+                    return Err(HttpError::MalformedResponse(
+                        "response chunk too large".into(),
+                    ));
+                }
 
                 client.write_all(&size_line_buf).await?;
                 bytes_forwarded += size_line_buf.len() as u64;
@@ -686,7 +699,11 @@ pub async fn forward_response(
                     break;
                 }
 
-                let mut remaining = chunk_size + 2;
+                let mut remaining =
+                    usize::try_from(chunk_size.checked_add(2).ok_or_else(|| {
+                        HttpError::MalformedResponse("response chunk size overflow".into())
+                    })?)
+                    .map_err(|_| HttpError::MalformedResponse("response chunk too large".into()))?;
                 let mut buf = [0u8; 8192];
                 while remaining > 0 {
                     let to_read = remaining.min(buf.len());
@@ -800,6 +817,7 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
     let mut head_buf = Vec::with_capacity(1024);
     let mut temp = [0u8; 1];
     let mut header_count = 0;
+    let mut saw_request_line = false;
 
     loop {
         if head_buf.len() >= MAX_HEAD_SIZE {
@@ -822,7 +840,14 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
                 break;
             }
             if head_buf.len() >= 2 && &head_buf[len - 2..] == b"\r\n" {
-                header_count += 1;
+                // The first CRLF terminates the request line and is not a
+                // header. The final empty line is handled by the terminator
+                // check above, so only actual header lines are counted.
+                if saw_request_line {
+                    header_count += 1;
+                } else {
+                    saw_request_line = true;
+                }
                 if header_count > MAX_HEADER_LINES {
                     return Err(HttpError::TooManyHeaders);
                 }

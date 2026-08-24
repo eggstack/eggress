@@ -30,6 +30,7 @@ quic = [
     "dep:eggress-transport-quic",
     "dep:eggress-protocol-h3",
 ]
+insecure-quic = ["eggress-runtime/insecure-quic", "eggress-transport-quic/insecure-quic"]
 pproxy-compat = ["dep:eggress-pproxy-compat"]
 ssh = ["eggress-runtime/ssh", "eggress-pproxy-compat/ssh"]
 

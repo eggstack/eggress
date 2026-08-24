@@ -99,11 +99,11 @@ optional SSH/QUIC, and Python workflows, subject to the matrix boundaries. The
 deliberate exclusions are macOS PF original-destination recovery and the four
 legacy cipher names `cast5-cfb`, `idea-cfb`, `rc2-cfb`, and `seed-cfb`.
 
-The Python distribution is `eggress`. Its wheel contains the bounded top-level
-`pproxy` package as well as the `eggress` namespace; there is no separately
-published `eggress-pproxy-compat` distribution. Do not install upstream
-`pproxy` beside Eggress because both distributions own the same import
-namespace.
+The Python distribution is `eggress`. Its wheel contains the `eggress`
+namespace. The separately published `eggress-pproxy-compat` distribution
+contains the bounded top-level `pproxy` package. Do not install that
+compatibility distribution beside upstream `pproxy` because both distributions
+own the same import namespace.
 
 ## Verification commands
 

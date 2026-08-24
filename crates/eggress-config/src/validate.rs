@@ -969,6 +969,47 @@ fn validate_admin(admin: &crate::model::AdminConfig, errors: &mut Vec<ConfigErro
         ));
     }
 
+    if let Some(auth) = &admin.auth {
+        if auth.bearer_token.as_deref().is_some_and(str::is_empty) {
+            errors.push(ConfigError::validation(
+                "admin.auth.bearer_token",
+                "bearer token must not be empty",
+            ));
+        }
+        if auth.bearer_token.is_some() && auth.bearer_token_env.is_some() {
+            errors.push(ConfigError::validation(
+                "admin.auth",
+                "configure either bearer_token or bearer_token_env, not both",
+            ));
+        }
+        if let Some(basic) = &auth.basic_auth {
+            if basic.user.is_empty() {
+                errors.push(ConfigError::validation(
+                    "admin.auth.basic_auth.user",
+                    "basic auth username must not be empty",
+                ));
+            }
+            if basic.password.as_deref().is_some_and(str::is_empty) {
+                errors.push(ConfigError::validation(
+                    "admin.auth.basic_auth.password",
+                    "basic auth password must not be empty",
+                ));
+            }
+            if basic.password.is_some() && basic.password_env.is_some() {
+                errors.push(ConfigError::validation(
+                    "admin.auth.basic_auth",
+                    "configure either password or password_env, not both",
+                ));
+            }
+        }
+        if auth.bearer_token.is_some() && auth.basic_auth.is_some() {
+            errors.push(ConfigError::validation(
+                "admin.auth",
+                "configure either bearer_token or basic_auth, not both",
+            ));
+        }
+    }
+
     if let Some(ref pac) = admin.pac {
         if let Some(ref path) = pac.path {
             if !path.starts_with('/') {

@@ -32,13 +32,14 @@ from eggress import start_pproxy
 
 ## Top-level `import pproxy`
 
-The `eggress` wheel installs a real, bounded `pproxy` package. It provides the
-documented public factories and the `proto`, `server`, and `cipher` modules.
-The distribution name remains `eggress`, and there is no separate compatibility
-distribution.
+The optional `eggress-pproxy-compat` distribution installs a real, bounded
+`pproxy` package. It provides the documented public factories and the `proto`,
+`server`, and `cipher` modules. The canonical `eggress` wheel does not install
+this top-level namespace.
 
 - It is a replacement namespace, not a private-internals clone.
-- It keeps the published distribution name `eggress`.
+- It keeps the published canonical distribution name `eggress` separate from
+  the opt-in compatibility distribution.
 
 Installing upstream `pproxy` and Eggress together is unsupported because both
 distributions provide the same namespace. Uninstall upstream pproxy first.
@@ -64,8 +65,9 @@ pproxy's private networking implementation.
 - The `eggress.pproxy` submodule is a pure Python module that re-exports
   functions from `eggress._eggress`. It does not import or depend on the
   upstream `pproxy` package.
-- Eggress owns the top-level `pproxy` namespace when installed.
-- Upstream pproxy and Eggress must not be installed together.
+- The optional `eggress-pproxy-compat` distribution owns the top-level `pproxy`
+  namespace; the canonical Eggress wheel does not install it.
+- Upstream pproxy and the compatibility distribution must not be installed together.
 
 ## Import examples
 

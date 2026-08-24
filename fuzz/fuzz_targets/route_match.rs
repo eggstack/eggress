@@ -230,7 +230,7 @@ fn pick_transport(data: &[u8]) -> TransportKind {
     if data.is_empty() {
         return TransportKind::Tcp;
     }
-    if data[0].is_multiple_of(2) {
+    if data[0] % 2 == 0 {
         TransportKind::Tcp
     } else {
         TransportKind::Udp

@@ -637,7 +637,10 @@ async fn execute_http_forward(
                     };
                 }
 
-                let body_result = tokio::time::timeout(config.connect_timeout, async {
+                // The connect timeout ends once the upstream route has been
+                // opened. Uploading a request body is an independent stream
+                // operation and may legitimately take longer.
+                let body_result = async {
                     let report = eggress_protocol_http::copy_request_body(
                         &mut client,
                         &mut opened.stream,
@@ -647,11 +650,11 @@ async fn execute_http_forward(
                     .await?;
                     opened.stream.flush().await?;
                     Ok::<_, eggress_protocol_http::HttpError>(report)
-                })
+                }
                 .await;
                 let body_report = match body_result {
-                    Ok(Ok(report)) => report,
-                    Ok(Err(_)) => {
+                    Ok(report) => report,
+                    Err(_) => {
                         let _ = opened.stream.shutdown().await;
                         let _ = client.shutdown().await;
                         return SessionReport {
@@ -662,23 +665,6 @@ async fn execute_http_forward(
                             bytes_downstream: total_bytes_downstream,
                             outcome: SessionOutcome::ClientProtocolError,
                             failure: Some(FailureCategory::Protocol),
-                            rule_id: last_rule_id,
-                            upstream_group: last_upstream_group,
-                            upstream_id: last_upstream_id,
-                            selection_reason: last_selection_reason,
-                        };
-                    }
-                    Err(_) => {
-                        let _ = opened.stream.shutdown().await;
-                        let _ = client.shutdown().await;
-                        return SessionReport {
-                            protocol: None,
-                            target: last_target,
-                            route: last_route,
-                            bytes_upstream: total_bytes_upstream + head_bytes,
-                            bytes_downstream: total_bytes_downstream,
-                            outcome: SessionOutcome::RelayFailed,
-                            failure: Some(FailureCategory::Relay),
                             rule_id: last_rule_id,
                             upstream_group: last_upstream_group,
                             upstream_id: last_upstream_id,

@@ -563,6 +563,8 @@ pub struct ServiceSupervisor {
 /// Native configuration startup always uses the default value.
 #[derive(Debug, Clone, Default)]
 pub struct CompatibilityOptions {
+    /// Whether the caller is the explicitly opt-in pproxy compatibility executable.
+    pub compatibility_mode: bool,
     pub auth_timeout: Option<Duration>,
     pub system_proxy: bool,
     /// Compatibility-only debug propagation. Native Eggress never enables it.
@@ -716,7 +718,11 @@ impl ServiceSupervisor {
         let health_cancel = CancellationToken::new();
         let admin_cancel = CancellationToken::new();
         #[cfg(feature = "ssh")]
-        let ssh_sessions = Arc::new(eggress_transport_ssh::SshSessionCache::new());
+        let ssh_sessions = Arc::new(if compatibility_options.compatibility_mode {
+            eggress_transport_ssh::SshSessionCache::new_compatibility()
+        } else {
+            eggress_transport_ssh::SshSessionCache::new()
+        });
 
         let tasks = TaskTracker::new();
         let connection_tasks = TaskTracker::new();
@@ -792,8 +798,8 @@ impl ServiceSupervisor {
     /// 1. Load and compile new config
     /// 2. Classify unsupported changes (reject if listener topology changed)
     /// 3. Build new snapshot with previous snapshot for Arc reuse
-    /// 4. Atomically swap routing and snapshot
-    /// 5. Update stored rt_config for subsequent reloads
+    /// 4. Update stored rt_config for subsequent reloads
+    /// 5. Atomically swap routing and snapshot
     pub fn reload_config(&mut self) -> ReloadResult {
         let config_path = match self.config_path {
             Some(ref p) => p.clone(),
@@ -830,6 +836,10 @@ impl ServiceSupervisor {
         let upstream_count = new_snapshot.upstreams.len();
         let gen = new_snapshot.generation;
 
+        // Keep the configuration used by the next reload in sync before making
+        // the new snapshot visible to readers.
+        self.rt_config = new_rt_config;
+
         // Snapshot must be published before the router swap. Readers that observe
         // the new generation via `snapshot.load()` pull the router from that
         // same snapshot Arc, so any reader seeing the new generation also sees
@@ -837,8 +847,6 @@ impl ServiceSupervisor {
         let new_snapshot = Arc::new(new_snapshot);
         self.state.snapshot.store(new_snapshot.clone());
         self.state.routing.swap_arc(new_snapshot.router.clone());
-
-        self.rt_config = new_rt_config;
 
         ReloadResult::Applied {
             generation: gen,
@@ -1475,7 +1483,7 @@ impl ServiceSupervisor {
                             }) as Arc<dyn eggress_server::UdpService>
                         });
 
-                        active.fetch_add(1, Ordering::Relaxed);
+                        active.fetch_add(1, Ordering::AcqRel);
 
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
@@ -1495,7 +1503,7 @@ impl ServiceSupervisor {
                                             Ok(c) => c,
                                             Err(e) => {
                                                 tracing::error!(%peer, "TLS config error: {e}");
-                                                active.fetch_sub(1, Ordering::Relaxed);
+                                                active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
@@ -1503,7 +1511,7 @@ impl ServiceSupervisor {
                                         Ok(s) => s,
                                         Err(e) => {
                                             tracing::debug!(%peer, "TLS accept failed: {e}");
-                                            active.fetch_sub(1, Ordering::Relaxed);
+                                            active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
                                     }
@@ -1572,7 +1580,7 @@ impl ServiceSupervisor {
                                 }
                             };
 
-                            active.fetch_sub(1, Ordering::Relaxed);
+                            active.fetch_sub(1, Ordering::Release);
 
                             tracing::info!(
                                 protocol = ?report.protocol,
@@ -1690,7 +1698,7 @@ impl ServiceSupervisor {
                             }) as Arc<dyn eggress_server::UdpService>
                         });
 
-                        active.fetch_add(1, Ordering::Relaxed);
+                        active.fetch_add(1, Ordering::AcqRel);
 
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
@@ -1710,7 +1718,7 @@ impl ServiceSupervisor {
                                             Ok(c) => c,
                                             Err(e) => {
                                                 tracing::error!("TLS config error for unix connection: {e}");
-                                                active.fetch_sub(1, Ordering::Relaxed);
+                                                active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
@@ -1718,7 +1726,7 @@ impl ServiceSupervisor {
                                         Ok(s) => s,
                                         Err(e) => {
                                             tracing::debug!("TLS accept failed for unix connection: {e}");
-                                            active.fetch_sub(1, Ordering::Relaxed);
+                                            active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
                                     }
@@ -1792,7 +1800,7 @@ impl ServiceSupervisor {
                                 }
                             };
 
-                            active.fetch_sub(1, Ordering::Relaxed);
+                            active.fetch_sub(1, Ordering::Release);
 
                             tracing::info!(
                                 protocol = ?report.protocol,
@@ -1926,6 +1934,8 @@ impl ServiceSupervisor {
                             let protocols = listener_protocols.clone();
                             let connection_limit = connection_limit;
                             let tls_client_config_for_connection = tls_client_config_for_listener.clone();
+                            #[cfg(feature = "ssh")]
+                            let listener_ssh_sessions_for_connection = listener_ssh_sessions.clone();
                             conn_tasks.spawn(async move {
                                 let result = eggress_protocol_h3::serve_connection(
                                     connection,
@@ -1939,6 +1949,8 @@ impl ServiceSupervisor {
                                         let protocols = protocols.clone();
                                         let active_streams = active_streams.clone();
                                         let tls_client_config = tls_client_config_for_connection.clone();
+                                        #[cfg(feature = "ssh")]
+                                        let ssh_sessions = listener_ssh_sessions_for_connection.clone();
                                         async move {
                                             let slot = match ListenerConnectionSlot::try_acquire(&active_streams, connection_limit) {
                                                 Some(slot) => slot,
@@ -1976,7 +1988,7 @@ impl ServiceSupervisor {
                                                 fixed_target: None,
                                                 local_bind: None,
                                                 #[cfg(feature = "ssh")]
-                                                ssh_sessions: Some(listener_ssh_sessions.clone()),
+                                                ssh_sessions: Some(ssh_sessions),
                                             };
                                             let pending = eggress_server::accept::PendingTunnel {
                                                 target: target.clone(),
@@ -2110,7 +2122,7 @@ impl ServiceSupervisor {
                         let conn_cancel = conn_cancel.child_token();
                         let generation = state.snapshot.load().generation;
 
-                        active.fetch_add(1, Ordering::Relaxed);
+                        active.fetch_add(1, Ordering::AcqRel);
 
                         let tls_config = prepared_listener.tls.clone();
                         let ss_config = prepared_listener.shadowsocks.clone();
@@ -2155,7 +2167,7 @@ impl ServiceSupervisor {
                                             Ok(c) => c,
                                             Err(e) => {
                                                 tracing::error!(%peer, "TLS config error: {e}");
-                                                active.fetch_sub(1, Ordering::Relaxed);
+                                                active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
@@ -2168,7 +2180,7 @@ impl ServiceSupervisor {
                                         Ok(s) => s,
                                         Err(e) => {
                                             tracing::debug!(%peer, "TLS accept failed: {e}");
-                                            active.fetch_sub(1, Ordering::Relaxed);
+                                            active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
                                     }
@@ -2257,7 +2269,7 @@ impl ServiceSupervisor {
                                 if let Err(error) = advanced_result {
                                     tracing::debug!(%peer, %error, "advanced listener ended");
                                 }
-                                active.fetch_sub(1, Ordering::Relaxed);
+                                active.fetch_sub(1, Ordering::Release);
                                 return;
                             }
 
@@ -2279,7 +2291,7 @@ impl ServiceSupervisor {
                                 }
                             };
 
-                            active.fetch_sub(1, Ordering::Relaxed);
+                            active.fetch_sub(1, Ordering::Release);
 
                             if compatibility_options.debug && report.failure.is_some() {
                                 tracing::error!(
@@ -2727,7 +2739,7 @@ impl ServiceSupervisor {
 
             let deadline = tokio::time::Instant::now() + shutdown_grace;
             loop {
-                let active = active_connections.load(Ordering::Relaxed);
+                let active = active_connections.load(Ordering::Acquire);
                 if active == 0 {
                     tracing::info!("all connections drained");
                     break;
@@ -2938,15 +2950,15 @@ protocols = ["http"]
     #[test]
     fn active_connections_counter_increments_and_decrements() {
         let active = Arc::new(AtomicU64::new(0));
-        assert_eq!(active.load(Ordering::Relaxed), 0);
-        active.fetch_add(1, Ordering::Relaxed);
-        assert_eq!(active.load(Ordering::Relaxed), 1);
-        active.fetch_add(1, Ordering::Relaxed);
-        assert_eq!(active.load(Ordering::Relaxed), 2);
-        active.fetch_sub(1, Ordering::Relaxed);
-        assert_eq!(active.load(Ordering::Relaxed), 1);
-        active.fetch_sub(1, Ordering::Relaxed);
-        assert_eq!(active.load(Ordering::Relaxed), 0);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        active.fetch_add(1, Ordering::AcqRel);
+        assert_eq!(active.load(Ordering::Acquire), 1);
+        active.fetch_add(1, Ordering::AcqRel);
+        assert_eq!(active.load(Ordering::Acquire), 2);
+        active.fetch_sub(1, Ordering::Release);
+        assert_eq!(active.load(Ordering::Acquire), 1);
+        active.fetch_sub(1, Ordering::Release);
+        assert_eq!(active.load(Ordering::Acquire), 0);
     }
 
     #[test]

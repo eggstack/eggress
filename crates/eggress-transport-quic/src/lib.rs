@@ -220,14 +220,23 @@ impl QuicClient {
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect("valid ephemeral address"))
             .map_err(|e| QuicError::Endpoint(e.to_string()))?;
         let client_config = if config.insecure {
-            let mut tls = rustls::ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
-                .with_no_client_auth();
-            tls.alpn_protocols = config.alpn_protocols.clone();
-            let crypto = QuinnTlsClientConfig::try_from(Arc::new(tls))
-                .map_err(|e| QuicError::Tls(e.to_string()))?;
-            ClientConfig::new(Arc::new(crypto))
+            #[cfg(any(test, debug_assertions, feature = "insecure-quic"))]
+            {
+                let mut tls = rustls::ClientConfig::builder()
+                    .dangerous()
+                    .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
+                    .with_no_client_auth();
+                tls.alpn_protocols = config.alpn_protocols.clone();
+                let crypto = QuinnTlsClientConfig::try_from(Arc::new(tls))
+                    .map_err(|e| QuicError::Tls(e.to_string()))?;
+                ClientConfig::new(Arc::new(crypto))
+            }
+            #[cfg(not(any(test, debug_assertions, feature = "insecure-quic")))]
+            {
+                return Err(QuicError::Tls(
+                    "insecure QUIC requires the insecure-quic feature".to_string(),
+                ));
+            }
         } else {
             use rustls_platform_verifier::ConfigVerifierExt;
             let mut tls = rustls::ClientConfig::with_platform_verifier()
@@ -382,9 +391,11 @@ impl QuicListener {
     }
 }
 
+#[cfg(any(test, debug_assertions, feature = "insecure-quic"))]
 #[derive(Debug)]
 struct InsecureVerifier;
 
+#[cfg(any(test, debug_assertions, feature = "insecure-quic"))]
 impl rustls::client::danger::ServerCertVerifier for InsecureVerifier {
     fn verify_server_cert(
         &self,

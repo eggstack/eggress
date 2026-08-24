@@ -4,6 +4,7 @@
 //! not expose remote command, SFTP, agent-forwarding, or SSH-server APIs.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -79,22 +80,44 @@ impl std::fmt::Debug for SshSessionKey {
 #[derive(Clone)]
 struct CompatClient {
     forwarded_channels: Option<mpsc::Sender<russh::Channel<russh::client::Msg>>>,
+    host: String,
+    port: u16,
+    host_key_policy: SshHostKeyPolicy,
 }
 
 impl CompatClient {
-    fn cached() -> Self {
+    fn cached(key: &SshSessionKey, host_key_policy: SshHostKeyPolicy) -> Self {
         Self {
             forwarded_channels: None,
+            host: key.host.clone(),
+            port: key.port,
+            host_key_policy,
         }
     }
 
     fn remote_forward(
         forwarded_channels: mpsc::Sender<russh::Channel<russh::client::Msg>>,
+        key: &SshSessionKey,
+        host_key_policy: SshHostKeyPolicy,
     ) -> Self {
         Self {
             forwarded_channels: Some(forwarded_channels),
+            host: key.host.clone(),
+            port: key.port,
+            host_key_policy,
         }
     }
+}
+
+/// Policy used to verify the SSH server's host key.
+#[derive(Clone, Debug)]
+pub enum SshHostKeyPolicy {
+    /// Verify against the user's default OpenSSH known_hosts file.
+    KnownHosts,
+    /// Verify against an explicitly selected known_hosts file.
+    KnownHostsFile(PathBuf),
+    /// Disable verification for the explicitly selected pproxy compatibility path.
+    InsecureCompatibility,
 }
 
 impl russh::client::Handler for CompatClient {
@@ -102,11 +125,19 @@ impl russh::client::Handler for CompatClient {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // pproxy 2.7.9 passes known_hosts=None. This behavior is isolated to
-        // the compatibility transport and is intentionally not a native API.
-        Ok(true)
+        Ok(match &self.host_key_policy {
+            SshHostKeyPolicy::KnownHosts => {
+                russh::keys::check_known_hosts(&self.host, self.port, server_public_key)
+                    .unwrap_or(false)
+            }
+            SshHostKeyPolicy::KnownHostsFile(path) => {
+                russh::keys::check_known_hosts_path(&self.host, self.port, server_public_key, path)
+                    .unwrap_or(false)
+            }
+            SshHostKeyPolicy::InsecureCompatibility => true,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -183,14 +214,40 @@ impl SshRemoteForward {
 /// The cache is deliberately explicit so shutdown can drop all session
 /// handles. A closed handle is discarded and recreated on the next channel
 /// request.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct SshSessionCache {
     sessions: Arc<Mutex<HashMap<SshSessionKey, Arc<SessionHandle>>>>,
+    host_key_policy: SshHostKeyPolicy,
+}
+
+impl Default for SshSessionCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SshSessionCache {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            host_key_policy: SshHostKeyPolicy::KnownHosts,
+        }
+    }
+
+    /// Construct the explicitly opted-in pproxy compatibility cache.
+    pub fn new_compatibility() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            host_key_policy: SshHostKeyPolicy::InsecureCompatibility,
+        }
+    }
+
+    /// Construct a cache using a caller-selected known_hosts file.
+    pub fn with_known_hosts(path: PathBuf) -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            host_key_policy: SshHostKeyPolicy::KnownHostsFile(path),
+        }
     }
 
     /// Open a direct TCP channel, reusing a live authenticated session.
@@ -253,7 +310,12 @@ impl SshSessionCache {
         }
         let (sender, channels) = mpsc::channel(128);
         let session = Arc::new(
-            connect_authenticated(key, transport, CompatClient::remote_forward(sender)).await?,
+            connect_authenticated(
+                key.clone(),
+                transport,
+                CompatClient::remote_forward(sender, &key, self.host_key_policy.clone()),
+            )
+            .await?,
         );
         let assigned_port = session
             .tcpip_forward(address, u32::from(port))
@@ -285,11 +347,16 @@ impl SshSessionCache {
             sessions.remove(&key);
         }
 
-        tracing::warn!(
-            host = %key.host,
-            port = key.port,
-            "SSH compatibility transport disables host-key verification"
-        );
+        if matches!(
+            &self.host_key_policy,
+            SshHostKeyPolicy::InsecureCompatibility
+        ) {
+            tracing::warn!(
+                host = %key.host,
+                port = key.port,
+                "SSH compatibility transport disables host-key verification"
+            );
+        }
         let config = russh::client::Config {
             keepalive_interval: Some(Duration::from_secs(60)),
             keepalive_max: 3,
@@ -299,7 +366,7 @@ impl SshSessionCache {
             connect_authenticated_with_config(
                 key.clone(),
                 transport,
-                CompatClient::cached(),
+                CompatClient::cached(&key, self.host_key_policy.clone()),
                 config,
             )
             .await?,

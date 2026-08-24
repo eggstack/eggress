@@ -77,8 +77,13 @@ impl UdpAssociationRegistry {
     }
 
     pub async fn close_all(&self) {
-        let assocs: Vec<Arc<UdpAssociation>> =
-            self.associations.read().await.values().cloned().collect();
+        let assocs: Vec<Arc<UdpAssociation>> = self
+            .associations
+            .write()
+            .await
+            .drain()
+            .map(|(_, assoc)| assoc)
+            .collect();
         for assoc in assocs {
             assoc.close();
         }
@@ -322,6 +327,7 @@ mod tests {
         registry.close_all().await;
         assert!(!a1.is_open());
         assert!(!a2.is_open());
+        assert_eq!(registry.active_count().await, 0);
     }
 
     #[tokio::test]

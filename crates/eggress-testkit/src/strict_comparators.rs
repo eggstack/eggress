@@ -609,10 +609,12 @@ pub fn run_comparator(
         | "compare_cli_flag"
         | "compare_cipher_roundtrip"
         | "compare_composition_validity" => {
-            vec![ComparisonResult::matched(
+            vec![ComparisonResult::mismatched(
                 comparator_name,
-                "dispatch_only",
+                "not_executed",
                 "requires_extra_args",
+                MismatchKind::NotExecuted,
+                MismatchClassification::HarnessDefect,
             )]
         }
         _ => vec![ComparisonResult::mismatched(
@@ -696,6 +698,18 @@ mod tests {
         let results = compare_namespace_set(&oracle, &candidate);
         assert!(!results.is_empty());
         assert!(results.iter().any(|r| !r.matched));
+    }
+
+    #[test]
+    fn dispatcher_does_not_fabricate_unparameterized_comparisons() {
+        let results = run_comparator("compare_cli_flag", &oracle_obs(), &candidate_obs());
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].matched);
+        assert_eq!(results[0].mismatch_kind, Some(MismatchKind::NotExecuted));
+        assert_eq!(
+            results[0].classification,
+            MismatchClassification::HarnessDefect
+        );
     }
 
     #[test]
@@ -1156,6 +1170,7 @@ mod tests {
     fn run_comparator_extra_args_passthrough() {
         let results = run_comparator("compare_namespace_set", &oracle_obs(), &candidate_obs());
         assert_eq!(results.len(), 1);
-        assert!(results[0].matched);
+        assert!(!results[0].matched);
+        assert_eq!(results[0].mismatch_kind, Some(MismatchKind::NotExecuted));
     }
 }

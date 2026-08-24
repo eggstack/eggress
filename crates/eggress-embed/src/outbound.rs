@@ -146,13 +146,7 @@ impl OutboundConnector {
 
         if self.direct {
             let stream = eggress_core::connector::DirectConnector
-                .connect_with_options(
-                    &target,
-                    &eggress_core::connector::ConnectOptions {
-                        enforce_dns_rebinding_check: true,
-                        ..Default::default()
-                    },
-                )
+                .connect_with_options(&target, &eggress_core::connector::ConnectOptions::default())
                 .await
                 .map_err(|e| EggressError::Runtime(e.to_string()))?;
             return Ok((

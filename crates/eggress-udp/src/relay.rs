@@ -185,7 +185,11 @@ async fn handle_client_datagram(
                                                 flow_socket.recv_from(&mut recv_buf),
                                             ) => result,
                                         };
-                                        let Ok(Ok((n, _peer))) = result else { break };
+                                        let Ok(Ok((n, peer))) = result else { break };
+                                        if peer != relay_addr {
+                                            tracing::trace!(%peer, %relay_addr, "discarding UDP response from unexpected peer");
+                                            continue;
+                                        }
                                         if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                             if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
                                         let _ = flow_response_tx.try_send(ResponseMsg {

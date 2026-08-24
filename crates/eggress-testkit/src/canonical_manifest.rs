@@ -1723,7 +1723,7 @@ mod tests {
         );
     }
 
-    /// The installed wheel owns the bounded top-level pproxy namespace.
+    /// The optional compatibility distribution owns the top-level pproxy namespace.
     #[test]
     fn python_importable_package_matches_wheel_contract() {
         let path = match find_canonical_manifest_path() {
@@ -1764,8 +1764,16 @@ mod tests {
             fs::read_to_string(workspace_root.join("crates/eggress-python/pyproject.toml"))
                 .expect("Python packaging configuration should exist");
         assert!(
-            pyproject.contains("pproxy/**/*.py"),
-            "the wheel packaging configuration must include the top-level pproxy package"
+            !pyproject.contains("pproxy/**/*.py") && !pyproject.contains("pproxy.__main__"),
+            "the canonical eggress wheel must not install the top-level pproxy package"
+        );
+        let compat_pyproject =
+            fs::read_to_string(workspace_root.join("python-pproxy-compat/pyproject.toml"))
+                .expect("the opt-in compatibility packaging configuration should exist");
+        assert!(
+            compat_pyproject.contains("name = \"eggress-pproxy-compat\"")
+                && compat_pyproject.contains("package-dir = {pproxy = \"../python/pproxy\"}"),
+            "the optional compatibility distribution must own the top-level pproxy package"
         );
     }
 

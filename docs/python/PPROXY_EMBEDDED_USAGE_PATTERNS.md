@@ -3,8 +3,9 @@
 Comparison of pproxy's Python API patterns and their eggress equivalents.
 
 The pproxy snippets below describe the frozen `pproxy==2.7.9` oracle. The
-Eggress wheel installs a bounded top-level `pproxy` package for these public
-factories; translation and managed-service helpers remain under `eggress.pproxy`.
+The optional `eggress-pproxy-compat` distribution installs a bounded top-level
+`pproxy` package for these public factories; translation and managed-service
+helpers remain under `eggress.pproxy`.
 
 ## 1. pproxy Usage Patterns
 

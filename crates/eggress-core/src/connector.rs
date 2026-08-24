@@ -9,8 +9,9 @@ use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 ///
 /// Used as a domain-resolution guard: after resolving a domain name,
 /// this checks whether the result points to a private/reserved/special-use
-/// range. Literal IP targets bypass this check by default for pproxy
-/// compatibility; trusted embed callers can opt in through `ConnectOptions`.
+/// range. The same option also applies to literal IP targets so callers get
+/// one consistent policy; the default remains permissive for pproxy
+/// compatibility.
 ///
 /// Rejected ranges:
 /// - IPv4: loopback (127.0.0.0/8), link-local (169.254.0.0/16),
@@ -108,10 +109,6 @@ fn is_v6_documentation(ip: &Ipv6Addr) -> bool {
 }
 
 /// Check if a resolved IP address represents a DNS rebinding risk.
-///
-/// Used as a domain-resolution guard: after resolving a domain name,
-/// this checks whether the result points to a private/reserved range.
-/// Literal IP targets bypass this check for pproxy compatibility.
 pub fn is_dns_rebinding_risk(ip: &IpAddr) -> bool {
     is_reserved_or_private_ip(ip)
 }
@@ -175,7 +172,7 @@ async fn resolve_target(
             let resolved = addrs
                 .next()
                 .ok_or_else(|| ConnectError::DnsResolution("no addresses found".to_string()))?;
-            if is_dns_rebinding_risk(&resolved.ip()) {
+            if enforce_dns_rebinding_check && is_dns_rebinding_risk(&resolved.ip()) {
                 return Err(ConnectError::ReservedTarget(resolved.ip()));
             }
             Ok(resolved)
@@ -222,6 +219,20 @@ mod tests {
         assert_eq!(&buf, b"ping");
 
         jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_policy_applies_consistently_to_domains() {
+        let target = TargetAddr {
+            host: TargetHost::Domain("localhost".to_string()),
+            port: 80,
+        };
+
+        assert!(resolve_target(&target, false).await.is_ok());
+        assert!(matches!(
+            resolve_target(&target, true).await,
+            Err(ConnectError::ReservedTarget(_))
+        ));
     }
 
     #[test]
@@ -380,7 +391,15 @@ mod tests {
             host: TargetHost::Domain("localhost".to_string()),
             port: 1,
         };
-        let result = Connector::connect(&connector, &target).await;
+        let result = connector
+            .connect_with_options(
+                &target,
+                &ConnectOptions {
+                    enforce_dns_rebinding_check: true,
+                    ..Default::default()
+                },
+            )
+            .await;
         assert!(matches!(result, Err(ConnectError::ReservedTarget(_))));
     }
 }

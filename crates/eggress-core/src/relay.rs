@@ -1,4 +1,8 @@
-use tokio::io::{self, AsyncWriteExt};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::task::JoinSet;
 
 use crate::BoxStream;
 
@@ -20,6 +24,23 @@ pub struct RelayResult {
     pub termination_reason: TerminationReason,
 }
 
+async fn copy_direction<R, W>(reader: &mut R, writer: &mut W, counter: &AtomicU64) -> io::Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            writer.shutdown().await?;
+            return Ok(());
+        }
+        writer.write_all(&buf[..n]).await?;
+        counter.fetch_add(n as u64, Ordering::Relaxed);
+    }
+}
+
 /// Relay data bidirectionally between two streams.
 ///
 /// When one side closes its write half, the other side's write half is shut down
@@ -28,44 +49,39 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
     let (mut client_read, mut client_write) = io::split(client);
     let (mut server_read, mut server_write) = io::split(server);
 
-    let client_to_server = tokio::spawn(async move {
-        let n = io::copy(&mut client_read, &mut server_write).await?;
-        server_write.shutdown().await?;
-        Ok::<u64, std::io::Error>(n)
+    let bytes_upstream = Arc::new(AtomicU64::new(0));
+    let bytes_downstream = Arc::new(AtomicU64::new(0));
+    let mut tasks = JoinSet::new();
+
+    let upstream_counter = Arc::clone(&bytes_upstream);
+    tasks.spawn(async move {
+        copy_direction(&mut client_read, &mut server_write, &upstream_counter).await
     });
 
-    let server_to_client = tokio::spawn(async move {
-        let n = io::copy(&mut server_read, &mut client_write).await?;
-        client_write.shutdown().await?;
-        Ok::<u64, std::io::Error>(n)
+    let downstream_counter = Arc::clone(&bytes_downstream);
+    tasks.spawn(async move {
+        copy_direction(&mut server_read, &mut client_write, &downstream_counter).await
     });
 
-    let a_result = client_to_server.await;
-    let b_result = server_to_client.await;
-
-    let (a_bytes, a_error) = match a_result {
-        Ok(Ok(n)) => (n, false),
-        Ok(Err(_)) => (0, true),
-        Err(_) => (0, true),
-    };
-
-    let (b_bytes, b_error) = match b_result {
-        Ok(Ok(n)) => (n, false),
-        Ok(Err(_)) => (0, true),
-        Err(_) => (0, true),
-    };
-
-    let termination_reason = match (a_error, b_error) {
-        (true, true) => TerminationReason::Error,
-        (true, false) => TerminationReason::ClientClosed,
-        (false, true) => TerminationReason::ServerClosed,
-        (false, false) => TerminationReason::BothClosed,
-    };
+    let mut had_error = false;
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) | Err(_) => {
+                had_error = true;
+                tasks.abort_all();
+            }
+        }
+    }
 
     RelayResult {
-        bytes_upstream: a_bytes,
-        bytes_downstream: b_bytes,
-        termination_reason,
+        bytes_upstream: bytes_upstream.load(Ordering::Relaxed),
+        bytes_downstream: bytes_downstream.load(Ordering::Relaxed),
+        termination_reason: if had_error {
+            TerminationReason::Error
+        } else {
+            TerminationReason::BothClosed
+        },
     }
 }
 

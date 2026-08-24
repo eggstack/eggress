@@ -12,6 +12,7 @@ readme = "README.md"
 
 [features]
 default = []
+insecure-quic = []
 
 [dependencies]
 bytes.workspace = true

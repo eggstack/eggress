@@ -6,11 +6,12 @@ use std::collections::HashMap;
 /// them with `***`. Preserves the rest of the URI structure.
 pub fn redact_proxy_uri(uri: &str) -> String {
     if let Some(at_pos) = uri.rfind('@') {
-        let prefix = &uri[..at_pos];
+        let authority_start = uri.find("://").map_or(0, |pos| pos + 3);
+        let userinfo = &uri[authority_start..at_pos];
         let suffix = &uri[at_pos..]; // includes @
-        if let Some(colon_pos) = prefix.rfind(':') {
-            let before = &uri[..colon_pos];
-            return format!("{}:***{}", before, suffix);
+        if let Some(colon_pos) = userinfo.rfind(':') {
+            let password_start = authority_start + colon_pos;
+            return format!("{}:***{}", &uri[..password_start], suffix);
         }
     }
     uri.to_string()
@@ -55,6 +56,14 @@ mod tests {
         assert_eq!(
             redact_proxy_uri("http://proxy.example.com:8080"),
             "http://proxy.example.com:8080"
+        );
+    }
+
+    #[test]
+    fn redact_uri_with_username_only() {
+        assert_eq!(
+            redact_proxy_uri("http://user@proxy.example.com:8080"),
+            "http://user@proxy.example.com:8080"
         );
     }
 

@@ -3097,7 +3097,7 @@ id = "python.importable_package"
 category = "python"
 pproxy_surface = "import pproxy"
 pproxy_behavior = "import pproxy to access Server(), Connection, etc."
-eggress_behavior = "The single eggress distribution installs the eggress namespace and a bounded top-level pproxy compatibility namespace alongside it."
+eggress_behavior = "The canonical eggress distribution installs the eggress namespace; the opt-in eggress-pproxy-compat distribution installs the bounded top-level pproxy compatibility namespace."
 tier = "drop_in"
 parser = "not_applicable"
 translator = "not_applicable"
@@ -3107,13 +3107,13 @@ cli = "not_applicable"
 python = "complete"
 docs = "complete"
 evidence = "integration"
-tests = ["test_wheel_import_smoke.py::test_import_top_level_pproxy_package"]
+tests = ["test_wheel_import_smoke.py::test_import_top_level_pproxy_package", "python-pproxy-compat/pyproject.toml"]
 upstream_evidence = "setup.py:packages=[\"pproxy\"] and pproxy package exports"
 implementation = "python/pproxy and crates/eggress-python"
 status = "matched"
 strict_closure_required = false
 strict_phase = "4"
-notes = "The single eggress wheel intentionally owns the bounded top-level pproxy namespace. Installed-wheel smoke tests verify importability and representative public exports; this does not imply that every private upstream pproxy internal is implemented."
+notes = "The top-level namespace is intentionally opt-in: install egress-pproxy-compat alongside eggress when it is required. Installed-wheel smoke tests verify importability and representative public exports; this does not imply that every private upstream pproxy internal is implemented."
 
 [[capability]]
 id = "python.translate_pproxy_args"

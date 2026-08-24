@@ -42,11 +42,7 @@ pub fn inspect_gnome_proxy(runner: &dyn CommandRunner) -> Result<SystemProxySett
         raw.insert("socks_proxy".to_string(), v.clone());
     }
 
-    let no_proxy = ignore_hosts.map(|h| {
-        h.trim_start_matches('[')
-            .trim_end_matches(']')
-            .replace("', '", ",")
-    });
+    let no_proxy = ignore_hosts.map(|h| parse_gsettings_string_array(&h));
 
     if let Some(ref v) = no_proxy {
         raw.insert("no_proxy".to_string(), v.clone());
@@ -230,14 +226,58 @@ fn parse_proxy_address(addr: &str) -> Option<(String, u16)> {
         .or_else(|| addr.strip_prefix("socks5://"))
         .unwrap_or(addr);
 
+    if let Some(addr) = addr.strip_prefix('[') {
+        let end = addr.find(']')?;
+        let host = &addr[..end];
+        let port = addr.get(end + 1..)?.strip_prefix(':')?.parse().ok()?;
+        return Some((host.to_string(), port));
+    }
+
     if let Some(pos) = addr.rfind(':') {
         let host = addr[..pos].to_string();
         let port_str = &addr[pos + 1..];
-        if let Ok(port) = port_str.parse::<u16>() {
-            return Some((host, port));
+        if !host.contains(':') {
+            if let Ok(port) = port_str.parse::<u16>() {
+                return Some((host, port));
+            }
         }
     }
     None
+}
+
+fn parse_gsettings_string_array(value: &str) -> String {
+    let value = value.trim();
+    let Some(value) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) else {
+        return value.to_string();
+    };
+
+    let mut entries = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    for ch in value.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+        } else if ch == '\\' && quoted {
+            escaped = true;
+        } else if ch == '\'' {
+            quoted = !quoted;
+        } else if ch == ',' && !quoted {
+            let entry = current.trim();
+            if !entry.is_empty() {
+                entries.push(entry.to_string());
+            }
+            current.clear();
+        } else {
+            current.push(ch);
+        }
+    }
+    let entry = current.trim();
+    if !entry.is_empty() {
+        entries.push(entry.to_string());
+    }
+    entries.join(",")
 }
 
 #[cfg(test)]
@@ -395,6 +435,27 @@ mod tests {
         assert_eq!(
             parse_proxy_address("proxy:8080"),
             Some(("proxy".to_string(), 8080))
+        );
+    }
+
+    #[test]
+    fn parse_proxy_address_ipv6() {
+        assert_eq!(
+            parse_proxy_address("http://[::1]:8080"),
+            Some(("::1".to_string(), 8080))
+        );
+    }
+
+    #[test]
+    fn parse_gsettings_single_item_array() {
+        assert_eq!(parse_gsettings_string_array("['localhost']"), "localhost");
+    }
+
+    #[test]
+    fn parse_gsettings_array_preserves_commas_inside_values() {
+        assert_eq!(
+            parse_gsettings_string_array("['localhost', 'foo,bar']"),
+            "localhost,foo,bar"
         );
     }
 }

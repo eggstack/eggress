@@ -185,6 +185,7 @@ fn main() -> ExitCode {
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
     let compatibility_options = eggress_runtime::CompatibilityOptions {
+        compatibility_mode: true,
         auth_timeout: Some(pproxy_args.effective_auth_timeout()),
         system_proxy: pproxy_args.system_proxy,
         debug: pproxy_args.debug,
@@ -218,7 +219,7 @@ fn init_logging(pproxy_args: &eggress_pproxy_compat::PproxyArgs) {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level)),
         )
-        .compact()
+        .pretty()
         .init();
 }
 

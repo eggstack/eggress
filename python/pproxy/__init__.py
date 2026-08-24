@@ -1,8 +1,8 @@
 """Bounded, Rust-backed compatibility package for ``pproxy==2.7.9``.
 
-The distribution remains named ``eggress``.  This package intentionally owns
-the import namespace when Eggress is installed; do not install it alongside
-the upstream ``pproxy`` distribution in one environment.
+This package is shipped by the opt-in ``eggress-pproxy-compat`` distribution;
+the canonical ``eggress`` distribution does not install this namespace.
+Do not install it alongside the upstream ``pproxy`` distribution in one environment.
 
 .. note::
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 try:
     from eggress._eggress import __version__ as __version__
 except ImportError:
-    __version__ = "1.0.1"
+    __version__ = "1.0.2"
 
 import sys
 from typing import Any, Sequence

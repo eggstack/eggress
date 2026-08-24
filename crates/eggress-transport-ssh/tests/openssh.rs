@@ -179,7 +179,7 @@ async fn openssh_public_key_auth_and_direct_tcpip_echo() {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
-    let cache = SshSessionCache::new();
+    let cache = SshSessionCache::new_compatibility();
     assert!(!format!("{:?}", fixture.key(0)).contains(&fixture.private_key.display().to_string()));
     let mut channel = open_channel(&cache, &fixture, echo_addr, 0).await.unwrap();
     channel.write_all(b"ssh-echo").await.unwrap();
@@ -196,7 +196,7 @@ async fn openssh_password_failure_is_redacted_and_reconnect_is_explicit() {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
-    let cache = SshSessionCache::new();
+    let cache = SshSessionCache::new_compatibility();
     let error = match open_channel_with_key(
         &cache,
         fixture.password_key("definitely-not-the-password"),
@@ -245,7 +245,7 @@ async fn openssh_password_auth_and_direct_tcpip_echo_when_configured() {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
-    let cache = SshSessionCache::new();
+    let cache = SshSessionCache::new_compatibility();
     let mut channel = open_channel_with_key(
         &cache,
         fixture.password_key(&password),
@@ -280,7 +280,7 @@ async fn openssh_supports_concurrent_channels_over_one_cached_session() {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
-    let cache = std::sync::Arc::new(SshSessionCache::new());
+    let cache = std::sync::Arc::new(SshSessionCache::new_compatibility());
     let mut tasks = Vec::new();
     for index in 0..8u8 {
         let cache = cache.clone();
@@ -317,7 +317,7 @@ async fn openssh_chain_tunnels_second_ssh_hop_through_first() {
         return;
     };
     let (echo_addr, echo_task) = start_echo().await;
-    let cache = SshSessionCache::new();
+    let cache = SshSessionCache::new_compatibility();
 
     let first_transport: BoxStream =
         Box::new(tokio::net::TcpStream::connect(first.addr).await.unwrap());
@@ -365,7 +365,7 @@ async fn openssh_forwards_to_remote_unix_socket() {
         }
     });
     let stream: BoxStream = Box::new(tokio::net::TcpStream::connect(fixture.addr).await.unwrap());
-    let cache = SshSessionCache::new();
+    let cache = SshSessionCache::new_compatibility();
     let mut channel = cache
         .open_unix_channel(fixture.key(0), stream, &socket_path.display().to_string())
         .await
@@ -383,7 +383,7 @@ async fn openssh_remote_tcp_forward_accepts_incoming_channel() {
     let Some(fixture) = OpenSsh::start().await else {
         return;
     };
-    let cache = SshSessionCache::new();
+    let cache = SshSessionCache::new_compatibility();
     let stream: BoxStream = Box::new(tokio::net::TcpStream::connect(fixture.addr).await.unwrap());
     let mut forward = cache
         .start_remote_tcp_forward(fixture.key(0), stream, "127.0.0.1", 0)

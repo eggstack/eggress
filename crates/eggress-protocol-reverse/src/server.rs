@@ -6,12 +6,14 @@ use crate::{
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+
+const AUTH_FAILURE_DELAY: Duration = Duration::from_millis(100);
 
 /// Configuration for a reverse proxy server (acceptor side).
 ///
@@ -456,6 +458,7 @@ impl ReverseServer {
                     if let Some(m) = metrics {
                         m.record_auth_failure(peer_addr, &e.to_string());
                     }
+                    tokio::time::sleep(AUTH_FAILURE_DELAY).await;
                     return Err(e);
                 }
             }

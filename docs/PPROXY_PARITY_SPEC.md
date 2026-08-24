@@ -409,7 +409,7 @@ wrapping `eggress-embed`). This provides `EggressConfig`, `EggressService`,
 `pproxy.Server()` — it uses explicit lifecycle management (start/shutdown)
 rather than asyncio server objects.
 
-The bundled top-level `pproxy` namespace is a separate compatibility surface
+The optional top-level `pproxy` namespace is a separate compatibility surface
 whose `Connection` and `Server` names are pproxy-shaped URI factories
 (aliases for `proxies_by_uri`), not the native `eggress.pproxy.Server`
 lifecycle class. The compatibility server path is a Python adapter that

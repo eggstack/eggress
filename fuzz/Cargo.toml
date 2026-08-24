@@ -26,6 +26,9 @@ path = "../crates/eggress-protocol-trojan"
 [dependencies.eggress-uri]
 path = "../crates/eggress-uri"
 
+[dependencies.eggress-pproxy-compat]
+path = "../crates/eggress-pproxy-compat"
+
 [dependencies.eggress-routing]
 path = "../crates/eggress-routing"
 

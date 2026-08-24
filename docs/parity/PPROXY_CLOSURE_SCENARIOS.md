@@ -56,8 +56,9 @@ but is not required for routine development.
 The clean-wheel and public API coverage is intentionally split across focused
 tests rather than repeated in the oracle harness:
 
-- `test_wheel_import_smoke.py`: installed `eggress` and top-level `pproxy`
-  imports, package metadata, and known unsupported diagnostics;
+- `test_wheel_import_smoke.py`: installed `eggress` plus the opt-in
+  `eggress-pproxy-compat` distribution and top-level `pproxy` imports, package
+  metadata, and known unsupported diagnostics;
 - `test_proxy_connection.py`: `Connection.tcp_connect()` echo and lifecycle;
 - `test_pproxy_public_namespace.py`: `Rule`, `DIRECT`, protocol/cipher exports,
   and UDP callback behavior;

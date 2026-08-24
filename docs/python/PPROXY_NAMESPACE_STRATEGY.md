@@ -1,8 +1,8 @@
 # ADR: pproxy Namespace and Packaging Strategy
 
-> Current decision (Phase 4): the `eggress` wheel installs a bounded real
-> `pproxy` package. The older no-shim decision below is retained as historical
-> context only and is superseded by this Phase 4 implementation.
+> Current decision: the canonical `eggress` wheel does not install the
+> top-level `pproxy` namespace. The opt-in `eggress-pproxy-compat` distribution
+> provides the bounded compatibility package.
 
 | Field | Value |
 |-------|-------|
@@ -40,35 +40,24 @@ Key constraints:
 ### 1. Bounded `import pproxy` package
 
 `import pproxy` resolves to Eggress's bounded compatibility package when the
-Eggress wheel is installed. It re-exports the public `proto`, `server`, and
+opt-in `eggress-pproxy-compat` distribution is installed. It re-exports the public `proto`, `server`, and
 `cipher` adapters and factory aliases without cloning pproxy private internals.
 
-**Rationale**: The requested drop-in surface requires the import namespace.
-Because namespace collision is unavoidable, installing upstream pproxy beside
-Eggress is explicitly unsupported and replacement installation is documented.
+**Rationale**: The requested compatibility surface requires the import
+namespace, but the canonical wheel must remain namespace-safe. Installing the
+compatibility distribution alongside upstream pproxy is explicitly unsupported.
 
-### 2. No separate `pproxy-compat` distribution package
+### 2. Separate compatibility distribution
 
-There is no separate `eggress-pproxy-compat` PyPI package. The pproxy
-compatibility layer ships inside the main `eggress` wheel.
+The `eggress-pproxy-compat` PyPI package contains the Python `pproxy` modules,
+depends on the matching `eggress` release, and is installed only when the
+top-level namespace is wanted. The canonical `eggress` wheel contains only
+the `eggress` namespace.
 
 **Trade-offs**:
 
-| Factor | Bundled (current) | Separate package |
-|--------|-------------------|-----------------|
-| Release complexity | One package | Two packages, version coupling |
-| Dependency resolution | Simple | Extra `eggress-pproxy-compat >= X` constraint |
-| Install size | Always included | Optional — smaller base install |
-| API coupling | None | Tight — pproxy compat calls `eggress-pproxy-compat` Rust internals |
-| User confusion | Low | Higher — users unsure which to install |
-
-Bundled wins because:
-- The pproxy compat code is tightly coupled to eggress internals (`eggress-pproxy-compat` Rust crate, `eggress._eggress` native module). Splitting would require exposing additional internal FFI surface.
-- The install size difference is negligible (the Rust native extension is the bulk).
-- One release process reduces operational burden.
-
-If a future use case demands a slimmer base install (e.g., embedded/IoT), a
-separate package can be extracted later without API breaks.
+The split keeps the canonical package namespace-safe and makes the compatibility
+surface an explicit opt-in, at the cost of publishing two versioned packages.
 
 ### 3. CLI entry point ownership
 
@@ -176,13 +165,10 @@ the version against which eggress compatibility is tested, not a dependency.
 
 ## Testing requirements
 
-1. **Coexistence smoke test** (`test_wheel_import_smoke.py`):
-   - `test_no_pproxy_shadow` — after `import eggress`, `sys.modules` must not
-     contain a top-level `pproxy` entry unless pproxy was independently installed.
-   - `test_eggress_pproxy_coexists` — both `import eggress` and `import pproxy`
-     work when pproxy is installed.
-   - `test_import_eggress_no_shadow` — `sys.modules.get('pproxy')` is None
-     unless pproxy is separately installed.
+1. **Compatibility-package smoke test** (`test_wheel_import_smoke.py`):
+   - the canonical wheel must not contain top-level `pproxy` files;
+   - installing `eggress-pproxy-compat` must make `import pproxy` work;
+   - upstream pproxy and the compatibility distribution must not be mixed.
 
 2. **Differential tests** (`test_pproxy_oracle.py`): auto-skip if pproxy is
    not installed; verify eggress and pproxy produce equivalent results for
@@ -206,13 +192,10 @@ the version against which eggress compatibility is tested, not a dependency.
 - `docs/python/INSTALLATION.md` — installation methods
 - `crates/eggress-cli/src/pproxy_main.rs` — CLI pproxy compatibility binary
 
-## Historical amendment: explicit compatibility distribution
+## Compatibility distribution implementation
 
 The canonical wheel keeps the namespace-safety rule: `import eggress` is the
-only import it owns, and it never uses `sys.modules` or `sys.path` mutation to
-impersonate upstream `pproxy`. The proposed separate compatibility
-distribution described by this historical amendment was not shipped.
-
-The current release bundles the Rust compatibility crate inside `eggress`; use
-`from eggress import pproxy` remains the migration-helper path. The top-level
-`pproxy` package is owned by Eggress when its wheel is installed.
+only top-level import it owns, and it never uses `sys.modules` or `sys.path`
+mutation to impersonate upstream `pproxy`. The Rust compatibility crate remains
+internal; `from eggress import pproxy` is the migration-helper path, while the
+top-level package is provided only by `eggress-pproxy-compat`.

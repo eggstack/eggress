@@ -29,6 +29,7 @@ operations = [
 reverse = ["dep:eggress-protocol-reverse", "operations"]
 ssh = ["eggress-server/ssh", "dep:eggress-transport-ssh"]
 quic = ["eggress-config/quic", "eggress-server/quic", "dep:eggress-transport-quic", "dep:eggress-protocol-h3"]
+insecure-quic = ["eggress-server/insecure-quic", "eggress-transport-quic/insecure-quic"]
 
 [dependencies]
 eggress-core.workspace = true

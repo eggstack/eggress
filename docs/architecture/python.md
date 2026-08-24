@@ -3,8 +3,8 @@
 `crates/eggress-python/` and `python/eggress/`
 
 Python bindings via PyO3 wrapping `eggress-embed`. Published as one `eggress`
-distribution on PyPI; the wheel also installs a bounded `pproxy` compatibility
-namespace (there is no separate compatibility distribution).
+distribution on PyPI. The optional `eggress-pproxy-compat` distribution installs
+the bounded top-level `pproxy` compatibility namespace.
 
 ## Key Types
 
@@ -17,7 +17,7 @@ namespace (there is no separate compatibility distribution).
 | `OutboundConnector` | `OutboundConnector` | Native Rust outbound connections |
 | `OutboundStream` | `PyOutboundStream` | Read/write/half-close on outbound streams |
 
-The top-level `pproxy` package installs the complete Phase 0 module namespace
+The optional top-level `pproxy` package installs the complete Phase 0 module namespace
 (`__doc__`, `__main__`, `cipherpy`, `sysproxy`, and `verbose` in addition to
 the core modules) from `python/pproxy/`. `Connection` and `Server` are aliases for
 `proxies_by_uri` (pproxy-shaped URI factories, NOT the native

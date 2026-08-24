@@ -106,6 +106,7 @@ pub enum MismatchKind {
     MissingInOracle,
     TypeMismatch,
     SignatureMismatch,
+    NotExecuted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -540,17 +540,13 @@ pub fn translate_from_uris(
             });
         } else if local.scheme.as_str() == "trojan" {
             // Trojan: password-only format — password = trojan password, username unused
-            // Trojan requires TLS; auto-generate TLS config if not already set (--ssl)
+            // Trojan requires real TLS material. Do not emit placeholder paths that
+            // make an invalid translated configuration appear runnable.
             if listener_entry.tls.is_none() {
-                listener_entry.tls = Some(TlsToml {
-                    cert: "/path/to/cert.pem".to_string(),
-                    key: Some("/path/to/key.pem".to_string()),
-                    alpn: None,
-                });
-                output = output.with_warning(
-                    "trojan-auto-tls",
+                output = output.with_unsupported(
+                    "trojan-tls-config",
                     format!(
-                        "Trojan listener '{}': TLS is required; auto-generated placeholder cert/key paths. Replace with actual TLS certificate paths.",
+                        "Trojan listener '{}': TLS is required; provide --ssl CERT,KEY with the pproxy compatibility command",
                         listener_name
                     ),
                 );
@@ -2864,8 +2860,13 @@ mod tests {
 
     #[test]
     fn test_translate_trojan_listener_supported() {
-        let args =
-            PproxyArgs::parse(&["-l".into(), "trojan://my-secret@0.0.0.0:443".into()]).unwrap();
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "trojan://my-secret@0.0.0.0:443".into(),
+            "--ssl".into(),
+            "cert.pem,key.pem".into(),
+        ])
+        .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         assert!(
             !output
@@ -2881,8 +2882,13 @@ mod tests {
 
     #[test]
     fn test_translate_trojan_listener_toml_roundtrip() {
-        let args =
-            PproxyArgs::parse(&["-l".into(), "trojan://pass123@0.0.0.0:443".into()]).unwrap();
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "trojan://pass123@0.0.0.0:443".into(),
+            "--ssl".into(),
+            "cert.pem,key.pem".into(),
+        ])
+        .unwrap();
         let output = translate_pproxy_args(&args).unwrap();
         let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
         assert_eq!(parsed["version"].as_integer(), Some(1));
@@ -2895,20 +2901,22 @@ mod tests {
         assert_eq!(listeners[0]["trojan"]["password"].as_str(), Some("pass123"));
         assert!(
             listeners[0]["tls"].is_table(),
-            "TLS should be auto-generated for trojan"
+            "configured TLS should be present for trojan"
         );
     }
 
     #[test]
-    fn test_translate_trojan_listener_no_password_unsupported() {
-        // In password-only format "user" is the password. To truly test no-password,
-        // we'd need user: format which isn't standard Trojan. This is a placeholder.
+    fn test_translate_trojan_listener_without_tls_is_unsupported() {
         let args =
             PproxyArgs::parse(&["-l".into(), "trojan://my-secret@0.0.0.0:443".into()]).unwrap();
         let output = translate_pproxy_args(&args).unwrap();
-        // Verify trojan section present
         assert!(output.toml.contains("[listeners.trojan]"));
         assert!(output.toml.contains("password = \"my-secret\""));
+        assert!(output
+            .unsupported
+            .iter()
+            .any(|u| u.feature == "trojan-tls-config"));
+        assert!(!output.toml.contains("/path/to/cert.pem"));
     }
 
     #[test]

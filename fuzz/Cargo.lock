@@ -68,6 +68,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec",
+]
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-config"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "eggress-core",
  "eggress-routing",
@@ -214,13 +235,14 @@ dependencies = [
 
 [[package]]
 name = "eggress-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-uri",
  "pin-project-lite",
  "rustls",
  "serde",
+ "socket2 0.5.10",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -234,6 +256,7 @@ version = "0.0.0"
 dependencies = [
  "eggress-config",
  "eggress-core",
+ "eggress-pproxy-compat",
  "eggress-protocol-http",
  "eggress-protocol-shadowsocks",
  "eggress-protocol-socks",
@@ -247,9 +270,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "eggress-protocol-http"
-version = "1.0.1"
+name = "eggress-pproxy-compat"
+version = "1.0.2"
 dependencies = [
+ "eggress-config",
+ "eggress-uri",
+ "fancy-regex",
+ "regex",
+ "serde",
+ "thiserror",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "eggress-protocol-http"
+version = "1.0.2"
+dependencies = [
+ "base64",
  "bytes",
  "eggress-core",
  "h2",
@@ -259,12 +297,13 @@ dependencies = [
  "subtle",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
 [[package]]
 name = "eggress-protocol-shadowsocks"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes-gcm",
  "bytes",
@@ -278,11 +317,12 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
 name = "eggress-protocol-socks"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -293,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-trojan"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -309,11 +349,13 @@ dependencies = [
 
 [[package]]
 name = "eggress-protocol-websocket"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
+ "base64",
  "bytes",
  "eggress-core",
  "futures-util",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -322,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-routing"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arc-swap",
  "eggress-core",
@@ -336,11 +378,12 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]
 name = "eggress-transport-tls"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -349,12 +392,13 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tracing",
  "webpki-roots 0.26.11",
 ]
 
 [[package]]
 name = "eggress-udp"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "eggress-core",
@@ -372,7 +416,7 @@ dependencies = [
 
 [[package]]
 name = "eggress-uri"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "serde",
  "thiserror",
@@ -392,6 +436,17 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -971,6 +1026,16 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "socket2"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
@@ -1036,7 +1101,7 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2",
+ "socket2 0.6.4",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]

@@ -78,6 +78,7 @@ async fn read_connect_request(stream: &mut BoxStream) -> Result<ConnectRequest, 
     let mut head_buf = Vec::with_capacity(1024);
     let mut temp = [0u8; 1];
     let mut header_count = 0;
+    let mut saw_request_line = false;
 
     loop {
         if head_buf.len() >= MAX_HEAD_SIZE {
@@ -101,7 +102,11 @@ async fn read_connect_request(stream: &mut BoxStream) -> Result<ConnectRequest, 
             }
             // Also count individual \r\n for header line limits
             if head_buf.len() >= 2 && &head_buf[len - 2..] == b"\r\n" {
-                header_count += 1;
+                if saw_request_line {
+                    header_count += 1;
+                } else {
+                    saw_request_line = true;
+                }
                 if header_count > MAX_HEADER_LINES {
                     return Err(HttpError::TooManyHeaders);
                 }

@@ -222,11 +222,11 @@ release the GIL around native blocking work, and do not bind a temporary local
 listener. `ProxyConnection` delegates to this path. UDP remains listener-based;
 `associate_udp()` is intentionally not advertised as a completed Python API.
 
-The canonical `eggress` wheel owns the `eggress` namespace and the bounded
-top-level `pproxy` compatibility package. The Rust `eggress-pproxy-compat`
-crate is internal; there is no separately published compatibility distribution.
-The upstream `pproxy` distribution must not be installed beside Eggress because
-both distributions own the same import namespace. The wheel does not use
+The canonical `eggress` wheel owns the `eggress` namespace. The optional
+`eggress-pproxy-compat` distribution owns the bounded top-level `pproxy`
+compatibility package; the Rust `eggress-pproxy-compat` crate remains internal.
+The compatibility distribution must not be installed beside upstream `pproxy`
+because both distributions own the same import namespace. Neither wheel uses
 `sys.modules` aliasing or import-time namespace mutation.
 
 ### eggress-python

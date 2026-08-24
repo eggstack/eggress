@@ -277,12 +277,16 @@ pub async fn shadowsocks_standalone_udp_relay(
 
                                             let recv_task = tokio::spawn(async move {
                                                 let mut recv_buf = [0u8; 65535];
-                                                while let Ok(Ok((n, _peer))) = tokio::time::timeout(
+                                                while let Ok(Ok((n, peer))) = tokio::time::timeout(
                                                     std::time::Duration::from_secs(30),
                                                     flow_socket.recv_from(&mut recv_buf),
                                                 )
                                                 .await
                                                 {
+                                                    if peer != relay_addr {
+                                                        tracing::trace!(%peer, %relay_addr, "discarding UDP response from unexpected peer");
+                                                        continue;
+                                                    }
                                                     if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                                         if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
                                         let _ = flow_response_tx.try_send(ResponseMsg {

@@ -197,6 +197,7 @@ impl PyEggressService {
             .take()
             .ok_or_else(|| EggressError::new_err("service already started"))?;
         let options = eggress_runtime::CompatibilityOptions {
+            compatibility_mode: true,
             auth_timeout: Some(Duration::from_secs(auth_timeout_seconds)),
             system_proxy,
             debug,

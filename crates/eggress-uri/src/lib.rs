@@ -570,7 +570,7 @@ fn parse_query_rule(query: Option<&str>) -> Option<String> {
 }
 
 fn percent_decode(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
+    let mut result = Vec::with_capacity(input.len());
     let bytes = input.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -578,15 +578,15 @@ fn percent_decode(input: &str) -> String {
             let hi = hex_val(bytes[i + 1]);
             let lo = hex_val(bytes[i + 2]);
             if let (Some(h), Some(l)) = (hi, lo) {
-                result.push(((h << 4) | l) as char);
+                result.push((h << 4) | l);
                 i += 3;
                 continue;
             }
         }
-        result.push(bytes[i] as char);
+        result.push(bytes[i]);
         i += 1;
     }
-    result
+    String::from_utf8_lossy(&result).into_owned()
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -756,6 +756,13 @@ mod tests {
         let creds = result.hops[0].credentials.as_ref().unwrap();
         assert_eq!(creds.username, "user@name");
         assert_eq!(creds.password, "pass");
+    }
+
+    #[test]
+    fn test_percent_decoded_utf8_credentials() {
+        let result = parse_proxy_chain("http://user:p%C3%A9ss@proxy:8080").unwrap();
+        let creds = result.hops[0].credentials.as_ref().unwrap();
+        assert_eq!(creds.password, "péss");
     }
 
     #[test]

@@ -190,7 +190,8 @@ fn init_logging(format: &str) {
     match format {
         "json" => builder.json().init(),
         "compact" => builder.compact().init(),
-        _ => builder.compact().init(),
+        "pretty" => builder.pretty().init(),
+        _ => builder.pretty().init(),
     }
 }
 
@@ -785,6 +786,7 @@ fn handle_pproxy_run(args: &PproxyRun) {
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
     let compatibility_options = eggress_runtime::CompatibilityOptions {
+        compatibility_mode: true,
         auth_timeout: Some(pproxy_args.effective_auth_timeout()),
         system_proxy: pproxy_args.system_proxy,
         debug: pproxy_args.debug,
