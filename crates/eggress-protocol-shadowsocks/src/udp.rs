@@ -25,6 +25,17 @@ pub fn encode_udp_packet(
     payload: &[u8],
     salt: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
+    let full_ikm = CipherMethod::password_key_material(password);
+    encode_udp_packet_with_ikm(method, &full_ikm, target, payload, salt)
+}
+
+pub fn encode_udp_packet_with_ikm(
+    method: CipherMethod,
+    full_ikm: &[u8],
+    target: &TargetAddr,
+    payload: &[u8],
+    salt: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
     if salt.len() != method.salt_size() {
         return Err(ShadowsocksError::DecryptionFailed(format!(
             "salt must be {} bytes, got {}",
@@ -34,7 +45,7 @@ pub fn encode_udp_packet(
     }
 
     // Derive subkey from password and salt
-    let subkey = method.derive_key(password, salt)?;
+    let subkey = method.derive_key_from_ikm(full_ikm, salt)?;
 
     // Validate domain length before encoding
     if let TargetHost::Domain(ref domain) = target.host {
@@ -77,6 +88,15 @@ pub fn decode_udp_packet(
     password: &[u8],
     packet: &[u8],
 ) -> Result<(TargetAddr, Vec<u8>), ShadowsocksError> {
+    let full_ikm = CipherMethod::password_key_material(password);
+    decode_udp_packet_with_ikm(method, &full_ikm, packet)
+}
+
+pub fn decode_udp_packet_with_ikm(
+    method: CipherMethod,
+    full_ikm: &[u8],
+    packet: &[u8],
+) -> Result<(TargetAddr, Vec<u8>), ShadowsocksError> {
     let salt_size = method.salt_size();
     let tag_size = method.tag_size();
 
@@ -98,7 +118,7 @@ pub fn decode_udp_packet(
 
     // Extract salt and derive subkey
     let salt = &packet[..salt_size];
-    let subkey = method.derive_key(password, salt)?;
+    let subkey = method.derive_key_from_ikm(full_ikm, salt)?;
 
     // Decrypt ciphertext with nonce=0
     let ciphertext = &packet[salt_size..];
@@ -136,6 +156,17 @@ pub fn encode_pproxy_udp_packet(
     payload: &[u8],
     salt: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
+    let full_ikm = CipherMethod::password_key_material(password);
+    encode_pproxy_udp_packet_with_ikm(method, &full_ikm, target, payload, salt)
+}
+
+pub fn encode_pproxy_udp_packet_with_ikm(
+    method: CipherMethod,
+    full_ikm: &[u8],
+    target: &TargetAddr,
+    payload: &[u8],
+    salt: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
     let plaintext = udp_plaintext(target, payload)?;
     if salt.len() != method.salt_size() {
         return Err(ShadowsocksError::DecryptionFailed(format!(
@@ -144,7 +175,7 @@ pub fn encode_pproxy_udp_packet(
             salt.len()
         )));
     }
-    let subkey = method.derive_key(password, salt)?;
+    let subkey = method.derive_key_from_ikm(full_ikm, salt)?;
     let nonce = vec![0u8; method.nonce_size()];
     let ciphertext = encrypt_standard_chunks(method, &subkey, &nonce, &plaintext)?;
     let mut output = Vec::with_capacity(salt.len() + ciphertext.len());
@@ -159,6 +190,15 @@ pub fn decode_pproxy_udp_packet(
     password: &[u8],
     packet: &[u8],
 ) -> Result<(TargetAddr, Vec<u8>), ShadowsocksError> {
+    let full_ikm = CipherMethod::password_key_material(password);
+    decode_pproxy_udp_packet_with_ikm(method, &full_ikm, packet)
+}
+
+pub fn decode_pproxy_udp_packet_with_ikm(
+    method: CipherMethod,
+    full_ikm: &[u8],
+    packet: &[u8],
+) -> Result<(TargetAddr, Vec<u8>), ShadowsocksError> {
     let salt_size = method.salt_size();
     let min_size = salt_size + 2 + method.tag_size() + method.tag_size();
     if packet.len() < min_size {
@@ -167,7 +207,7 @@ pub fn decode_pproxy_udp_packet(
         ));
     }
     let salt = &packet[..salt_size];
-    let subkey = method.derive_key(password, salt)?;
+    let subkey = method.derive_key_from_ikm(full_ikm, salt)?;
     let nonce = vec![0u8; method.nonce_size()];
     let plaintext = decrypt_standard_chunks(method, &subkey, &nonce, &packet[salt_size..])?;
     let (target, addr_len) = decode_address(&plaintext)?;

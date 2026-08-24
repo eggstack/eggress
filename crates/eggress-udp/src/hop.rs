@@ -30,6 +30,7 @@ pub enum UdpHop {
         endpoint: TargetAddr,
         method: eggress_protocol_shadowsocks::CipherMethod,
         password: Vec<u8>,
+        password_ikm: Vec<u8>,
     },
 }
 
@@ -51,12 +52,22 @@ impl UdpHop {
             }
             #[cfg(feature = "shadowsocks")]
             Self::Shadowsocks {
-                method, password, ..
+                method,
+                password_ikm,
+                ..
             } => {
-                let mut salt = vec![0u8; method.salt_size()];
-                rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
-                eggress_protocol_shadowsocks::udp::encode_udp_packet(
-                    *method, password, target, payload, &salt,
+                let mut salt_buf = [0u8; 32];
+                rand::RngCore::fill_bytes(
+                    &mut rand::thread_rng(),
+                    &mut salt_buf[..method.salt_size()],
+                );
+                let salt = &salt_buf[..method.salt_size()];
+                eggress_protocol_shadowsocks::udp::encode_udp_packet_with_ikm(
+                    *method,
+                    password_ikm,
+                    target,
+                    payload,
+                    salt,
                 )
                 .map_err(|error| UdpHopError::Codec(error.to_string()))
             }
@@ -73,9 +84,15 @@ impl UdpHop {
             }
             #[cfg(feature = "shadowsocks")]
             Self::Shadowsocks {
-                method, password, ..
-            } => eggress_protocol_shadowsocks::udp::decode_udp_packet(*method, password, packet)
-                .map_err(|error| UdpHopError::Codec(error.to_string())),
+                method,
+                password_ikm,
+                ..
+            } => eggress_protocol_shadowsocks::udp::decode_udp_packet_with_ikm(
+                *method,
+                password_ikm,
+                packet,
+            )
+            .map_err(|error| UdpHopError::Codec(error.to_string())),
         }
     }
 }
@@ -138,19 +155,17 @@ impl UdpHopStack {
 
     /// Decode in reverse wire order: outer hop first, final destination hop
     /// last.
-    pub fn decode_response(
-        &self,
-        mut packet: Vec<u8>,
-    ) -> Result<(TargetAddr, Vec<u8>), UdpHopError> {
+    pub fn decode_response(&self, packet: &[u8]) -> Result<(TargetAddr, Vec<u8>), UdpHopError> {
         let mut target = None;
+        let mut packet = std::borrow::Cow::Borrowed(packet);
         for hop in &self.hops {
             let (decoded_target, decoded_payload) = hop.decode(&packet)?;
             target = Some(decoded_target);
-            packet = decoded_payload;
+            packet = std::borrow::Cow::Owned(decoded_payload);
         }
         Ok((
             target.ok_or_else(|| UdpHopError::Codec("empty UDP hop stack".into()))?,
-            packet,
+            packet.into_owned(),
         ))
     }
 }
@@ -172,10 +187,14 @@ impl UdpHop {
                 let method =
                     eggress_protocol_shadowsocks::CipherMethod::parse_method(&credentials.username)
                         .map_err(|_| UdpHopError::InvalidShadowsocksCredentials)?;
+                let password = credentials.password.as_bytes().to_vec();
+                let password_ikm =
+                    eggress_protocol_shadowsocks::CipherMethod::password_key_material(&password);
                 Ok(Self::Shadowsocks {
                     endpoint,
                     method,
-                    password: credentials.password.as_bytes().to_vec(),
+                    password,
+                    password_ikm,
                 })
             }
             protocol => Err(UdpHopError::UnsupportedProtocol(protocol)),
@@ -287,7 +306,7 @@ mod tests {
             endpoint_target("domain.example", 443),
         ] {
             let packet = stack.encode_request(&target, b"x").unwrap();
-            let (decoded, payload) = stack.decode_response(packet).unwrap();
+            let (decoded, payload) = stack.decode_response(&packet).unwrap();
             assert_eq!(decoded, target);
             assert_eq!(payload, b"x");
         }

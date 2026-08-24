@@ -7,11 +7,13 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use base64::Engine;
 use bytes::Bytes;
 use h2::server::Connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{Notify, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 use crate::error::HttpError;
 use eggress_core::connector::is_dns_rebinding_risk;
@@ -312,30 +314,6 @@ impl tokio::io::AsyncRead for H2StreamRead {
     }
 }
 
-fn h2_base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        result.push(TABLE[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(TABLE[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(TABLE[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if chunk.len() > 2 {
-            result.push(TABLE[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-    result
-}
-
 /// Perform an H2 CONNECT handshake as a client.
 ///
 /// Establishes an HTTP/2 connection over the given stream, sends a CONNECT
@@ -378,7 +356,7 @@ where
 
     if let Some((user, pass)) = auth {
         let credentials = format!("{}:{}", user, pass);
-        let encoded = h2_base64_encode(credentials.as_bytes());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         builder = builder.header(
             http::header::PROXY_AUTHORIZATION,
             format!("Basic {}", encoded),
@@ -463,16 +441,38 @@ pub struct H2ConnectionEntry {
     conn_handle: tokio::task::JoinHandle<Result<(), h2::Error>>,
     #[allow(dead_code)]
     created_at: Instant,
-    last_used: Arc<Mutex<Instant>>,
-    active_streams: Arc<AtomicU64>,
-    retired: Arc<AtomicBool>,
-    notify: Arc<Notify>,
+    last_used: AtomicU64,
+    active_streams: AtomicU64,
+    retired: AtomicBool,
+    notify: Notify,
 }
 
 impl H2ConnectionEntry {
-    fn is_available(&self, max_concurrent_streams: u32) -> bool {
-        !self.retired.load(Ordering::Acquire)
-            && self.active_streams.load(Ordering::Acquire) < max_concurrent_streams as u64
+    fn try_acquire(&self, max_concurrent_streams: u32) -> bool {
+        if self.retired.load(Ordering::Acquire) {
+            return false;
+        }
+        let mut active = self.active_streams.load(Ordering::Acquire);
+        loop {
+            if active >= max_concurrent_streams as u64 {
+                return false;
+            }
+            match self.active_streams.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    if self.retired.load(Ordering::Acquire) {
+                        self.active_streams.fetch_sub(1, Ordering::Release);
+                        return false;
+                    }
+                    return true;
+                }
+                Err(next) => active = next,
+            }
+        }
     }
 
     fn mark_retired(&self) {
@@ -496,9 +496,9 @@ pub struct H2ConnectionPool {
     pool_size: u32,
     idle_timeout: Duration,
     max_concurrent_streams: u32,
-    #[allow(dead_code)]
     created_at: Instant,
     reaper_running: AtomicBool,
+    reaper_cancel: CancellationToken,
 }
 
 impl H2ConnectionPool {
@@ -511,19 +511,27 @@ impl H2ConnectionPool {
             max_concurrent_streams,
             created_at: Instant::now(),
             reaper_running: AtomicBool::new(false),
+            reaper_cancel: CancellationToken::new(),
         })
+    }
+
+    fn now_ticks(&self) -> u64 {
+        Instant::now()
+            .duration_since(self.created_at)
+            .as_nanos()
+            .min(u64::MAX as u128) as u64
     }
 
     /// Try to acquire an existing idle connection from the pool.
     fn try_acquire_entry(&self) -> Option<Arc<H2ConnectionEntry>> {
-        let entries = self.entries.lock().unwrap().clone();
-        let now = Instant::now();
+        let now = self.now_ticks();
+        let idle_timeout = self.idle_timeout.as_nanos().min(u64::MAX as u128) as u64;
+        let entries = self.entries.lock().unwrap();
         for entry in entries.iter() {
-            if entry.is_available(self.max_concurrent_streams)
-                && now.duration_since(*entry.last_used.lock().unwrap()) < self.idle_timeout
+            if now.saturating_sub(entry.last_used.load(Ordering::Acquire)) < idle_timeout
+                && entry.try_acquire(self.max_concurrent_streams)
             {
-                entry.active_streams.fetch_add(1, Ordering::AcqRel);
-                *entry.last_used.lock().unwrap() = now;
+                entry.last_used.store(now, Ordering::Release);
                 return Some(Arc::clone(entry));
             }
         }
@@ -550,10 +558,10 @@ impl H2ConnectionPool {
             sender: Arc::clone(&sender),
             conn_handle,
             created_at: Instant::now(),
-            last_used: Arc::new(Mutex::new(Instant::now())),
-            active_streams: Arc::new(AtomicU64::new(1)),
-            retired: Arc::new(AtomicBool::new(false)),
-            notify: Arc::new(Notify::new()),
+            last_used: AtomicU64::new(self.now_ticks()),
+            active_streams: AtomicU64::new(1),
+            retired: AtomicBool::new(false),
+            notify: Notify::new(),
         });
 
         self.entries.lock().unwrap().push(Arc::clone(&entry));
@@ -572,39 +580,43 @@ impl H2ConnectionPool {
         {
             return;
         }
-        let pool = Arc::clone(self);
+        let pool = Arc::downgrade(self);
+        let cancel = self.reaper_cancel.clone();
+        let interval = std::cmp::max(self.idle_timeout / 2, Duration::from_millis(1));
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(pool.idle_timeout / 2).await;
-                pool.reap_idle_entries();
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = tokio::time::sleep(interval) => {
+                        let Some(pool) = pool.upgrade() else { break };
+                        pool.reap_idle_entries();
+                    }
+                }
             }
         });
     }
 
     fn reap_idle_entries(&self) {
-        let now = Instant::now();
-        let entries = self.entries.lock().unwrap().clone();
-        for entry in &entries {
+        let now = self.now_ticks();
+        let idle_timeout = self.idle_timeout.as_nanos().min(u64::MAX as u128) as u64;
+        self.entries.lock().unwrap().retain(|entry| {
             if entry.retired.load(Ordering::Acquire) {
-                continue;
+                return false;
             }
-            let last_used = *entry.last_used.lock().unwrap();
-            if now.duration_since(last_used) >= self.idle_timeout
+            if now.saturating_sub(entry.last_used.load(Ordering::Acquire)) >= idle_timeout
                 && entry.active_streams.load(Ordering::Acquire) == 0
             {
                 entry.mark_retired();
+                return false;
             }
-        }
-        self.entries
-            .lock()
-            .unwrap()
-            .retain(|entry| !entry.retired.load(Ordering::Acquire));
+            true
+        });
     }
 
     /// Release a connection back to the pool after a stream completes.
     pub fn release(&self, entry: &Arc<H2ConnectionEntry>) {
         entry.active_streams.fetch_sub(1, Ordering::AcqRel);
-        *entry.last_used.lock().unwrap() = Instant::now();
+        entry.last_used.store(self.now_ticks(), Ordering::Release);
         entry.notify.notify_waiters();
     }
 
@@ -630,6 +642,12 @@ impl H2ConnectionPool {
             total_streams,
             idle_timeout_secs: self.idle_timeout.as_secs(),
         }
+    }
+}
+
+impl Drop for H2ConnectionPool {
+    fn drop(&mut self) {
+        self.reaper_cancel.cancel();
     }
 }
 
@@ -782,7 +800,7 @@ where
 
     if let Some((user, pass)) = auth {
         let credentials = format!("{}:{}", user, pass);
-        let encoded = h2_base64_encode(credentials.as_bytes());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         builder = builder.header(
             http::header::PROXY_AUTHORIZATION,
             format!("Basic {}", encoded),
@@ -844,7 +862,7 @@ async fn try_pooled_connection(
 
     if let Some((user, pass)) = auth {
         let credentials = format!("{}:{}", user, pass);
-        let encoded = h2_base64_encode(credentials.as_bytes());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         builder = builder.header(
             http::header::PROXY_AUTHORIZATION,
             format!("Basic {}", encoded),

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use rustls::pki_types::ServerName;
 use tokio::io::AsyncWriteExt;
@@ -173,7 +174,9 @@ pub async fn trojan_accept(
                 .read_exact(&mut addr_buf)
                 .await
                 .map_err(TrojanError::Io)?;
-            let ip = std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&addr_buf[..16]).unwrap());
+            let ip = std::net::Ipv6Addr::from(
+                <[u8; 16]>::try_from(&addr_buf[..16]).expect("IPv6 address field is 16 bytes"),
+            );
             let port = u16::from_be_bytes([addr_buf[16], addr_buf[17]]);
             TargetAddr {
                 host: TargetHost::Ip(std::net::IpAddr::V6(ip)),
@@ -220,17 +223,23 @@ pub async fn trojan_connect(
     server_name: &str,
     tls_config: Option<Arc<rustls::ClientConfig>>,
 ) -> Result<BoxStream, TrojanError> {
+    static DEFAULT_TLS_CONFIG: OnceLock<Result<Arc<rustls::ClientConfig>, String>> =
+        OnceLock::new();
     let config = match tls_config {
         Some(c) => c,
-        None => {
-            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-            let builder = builder
-                .with_system_roots()
-                .map_err(|e| TrojanError::Tls(format!("failed to load system roots: {e}")))?;
-            builder
-                .build()
-                .map_err(|e| TrojanError::Tls(format!("failed to build TLS config: {e}")))?
-        }
+        None => DEFAULT_TLS_CONFIG
+            .get_or_init(|| {
+                let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+                let builder = builder
+                    .with_system_roots()
+                    .map_err(|e| format!("failed to load system roots: {e}"))?;
+                builder
+                    .build()
+                    .map_err(|e| format!("failed to build TLS config: {e}"))
+            })
+            .as_ref()
+            .map_err(|e| TrojanError::Tls(e.clone()))?
+            .clone(),
     };
 
     let connector = TlsConnector::from(config);

@@ -10,6 +10,10 @@ keywords = ["proxy", "tls", "rustls", "transport"]
 categories = ["network-programming", "cryptography"]
 readme = "README.md"
 
+[features]
+default = []
+insecure-tls = []
+
 [dependencies]
 eggress-core.workspace = true
 thiserror.workspace = true
@@ -19,6 +23,7 @@ rustls.workspace = true
 tokio-rustls.workspace = true
 webpki-roots.workspace = true
 pkcs8.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

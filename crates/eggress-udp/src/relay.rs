@@ -16,7 +16,6 @@ use crate::flow::{TargetFlowEntry, UdpFlowKey, UdpFlowKind};
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
 use crate::registry::UdpAssociationRegistry;
-use crate::security::validate_target;
 use crate::udp_capability::{udp_capability, UdpRelayCapability};
 use crate::upstream_socks5::{open_socks5_udp_upstream, Socks5UdpUpstreamConfig};
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
@@ -34,12 +33,16 @@ pub struct RelayConfig {
     pub identity: ClientIdentity,
     pub client_tcp_peer: SocketAddr,
     pub registry: Arc<UdpAssociationRegistry>,
+    /// Allow private targets for callers that explicitly permit private egress.
+    pub allow_private_egress: bool,
 }
 
 struct ResponseMsg {
     target: SocksAddr,
     payload: Vec<u8>,
 }
+
+const RESPONSE_CHANNEL_CAPACITY: usize = 256;
 
 fn reap_idle_flows(
     flows: &mut HashMap<UdpFlowKey, TargetFlowEntry>,
@@ -71,7 +74,7 @@ async fn handle_client_datagram(
     client_addr: SocketAddr,
     flows: &mut HashMap<UdpFlowKey, TargetFlowEntry>,
     config: &RelayConfig,
-    response_tx: &mpsc::UnboundedSender<ResponseMsg>,
+    response_tx: &mpsc::Sender<ResponseMsg>,
     _association: &UdpAssociation,
     cancel: &CancellationToken,
 ) -> Result<(), UdpError> {
@@ -83,7 +86,9 @@ async fn handle_client_datagram(
         }
     };
 
-    if let Err(_e) = validate_target(&request.target) {
+    if let Err(_e) =
+        crate::security::validate_standalone_target(&request.target, config.allow_private_egress)
+    {
         config.udp_metrics.record_dropped();
         return Ok(());
     }
@@ -183,7 +188,7 @@ async fn handle_client_datagram(
                                         let Ok(Ok((n, _peer))) = result else { break };
                                         if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                             if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
-                                                let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                     target: upstream_resp.target.clone(),
                                                     payload: upstream_resp.payload.to_vec(),
                                                 });
@@ -286,7 +291,13 @@ async fn handle_client_datagram(
                         let flow_target = request.target.clone();
                         let flow_socket = udp_socket.clone();
                         let flow_method = method;
-                        let flow_password = password.as_bytes().to_vec();
+                        let flow_password: Arc<[u8]> = Arc::from(password.as_bytes());
+                        let flow_password_ikm: Arc<[u8]> = Arc::from(
+                            eggress_protocol_shadowsocks::CipherMethod::password_key_material(
+                                &flow_password,
+                            ),
+                        );
+                        let flow_password_ikm_for_recv = flow_password_ikm.clone();
                         let flow_cancel = cancel.clone();
 
                         let recv_task = tokio::spawn(async move {
@@ -301,15 +312,15 @@ async fn handle_client_datagram(
                                 };
                                 let Ok(Ok((n, _peer))) = result else { break };
                                 if let Ok((resp_target, resp_payload)) =
-                                    eggress_protocol_shadowsocks::udp::decode_udp_packet(
+                                    eggress_protocol_shadowsocks::udp::decode_udp_packet_with_ikm(
                                         flow_method,
-                                        &flow_password,
+                                        &flow_password_ikm_for_recv,
                                         &recv_buf[..n],
                                     )
                                 {
                                     let resp_socks_addr = target_to_socks_addr(&resp_target);
                                     if socks_addr_equivalent(&resp_socks_addr, &flow_target) {
-                                        let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                             target: resp_socks_addr,
                                             payload: resp_payload,
                                         });
@@ -334,7 +345,8 @@ async fn handle_client_datagram(
                             upstream_addr,
                             udp_socket,
                             method,
-                            password: password.into_bytes(),
+                            password: flow_password,
+                            password_ikm: flow_password_ikm,
                             lease: active_lease,
                             last_activity: Instant::now(),
                         };
@@ -418,9 +430,9 @@ async fn handle_client_datagram(
                                 };
                                 let Ok(Ok((n, _peer))) = result else { break };
                                 if let Ok((target, payload)) =
-                                    flow_stack.decode_response(recv_buf[..n].to_vec())
+                                    flow_stack.decode_response(&recv_buf[..n])
                                 {
-                                    let _ = flow_response_tx.send(ResponseMsg {
+                                    let _ = flow_response_tx.try_send(ResponseMsg {
                                         target: target_to_socks_addr(&target),
                                         payload,
                                     });
@@ -497,7 +509,7 @@ async fn handle_client_datagram(
                     };
                     let Ok(Ok(n)) = result else { break };
                     let payload = recv_buf[..n].to_vec();
-                    let _ = flow_response_tx.send(ResponseMsg {
+                    let _ = flow_response_tx.try_send(ResponseMsg {
                         target: target_addr_clone.clone(),
                         payload,
                     });
@@ -535,7 +547,8 @@ pub async fn udp_relay_loop(
     let mut buf = vec![0u8; config.limits.max_datagram_size];
     let mut flows: HashMap<UdpFlowKey, TargetFlowEntry> = HashMap::new();
 
-    let (response_tx, mut response_rx) = mpsc::unbounded_channel::<ResponseMsg>();
+    let (response_tx, mut response_rx) = mpsc::channel::<ResponseMsg>(RESPONSE_CHANNEL_CAPACITY);
+    let mut response_buf = Vec::new();
 
     let mut idle_tick = tokio::time::interval(config.limits.idle_timeout);
     idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -599,9 +612,13 @@ pub async fn udp_relay_loop(
                 }
                 Some(msg) = response_rx.recv() => {
                     if let Some(client_addr) = association.client_udp_addr() {
-                        let mut out = Vec::new();
-                        match encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out) {
-                            Ok(()) => match relay_socket.send_to(&out, client_addr).await {
+                        response_buf.clear();
+                        match encode_socks5_udp_datagram(
+                            &msg.target,
+                            &msg.payload,
+                            &mut response_buf,
+                        ) {
+                            Ok(()) => match relay_socket.send_to(&response_buf, client_addr).await {
                                 Ok(_) => config.udp_metrics.record_packet_down(msg.payload.len() as u64),
                                 Err(error) => {
                                     tracing::debug!(%error, client = %client_addr, "failed to send UDP response");
@@ -760,6 +777,7 @@ mod tests {
             identity: ClientIdentity::Anonymous,
             client_tcp_peer: test_addr(),
             registry: test_registry(),
+            allow_private_egress: true,
         }
     }
 
@@ -1140,6 +1158,7 @@ mod tests {
             identity: ClientIdentity::Anonymous,
             client_tcp_peer: test_addr(),
             registry: test_registry(),
+            allow_private_egress: true,
         }
     }
 
@@ -1808,6 +1827,7 @@ mod tests {
             identity: ClientIdentity::Anonymous,
             client_tcp_peer: test_addr(),
             registry,
+            allow_private_egress: true,
         };
         let cancel = CancellationToken::new();
 

@@ -16,6 +16,76 @@ pub const MAX_CHUNK_PAYLOAD: usize = 16 * 1024 - 1;
 
 type Aes192Gcm = AesGcm<Aes192, U12>;
 
+pub(crate) enum AeadCipher {
+    Aes128(Aes128Gcm),
+    Aes192(Aes192Gcm),
+    Aes256(Aes256Gcm),
+    ChaCha20(ChaCha20Poly1305),
+}
+
+impl AeadCipher {
+    pub(crate) fn new(method: CipherMethod, key: &[u8]) -> Result<Self, ShadowsocksError> {
+        match method {
+            CipherMethod::Aes128Gcm => Aes128Gcm::new_from_slice(key)
+                .map(Self::Aes128)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            CipherMethod::Aes192Gcm => Aes192Gcm::new_from_slice(key)
+                .map(Self::Aes192)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            CipherMethod::Aes256Gcm => Aes256Gcm::new_from_slice(key)
+                .map(Self::Aes256)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            CipherMethod::ChaCha20IetfPoly1305 => ChaCha20Poly1305::new_from_slice(key)
+                .map(Self::ChaCha20)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+        }
+    }
+
+    pub(crate) fn encrypt(
+        &self,
+        nonce: &[u8],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, ShadowsocksError> {
+        let nonce = Nonce::from_slice(nonce);
+        match self {
+            Self::Aes128(cipher) => cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            Self::Aes192(cipher) => cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            Self::Aes256(cipher) => cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            Self::ChaCha20(cipher) => cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+        }
+    }
+
+    pub(crate) fn decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, ShadowsocksError> {
+        let nonce = Nonce::from_slice(nonce);
+        match self {
+            Self::Aes128(cipher) => cipher
+                .decrypt(nonce, ciphertext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            Self::Aes192(cipher) => cipher
+                .decrypt(nonce, ciphertext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            Self::Aes256(cipher) => cipher
+                .decrypt(nonce, ciphertext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+            Self::ChaCha20(cipher) => cipher
+                .decrypt(nonce, ciphertext)
+                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+        }
+    }
+}
+
 /// Encrypt plaintext using AEAD with a random salt.
 ///
 /// Returns: salt + encrypted(plaintext)
@@ -30,11 +100,12 @@ pub fn encrypt_frame(
     let nonce_size = method.nonce_size();
 
     // Generate random salt
-    let mut salt = vec![0u8; salt_size];
-    rand::thread_rng().fill_bytes(&mut salt);
+    let mut salt_buf = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut salt_buf[..salt_size]);
+    let salt = &salt_buf[..salt_size];
 
     // Derive subkey
-    let subkey = method.derive_key(key, &salt)?;
+    let subkey = method.derive_key(key, salt)?;
 
     // Generate nonce (12 bytes, starts at 0)
     let nonce_bytes = vec![0u8; nonce_size];
@@ -44,7 +115,7 @@ pub fn encrypt_frame(
 
     // Build output: salt + ciphertext
     let mut output = Vec::with_capacity(salt_size + ciphertext.len());
-    output.extend_from_slice(&salt);
+    output.extend_from_slice(salt);
     output.extend_from_slice(&ciphertext);
 
     Ok(output)
@@ -158,7 +229,8 @@ pub fn encrypt_chunk_standard(
     let len_ct = aead_encrypt_raw(method, key, nonce, &len_bytes)?;
 
     // Compute payload nonce = nonce + 1 (increment last byte with carry)
-    let payload_nonce = nonce_increment(nonce)?;
+    let mut payload_nonce = [0u8; 12];
+    nonce_increment(nonce, &mut payload_nonce)?;
 
     // Encrypt payload with payload nonce
     let payload_ct = aead_encrypt_raw(method, key, &payload_nonce, payload)?;
@@ -214,7 +286,8 @@ pub fn decrypt_chunk_standard(
     }
 
     // Compute payload nonce = nonce + 1
-    let payload_nonce = nonce_increment(nonce)?;
+    let mut payload_nonce = [0u8; 12];
+    nonce_increment(nonce, &mut payload_nonce)?;
 
     // Decrypt payload block
     let payload_start = len_block_size;
@@ -237,11 +310,13 @@ pub(crate) fn encrypt_standard_chunks(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
     let mut output = Vec::new();
-    let mut current_nonce = nonce.to_vec();
+    let mut current_nonce = [0u8; 12];
+    current_nonce.copy_from_slice(nonce);
     for chunk in plaintext.chunks(MAX_CHUNK_PAYLOAD) {
         output.extend_from_slice(&encrypt_chunk_standard(method, key, &current_nonce, chunk)?);
-        let length_nonce = nonce_increment(&current_nonce)?;
-        current_nonce = nonce_increment(&length_nonce)?;
+        let mut length_nonce = [0u8; 12];
+        nonce_increment(&current_nonce, &mut length_nonce)?;
+        nonce_increment(&length_nonce, &mut current_nonce)?;
     }
     Ok(output)
 }
@@ -255,7 +330,8 @@ pub(crate) fn decrypt_standard_chunks(
 ) -> Result<Vec<u8>, ShadowsocksError> {
     let tag_size = method.tag_size();
     let len_block_size = 2 + tag_size;
-    let mut current_nonce = nonce.to_vec();
+    let mut current_nonce = [0u8; 12];
+    current_nonce.copy_from_slice(nonce);
     let mut offset = 0;
     let mut plaintext = Vec::new();
 
@@ -285,7 +361,8 @@ pub(crate) fn decrypt_standard_chunks(
                 "data too short for pproxy payload block".into(),
             ));
         }
-        let length_nonce = nonce_increment(&current_nonce)?;
+        let mut length_nonce = [0u8; 12];
+        nonce_increment(&current_nonce, &mut length_nonce)?;
         let payload = aead_decrypt_raw(
             method,
             key,
@@ -294,21 +371,24 @@ pub(crate) fn decrypt_standard_chunks(
         )?;
         plaintext.extend_from_slice(&payload);
         offset += payload_wire_len;
-        current_nonce = nonce_increment(&length_nonce)?;
+        nonce_increment(&length_nonce, &mut current_nonce)?;
     }
 
     Ok(plaintext)
 }
 
 /// Increment a nonce by 1 (little-endian in first 8 bytes, increment first byte with carry).
-fn nonce_increment(nonce: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
-    let mut result = nonce.to_vec();
+fn nonce_increment(nonce: &[u8], result: &mut [u8]) -> Result<(), ShadowsocksError> {
+    if nonce.len() != result.len() {
+        return Err(ShadowsocksError::Other("nonce size mismatch".into()));
+    }
+    result.copy_from_slice(nonce);
     let end = result.len().min(8);
     for byte in result[..end].iter_mut() {
         let (val, carry) = byte.overflowing_add(1);
         *byte = val;
         if !carry {
-            return Ok(result);
+            return Ok(());
         }
     }
     Err(ShadowsocksError::Other("nonce increment overflow".into()))
@@ -321,38 +401,7 @@ pub fn aead_encrypt_raw(
     nonce: &[u8],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
-    let nonce = Nonce::from_slice(nonce);
-
-    match method {
-        CipherMethod::Aes128Gcm => {
-            let cipher = Aes128Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::Aes192Gcm => {
-            let cipher = Aes192Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::Aes256Gcm => {
-            let cipher = Aes256Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::ChaCha20IetfPoly1305 => {
-            let cipher = ChaCha20Poly1305::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-    }
+    AeadCipher::new(method, key)?.encrypt(nonce, plaintext)
 }
 
 /// Raw AEAD decryption without salt derivation (for address header).
@@ -362,38 +411,7 @@ pub fn aead_decrypt_raw(
     nonce: &[u8],
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
-    let nonce = Nonce::from_slice(nonce);
-
-    match method {
-        CipherMethod::Aes128Gcm => {
-            let cipher = Aes128Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::Aes192Gcm => {
-            let cipher = Aes192Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::Aes256Gcm => {
-            let cipher = Aes256Gcm::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-        CipherMethod::ChaCha20IetfPoly1305 => {
-            let cipher = ChaCha20Poly1305::new_from_slice(key)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))?;
-            cipher
-                .decrypt(nonce, ciphertext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string()))
-        }
-    }
+    AeadCipher::new(method, key)?.decrypt(nonce, ciphertext)
 }
 
 /// Internal AEAD encryption.
@@ -733,7 +751,8 @@ mod tests {
     #[test]
     fn test_nonce_increment_basic() {
         let nonce = vec![0u8; 12];
-        let result = nonce_increment(&nonce).unwrap();
+        let mut result = vec![0u8; nonce.len()];
+        nonce_increment(&nonce, &mut result).unwrap();
         assert_eq!(result[0], 1);
     }
 
@@ -741,7 +760,8 @@ mod tests {
     fn test_nonce_increment_carry() {
         let mut nonce = vec![0u8; 12];
         nonce[0] = 0xFF;
-        let result = nonce_increment(&nonce).unwrap();
+        let mut result = vec![0u8; nonce.len()];
+        nonce_increment(&nonce, &mut result).unwrap();
         assert_eq!(result[0], 0);
         assert_eq!(result[1], 1);
     }
@@ -749,7 +769,8 @@ mod tests {
     #[test]
     fn test_nonce_increment_overflow() {
         let nonce = vec![0xFFu8; 12];
-        let result = nonce_increment(&nonce);
+        let mut result = vec![0u8; nonce.len()];
+        let result = nonce_increment(&nonce, &mut result);
         assert!(result.is_err());
     }
 }

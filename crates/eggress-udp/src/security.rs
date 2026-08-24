@@ -5,6 +5,10 @@ use eggress_protocol_socks::socks5::server::SocksAddr;
 use crate::error::UdpError;
 
 pub fn validate_target(target: &SocksAddr) -> Result<(), UdpError> {
+    validate_target_shape(target, true)
+}
+
+fn validate_target_shape(target: &SocksAddr, reject_loopback: bool) -> Result<(), UdpError> {
     match target {
         SocksAddr::IPv4(addr, port) => {
             let ip = Ipv4Addr::from(*addr);
@@ -20,6 +24,9 @@ pub fn validate_target(target: &SocksAddr) -> Result<(), UdpError> {
             if ip.is_unspecified() {
                 return Err(UdpError::UnspecifiedTarget);
             }
+            if reject_loopback && ip.is_loopback() {
+                return Err(UdpError::Other("loopback target not allowed".to_string()));
+            }
             Ok(())
         }
         SocksAddr::IPv6(addr, port) => {
@@ -32,6 +39,9 @@ pub fn validate_target(target: &SocksAddr) -> Result<(), UdpError> {
             }
             if ip.is_unspecified() {
                 return Err(UdpError::UnspecifiedTarget);
+            }
+            if reject_loopback && ip.is_loopback() {
+                return Err(UdpError::Other("loopback target not allowed".to_string()));
             }
             Ok(())
         }
@@ -68,7 +78,7 @@ pub fn validate_standalone_target(
     target: &SocksAddr,
     allow_private_egress: bool,
 ) -> Result<(), UdpError> {
-    validate_target(target)?;
+    validate_target_shape(target, !allow_private_egress)?;
 
     if !allow_private_egress {
         match target {
@@ -114,7 +124,10 @@ mod tests {
 
     #[test]
     fn valid_ipv6_target() {
-        let target = SocksAddr::IPv6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 443);
+        let target = SocksAddr::IPv6(
+            [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            443,
+        );
         assert!(validate_target(&target).is_ok());
     }
 
@@ -197,9 +210,9 @@ mod tests {
     }
 
     #[test]
-    fn valid_loopback() {
+    fn reject_loopback() {
         let target = SocksAddr::IPv4([127, 0, 0, 1], 8080);
-        assert!(validate_target(&target).is_ok());
+        assert!(validate_target(&target).is_err());
     }
 
     #[test]

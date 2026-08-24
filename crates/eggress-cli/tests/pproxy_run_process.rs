@@ -1,4 +1,13 @@
 use std::process::Command;
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::Mutex;
+
+static LISTENER_MUTEX: Mutex<()> = Mutex::new(());
+static NEXT_LISTENER_PORT: AtomicU16 = AtomicU16::new(20_000);
+
+fn next_listener_port() -> u16 {
+    NEXT_LISTENER_PORT.fetch_add(1, Ordering::Relaxed)
+}
 
 fn eggress_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_eggress"));
@@ -7,6 +16,7 @@ fn eggress_bin() -> Command {
 }
 
 fn run_with_timeout(args: &[&str], timeout_ms: u64) -> std::process::Output {
+    let _guard = LISTENER_MUTEX.lock().unwrap();
     let mut child = eggress_bin()
         .args(args)
         .stdout(std::process::Stdio::piped())
@@ -54,6 +64,7 @@ fn run_with_timeout(args: &[&str], timeout_ms: u64) -> std::process::Output {
 }
 
 fn run_and_kill(args: &[&str], timeout_ms: u64) -> (Option<i32>, String) {
+    let _guard = LISTENER_MUTEX.lock().unwrap();
     let mut child = eggress_bin()
         .args(args)
         .stdout(std::process::Stdio::null())
@@ -121,15 +132,17 @@ fn test_pproxy_run_help_uses_compatibility_action() {
 
 #[test]
 fn test_pproxy_run_bind_failure() {
+    let port = next_listener_port();
+    let listener = format!("socks5://127.0.0.1:{port}");
     let output = run_with_timeout(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "socks5://127.0.0.1:19876",
+            listener.as_str(),
             "-l",
-            "socks5://127.0.0.1:19876",
+            listener.as_str(),
         ],
         5000,
     );
@@ -171,13 +184,14 @@ fn test_pproxy_run_unsupported_feature() {
 fn test_pproxy_run_unknown_flag_fails() {
     // `eggress pproxy run` must refuse unknown flags before startup,
     // matching the standalone `pproxy` binary's behavior.
+    let listener = format!("http://:{}", next_listener_port());
     let output = run_with_timeout(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19880",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
             "--bogus-flag",
@@ -199,13 +213,14 @@ fn test_pproxy_run_unknown_flag_fails() {
 
 #[test]
 fn test_pproxy_run_daemon_fails() {
+    let listener = format!("http://:{}", next_listener_port());
     let output = run_with_timeout(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19881",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
             "--daemon",
@@ -227,13 +242,14 @@ fn test_pproxy_run_daemon_fails() {
 
 #[test]
 fn test_pproxy_run_auth_starts_listener() {
+    let listener = format!("http://:{}", next_listener_port());
     let (status, stderr) = run_and_kill(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19882",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
             "--auth",
@@ -254,13 +270,14 @@ fn test_pproxy_run_auth_starts_listener() {
 
 #[test]
 fn test_pproxy_run_sys_uses_compatibility_operation() {
+    let listener = format!("http://:{}", next_listener_port());
     let (status, stderr) = run_and_kill(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19883",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
             "--sys",
@@ -279,13 +296,14 @@ fn test_pproxy_run_sys_uses_compatibility_operation() {
 
 #[test]
 fn test_pproxy_run_malformed_auth_fails() {
+    let listener = format!("http://:{}", next_listener_port());
     let output = run_with_timeout(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19884",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
             "--auth",
@@ -311,13 +329,16 @@ fn test_pproxy_run_in_memory_config() {
     // Regression: eggress pproxy run must start from in-memory config
     // without writing temporary files. The process should start and run
     // until we kill it (proving the in-memory config worked).
+    let _guard = LISTENER_MUTEX.lock().unwrap();
+    let port = next_listener_port();
+    let listener = format!("http://127.0.0.1:{port}");
     let mut child = eggress_bin()
         .args([
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://127.0.0.1:19893",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
         ])
@@ -326,23 +347,34 @@ fn test_pproxy_run_in_memory_config() {
         .spawn()
         .expect("failed to spawn eggress pproxy run");
 
-    // Give it a moment to start
-    std::thread::sleep(std::time::Duration::from_millis(2000));
-    // If the process is still running, the in-memory config worked.
-    // If it exited early with an error, that's a failure.
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            panic!(
-                "eggress pproxy run exited early with status: {:?}",
-                status.code()
-            );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                panic!(
+                    "eggress pproxy run exited before listener readiness with status: {:?}",
+                    status.code()
+                );
+            }
+            Ok(None) => {}
+            Err(e) => panic!("failed to check process status: {e}"),
         }
-        Ok(None) => {
-            // Still running - success, kill it
+
+        if std::net::TcpStream::connect_timeout(
+            &format!("127.0.0.1:{port}").parse().unwrap(),
+            std::time::Duration::from_millis(50),
+        )
+        .is_ok()
+        {
             let _ = child.kill();
             let _ = child.wait();
+            break;
         }
-        Err(e) => panic!("failed to check process status: {e}"),
+        assert!(
+            std::time::Instant::now() < deadline,
+            "eggress pproxy run did not become ready before the deadline"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
     }
 }
 
@@ -350,13 +382,14 @@ fn test_pproxy_run_in_memory_config() {
 fn test_pproxy_run_unsupported_exit_code_matches_standalone() {
     // Both entry points must return exit code 5 (EXIT_UNSUPPORTED_FEATURE)
     // for the same unsupported feature.
+    let listener = format!("http://:{}", next_listener_port());
     let output = run_with_timeout(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19890",
+            listener.as_str(),
             "-r",
             "socks5://127.0.0.1:1080",
             "--daemon",
@@ -375,15 +408,17 @@ fn test_pproxy_run_unsupported_exit_code_matches_standalone() {
 fn test_pproxy_run_test_mode_in_process() {
     // The nested compatibility entry point must use the same in-process
     // upstream-test implementation as standalone pproxy --test.
+    let listener = format!("http://:{}", next_listener_port());
+    let upstream = format!("socks5://127.0.0.1:{}", next_listener_port());
     let output = run_with_timeout(
         &[
             "pproxy",
             "run",
             "--",
             "-l",
-            "http://:19891",
+            listener.as_str(),
             "-r",
-            "socks5://127.0.0.1:19892",
+            upstream.as_str(),
             "--test",
             "http://example.com/eggress-test-target",
         ],

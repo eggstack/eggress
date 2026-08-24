@@ -1,3 +1,4 @@
+use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::error::HttpError;
@@ -74,7 +75,7 @@ pub async fn http_connect(
     // Add Proxy-Authorization if provided
     if let Some((user, pass)) = auth {
         let credentials = format!("{}:{}", user, pass);
-        let encoded = base64_encode(credentials.as_bytes());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
     }
 
@@ -188,36 +189,6 @@ pub fn parse_status_code(response: &str, limits: &HttpConnectLimits) -> Result<u
         .map_err(|e| HttpError::MalformedResponse(format!("invalid status code: {}", e)))
 }
 
-/// Simple base64 encoder (no-std compatible, no external dependency).
-fn base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    let mut result = String::with_capacity(input.len().div_ceil(3) * 4);
-
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-
-        result.push(TABLE[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(TABLE[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(TABLE[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if chunk.len() > 2 {
-            result.push(TABLE[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-
-    result
-}
-
 /// Write an HTTP error response.
 async fn write_error_response(
     stream: &mut BoxStream,
@@ -239,9 +210,18 @@ mod tests {
 
     #[test]
     fn test_base64_encode() {
-        assert_eq!(base64_encode(b"test"), "dGVzdA==");
-        assert_eq!(base64_encode(b"hello"), "aGVsbG8=");
-        assert_eq!(base64_encode(b"user:pass"), "dXNlcjpwYXNz");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(b"test"),
+            "dGVzdA=="
+        );
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(b"hello"),
+            "aGVsbG8="
+        );
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(b"user:pass"),
+            "dXNlcjpwYXNz"
+        );
     }
 
     #[test]

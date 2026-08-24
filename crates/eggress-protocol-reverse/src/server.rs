@@ -261,7 +261,7 @@ impl ReverseServer {
         let metrics = self.metrics.clone();
 
         // Channel for available control connections
-        let (control_tx, control_rx) = mpsc::unbounded_channel::<ControlStream>();
+        let (control_tx, control_rx) = mpsc::channel::<ControlStream>(256);
 
         // Spawn control connection acceptor
         let config_clone = config.clone();
@@ -338,7 +338,6 @@ impl ReverseServer {
         if let Some(task) = external_task {
             let _ = task.await;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let drain_ms = drain_start.elapsed().as_millis() as u64;
         if let Some(ref m) = metrics {
             m.record_drain(drain_ms);
@@ -352,7 +351,7 @@ impl ReverseServer {
         listener: TcpListener,
         config: Arc<ReverseServerConfig>,
         cancel: CancellationToken,
-        control_tx: mpsc::UnboundedSender<ControlStream>,
+        control_tx: mpsc::Sender<ControlStream>,
         metrics: Option<Arc<ReverseMetrics>>,
         state: Arc<ReverseServerState>,
     ) {
@@ -414,7 +413,7 @@ impl ReverseServer {
         mut stream: TcpStream,
         peer_addr: SocketAddr,
         config: Arc<ReverseServerConfig>,
-        control_tx: mpsc::UnboundedSender<ControlStream>,
+        control_tx: mpsc::Sender<ControlStream>,
         metrics: Option<&ReverseMetrics>,
         state: Arc<ReverseServerState>,
     ) -> Result<(), ProtocolError> {
@@ -479,7 +478,7 @@ impl ReverseServer {
             peer_addr,
             redacted_auth: redacted,
         };
-        if control_tx.send(ctrl).is_err() {
+        if control_tx.try_send(ctrl).is_err() {
             state.active_control.fetch_sub(1, Ordering::Relaxed);
             if let Some(m) = metrics {
                 m.record_control_closed();
@@ -495,7 +494,7 @@ impl ReverseServer {
         listener: TcpListener,
         config: Arc<ReverseServerConfig>,
         cancel: CancellationToken,
-        mut control_rx: mpsc::UnboundedReceiver<ControlStream>,
+        mut control_rx: mpsc::Receiver<ControlStream>,
         metrics: Option<Arc<ReverseMetrics>>,
         state: Arc<ReverseServerState>,
     ) {

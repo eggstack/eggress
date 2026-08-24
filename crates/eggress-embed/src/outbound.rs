@@ -43,8 +43,8 @@ async fn resolve_endpoint_addr(
         return Some(std::net::SocketAddr::new(ip, endpoint.port));
     }
     let lookup = format!("{}:{}", endpoint.host, endpoint.port);
-    let result = tokio::net::lookup_host(&lookup).await.ok()?.next();
-    result
+    let mut addresses = tokio::net::lookup_host(&lookup).await.ok()?;
+    addresses.next()
 }
 
 /// A native outbound connector that executes the chain engine directly.
@@ -145,12 +145,16 @@ impl OutboundConnector {
         };
 
         if self.direct {
-            let stream = eggress_core::connector::Connector::connect(
-                &eggress_core::connector::DirectConnector,
-                &target,
-            )
-            .await
-            .map_err(|e| EggressError::Runtime(e.to_string()))?;
+            let stream = eggress_core::connector::DirectConnector
+                .connect_with_options(
+                    &target,
+                    &eggress_core::connector::ConnectOptions {
+                        enforce_dns_rebinding_check: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| EggressError::Runtime(e.to_string()))?;
             return Ok((
                 stream,
                 OutboundInfo {

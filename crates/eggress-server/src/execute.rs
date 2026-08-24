@@ -361,7 +361,10 @@ async fn open_route(
                 let stream = DirectConnector
                     .connect_with_options(
                         request.target,
-                        &eggress_core::connector::ConnectOptions { local_bind: bind },
+                        &eggress_core::connector::ConnectOptions {
+                            local_bind: bind,
+                            ..Default::default()
+                        },
                     )
                     .await?;
                 Ok::<_, SessionOpenError>((stream, None))

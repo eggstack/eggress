@@ -78,7 +78,7 @@ impl std::fmt::Debug for SshSessionKey {
 
 #[derive(Clone)]
 struct CompatClient {
-    forwarded_channels: Option<mpsc::UnboundedSender<russh::Channel<russh::client::Msg>>>,
+    forwarded_channels: Option<mpsc::Sender<russh::Channel<russh::client::Msg>>>,
 }
 
 impl CompatClient {
@@ -89,7 +89,7 @@ impl CompatClient {
     }
 
     fn remote_forward(
-        forwarded_channels: mpsc::UnboundedSender<russh::Channel<russh::client::Msg>>,
+        forwarded_channels: mpsc::Sender<russh::Channel<russh::client::Msg>>,
     ) -> Self {
         Self {
             forwarded_channels: Some(forwarded_channels),
@@ -123,7 +123,7 @@ impl russh::client::Handler for CompatClient {
         let forwarded_channels = self.forwarded_channels.clone();
         async move {
             if let Some(forwarded_channels) = forwarded_channels {
-                if forwarded_channels.send(channel).is_ok() {
+                if forwarded_channels.try_send(channel).is_ok() {
                     reply.accept().await;
                     return Ok(());
                 }
@@ -147,7 +147,7 @@ pub struct SshRemoteForward {
     handle: Arc<SessionHandle>,
     address: String,
     port: u16,
-    channels: mpsc::UnboundedReceiver<russh::Channel<russh::client::Msg>>,
+    channels: mpsc::Receiver<russh::Channel<russh::client::Msg>>,
 }
 
 impl SshRemoteForward {
@@ -251,7 +251,7 @@ impl SshSessionCache {
                 "SSH compatibility remote forwarding exposes a non-loopback bind"
             );
         }
-        let (sender, channels) = mpsc::unbounded_channel();
+        let (sender, channels) = mpsc::channel(128);
         let session = Arc::new(
             connect_authenticated(key, transport, CompatClient::remote_forward(sender)).await?,
         );
@@ -274,15 +274,17 @@ impl SshSessionCache {
         key: SshSessionKey,
         transport: SshStream,
     ) -> Result<Arc<SessionHandle>, SshTransportError> {
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(&key) {
-            if !session.is_closed() {
-                drop(transport);
-                return Ok(Arc::clone(session));
+        {
+            let mut sessions = self.sessions.lock().await;
+            if let Some(session) = sessions.get(&key) {
+                if !session.is_closed() {
+                    drop(transport);
+                    return Ok(Arc::clone(session));
+                }
             }
+            sessions.remove(&key);
         }
 
-        sessions.remove(&key);
         tracing::warn!(
             host = %key.host,
             port = key.port,
@@ -302,8 +304,12 @@ impl SshSessionCache {
             )
             .await?,
         );
-        sessions.insert(key, Arc::clone(&session));
-        Ok(session)
+
+        let mut sessions = self.sessions.lock().await;
+        Ok(sessions
+            .entry(key)
+            .or_insert_with(|| Arc::clone(&session))
+            .clone())
     }
 
     /// Drop all cached session handles. Existing channels drain according to

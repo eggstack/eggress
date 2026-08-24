@@ -21,11 +21,14 @@ impl NonceCounter {
         }
     }
 
-    pub fn current(&self) -> Vec<u8> {
-        let mut buf = vec![0u8; self.nonce_size];
+    pub fn current(&self, buf: &mut [u8]) -> Result<(), ShadowsocksError> {
+        if buf.len() != self.nonce_size {
+            return Err(ShadowsocksError::Other("nonce size mismatch".into()));
+        }
+        buf.fill(0);
         let end = self.nonce_size.min(8);
         buf[..end].copy_from_slice(&self.counter.to_le_bytes()[..end]);
-        buf
+        Ok(())
     }
 
     pub fn advance(&mut self) -> Result<(), ShadowsocksError> {
@@ -48,14 +51,17 @@ mod tests {
     #[test]
     fn test_nonce_starts_at_zero() {
         let nonce = NonceCounter::new(12);
-        assert_eq!(nonce.current(), vec![0u8; 12]);
+        let mut bytes = [0u8; 12];
+        nonce.current(&mut bytes).unwrap();
+        assert_eq!(bytes, [0u8; 12]);
     }
 
     #[test]
     fn test_nonce_increments() {
         let mut nonce = NonceCounter::new(12);
         nonce.advance().unwrap();
-        let bytes = nonce.current();
+        let mut bytes = [0u8; 12];
+        nonce.current(&mut bytes).unwrap();
         assert_eq!(bytes.len(), 12);
         // little-endian: counter in first 8 bytes, rest zero
         assert_eq!(&bytes[..8], &1u64.to_le_bytes());
@@ -67,7 +73,8 @@ mod tests {
         let mut nonce = NonceCounter::new(12);
         for i in 1u64..=10 {
             nonce.advance().unwrap();
-            let bytes = nonce.current();
+            let mut bytes = [0u8; 12];
+            nonce.current(&mut bytes).unwrap();
             assert_eq!(&bytes[..8], &i.to_le_bytes());
         }
     }

@@ -9,7 +9,8 @@ use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 ///
 /// Used as a domain-resolution guard: after resolving a domain name,
 /// this checks whether the result points to a private/reserved/special-use
-/// range. Literal IP targets bypass this check for pproxy compatibility.
+/// range. Literal IP targets bypass this check by default for pproxy
+/// compatibility; trusted embed callers can opt in through `ConnectOptions`.
 ///
 /// Rejected ranges:
 /// - IPv4: loopback (127.0.0.0/8), link-local (169.254.0.0/16),
@@ -128,6 +129,8 @@ pub struct DirectConnector;
 #[derive(Debug, Clone, Default)]
 pub struct ConnectOptions {
     pub local_bind: Option<SocketAddr>,
+    /// Reject literal IP targets in reserved/private ranges as well as DNS results.
+    pub enforce_dns_rebinding_check: bool,
 }
 
 impl DirectConnector {
@@ -136,7 +139,7 @@ impl DirectConnector {
         target: &TargetAddr,
         options: &ConnectOptions,
     ) -> Result<BoxStream, ConnectError> {
-        let addr = resolve_target(target).await?;
+        let addr = resolve_target(target, options.enforce_dns_rebinding_check).await?;
         let stream = if let Some(local) = options.local_bind {
             let socket = if local.is_ipv4() {
                 tokio::net::TcpSocket::new_v4()
@@ -153,9 +156,17 @@ impl DirectConnector {
     }
 }
 
-async fn resolve_target(target: &TargetAddr) -> Result<SocketAddr, ConnectError> {
+async fn resolve_target(
+    target: &TargetAddr,
+    enforce_dns_rebinding_check: bool,
+) -> Result<SocketAddr, ConnectError> {
     match &target.host {
-        TargetHost::Ip(ip) => Ok(SocketAddr::new(*ip, target.port)),
+        TargetHost::Ip(ip) => {
+            if enforce_dns_rebinding_check && is_dns_rebinding_risk(ip) {
+                return Err(ConnectError::ReservedTarget(*ip));
+            }
+            Ok(SocketAddr::new(*ip, target.port))
+        }
         TargetHost::Domain(domain) => {
             let lookup = format!("{}:{}", domain, target.port);
             let mut addrs = tokio::net::lookup_host(&lookup)

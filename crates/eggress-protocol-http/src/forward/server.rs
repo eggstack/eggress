@@ -17,7 +17,7 @@ impl Default for BodyCopyLimits {
         Self {
             max_chunk_size_line: 1024,
             max_chunk_size: 64 * 1024 * 1024,
-            max_decoded_body: 1024 * 1024 * 1024,
+            max_decoded_body: 64 * 1024 * 1024,
             max_trailer_line: 8192,
             max_trailer_bytes: 32 * 1024,
         }
@@ -556,11 +556,28 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
     })
 }
 
-fn format_response_head(response: &ForwardResponse, force_close: bool) -> String {
+fn format_response_head(
+    response: &ForwardResponse,
+    force_close: bool,
+) -> Result<String, HttpError> {
     let filtered = filter_hop_by_hop(&response.headers);
+    if !response
+        .reason
+        .bytes()
+        .all(|byte| (0x20..=0x7e).contains(&byte))
+    {
+        return Err(HttpError::MalformedResponse(
+            "response reason contains non-printable bytes".into(),
+        ));
+    }
     let mut head = format!("HTTP/1.1 {} {}\r\n", response.status, response.reason);
 
     for (name, value) in &filtered {
+        if name.contains(['\r', '\n']) || value.contains(['\r', '\n']) {
+            return Err(HttpError::MalformedResponse(
+                "response header contains a line break".into(),
+            ));
+        }
         head.push_str(&format!("{}: {}\r\n", name, value));
     }
 
@@ -573,7 +590,7 @@ fn format_response_head(response: &ForwardResponse, force_close: bool) -> String
     }
 
     head.push_str("\r\n");
-    head
+    Ok(head)
 }
 
 /// Result of forwarding a response, including upstream connection state.
@@ -607,14 +624,14 @@ pub async fn forward_response(
             if informational_responses > MAX_INFORMATIONAL_RESPONSES {
                 return Err(HttpError::TooManyInformationalResponses);
             }
-            let head = format_response_head(&response, false);
+            let head = format_response_head(&response, false)?;
             client.write_all(head.as_bytes()).await?;
             bytes_forwarded += head.len() as u64;
             continue;
         }
         break response;
     };
-    let head = format_response_head(&response, true);
+    let head = format_response_head(&response, true)?;
     client.write_all(head.as_bytes()).await?;
     bytes_forwarded += head.len() as u64;
 

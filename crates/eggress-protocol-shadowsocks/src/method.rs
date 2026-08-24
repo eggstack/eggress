@@ -45,6 +45,11 @@ impl CipherMethod {
         self.key_size()
     }
 
+    /// Derive the password-only material reused across UDP salts.
+    pub fn password_key_material(password: &[u8]) -> Vec<u8> {
+        evp_bytes_to_key(password)
+    }
+
     /// Nonce size in bytes.
     pub fn nonce_size(&self) -> usize {
         12
@@ -60,7 +65,15 @@ impl CipherMethod {
     /// Uses `EVP_BytesToKey(password)` as IKM (matching OpenSSL/shadowsocks-rust),
     /// truncated to `key_size` bytes, then HKDF-SHA1 with info="ss-subkey" per SIP003.
     pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<Vec<u8>, ShadowsocksError> {
-        let full_ikm = evp_bytes_to_key(password);
+        self.derive_key_from_ikm(&evp_bytes_to_key(password), salt)
+    }
+
+    /// Derive a salt-specific subkey from cached password key material.
+    pub fn derive_key_from_ikm(
+        &self,
+        full_ikm: &[u8],
+        salt: &[u8],
+    ) -> Result<Vec<u8>, ShadowsocksError> {
         // shadowsocks-rust passes only key_size bytes as IKM to HKDF.
         // evp_bytes_to_key produces 48 bytes; we must truncate to key_size
         // to match the subkey derivation.

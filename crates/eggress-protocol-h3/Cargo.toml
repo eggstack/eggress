@@ -14,12 +14,14 @@ readme = "README.md"
 default = []
 
 [dependencies]
+base64 = "0.22"
 bytes.workspace = true
 eggress-core.workspace = true
 eggress-transport-quic.workspace = true
 h3.workspace = true
 h3-quinn.workspace = true
 http.workspace = true
+subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

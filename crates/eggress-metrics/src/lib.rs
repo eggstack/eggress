@@ -197,7 +197,6 @@ pub struct MetricsRegistry {
     bridged_shadowsocks_metrics:
         Mutex<Option<(Arc<ShadowsocksMetrics>, BridgedShadowsocksSnapshot)>>,
     h2_prev_connections_opened: Mutex<u64>,
-    h2_prev_connections_closed: Mutex<u64>,
     h2_prev_streams_opened: Mutex<u64>,
     h2_prev_streams_closed: Mutex<u64>,
     h2_prev_goaway: Mutex<u64>,
@@ -868,7 +867,6 @@ impl MetricsRegistry {
             #[cfg(feature = "extended")]
             bridged_shadowsocks_metrics: Mutex::new(None),
             h2_prev_connections_opened: Mutex::new(0),
-            h2_prev_connections_closed: Mutex::new(0),
             h2_prev_streams_opened: Mutex::new(0),
             h2_prev_streams_closed: Mutex::new(0),
             h2_prev_goaway: Mutex::new(0),
@@ -961,7 +959,10 @@ impl MetricsRegistry {
                 .standalone_flow_reaps
                 .load(std::sync::atomic::Ordering::Relaxed),
         };
-        *self.bridged_udp_metrics.lock().unwrap() = Some((metrics, snapshot));
+        *self
+            .bridged_udp_metrics
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some((metrics, snapshot));
     }
 
     /// Bridge a shared `ShadowsocksMetrics` instance so that `render_prometheus()`
@@ -1003,7 +1004,10 @@ impl MetricsRegistry {
                 .udp_unsupported_method_rejects_total
                 .load(std::sync::atomic::Ordering::Relaxed),
         };
-        *self.bridged_shadowsocks_metrics.lock().unwrap() = Some((metrics, snapshot));
+        *self
+            .bridged_shadowsocks_metrics
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some((metrics, snapshot));
     }
 
     pub fn record_session_start(&self) {
@@ -1070,7 +1074,12 @@ impl MetricsRegistry {
 
         // Sync live UDP relay counters from the bridged UdpMetrics into
         // Prometheus gauges/counters before encoding.
-        if let Some((metrics, prev)) = self.bridged_udp_metrics.lock().unwrap().as_mut() {
+        if let Some((metrics, prev)) = self
+            .bridged_udp_metrics
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
             // Gauges: set directly (active counts are current-state, not cumulative)
             self.udp_associations_active.set(
                 metrics
@@ -1294,7 +1303,12 @@ impl MetricsRegistry {
 
         // Sync live Shadowsocks protocol counters/gauges from bridged metrics
         #[cfg(feature = "extended")]
-        if let Some((metrics, prev)) = self.bridged_shadowsocks_metrics.lock().unwrap().as_mut() {
+        if let Some((metrics, prev)) = self
+            .bridged_shadowsocks_metrics
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
             self.ss_tcp_sessions_active.set(
                 metrics
                     .tcp_sessions_active
@@ -1408,22 +1422,26 @@ impl MetricsRegistry {
             let cur_closed = H2_PROTOCOL_METRICS
                 .connections_closed
                 .load(Ordering::Relaxed);
-            let prev_opened = *self.h2_prev_connections_opened.lock().unwrap();
-            let _prev_closed = *self.h2_prev_connections_closed.lock().unwrap();
-            let delta_opened = cur_opened.saturating_sub(prev_opened);
+            let mut prev_opened = self
+                .h2_prev_connections_opened
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta_opened = cur_opened.saturating_sub(*prev_opened);
             if delta_opened > 0 {
                 self.h2_connections_total.inc_by(delta_opened);
             }
-            *self.h2_prev_connections_opened.lock().unwrap() = cur_opened;
-            *self.h2_prev_connections_closed.lock().unwrap() = cur_closed;
+            *prev_opened = cur_opened;
             // active = total opened - total closed (capped at 0)
             let active = cur_opened.saturating_sub(cur_closed);
             self.h2_connections_active
                 .set(active.min(i64::MAX as u64) as i64);
 
             let cur = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
-            let prev = *self.h2_prev_streams_opened.lock().unwrap();
-            let delta = cur.saturating_sub(prev);
+            let mut prev = self
+                .h2_prev_streams_opened
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_streams_total
                     .get_or_create(&H2StreamLabels {
@@ -1432,11 +1450,14 @@ impl MetricsRegistry {
                     })
                     .inc_by(delta);
             }
-            *self.h2_prev_streams_opened.lock().unwrap() = cur;
+            *prev = cur;
 
             let cur = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
-            let prev = *self.h2_prev_streams_closed.lock().unwrap();
-            let delta = cur.saturating_sub(prev);
+            let mut prev = self
+                .h2_prev_streams_closed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_streams_total
                     .get_or_create(&H2StreamLabels {
@@ -1445,7 +1466,7 @@ impl MetricsRegistry {
                     })
                     .inc_by(delta);
             }
-            *self.h2_prev_streams_closed.lock().unwrap() = cur;
+            *prev = cur;
 
             let total_opened = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
             let total_closed = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
@@ -1454,65 +1475,105 @@ impl MetricsRegistry {
                 .set(active_streams.min(i64::MAX as u64) as i64);
 
             let cur = H2_PROTOCOL_METRICS.goaway_received.load(Ordering::Relaxed);
-            let delta = cur.saturating_sub(*self.h2_prev_goaway.lock().unwrap());
+            let mut prev = self
+                .h2_prev_goaway
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_goaway_total.inc_by(delta);
             }
-            *self.h2_prev_goaway.lock().unwrap() = cur;
+            *prev = cur;
 
             let cur = H2_PROTOCOL_METRICS
                 .handshake_failures
                 .load(Ordering::Relaxed);
-            let delta = cur.saturating_sub(*self.h2_prev_handshake_failures.lock().unwrap());
+            let mut prev = self
+                .h2_prev_handshake_failures
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_handshake_failures_total.inc_by(delta);
             }
-            *self.h2_prev_handshake_failures.lock().unwrap() = cur;
+            *prev = cur;
 
             let cur = H2_PROTOCOL_METRICS.auth_failures.load(Ordering::Relaxed);
-            let delta = cur.saturating_sub(*self.h2_prev_auth_failures.lock().unwrap());
+            let mut prev = self
+                .h2_prev_auth_failures
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_auth_failures_total.inc_by(delta);
             }
-            *self.h2_prev_auth_failures.lock().unwrap() = cur;
+            *prev = cur;
 
             let cur = H2_PROTOCOL_METRICS
                 .flow_control_stalls
                 .load(Ordering::Relaxed);
-            let delta = cur.saturating_sub(*self.h2_prev_flow_control_stalls.lock().unwrap());
+            let mut prev = self
+                .h2_prev_flow_control_stalls
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_flow_control_stalls_total.inc_by(delta);
             }
-            *self.h2_prev_flow_control_stalls.lock().unwrap() = cur;
+            *prev = cur;
 
             let cur = H2_PROTOCOL_METRICS.pool_exhausted.load(Ordering::Relaxed);
-            let delta = cur.saturating_sub(*self.h2_prev_pool_exhausted.lock().unwrap());
+            let mut prev = self
+                .h2_prev_pool_exhausted
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_pool_exhausted_total.inc_by(delta);
             }
-            *self.h2_prev_pool_exhausted.lock().unwrap() = cur;
+            *prev = cur;
 
             let cur = H2_PROTOCOL_METRICS.bytes_relayed.load(Ordering::Relaxed);
-            let delta = cur.saturating_sub(*self.h2_prev_bytes_relayed.lock().unwrap());
+            let mut prev = self
+                .h2_prev_bytes_relayed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_bytes_relayed_total.inc_by(delta);
             }
-            *self.h2_prev_bytes_relayed.lock().unwrap() = cur;
+            *prev = cur;
         }
 
         // Sync transparent proxy counters from bridged SupervisorState atomics
-        if let Some(accepted) = self.transparent_accepted_bridged.lock().unwrap().as_ref() {
+        if let Some(accepted) = self
+            .transparent_accepted_bridged
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let cur = accepted.load(Ordering::Relaxed);
-            let mut prev = self.transparent_prev_accepted.lock().unwrap();
+            let mut prev = self
+                .transparent_prev_accepted
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.transparent_connections_accepted.inc_by(delta);
             }
             *prev = cur;
         }
-        if let Some(dst_failed) = self.transparent_dst_failed_bridged.lock().unwrap().as_ref() {
+        if let Some(dst_failed) = self
+            .transparent_dst_failed_bridged
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let cur = dst_failed.load(Ordering::Relaxed);
-            let mut prev = self.transparent_prev_dst_failed.lock().unwrap();
+            let mut prev = self
+                .transparent_prev_dst_failed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let delta = cur.saturating_sub(*prev);
             if delta > 0 {
                 self.transparent_original_dst_failed.inc_by(delta);
@@ -1521,7 +1582,7 @@ impl MetricsRegistry {
         }
 
         let mut buf = String::new();
-        encode(&mut buf, &self.registry).unwrap();
+        encode(&mut buf, &self.registry).expect("String write is infallible");
         buf
     }
 
@@ -1615,8 +1676,14 @@ impl MetricsRegistry {
     /// Bridge the supervisor's transparent proxy atomic counters so that
     /// `render_prometheus()` exposes live transparent proxy counters.
     pub fn set_transparent_counters(&self, accepted: Arc<AtomicU64>, dst_failed: Arc<AtomicU64>) {
-        *self.transparent_accepted_bridged.lock().unwrap() = Some(accepted);
-        *self.transparent_dst_failed_bridged.lock().unwrap() = Some(dst_failed);
+        *self
+            .transparent_accepted_bridged
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(accepted);
+        *self
+            .transparent_dst_failed_bridged
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(dst_failed);
     }
 
     pub fn record_upstream_open(&self, protocol: &str, outcome: &str) {

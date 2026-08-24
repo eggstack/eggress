@@ -106,7 +106,7 @@ impl<'a> RedactedUri<'a> {
     }
 }
 
-impl<'a> fmt::Display for RedactedUri<'a> {
+impl fmt::Display for RedactedUri<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let hops: Vec<String> = self
             .chain
@@ -578,7 +578,7 @@ fn percent_decode(input: &str) -> String {
             let hi = hex_val(bytes[i + 1]);
             let lo = hex_val(bytes[i + 2]);
             if let (Some(h), Some(l)) = (hi, lo) {
-                result.push((h << 4 | l) as char);
+                result.push(((h << 4) | l) as char);
                 i += 3;
                 continue;
             }

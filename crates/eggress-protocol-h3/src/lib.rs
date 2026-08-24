@@ -2,10 +2,12 @@
 
 use std::sync::Arc;
 
+use base64::Engine;
 use bytes::{Buf, Bytes};
 use eggress_core::BoxStream;
 use eggress_transport_quic::{QuicClient, QuicConnection, QuicError};
 use http::{Request, Response, StatusCode};
+use subtle::ConstantTimeEq;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -88,7 +90,8 @@ impl H3Client {
             .method(http::Method::CONNECT)
             .uri(format!("https://{authority}/"));
         if let Some((username, password)) = &self.authorization {
-            let encoded = base64_encode(&format!("{username}:{password}"));
+            let encoded =
+                base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
             request = request.header(
                 http::header::PROXY_AUTHORIZATION,
                 format!("Basic {encoded}"),
@@ -124,6 +127,21 @@ impl H3Client {
     }
 }
 
+fn h3_response(status: StatusCode) -> Response<()> {
+    let mut response = Response::new(());
+    *response.status_mut() = status;
+    response
+}
+
+fn h3_auth_required_response() -> Response<()> {
+    let mut response = h3_response(StatusCode::PROXY_AUTHENTICATION_REQUIRED);
+    response.headers_mut().insert(
+        http::header::PROXY_AUTHENTICATE,
+        http::HeaderValue::from_static("Basic realm=\"eggress\""),
+    );
+    response
+}
+
 /// Serve all H3 CONNECT requests on one established QUIC connection.
 pub async fn serve_connection<F, Fut>(
     connection: QuicConnection,
@@ -153,7 +171,7 @@ where
             .map_err(|e| H3Error::Stream(e.to_string()))?;
         if request.method() != http::Method::CONNECT {
             let _ = stream
-                .send_response(Response::builder().status(405).body(()).unwrap())
+                .send_response(h3_response(StatusCode::METHOD_NOT_ALLOWED))
                 .await;
             let _ = stream.finish().await;
             continue;
@@ -173,23 +191,20 @@ where
                 .get(http::header::PROXY_AUTHORIZATION)
                 .and_then(|value| value.to_str().ok())
                 .and_then(parse_basic_authorization)
-                .is_some_and(|(user, pass)| user == *username && pass == *password);
+                .is_some_and(|(user, pass)| {
+                    (user.as_bytes().ct_eq(username.as_bytes())
+                        & pass.as_bytes().ct_eq(password.as_bytes()))
+                    .unwrap_u8()
+                        == 1
+                });
             if !valid {
-                let _ = stream
-                    .send_response(
-                        Response::builder()
-                            .status(407)
-                            .header(http::header::PROXY_AUTHENTICATE, "Basic realm=\"eggress\"")
-                            .body(())
-                            .unwrap(),
-                    )
-                    .await;
+                let _ = stream.send_response(h3_auth_required_response()).await;
                 let _ = stream.finish().await;
                 continue;
             }
         }
         stream
-            .send_response(Response::builder().status(200).body(()).unwrap())
+            .send_response(h3_response(StatusCode::OK))
             .await
             .map_err(|e| H3Error::Stream(e.to_string()))?;
         let (send, recv) = stream.split();
@@ -204,7 +219,10 @@ where
 
 fn parse_basic_authorization(value: &str) -> Option<(String, String)> {
     let encoded = value.strip_prefix("Basic ")?;
-    let decoded = base64_decode(encoded)?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())?;
     let (username, password) = decoded.split_once(':')?;
     Some((username.to_string(), password.to_string()))
 }
@@ -297,54 +315,6 @@ where
     Box::new(tokio::io::join(peer_reader, application_writer))
 }
 
-fn base64_encode(value: &str) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = value.as_bytes();
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = ((chunk[0] as u32) << 16)
-            | ((chunk.get(1).copied().unwrap_or(0) as u32) << 8)
-            | chunk.get(2).copied().unwrap_or(0) as u32;
-        output.push(TABLE[((n >> 18) & 63) as usize] as char);
-        output.push(TABLE[((n >> 12) & 63) as usize] as char);
-        output.push(if chunk.len() > 1 {
-            TABLE[((n >> 6) & 63) as usize] as char
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            TABLE[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    output
-}
-
-fn base64_decode(value: &str) -> Option<String> {
-    let mut output = Vec::with_capacity(value.len() * 3 / 4);
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    for byte in value.bytes().filter(|byte| *byte != b'=') {
-        let value = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
-        } as u32;
-        buffer = (buffer << 6) | value;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push((buffer >> bits) as u8);
-            buffer &= (1 << bits) - 1;
-        }
-    }
-    String::from_utf8(output).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,7 +326,10 @@ mod tests {
 
     #[test]
     fn basic_authorization_is_deterministic() {
-        assert_eq!(base64_encode("user:pass"), "dXNlcjpwYXNz");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode("user:pass"),
+            "dXNlcjpwYXNz"
+        );
     }
 
     #[tokio::test]

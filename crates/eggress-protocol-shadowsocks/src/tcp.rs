@@ -29,10 +29,11 @@ pub async fn shadowsocks_connect(
     metrics: Option<Arc<ShadowsocksMetrics>>,
 ) -> Result<BoxStream, ShadowsocksError> {
     use rand::RngCore;
-    let mut salt = vec![0u8; method.salt_size()];
-    rand::thread_rng().fill_bytes(&mut salt);
+    let mut salt_buf = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut salt_buf[..method.salt_size()]);
+    let salt = &salt_buf[..method.salt_size()];
 
-    let subkey = method.derive_key(password.as_bytes(), &salt)?;
+    let subkey = method.derive_key(password.as_bytes(), salt)?;
 
     let address = encode_address(target)?;
 
@@ -42,7 +43,7 @@ pub async fn shadowsocks_connect(
     let addr_wire = crate::aead::encrypt_chunk_standard(method, &subkey, &addr_nonce, &address)?;
 
     let mut payload = Vec::with_capacity(salt.len() + addr_wire.len());
-    payload.extend_from_slice(&salt);
+    payload.extend_from_slice(salt);
     payload.extend_from_slice(&addr_wire);
 
     stream.write_all(&payload).await?;
@@ -57,10 +58,7 @@ pub async fn shadowsocks_connect(
     // read nonces start at 0 (peer's first response uses nonce 0).
     // The peer will send its own salt, from which we derive the read subkey.
     Ok(Box::new(ShadowsocksAeadStream::new_client(
-        stream,
-        method,
-        subkey,
-        password.to_string(),
+        stream, method, subkey, password,
     )))
 }
 
@@ -80,10 +78,13 @@ pub async fn shadowsocks_accept(
     use crate::aead::aead_decrypt_raw;
     use tokio::io::AsyncReadExt;
 
-    let mut salt = vec![0u8; method.salt_size()];
-    stream.read_exact(&mut salt).await?;
+    let mut salt_buf = [0u8; 32];
+    stream
+        .read_exact(&mut salt_buf[..method.salt_size()])
+        .await?;
+    let salt = &salt_buf[..method.salt_size()];
 
-    let subkey = method.derive_key(password.as_bytes(), &salt)?;
+    let subkey = method.derive_key(password.as_bytes(), salt)?;
     let tag_size = method.tag_size();
     let len_block_size = 2 + tag_size;
 
@@ -142,8 +143,7 @@ pub async fn shadowsocks_accept(
 
     // Data chunks: read nonces start at 2 (address header used 0,1),
     // write nonces start at 0 (first response to client uses nonce 0).
-    let mut ss_stream =
-        ShadowsocksAeadStream::new_server(stream, method, subkey, true, password.to_string());
+    let mut ss_stream = ShadowsocksAeadStream::new_server(stream, method, subkey, true, password);
     ss_stream.prepend_read_plaintext(&address_plaintext[consumed..]);
 
     Ok((Box::new(ss_stream), target_addr))

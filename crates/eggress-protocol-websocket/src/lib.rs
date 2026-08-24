@@ -3,10 +3,12 @@ pub mod error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use base64::Engine;
 use bytes::{Buf, BytesMut};
 use eggress_core::BoxStream;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{Sink, Stream, StreamExt};
+use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::Message;
@@ -269,7 +271,11 @@ where
             let Some((user, password)) = parse_basic_auth(header) else {
                 return Err(ErrorResponse::new(None));
             };
-            if user != *expected_user || password != *expected_password {
+            if (user.as_bytes().ct_eq(expected_user.as_bytes())
+                & password.as_bytes().ct_eq(expected_password.as_bytes()))
+            .unwrap_u8()
+                != 1
+            {
                 return Err(ErrorResponse::new(None));
             }
             *accepted_user_for_callback
@@ -293,20 +299,9 @@ where
 
 fn parse_basic_auth(value: &str) -> Option<(String, String)> {
     let encoded = value.strip_prefix("Basic ")?;
-    let bytes = encoded.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len() * 3 / 4);
-    let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    for byte in bytes.iter().copied().filter(|byte| *byte != b'=') {
-        let value = table.iter().position(|candidate| *candidate == byte)? as u32;
-        buffer = (buffer << 6) | value;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            decoded.push((buffer >> bits) as u8);
-        }
-    }
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
     let decoded = String::from_utf8(decoded).ok()?;
     let (user, password) = decoded.split_once(':')?;
     Some((user.to_string(), password.to_string()))

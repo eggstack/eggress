@@ -271,7 +271,13 @@ impl ChainExecutor {
                 })
                 .transpose()?;
             self.direct_connector
-                .connect_with_options(&first_hop_addr, &ConnectOptions { local_bind })
+                .connect_with_options(
+                    &first_hop_addr,
+                    &ConnectOptions {
+                        local_bind,
+                        ..Default::default()
+                    },
+                )
                 .await
                 .map_err(|e| ChainError::ConnectFailed {
                     hop_index: 0,

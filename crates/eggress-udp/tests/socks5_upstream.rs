@@ -187,6 +187,7 @@ fn relay_config(routing: Arc<dyn eggress_routing::RouteService>) -> (RelayConfig
         identity: ClientIdentity::Anonymous,
         client_tcp_peer: test_addr(),
         registry: test_registry(),
+        allow_private_egress: true,
     };
     (config, udp_metrics)
 }
@@ -469,6 +470,7 @@ async fn upstream_target_flow_idle_cleanup() {
         identity: ClientIdentity::Anonymous,
         client_tcp_peer: test_addr(),
         registry: test_registry(),
+        allow_private_egress: true,
     };
 
     let assoc = test_assoc();
@@ -532,6 +534,7 @@ async fn upstream_metrics_tracking() {
         identity: ClientIdentity::Anonymous,
         client_tcp_peer: test_addr(),
         registry: test_registry(),
+        allow_private_egress: true,
     };
 
     let assoc = test_assoc();

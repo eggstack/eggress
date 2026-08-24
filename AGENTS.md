@@ -75,7 +75,7 @@ Ordinary changes do not require generated evidence bundles, uploaded artifacts, 
 
 ## CI boundary
 
-There is no hosted CI workflow in this repository. All verification is local. Do not create GitHub Actions workflows, release artifact matrices, automated releases, or container publishing without an explicit project-level decision.
+Hosted workflows are smoke signals only; all merge verification remains local. Do not create additional GitHub Actions workflows, release artifact matrices, automated releases, or container publishing without an explicit project-level decision.
 
 ## Release policy
 

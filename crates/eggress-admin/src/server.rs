@@ -7,6 +7,7 @@ use bytes::Bytes;
 use http_body_util::Full;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
+use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
@@ -25,7 +26,8 @@ fn authorized(
     auth: &eggress_config::compile::AdminAuthConfig,
 ) -> bool {
     if let Some(expected) = auth.bearer_token.as_deref() {
-        return authorization_payload(req, "Bearer").is_some_and(|token| token == expected);
+        return authorization_payload(req, "Bearer")
+            .is_some_and(|token| token.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() == 1);
     }
 
     let Some(username) = auth.basic_username.as_deref() else {
@@ -42,7 +44,12 @@ fn authorized(
                 .split_once(':')
                 .map(|(user, pass)| (user.to_string(), pass.to_string()))
         })
-        .is_some_and(|(user, pass)| user == username && pass == password)
+        .is_some_and(|(user, pass)| {
+            (user.as_bytes().ct_eq(username.as_bytes())
+                & pass.as_bytes().ct_eq(password.as_bytes()))
+            .unwrap_u8()
+                == 1
+        })
 }
 
 fn authorization_payload<'a>(
@@ -82,12 +89,19 @@ impl AdminServer {
                             async move {
                                 let response = match state.auth.as_ref() {
                                     Some(auth) if !authorized(&req, auth) => {
-                                        http::Response::builder()
-                                            .status(401)
-                                            .header(http::header::WWW_AUTHENTICATE, "Bearer, Basic")
-                                            .header(http::header::CONTENT_TYPE, "text/plain")
-                                            .body(Full::new(Bytes::from_static(b"unauthorized")))
-                                            .expect("static admin auth response")
+                                        let mut response = http::Response::new(Full::new(
+                                            Bytes::from_static(b"unauthorized"),
+                                        ));
+                                        *response.status_mut() = http::StatusCode::UNAUTHORIZED;
+                                        response.headers_mut().insert(
+                                            http::header::WWW_AUTHENTICATE,
+                                            http::HeaderValue::from_static("Bearer, Basic"),
+                                        );
+                                        response.headers_mut().insert(
+                                            http::header::CONTENT_TYPE,
+                                            http::HeaderValue::from_static("text/plain"),
+                                        );
+                                        response
                                     }
                                     _ => handle_request(req, &state).await,
                                 };

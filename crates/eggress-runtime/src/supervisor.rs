@@ -465,6 +465,7 @@ impl eggress_server::UdpService for RuntimeUdpService {
                 identity: assoc.meta.identity.clone(),
                 client_tcp_peer,
                 registry: registry.clone(),
+                allow_private_egress: udp_config.allow_private_egress,
             };
 
             let relay_assoc = assoc.clone();
@@ -2244,7 +2245,14 @@ impl ServiceSupervisor {
                                         None => Err("WebSocket listener requires a fixed target"
                                             .to_string()),
                                     },
-                                    _ => unreachable!(),
+                                    None => {
+                                        Err("advanced listener has no configured protocol"
+                                            .to_string())
+                                    }
+                                    Some(_) => {
+                                        Err("advanced listener protocol is not supported here"
+                                            .to_string())
+                                    }
                                 };
                                 if let Err(error) = advanced_result {
                                     tracing::debug!(%peer, %error, "advanced listener ended");
@@ -2519,20 +2527,18 @@ impl ServiceSupervisor {
                 if admin_cfg.enabled {
                     let bind = admin_cfg.bind.clone();
                     let admin_cancel_token = admin_cancel.clone();
-                    let server =
-                        match eggress_admin::AdminServer::new(&bind, admin_cancel_token).await {
-                            Ok(s) => Some(s),
-                            Err(e) => {
-                                return Err(RuntimeError::ListenerBind {
-                                    addr: bind,
-                                    source: std::io::Error::new(
-                                        std::io::ErrorKind::AddrInUse,
-                                        e.to_string(),
-                                    ),
-                                });
-                            }
-                        };
-                    server
+                    match eggress_admin::AdminServer::new(&bind, admin_cancel_token).await {
+                        Ok(s) => Some(s),
+                        Err(e) => {
+                            return Err(RuntimeError::ListenerBind {
+                                addr: bind,
+                                source: std::io::Error::new(
+                                    std::io::ErrorKind::AddrInUse,
+                                    e.to_string(),
+                                ),
+                            });
+                        }
+                    }
                 } else {
                     None
                 }

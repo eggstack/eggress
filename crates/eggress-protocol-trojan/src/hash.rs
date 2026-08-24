@@ -7,7 +7,11 @@ use subtle::ConstantTimeEq;
 /// password, sent as the first line of the handshake.
 pub fn password_hash(password: &str) -> String {
     let hash = Sha224::digest(password.as_bytes());
-    hash.iter().map(|b| format!("{:02x}", b)).collect()
+    hash.iter().fold(String::new(), |mut output, byte| {
+        use std::fmt::Write;
+        write!(&mut output, "{byte:02x}").expect("writing to String is infallible");
+        output
+    })
 }
 
 /// Check whether a received 56-byte hash matches the expected password.

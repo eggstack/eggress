@@ -11,12 +11,14 @@ categories = ["network-programming"]
 readme = "README.md"
 
 [dependencies]
+base64 = "0.22"
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+subtle.workspace = true
 eggress-core.workspace = true
 
 [dev-dependencies]

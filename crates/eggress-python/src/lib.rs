@@ -485,7 +485,7 @@ impl PyConnection {
         Ok(false)
     }
 
-    fn __del__(&mut self, py: Python<'_>) {
+    fn __del__(&mut self) {
         if !begin_close(&self.state) {
             return;
         }
@@ -493,13 +493,21 @@ impl PyConnection {
             "Warning: Connection object was not properly closed. Calling close() in __del__."
         );
         if let Some(handle) = self.handle.take() {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                py.detach(|| handle.shutdown_blocking())
-            }));
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => eprintln!("shutdown error in __del__: {error}"),
-                Err(_) => eprintln!("shutdown panicked in __del__"),
+            match outbound_runtime() {
+                Ok(runtime) => {
+                    runtime.spawn(async move {
+                        if let Err(error) = handle.shutdown().await {
+                            eprintln!("shutdown error in __del__: {error}");
+                        }
+                    });
+                }
+                Err(error) => {
+                    eprintln!("could not schedule shutdown in __del__: {error}");
+                    // Dropping here would synchronously join the service thread
+                    // from Python's finalizer. Leak only this already-closing
+                    // handle when the process-wide cleanup runtime is unavailable.
+                    std::mem::forget(handle);
+                }
             }
         }
         self.state.store(STATE_CLOSED, Ordering::Release);
@@ -1983,4 +1991,56 @@ fn _eggress(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn uri_translation_smoke() {
+        let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri("http://127.0.0.1:8080")
+            .expect("valid pproxy URI");
+        assert_eq!(parsed.scheme, "http");
+        assert_eq!(parsed.port, 8080);
+
+        let args = eggress_pproxy_compat::PproxyArgs::parse(&["http://127.0.0.1:8080".to_string()])
+            .expect("valid pproxy args");
+        let output =
+            eggress_pproxy_compat::translate_pproxy_args(&args).expect("translatable pproxy args");
+        assert!(output.toml.contains("127.0.0.1:8080"));
+    }
+
+    #[test]
+    fn config_conversion_smoke() {
+        let args = eggress_pproxy_compat::PproxyArgs::parse(&["http://127.0.0.1:8080".to_string()])
+            .expect("valid pproxy args");
+        let output =
+            eggress_pproxy_compat::translate_pproxy_args(&args).expect("translatable pproxy args");
+        let config = eggress_embed::EggressConfig::from_toml_str(&output.toml)
+            .expect("translated TOML converts to embed config");
+        assert!(!config.source_toml().is_empty());
+    }
+
+    #[test]
+    fn error_mapping_categories_are_stable() {
+        use eggress_embed::EggressError;
+
+        let cases = [
+            (EggressError::Config("bad config".into()), "config"),
+            (EggressError::Runtime("runtime".into()), "runtime"),
+            (EggressError::Startup("startup".into()), "startup"),
+            (EggressError::Reload("reload".into()), "reload"),
+            (EggressError::Shutdown("shutdown".into()), "shutdown"),
+            (
+                EggressError::UnsupportedFeature {
+                    feature: "feature".into(),
+                    message: "unsupported".into(),
+                },
+                "unsupported_feature",
+            ),
+            (EggressError::Internal("internal".into()), "internal"),
+        ];
+        for (error, category) in cases {
+            assert_eq!(error.category(), category);
+        }
+    }
 }

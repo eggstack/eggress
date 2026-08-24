@@ -20,9 +20,8 @@ use crate::security::validate_standalone_target;
 use crate::udp_capability::{udp_capability, UdpRelayCapability};
 use crate::upstream_socks5::{open_socks5_udp_upstream, Socks5UdpUpstreamConfig};
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr};
-use eggress_protocol_shadowsocks::udp::{
-    decode_pproxy_udp_packet, decode_udp_packet, encode_pproxy_udp_packet,
-};
+#[cfg(test)]
+use eggress_protocol_shadowsocks::udp::{decode_pproxy_udp_packet, encode_pproxy_udp_packet};
 use eggress_protocol_socks::socks5::server::SocksAddr;
 use eggress_routing::{
     RouteError, RouteRequest, RouteService, SelectedRoute, SelectionReason, TransportKind,
@@ -46,6 +45,8 @@ struct ResponseMsg {
     payload: Vec<u8>,
 }
 
+const RESPONSE_CHANNEL_CAPACITY: usize = 256;
+
 pub async fn shadowsocks_standalone_udp_relay(
     socket: Arc<UdpSocket>,
     config: ShadowsocksStandaloneUdpConfig,
@@ -53,24 +54,31 @@ pub async fn shadowsocks_standalone_udp_relay(
 ) -> Result<(), UdpError> {
     let mut buf = vec![0u8; config.limits.max_datagram_size];
     let mut clients: HashMap<SocketAddr, ClientFlowState> = HashMap::new();
-    let (response_tx, mut response_rx) = tokio::sync::mpsc::unbounded_channel::<ResponseMsg>();
+    let (response_tx, mut response_rx) =
+        tokio::sync::mpsc::channel::<ResponseMsg>(RESPONSE_CHANNEL_CAPACITY);
 
     let socket_clone = socket.clone();
     let metrics_clone = config.udp_metrics.clone();
     let ss_metrics_clone = config.shadowsocks_metrics.clone();
     let resp_method = config.method;
     let resp_password = config.password.as_bytes().to_vec();
+    let resp_password_ikm =
+        eggress_protocol_shadowsocks::CipherMethod::password_key_material(&resp_password);
     tokio::spawn(async move {
+        let mut salt_buf = [0u8; 32];
         while let Some(msg) = response_rx.recv().await {
             let target_addr = socks_to_target_addr(&msg.target);
-            let mut salt = vec![0u8; resp_method.salt_size()];
-            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
-            match encode_pproxy_udp_packet(
+            rand::RngCore::fill_bytes(
+                &mut rand::thread_rng(),
+                &mut salt_buf[..resp_method.salt_size()],
+            );
+            let salt = &salt_buf[..resp_method.salt_size()];
+            match eggress_protocol_shadowsocks::udp::encode_pproxy_udp_packet_with_ikm(
                 resp_method,
-                &resp_password,
+                &resp_password_ikm,
                 &target_addr,
                 &msg.payload,
-                &salt,
+                salt,
             ) {
                 Ok(encoded) => {
                     if socket_clone.send_to(&encoded, msg.client).await.is_ok() {
@@ -93,6 +101,9 @@ pub async fn shadowsocks_standalone_udp_relay(
     idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut target_cleanup_tick = tokio::time::interval(config.limits.target_idle_timeout);
     target_cleanup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let password_ikm = eggress_protocol_shadowsocks::CipherMethod::password_key_material(
+        config.password.as_bytes(),
+    );
 
     loop {
         tokio::select! {
@@ -101,9 +112,9 @@ pub async fn shadowsocks_standalone_udp_relay(
 
                 let packet = &buf[..n];
 
-                let (target_addr, payload) = match decode_pproxy_udp_packet(
+                let (target_addr, payload) = match eggress_protocol_shadowsocks::udp::decode_pproxy_udp_packet_with_ikm(
                     config.method,
-                    config.password.as_bytes(),
+                    &password_ikm,
                     packet,
                 ) {
                     Ok(r) => r,
@@ -274,7 +285,7 @@ pub async fn shadowsocks_standalone_udp_relay(
                                                 {
                                                     if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                                         if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
-                                                            let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                                 client: flow_client,
                                                                 target: upstream_resp.target.clone(),
                                                                 payload: upstream_resp.payload.to_vec(),
@@ -364,7 +375,13 @@ pub async fn shadowsocks_standalone_udp_relay(
                                     let flow_target = target_socks.clone();
                                     let flow_socket = udp_socket.clone();
                                     let flow_method = method;
-                                    let flow_password = password.as_bytes().to_vec();
+                                    let flow_password: Arc<[u8]> = Arc::from(password.as_bytes());
+                                    let flow_password_ikm: Arc<[u8]> = Arc::from(
+                                        eggress_protocol_shadowsocks::CipherMethod::password_key_material(
+                                            &flow_password,
+                                        ),
+                                    );
+                                    let flow_password_ikm_for_recv = flow_password_ikm.clone();
                                     let flow_client = client_addr;
 
                                     let recv_task = tokio::spawn(async move {
@@ -376,15 +393,15 @@ pub async fn shadowsocks_standalone_udp_relay(
                                         .await
                                         {
                                             if let Ok((resp_target, resp_payload)) =
-                                                decode_udp_packet(
+                                                eggress_protocol_shadowsocks::udp::decode_udp_packet_with_ikm(
                                                     flow_method,
-                                                    &flow_password,
+                                                    &flow_password_ikm_for_recv,
                                                     &recv_buf[..n],
                                                 )
                                             {
                                                 let resp_socks_addr = target_to_socks_addr(&resp_target);
                                                 if socks_addr_equivalent(&resp_socks_addr, &flow_target) {
-                                                    let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                         client: flow_client,
                                                         target: resp_socks_addr,
                                                         payload: resp_payload,
@@ -410,7 +427,8 @@ pub async fn shadowsocks_standalone_udp_relay(
                                         upstream_addr,
                                         udp_socket,
                                         method,
-                                        password: password.into_bytes(),
+                                        password: flow_password,
+                                        password_ikm: flow_password_ikm,
                                         lease: active_lease,
                                         last_activity: Instant::now(),
                                     };
@@ -484,9 +502,9 @@ pub async fn shadowsocks_standalone_udp_relay(
                                         .await
                                         {
                                             if let Ok((target, payload)) =
-                                                flow_stack.decode_response(recv_buf[..n].to_vec())
+                                                flow_stack.decode_response(&recv_buf[..n])
                                             {
-                                                let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                     client: flow_client,
                                                     target: target_to_socks_addr(&target),
                                                     payload,
@@ -541,7 +559,7 @@ pub async fn shadowsocks_standalone_udp_relay(
 async fn build_direct_flow(
     config: &ShadowsocksStandaloneUdpConfig,
     client_addr: SocketAddr,
-    response_tx: &tokio::sync::mpsc::UnboundedSender<ResponseMsg>,
+    response_tx: &tokio::sync::mpsc::Sender<ResponseMsg>,
     target: SocksAddr,
 ) -> Result<TargetFlowEntry, UdpError> {
     let flow = UdpTargetFlow::new(target.clone(), local_udp_bind_addr()).await?;
@@ -559,7 +577,7 @@ async fn build_direct_flow(
         .await
         {
             let payload = recv_buf[..n].to_vec();
-            let _ = flow_response_tx.send(ResponseMsg {
+            let _ = flow_response_tx.try_send(ResponseMsg {
                 client: client_addr,
                 target: flow_target.clone(),
                 payload,

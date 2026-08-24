@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
 use rustls::pki_types::CertificateDer;
 use rustls::ClientConfig;
 
@@ -51,6 +52,7 @@ impl TlsClientConfigBuilder {
     }
 
     /// Accept any server certificate (insecure, for testing only).
+    #[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
     pub fn with_insecure(mut self) -> Self {
         self.insecure = true;
         self
@@ -71,10 +73,19 @@ impl TlsClientConfigBuilder {
     /// Build the shared `ClientConfig`.
     pub fn build(self) -> Result<Arc<ClientConfig>, TlsError> {
         let mut config = if self.insecure {
-            ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
-                .with_no_client_auth()
+            #[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
+            {
+                ClientConfig::builder()
+                    .dangerous()
+                    .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
+                    .with_no_client_auth()
+            }
+            #[cfg(not(any(test, debug_assertions, feature = "insecure-tls")))]
+            {
+                return Err(TlsError::Handshake(
+                    "insecure TLS requires the insecure-tls feature".into(),
+                ));
+            }
         } else {
             ClientConfig::builder()
                 .with_root_certificates(self.root_store)
@@ -94,9 +105,11 @@ impl Default for TlsClientConfigBuilder {
 
 /// A certificate verifier that accepts any server certificate.
 /// Only for testing — never use in production.
+#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
 #[derive(Debug)]
 struct InsecureVerifier;
 
+#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
 impl rustls::client::danger::ServerCertVerifier for InsecureVerifier {
     fn verify_server_cert(
         &self,

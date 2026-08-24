@@ -1,5 +1,6 @@
 use std::net::IpAddr;
 
+use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::error::HttpError;
@@ -175,10 +176,10 @@ pub fn parse_authority(authority: &str) -> Result<TargetAddr, HttpError> {
             .get(bracket_end + 2..)
             .ok_or_else(|| HttpError::TargetParseError("missing port after IPv6 address".into()))?;
 
-        if !authority
+        if authority
             .as_bytes()
             .get(bracket_end + 1)
-            .is_some_and(|&b| b == b':')
+            .is_none_or(|&b| b != b':')
         {
             return Err(HttpError::TargetParseError(
                 "expected ':' between IPv6 address and port".into(),
@@ -247,36 +248,14 @@ pub fn parse_basic_auth(value: &str) -> Option<(String, String)> {
     }
 
     let encoded = &value[6..];
-    let decoded = base64_decode(encoded)?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
     let decoded_str = String::from_utf8(decoded).ok()?;
     let colon_pos = decoded_str.find(':')?;
     let username = decoded_str[..colon_pos].to_string();
     let password = decoded_str[colon_pos + 1..].to_string();
     Some((username, password))
-}
-
-/// Simple base64 decoder (no-std compatible, no external dependency).
-fn base64_decode(input: &str) -> Option<Vec<u8>> {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    let input = input.trim_end_matches('=');
-    let input_bytes = input.as_bytes();
-
-    let mut result = Vec::with_capacity(input_bytes.len() * 3 / 4);
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-
-    for &byte in input_bytes {
-        let val = TABLE.iter().position(|&b| b == byte)? as u32;
-        buf = (buf << 6) | val;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            result.push((buf >> bits) as u8);
-        }
-    }
-
-    Some(result)
 }
 
 /// Write an HTTP error response.
@@ -360,7 +339,9 @@ mod tests {
 
     #[test]
     fn test_base64_decode() {
-        let decoded = base64_decode("dGVzdA==").unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode("dGVzdA==")
+            .unwrap();
         assert_eq!(decoded, b"test");
     }
 

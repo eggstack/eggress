@@ -441,7 +441,11 @@ pub fn compare_cli_flag(
 // ---------------------------------------------------------------------------
 
 fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    bytes.iter().fold(String::new(), |mut output, byte| {
+        use std::fmt::Write;
+        write!(&mut output, "{byte:02x}").expect("writing to String is infallible");
+        output
+    })
 }
 
 pub fn compare_cipher_roundtrip(

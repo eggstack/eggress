@@ -6,14 +6,14 @@ use crate::upstream::{UpstreamGroup, UpstreamRuntime};
 use crate::RouteRequest;
 
 pub trait RandomIndex: Send + Sync {
-    fn index(&self, upper: usize) -> usize;
+    fn index(&self, upper: usize) -> Option<usize>;
 }
 
 pub struct FastrandRandom;
 
 impl RandomIndex for FastrandRandom {
-    fn index(&self, upper: usize) -> usize {
-        fastrand::usize(0..upper)
+    fn index(&self, upper: usize) -> Option<usize> {
+        (upper > 0).then(|| fastrand::usize(0..upper))
     }
 }
 
@@ -32,13 +32,13 @@ impl DeterministicRandom {
 }
 
 impl RandomIndex for DeterministicRandom {
-    fn index(&self, upper: usize) -> usize {
+    fn index(&self, upper: usize) -> Option<usize> {
         let idx = self.counter.fetch_add(1, Ordering::Relaxed);
         let values = self.values.lock().unwrap_or_else(|e| e.into_inner());
-        if values.is_empty() {
-            return 0;
+        if values.is_empty() || upper == 0 {
+            return None;
         }
-        values[idx % values.len()] % upper
+        Some(values[idx % values.len()] % upper)
     }
 }
 
@@ -110,20 +110,31 @@ impl Scheduler for RoundRobinScheduler {
             return None;
         }
         let len = candidates.len();
-        let current = self.cursor.load(Ordering::Relaxed) as usize;
-        for i in 0..len {
-            let idx = (current + i) % len;
-            if is_eligible(&candidates[idx]) {
-                let _ = self.cursor.compare_exchange(
-                    current as u64,
-                    (current + 1) as u64,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                );
-                return Some(candidates[idx].clone());
+        let mut current = self.cursor.load(Ordering::Relaxed);
+        loop {
+            let mut found = false;
+            for i in 0..len {
+                let idx = (current as usize + i) % len;
+                if is_eligible(&candidates[idx]) {
+                    found = true;
+                    match self.cursor.compare_exchange(
+                        current,
+                        current.wrapping_add(1),
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => return Some(candidates[idx].clone()),
+                        Err(next) => {
+                            current = next;
+                            break;
+                        }
+                    }
+                }
+            }
+            if !found {
+                return None;
             }
         }
-        None
     }
 
     fn preview(
@@ -179,7 +190,7 @@ impl Scheduler for RandomScheduler {
         if candidates.is_empty() {
             return None;
         }
-        let start = self.rng.index(candidates.len());
+        let start = self.rng.index(candidates.len())?;
         for i in 0..candidates.len() {
             let idx = (start + i) % candidates.len();
             if is_eligible(&candidates[idx]) {
@@ -233,25 +244,25 @@ mod tests {
     #[test]
     fn deterministic_random_index_returns_sequential_values() {
         let rng = DeterministicRandom::new(vec![2, 0, 1]);
-        assert_eq!(rng.index(10), 2);
-        assert_eq!(rng.index(10), 0);
-        assert_eq!(rng.index(10), 1);
+        assert_eq!(rng.index(10), Some(2));
+        assert_eq!(rng.index(10), Some(0));
+        assert_eq!(rng.index(10), Some(1));
     }
 
     #[test]
     fn deterministic_random_index_wraps_around() {
         let rng = DeterministicRandom::new(vec![1, 3]);
-        assert_eq!(rng.index(10), 1);
-        assert_eq!(rng.index(10), 3);
-        assert_eq!(rng.index(10), 1);
+        assert_eq!(rng.index(10), Some(1));
+        assert_eq!(rng.index(10), Some(3));
+        assert_eq!(rng.index(10), Some(1));
     }
 
     #[test]
     fn deterministic_random_index_modulo_upper() {
         let rng = DeterministicRandom::new(vec![5, 12, 7]);
-        assert_eq!(rng.index(3), 2);
-        assert_eq!(rng.index(3), 0);
-        assert_eq!(rng.index(3), 1);
+        assert_eq!(rng.index(3), Some(2));
+        assert_eq!(rng.index(3), Some(0));
+        assert_eq!(rng.index(3), Some(1));
     }
 
     #[test]

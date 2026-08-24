@@ -1164,10 +1164,10 @@ fn parse_authority(
             eggress_protocol_http::HttpError::TargetParseError("missing port".into())
         })?;
 
-        if !authority
+        if authority
             .as_bytes()
             .get(bracket_end + 1)
-            .is_some_and(|&b| b == b':')
+            .is_none_or(|&b| b != b':')
         {
             return Err(eggress_protocol_http::HttpError::TargetParseError(
                 "expected ':' between IPv6 address and port".into(),

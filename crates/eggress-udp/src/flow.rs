@@ -97,7 +97,8 @@ pub struct ShadowsocksUdpTargetFlow {
     pub upstream_addr: SocketAddr,
     pub udp_socket: Arc<tokio::net::UdpSocket>,
     pub method: eggress_protocol_shadowsocks::CipherMethod,
-    pub password: Vec<u8>,
+    pub password: Arc<[u8]>,
+    pub password_ikm: Arc<[u8]>,
     pub lease: ActiveLease,
     pub last_activity: Instant,
 }
@@ -142,7 +143,7 @@ impl ComposedUdpTargetFlow {
 
     pub fn decode_response(
         &self,
-        packet: Vec<u8>,
+        packet: &[u8],
     ) -> Result<(SocksAddr, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
         let (target, payload) = self.stack.decode_response(packet)?;
         Ok((target_to_socks_addr(&target), payload))
@@ -175,13 +176,20 @@ impl ShadowsocksUdpTargetFlow {
         target: &SocksAddr,
         payload: &[u8],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use eggress_protocol_shadowsocks::udp::encode_udp_packet;
+        use eggress_protocol_shadowsocks::udp::encode_udp_packet_with_ikm;
         use rand::RngCore;
 
         let target_addr = socks_to_target_addr(target);
-        let mut salt = vec![0u8; self.method.salt_size()];
-        rand::thread_rng().fill_bytes(&mut salt);
-        let packet = encode_udp_packet(self.method, &self.password, &target_addr, payload, &salt)?;
+        let mut salt_buf = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut salt_buf[..self.method.salt_size()]);
+        let salt = &salt_buf[..self.method.salt_size()];
+        let packet = encode_udp_packet_with_ikm(
+            self.method,
+            &self.password_ikm,
+            &target_addr,
+            payload,
+            salt,
+        )?;
         self.udp_socket.send_to(&packet, self.upstream_addr).await?;
         Ok(())
     }

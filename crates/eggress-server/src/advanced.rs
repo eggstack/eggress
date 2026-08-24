@@ -1,6 +1,7 @@
 //! Dedicated listener handlers for multiplexed and upgraded transports.
 
 use eggress_core::{BoxStream, ClientIdentity, TargetAddr};
+use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::accept::{
@@ -88,7 +89,11 @@ pub async fn serve_h2_connection(
                     .get(http::header::PROXY_AUTHORIZATION)
                     .and_then(|value| value.to_str().ok())
                     .and_then(parse_basic_auth),
-                Some((user, pass)) if user == username && pass == password
+                Some((user, pass))
+                    if (user.as_bytes().ct_eq(username.as_bytes())
+                        & pass.as_bytes().ct_eq(password.as_bytes()))
+                        .unwrap_u8()
+                        == 1
             )
         } else {
             true

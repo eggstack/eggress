@@ -1469,7 +1469,23 @@ async fn standalone_per_client_target_limit() {
         b"first",
     );
     client_socket.send(&pkt1).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    for _ in 0..100 {
+        if metrics_limits
+            .standalone_flows_total
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == 1
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
+    assert_eq!(
+        metrics_limits
+            .standalone_flows_total
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "first target flow should be created before testing the limit"
+    );
 
     // Second packet to different target should be rejected (limit = 1)
     let pkt2 = standalone_socks5_packet(
@@ -1477,7 +1493,16 @@ async fn standalone_per_client_target_limit() {
         b"second",
     );
     client_socket.send(&pkt2).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    for _ in 0..100 {
+        if metrics_limits
+            .standalone_rejected_datagrams
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == 1
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
 
     assert_eq!(
         metrics_limits

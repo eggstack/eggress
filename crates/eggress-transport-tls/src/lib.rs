@@ -13,7 +13,12 @@ pub use transport::{tls_accept, tls_connect};
 /// Install the ring crypto provider if not already installed.
 /// Safe to call multiple times — only the first call takes effect.
 pub fn install_default_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    if let Err(error) = rustls::crypto::ring::default_provider().install_default() {
+        tracing::warn!(
+            ?error,
+            "ring crypto provider was not installed; another provider is already active"
+        );
+    }
 }
 
 #[cfg(test)]

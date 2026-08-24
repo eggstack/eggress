@@ -39,7 +39,7 @@ fn make_group(
     )
 }
 
-fn dummy_request<'a>(target: &'a TargetAddr) -> RouteRequest<'a> {
+fn dummy_request(target: &TargetAddr) -> RouteRequest<'_> {
     RouteRequest {
         target,
         source: None,

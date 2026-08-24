@@ -502,10 +502,8 @@ pub async fn handle_socks5_handshake<R: AsyncRead + Unpin, W: AsyncWrite + Unpin
 /// Send a rejection reply for unsupported commands.
 pub async fn reject_command<W: AsyncWrite + Unpin>(
     writer: &mut W,
-    cmd: u8,
     target: &SocksAddr,
 ) -> Result<(), Socks5Error> {
-    let _ = cmd;
     send_connect_reply(writer, REP_COMMAND_NOT_SUPPORTED, target).await?;
     Ok(())
 }
@@ -729,7 +727,7 @@ mod tests {
         let (mut client, mut server) = duplex(1024);
 
         let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
-        reject_command(&mut server, 0x02, &target).await.unwrap();
+        reject_command(&mut server, &target).await.unwrap();
 
         let mut response = [0u8; 10];
         client.read_exact(&mut response).await.unwrap();
@@ -742,7 +740,7 @@ mod tests {
         let (mut client, mut server) = duplex(1024);
 
         let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
-        reject_command(&mut server, 0x04, &target).await.unwrap();
+        reject_command(&mut server, &target).await.unwrap();
 
         let mut response = [0u8; 10];
         client.read_exact(&mut response).await.unwrap();
@@ -986,7 +984,7 @@ mod tests {
         let (mut client, mut server) = duplex(1024);
 
         let target = SocksAddr::IPv4([192, 168, 1, 1], 80);
-        reject_command(&mut server, 0x02, &target).await.unwrap();
+        reject_command(&mut server, &target).await.unwrap();
 
         let mut response = [0u8; 10];
         client.read_exact(&mut response).await.unwrap();

@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use bytes::{Buf as _, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::aead::{aead_decrypt_raw, aead_encrypt_raw};
+use crate::aead::AeadCipher;
 use crate::method::CipherMethod;
 use crate::nonce::NonceCounter;
 
@@ -45,11 +45,13 @@ pub struct ShadowsocksAeadStream<S> {
     method: CipherMethod,
     /// Subkey for writing (encrypting outbound data).
     write_subkey: Vec<u8>,
+    write_cipher: Option<AeadCipher>,
     /// Subkey for reading (decrypting inbound data). `None` until the peer's
     /// salt is received on the first read.
     read_subkey: Option<Vec<u8>>,
-    /// Password for deriving the read subkey from the peer's salt.
-    password: Option<String>,
+    read_cipher: Option<AeadCipher>,
+    /// Cached password key material for deriving subkeys from peer salts.
+    password_ikm: Option<Vec<u8>>,
     /// Whether the write side needs to send its salt before the first data chunk.
     send_write_salt: bool,
     write_nonce: NonceCounter,
@@ -64,12 +66,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
     /// Create a new AEAD stream (same subkey for both directions — for internal use).
     pub fn new(inner: S, method: CipherMethod, subkey: Vec<u8>) -> Self {
         let nonce_size = method.nonce_size();
+        let write_cipher = AeadCipher::new(method, &subkey)
+            .expect("derived Shadowsocks subkey must match the cipher method");
+        let read_cipher = AeadCipher::new(method, &subkey)
+            .expect("derived Shadowsocks subkey must match the cipher method");
         Self {
             inner,
             method,
             write_subkey: subkey.clone(),
+            write_cipher: Some(write_cipher),
             read_subkey: Some(subkey),
-            password: None,
+            read_cipher: Some(read_cipher),
+            password_ikm: None,
             send_write_salt: false,
             write_nonce: NonceCounter::starting_at(nonce_size, 0),
             read_nonce: NonceCounter::starting_at(nonce_size, 0),
@@ -88,15 +96,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         inner: S,
         method: CipherMethod,
         write_subkey: Vec<u8>,
-        password: String,
+        password: &str,
     ) -> Self {
         let nonce_size = method.nonce_size();
+        let write_cipher = AeadCipher::new(method, &write_subkey)
+            .expect("derived Shadowsocks subkey must match the cipher method");
         Self {
             inner,
             method,
             write_subkey,
+            write_cipher: Some(write_cipher),
             read_subkey: None,
-            password: Some(password),
+            read_cipher: None,
+            password_ikm: Some(CipherMethod::password_key_material(password.as_bytes())),
             send_write_salt: false,
             // Write nonces start at 2 (address header used 0,1).
             write_nonce: NonceCounter::starting_at(nonce_size, 2),
@@ -119,15 +131,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         method: CipherMethod,
         read_subkey: Vec<u8>,
         send_write_salt: bool,
-        password: String,
+        password: &str,
     ) -> Self {
         let nonce_size = method.nonce_size();
+        let read_cipher = AeadCipher::new(method, &read_subkey)
+            .expect("derived Shadowsocks subkey must match the cipher method");
         Self {
             inner,
             method,
             write_subkey: Vec::new(), // will be derived when salt is sent
+            write_cipher: None,
             read_subkey: Some(read_subkey),
-            password: Some(password),
+            read_cipher: Some(read_cipher),
+            password_ikm: Some(CipherMethod::password_key_material(password.as_bytes())),
             send_write_salt,
             // Read nonces start at 2 (address header used 0,1).
             read_nonce: NonceCounter::starting_at(nonce_size, 2),
@@ -149,12 +165,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         read_start: u64,
     ) -> Self {
         let nonce_size = method.nonce_size();
+        let write_cipher = AeadCipher::new(method, &subkey)
+            .expect("derived Shadowsocks subkey must match the cipher method");
+        let read_cipher = AeadCipher::new(method, &subkey)
+            .expect("derived Shadowsocks subkey must match the cipher method");
         Self {
             inner,
             method,
             write_subkey: subkey.clone(),
+            write_cipher: Some(write_cipher),
             read_subkey: Some(subkey),
-            password: None,
+            read_cipher: Some(read_cipher),
+            password_ikm: None,
             send_write_salt: false,
             write_nonce: NonceCounter::starting_at(nonce_size, write_start),
             read_nonce: NonceCounter::starting_at(nonce_size, read_start),
@@ -256,15 +278,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                     }
 
                     let salt = this.read_buf.split_to(salt_size);
-                    let password = this
-                        .password
+                    let password_ikm = this
+                        .password_ikm
                         .as_deref()
                         .ok_or_else(|| io::Error::other("no password for subkey derivation"))?;
                     let read_subkey = this
                         .method
-                        .derive_key(password.as_bytes(), &salt)
+                        .derive_key_from_ikm(password_ikm, &salt)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let read_cipher = AeadCipher::new(this.method, &read_subkey)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                     this.read_subkey = Some(read_subkey);
+                    this.read_cipher = Some(read_cipher);
                     this.read_buf.clear();
                     this.read_state = ReadState::LengthBlock;
                 }
@@ -285,20 +310,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         Poll::Pending => return Poll::Pending,
                     }
 
-                    let subkey = this
-                        .read_subkey
+                    let cipher = this
+                        .read_cipher
                         .as_ref()
-                        .ok_or_else(|| io::Error::other("read subkey not yet derived"))?;
+                        .ok_or_else(|| io::Error::other("read cipher not yet derived"))?;
 
                     // Decrypt length block with current nonce.
-                    let nonce = this.read_nonce.current();
-                    let len_plaintext = aead_decrypt_raw(
-                        this.method,
-                        subkey,
-                        &nonce,
-                        &this.read_buf[..len_block_size],
-                    )
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let mut nonce = [0u8; 12];
+                    this.read_nonce
+                        .current(&mut nonce)
+                        .map_err(io::Error::other)?;
+                    let len_plaintext = cipher
+                        .decrypt(&nonce, &this.read_buf[..len_block_size])
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     // Advance past length nonce.
                     this.read_nonce.advance().map_err(io::Error::other)?;
@@ -348,14 +372,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         Poll::Pending => return Poll::Pending,
                     }
 
-                    let subkey = this
-                        .read_subkey
+                    let cipher = this
+                        .read_cipher
                         .as_ref()
-                        .ok_or_else(|| io::Error::other("read subkey not yet derived"))?;
+                        .ok_or_else(|| io::Error::other("read cipher not yet derived"))?;
 
                     // Decrypt payload with current nonce (now at payload nonce).
-                    let nonce = this.read_nonce.current();
-                    let plaintext = aead_decrypt_raw(this.method, subkey, &nonce, &this.read_buf)
+                    let mut nonce = [0u8; 12];
+                    this.read_nonce
+                        .current(&mut nonce)
+                        .map_err(io::Error::other)?;
+                    let plaintext = cipher
+                        .decrypt(&nonce, &this.read_buf)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     // Advance past payload nonce.
@@ -387,18 +415,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
         if this.send_write_salt {
             // Generate a random salt and derive the write subkey.
             use rand::RngCore;
-            let mut salt = vec![0u8; this.method.salt_size()];
-            rand::thread_rng().fill_bytes(&mut salt);
-            let password = this
-                .password
+            let mut salt_buf = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut salt_buf[..this.method.salt_size()]);
+            let salt = &salt_buf[..this.method.salt_size()];
+            let password_ikm = this
+                .password_ikm
                 .as_deref()
                 .ok_or_else(|| io::Error::other("no password for subkey derivation"))?;
             let write_subkey = this
                 .method
-                .derive_key(password.as_bytes(), &salt)
+                .derive_key_from_ikm(password_ikm, salt)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let write_cipher = AeadCipher::new(this.method, &write_subkey)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             this.write_subkey = write_subkey;
-            this.write_buf.extend_from_slice(&salt);
+            this.write_cipher = Some(write_cipher);
+            this.write_buf.extend_from_slice(salt);
             this.send_write_salt = false;
         }
 
@@ -425,20 +457,27 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
 
         // Encrypt length block: AEAD(len_u16_be, nonce)
         let len_bytes = (chunk_size as u16).to_be_bytes();
-        let len_nonce = this.write_nonce.current();
-        let len_ct = aead_encrypt_raw(this.method, &this.write_subkey, &len_nonce, &len_bytes)
+        let cipher = this
+            .write_cipher
+            .as_ref()
+            .ok_or_else(|| io::Error::other("write cipher not yet derived"))?;
+        let mut len_nonce = [0u8; 12];
+        this.write_nonce
+            .current(&mut len_nonce)
+            .map_err(io::Error::other)?;
+        let len_ct = cipher
+            .encrypt(&len_nonce, &len_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         this.write_nonce.advance().map_err(io::Error::other)?;
 
         // Encrypt payload block: AEAD(payload, nonce+1)
-        let payload_nonce = this.write_nonce.current();
-        let payload_ct = aead_encrypt_raw(
-            this.method,
-            &this.write_subkey,
-            &payload_nonce,
-            &buf[..chunk_size],
-        )
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let mut payload_nonce = [0u8; 12];
+        this.write_nonce
+            .current(&mut payload_nonce)
+            .map_err(io::Error::other)?;
+        let payload_ct = cipher
+            .encrypt(&payload_nonce, &buf[..chunk_size])
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         this.write_nonce.advance().map_err(io::Error::other)?;
 
         // Wire frame: [18-byte length block] [payload_len + 16-byte payload block]

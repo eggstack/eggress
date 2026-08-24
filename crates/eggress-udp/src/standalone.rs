@@ -44,6 +44,8 @@ struct ResponseMsg {
     payload: Vec<u8>,
 }
 
+const RESPONSE_CHANNEL_CAPACITY: usize = 256;
+
 pub async fn standalone_udp_relay(
     socket: Arc<UdpSocket>,
     config: StandaloneUdpConfig,
@@ -51,12 +53,14 @@ pub async fn standalone_udp_relay(
 ) -> Result<(), UdpError> {
     let mut buf = vec![0u8; config.limits.max_datagram_size];
     let mut clients: HashMap<SocketAddr, ClientFlowState> = HashMap::new();
-    let (response_tx, mut response_rx) = tokio::sync::mpsc::unbounded_channel::<ResponseMsg>();
+    let (response_tx, mut response_rx) =
+        tokio::sync::mpsc::channel::<ResponseMsg>(RESPONSE_CHANNEL_CAPACITY);
 
     let socket_clone = socket.clone();
     let metrics_clone = config.udp_metrics.clone();
     let response_cancel = cancel.clone();
     tokio::spawn(async move {
+        let mut out = Vec::new();
         loop {
             let msg = tokio::select! {
                 _ = response_cancel.cancelled() => break,
@@ -65,7 +69,7 @@ pub async fn standalone_udp_relay(
                     None => break,
                 },
             };
-            let mut out = Vec::new();
+            out.clear();
             match encode_socks5_udp_datagram(&msg.target, &msg.payload, &mut out) {
                 Ok(()) => match socket_clone.send_to(&out, msg.client).await {
                     Ok(_) => metrics_clone.record_standalone_packet_out(out.len() as u64),
@@ -257,7 +261,7 @@ pub async fn standalone_udp_relay(
                                                     let Ok(Ok((n, _peer))) = result else { break };
                                                     if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                                         if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
-                                                            let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                                 client: flow_client,
                                                                 target: upstream_resp.target.clone(),
                                                                 payload: upstream_resp.payload.to_vec(),
@@ -347,8 +351,14 @@ pub async fn standalone_udp_relay(
                                     let flow_response_tx = response_tx.clone();
                                     let flow_target = request.target.clone();
                                     let flow_socket = udp_socket.clone();
-                                    let flow_method = method;
-                                    let flow_password = password.as_bytes().to_vec();
+                                        let flow_method = method;
+                                        let flow_password: Arc<[u8]> = Arc::from(password.as_bytes());
+                                        let flow_password_ikm: Arc<[u8]> = Arc::from(
+                                            eggress_protocol_shadowsocks::CipherMethod::password_key_material(
+                                                &flow_password,
+                                            ),
+                                        );
+                                        let flow_password_ikm_for_recv = flow_password_ikm.clone();
                                     let flow_client = client_addr;
                                     let flow_cancel = cancel.clone();
 
@@ -364,15 +374,15 @@ pub async fn standalone_udp_relay(
                                             };
                                             let Ok(Ok((n, _peer))) = result else { break };
                                             if let Ok((resp_target, resp_payload)) =
-                                                eggress_protocol_shadowsocks::udp::decode_udp_packet(
+                                                eggress_protocol_shadowsocks::udp::decode_udp_packet_with_ikm(
                                                     flow_method,
-                                                    &flow_password,
+                                                    &flow_password_ikm_for_recv,
                                                     &recv_buf[..n],
                                                 )
                                             {
                                                 let resp_socks_addr = target_to_socks_addr(&resp_target);
                                                 if socks_addr_equivalent(&resp_socks_addr, &flow_target) {
-                                                    let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                         client: flow_client,
                                                         target: resp_socks_addr,
                                                         payload: resp_payload,
@@ -398,7 +408,8 @@ pub async fn standalone_udp_relay(
                                         upstream_addr,
                                         udp_socket,
                                         method,
-                                        password: password.into_bytes(),
+                                        password: flow_password,
+                                        password_ikm: flow_password_ikm,
                                         lease: active_lease,
                                         last_activity: Instant::now(),
                                     };
@@ -476,9 +487,9 @@ pub async fn standalone_udp_relay(
                                             };
                                             let Ok(Ok((n, _peer))) = result else { break };
                                             if let Ok((target, payload)) =
-                                                flow_stack.decode_response(recv_buf[..n].to_vec())
+                                                flow_stack.decode_response(&recv_buf[..n])
                                             {
-                                                let _ = flow_response_tx.send(ResponseMsg {
+                                        let _ = flow_response_tx.try_send(ResponseMsg {
                                                     client: flow_client,
                                                     target: target_to_socks_addr(&target),
                                                     payload,
@@ -533,7 +544,7 @@ pub async fn standalone_udp_relay(
 async fn build_direct_flow(
     config: &StandaloneUdpConfig,
     client_addr: SocketAddr,
-    response_tx: &tokio::sync::mpsc::UnboundedSender<ResponseMsg>,
+    response_tx: &tokio::sync::mpsc::Sender<ResponseMsg>,
     target: SocksAddr,
     cancel: &CancellationToken,
 ) -> Result<TargetFlowEntry, UdpError> {
@@ -556,7 +567,7 @@ async fn build_direct_flow(
             };
             let Ok(Ok(n)) = result else { break };
             let payload = recv_buf[..n].to_vec();
-            let _ = flow_response_tx.send(ResponseMsg {
+            let _ = flow_response_tx.try_send(ResponseMsg {
                 client: client_addr,
                 target: flow_target.clone(),
                 payload,

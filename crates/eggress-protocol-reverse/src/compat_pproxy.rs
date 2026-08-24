@@ -862,9 +862,9 @@ fn base64_encode(input: &[u8]) -> String {
         let b = *chunk.get(1).unwrap_or(&0);
         let c = *chunk.get(2).unwrap_or(&0);
         output.push(TABLE[(a >> 2) as usize] as char);
-        output.push(TABLE[((a << 4 | b >> 4) & 0x3f) as usize] as char);
+        output.push(TABLE[(((a << 4) | (b >> 4)) & 0x3f) as usize] as char);
         output.push(if chunk.len() > 1 {
-            TABLE[((b << 2 | c >> 6) & 0x3f) as usize] as char
+            TABLE[(((b << 2) | (c >> 6)) & 0x3f) as usize] as char
         } else {
             '='
         });

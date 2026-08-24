@@ -169,7 +169,7 @@ async fn association_close_all() {
 
 #[test]
 fn security_valid_target_passes() {
-    let target = SocksAddr::IPv4([127, 0, 0, 1], 80);
+    let target = SocksAddr::IPv4([192, 0, 2, 1], 80);
     assert!(validate_target(&target).is_ok());
 }
 
