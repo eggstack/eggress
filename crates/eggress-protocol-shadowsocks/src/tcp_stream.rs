@@ -5,6 +5,7 @@ use std::task::{Context, Poll};
 
 use bytes::{Buf as _, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use zeroize::Zeroizing;
 
 use crate::aead::AeadCipher;
 use crate::method::CipherMethod;
@@ -44,14 +45,14 @@ pub struct ShadowsocksAeadStream<S> {
     inner: S,
     method: CipherMethod,
     /// Subkey for writing (encrypting outbound data).
-    write_subkey: Vec<u8>,
+    write_subkey: Zeroizing<Vec<u8>>,
     write_cipher: Option<AeadCipher>,
     /// Subkey for reading (decrypting inbound data). `None` until the peer's
     /// salt is received on the first read.
-    read_subkey: Option<Vec<u8>>,
+    read_subkey: Option<Zeroizing<Vec<u8>>>,
     read_cipher: Option<AeadCipher>,
     /// Cached password key material for deriving subkeys from peer salts.
-    password_ikm: Option<Vec<u8>>,
+    password_ikm: Option<Zeroizing<Vec<u8>>>,
     /// Whether the write side needs to send its salt before the first data chunk.
     send_write_salt: bool,
     write_nonce: NonceCounter,
@@ -70,6 +71,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             .expect("derived Shadowsocks subkey must match the cipher method");
         let read_cipher = AeadCipher::new(method, &subkey)
             .expect("derived Shadowsocks subkey must match the cipher method");
+        let subkey = Zeroizing::new(subkey);
         Self {
             inner,
             method,
@@ -104,11 +106,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         Self {
             inner,
             method,
-            write_subkey,
+            write_subkey: Zeroizing::new(write_subkey),
             write_cipher: Some(write_cipher),
             read_subkey: None,
             read_cipher: None,
-            password_ikm: Some(CipherMethod::password_key_material(password.as_bytes())),
+            password_ikm: Some(Zeroizing::new(CipherMethod::password_key_material(
+                password.as_bytes(),
+            ))),
             send_write_salt: false,
             // Write nonces start at 2 (address header used 0,1).
             write_nonce: NonceCounter::starting_at(nonce_size, 2),
@@ -139,11 +143,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         Self {
             inner,
             method,
-            write_subkey: Vec::new(), // will be derived when salt is sent
+            write_subkey: Zeroizing::new(Vec::new()), // will be derived when salt is sent
             write_cipher: None,
-            read_subkey: Some(read_subkey),
+            read_subkey: Some(Zeroizing::new(read_subkey)),
             read_cipher: Some(read_cipher),
-            password_ikm: Some(CipherMethod::password_key_material(password.as_bytes())),
+            password_ikm: Some(Zeroizing::new(CipherMethod::password_key_material(
+                password.as_bytes(),
+            ))),
             send_write_salt,
             // Read nonces start at 2 (address header used 0,1).
             read_nonce: NonceCounter::starting_at(nonce_size, 2),
@@ -169,6 +175,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             .expect("derived Shadowsocks subkey must match the cipher method");
         let read_cipher = AeadCipher::new(method, &subkey)
             .expect("derived Shadowsocks subkey must match the cipher method");
+        let subkey = Zeroizing::new(subkey);
         Self {
             inner,
             method,
@@ -288,7 +295,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                     let read_cipher = AeadCipher::new(this.method, &read_subkey)
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    this.read_subkey = Some(read_subkey);
+                    this.read_subkey = Some(Zeroizing::new(read_subkey));
                     this.read_cipher = Some(read_cipher);
                     this.read_buf.clear();
                     this.read_state = ReadState::LengthBlock;
@@ -428,7 +435,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ShadowsocksAeadStream<S> 
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             let write_cipher = AeadCipher::new(this.method, &write_subkey)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            this.write_subkey = write_subkey;
+            this.write_subkey = Zeroizing::new(write_subkey);
             this.write_cipher = Some(write_cipher);
             this.write_buf.extend_from_slice(salt);
             this.send_write_salt = false;

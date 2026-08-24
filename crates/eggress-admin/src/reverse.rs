@@ -53,20 +53,20 @@ impl ReverseRegistry {
     /// same id; in practice ids are unique per supervisor generation.
     pub fn register(&self, entry: ReverseServerEntry) {
         let id = entry.id.clone();
-        let mut guard = self.inner.write().expect("reverse registry poisoned");
+        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
         guard.insert(id, entry);
     }
 
     /// Remove a reverse server entry by id. Called when the
     /// supervisor tears the server down.
     pub fn unregister(&self, id: &ReverseServerId) {
-        let mut guard = self.inner.write().expect("reverse registry poisoned");
+        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
         guard.remove(id);
     }
 
     /// Snapshot all registered servers' state.
     pub fn snapshot(&self) -> Vec<ReverseServerEntrySnapshot> {
-        let guard = self.inner.read().expect("reverse registry poisoned");
+        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
         guard
             .values()
             .map(|e| ReverseServerEntrySnapshot {
@@ -79,7 +79,7 @@ impl ReverseRegistry {
 
     /// True if no reverse servers are registered.
     pub fn is_empty(&self) -> bool {
-        let guard = self.inner.read().expect("reverse registry poisoned");
+        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
         guard.is_empty()
     }
 }

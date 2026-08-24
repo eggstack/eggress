@@ -92,26 +92,11 @@ pub async fn http_connect(
 
     match status {
         200..=299 => Ok(stream),
-        407 => {
-            let _ = write_error_response(&mut stream, 407, "Proxy Authentication Required").await;
-            Err(HttpError::AuthRequired)
-        }
-        403 => {
-            let _ = write_error_response(&mut stream, 403, "Forbidden").await;
-            Err(HttpError::AuthFailed)
-        }
-        502 => {
-            let _ = write_error_response(&mut stream, 502, "Bad Gateway").await;
-            Err(HttpError::BadGateway)
-        }
-        504 => {
-            let _ = write_error_response(&mut stream, 504, "Gateway Timeout").await;
-            Err(HttpError::GatewayTimeout)
-        }
-        code => {
-            let _ = write_error_response(&mut stream, code, "Upstream Error").await;
-            Err(HttpError::UnexpectedStatus(code))
-        }
+        407 => Err(HttpError::AuthRequired),
+        403 => Err(HttpError::AuthFailed),
+        502 => Err(HttpError::BadGateway),
+        504 => Err(HttpError::GatewayTimeout),
+        code => Err(HttpError::UnexpectedStatus(code)),
     }
 }
 
@@ -187,21 +172,6 @@ pub fn parse_status_code(response: &str, limits: &HttpConnectLimits) -> Result<u
     parts[1]
         .parse::<u16>()
         .map_err(|e| HttpError::MalformedResponse(format!("invalid status code: {}", e)))
-}
-
-/// Write an HTTP error response.
-async fn write_error_response(
-    stream: &mut BoxStream,
-    status: u16,
-    reason: &str,
-) -> Result<(), HttpError> {
-    let response = format!(
-        "HTTP/1.1 {} {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-        status, reason
-    );
-    stream.write_all(response.as_bytes()).await?;
-    stream.flush().await?;
-    Ok(())
 }
 
 #[cfg(test)]

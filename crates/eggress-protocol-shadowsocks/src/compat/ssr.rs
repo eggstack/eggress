@@ -254,11 +254,12 @@ impl AsyncWrite for PproxyStream {
         };
         self.write_buf = encoded;
         self.write_pos = 0;
-        let result = self.as_mut().write_pending(cx);
-        match result {
+        match self.as_mut().write_pending(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(data.len())),
             Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
-            Poll::Pending => Poll::Ready(Ok(data.len())),
+            // The encoded bytes are buffered but not yet accepted by the
+            // inner stream; report Pending so the caller is woken to flush.
+            Poll::Pending => Poll::Pending,
         }
     }
 

@@ -119,13 +119,23 @@ fn build_one_upstream_runtime(u: &UpstreamConfig) -> Arc<UpstreamRuntime> {
         UpstreamRuntime::new(id, u.chain.clone()).with_health_config(u.health.clone());
 
     if let Some(first_hop) = u.chain.hops.first() {
-        let addr: Result<std::net::SocketAddr, _> =
-            format!("{}:{}", first_hop.endpoint.host, first_hop.endpoint.port).parse();
-        if let Ok(addr) = addr {
-            runtime = runtime.with_health_probe(eggress_routing::health::HealthProbe::TcpConnect {
-                target: addr,
-                timeout: u.health.timeout,
-            });
+        match format!("{}:{}", first_hop.endpoint.host, first_hop.endpoint.port)
+            .parse::<std::net::SocketAddr>()
+        {
+            Ok(addr) => {
+                runtime =
+                    runtime.with_health_probe(eggress_routing::health::HealthProbe::TcpConnect {
+                        target: addr,
+                        timeout: u.health.timeout,
+                    });
+            }
+            Err(_) => {
+                tracing::warn!(
+                    upstream = %u.id,
+                    endpoint = %first_hop.endpoint.host,
+                    "skipping health probe for hostname endpoint; upstream stays at its initial health state"
+                );
+            }
         }
     }
 

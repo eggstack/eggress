@@ -572,17 +572,27 @@ mod tests {
     fn jitter_range_validation() {
         let base = Duration::from_secs(30);
         let jitter_pct = 0.2;
+        let mut saw_negative = false;
         for _ in 0..1000 {
-            let jitter_ms =
-                (base.as_millis() as f64 * jitter_pct * (fastrand::f64() * 2.0 - 1.0)) as u64;
-            let delay = if jitter_ms < base.as_millis() as u64 {
-                base + Duration::from_millis(jitter_ms)
+            // Mirror the production computation exactly: signed jitter so
+            // both the positive and negative branches are exercised.
+            let jitter_signed =
+                (base.as_millis() as f64 * jitter_pct) * (fastrand::f64() * 2.0 - 1.0);
+            if jitter_signed < 0.0 {
+                saw_negative = true;
+            }
+            let delay = if jitter_signed >= 0.0 {
+                base + Duration::from_millis(jitter_signed as u64)
             } else {
-                base
+                base.saturating_sub(Duration::from_millis((-jitter_signed) as u64))
             };
-            assert!(delay >= base - Duration::from_millis(1));
+            assert!(delay >= base - Duration::from_secs(6));
             assert!(delay <= base + Duration::from_secs(6));
         }
+        assert!(
+            saw_negative,
+            "negative jitter (saturating_sub) branch must be exercised"
+        );
     }
 
     #[tokio::test]

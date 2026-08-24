@@ -74,7 +74,7 @@ pub async fn read_socks4_request<S: tokio::io::AsyncRead + Unpin>(
     let mut user_id_bytes = Vec::with_capacity(64);
     let mut buf = [0u8; 1];
     loop {
-        if user_id_bytes.len() > MAX_USER_ID_LEN {
+        if user_id_bytes.len() >= MAX_USER_ID_LEN {
             return Err(Socks4Error::UserIdTooLong);
         }
         let n = stream.read(&mut buf).await?;
@@ -98,7 +98,7 @@ pub async fn read_socks4_request<S: tokio::io::AsyncRead + Unpin>(
         {
             let mut domain_bytes = Vec::with_capacity(256);
             loop {
-                if domain_bytes.len() > 255 {
+                if domain_bytes.len() >= 255 {
                     return Err(Socks4Error::DomainTooLong);
                 }
                 let n = stream.read(&mut buf).await?;

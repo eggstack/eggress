@@ -382,7 +382,14 @@ fn validate_health_config(
         }
     }
     if let Some(ref interval) = health.interval {
-        if parse_duration(interval).is_err() {
+        if let Ok(d) = parse_duration(interval) {
+            if d.is_zero() {
+                errors.push(ConfigError::validation(
+                    &format!("{}.health.interval", parent_path),
+                    &format!("must be greater than 0, got: {}", interval),
+                ));
+            }
+        } else {
             errors.push(ConfigError::validation(
                 &format!("{}.health.interval", parent_path),
                 &format!("invalid duration: {}", interval),
@@ -390,7 +397,14 @@ fn validate_health_config(
         }
     }
     if let Some(ref timeout) = health.timeout {
-        if parse_duration(timeout).is_err() {
+        if let Ok(d) = parse_duration(timeout) {
+            if d.is_zero() {
+                errors.push(ConfigError::validation(
+                    &format!("{}.health.timeout", parent_path),
+                    &format!("must be greater than 0, got: {}", timeout),
+                ));
+            }
+        } else {
             errors.push(ConfigError::validation(
                 &format!("{}.health.timeout", parent_path),
                 &format!("invalid duration: {}", timeout),
@@ -906,7 +920,14 @@ pub fn validate_duration(s: &str) -> Result<std::time::Duration, ConfigError> {
 
 fn validate_timeouts(timeouts: &crate::model::TimeoutConfig, errors: &mut Vec<ConfigError>) {
     if let Some(ref handshake) = timeouts.handshake {
-        if parse_duration(handshake).is_err() {
+        if let Ok(d) = parse_duration(handshake) {
+            if d.is_zero() {
+                errors.push(ConfigError::validation(
+                    "timeouts.handshake",
+                    &format!("must be greater than 0, got: {}", handshake),
+                ));
+            }
+        } else {
             errors.push(ConfigError::validation(
                 "timeouts.handshake",
                 &format!("invalid duration: {}", handshake),
@@ -914,7 +935,14 @@ fn validate_timeouts(timeouts: &crate::model::TimeoutConfig, errors: &mut Vec<Co
         }
     }
     if let Some(ref connect) = timeouts.connect {
-        if parse_duration(connect).is_err() {
+        if let Ok(d) = parse_duration(connect) {
+            if d.is_zero() {
+                errors.push(ConfigError::validation(
+                    "timeouts.connect",
+                    &format!("must be greater than 0, got: {}", connect),
+                ));
+            }
+        } else {
             errors.push(ConfigError::validation(
                 "timeouts.connect",
                 &format!("invalid duration: {}", connect),
@@ -1234,6 +1262,55 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_durations_rejected_for_timeouts() {
+        let timeouts = crate::model::TimeoutConfig {
+            handshake: Some("0s".to_string()),
+            connect: Some("0ms".to_string()),
+        };
+        let mut errors = Vec::new();
+        validate_timeouts(&timeouts, &mut errors);
+        assert_eq!(errors.len(), 2, "zero handshake and connect must both fail");
+        for error in &errors {
+            let ConfigError::Validation { message, .. } = error else {
+                panic!("expected validation error, got {error:?}");
+            };
+            assert!(message.contains("greater than 0"), "unexpected: {message}");
+        }
+    }
+
+    #[test]
+    fn nonzero_and_missing_timeouts_accepted() {
+        let timeouts = crate::model::TimeoutConfig {
+            handshake: Some("5s".to_string()),
+            connect: None,
+        };
+        let mut errors = Vec::new();
+        validate_timeouts(&timeouts, &mut errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn zero_health_durations_rejected() {
+        let health = crate::model::HealthConfigToml {
+            mode: None,
+            interval: Some("0s".to_string()),
+            timeout: Some("0s".to_string()),
+            failures_to_unhealthy: None,
+            successes_to_healthy: None,
+            initial_state: None,
+        };
+        let mut errors = Vec::new();
+        validate_health_config(&health, "upstreams[0]", &mut errors);
+        assert_eq!(errors.len(), 2, "zero interval and timeout must both fail");
+        for error in &errors {
+            let ConfigError::Validation { message, .. } = error else {
+                panic!("expected validation error, got {error:?}");
+            };
+            assert!(message.contains("greater than 0"), "unexpected: {message}");
+        }
+    }
 
     #[test]
     fn loopback_detection() {

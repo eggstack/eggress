@@ -271,6 +271,7 @@ pub async fn shadowsocks_standalone_udp_relay(
                                             let control_task = upstream_assoc.control_task;
 
                                             let flow_response_tx = response_tx.clone();
+                                            let flow_metrics = config.udp_metrics.clone();
                                             let flow_target = target.clone();
                                             let flow_socket = udp_socket.clone();
                                             let flow_client = client_addr;
@@ -289,11 +290,14 @@ pub async fn shadowsocks_standalone_udp_relay(
                                                     }
                                                     if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                                         if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
-                                        let _ = flow_response_tx.try_send(ResponseMsg {
+                                                            if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = flow_response_tx.try_send(ResponseMsg {
                                                                 client: flow_client,
                                                                 target: upstream_resp.target.clone(),
                                                                 payload: upstream_resp.payload.to_vec(),
-                                                            });
+                                                            }) {
+                                                                flow_metrics.record_dropped_response_channel_full();
+                                                                tracing::debug!("UDP response channel full; response datagram dropped");
+                                                            }
                                                         } else {
                                                             tracing::trace!(
                                                                 "upstream response target mismatch: expected {:?}, got {:?}",
@@ -376,6 +380,7 @@ pub async fn shadowsocks_standalone_udp_relay(
                                     );
 
                                     let flow_response_tx = response_tx.clone();
+                                    let flow_metrics = config.udp_metrics.clone();
                                     let flow_target = target_socks.clone();
                                     let flow_socket = udp_socket.clone();
                                     let flow_method = method;
@@ -405,11 +410,14 @@ pub async fn shadowsocks_standalone_udp_relay(
                                             {
                                                 let resp_socks_addr = target_to_socks_addr(&resp_target);
                                                 if socks_addr_equivalent(&resp_socks_addr, &flow_target) {
-                                        let _ = flow_response_tx.try_send(ResponseMsg {
+                                                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = flow_response_tx.try_send(ResponseMsg {
                                                         client: flow_client,
                                                         target: resp_socks_addr,
                                                         payload: resp_payload,
-                                                    });
+                                                    }) {
+                                                        flow_metrics.record_dropped_response_channel_full();
+                                                        tracing::debug!("UDP response channel full; response datagram dropped");
+                                                    }
                                                 } else {
                                                     tracing::trace!(
                                                         "shadowsocks upstream response target mismatch: expected {:?}, got {:?}",
@@ -496,6 +504,7 @@ pub async fn shadowsocks_standalone_udp_relay(
                                     let flow_socket = flow.socket.clone();
                                     let flow_stack = flow.stack.clone();
                                     let flow_response_tx = response_tx.clone();
+                                    let flow_metrics = config.udp_metrics.clone();
                                     let flow_client = client_addr;
                                     let recv_task = tokio::spawn(async move {
                                         let mut recv_buf = [0u8; 65535];
@@ -508,11 +517,14 @@ pub async fn shadowsocks_standalone_udp_relay(
                                             if let Ok((target, payload)) =
                                                 flow_stack.decode_response(&recv_buf[..n])
                                             {
-                                        let _ = flow_response_tx.try_send(ResponseMsg {
+                                                if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = flow_response_tx.try_send(ResponseMsg {
                                                     client: flow_client,
                                                     target: target_to_socks_addr(&target),
                                                     payload,
-                                                });
+                                                }) {
+                                                    flow_metrics.record_dropped_response_channel_full();
+                                                    tracing::debug!("UDP response channel full; response datagram dropped");
+                                                }
                                             }
                                         }
                                     });
@@ -569,6 +581,7 @@ async fn build_direct_flow(
     let flow = UdpTargetFlow::new(target.clone(), local_udp_bind_addr()).await?;
 
     let flow_response_tx = response_tx.clone();
+    let flow_metrics = config.udp_metrics.clone();
     let flow_target = target.clone();
     let flow_socket = flow.socket.clone();
 
@@ -581,11 +594,16 @@ async fn build_direct_flow(
         .await
         {
             let payload = recv_buf[..n].to_vec();
-            let _ = flow_response_tx.try_send(ResponseMsg {
-                client: client_addr,
-                target: flow_target.clone(),
-                payload,
-            });
+            if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
+                flow_response_tx.try_send(ResponseMsg {
+                    client: client_addr,
+                    target: flow_target.clone(),
+                    payload,
+                })
+            {
+                flow_metrics.record_dropped_response_channel_full();
+                tracing::debug!("UDP response channel full; response datagram dropped");
+            }
         }
     });
 

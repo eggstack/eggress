@@ -644,6 +644,7 @@ pub async fn forward_response(
     bytes_forwarded += head.len() as u64;
 
     // Relay body based on framing
+    let mut eof_framing = false;
     match (response.content_length, response.is_chunked) {
         (Some(len), _) => {
             let mut remaining = len;
@@ -723,6 +724,9 @@ pub async fn forward_response(
             }
         }
         (None, false) => {
+            // No Content-Length and no Transfer-Encoding: the response body
+            // ends at connection close, so the upstream is fully drained.
+            eof_framing = true;
             let mut buf = [0u8; 8192];
             loop {
                 let n = upstream.read(&mut buf).await?;
@@ -736,7 +740,7 @@ pub async fn forward_response(
     }
 
     // Determine upstream alive: HTTP/1.1 default is keep-alive, HTTP/1.0 default is close
-    let upstream_alive = if response.connection_close {
+    let mut upstream_alive = if response.connection_close {
         false
     } else if response.version.contains("1.1") {
         true
@@ -747,6 +751,10 @@ pub async fn forward_response(
             .iter()
             .any(|(n, v)| n.eq_ignore_ascii_case("Keep-Alive") && !v.is_empty())
     };
+    if eof_framing {
+        // A connection closed by EOF framing can never be reused.
+        upstream_alive = false;
+    }
 
     // Client should close if the upstream said close
     let client_should_close = response.connection_close;

@@ -40,9 +40,12 @@ impl AuthReuseCache {
 
     pub fn lookup(&self, peer_ip: IpAddr) -> Option<ClientIdentity> {
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-        let now = Instant::now();
-        entries.retain(|_, entry| now.duration_since(entry.last_authenticated) <= self.timeout);
-        entries.get(&peer_ip).map(|entry| entry.identity.clone())
+        let entry = entries.get(&peer_ip)?;
+        if Instant::now().duration_since(entry.last_authenticated) > self.timeout {
+            entries.remove(&peer_ip);
+            return None;
+        }
+        Some(entry.identity.clone())
     }
 
     pub fn record(&self, peer_ip: IpAddr, identity: ClientIdentity) {

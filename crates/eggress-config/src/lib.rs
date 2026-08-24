@@ -579,6 +579,34 @@ destination_port_range = [8000, 9000]
     }
 
     #[test]
+    fn inverted_port_range_is_rejected() {
+        // A reversed range would otherwise silently match nothing.
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[[rules]]
+id = "reversed-range"
+direct = true
+
+[rules.match]
+destination_port_range = [9000, 8000]
+"#;
+        let f = write_config(config);
+        let path = f.path().to_str().unwrap();
+        let result = load_and_validate(path);
+        let err = result.err().expect("inverted port range must be rejected");
+        assert!(
+            err.to_string().contains("must be <="),
+            "expected start<=end error, got: {err}"
+        );
+    }
+
+    #[test]
     fn leaf_matcher_port_set() {
         let config = r#"
 version = 1

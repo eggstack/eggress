@@ -1070,7 +1070,14 @@ fn parse_listener_uri(uri: &str) -> Result<ListenerSpec, Box<dyn std::error::Err
 #[tokio::main]
 async fn main() -> ExitCode {
     let exit_code = run().await;
-    ExitCode::from(exit_code as u8)
+    let code = u8::try_from(exit_code).unwrap_or_else(|_| {
+        debug_assert!(
+            (0..=u8::MAX as i32).contains(&exit_code),
+            "exit code {exit_code} does not fit in u8"
+        );
+        EXIT_RUNTIME_FAILURE as u8
+    });
+    ExitCode::from(code)
 }
 
 async fn run() -> i32 {

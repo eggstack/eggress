@@ -13,6 +13,7 @@ pub struct UdpMetrics {
     pub dropped_packets: AtomicU64,
     pub dropped_encode_errors: AtomicU64,
     pub dropped_send_errors: AtomicU64,
+    pub dropped_response_channel_full: AtomicU64,
     pub target_flows_active: AtomicU64,
     pub target_flows_total: AtomicU64,
     pub decode_errors: AtomicU64,
@@ -75,6 +76,12 @@ impl UdpMetrics {
 
     pub fn record_dropped_send_error(&self) {
         self.dropped_send_errors.fetch_add(1, Ordering::Relaxed);
+        self.record_dropped();
+    }
+
+    pub fn record_dropped_response_channel_full(&self) {
+        self.dropped_response_channel_full
+            .fetch_add(1, Ordering::Relaxed);
         self.record_dropped();
     }
 
@@ -246,6 +253,19 @@ mod tests {
         metrics.record_dropped();
         metrics.record_dropped();
         assert_eq!(metrics.dropped_packets.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn response_channel_overflow_counts_as_drop() {
+        let metrics = UdpMetrics::new();
+        metrics.record_dropped_response_channel_full();
+        assert_eq!(
+            metrics
+                .dropped_response_channel_full
+                .load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(metrics.dropped_packets.load(Ordering::Relaxed), 1);
     }
 
     #[test]

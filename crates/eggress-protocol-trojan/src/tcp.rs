@@ -103,7 +103,9 @@ pub async fn trojan_accept(
     }
 
     if &hash_buf[56..58] != b"\r\n" {
-        return Err(TrojanError::Protocol("missing CRLF after hash".into()));
+        // Uniform handling with the hash-mismatch path: a distinguishable
+        // error here would leak whether the guessed hash was correct.
+        return Err(TrojanError::AuthFailed);
     }
 
     // Read CMD (1 byte) — must be 0x01 (CONNECT)
@@ -995,21 +997,35 @@ mod tests {
 
         let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
         let result = trojan_accept(stream, password).await;
-        match result {
-            Err(TrojanError::Protocol(msg)) => {
-                assert!(
-                    msg.contains("missing CRLF after hash") || msg.contains("CRLF"),
-                    "expected CRLF error, got: {}",
-                    msg
-                );
-            }
-            // If the hash comparison happens before CRLF check, we might get
-            // AuthFailed instead because the hash bytes include the CMD byte
-            Err(TrojanError::AuthFailed) => {
-                // Acceptable — the hash was compared without the CRLF and didn't match
-            }
-            other => panic!("expected error for missing CRLF, got {:?}", other.err()),
-        }
+        // A bad CRLF after a *correct* hash must be indistinguishable from a
+        // wrong password so the error path cannot leak hash validity.
+        assert!(
+            matches!(result, Err(TrojanError::AuthFailed)),
+            "expected AuthFailed for missing CRLF after hash, got {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn trojan_accept_bad_crlf_after_correct_hash_is_auth_failed() {
+        let password = "pass";
+        let hash = password_hash(password);
+        let mut handshake = Vec::new();
+        handshake.extend_from_slice(hash.as_bytes());
+        handshake.extend_from_slice(b"XX"); // corrupt CRLF after the hash
+        handshake.push(0x01); // CONNECT
+        handshake.push(0x01); // ATYP IPv4
+        handshake.extend_from_slice(&[127, 0, 0, 1]);
+        handshake.extend_from_slice(&80u16.to_be_bytes());
+        handshake.extend_from_slice(b"\r\n");
+
+        let stream: BoxStream = Box::new(std::io::Cursor::new(handshake));
+        let result = trojan_accept(stream, password).await;
+        assert!(
+            matches!(result, Err(TrojanError::AuthFailed)),
+            "expected AuthFailed for corrupt CRLF after correct hash, got {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]

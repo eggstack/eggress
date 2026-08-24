@@ -273,14 +273,20 @@ pub async fn read_method_negotiation<R: AsyncRead + Unpin>(
 ///
 /// If the client supports `AUTH_NONE` and no password is required, selects no auth.
 /// If `password` is Some and the client supports username/password auth, selects that.
+/// If `password` is Some but username/password auth was not offered, sends 0xFF
+/// (no acceptable methods) so unauthenticated access is never negotiated.
 /// Otherwise, sends 0xFF (no acceptable methods).
 pub async fn send_method_selection<W: AsyncWrite + Unpin>(
     writer: &mut W,
     methods: &[u8],
     password: Option<&str>,
 ) -> Result<(), Socks5Error> {
-    let method = if password.is_some() && methods.contains(&AUTH_USERNAME_PASSWORD) {
-        AUTH_USERNAME_PASSWORD
+    let method = if let Some(_password) = password {
+        if methods.contains(&AUTH_USERNAME_PASSWORD) {
+            AUTH_USERNAME_PASSWORD
+        } else {
+            AUTH_NO_ACCEPTABLE
+        }
     } else if methods.contains(&AUTH_NONE) {
         AUTH_NONE
     } else {
@@ -360,7 +366,8 @@ pub async fn read_connect_request<R: AsyncRead + Unpin>(
 
     let cmd = reader.read_u8().await?;
     if cmd != CMD_CONNECT {
-        // Send reply for command not supported before returning error
+        // The REP=0x07 acknowledgement for unsupported commands is sent by
+        // `handle_socks5_handshake`, which owns the writer half.
         return Err(Socks5Error::UnsupportedCommand(cmd));
     }
 
@@ -489,14 +496,27 @@ pub async fn handle_socks5_handshake<R: AsyncRead + Unpin, W: AsyncWrite + Unpin
 
     // Step 2: Auth (if password required)
     if let Some(pwd) = password {
-        read_auth_request(reader, pwd).await?;
+        if let Err(e) = read_auth_request(reader, pwd).await {
+            // RFC 1929: always answer with a failure status before closing.
+            let _ = send_auth_response(writer, false).await;
+            return Err(e);
+        }
         send_auth_response(writer, true).await?;
     }
 
     // Step 3: CONNECT request
-    let target = read_connect_request(reader).await?;
-
-    Ok(target)
+    match read_connect_request(reader).await {
+        Ok(target) => Ok(target),
+        Err(Socks5Error::UnsupportedCommand(cmd)) => {
+            // RFC 1928 §6: acknowledge unsupported commands with REP=0x07
+            // before closing. The target address was not readable, so the
+            // reply carries an unspecified bind address.
+            let unspecified = SocksAddr::IPv4([0, 0, 0, 0], 0);
+            let _ = send_connect_reply(writer, REP_COMMAND_NOT_SUPPORTED, &unspecified).await;
+            Err(Socks5Error::UnsupportedCommand(cmd))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Send a rejection reply for unsupported commands.
@@ -582,6 +602,23 @@ mod tests {
         let methods = read_method_negotiation(&mut server).await.unwrap();
         let result = send_method_selection(&mut server, &methods, None).await;
         assert!(matches!(result, Err(Socks5Error::MethodNegotiationFailed)));
+    }
+
+    #[tokio::test]
+    async fn test_password_required_rejects_auth_none_only_client() {
+        let (mut client, mut server) = duplex(1024);
+
+        // Client offers only AUTH_NONE while the server requires a password.
+        client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+
+        let methods = read_method_negotiation(&mut server).await.unwrap();
+        let result = send_method_selection(&mut server, &methods, Some("secret")).await;
+        assert!(matches!(result, Err(Socks5Error::MethodNegotiationFailed)));
+
+        // The client must see 0xFF, never a negotiated 0x00.
+        let mut response = [0u8; 2];
+        client.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [0x05, 0xFF]);
     }
 
     #[tokio::test]

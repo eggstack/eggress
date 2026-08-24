@@ -135,6 +135,7 @@ pub struct MetricsRegistry {
     udp_dropped_packets_total: Counter,
     udp_dropped_encode_errors_total: Counter,
     udp_dropped_send_errors_total: Counter,
+    udp_dropped_response_channel_full_total: Counter,
     udp_target_flows_active: Gauge,
     udp_target_flows_total: Counter,
     udp_decode_errors_total: Family<DecodeErrorLabels, Counter>,
@@ -219,6 +220,7 @@ struct BridgedUdpSnapshot {
     dropped_packets: u64,
     dropped_encode_errors: u64,
     dropped_send_errors: u64,
+    dropped_response_channel_full: u64,
     target_flows_total: u64,
     decode_errors: u64,
     upstream_associations_total: u64,
@@ -409,6 +411,13 @@ impl MetricsRegistry {
             "eggress_udp_dropped_send_errors_total",
             "Total UDP datagrams dropped because response sending failed",
             udp_dropped_send_errors_total.clone(),
+        );
+
+        let udp_dropped_response_channel_full_total = Counter::default();
+        registry.register(
+            "eggress_udp_dropped_response_channel_full_total",
+            "Total UDP response datagrams dropped because the relay response channel was full",
+            udp_dropped_response_channel_full_total.clone(),
         );
 
         let udp_target_flows_active = Gauge::default();
@@ -806,6 +815,7 @@ impl MetricsRegistry {
             udp_dropped_packets_total,
             udp_dropped_encode_errors_total,
             udp_dropped_send_errors_total,
+            udp_dropped_response_channel_full_total,
             udp_target_flows_active,
             udp_target_flows_total,
             udp_decode_errors_total,
@@ -909,6 +919,9 @@ impl MetricsRegistry {
                 .load(std::sync::atomic::Ordering::Relaxed),
             dropped_send_errors: metrics
                 .dropped_send_errors
+                .load(std::sync::atomic::Ordering::Relaxed),
+            dropped_response_channel_full: metrics
+                .dropped_response_channel_full
                 .load(std::sync::atomic::Ordering::Relaxed),
             target_flows_total: metrics
                 .target_flows_total
@@ -1170,6 +1183,15 @@ impl MetricsRegistry {
                 self.udp_dropped_send_errors_total.inc_by(delta);
             }
             prev.dropped_send_errors = cur;
+
+            let cur = metrics
+                .dropped_response_channel_full
+                .load(Ordering::Relaxed);
+            let delta = cur.saturating_sub(prev.dropped_response_channel_full);
+            if delta > 0 {
+                self.udp_dropped_response_channel_full_total.inc_by(delta);
+            }
+            prev.dropped_response_channel_full = cur;
 
             let cur = metrics.target_flows_total.load(Ordering::Relaxed);
             let delta = cur.saturating_sub(prev.target_flows_total);

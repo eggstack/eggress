@@ -13,6 +13,7 @@ use hmac::{Hmac, Mac};
 use rand::RngCore;
 use sha1::Sha1;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use zeroize::Zeroizing;
 
 use crate::address::{decode_address, encode_address};
 use crate::error::ShadowsocksError;
@@ -516,11 +517,11 @@ fn apply_block(
 ) {
     match mode {
         BlockMode::Cfb(bits) if bits == 1 => {
+            let mut encrypted = vec![0u8; feedback.len()];
             for byte in data {
                 let input = *byte;
                 let mut output = 0u8;
                 for bit in (0..8).rev() {
-                    let mut encrypted = vec![0u8; feedback.len()];
                     cipher.encrypt_block(feedback, &mut encrypted);
                     let in_bit = (input >> bit) & 1;
                     let out_bit = in_bit ^ (encrypted[0] >> 7);
@@ -549,16 +550,20 @@ fn apply_block(
                         segment_buffer.clear();
                     }
                     let count = (keystream.len() - *keystream_pos).min(data.len() - offset);
-                    let input = data[offset..offset + count].to_vec();
-                    for i in 0..count {
-                        data[offset + i] ^= keystream[*keystream_pos + i];
-                    }
-                    let source = if decrypt {
-                        &input
+                    if decrypt {
+                        // Keep the pre-XOR ciphertext: it becomes the next
+                        // feedback block.
+                        let input = data[offset..offset + count].to_vec();
+                        for i in 0..count {
+                            data[offset + i] ^= keystream[*keystream_pos + i];
+                        }
+                        segment_buffer.extend_from_slice(&input);
                     } else {
-                        &data[offset..offset + count]
-                    };
-                    segment_buffer.extend_from_slice(source);
+                        for i in 0..count {
+                            data[offset + i] ^= keystream[*keystream_pos + i];
+                        }
+                        segment_buffer.extend_from_slice(&data[offset..offset + count]);
+                    }
                     *keystream_pos += count;
                     offset += count;
                     if *keystream_pos == block_len {
@@ -570,25 +575,32 @@ fn apply_block(
                 }
                 return;
             }
+            let mut encrypted = vec![0u8; block_len];
             let mut offset = 0;
             while offset < data.len() {
-                let mut encrypted = vec![0u8; block_len];
                 cipher.encrypt_block(feedback, &mut encrypted);
                 let count = segment.min(data.len() - offset);
-                let input = data[offset..offset + count].to_vec();
-                for i in 0..count {
-                    data[offset + i] ^= encrypted[i];
-                }
-                let source = if decrypt {
-                    &input
+                if decrypt {
+                    let input = data[offset..offset + count].to_vec();
+                    for i in 0..count {
+                        data[offset + i] ^= encrypted[i];
+                    }
+                    if count == block_len {
+                        feedback.copy_from_slice(&input);
+                    } else {
+                        feedback.drain(..count);
+                        feedback.extend_from_slice(&input);
+                    }
                 } else {
-                    &data[offset..offset + count]
-                };
-                if count == block_len {
-                    feedback.copy_from_slice(source);
-                } else {
-                    feedback.drain(..count);
-                    feedback.extend_from_slice(source);
+                    for i in 0..count {
+                        data[offset + i] ^= encrypted[i];
+                    }
+                    if count == block_len {
+                        feedback.copy_from_slice(&data[offset..offset + count]);
+                    } else {
+                        feedback.drain(..count);
+                        feedback.extend_from_slice(&data[offset..offset + count]);
+                    }
                 }
                 offset += count;
             }
@@ -791,10 +803,10 @@ fn warn_legacy(method: LegacyMethod) {
 struct LegacyStream {
     inner: BoxStream,
     method: LegacyMethod,
-    key: Vec<u8>,
-    read_iv: Vec<u8>,
+    key: Zeroizing<Vec<u8>>,
+    read_iv: Zeroizing<Vec<u8>>,
     read_state: Option<CipherState>,
-    write_iv: Vec<u8>,
+    write_iv: Zeroizing<Vec<u8>>,
     write_state: Option<CipherState>,
     ota_read: bool,
     ota_write: bool,
@@ -822,10 +834,10 @@ impl LegacyStream {
         Ok(Self {
             inner,
             method,
-            key,
-            read_iv: Vec::new(),
+            key: Zeroizing::new(key),
+            read_iv: Zeroizing::new(Vec::new()),
             read_state,
-            write_iv: iv,
+            write_iv: Zeroizing::new(iv),
             write_state,
             ota_read: false,
             ota_write: method.ota,
@@ -852,10 +864,10 @@ impl LegacyStream {
         Ok(Self {
             inner,
             method,
-            key,
-            read_iv: iv,
+            key: Zeroizing::new(key),
+            read_iv: Zeroizing::new(iv),
             read_state,
-            write_iv: Vec::new(),
+            write_iv: Zeroizing::new(Vec::new()),
             write_state,
             ota_read: false,
             ota_write: false,
@@ -1012,7 +1024,7 @@ impl AsyncWrite for LegacyStream {
             if self.write_state.is_none() {
                 let mut iv = vec![0u8; self.method.iv_len()];
                 rand::thread_rng().fill_bytes(&mut iv);
-                self.write_iv = iv.clone();
+                self.write_iv = Zeroizing::new(iv.clone());
                 self.write_state = match CipherState::new(self.method, &self.key, &iv) {
                     Ok(state) => Some(state),
                     Err(error) => {

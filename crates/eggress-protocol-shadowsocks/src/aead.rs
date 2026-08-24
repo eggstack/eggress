@@ -14,6 +14,9 @@ use crate::method::CipherMethod;
 /// field itself is a u16.
 pub const MAX_CHUNK_PAYLOAD: usize = 16 * 1024 - 1;
 
+/// Authentication tag size shared by every supported AEAD method.
+const AEAD_TAG_SIZE: usize = 16;
+
 type Aes192Gcm = AesGcm<Aes192, U12>;
 
 pub(crate) enum AeadCipher {
@@ -222,18 +225,27 @@ pub fn encrypt_chunk_standard(
             MAX_CHUNK_PAYLOAD,
         )));
     }
+    encrypt_chunk_with(&AeadCipher::new(method, key)?, nonce, payload)
+}
 
+/// Shared cipher implementation behind [`encrypt_chunk_standard`] so callers
+/// processing many chunks can derive the key schedule once per session.
+fn encrypt_chunk_with(
+    cipher: &AeadCipher,
+    nonce: &[u8],
+    payload: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
     let len_bytes = (payload.len() as u16).to_be_bytes();
 
     // Encrypt length block with nonce
-    let len_ct = aead_encrypt_raw(method, key, nonce, &len_bytes)?;
+    let len_ct = cipher.encrypt(nonce, &len_bytes)?;
 
     // Compute payload nonce = nonce + 1 (increment last byte with carry)
     let mut payload_nonce = [0u8; 12];
     nonce_increment(nonce, &mut payload_nonce)?;
 
     // Encrypt payload with payload nonce
-    let payload_ct = aead_encrypt_raw(method, key, &payload_nonce, payload)?;
+    let payload_ct = cipher.encrypt(&payload_nonce, payload)?;
 
     let mut output = Vec::with_capacity(len_ct.len() + payload_ct.len());
     output.extend_from_slice(&len_ct);
@@ -251,8 +263,17 @@ pub fn decrypt_chunk_standard(
     nonce: &[u8],
     data: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
-    let tag_size = method.tag_size();
-    let len_block_size = 2 + tag_size;
+    decrypt_chunk_with(&AeadCipher::new(method, key)?, nonce, data)
+}
+
+/// Shared cipher implementation behind [`decrypt_chunk_standard`] so callers
+/// processing many chunks can derive the key schedule once per session.
+fn decrypt_chunk_with(
+    cipher: &AeadCipher,
+    nonce: &[u8],
+    data: &[u8],
+) -> Result<Vec<u8>, ShadowsocksError> {
+    let len_block_size = 2 + AEAD_TAG_SIZE;
 
     if data.len() < len_block_size {
         return Err(ShadowsocksError::DecryptionFailed(
@@ -261,7 +282,7 @@ pub fn decrypt_chunk_standard(
     }
 
     // Decrypt length block (first 18 bytes)
-    let len_plaintext = aead_decrypt_raw(method, key, nonce, &data[..len_block_size])?;
+    let len_plaintext = cipher.decrypt(nonce, &data[..len_block_size])?;
     if len_plaintext.len() != 2 {
         return Err(ShadowsocksError::DecryptionFailed(
             "length block plaintext invalid".into(),
@@ -275,7 +296,7 @@ pub fn decrypt_chunk_standard(
             payload_len, MAX_CHUNK_PAYLOAD
         )));
     }
-    let expected_total = len_block_size + payload_len + tag_size;
+    let expected_total = len_block_size + payload_len + AEAD_TAG_SIZE;
 
     if data.len() < expected_total {
         return Err(ShadowsocksError::DecryptionFailed(format!(
@@ -291,15 +312,8 @@ pub fn decrypt_chunk_standard(
 
     // Decrypt payload block
     let payload_start = len_block_size;
-    let payload_end = payload_start + payload_len + tag_size;
-    let plaintext = aead_decrypt_raw(
-        method,
-        key,
-        &payload_nonce,
-        &data[payload_start..payload_end],
-    )?;
-
-    Ok(plaintext)
+    let payload_end = payload_start + payload_len + AEAD_TAG_SIZE;
+    cipher.decrypt(&payload_nonce, &data[payload_start..payload_end])
 }
 
 /// Encrypt a sequence of pproxy AEAD chunks with consecutive nonces.
@@ -309,11 +323,12 @@ pub(crate) fn encrypt_standard_chunks(
     nonce: &[u8],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
+    let cipher = AeadCipher::new(method, key)?;
     let mut output = Vec::new();
     let mut current_nonce = [0u8; 12];
     current_nonce.copy_from_slice(nonce);
     for chunk in plaintext.chunks(MAX_CHUNK_PAYLOAD) {
-        output.extend_from_slice(&encrypt_chunk_standard(method, key, &current_nonce, chunk)?);
+        output.extend_from_slice(&encrypt_chunk_with(&cipher, &current_nonce, chunk)?);
         let mut length_nonce = [0u8; 12];
         nonce_increment(&current_nonce, &mut length_nonce)?;
         nonce_increment(&length_nonce, &mut current_nonce)?;
@@ -328,25 +343,20 @@ pub(crate) fn decrypt_standard_chunks(
     nonce: &[u8],
     data: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
-    let tag_size = method.tag_size();
-    let len_block_size = 2 + tag_size;
+    let cipher = AeadCipher::new(method, key)?;
     let mut current_nonce = [0u8; 12];
     current_nonce.copy_from_slice(nonce);
     let mut offset = 0;
     let mut plaintext = Vec::new();
 
     while offset < data.len() {
-        if data.len() - offset < len_block_size {
+        if data.len() - offset < 2 + AEAD_TAG_SIZE {
             return Err(ShadowsocksError::DecryptionFailed(
                 "data too short for pproxy length block".into(),
             ));
         }
-        let length_plaintext = aead_decrypt_raw(
-            method,
-            key,
-            &current_nonce,
-            &data[offset..offset + len_block_size],
-        )?;
+        let length_plaintext =
+            cipher.decrypt(&current_nonce, &data[offset..offset + 2 + AEAD_TAG_SIZE])?;
         let payload_len = u16::from_be_bytes([length_plaintext[0], length_plaintext[1]]) as usize;
         if payload_len > MAX_CHUNK_PAYLOAD {
             return Err(ShadowsocksError::DecryptionFailed(format!(
@@ -354,8 +364,8 @@ pub(crate) fn decrypt_standard_chunks(
                 payload_len, MAX_CHUNK_PAYLOAD
             )));
         }
-        offset += len_block_size;
-        let payload_wire_len = payload_len + tag_size;
+        offset += 2 + AEAD_TAG_SIZE;
+        let payload_wire_len = payload_len + AEAD_TAG_SIZE;
         if data.len() - offset < payload_wire_len {
             return Err(ShadowsocksError::DecryptionFailed(
                 "data too short for pproxy payload block".into(),
@@ -363,12 +373,7 @@ pub(crate) fn decrypt_standard_chunks(
         }
         let mut length_nonce = [0u8; 12];
         nonce_increment(&current_nonce, &mut length_nonce)?;
-        let payload = aead_decrypt_raw(
-            method,
-            key,
-            &length_nonce,
-            &data[offset..offset + payload_wire_len],
-        )?;
+        let payload = cipher.decrypt(&length_nonce, &data[offset..offset + payload_wire_len])?;
         plaintext.extend_from_slice(&payload);
         offset += payload_wire_len;
         nonce_increment(&length_nonce, &mut current_nonce)?;

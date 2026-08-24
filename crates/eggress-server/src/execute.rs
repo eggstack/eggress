@@ -1105,35 +1105,8 @@ impl tokio::io::AsyncWrite for HttpOnlyStream {
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         if !self.pending.is_empty() {
-            let end = match self.pending.windows(4).position(|w| w == b"\r\n\r\n") {
-                Some(pos) => pos + 4,
-                None => return Poll::Ready(Ok(())),
-            };
-            let head = &self.pending[..end];
-            let mut lines = head.split(|b| *b == b'\n');
-            let first = lines.next().unwrap_or_default();
-            let first = first.strip_suffix(b"\r").unwrap_or(first);
-            let mut rewritten = Vec::with_capacity(head.len() + 32);
-            if let Some(space) = first.iter().position(|b| *b == b' ') {
-                if let Some(second) = first[space + 1..].iter().position(|b| *b == b' ') {
-                    let method = &first[..space];
-                    let path = &first[space + 1..space + 1 + second];
-                    if path.starts_with(b"/") {
-                        rewritten.extend_from_slice(method);
-                        rewritten.extend_from_slice(b" http://");
-                        rewritten.extend_from_slice(self.target.to_string().as_bytes());
-                        rewritten.extend_from_slice(path);
-                        rewritten.extend_from_slice(&first[space + 1 + second..]);
-                        rewritten.extend_from_slice(b"\r\n");
-                        for line in lines {
-                            rewritten.extend_from_slice(line);
-                        }
-                        let body = self.pending[end..].to_vec();
-                        rewritten.extend_from_slice(&body);
-                        self.pending = rewritten;
-                    }
-                }
-            }
+            let rewritten = rewrite_request_head(&self.pending, &self.target);
+            self.pending = rewritten;
         }
         let pending = self.pending.clone();
         match Pin::new(&mut self.inner).poll_write(cx, &pending) {
@@ -1154,6 +1127,50 @@ impl tokio::io::AsyncWrite for HttpOnlyStream {
         let _ = self.as_mut().poll_flush(cx);
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
+}
+
+/// Rewrites an origin-form request head into the absolute-form request
+/// expected by pproxy's `httponly` upstream mode. Only the request line
+/// changes; every other byte — including all header line terminators and
+/// the body — is preserved exactly as received. Input without a complete,
+/// rewritable request head is returned unchanged.
+fn rewrite_request_head(data: &[u8], target: &TargetAddr) -> Vec<u8> {
+    let Some(pos) = data.windows(4).position(|w| w == b"\r\n\r\n") else {
+        // Head not complete yet; leave everything untouched.
+        return data.to_vec();
+    };
+    let end = pos + 4;
+    let head = &data[..end];
+    let mut rewritten = Vec::with_capacity(data.len() + 32);
+    if let Some(nl) = head.iter().position(|b| *b == b'\n') {
+        let raw_first = &head[..nl];
+        let first = raw_first.strip_suffix(b"\r").unwrap_or(raw_first);
+        if let Some(space) = first.iter().position(|b| *b == b' ') {
+            if let Some(second) = first[space + 1..].iter().position(|b| *b == b' ') {
+                let method = &first[..space];
+                let path = &first[space + 1..space + 1 + second];
+                if path.starts_with(b"/") {
+                    rewritten.extend_from_slice(method);
+                    rewritten.extend_from_slice(b" http://");
+                    rewritten.extend_from_slice(target.to_string().as_bytes());
+                    rewritten.extend_from_slice(path);
+                    rewritten.extend_from_slice(&first[space + 1 + second..]);
+                    // Restore the original request-line terminator, then
+                    // copy every remaining header byte verbatim; only the
+                    // request line itself changes.
+                    if raw_first.len() != first.len() {
+                        rewritten.push(b'\r');
+                    }
+                    rewritten.extend_from_slice(&head[nl..]);
+                }
+            }
+        }
+    }
+    if rewritten.is_empty() {
+        rewritten.extend_from_slice(head);
+    }
+    rewritten.extend_from_slice(&data[end..]);
+    rewritten
 }
 
 struct HttpOnlyHopHandler;
@@ -1732,5 +1749,68 @@ fn target_to_socks_addr(target: &TargetAddr) -> eggress_protocol_socks::socks5::
         TargetHost::Ip(std::net::IpAddr::V4(ip)) => SocksAddr::IPv4(ip.octets(), target.port),
         TargetHost::Ip(std::net::IpAddr::V6(ip)) => SocksAddr::IPv6(ip.octets(), target.port),
         TargetHost::Domain(d) => SocksAddr::Domain(d.clone(), target.port),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn http_only_target() -> TargetAddr {
+        TargetAddr {
+            host: TargetHost::Domain("target.example".into()),
+            port: 8080,
+        }
+    }
+
+    #[test]
+    fn httponly_rewrite_preserves_header_terminators() {
+        let request = b"GET /path HTTP/1.1\r\nHost: example.com\r\nX-Foo: bar\r\n\r\nbody";
+        let rewritten = rewrite_request_head(request, &http_only_target());
+        assert_eq!(
+            std::str::from_utf8(&rewritten).unwrap(),
+            "GET http://target.example:8080/path HTTP/1.1\r\n\
+             Host: example.com\r\n\
+             X-Foo: bar\r\n\
+             \r\n\
+             body"
+        );
+    }
+
+    #[test]
+    fn httponly_rewrite_preserves_mixed_line_endings() {
+        // Request line terminated by bare LF while the head ends with CRLF.
+        let request = b"GET /path HTTP/1.1\nHost: example.com\r\nX-Foo: bar\r\n\r\n";
+        let rewritten = rewrite_request_head(request, &http_only_target());
+        assert_eq!(
+            std::str::from_utf8(&rewritten).unwrap(),
+            "GET http://target.example:8080/path HTTP/1.1\n\
+             Host: example.com\r\n\
+             X-Foo: bar\r\n\
+             \r\n"
+        );
+    }
+
+    #[test]
+    fn httponly_rewrite_waits_for_complete_head() {
+        // No `\r\n\r\n` terminator yet — unchanged (flush retries later).
+        let partial = b"GET /path HTTP/1.1\r\nHost: example.com\r\n".as_slice();
+        assert_eq!(rewrite_request_head(partial, &http_only_target()), partial);
+    }
+
+    #[test]
+    fn httponly_rewrite_leaves_absolute_form_and_incomplete_heads_alone() {
+        // Absolute-form request line is not origin-form; unchanged.
+        let absolute =
+            b"GET http://example.com/path HTTP/1.1\r\nHost: example.com\r\n\r\n".as_slice();
+        assert_eq!(
+            rewrite_request_head(absolute, &http_only_target()),
+            absolute
+        );
+        // No complete head yet; unchanged (flush will retry later).
+        let partial = b"GET /path HTTP/1.1\r\nHost: example.com\r\n".as_slice();
+        assert_eq!(rewrite_request_head(partial, &http_only_target()), partial);
+        // Empty input stays empty.
+        assert!(rewrite_request_head(b"", &http_only_target()).is_empty());
     }
 }

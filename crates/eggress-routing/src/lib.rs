@@ -131,8 +131,10 @@ pub enum MatchExpr {
 
 fn normalize_host_for_exact(host: &str) -> String {
     let h = host.strip_suffix('.').unwrap_or(host);
-    if h.parse::<IpAddr>().is_ok() {
-        h.to_string()
+    if let Ok(ip) = h.parse::<IpAddr>() {
+        // Canonical form lowercases IPv6 hex digits and collapses padding,
+        // so `FE80::1` and `fe80::1` compare equal.
+        ip.to_string()
     } else {
         h.to_ascii_lowercase()
     }
@@ -706,9 +708,45 @@ impl CompatRegexRule {
     }
 
     pub fn matches(&self, hostname: &str, port: u16) -> bool {
-        let target = format!("{}:{}", hostname, port);
-        self.pattern.is_match(&target)
+        // Format into a stack buffer for typical hostnames; fall back to the
+        // heap only when the target does not fit.
+        let mut buf = [0u8; 320];
+        match fmt_target(hostname, port, &mut buf) {
+            Some(target) => self.pattern.is_match(target),
+            None => self.pattern.is_match(&format!("{}:{}", hostname, port)),
+        }
     }
+}
+
+/// Writes `hostname:port` into `buf`, returning the filled slice or `None`
+/// when the buffer is too small.
+fn fmt_target<'a>(hostname: &str, port: u16, buf: &'a mut [u8]) -> Option<&'a str> {
+    let bytes = hostname.as_bytes();
+    if bytes.len() + 5 > buf.len() {
+        return None;
+    }
+    buf[..bytes.len()].copy_from_slice(bytes);
+    let mut pos = bytes.len();
+    buf[pos] = b':';
+    pos += 1;
+    if port == 0 {
+        buf[pos] = b'0';
+        pos += 1;
+    } else {
+        let mut digits = [0u8; 5];
+        let mut count = 0;
+        let mut remaining = port;
+        while remaining > 0 {
+            digits[count] = b'0' + (remaining % 10) as u8;
+            remaining /= 10;
+            count += 1;
+        }
+        for digit in digits[..count].iter().rev() {
+            buf[pos] = *digit;
+            pos += 1;
+        }
+    }
+    std::str::from_utf8(&buf[..pos]).ok()
 }
 
 #[cfg(test)]
@@ -768,6 +806,16 @@ mod tests {
         let target = target_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 443);
         let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
         assert!(MatchExpr::HostExact(Arc::from("192.168.1.1")).matches(&req));
+    }
+
+    #[test]
+    fn host_exact_ipv6_literal_case_insensitive() {
+        // IPv6 literals may use mixed-case hex digits on either side of the
+        // comparison; canonicalizing both forms makes them equal.
+        let target = target_ip(IpAddr::V6("fe80::1".parse().unwrap()), 443);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(MatchExpr::HostExact(Arc::from("FE80::1")).matches(&req));
+        assert!(MatchExpr::HostExact(Arc::from("fe80:0:0:0:0:0:0:1")).matches(&req));
     }
 
     #[test]
