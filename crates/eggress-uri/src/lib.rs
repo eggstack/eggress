@@ -69,10 +69,21 @@ pub struct EndpointSpec {
 }
 
 /// Credential specification.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredentialSpec {
     pub username: String,
     pub password: String,
+}
+
+impl fmt::Debug for CredentialSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Never emit the plaintext password through Debug (logging, panics,
+        // assertion messages); mirror the redacting `Display` behavior.
+        f.debug_struct("CredentialSpec")
+            .field("username", &self.username)
+            .field("password", &"****")
+            .finish()
+    }
 }
 
 /// Errors that can occur during URI parsing.
@@ -215,13 +226,19 @@ fn split_hops(uri: &str) -> Result<Vec<String>, UriParseError> {
     let chars: Vec<char> = uri.chars().collect();
     let len = chars.len();
     let mut i = 0;
-    let mut bracket_depth = 0;
+    let mut bracket_depth: usize = 0;
 
     while i < len {
         if chars[i] == '[' {
             bracket_depth += 1;
             current.push(chars[i]);
         } else if chars[i] == ']' {
+            if bracket_depth == 0 {
+                return Err(UriParseError::InvalidFormat {
+                    message: "unmatched ']'".to_string(),
+                    span: Some(i),
+                });
+            }
             bracket_depth -= 1;
             current.push(chars[i]);
         } else if bracket_depth == 0 && i + 1 < len && chars[i] == '_' && chars[i + 1] == '_' {
@@ -236,6 +253,13 @@ fn split_hops(uri: &str) -> Result<Vec<String>, UriParseError> {
             current.push(chars[i]);
         }
         i += 1;
+    }
+
+    if bracket_depth != 0 {
+        return Err(UriParseError::InvalidFormat {
+            message: "unmatched '['".to_string(),
+            span: None,
+        });
     }
 
     if !current.is_empty() {
@@ -983,6 +1007,27 @@ mod tests {
     fn test_unterminated_bracket() {
         let result = parse_proxy_chain("http://[::1:8080");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_mismatched_brackets_are_rejected() {
+        // A stray ']' must not silently shift the hop-splitting grammar.
+        assert!(parse_proxy_chain("]__http://host:80").is_err());
+        assert!(parse_proxy_chain("http://]host:80").is_err());
+    }
+
+    #[test]
+    fn test_credential_debug_is_redacted() {
+        let creds = CredentialSpec {
+            username: "alice".to_string(),
+            password: "s3cret".to_string(),
+        };
+        let rendered = format!("{:?}", creds);
+        assert!(rendered.contains("alice"));
+        assert!(
+            !rendered.contains("s3cret"),
+            "debug leaked password: {rendered}"
+        );
     }
 
     #[test]

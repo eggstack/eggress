@@ -7,6 +7,7 @@ Python bindings for the [eggress](https://github.com/eggstack/eggress) proxy fra
 ```bash
 pip install maturin
 cd crates/eggress-python
+rm -f ../../target/wheels/eggress-*.whl   # stale wheels break the install glob below
 maturin build --target x86_64-apple-darwin   # adjust target for your platform
 pip install --force-reinstall target/wheels/eggress-*.whl
 ```

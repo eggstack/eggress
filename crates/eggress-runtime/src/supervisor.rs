@@ -471,6 +471,7 @@ impl eggress_server::UdpService for RuntimeUdpService {
             let relay_assoc = assoc.clone();
             let relay_cancel = assoc.cancel.clone();
             let assoc_id = assoc.id;
+            let relay_udp_metrics = udp_metrics.clone();
             udp_tasks.spawn(async move {
                 let result = eggress_udp::relay::udp_relay_loop(
                     relay_socket,
@@ -480,7 +481,8 @@ impl eggress_server::UdpService for RuntimeUdpService {
                 )
                 .await;
                 if let Err(error) = result {
-                    tracing::debug!(
+                    relay_udp_metrics.record_association_failure();
+                    tracing::warn!(
                         %error,
                         association_id = ?assoc_id,
                         "UDP relay ended with error"
@@ -719,7 +721,20 @@ impl ServiceSupervisor {
         let admin_cancel = CancellationToken::new();
         #[cfg(feature = "ssh")]
         let ssh_sessions = Arc::new(if compatibility_options.compatibility_mode {
-            eggress_transport_ssh::SshSessionCache::new_compatibility()
+            let insecure_acknowledged = std::env::var("EGRESS_SSH_INSECURE_HOST_KEYS")
+                .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+                .unwrap_or(false);
+            if insecure_acknowledged {
+                eggress_transport_ssh::SshSessionCache::new_compatibility()
+            } else {
+                tracing::warn!(
+                    "compatibility mode would disable SSH host-key verification; \
+                     keeping known_hosts verification enabled. To explicitly \
+                     accept unverified SSH host keys (MITM risk), set \
+                     EGRESS_SSH_INSECURE_HOST_KEYS=1"
+                );
+                eggress_transport_ssh::SshSessionCache::new()
+            }
         } else {
             eggress_transport_ssh::SshSessionCache::new()
         });

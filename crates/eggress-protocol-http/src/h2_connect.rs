@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use bytes::Bytes;
+#[cfg(test)]
 use h2::server::Connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -149,6 +150,12 @@ impl tokio::io::AsyncWrite for H2StreamWrite {
     }
 }
 
+/// Relay one established H2 CONNECT stream to `target`.
+///
+/// Low-level plumbing: the caller owns connection admission. Authentication
+/// and DNS-rebinding policy are enforced by production listeners before
+/// streams reach this point (`serve_h2_connection` routes through the
+/// executor that applies outbound policy).
 pub async fn h2_connect_relay(
     mut recv_stream: h2::RecvStream,
     send_stream: h2::SendStream<Bytes>,
@@ -229,7 +236,15 @@ pub async fn h2_connect_relay(
     Ok(())
 }
 
-pub async fn handle_h2_connect(
+/// Test-only accept loop for a plain H2 CONNECT proxy.
+///
+/// Deliberately not part of the public API: it performs no authentication and
+/// applies no outbound screening, so exposing it would hand embedders an
+/// unauthenticated open-proxy relay. Production listeners must use
+/// `eggress-server`'s `serve_h2_connection`, which authenticates and routes
+/// through the policy-enforcing executor.
+#[cfg(test)]
+pub(crate) async fn handle_h2_connect(
     mut connection: Connection<TcpStream, Bytes>,
 ) -> Result<(), H2ConnectError> {
     loop {
@@ -541,7 +556,7 @@ impl H2ConnectionPool {
     fn try_acquire_entry(&self) -> Option<Arc<H2ConnectionEntry>> {
         let now = self.now_ticks();
         let idle_timeout = self.idle_timeout.as_nanos().min(u64::MAX as u128) as u64;
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         for entry in entries.iter() {
             if now.saturating_sub(entry.last_used.load(Ordering::Acquire)) < idle_timeout
                 && entry.try_acquire(self.max_concurrent_streams)
@@ -579,7 +594,10 @@ impl H2ConnectionPool {
             notify: Notify::new(),
         });
 
-        self.entries.lock().unwrap().push(Arc::clone(&entry));
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Arc::clone(&entry));
         H2_PROTOCOL_METRICS
             .connections_opened
             .fetch_add(1, Ordering::Relaxed);
@@ -614,18 +632,21 @@ impl H2ConnectionPool {
     fn reap_idle_entries(&self) {
         let now = self.now_ticks();
         let idle_timeout = self.idle_timeout.as_nanos().min(u64::MAX as u128) as u64;
-        self.entries.lock().unwrap().retain(|entry| {
-            if entry.retired.load(Ordering::Acquire) {
-                return false;
-            }
-            if now.saturating_sub(entry.last_used.load(Ordering::Acquire)) >= idle_timeout
-                && entry.active_streams.load(Ordering::Acquire) == 0
-            {
-                entry.mark_retired();
-                return false;
-            }
-            true
-        });
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|entry| {
+                if entry.retired.load(Ordering::Acquire) {
+                    return false;
+                }
+                if now.saturating_sub(entry.last_used.load(Ordering::Acquire)) >= idle_timeout
+                    && entry.active_streams.load(Ordering::Acquire) == 0
+                {
+                    entry.mark_retired();
+                    return false;
+                }
+                true
+            });
     }
 
     /// Release a connection back to the pool after a stream completes.
@@ -642,7 +663,7 @@ impl H2ConnectionPool {
 
     /// Get pool statistics.
     pub fn stats(&self) -> H2PoolStats {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let active = entries
             .iter()
             .filter(|e| !e.retired.load(Ordering::Acquire))
@@ -696,12 +717,12 @@ impl H2PoolRegistry {
     /// Get or create a pool for the given key.
     pub fn get_or_create(&self, key: &H2PoolKey) -> Arc<H2ConnectionPool> {
         {
-            let pools = self.pools.read().unwrap();
+            let pools = self.pools.read().unwrap_or_else(|e| e.into_inner());
             if let Some(pool) = pools.get(key) {
                 return Arc::clone(pool);
             }
         }
-        let mut pools = self.pools.write().unwrap();
+        let mut pools = self.pools.write().unwrap_or_else(|e| e.into_inner());
         pools
             .entry(key.clone())
             .or_insert_with(|| {
@@ -827,7 +848,7 @@ where
         .map_err(|e| H2ConnectError::H2(e.to_string()))?;
 
     let (response_future, send_stream) = {
-        let mut sender = entry.sender.lock().unwrap();
+        let mut sender = entry.sender.lock().unwrap_or_else(|e| e.into_inner());
         sender.send_request(request, false)?
     };
 
@@ -890,7 +911,7 @@ async fn try_pooled_connection(
     };
 
     let result = {
-        let mut sender = entry.sender.lock().unwrap();
+        let mut sender = entry.sender.lock().unwrap_or_else(|e| e.into_inner());
         sender.send_request(request, false)
     };
 

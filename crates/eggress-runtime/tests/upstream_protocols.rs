@@ -967,6 +967,58 @@ upstream_group = "tcp-upstream"
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
 
+/// Local test-only accept loop for a plain H2 CONNECT proxy. Mirrors the
+/// removed public `handle_h2_connect`: no auth, no screening — adequate only
+/// as a hermetic fake upstream.
+async fn handle_h2_connect(
+    mut connection: h2::server::Connection<tokio::net::TcpStream, bytes::Bytes>,
+) -> Result<(), eggress_protocol_http::H2ConnectError> {
+    loop {
+        match connection.accept().await {
+            Some(Ok((request, mut send_response))) => {
+                if *request.method() == http::Method::CONNECT {
+                    let authority = request.uri().authority().ok_or_else(|| {
+                        eggress_protocol_http::H2ConnectError::H2("missing authority".into())
+                    })?;
+
+                    let target_str = match authority.port_u16() {
+                        Some(port) => format!("{}:{}", authority.host(), port),
+                        None => format!("{}:443", authority.host()),
+                    };
+
+                    let target: eggress_core::TargetAddr = target_str
+                        .parse()
+                        .map_err(|e: String| eggress_protocol_http::H2ConnectError::H2(e))?;
+
+                    let response = http::Response::builder().status(200).body(()).unwrap();
+
+                    let send_stream = send_response.send_response(response, false)?;
+                    let recv_stream = request.into_body();
+
+                    tokio::spawn(async move {
+                        if let Err(e) = eggress_protocol_http::h2_connect_relay(
+                            recv_stream,
+                            send_stream,
+                            target,
+                        )
+                        .await
+                        {
+                            eprintln!("h2 connect relay error: {}", e);
+                        }
+                    });
+                } else {
+                    send_response.send_reset(h2::Reason::PROTOCOL_ERROR);
+                }
+            }
+            Some(Err(e)) => {
+                return Err(eggress_protocol_http::H2ConnectError::H2(e.to_string()));
+            }
+            None => break,
+        }
+    }
+    Ok(())
+}
+
 async fn start_h2_connect_proxy() -> std::net::SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -981,7 +1033,7 @@ async fn start_h2_connect_proxy() -> std::net::SocketAddr {
                     Ok(c) => c,
                     Err(_) => return,
                 };
-                if let Err(e) = eggress_protocol_http::handle_h2_connect(conn).await {
+                if let Err(e) = handle_h2_connect(conn).await {
                     eprintln!("h2 connect proxy error: {}", e);
                 }
             });

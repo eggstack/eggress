@@ -225,23 +225,26 @@ pub async fn trojan_connect(
     server_name: &str,
     tls_config: Option<Arc<rustls::ClientConfig>>,
 ) -> Result<BoxStream, TrojanError> {
-    static DEFAULT_TLS_CONFIG: OnceLock<Result<Arc<rustls::ClientConfig>, String>> =
-        OnceLock::new();
+    // Only successful builds are memoized: a transient failure (e.g. system
+    // roots unreadable at first use) must not poison every later connection.
+    static DEFAULT_TLS_CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     let config = match tls_config {
         Some(c) => c,
-        None => DEFAULT_TLS_CONFIG
-            .get_or_init(|| {
+        None => {
+            if let Some(cached) = DEFAULT_TLS_CONFIG.get() {
+                Arc::clone(cached)
+            } else {
                 let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
                 let builder = builder
                     .with_system_roots()
-                    .map_err(|e| format!("failed to load system roots: {e}"))?;
-                builder
+                    .map_err(|e| TrojanError::Tls(format!("failed to load system roots: {e}")))?;
+                let built = builder
                     .build()
-                    .map_err(|e| format!("failed to build TLS config: {e}"))
-            })
-            .as_ref()
-            .map_err(|e| TrojanError::Tls(e.clone()))?
-            .clone(),
+                    .map_err(|e| TrojanError::Tls(format!("failed to build TLS config: {e}")))?;
+                let _ = DEFAULT_TLS_CONFIG.set(Arc::clone(&built));
+                built
+            }
+        }
     };
 
     let connector = TlsConnector::from(config);

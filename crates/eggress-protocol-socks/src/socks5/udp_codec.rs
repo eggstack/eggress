@@ -32,6 +32,15 @@ pub fn decode_socks5_udp_datagram(packet: &[u8]) -> Result<Socks5UdpRequest<'_>,
         return Err(UdpCodecError::TooShort);
     }
 
+    // Defense-in-depth: reject oversized attacker-controlled datagrams up
+    // front instead of relying only on kernel receive limits.
+    if packet.len() > MAX_UDP_DATAGRAM_SIZE {
+        return Err(UdpCodecError::PacketTooLarge(
+            packet.len(),
+            MAX_UDP_DATAGRAM_SIZE,
+        ));
+    }
+
     if packet[0] != 0x00 || packet[1] != 0x00 {
         return Err(UdpCodecError::BadReserved);
     }
@@ -319,6 +328,16 @@ mod tests {
         let pkt = ipv4_packet([10, 0, 0, 1], 80, b"");
         let req = decode_socks5_udp_datagram(&pkt).unwrap();
         assert_eq!(req.payload.len(), 0);
+    }
+
+    #[test]
+    fn reject_oversized_datagram() {
+        let payload = vec![0u8; MAX_UDP_DATAGRAM_SIZE + 1];
+        let pkt = ipv4_packet([10, 0, 0, 1], 80, &payload);
+        assert!(matches!(
+            decode_socks5_udp_datagram(&pkt),
+            Err(UdpCodecError::PacketTooLarge(_, MAX_UDP_DATAGRAM_SIZE))
+        ));
     }
 
     #[test]

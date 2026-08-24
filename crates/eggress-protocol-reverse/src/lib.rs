@@ -44,6 +44,13 @@ pub enum ControlState {
 /// Write auth credentials as raw bytes to a stream.
 ///
 /// pproxy format: raw `user:pass` string bytes.
+///
+/// # Security
+///
+/// Credentials cross the wire in plaintext with no challenge, so captured
+/// handshakes are replayable. Wrap the control channel in TLS when it leaves
+/// a trusted network; see also `ReverseServerConfig::validate`, which refuses
+/// unauthenticated non-loopback external binds.
 pub async fn write_auth(
     stream: &mut TcpStream,
     username: &str,

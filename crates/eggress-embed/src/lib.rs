@@ -861,14 +861,32 @@ fn redact_uri(uri: &str) -> String {
 }
 
 /// Write config to a temporary file for the supervisor.
+///
+/// The TOML may carry plaintext upstream credentials, so on Unix the file is
+/// created owner-only (0600) instead of world-readable.
 fn write_temp_config(config: &EggressConfig) -> Result<String, EggressError> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir();
     let file_name = format!("eggress-embed-{}-{id}.toml", std::process::id());
     let path = dir.join(&file_name);
-    std::fs::write(&path, &config.source_toml)
-        .map_err(|e| EggressError::Config(format!("failed to write temp config: {e}")))?;
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .and_then(|mut file| file.write_all(config.source_toml.as_bytes()))
+            .map_err(|e| EggressError::Config(format!("failed to write temp config: {e}")))?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&path, &config.source_toml)
+            .map_err(|e| EggressError::Config(format!("failed to write temp config: {e}")))?;
+    }
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -904,5 +922,21 @@ mod tests {
             listener_addr_or_configured(&[], 0, "not an address"),
             default_listener_addr()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temp_config_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let config = super::EggressConfig::from_toml_str("version = 1").unwrap();
+        let path = super::write_temp_config(&config).unwrap();
+        let metadata = std::fs::metadata(&path).unwrap();
+        assert_eq!(
+            metadata.permissions().mode() & 0o777,
+            0o600,
+            "temp config carries plaintext credentials and must not be group/world readable"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 }

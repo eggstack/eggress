@@ -599,7 +599,7 @@ destination_port_range = [9000, 8000]
         let f = write_config(config);
         let path = f.path().to_str().unwrap();
         let result = load_and_validate(path);
-        let err = result.err().expect("inverted port range must be rejected");
+        let err = result.expect_err("inverted port range must be rejected");
         assert!(
             err.to_string().contains("must be <="),
             "expected start<=end error, got: {err}"

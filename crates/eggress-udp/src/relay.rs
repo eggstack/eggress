@@ -588,6 +588,17 @@ pub async fn udp_relay_loop(
     let assoc_id = association.id;
     let registry = config.registry.clone();
 
+    // Abort/panic-safe cleanup: if the task running the loop below is
+    // aborted mid-await or panics, the inline cleanup after it would never
+    // run and the registry slot would stay consumed until process exit.
+    // The guard releases the slot (and closes the association) unconditionally.
+    let mut cleanup_guard = RelayCleanupGuard {
+        registry: Arc::clone(&registry),
+        metrics: Arc::clone(&config.udp_metrics),
+        association: Arc::clone(&association),
+        assoc_id: Some(assoc_id),
+    };
+
     let result = (async {
         loop {
             tokio::select! {
@@ -687,9 +698,53 @@ pub async fn udp_relay_loop(
     }
 
     association.close();
+    cleanup_guard.disarm();
     registry.remove(assoc_id).await;
 
     result
+}
+
+/// Drop-guard releasing an association's registry slot unconditionally.
+///
+/// Normal completion disarms the guard and performs full inline cleanup
+/// (flow teardown, metrics, async removal). On abort or panic the `Drop`
+/// impl still closes the association, records closure metrics, and removes
+/// the registry slot so global/per-listener association limits cannot be
+/// permanently exhausted by leaked slots.
+struct RelayCleanupGuard {
+    registry: Arc<UdpAssociationRegistry>,
+    metrics: Arc<UdpMetrics>,
+    association: Arc<UdpAssociation>,
+    assoc_id: Option<crate::assoc::UdpAssociationId>,
+}
+
+impl RelayCleanupGuard {
+    fn disarm(&mut self) {
+        self.assoc_id = None;
+    }
+}
+
+impl Drop for RelayCleanupGuard {
+    fn drop(&mut self) {
+        let Some(assoc_id) = self.assoc_id.take() else {
+            return;
+        };
+        // Normal-path cleanup did not run: emulate its essential effects.
+        self.metrics.record_association_closed();
+        self.association.close();
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                let registry = Arc::clone(&self.registry);
+                handle.spawn(async move {
+                    registry.remove(assoc_id).await;
+                });
+            }
+            Err(_) => {
+                // No runtime (teardown path): best-effort synchronous removal.
+                self.registry.try_remove_now(assoc_id);
+            }
+        }
+    }
 }
 
 fn socks_to_target_addr(addr: &SocksAddr) -> TargetAddr {

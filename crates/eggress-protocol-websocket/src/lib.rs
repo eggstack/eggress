@@ -195,6 +195,14 @@ impl WebSocketTunnelServer {
         }
     }
 
+    /// Accept a WebSocket tunnel upgrade.
+    ///
+    /// # Security
+    ///
+    /// The handshake does not validate the `Origin` header. This is correct
+    /// for non-browser proxy tunnel usage; do not expose these endpoints to
+    /// web browsers, where ignoring `Origin` permits cross-site WebSocket
+    /// hijacking.
     pub async fn accept_upgrade(
         &self,
         stream: tokio::net::TcpStream,

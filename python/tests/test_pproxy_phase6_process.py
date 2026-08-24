@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,12 +11,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_pproxy(*args: str) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT / "python")
     return subprocess.run(
         [sys.executable, "-m", "pproxy", *args],
         cwd=ROOT,
-        env=env,
         text=True,
         capture_output=True,
         timeout=15,

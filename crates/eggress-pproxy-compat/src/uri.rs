@@ -209,7 +209,7 @@ pub fn parse_pproxy_uri(uri: &str) -> Result<PproxyUri, CompatError> {
     // parser describes the listener portion; callers that need every hop use
     // `parse_pproxy_chain`.
     let parse_uri = if uri.contains("__") {
-        split_chain_hops(uri).into_iter().next().unwrap_or(uri)
+        split_chain_hops(uri)?.into_iter().next().unwrap_or(uri)
     } else {
         uri.split_once(';').map_or(uri, |(head, _)| head)
     };
@@ -719,7 +719,7 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
     }
 
     let mut hops = Vec::new();
-    for segment in split_chain_hops(uri) {
+    for segment in split_chain_hops(uri)? {
         if segment.is_empty() {
             return Err(CompatError::InvalidUri {
                 message: format!("chain URI has empty hop segment: {}", uri),
@@ -735,7 +735,7 @@ pub fn parse_pproxy_chain(uri: &str) -> Result<PproxyChain, CompatError> {
     })
 }
 
-fn split_chain_hops(uri: &str) -> Vec<&str> {
+fn split_chain_hops(uri: &str) -> Result<Vec<&str>, CompatError> {
     let mut result = Vec::new();
     let mut start = 0;
     let mut bracket = 0u32;
@@ -745,9 +745,23 @@ fn split_chain_hops(uri: &str) -> Vec<&str> {
     while i < bytes.len() {
         match bytes[i] as char {
             '[' => bracket += 1,
-            ']' => bracket = bracket.saturating_sub(1),
+            ']' => {
+                if bracket == 0 {
+                    return Err(CompatError::InvalidUri {
+                        message: format!("chain URI has unmatched ']': {}", uri),
+                    });
+                }
+                bracket -= 1;
+            }
             '{' => brace += 1,
-            '}' => brace = brace.saturating_sub(1),
+            '}' => {
+                if brace == 0 {
+                    return Err(CompatError::InvalidUri {
+                        message: format!("chain URI has unmatched '}}': {}", uri),
+                    });
+                }
+                brace -= 1;
+            }
             '_' if i + 1 < bytes.len() && bytes[i + 1] == b'_' && bracket == 0 && brace == 0 => {
                 result.push(&uri[start..i]);
                 i += 1;
@@ -757,8 +771,18 @@ fn split_chain_hops(uri: &str) -> Vec<&str> {
         }
         i += 1;
     }
+    if bracket != 0 {
+        return Err(CompatError::InvalidUri {
+            message: format!("chain URI has unmatched '[': {}", uri),
+        });
+    }
+    if brace != 0 {
+        return Err(CompatError::InvalidUri {
+            message: format!("chain URI has unmatched '{{': {}", uri),
+        });
+    }
     result.push(&uri[start..]);
-    result
+    Ok(result)
 }
 
 /// Check if any hop in a chain uses an unsupported protocol for chaining.

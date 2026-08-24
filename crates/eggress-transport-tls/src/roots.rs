@@ -11,6 +11,10 @@ pub fn load_system_roots() -> Result<RootCertStore, TlsError> {
 }
 
 /// Load CA certificates from PEM bytes into a `RootCertStore`.
+///
+/// Fails with a structured error when no certificates can be parsed, so
+/// misconfigured CA material is reported immediately instead of surfacing
+/// later as a confusing remote handshake failure.
 pub fn load_pem_roots(pem: &[u8]) -> Result<RootCertStore, TlsError> {
     let mut store = RootCertStore::empty();
     for cert in CertificateDer::pem_slice_iter(pem) {
@@ -18,6 +22,11 @@ pub fn load_pem_roots(pem: &[u8]) -> Result<RootCertStore, TlsError> {
         store
             .add(cert)
             .map_err(|e| TlsError::RootStore(e.to_string()))?;
+    }
+    if store.is_empty() {
+        return Err(TlsError::PemParse(
+            "no certificates found in PEM root material".to_string(),
+        ));
     }
     Ok(store)
 }
@@ -60,10 +69,15 @@ mod tests {
 
     #[test]
     fn load_pem_roots_invalid_data() {
+        // Non-PEM input must fail immediately with a structured error
+        // instead of yielding an empty trust store.
         let result = load_pem_roots(b"not a valid PEM");
-        // Should not fail — just returns empty store (no certs found)
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(matches!(result, Err(TlsError::PemParse(_))));
+    }
+
+    #[test]
+    fn load_pem_roots_empty_input_is_error() {
+        assert!(load_pem_roots(b"").is_err());
     }
 
     #[test]

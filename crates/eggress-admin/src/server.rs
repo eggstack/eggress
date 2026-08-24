@@ -9,12 +9,18 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use subtle::ConstantTimeEq;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 use crate::reverse::ReverseRegistry;
 use crate::routes::handle_request;
 use crate::AdminError;
 use eggress_config::compile::{PacConfig, StaticRoute};
+
+/// Upper bound on concurrently served admin connections. The admin surface is
+/// local tooling; an unbounded accept loop would otherwise turn the admin port
+/// into a trivially cheap DoS target.
+const MAX_ADMIN_CONNECTIONS: usize = 64;
 
 pub struct AdminServer {
     pub(crate) listener: TcpListener,
@@ -70,6 +76,15 @@ fn authorization_payload<'a>(
 impl AdminServer {
     pub async fn new(bind: &str, cancel: CancellationToken) -> Result<Self, AdminError> {
         let listener = TcpListener::bind(bind).await?;
+        if let Ok(addr) = listener.local_addr() {
+            if !addr.ip().is_loopback() {
+                tracing::warn!(
+                    "admin listener bound to non-loopback address {addr}: \
+                     status, metrics, and topology are exposed to the network; \
+                     prefer a loopback bind or configure admin auth"
+                );
+            }
+        }
         Ok(Self { listener, cancel })
     }
 
@@ -78,12 +93,19 @@ impl AdminServer {
     }
 
     pub async fn run(self, state: AdminState) -> Result<(), AdminError> {
+        let permits = Arc::new(Semaphore::new(MAX_ADMIN_CONNECTIONS));
         loop {
             tokio::select! {
                 result = self.listener.accept() => {
                     let (stream, _addr) = result.map_err(|e| AdminError::Accept(e.to_string()))?;
+                    let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
+                        tracing::warn!("admin connection limit ({MAX_ADMIN_CONNECTIONS}) reached; rejecting connection");
+                        drop(stream);
+                        continue;
+                    };
                     let state = state.clone();
                     tokio::spawn(async move {
+                        let _permit = permit;
                         let service = service_fn(move |req| {
                             let state = state.clone();
                             async move {

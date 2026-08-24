@@ -74,7 +74,6 @@ def test_python_module_entry_point_reports_compatibility_version():
         check=False,
         capture_output=True,
         text=True,
-        env={**os.environ, "PYTHONPATH": os.path.abspath("python")},
     )
     assert result.returncode == 0
     assert result.stdout.strip() == f"eggress-pproxy-compat {pproxy.__version__}"

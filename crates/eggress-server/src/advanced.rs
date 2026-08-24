@@ -133,8 +133,7 @@ pub async fn serve_h2_connection(
             reader: eggress_protocol_http::H2StreamRead::new(request.into_body()),
             writer: eggress_protocol_http::H2StreamWrite::new(send_stream),
         });
-        let mut stream_config = config.clone();
-        stream_config.context.source = config.context.source;
+        let stream_config = config.clone();
         let pending = PendingTunnel {
             target,
             client: client_stream,

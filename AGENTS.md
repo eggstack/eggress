@@ -44,6 +44,7 @@ For Python-facing changes, build the native wheel in a clean environment and run
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
+rm -f target/wheels/eggress-*.whl
 (cd crates/eggress-python && ../../.venv/bin/maturin build --release --out ../../target/wheels)
 .venv/bin/python -m pip install target/wheels/eggress-*.whl
 .venv/bin/python -m pip install --no-deps ./python-pproxy-compat

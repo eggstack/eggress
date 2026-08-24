@@ -59,6 +59,18 @@ impl UdpAssociationRegistry {
         self.associations.write().await.remove(&id);
     }
 
+    /// Best-effort synchronous removal for drop paths that cannot await.
+    ///
+    /// Returns `false` when the lock is momentarily contended; callers using
+    /// this on the abort path should prefer spawning an async `remove` when a
+    /// runtime is available and fall back to this method otherwise.
+    pub fn try_remove_now(&self, id: UdpAssociationId) -> bool {
+        self.associations
+            .try_write()
+            .map(|mut assocs| assocs.remove(&id).is_some())
+            .unwrap_or(false)
+    }
+
     pub async fn get(&self, id: UdpAssociationId) -> Option<Arc<UdpAssociation>> {
         self.associations.read().await.get(&id).cloned()
     }
