@@ -55,7 +55,13 @@ pip install eggress
 pip install "eggress[cipher-api]"
 ```
 
-Programs using the bounded public `pproxy` API can keep `import pproxy` after installing Eggress. Uninstall the upstream `pproxy` distribution first because both wheels provide the same import namespace.
+The `eggress` wheel provides only the `eggress` package. For a bounded, Eggress-backed top-level `pproxy` import, additionally install the opt-in compatibility distribution from a repository checkout:
+
+```bash
+pip install ./python-pproxy-compat
+```
+
+Never install upstream `pproxy` and `eggress-pproxy-compat` together because they provide the same import namespace; uninstall upstream `pproxy` first.
 
 Supported Python versions: 3.9, 3.10, 3.11, 3.12, 3.13. Prebuilt wheels available for Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64.
 
@@ -213,14 +219,17 @@ See the [full capability checklist](https://github.com/eggstack/eggress/blob/mai
 
 ```text
 eggress/
-├── crates/          # Workspace crates (core, cli, server, runtime, protocols, transport, etc.)
-├── compat/          # Upstream oracle definition and fixtures
-├── fuzz/            # Fuzz harness smoke targets
-├── benches/         # Criterion benchmarks
-├── tests/           # Cross-implementation tests
-├── scripts/         # Helper and validation scripts
-├── docs/            # Documentation, parity manifests, and release artifacts
-└── plans/           # Historical planning documents
+├── crates/               # Workspace crates (core, cli, server, runtime, protocols, transport, etc.)
+├── architecture/         # Per-component architecture deep dives + overview index
+├── compat/               # Upstream oracle definition and fixtures
+├── fuzz/                 # Fuzz harness smoke targets
+├── benches/              # Criterion benchmarks
+├── tests/                # Cross-implementation tests (tests/compat)
+├── scripts/              # Helper and validation scripts
+├── python/               # Canonical Python package source (python/eggress)
+├── python-pproxy-compat/ # Opt-in distribution owning the top-level `pproxy` namespace
+├── docs/                 # Documentation, parity manifests, and release artifacts
+└── plans/                # Historical planning documents
 ```
 
 ## Documentation
@@ -228,6 +237,7 @@ eggress/
 | Topic | Link |
 |-------|------|
 | Architecture | [docs/ARCHITECTURE.md](https://github.com/eggstack/eggress/blob/main/docs/ARCHITECTURE.md) |
+| Per-component deep dives | [architecture/overview.md](https://github.com/eggstack/eggress/blob/main/architecture/overview.md) |
 | Embed API | [docs/EMBED_API.md](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) |
 | Python bindings | [docs/PYTHON_BINDINGS.md](https://github.com/eggstack/eggress/blob/main/docs/PYTHON_BINDINGS.md) |
 | pproxy migration | [docs/PPROXY_MIGRATION.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md) |

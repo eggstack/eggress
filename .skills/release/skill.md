@@ -7,14 +7,19 @@ Use when cutting a new release — bumping versions, verifying the release candi
 
 Default bump is **+0.0.1** (patch). Use +0.1.0 (minor) or +1.0.0 (major) only when explicitly requested.
 
-Current version locations — all must be updated together:
+Current version locations — all must be moved in lockstep:
 
-| File | Field | Package |
-|------|-------|---------|
-| `Cargo.toml` (workspace) | `version` | Workspace (Rust crates) |
-| `crates/eggress-python/Cargo.toml` | `version` | Python binding crate |
-| `crates/eggress-python/pyproject.toml` | `project.version` | Python wheel (authoritative) |
-| `python/pyproject.toml` | `project.version` | Local dev convenience |
+| File | Field | Notes |
+|------|-------|-------|
+| `Cargo.toml` (workspace) | `[workspace.package]` `version` | Authoritative workspace version |
+| `Cargo.toml` (workspace) | every internal `=x.y.z` pin under `[workspace.dependencies]` (~24 entries) | Required for crates.io resolution |
+| `crates/eggress-python/pyproject.toml` | `project.version` | Python wheel |
+| `python-pproxy-compat/pyproject.toml` | `project.version` (+ its `eggress==x.y.z` dependency pin) | Opt-in compat distribution |
+
+Notes:
+- `crates/eggress-python/Cargo.toml` uses `version.workspace = true`; it has no independent version.
+- `python/pyproject.toml` is a local dev convenience and inherits the workspace version.
+- The publish workflow hard-fails if a pushed tag does not match the workspace version.
 
 ## Release steps
 
@@ -32,7 +37,7 @@ Increment by +0.0.1 unless the user specifies otherwise.
 Use `sed` or manual edits to update every version location listed above. Verify all files match:
 
 ```bash
-rg -n 'version\s*=\s*"1\.' Cargo.toml crates/eggress-python/Cargo.toml crates/eggress-python/pyproject.toml python/pyproject.toml
+rg -n '1\.<old>' Cargo.toml crates/eggress-python/pyproject.toml python-pproxy-compat/pyproject.toml
 ```
 
 ### 3. Verify the release candidate
@@ -106,13 +111,24 @@ Verify publication:
 
 ### 7. Publish Rust crates to crates.io (manual)
 
-Crates.io publication is manual and currently blocked until crate boundaries are restructured. When ready:
+Crates.io publication is operator-driven; no workflow publishes crates. All
+internal crates carry crates.io metadata and are publishable. Because crates.io
+rate-limits new crate publications to roughly one per 10 minutes, use the
+tiered helper which publishes in dependency order and waits out the cooldown:
 
 ```bash
 # Dry run first
-cargo publish --dry-run -p eggress-cli
+./scripts/publish-remaining.sh --dry-run
 
-# Publish (dependency order matters)
+# Publish remaining crates in dependency order (~4h wall time)
+./scripts/publish-remaining.sh
+```
+
+For a single-crate release, publish manually in dependency order (top-level
+facades such as `eggress-cli` last):
+
+```bash
+cargo publish --dry-run -p eggress-cli
 cargo publish -p eggress-cli
 ```
 
@@ -120,31 +136,25 @@ Verify:
 ```bash
 cargo install eggress-cli --version <new_version> --locked --root /tmp/eggress-release-check
 /tmp/eggress-release-check/bin/eggress --version
-```
-
-### 8. Optional: create GitHub Release
-
-```bash
-gh release create v<new_version> \
-  --title "eggress v<new_version>" \
-  --generate-notes
+/tmp/eggress-release-check/bin/pproxy --help
 ```
 
 ## Roll-forward policy
 
 Crates.io versions are immutable. For a defective release:
-1. Yank the affected version
-2. Fix the defect
-3. Increment the version
-4. Repeat verification and publish
+1. Yank the affected version when appropriate.
+2. Fix the defect.
+3. Increment the version.
+4. Repeat verification and publish.
 
-Do not delete or retag an existing version.
+Do not delete or retag an existing version to simulate replacement.
 
 ## Troubleshooting
 
 ### Python publish workflow didn't trigger
 - Ensure the tag matches `v*` pattern (e.g., `v1.0.2`)
-- Check that `pypi` environment exists in repo settings
+- The workflow hard-fails if the tag does not equal the workspace version
+- Check that the protected `pypi` environment exists in repo settings
 - Verify trusted publisher configuration on PyPI matches: repo `eggstack/eggress`, workflow `publish-python.yml`
 
 ### Maturin build fails in CI
@@ -152,5 +162,6 @@ Do not delete or retag an existing version.
 - Check that the workflow uses `dtolnay/rust-toolchain@stable`
 
 ### crates.io publish fails
-- Internal crates are marked `publish = false` — this is expected until crate boundaries are restructured
+- Respect the ~10-minute crates.io cooldown for new crate names (`scripts/publish-remaining.sh` handles this; override with `EGGRESS_PUBLISH_DELAY_SECONDS`)
+- Wait for index propagation between dependent publishes; re-run the dependent dry run if resolution is uncertain
 - Use `cargo publish --dry-run` to diagnose packaging issues

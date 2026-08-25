@@ -12,11 +12,12 @@ Use these current documents before relying on historical phase or completion rec
 
 - `docs/CI_STATUS.md`: CI and verification policy.
 - `docs/TESTING.md`: local, specialized, interoperability, performance, and fuzz testing.
-- `docs/release/RELEASE_PROCESS.md`: manual release policy.
-- `docs/ARCHITECTURE.md`: system architecture.
+- `docs/release/RELEASE_PROCESS.md`: release policy (manual crates.io; tag-triggered PyPI workflow).
+- `architecture/overview.md`: bird's-eye architecture map and index into the per-component deep dives.
+- `docs/ARCHITECTURE.md`: long-form system architecture narrative.
 - `docs/DIFFERENTIAL_TESTING.md`: pproxy oracle and differential harness.
 - `docs/parity/pproxy_capability_manifest.toml`: canonical capability contract.
-- `docs/parity/pproxy_2_7_9_strict_manifest.toml`: strict behavioral contract.
+- `docs/parity/pproxy_2_7_9_strict_manifest.toml`: strict behavioral contract (historical provenance for the active manifest).
 - `docs/PPROXY_PARITY_SPEC.md`: compatibility vocabulary and tier definitions.
 
 Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.
@@ -86,7 +87,7 @@ There are three hosted workflows, and one of them is a real release path:
 - `.github/workflows/python-test.yml`: path-scoped Ubuntu/Python 3.12 smoke for the Python packages.
 - `.github/workflows/publish-python.yml`: **fires on every `v*` tag push.** It validates the tag against the workspace version, builds the five-platform wheels plus sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch). Pushing a version tag is a release action, not bookkeeping.
 
-Do not create additional GitHub Actions workflows without an explicit project-level decision. Note that `docs/CI_STATUS.md` and `docs/release/RELEASE_PROCESS.md` still claim tags never trigger publishing; the workflow supersedes that prose.
+Do not create additional GitHub Actions workflows without an explicit project-level decision. `docs/CI_STATUS.md` and `docs/release/RELEASE_PROCESS.md` describe the tag-triggered PyPI publish path and are kept in sync with the workflow.
 
 ## Release policy
 
@@ -104,7 +105,8 @@ types, verification commands, and common pitfalls.
 
 | Skill | Purpose |
 |-------|---------|
-| `rust-proxy-dev` | New proxy protocols, transport wrappers, core relay/chain, embed API, Python bindings, pproxy binary |
+| `rust-proxy-dev` | New proxy protocols, transport wrappers, core relay/chain, embed API, pproxy compatibility binary |
+| `python-bindings` | PyO3 extension, `python/eggress` package, pproxy namespace rules, wheel packaging |
 | `testing` | Test layers, fuzz harnesses, differential/oracle harnesses, Python tests, benchmarking |
 | `security-dev` | DNS rebinding, auth metrics, SSH boundary, legacy crypto, fuzz targets, security invariants |
 | `config-reload` | TOML schema, hot-reload behavior, supervisor lifecycle, adding config fields |
@@ -115,11 +117,50 @@ types, verification commands, and common pitfalls.
 | `release` | Version bumps, verification, PyPI/crates.io publishing |
 
 Load a skill with the `skill` tool when a task matches its description. The
-`rust-proxy-dev` and `testing` skills are the most broadly applicable.
+`rust-proxy-dev`, `python-bindings`, and `testing` skills are the most broadly
+applicable. Skills are mirrored into `.agents/skills/` and
+`.opencode/skills/` via relative symlinks; add a symlink to every mirror when
+adding a skill.
+
+## Architecture deep dives
+
+`architecture/overview.md` is the maintained bird's-eye map and component
+index; each sibling file is a focused review guide for one component. Start a
+subsystem task from the matching deep dive rather than re-deriving layout
+from source:
+
+| Deep dive | Scope |
+|---|---|
+| [architecture/core.md](architecture/core.md) | `eggress-core`: BoxStream, relay, detection/dispatch, ChainExecutor, rebinding guard |
+| [architecture/uri.md](architecture/uri.md) | `eggress-uri`: chain AST, `+`/`__` grammar, redaction |
+| [architecture/config.md](architecture/config.md) | `eggress-config`: TOML schema, validation, secrets, compilation |
+| [architecture/routing.md](architecture/routing.md) | `eggress-routing`: matchers, schedulers, health hysteresis, leases |
+| [architecture/metrics.md](architecture/metrics.md) | `eggress-metrics`: registry, subsystem bridges |
+| [architecture/server.md](architecture/server.md) | `eggress-server`: serve pipeline, session reports, reply semantics |
+| [architecture/runtime.md](architecture/runtime.md) | `eggress-runtime`: snapshots, reload, signals, shutdown ordering |
+| [architecture/admin.md](architecture/admin.md) | `eggress-admin`: /-/endpoints, PAC, route-explain |
+| [architecture/udp.md](architecture/udp.md) | `eggress-udp`: associations, flows, upstream relay, standalone modes |
+| [architecture/system-proxy.md](architecture/system-proxy.md) | `eggress-system-proxy`: OS proxy inspect/apply/rollback |
+| [architecture/protocols-http.md](architecture/protocols-http.md) | HTTP CONNECT/forward + H2 pool |
+| [architecture/protocols-socks.md](architecture/protocols-socks.md) | SOCKS4/4a + SOCKS5 |
+| [architecture/protocols-shadowsocks.md](architecture/protocols-shadowsocks.md) | Shadowsocks AEAD + legacy/SSR gates |
+| [architecture/protocols-trojan.md](architecture/protocols-trojan.md) | Trojan over rustls |
+| [architecture/protocols-tunnels.md](architecture/protocols-tunnels.md) | WebSocket + raw tunnels |
+| [architecture/protocols-reverse.md](architecture/protocols-reverse.md) | Reverse/backward proxy |
+| [architecture/transports-tls.md](architecture/transports-tls.md) | TLS/ALPN (rustls only) |
+| [architecture/transports-ssh-quic-h3.md](architecture/transports-ssh-quic-h3.md) | SSH, QUIC streams, HTTP/3 CONNECT (opt-in features) |
+| [architecture/cli.md](architecture/cli.md) | `eggress-cli`: both binaries, flags, exit codes, lean builds |
+| [architecture/embed.md](architecture/embed.md) | `eggress-embed`: in-process service lifecycle, OutboundConnector |
+| [architecture/python-bindings.md](architecture/python-bindings.md) | PyO3 extension and `python/eggress` package |
+| [architecture/pproxy-compat.md](architecture/pproxy-compat.md) | Translation/check/run surface and the compat distributions |
+| [architecture/testing-and-tooling.md](architecture/testing-and-tooling.md) | Testkit, fuzz, benches, scripts, oracle assets |
+
+Keep these files accurate when moving or renaming modules they describe;
+they are grounded in current source layout and public APIs.
 
 ## Workspace map
 
-The root `Cargo.toml` package is `eggress-bench` (Criterion benches in `benches/`). The workspace itself holds 26 crates under `crates/`, grouped by role:
+The root `Cargo.toml` package is `eggress-bench` (Criterion benches in `benches/`). The workspace itself holds 26 crates under `crates/`, grouped by role (each role maps to a deep dive in the [Architecture deep dives](#architecture-deep-dives) section above):
 
 - Foundation: `eggress-core` (shared types, traits, relay, boxed stream boundaries), `eggress-uri` (URI parsing/compatibility grammar), `eggress-config` (TOML schema and validation), `eggress-routing` (rules, schedulers, health state, route selection), `eggress-metrics`.
 - Runtime: `eggress-server` (listener/connection orchestration), `eggress-runtime` (supervisor, lifecycle, reload, shutdown), `eggress-admin` (local admin HTTP: PAC, metrics, status, route explanation), `eggress-udp`, `eggress-system-proxy`.

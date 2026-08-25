@@ -2,10 +2,12 @@
 
 Eggress provides a pproxy compatibility layer that translates common pproxy invocations and URI shapes into native Eggress configuration. It is a migration surface, not strict full drop-in parity.
 
-Install the single `eggress` distribution. Its wheel includes the bounded
-top-level `pproxy` package; `from eggress import pproxy` remains the explicit
-migration-helper path. Uninstall upstream `pproxy` first because both wheels
-own the same import namespace.
+Install the `eggress` distribution. `from eggress import pproxy` is the explicit
+migration-helper path. For a bounded top-level `pproxy` import, additionally
+install the optional `eggress-pproxy-compat` distribution from a repository
+checkout (`pip install ./python-pproxy-compat`). Uninstall upstream `pproxy`
+first because it owns the same import namespace as the compatibility
+distribution.
 
 ## Quick Start
 

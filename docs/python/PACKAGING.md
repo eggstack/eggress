@@ -12,9 +12,8 @@ Wheels are built for five targets using maturin:
 | `aarch64-apple-darwin` | macOS | arm64 |
 | `x86_64-pc-windows-msvc` | Windows | x86_64 |
 
-Each target produces a platform-specific wheel. The `pyproject.toml` classifier
-`Operating System :: OS Independent` is accurate because pip resolves the
-correct wheel for the host platform.
+Each target produces a platform-specific abi3 (`cp39-abi3`) wheel resolved by
+pip for the host platform.
 
 ## Source distribution
 
@@ -71,17 +70,28 @@ eggress/
 ├── _eggress.*.so        # Native extension (PyO3, platform-specific)
 ├── config.py            # EggressConfig wrapper
 ├── service.py           # EggressService, EggressHandle, AsyncEggressHandle
-├── pproxy.py            # pproxy compatibility functions
+├── connection.py        # Connection (pproxy-style) wrapper
+├── async_connection.py  # Async connection lifecycle helpers
+├── pproxy.py            # pproxy migration/translation helpers
+├── pproxy_connection.py # PPProxyService/PPProxyHandle wiring
+├── protocol.py          # pproxy-compatible protocol objects
+├── cipher.py            # AEAD cipher objects delegating to Rust
+├── plugin.py            # bounded plugin callback bridge
 ├── outbound.py          # native sync/async outbound stream wrappers
+├── _asyncio.py          # asyncio semantic bridge
+├── _asyncio_adapter.py  # loop/coroutine adapters
+├── wrapper.py           # shared wrapper utilities
 ├── exceptions.py        # Exception hierarchy
 └── py.typed             # PEP 561 marker
 ```
 
 - `eggress._eggress` — native extension compiled by maturin from
   `crates/eggress-python/src/lib.rs`. All blocking Rust calls release the GIL.
-- Pure Python wrappers (`config.py`, `service.py`, `pproxy.py`,
-  `exceptions.py`) provide the public API, error hierarchy, and context
+- Pure Python wrappers provide the public API, error hierarchy, and context
   manager support.
+
+The top-level `pproxy` namespace is NOT part of this wheel; it belongs to the
+separate `eggress-pproxy-compat` distribution (see IMPORT_STRATEGY.md).
 
 ## See also
 

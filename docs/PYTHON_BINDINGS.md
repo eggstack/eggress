@@ -950,11 +950,12 @@ stream.close()
 use this native path and never create a temporary local listener. UDP remains
 listener-based.
 
-The canonical `eggress` wheel installs the `eggress` namespace and a bounded
-top-level `pproxy` compatibility package. It never aliases `pproxy` through
-`sys.modules` and does not provide a separate compatibility distribution.
-Uninstall upstream `pproxy` before installing Eggress because both distributions
-own the same import namespace.
+The canonical `eggress` wheel installs only the `eggress` namespace; it never
+aliases `pproxy` through `sys.modules` and does not install a top-level
+`pproxy` package. The optional `eggress-pproxy-compat` distribution owns the
+bounded top-level `pproxy` compatibility package. Uninstall upstream `pproxy`
+before installing the compatibility distribution because both own the same
+import namespace.
 
 **Bundled helper approach:** use the `eggress.pproxy` subpackage for
 translation and service helpers:

@@ -12,6 +12,8 @@ In each crate's `src/` files. Test individual functions and types.
 In `crates/eggress-runtime/tests/`:
 - `startup.rs` — listener bind, readiness, negative paths
 - `routing.rs` — rule matching, fallback, direct routes
+- `retry_fallback.rs` — retry/fallback semantics across upstreams and groups
+- `scheduler_runtime.rs` — scheduler behavior under runtime conditions
 - `health.rs` — health state machine, probe reconciliation
 - `admin.rs` — admin endpoints, route explanation
 - `reload.rs` — config reload behavior
@@ -24,9 +26,14 @@ In `crates/eggress-runtime/tests/`:
 - Compatibility listener coverage should exercise H2 multiplexing and fixed-target
   WS/WSS locally, plus source-IP auth reuse/expiry and `--sys` rollback with
   `MockCommandRunner`; do not use public-internet fixtures.
+- `multihop_tcp.rs` — multi-hop TCP chain scenarios
+- `shadowsocks_tcp.rs` / `shadowsocks_udp.rs` — Shadowsocks TCP relay and UDP paths
+- `trojan.rs`, `tls.rs`, `transparent.rs`, `unix_socket.rs` — per-listener/transport integration
+- `reverse_runtime.rs` / `reverse_interop.rs` / `reverse_soak.rs` — reverse proxy runtime, gated interop, gated soak
 - `lifecycle_invariants.rs` — runtime lifecycle invariants
 - `observability.rs` — metrics, admin, observability correctness
 - `security_invariants.rs` — security constraints and invariants
+- `performance_smoke.rs` — automated Tier 1 performance/leak smoke (not ignored)
 - `load.rs` — `#[ignore]` load/stress tests (run with `-- --ignored`)
 
 ### Property tests (proptest)
@@ -259,7 +266,8 @@ python -m pytest python/tests/test_performance_smoke.py -v
 python -m pytest python/tests/test_protocol_cipher.py -v
 python -m pytest python/tests -v  # all Python tests
 
-# Clean-wheel Phase 4 smoke (run without the source checkout on PYTHONPATH)
+# Clean-wheel top-level namespace smoke (requires the opt-in compat
+# distribution installed in the same environment: pip install --no-deps ./python-pproxy-compat)
 python -c 'import pproxy, pproxy.server, pproxy.proto, pproxy.cipher, pproxy.plugin'
 python -c 'import pproxy.__doc__, pproxy.__main__, pproxy.cipherpy, pproxy.sysproxy, pproxy.verbose'
 python -m pproxy --version

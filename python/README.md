@@ -12,10 +12,6 @@ maturin build --target x86_64-apple-darwin   # adjust target for your platform
 pip install --force-reinstall target/wheels/eggress-*.whl
 ```
 
-> **Note:** `maturin develop` installs the native extension to the wrong module
-> path (`_eggress/_eggress.so` instead of `eggress/_eggress.so`). Use
-> `maturin build` + `pip install` instead.
-
 ## Prebuilt wheels
 
 Prebuilt wheels are published to PyPI for:
@@ -77,9 +73,9 @@ best-effort fallback, not the lifecycle API.
 ## pproxy Compatibility
 
 Eggress provides a pproxy compatibility surface validated against pproxy==2.7.9
-and bounded by the canonical capability manifest. The wheel includes all ten
-Phase 0 package modules; legacy cipher implementations and unsupported native
-transports still fail explicitly rather than being silently substituted:
+and bounded by the canonical capability manifest. Legacy cipher implementations
+and unsupported native transports fail explicitly rather than being silently
+substituted:
 
 - **URI Translation**: `translate_pproxy_args()` converts pproxy CLI arguments to eggress TOML
 - **Same Protocols**: HTTP, SOCKS4/4a, SOCKS5, Shadowsocks (AEAD), Trojan
@@ -110,11 +106,12 @@ with PPProxyService.from_toml(toml_str) as handle:
     print(handle.bound_addresses)
 ```
 
-The package also supports `python -m pproxy` and installs a `pproxy` console
-script with the same compatibility entry point. `pproxy.server` helper calls
-reuse the existing protocol/proxy adapters, while `pproxy.sysproxy` delegates
-system-proxy apply/rollback to the native backend where the platform supports
-it.
+The optional `eggress-pproxy-compat` distribution additionally provides
+`python -m pproxy`, a `pproxy` console script, and the top-level `pproxy`
+package backed by the same compatibility entry point. `pproxy.server` helper
+calls reuse the existing protocol/proxy adapters, while `pproxy.sysproxy`
+delegates system-proxy apply/rollback to the native backend where the platform
+supports it. See the namespace strategy below before installing it.
 
 ## API Contract (Phase C1)
 

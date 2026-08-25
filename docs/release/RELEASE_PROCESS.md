@@ -1,12 +1,14 @@
 # Manual Release Process
 
-Egress releases are operator-driven. GitHub Actions does not publish crates, build release bundles, create GitHub Releases, push container images, publish Python packages, or react to version tags.
+Egress releases are operator-driven. GitHub Actions does not publish crates, build release bundles, create GitHub Releases, push container images, or react to ordinary pushes.
+
+The one automated publishing path is Python: `.github/workflows/publish-python.yml` fires on every `v*` tag push and publishes the `eggress` wheel and sdist to PyPI through the protected `pypi` GitHub environment. Pushing a version tag is therefore a deliberate release action, not bookkeeping.
 
 No release cadence is encoded in the repository. A maintainer releases when the code and version are ready.
 
 ## Release target
 
-The primary release channel is crates.io using local `cargo publish` commands. Git tags and GitHub Releases are optional bookkeeping performed manually after crates.io publication; they are not release prerequisites or automation triggers.
+The primary Rust release channel is crates.io using local `cargo publish` commands. Git tags trigger the Python publish workflow (see below); a GitHub Release may optionally be created manually after publication.
 
 Python/PyPI distribution is a separate manual operation and must not be coupled to the Rust release workflow.
 
@@ -15,7 +17,7 @@ Python/PyPI distribution is a separate manual operation and must not be coupled 
 - A clean local checkout of the intended commit.
 - Rust stable and the repository MSRV available.
 - crates.io credentials configured with `cargo login` or `CARGO_REGISTRY_TOKEN`.
-- The intended version committed in all affected manifests and user-visible version constants.
+- The intended version committed in all affected manifests and user-visible version constants. The version moves in lockstep across: `[workspace.package]` `version` in the root `Cargo.toml`, every internal `=x.y.z` pin under `[workspace.dependencies]`, `crates/eggress-python/pyproject.toml`, and `python-pproxy-compat/pyproject.toml`.
 - Release notes or changelog text prepared when the change warrants it.
 
 Crates.io versions are immutable. A published version cannot be overwritten. If publication partially succeeds or a package is incorrect, fix the repository, increment the version, and publish a new version.
@@ -84,16 +86,33 @@ Use an equivalent temporary directory on platforms where `/tmp` is unavailable.
 
 If the release includes public libraries, create a minimal temporary consumer project and confirm that Cargo resolves the published versions without workspace paths.
 
-## 5. Optional manual repository bookkeeping
+## 5. Tagging and the Python publish workflow
 
-After crates.io verification, a maintainer may create and push a tag:
+A `v*` tag push is a release action: it triggers `.github/workflows/publish-python.yml`.
+
+The workflow:
+1. Hard-fails unless the tag equals the workspace version (`v<version>` where `<version>` is `[workspace.package]` `version` in the root `Cargo.toml`).
+2. Builds five abi3 wheels (Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64) plus one sdist.
+3. Smoke-tests each artifact in a clean environment (`scripts/release_artifact_smoke.py`, which imports both `eggress` and the top-level `pproxy` namespace from the opt-in compat package).
+4. Publishes to PyPI through the protected `pypi` GitHub environment via OIDC trusted publishers. TestPyPI is available only through manual workflow dispatch with `publish_target=testpypi`.
 
 ```bash
 git tag -a v<version> -m "Release v<version>"
 git push origin v<version>
 ```
 
-A GitHub Release may also be created manually for notes or separately built binaries:
+Verify publication:
+
+```bash
+gh run list --workflow=publish-python.yml --limit=1
+curl -s https://pypi.org/pypi/eggress/<version>/json | python -m json.tool | head -5
+```
+
+Do not push a production tag solely to test the workflow; use manual dispatch against TestPyPI with a version that is safe to reuse there.
+
+## 6. Optional manual repository bookkeeping
+
+After crates.io verification, a maintainer may create a GitHub Release for notes or separately built binaries:
 
 ```bash
 gh release create v<version> \
@@ -101,13 +120,7 @@ gh release create v<version> \
   --notes-file <release-notes-file>
 ```
 
-These commands are optional and must remain manual. Pushing a tag must not start publishing, artifact construction, signing, container pushes, or release creation in GitHub Actions.
-
-## Python distribution
-
-When the Python packages are ready for a separate release, build and publish them locally with maturin and the chosen Python package repository credentials. Verify canonical `eggress` and `eggress-pproxy-compat` packages together in a clean environment before upload.
-
-Python publishing is intentionally outside the crates.io release procedure. Removing GitHub publishing workflows does not imply that Python packaging is abandoned; it means packaging cadence and credentials remain under explicit operator control.
+This step is optional and must remain manual.
 
 ## Roll-forward policy
 
@@ -125,9 +138,10 @@ Do not delete or retag an existing version to simulate replacement.
 
 The following must not be added back without an explicit project-level decision:
 
-- publishing on a tag or branch push;
+- crates.io publishing on a tag or branch push;
 - crates.io tokens or trusted-publishing configuration in GitHub Actions;
 - automated GitHub Release creation;
+- publishing anything other than the canonical `eggress` wheel/sdist from the tag-triggered Python workflow (the `eggress-pproxy-compat` distribution is published manually);
 - mandatory release artifact, checksum, SBOM, signature, or container jobs;
 - a release workflow that repeats the ordinary CI suite;
 - release gates that require generated evidence unrelated to the changed release surface.

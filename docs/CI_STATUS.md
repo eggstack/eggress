@@ -6,12 +6,13 @@ This document is the source of truth for repository verification. It supersedes 
 
 Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for ordinary development, not a release engine, compatibility evidence archive, or substitute for focused local testing.
 
-The repository has two automatic workflows:
+The repository has three hosted workflows:
 
 - `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
+- `.github/workflows/publish-python.yml`: a real release path, not a smoke job. It fires on every `v*` tag push, validates the tag against the workspace version, builds five-platform abi3 wheels plus an sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch).
 
-There are no tag-triggered release workflows, artifact assembly workflows, publishing workflows, cross-platform release matrices, or mandatory compatibility-evidence uploads.
+There are no crates-publishing workflows, artifact assembly workflows, cross-platform Rust release matrices, or mandatory compatibility-evidence uploads. Pushing a version tag is a release action; ordinary pushes never publish anything.
 
 ## Routine development
 
@@ -77,9 +78,9 @@ Compatibility claims must still be backed by the applicable oracle or interopera
 
 ## Release boundary
 
-Release cadence is entirely manual. GitHub Actions must not publish crates, create GitHub Releases, push container images, build release bundles, or react to version tags.
+Rust crates.io publication is entirely manual: the release operator runs local checks and `cargo publish` in dependency order. See `docs/release/RELEASE_PROCESS.md`.
 
-The release operator performs release checks and `cargo publish` locally. See `docs/release/RELEASE_PROCESS.md`.
+The single exception to "no publishing automation" is Python: pushing a `v*` tag triggers `publish-python.yml`, which publishes the `eggress` wheel and sdist to PyPI through the protected `pypi` environment. The workflow hard-fails on a tag/version mismatch, so a tag push must always be a deliberate release act. GitHub Actions still does not publish crates, create GitHub Releases, push container images, or build release bundles.
 
 ## Design rationale
 

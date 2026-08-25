@@ -180,6 +180,8 @@ eggress/
 - `docs/parity/pproxy_capability_manifest.toml`,
   `docs/parity/pproxy_2_7_9_strict_manifest.toml` — compatibility contracts
 - `docs/PPROXY_PARITY_SPEC.md` — tier vocabulary used throughout
-- `.skills/` — task-specific agent guides (rust-proxy-dev, testing, security-dev, …)
+- `.skills/` — task-specific agent guides (rust-proxy-dev, python-bindings,
+  testing, security-dev, …); mirrored into `.agents/skills/` and
+  `.opencode/skills/` via relative symlinks
 - Earlier per-crate notes also exist under `docs/architecture/`; treat this
   directory as the maintained review index.
