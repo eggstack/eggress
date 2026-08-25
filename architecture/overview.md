@@ -1,309 +1,185 @@
 # Eggress Architecture Overview
 
-A Rust-native, embeddable, multi-protocol proxy framework and CLI targeting practical compatibility with Python `pproxy==2.7.9`. Built on Tokio with stream-native composition: protocols and transports operate on boxed async byte streams, enabling arbitrary multi-hop chaining without generics propagating through the architecture.
+Eggress is a Rust-native, embeddable, multi-protocol proxy framework and CLI
+targeting practical and behavioral compatibility with Python `pproxy==2.7.9`.
+It is built on Tokio around one central design decision: **everything is a
+boxed byte stream**. Protocols, TLS, SSH, QUIC, and chain hops all consume an
+`AsyncRead + AsyncWrite` stream and return an upgraded one, so any listener
+protocol can be paired with any upstream chain without generics leaking
+through the stack.
 
-## System at a Glance
+This document is the bird's-eye map and the index into per-component deep
+dives. Each component below links to its own file **in this directory** for a
+focused review session.
+
+## The system at a glance
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          eggress system                             │
-│                                                                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
-│  │   CLI    │  │  Embed   │  │ Python   │  │  System Proxy     │  │
-│  │ (binary) │  │ (Rust)   │  │ (PyO3)   │  │  (inspector)      │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └─────────┬─────────┘  │
-│       │              │              │                  │            │
-│       └──────────────┴──────────────┴──────────────────┘            │
-│                              │                                      │
-│                    ┌─────────▼──────────┐                           │
-│                    │  eggress-runtime   │                           │
-│                    │  (supervisor)      │                           │
-│                    └─────────┬──────────┘                           │
-│                              │                                      │
-│          ┌───────────────────┼───────────────────┐                  │
-│          │                   │                   │                  │
-│  ┌───────▼──────┐  ┌────────▼───────┐  ┌───────▼──────┐          │
-│  │  server      │  │  routing       │  │  admin       │          │
-│  │  (conn mgr)  │  │  (policy+sel)  │  │  (HTTP API)  │          │
-│  └───────┬──────┘  └────────┬───────┘  └───────┬──────┘          │
-│          │                  │                   │                  │
-│          └──────────────────┼───────────────────┘                  │
-│                              │                                      │
-│                    ┌─────────▼──────────┐                           │
-│                    │   eggress-core     │                           │
-│                    │ (types, traits,    │                           │
-│                    │  relay, detection) │                           │
-│                    └─────────┬──────────┘                           │
-│                              │                                      │
-│  ┌───────────┬───────────┬───┴───┬───────────┬───────────┐        │
-│  │  HTTP     │  SOCKS    │  SS   │  Trojan   │ WebSocket │ ...   │
-│  │  CONNECT  │  4/4a/5   │  AEAD │  protocol │  tunnel   │        │
-│  └───────────┴───────────┴───────┴───────────┴───────────┘        │
-│                                                                     │
-│  ┌──────────────┐  ┌──────────┐  ┌────────────┐                   │
-│  │transport-tls │  │   UDP    │  │   URI      │                   │
-│  │  (rustls)    │  │ assocs+  │  │  parser    │                   │
-│  │              │  │  relay   │  │            │                   │
-│  └──────────────┘  └──────────┘  └────────────┘                   │
-└─────────────────────────────────────────────────────────────────────┘
+ entry points                    composition / policy             data plane
+┌─────────────────────┐      ┌──────────────────────────┐    ┌─────────────────────────┐
+│ eggress CLI         │      │ runtime supervisor       │    │ protocol crates          │
+│ compat pproxy CLI   │─────▶│  · snapshot compilation  │───▶│ http/socks/shadowsocks/  │
+│ embed API (Rust)    │      │  · reload, signals       │    │ trojan/websocket/raw/    │
+│ Python (PyO3)       │      │  · shutdown ordering     │    │ reverse/h3               │
+└─────────────────────┘      ├──────────────────────────┤    └───────────┬─────────────┘
+                             │ server: accept→route→    │                │ BoxStream
+        config ─────────────▶│ relay (per connection)   │    ┌───────────▼─────────────┐
+   (eggress-config TOML)     ├──────────────────────────┤    │ transports              │
+                             │ routing: rules → groups  │    │ tls (always available)  │
+        observability ──────▶│ → schedulers → health    │    │ ssh / quic / h3 (opt-in)│
+   (admin HTTP + metrics)    ├──────────────────────────┤    └─────────────────────────┘
+                             │ admin · metrics · udp ·  │
+                             │ system-proxy · reverse   │
+                             └──────────────────────────┘
 ```
 
-## Entry Points
+## How a TCP connection flows
 
-All three converge on the same runtime:
+```
+Client → TcpListener (optional TLS unwrap, Unix/transparent variants)
+  → serve_connection()                        [server]
+      → accept(): sniff via ReplayStream + ProtocolDispatcher, auth check,
+        bounded by handshake timeout → AcceptedSession
+      → RouteRequest { target, source, listener, protocol, identity, transport }
+      → RouteService::route()                 [routing]
+        rules first-match-wins → group → scheduler picks member (health-aware)
+        → SelectedRoute::Direct | Upstream{chain} (+ PendingLease)
+      → open_route()
+          Direct: DirectConnector (DNS rebinding-guarded)
+          Upstream: ChainExecutor — each HopHandler consumes prior stream;
+                    PendingLease → ActiveLease on success
+      → deferred success reply to client
+      → relay() both directions with half-close + byte counts
+      → SessionReport { outcome, failure category, bytes, rule/group/upstream }
+  → SessionMetrics recorded exactly once
+```
 
-| Entry Point | Crate | Description | Deep Dive |
+UDP follows the same routing engine per datagram (see [udp.md](udp.md));
+reverse/backward traffic uses routing as an authorization gate
+(see [protocols-reverse.md](protocols-reverse.md)).
+
+## Lifecycle: startup, reload, shutdown
+
+The runtime compiles validated TOML into one `CompiledRuntimeSnapshot`
+(router + shared upstream `Arc`s + health plan + listeners + PAC). Routing,
+health, admin, and metrics all read the SAME snapshot; reload swaps it
+atomically via arc-swap after the candidate compiles cleanly. Shutdown is an
+enforced order — readiness false → listeners stop → UDP drain → connection
+drain/cancel → admin last. Details: [runtime.md](runtime.md).
+
+---
+
+## Component index
+
+### Foundation
+
+| Component | Crate(s) | Role | Deep dive |
 |---|---|---|---|
-| CLI binary | `eggress-cli` | `eggress` and `pproxy` binaries | [cli.md](../docs/architecture/cli.md) |
-| Rust embed API | `eggress-embed` | In-process `EggressService::start()` | [embed.md](../docs/architecture/embed.md) |
-| Python bindings | `eggress-python` | PyO3 wrapping the embed API | [python.md](../docs/architecture/python.md) |
+| Core types & streams | `eggress-core` | BoxStream, targets, relay, detection/dispatch, ChainExecutor, rebinding guard | [core.md](core.md) |
+| URI grammar | `eggress-uri` | ProxyChainSpec AST, `+`/`__` syntax, redaction | [uri.md](uri.md) |
+| Configuration | `eggress-config` | TOML schema, validation, secrets, compilation | [config.md](config.md) |
 
-## Data Flow
+### Policy & observability
 
-```
-Client connects
-  → TcpListener (accepts, optional TLS unwrap)
-  → serve_connection()  [eggress-server]
-      → accept() — protocol detection with timeout and authentication
-          → ReplayStream sniffs initial bytes
-          → ProtocolDispatcher tries each detector in order
-          → returns AcceptedSession (Tunnel or HttpForward)
-      → RouteRequest built from session metadata
-      → Router.decide() — evaluates rules, returns RouteDecision
-      → Router.select() — scheduler picks upstream, returns SelectedRoute with ActiveLease
-      → open_route() — DirectConnector or ChainExecutor
-          → for chains: each HopHandler performs protocol handshake on prior stream
-      → send success/failure reply to client
-      → relay() or HTTP forward exchange (with byte counting)
-      → SessionReport (protocol, target, route, bytes, outcome, failure category)
-```
+| Component | Crate(s) | Role | Deep dive |
+|---|---|---|---|
+| Routing engine | `eggress-routing` | Matchers, schedulers, health hysteresis, leases, explanation | [routing.md](routing.md) |
+| Metrics | `eggress-metrics` | Prometheus registry, subsystem bridges, delta promotion | [metrics.md](metrics.md) |
 
-## Crate Dependency Graph
+### Data plane & lifecycle
 
-```
-                      ┌─────────────┐
-                      │  eggress-   │
-                      │    uri      │
-                      └──────┬──────┘
-                             │
-                      ┌──────▼──────┐
-              ┌───────│  eggress-   │───────┐
-              │       │    core     │       │
-              │       └──────┬──────┘       │
-              │              │              │
-     ┌────────▼────┐  ┌─────▼──────┐  ┌────▼─────────┐
-     │  transport-  │  │  routing   │  │  protocol-*  │
-     │    tls       │  │            │  │  (each)      │
-     └──────┬──────┘  └─────┬──────┘  └────┬─────────┘
-            │               │              │
-            │        ┌──────▼──────┐       │
-            │        │   config    │       │
-            │        └──────┬──────┘       │
-            │               │              │
-     ┌──────▼───────────────▼──────────────▼──────┐
-     │              eggress-server                 │
-     └────────────────────┬───────────────────────┘
-                          │
-                ┌─────────▼──────────────┐
-                │       eggress-runtime   │
-                │  (supervisor+lifecycle) │
-                └─────┬──────────┬──────┬┘
-                      │          │      │
-               ┌──────▼───┐ ┌───▼───┐ ┌▼──────────┐
-               │  embed   │ │ admin │ │  metrics   │
-               └────┬─────┘ └───────┘ └─────┬──────┘
-                    │                       │
-            ┌───────┴────────┐    ┌─────────┼──────────────┐
-            │                │    │         │              │
-      ┌─────▼─────┐   ┌─────▼──────┐ ┌────▼─────┐ ┌──────▼──────┐
-      │   cli     │   │  python    │ │   UDP    │ │  protocol-* │
-      └───────────┘   └────────────┘ │ assocs+  │ │  (metrics)  │
-                                     │  relay   │ └─────────────┘
-                                     └──────────┘
-```
+| Component | Crate(s) | Role | Deep dive |
+|---|---|---|---|
+| Connection orchestration | `eggress-server` | serve_connection pipeline, session reports, reply semantics, Unix/transparent listeners | [server.md](server.md) |
+| Runtime supervisor | `eggress-runtime` | Snapshots, reload, signals, shutdown ordering, reverse integration | [runtime.md](runtime.md) |
+| Admin HTTP | `eggress-admin` | /-/endpoints, /metrics, PAC, route-explain | [admin.md](admin.md) |
+| UDP subsystem | `eggress-udp` | Associations, flows, SOCKS5/SS upstream relay, standalone modes | [udp.md](udp.md) |
+| System proxy | `eggress-system-proxy` | OS proxy inspect/apply/rollback per platform | [system-proxy.md](system-proxy.md) |
 
-Protocol crates depend only on `eggress-core` (and sometimes `eggress-uri`); they do not depend on each other. Leaf crates (no eggress dependencies): `eggress-uri`, `eggress-system-proxy`, `eggress-testkit`.
+### Protocol crates (each depends only on core + uri)
 
----
-
-## Component Deep Dive Index
-
-### Foundation Layer
-
-| # | Component | Crate | What It Does | Deep Dive |
-|---|---|---|---|---|
-| 1 | Core types & traits | `eggress-core` | `BoxStream`, `TargetAddr`, `ProtocolId`, `SessionContext`, relay, chain execution, detection, dispatch | [core.md](../docs/architecture/core.md) |
-| 2 | URI parsing | `eggress-uri` | `ProxyChainSpec`, hop/protocol/credential parsing, redacted display, native grammar | [uri.md](../docs/architecture/uri.md) |
-| 3 | TLS transport | `eggress-transport-tls` | rustls config builders, PEM/system root loading, accept/connect wrappers | [transport-tls.md](../docs/architecture/transport-tls.md) |
-| 4 | QUIC transport | `eggress-transport-quic` | Optional Quinn QUIC streams and HTTP/3 CONNECT adapters | [transport-quic.md](../docs/architecture/transport-quic.md) |
-| 5 | SSH transport | `eggress-transport-ssh` | Optional russh client transport for pproxy-compatible SSH upstream chains | [transport-ssh.md](../docs/architecture/transport-ssh.md) |
-
-### Protocol Crates
-
-| # | Protocol | Crate | Inbound | Outbound | Chain Hop | Deep Dive |
+| Component | Crate | Inbound | Outbound | Chain hop | UDP | Deep dive |
 |---|---|---|---|---|---|---|
-| 6 | HTTP/1.1 CONNECT | `eggress-protocol-http` | Yes | Yes | Yes | [protocols-http.md](../docs/architecture/protocols-http.md) |
-| 7 | HTTP forward proxy | `eggress-protocol-http` | Yes | — | — | [protocols-http.md](../docs/architecture/protocols-http.md) |
-| 8 | H2 CONNECT | `eggress-protocol-http` | — | Yes (pooled) | Yes | [protocols-http.md](../docs/architecture/protocols-http.md) |
-| 9 | SOCKS4/4a | `eggress-protocol-socks` | Yes | Yes | Yes | [protocols-socks.md](../docs/architecture/protocols-socks.md) |
-| 10 | SOCKS5 | `eggress-protocol-socks` | Yes | Yes | Yes | [protocols-socks.md](../docs/architecture/protocols-socks.md) |
-| 11 | Shadowsocks (AEAD) | `eggress-protocol-shadowsocks` | Yes | Yes | Yes | [protocols-shadowsocks.md](../docs/architecture/protocols-shadowsocks.md) |
-| 12 | Trojan | `eggress-protocol-trojan` | Yes | Yes | Yes | [protocols-trojan.md](../docs/architecture/protocols-trojan.md) |
-| 13 | WebSocket tunnel | `eggress-protocol-websocket` | Yes | Yes | Yes | [protocols-websocket.md](../docs/architecture/protocols-websocket.md) |
-| 14 | Raw/tunnel passthrough | `eggress-protocol-raw` | — | — | Yes | [protocols-raw.md](../docs/architecture/protocols-raw.md) |
-| 15 | Reverse proxy | `eggress-protocol-reverse` | Yes (server) | Yes (client) | — | [protocols-reverse.md](../docs/architecture/protocols-reverse.md) |
+| HTTP/1.1 CONNECT + forward + H2 pool | `eggress-protocol-http` | yes | yes | yes | — | [protocols-http.md](protocols-http.md) |
+| SOCKS4/4a + SOCKS5 | `eggress-protocol-socks` | yes | yes | yes | codec | [protocols-socks.md](protocols-socks.md) |
+| Shadowsocks AEAD (+legacy/SSR gates) | `eggress-protocol-shadowsocks` | yes | yes | yes | yes | [protocols-shadowsocks.md](protocols-shadowsocks.md) |
+| Trojan | `eggress-protocol-trojan` | yes | yes (TLS) | yes | — | [protocols-trojan.md](protocols-trojan.md) |
+| WebSocket tunnel | `eggress-protocol-websocket` | yes | yes | yes | — | [protocols-tunnels.md](protocols-tunnels.md) |
+| Raw passthrough | `eggress-protocol-raw` | fixed-target listener | — | yes | — | [protocols-tunnels.md](protocols-tunnels.md) |
+| Reverse / backward | `eggress-protocol-reverse` | acceptor | NAT'd client | — | — | [protocols-reverse.md](protocols-reverse.md) |
 
-### Infrastructure Layer
+### Transports
 
-| # | Component | Crate | What It Does | Deep Dive |
-|---|---|---|---|---|
-| 16 | Routing engine | `eggress-routing` | Rule matching, upstream selection, health state machine, schedulers, leases, route explanation | [routing.md](../docs/architecture/routing.md) |
-| 17 | Configuration | `eggress-config` | TOML schema, validation, compilation, secret sources | [config.md](../docs/architecture/config.md) |
-| 18 | Server orchestration | `eggress-server` | `serve_connection()`, session lifecycle, accept/execute/reply, failure categories | [server.md](../docs/architecture/server.md) |
-| 19 | Runtime supervisor | `eggress-runtime` | Startup, shutdown ordering, reload, snapshot compilation, reverse proxy integration | [runtime.md](../docs/architecture/runtime.md) |
-| 20 | Admin HTTP server | `eggress-admin` | Endpoints, PAC, metrics, route explanation, reverse registry | [admin.md](../docs/architecture/admin.md) |
-| 21 | Metrics | `eggress-metrics` | Prometheus registry, session/UDP/Shadowsocks metric bridging | [metrics.md](../docs/architecture/metrics.md) |
-| 22 | UDP subsystem | `eggress-udp` | Association registry, target flows, upstream relay, security policy | [udp.md](../docs/architecture/udp.md) |
-| 23 | System proxy | `eggress-system-proxy` | Platform detection, inspect/apply/rollback | [system-proxy.md](../docs/architecture/system-proxy.md) |
+| Component | Crate(s) | Feature | Deep dive |
+|---|---|---|---|
+| TLS (rustls only) | `eggress-transport-tls` | always built | [transports-tls.md](transports-tls.md) |
+| SSH channels | `eggress-transport-ssh` | `ssh` | [transports-ssh-quic-h3.md](transports-ssh-quic-h3.md) |
+| QUIC streams | `eggress-transport-quic` | `quic` | [transports-ssh-quic-h3.md](transports-ssh-quic-h3.md) |
+| HTTP/3 CONNECT | `eggress-protocol-h3` | `quic` | [transports-ssh-quic-h3.md](transports-ssh-quic-h3.md) |
 
-### Entry Points & Embedding
+### Entry points & compatibility
 
-| # | Component | Crate | What It Does | Deep Dive |
-|---|---|---|---|---|
-| 24 | Embed API | `eggress-embed` | Rust in-process API, async/blocking start, handle lifecycle, outbound connector | [embed.md](../docs/architecture/embed.md) |
-| 25 | Python bindings | `eggress-python` | PyO3 wrappers, pproxy Server, OutboundConnector, GIL release | [python.md](../docs/architecture/python.md) |
-| 26 | CLI binary | `eggress-cli` | Binary modes, pproxy compat binary, upstream-test, system-proxy | [cli.md](../docs/architecture/cli.md) |
+| Component | Crate(s)/tree | Role | Deep dive |
+|---|---|---|---|
+| CLI binaries | `eggress-cli` (`eggress`, compat `pproxy`) | flags/subcommands, exit codes, lean builds | [cli.md](cli.md) |
+| Embed API | `eggress-embed` | in-process service lifecycle, OutboundConnector | [embed.md](embed.md) |
+| Python bindings + package | `eggress-python`, `python/` | PyO3 `_eggress`, pure-Python wrappers, asyncio bridge | [python-bindings.md](python-bindings.md) |
+| pproxy compat | `eggress-pproxy-compat`, `python-pproxy-compat/` | translate/check/run, tier tiers, gate, `pproxy` namespace dist | [pproxy-compat.md](pproxy-compat.md) |
 
-### Compatibility
+### Verification infrastructure
 
-| # | Component | Crate | What It Does | Deep Dive |
-|---|---|---|---|---|
-| 27 | pproxy compat | `eggress-pproxy-compat` | CLI translation, URI parsing, tier classification, diagnostics | [pproxy-compat.md](../docs/architecture/pproxy-compat.md) |
-
-### Tooling & Test Infrastructure
-
-| # | Component | Location | What It Does | Deep Dive |
-|---|---|---|---|---|
-| 28 | Testkit | `eggress-testkit` | Test servers, oracle harness, manifest validation, differential testing | [testkit.md](../docs/architecture/testkit.md) |
-| 29 | Tools & scripts | `scripts/` | Interop tests, certification probes, smoke clients, fuzz targets | [tools-and-scripts.md](../docs/architecture/tools-and-scripts.md) |
-
----
-
-## Core Abstractions
-
-| Concept | Location | Description |
+| Component | Location | Deep dive |
 |---|---|---|
-| `BoxStream` | `eggress-core` | `Pin<Box<dyn AsyncRead + AsyncWrite + Send>>` — the universal stream type |
-| `TargetAddr` | `eggress-core` | Typed destination preserving domain names until resolution |
-| `ProtocolId` | `eggress-core` | Enum identifying detected inbound protocol (Http, Socks4, Socks5, Raw, Echo, etc.) |
-| `RouteAction` | `eggress-core` | What to do with a connection: direct, upstream, or reject |
-| `ProxyChainSpec` | `eggress-uri` | Parsed multi-hop proxy chain from URI syntax |
-| `MatchExpr` | `eggress-routing` | Composite matcher: host, port, CIDR, protocol, identity, transport |
-| `CompiledRule` | `eggress-routing` | First-match-wins routing rule with upstream group binding |
-| `SessionContext` | `eggress-core` | Per-connection metadata (target, client identity, listener) |
+| Testkit, fuzz targets, benches, scripts, oracle assets, CI policy | `crates/eggress-testkit`, `fuzz/`, `benches/`, `scripts/`, `compat/`, `.github/workflows` | [testing-and-tooling.md](testing-and-tooling.md) |
 
 ---
 
-## Feature Groups
+## Cross-cutting invariants (hold everywhere)
 
-| Group | Scope | Contents |
-|-------|-------|----------|
-| `common` | runtime, cli, embed | HTTP/SOCKS core, TLS transport, UDP, raw; admin and metrics remain required |
-| `extended` | runtime, server, metrics, cli, embed | Shadowsocks, Trojan, WebSocket |
-| `operations` | runtime, cli | System proxy |
-| `reverse` | runtime, cli | Reverse/backward proxy control-channel |
-| `pproxy-compat` | cli, embed | pproxy compatibility translator and binary |
-| `ssh` | cli, embed, runtime, server, Python | Optional SSH upstream transport |
-| `legacy-crypto` | cli, embed, runtime, server, Python | Optional legacy Shadowsocks ciphers |
-| `pproxy-daemon` | cli, Python | Optional Linux safe re-exec daemon |
-| `full` | all | Union of all (default) |
+1. Streams are boxed at every protocol/transport boundary.
+2. Domains stay unresolved until dial time; DNS results are screened against
+   private/reserved ranges (rebinding defense).
+3. Credentials are redacted in logs, errors, diagnostics, and metric labels.
+4. Parsers are bounded (heads, credentials, chunks, datagrams) — every parser
+   has a matching fuzz target.
+5. Auth comparisons are constant-time (`subtle`) across all protocols.
+6. One compiled snapshot feeds routing + health + admin + metrics.
+7. Listeners are not hot-reloadable; policy/upstreams/groups/health are.
+8. Unsupported transports/features fail with structured diagnostics and
+   stable exit codes — never silent fallback.
+9. `unsafe_code = "deny"` workspace-wide; no OpenSSL/C dependencies; rustls
+   only.
 
-Lean build: `cargo build -p eggress-cli --release --no-default-features --features common`
+## Build profiles
 
----
+Default features = `full` (common+extended+operations+reverse+pproxy-compat).
+Optional: `ssh`, `quic`, `legacy-crypto`, `pproxy-daemon`. Lean build:
+`cargo build -p eggress-cli --release --no-default-features --features common`.
+MSRV 1.85; release profiles use thin-LTO/symbol-stripping.
 
-## Platform Constraints
-
-- Rust edition 2021, MSRV 1.85
-- `unsafe_code = "deny"` workspace-wide
-- No OpenSSL, no C dependencies (denied via `deny.toml`)
-- TLS via rustls only
-
----
-
-## Design Principles
-
-1. **Stream-native composition** — protocols and transports operate on `BoxStream`, enabling arbitrary chaining
-2. **Separate protocol from transport** — protocols run over arbitrary streams; TLS is a wrapper, not a protocol
-3. **Preserve unresolved targets** — domain names stay as domains until resolution is required
-4. **Box streams at boundaries** — avoid propagating generic stream types through the architecture
-5. **No unsafe in core crates** — `unsafe_code = "deny"` workspace-wide
-6. **Credentials never logged** — redacted `Display` implementations
-7. **Bounded everything** — sniff buffers, headers, credentials, handshake timeouts
-8. **Normalized failure categories** — structured outcomes for metrics and diagnostics
-9. **Immutable routing snapshots** — atomic swap via `ArcSwap` for lock-free reads
-10. **Health-aware scheduling** — upstream eligibility based on health state machine
-11. **Operator explainability** — route explanation without debug logs
-12. **Graceful shutdown ordering** — readiness false → stop listeners → drain → force-cancel → stop admin
-13. **Atomic reload** — compile candidate before swap, reject unsupported changes
-14. **Fallible supervisor** — startup errors return `RuntimeError` instead of panicking
-
----
-
-## Workspace Layout
+## Repository layout
 
 ```
 eggress/
-├── crates/                    # 26 Rust crates
-│   ├── eggress-core/          # Foundation: types, traits, relay, detection
-│   ├── eggress-uri/           # URI parsing and typed AST
-│   ├── eggress-routing/       # Rule engine, schedulers, health state
-│   ├── eggress-config/        # TOML config parsing and validation
-│   ├── eggress-server/        # Connection orchestration
-│   ├── eggress-runtime/       # Service supervisor and lifecycle
-│   ├── eggress-admin/         # Admin HTTP server
-│   ├── eggress-metrics/       # Prometheus metrics
-│   ├── eggress-transport-tls/ # TLS transport (rustls)
-│   ├── eggress-transport-ssh/ # Optional SSH transport
-│   ├── eggress-transport-quic/# Optional QUIC transport
-│   ├── eggress-udp/           # UDP associations and relay
-│   ├── eggress-protocol-http/     # HTTP/1.1, H2 CONNECT
-│   ├── eggress-protocol-socks/    # SOCKS4/4a, SOCKS5
-│   ├── eggress-protocol-shadowsocks/ # Shadowsocks AEAD
-│   ├── eggress-protocol-trojan/   # Trojan protocol
-│   ├── eggress-protocol-websocket/ # WebSocket tunnels
-│   ├── eggress-protocol-raw/      # Raw TCP passthrough
-│   ├── eggress-protocol-reverse/  # Reverse/backward proxy
-│   ├── eggress-protocol-h3/       # HTTP/3 (QUIC-based)
-│   ├── eggress-embed/         # Rust embed API
-│   ├── eggress-python/        # PyO3 Python bindings
-│   ├── eggress-pproxy-compat/ # pproxy compatibility layer
-│   ├── eggress-cli/           # CLI binary targets
-│   ├── eggress-system-proxy/  # System proxy inspection
-│   └── eggress-testkit/       # Test utilities and oracle
-├── python/                    # Python package (eggress/ + pproxy/)
-├── fuzz/                      # Standalone fuzz workspace
-├── benches/                   # Criterion benchmarks
-├── scripts/                   # Interoperability and testing scripts
-├── tests/                     # Integration tests
-├── docs/                      # Documentation
-│   └── architecture/          # Per-component deep dives (26 files)
-├── .skills/                   # Agent skills (task-specific guidance)
-├── plans/                     # Historical phase plans
-├── compat/                    # Compatibility test assets
-└── example-config.toml        # Example TOML configuration
+├── crates/                 # 26 workspace crates (see index above)
+├── python/                 # canonical Python package (eggress/) + pproxy shim sources
+├── python-pproxy-compat/   # opt-in distribution owning top-level `pproxy`
+├── architecture/           # THIS directory: overview + per-component reviews
+├── docs/                   # canonical reference docs (ARCHITECTURE, parity manifests, specs)
+├── tests/                  # cross-implementation Python tests (tests/compat)
+├── fuzz/                   # standalone libfuzzer workspace (11 targets)
+├── benches/                # Criterion benchmarks (root pkg eggress-bench)
+├── scripts/                # interop/certification/probe/evidence tooling
+├── compat/pproxy-2.7.9/    # frozen oracle provenance + baselines
+└── example-config.toml     # annotated configuration tour
 ```
 
----
+## Related material (outside this directory)
 
-## Further Reading
-
-- [Existing architecture docs](../docs/architecture/) — 26 detailed per-component documents
-- [Agent skills](../.skills/) — task-specific development guidance (proxy dev, testing, security, config, routing, transports, reverse proxy, release)
-- [pproxy parity spec](../docs/PPROXY_PARITY_SPEC.md) — compatibility vocabulary and tier definitions
-- [Embed API reference](../docs/EMBED_API.md) — Rust in-process API
-- [Python bindings reference](../docs/PYTHON_BINDINGS.md) — PyO3 API surface
-- [Config reference](../docs/CONFIG_REFERENCE.md) — TOML schema
-- [URI grammar](../docs/URI_GRAMMAR.md) — proxy chain URI syntax
-- [Testing guide](../docs/TESTING.md) — local, specialized, interoperability testing
-- [Security review](../docs/SECURITY_REVIEW.md) — threat model and mitigations
+- `docs/ARCHITECTURE.md` — long-form canonical architecture narrative
+- `docs/parity/pproxy_capability_manifest.toml`,
+  `docs/parity/pproxy_2_7_9_strict_manifest.toml` — compatibility contracts
+- `docs/PPROXY_PARITY_SPEC.md` — tier vocabulary used throughout
+- `.skills/` — task-specific agent guides (rust-proxy-dev, testing, security-dev, …)
+- Earlier per-crate notes also exist under `docs/architecture/`; treat this
+  directory as the maintained review index.
