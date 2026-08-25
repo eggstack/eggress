@@ -54,6 +54,9 @@ impl TlsClientConfigBuilder {
     /// Accept any server certificate (insecure, for testing only).
     #[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
     pub fn with_insecure(mut self) -> Self {
+        // Certificate verification is bypassed for every connection made
+        // with this builder; never enable in production deployments.
+        tracing::warn!("TLS certificate verification disabled (insecure mode)");
         self.insecure = true;
         self
     }

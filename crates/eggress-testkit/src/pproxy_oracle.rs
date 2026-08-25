@@ -216,12 +216,15 @@ fn redact_uri_credentials(text: &str) -> String {
                 let cred_start = after_scheme;
                 let cred_end = after_scheme + at_rel;
                 let colon_pos = result[cred_start..cred_end].find(':');
-                if let Some(colon_pos) = colon_pos {
-                    let user = result[cred_start..cred_start + colon_pos].to_string();
+                if colon_pos.is_some() {
                     let rest = result[cred_end + 1..].to_string();
-                    let redacted = format!("{}:***@{}", user, rest);
+                    // Match the `****:****@` redaction convention used by the
+                    // other layers (embed, pproxy-compat, python bindings) so
+                    // differential transcripts never carry proxy usernames.
+                    const REDACTED_PREFIX: &str = "****:****@";
+                    let redacted = format!("{REDACTED_PREFIX}{rest}");
                     result = format!("{}{}", &result[..cred_start], redacted);
-                    offset = cred_start + user.len() + 5;
+                    offset = cred_start + REDACTED_PREFIX.len();
                 } else {
                     offset = cred_end;
                 }
@@ -324,40 +327,44 @@ fn parse_listen_addr_from_args(args: &[String]) -> Option<SocketAddr> {
 }
 
 fn parse_bound_addr(text: &str) -> Option<SocketAddr> {
+    // (needle in oracle output, resulting IP). IPv6 literals are bracketed
+    // exactly as they appear in pproxy's startup banner.
+    const PATTERNS: [(&str, std::net::IpAddr); 4] = [
+        (
+            "127.0.0.1:",
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        ),
+        (
+            "0.0.0.0:",
+            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+        ),
+        (
+            "[::1]:",
+            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+        ),
+        (
+            "[::]:",
+            std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        ),
+    ];
+
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
 
-        if let Some(idx) = line.find("127.0.0.1:") {
-            let port_str = &line[idx + "127.0.0.1:".len()..];
-            let port_str = port_str
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect::<String>();
-            if let Ok(port) = port_str.parse::<u16>() {
-                if port > 0 {
-                    return Some(SocketAddr::new(
-                        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-                        port,
-                    ));
-                }
-            }
-        }
-
-        if let Some(idx) = line.find("0.0.0.0:") {
-            let port_str = &line[idx + "0.0.0.0:".len()..];
-            let port_str = port_str
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect::<String>();
-            if let Ok(port) = port_str.parse::<u16>() {
-                if port > 0 {
-                    return Some(SocketAddr::new(
-                        std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-                        port,
-                    ));
+        for (needle, ip) in PATTERNS {
+            if let Some(idx) = line.find(needle) {
+                let port_str = &line[idx + needle.len()..];
+                let port_str = port_str
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>();
+                if let Ok(port) = port_str.parse::<u16>() {
+                    if port > 0 {
+                        return Some(SocketAddr::new(ip, port));
+                    }
                 }
             }
         }
@@ -477,8 +484,10 @@ mod tests {
 
         assert!(!redacted.contains("secret123"));
         assert!(!redacted.contains("pw0rd"));
-        assert!(redacted.contains("user:***@127.0.0.1:1080"));
-        assert!(redacted.contains("admin:***@0.0.0.0:8080"));
+        assert!(!redacted.contains("user:"), "username must be redacted");
+        assert!(!redacted.contains("admin:"), "username must be redacted");
+        assert!(redacted.contains("****:****@127.0.0.1:1080"));
+        assert!(redacted.contains("****:****@0.0.0.0:8080"));
     }
 
     #[test]
@@ -509,18 +518,34 @@ mod tests {
 
         assert_eq!(parse_bound_addr("no address here"), None);
         assert_eq!(parse_bound_addr(""), None);
+
+        assert_eq!(
+            parse_bound_addr("Listen: socks5://[::1]:9090"),
+            Some(SocketAddr::new(
+                std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+                9090
+            ))
+        );
+
+        assert_eq!(
+            parse_bound_addr("Listen: http://[::]:8080"),
+            Some(SocketAddr::new(
+                std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+                8080
+            ))
+        );
     }
 
     #[test]
     fn test_redact_uri_credentials() {
         assert_eq!(
             redact_uri_credentials("socks5://user:pass@host:1080"),
-            "socks5://user:***@host:1080"
+            "socks5://****:****@host:1080"
         );
 
         assert_eq!(
             redact_uri_credentials("http://admin:secret@proxy:8080"),
-            "http://admin:***@proxy:8080"
+            "http://****:****@proxy:8080"
         );
 
         assert_eq!(

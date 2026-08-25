@@ -152,10 +152,10 @@ pub fn generate_gnome_apply_commands(
     if let Some(no_proxy) = no_proxy {
         let gsettings_list: Vec<String> = no_proxy
             .split(',')
-            // Escape embedded single quotes as '\'' so the GVariant string
-            // array stays well-formed (argv-based exec: not shell injection,
-            // but a raw quote would produce an invalid GVariant value).
-            .map(|s| format!("'{}'", s.trim().replace('\'', "'\\''")))
+            // Escape embedded single quotes as \' per GVariant string syntax.
+            // (argv-based exec: no shell involved, but a raw quote would
+            // produce an invalid GVariant value.)
+            .map(|s| format!("'{}'", s.trim().replace('\'', "\\'")))
             .collect();
         let value = format!("[{}]", gsettings_list.join(", "));
         commands.push(Command::new(

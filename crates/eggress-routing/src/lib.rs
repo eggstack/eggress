@@ -139,8 +139,15 @@ fn normalize_host_for_exact(host: &str) -> String {
     let h = host.strip_suffix('.').unwrap_or(host);
     if let Ok(ip) = h.parse::<IpAddr>() {
         // Canonical form lowercases IPv6 hex digits and collapses padding,
-        // so `FE80::1` and `fe80::1` compare equal.
-        ip.to_string()
+        // so `FE80::1` and `fe80::1` compare equal. IPv4-mapped IPv6
+        // literals canonicalize to plain IPv4, so a dual-stack client
+        // sending `::ffff:a.b.c.d` matches a rule written for `a.b.c.d`.
+        match ip {
+            IpAddr::V6(v6) => v6
+                .to_ipv4_mapped()
+                .map_or_else(|| ip.to_string(), |v4| v4.to_string()),
+            IpAddr::V4(_) => ip.to_string(),
+        }
     } else {
         h.to_ascii_lowercase()
     }

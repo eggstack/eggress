@@ -64,9 +64,12 @@ impl ProtocolDispatcher {
     /// Dispatches a connection by sniffing its initial bytes and matching
     /// against registered protocol detectors.
     ///
-    /// Returns the matched protocol ID and a `ReplayStream` positioned at the
-    /// start of the connection (all sniffed bytes are preserved in the buffer
-    /// and will be replayed to the protocol handler on first read).
+    /// Returns the matched protocol ID and a `ReplayStream`. The sniffed
+    /// prefix bytes are consumed by the detection reads performed here, so
+    /// the returned stream is positioned immediately *after* the sniffed
+    /// prefix — they are NOT replayed on subsequent reads. The sniffed
+    /// bytes remain available for inspection via [`ReplayStream::buffer`]
+    /// and [`ReplayStream::buffered_remaining`].
     pub async fn dispatch(
         &self,
         stream: BoxStream,

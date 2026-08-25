@@ -315,18 +315,16 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
             } else {
                 format!("{host}:{port}")
             };
+            // Return errors instead of exiting the process here: the future
+            // runs inside a tokio runtime and must not bypass destructors.
             let mut stream = match tokio::net::TcpStream::connect(&addr).await {
                 Ok(s) => s,
-                Err(e) => {
-                    eprintln!("failed to connect to admin at {addr}: {e}");
-                    std::process::exit(EXIT_RUNTIME_FAILURE);
-                }
+                Err(e) => return Err(format!("failed to connect to admin at {addr}: {e}")),
             };
 
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             if let Err(e) = stream.write_all(request.as_bytes()).await {
-                eprintln!("failed to send request: {e}");
-                std::process::exit(EXIT_RUNTIME_FAILURE);
+                return Err(format!("failed to send request: {e}"));
             }
             let _ = stream.shutdown().await;
 
@@ -339,9 +337,17 @@ fn handle_route_explain_remote(args: &RouteExplain, admin_url: &str) {
                     Err(_) => break,
                 }
             }
-            String::from_utf8_lossy(&response).to_string()
+            Ok(String::from_utf8_lossy(&response).to_string())
         })
     });
+
+    let result = match result {
+        Ok(result) => result,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(EXIT_RUNTIME_FAILURE);
+        }
+    };
 
     let body_start = result.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
     let body = &result[body_start..];
@@ -1396,12 +1402,22 @@ async fn run_listener(
 
     let proto_slice: Arc<[eggress_core::ProtocolId]> = config.protocols.clone().into();
 
+    // Back off when accept() keeps failing (e.g. fd exhaustion) so the loop
+    // does not tight-spin while the system is resource-starved.
+    const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
+
     loop {
         let conn = match listener.accept().await {
             Ok(conn) => conn,
             Err(e) => {
-                if e.to_string().contains("listener cancelled") {
+                if eggress_core::listener::is_listener_cancelled(&e) {
                     break;
+                }
+                match e.kind() {
+                    std::io::ErrorKind::WouldBlock
+                    | std::io::ErrorKind::Interrupted
+                    | std::io::ErrorKind::ConnectionAborted => {}
+                    _ => tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await,
                 }
                 tracing::error!("accept error: {e}");
                 continue;

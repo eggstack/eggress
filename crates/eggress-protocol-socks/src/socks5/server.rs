@@ -329,10 +329,11 @@ pub async fn read_auth_request<R: AsyncRead + Unpin>(
     let mut password_bytes = vec![0u8; plen];
     reader.read_exact(&mut password_bytes).await?;
 
-    let password_str = String::from_utf8_lossy(&password_bytes);
+    // Compare the raw wire bytes: lossy UTF-8 conversion would map distinct
+    // invalid sequences to U+FFFD, collapsing them into the same value.
     use subtle::ConstantTimeEq;
-    let passwords_match: bool = password_str
-        .as_bytes()
+    let passwords_match: bool = password_bytes
+        .as_slice()
         .ct_eq(expected_password.as_bytes())
         .into();
     if !passwords_match {

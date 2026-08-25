@@ -1809,9 +1809,11 @@ impl MetricsRegistry {
 
     pub fn h2_snapshot(&self) -> H2MetricsSnapshot {
         H2MetricsSnapshot {
-            connections_active: self.h2_connections_active.get() as u64,
+            // Clamp active-resource gauges so an incidental inc/dec bug
+            // cannot surface as a huge unsigned value.
+            connections_active: self.h2_connections_active.get().max(0) as u64,
             connections_total: self.h2_connections_total.get(),
-            streams_active: self.h2_streams_active.get() as u64,
+            streams_active: self.h2_streams_active.get().max(0) as u64,
             goaway_total: self.h2_goaway_total.get(),
             handshake_failures_total: self.h2_handshake_failures_total.get(),
             auth_failures_total: self.h2_auth_failures_total.get(),

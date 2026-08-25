@@ -129,13 +129,39 @@ impl russh::client::Handler for CompatClient {
     ) -> Result<bool, Self::Error> {
         Ok(match &self.host_key_policy {
             SshHostKeyPolicy::KnownHosts => {
-                russh::keys::check_known_hosts(&self.host, self.port, server_public_key)
-                    .unwrap_or(false)
+                match russh::keys::check_known_hosts(&self.host, self.port, server_public_key) {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        // A missing or unreadable known_hosts file must not be
+                        // indistinguishable from a key mismatch.
+                        tracing::warn!(
+                            host = %self.host,
+                            port = self.port,
+                            %error,
+                            "known_hosts lookup failed; rejecting host key"
+                        );
+                        false
+                    }
+                }
             }
-            SshHostKeyPolicy::KnownHostsFile(path) => {
-                russh::keys::check_known_hosts_path(&self.host, self.port, server_public_key, path)
-                    .unwrap_or(false)
-            }
+            SshHostKeyPolicy::KnownHostsFile(path) => match russh::keys::check_known_hosts_path(
+                &self.host,
+                self.port,
+                server_public_key,
+                path,
+            ) {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    tracing::warn!(
+                        host = %self.host,
+                        port = self.port,
+                        known_hosts = %path.display(),
+                        %error,
+                        "known_hosts lookup failed; rejecting host key"
+                    );
+                    false
+                }
+            },
             SshHostKeyPolicy::InsecureCompatibility => true,
         })
     }

@@ -7,13 +7,15 @@ use tokio::task::JoinSet;
 use crate::BoxStream;
 
 /// Reason the relay terminated.
+///
+/// `ClientClosed`/`ServerClosed` report which side hung up first when both
+/// directions completed cleanly; `Error` means at least one direction failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminationReason {
     ClientClosed,
     ServerClosed,
     BothClosed,
     Error,
-    Cancelled,
 }
 
 /// Result of a relay operation.
@@ -22,6 +24,15 @@ pub struct RelayResult {
     pub bytes_upstream: u64,
     pub bytes_downstream: u64,
     pub termination_reason: TerminationReason,
+}
+
+/// Which relay direction a spawned task was copying.
+#[derive(Debug, Clone, Copy)]
+enum Direction {
+    /// Client → server (upstream).
+    Upstream,
+    /// Server → client (downstream).
+    Downstream,
 }
 
 async fn copy_direction<R, W>(reader: &mut R, writer: &mut W, counter: &AtomicU64) -> io::Result<()>
@@ -55,19 +66,31 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
 
     let upstream_counter = Arc::clone(&bytes_upstream);
     tasks.spawn(async move {
-        copy_direction(&mut client_read, &mut server_write, &upstream_counter).await
+        let result = copy_direction(&mut client_read, &mut server_write, &upstream_counter).await;
+        (Direction::Upstream, result)
     });
 
     let downstream_counter = Arc::clone(&bytes_downstream);
     tasks.spawn(async move {
-        copy_direction(&mut server_read, &mut client_write, &downstream_counter).await
+        let result = copy_direction(&mut server_read, &mut client_write, &downstream_counter).await;
+        (Direction::Downstream, result)
     });
 
     let mut had_error = false;
-    while let Some(result) = tasks.join_next().await {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(_)) | Err(_) => {
+    // Records the first direction to finish cleanly, so diagnostics can tell
+    // which side hung up first.
+    let mut first_closed: Option<TerminationReason> = None;
+    while let Some(outcome) = tasks.join_next().await {
+        match outcome {
+            Ok((direction, Ok(()))) => {
+                if first_closed.is_none() {
+                    first_closed = Some(match direction {
+                        Direction::Upstream => TerminationReason::ClientClosed,
+                        Direction::Downstream => TerminationReason::ServerClosed,
+                    });
+                }
+            }
+            Ok((_, Err(_))) | Err(_) => {
                 had_error = true;
                 tasks.abort_all();
             }
@@ -80,7 +103,7 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
         termination_reason: if had_error {
             TerminationReason::Error
         } else {
-            TerminationReason::BothClosed
+            first_closed.unwrap_or(TerminationReason::BothClosed)
         },
     }
 }
@@ -167,6 +190,8 @@ mod tests {
         let result = proxy_jh.await.unwrap();
         assert_eq!(result.bytes_upstream, 4);
         assert_eq!(result.bytes_downstream, 4);
+        // The client closed its write half first.
+        assert_eq!(result.termination_reason, TerminationReason::ClientClosed);
 
         jh.await.unwrap();
     }

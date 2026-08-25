@@ -97,7 +97,17 @@ impl HealthCell {
                     HealthState::Recovering
                 }
             }
-            HealthState::Suspect => HealthState::Healthy,
+            HealthState::Suspect => {
+                // Mirror Recovering/Unknown: require the configured
+                // confirmation threshold before declaring Healthy again, so
+                // a single success cannot mask an intermittently failing
+                // upstream.
+                if snap.consecutive_successes >= config.successes_to_healthy {
+                    HealthState::Healthy
+                } else {
+                    HealthState::Suspect
+                }
+            }
             HealthState::Unknown => {
                 if snap.consecutive_successes >= config.successes_to_healthy {
                     HealthState::Healthy
@@ -360,10 +370,14 @@ mod tests {
     }
 
     #[test]
-    fn suspect_to_healthy_on_success() {
+    fn suspect_to_healthy_after_confirmation_successes() {
         let config = HealthConfig::default();
         let cell = HealthCell::new(HealthState::Suspect);
         cell.observe_failure(None, &config);
+        assert_eq!(cell.state(), HealthState::Suspect);
+        // A single success is not enough to leave Suspect; the configured
+        // confirmation threshold applies, as it does for Recovering.
+        cell.observe_success(Duration::from_millis(10), &config);
         assert_eq!(cell.state(), HealthState::Suspect);
         cell.observe_success(Duration::from_millis(10), &config);
         assert_eq!(cell.state(), HealthState::Healthy);
@@ -449,6 +463,10 @@ mod tests {
         cell.observe_success(Duration::from_millis(10), &config);
         assert_eq!(cell.state(), HealthState::Healthy);
         cell.observe_failure(None, &config);
+        assert_eq!(cell.state(), HealthState::Suspect);
+        // The failure reset the success counter, so leaving Suspect again
+        // requires the full confirmation threshold.
+        cell.observe_success(Duration::from_millis(10), &config);
         assert_eq!(cell.state(), HealthState::Suspect);
         cell.observe_success(Duration::from_millis(10), &config);
         assert_eq!(cell.state(), HealthState::Healthy);

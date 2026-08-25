@@ -1,5 +1,16 @@
 use serde::Deserialize;
 
+// Secret-bearing fields (passwords, bearer tokens) are redacted in `Debug`
+// output so `{:?}` of any config value can never leak credentials.
+#[derive(Default)]
+struct Redacted;
+
+impl std::fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("****")
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum MatchExprConfig {
@@ -142,7 +153,7 @@ pub struct UnixListenerConfig {
     pub mode: Option<u32>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ShadowsocksListenerConfig {
     pub method: String,
@@ -151,6 +162,17 @@ pub struct ShadowsocksListenerConfig {
     pub auth_prefix: Option<String>,
     #[serde(default)]
     pub plugins: Vec<String>,
+}
+
+impl std::fmt::Debug for ShadowsocksListenerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShadowsocksListenerConfig")
+            .field("method", &self.method)
+            .field("password", &Redacted)
+            .field("auth_prefix", &self.auth_prefix)
+            .field("plugins", &self.plugins)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -162,7 +184,7 @@ pub struct SsrListenerConfig {
     pub plugins: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListenerTrojanConfig {
     /// Trojan password (hashed with SHA224 on the wire).
@@ -177,6 +199,15 @@ pub struct ListenerTrojanConfig {
     pub fallback: Option<String>,
 }
 
+impl std::fmt::Debug for ListenerTrojanConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ListenerTrojanConfig")
+            .field("password", &Redacted)
+            .field("fallback", &self.fallback)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListenerTlsConfig {
@@ -186,7 +217,7 @@ pub struct ListenerTlsConfig {
     pub alpn: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     #[serde(rename = "type")]
@@ -194,6 +225,17 @@ pub struct AuthConfig {
     pub username: Option<String>,
     pub password: Option<String>,
     pub password_env: Option<String>,
+}
+
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthConfig")
+            .field("auth_type", &self.auth_type)
+            .field("username", &self.username)
+            .field("password", &Redacted)
+            .field("password_env", &self.password_env)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -276,7 +318,7 @@ pub struct AdminConfig {
     pub static_content: Option<Vec<StaticContentToml>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdminAuthConfig {
     pub bearer_token: Option<String>,
@@ -284,12 +326,32 @@ pub struct AdminAuthConfig {
     pub basic_auth: Option<AdminBasicAuthConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+impl std::fmt::Debug for AdminAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdminAuthConfig")
+            .field("bearer_token", &Redacted)
+            .field("bearer_token_env", &self.bearer_token_env)
+            .field("basic_auth", &self.basic_auth)
+            .finish()
+    }
+}
+
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdminBasicAuthConfig {
     pub user: String,
     pub password: Option<String>,
     pub password_env: Option<String>,
+}
+
+impl std::fmt::Debug for AdminBasicAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdminBasicAuthConfig")
+            .field("user", &self.user)
+            .field("password", &Redacted)
+            .field("password_env", &self.password_env)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -314,7 +376,7 @@ pub struct StaticContentToml {
 ///
 /// The reverse server accepts control connections from remote clients and
 /// dispatches accepted connections back through the control channel.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReverseServerConfig {
     /// Unique identifier for this reverse server.
@@ -341,11 +403,27 @@ pub struct ReverseServerConfig {
     pub pproxy_compat: bool,
 }
 
+impl std::fmt::Debug for ReverseServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReverseServerConfig")
+            .field("id", &self.id)
+            .field("control_bind", &self.control_bind)
+            .field("external_bind", &self.external_bind)
+            .field("auth_username", &self.auth_username)
+            .field("auth_password", &Redacted)
+            .field("auth_password_env", &self.auth_password_env)
+            .field("max_streams", &self.max_streams)
+            .field("heartbeat_interval", &self.heartbeat_interval)
+            .field("pproxy_compat", &self.pproxy_compat)
+            .finish()
+    }
+}
+
 /// Configuration for a reverse proxy control client.
 ///
 /// The control client connects to a remote reverse server and services
 /// incoming stream-open requests by connecting to local targets.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReverseClientConfig {
     /// Unique identifier for this reverse client.
@@ -379,4 +457,24 @@ pub struct ReverseClientConfig {
     /// Eggress reverse framing.
     #[serde(default)]
     pub pproxy_compat: bool,
+}
+
+impl std::fmt::Debug for ReverseClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReverseClientConfig")
+            .field("id", &self.id)
+            .field("server_addr", &self.server_addr)
+            .field("server_uri", &self.server_uri)
+            .field("auth_username", &self.auth_username)
+            .field("auth_password", &Redacted)
+            .field("auth_password_env", &self.auth_password_env)
+            .field("reconnect_initial", &self.reconnect_initial)
+            .field("reconnect_max", &self.reconnect_max)
+            .field("heartbeat_interval", &self.heartbeat_interval)
+            .field("parallel_connections", &self.parallel_connections)
+            .field("default_target_host", &self.default_target_host)
+            .field("default_target_port", &self.default_target_port)
+            .field("pproxy_compat", &self.pproxy_compat)
+            .finish()
+    }
 }

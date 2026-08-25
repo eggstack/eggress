@@ -153,11 +153,18 @@ pub async fn start_http_origin_server() -> (SocketAddr, tokio::task::JoinHandle<
 pub struct SlowReader {
     inner: tokio::net::tcp::OwnedReadHalf,
     delay: Duration,
+    /// True once a delayed wake has been scheduled and the next poll may
+    /// actually read from the inner stream.
+    primed: bool,
 }
 
 impl SlowReader {
     pub fn new(inner: tokio::net::tcp::OwnedReadHalf, delay: Duration) -> Self {
-        Self { inner, delay }
+        Self {
+            inner,
+            delay,
+            primed: false,
+        }
     }
 }
 
@@ -167,21 +174,22 @@ impl AsyncRead for SlowReader {
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        // First poll the inner read
-        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
-        if result.is_ready() {
-            // After a successful read, insert a delay by re-registering waker
+        // Return `Pending` *before* consuming any bytes: per the `AsyncRead`
+        // contract, `Pending` means nothing was taken, so data must not be
+        // placed into `buf` on this poll. The delayed wake throttles reads
+        // without dropping or duplicating bytes.
+        if !self.primed {
+            self.primed = true;
             let waker = cx.waker().clone();
             let delay = self.delay;
             tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
                 waker.wake();
             });
-            // Return Pending to simulate slowness
-            Poll::Pending
-        } else {
-            result
+            return Poll::Pending;
         }
+        self.primed = false;
+        Pin::new(&mut self.inner).poll_read(cx, buf)
     }
 }
 
@@ -191,11 +199,18 @@ impl AsyncRead for SlowReader {
 pub struct SlowWriter {
     inner: tokio::net::tcp::OwnedWriteHalf,
     delay: Duration,
+    /// True once a delayed wake has been scheduled and the next poll may
+    /// actually write to the inner stream.
+    primed: bool,
 }
 
 impl SlowWriter {
     pub fn new(inner: tokio::net::tcp::OwnedWriteHalf, delay: Duration) -> Self {
-        Self { inner, delay }
+        Self {
+            inner,
+            delay,
+            primed: false,
+        }
     }
 }
 
@@ -205,18 +220,20 @@ impl AsyncWrite for SlowWriter {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        let result = Pin::new(&mut self.inner).poll_write(cx, buf);
-        if result.is_ready() {
+        // Mirror `SlowReader`: return `Pending` before accepting bytes so no
+        // write is reported twice or silently swallowed.
+        if !self.primed {
+            self.primed = true;
             let waker = cx.waker().clone();
             let delay = self.delay;
             tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
                 waker.wake();
             });
-            Poll::Pending
-        } else {
-            result
+            return Poll::Pending;
         }
+        self.primed = false;
+        Pin::new(&mut self.inner).poll_write(cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {

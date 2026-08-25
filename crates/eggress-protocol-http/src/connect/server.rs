@@ -201,18 +201,19 @@ pub fn parse_authority(authority: &str) -> Result<TargetAddr, HttpError> {
         });
     }
 
-    // Handle IPv4 or domain
-    // Find the last ':' to split host and port
-    let colon_pos = authority
-        .rfind(':')
-        .ok_or_else(|| HttpError::TargetParseError("missing port in authority".into()))?;
-
-    let host_str = &authority[..colon_pos];
-    let port_str = &authority[colon_pos + 1..];
-
-    let port: u16 = port_str
-        .parse()
-        .map_err(|e| HttpError::TargetParseError(format!("invalid port: {}", e)))?;
+    // Handle IPv4 or domain.
+    // A missing port implies the default HTTPS port for CONNECT targets
+    // (RFC 9110 §9.3.6: the authority carries host[:port]).
+    const DEFAULT_CONNECT_PORT: u16 = 443;
+    let (host_str, port) = match authority.rfind(':') {
+        Some(colon_pos) => {
+            let port: u16 = authority[colon_pos + 1..]
+                .parse()
+                .map_err(|e| HttpError::TargetParseError(format!("invalid port: {}", e)))?;
+            (&authority[..colon_pos], port)
+        }
+        None => (authority, DEFAULT_CONNECT_PORT),
+    };
 
     // Try to parse as IP first
     if let Ok(ip) = host_str.parse::<IpAddr>() {
@@ -319,8 +320,24 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_authority_missing_port() {
-        assert!(parse_authority("example.com").is_err());
+    fn test_parse_authority_missing_port_implies_default() {
+        // CONNECT without an explicit port implies the default HTTPS port.
+        let target = parse_authority("example.com").unwrap();
+        assert_eq!(
+            target,
+            TargetAddr {
+                host: TargetHost::Domain("example.com".to_string()),
+                port: 443,
+            }
+        );
+        let target = parse_authority("192.168.1.1").unwrap();
+        assert_eq!(
+            target,
+            TargetAddr {
+                host: TargetHost::Ip("192.168.1.1".parse().unwrap()),
+                port: 443,
+            }
+        );
     }
 
     #[test]
@@ -357,18 +374,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_authority_empty_host() {
-        assert!(parse_authority(":80").is_err());
-    }
-
-    #[test]
     fn test_parse_authority_empty_string() {
         assert!(parse_authority("").is_err());
     }
 
     #[test]
-    fn test_parse_authority_no_colon() {
-        assert!(parse_authority("example.com").is_err());
+    fn test_parse_authority_empty_host_with_port() {
+        assert!(parse_authority(":80").is_err());
+        assert!(parse_authority("").is_err());
     }
 
     #[test]

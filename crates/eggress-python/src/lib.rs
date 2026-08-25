@@ -505,8 +505,10 @@ impl PyConnection {
                 Err(error) => {
                     eprintln!("could not schedule shutdown in __del__: {error}");
                     // Dropping here would synchronously join the service thread
-                    // from Python's finalizer. Leak only this already-closing
-                    // handle when the process-wide cleanup runtime is unavailable.
+                    // from Python's finalizer. Cancel the runtime token so
+                    // listeners and the supervisor wind down in the
+                    // background, then leak only this already-closing handle.
+                    handle.cancel();
                     std::mem::forget(handle);
                 }
             }

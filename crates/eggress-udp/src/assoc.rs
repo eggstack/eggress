@@ -69,9 +69,14 @@ impl UdpAssociation {
     }
 
     pub fn touch(&self) {
-        if let Ok(mut last) = self.meta.last_activity.lock() {
-            *last = Instant::now();
-        }
+        // Recover from poisoning like the other accessors: a panic in some
+        // other critical section must not make live associations look idle.
+        let mut last = self
+            .meta
+            .last_activity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *last = Instant::now();
     }
 
     pub fn last_activity(&self) -> Instant {

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use arc_swap::ArcSwap;
 #[cfg(feature = "operations")]
 use eggress_admin::{AdminSnapshot, AdminSnapshotProvider, ListenerInfo};
-use eggress_core::listener::{TcpListener, TcpListenerConfig};
+use eggress_core::listener::{is_listener_cancelled, TcpListener, TcpListenerConfig};
 use eggress_core::ProtocolId;
 use eggress_routing::health::HealthManager;
 use eggress_routing::upstream::UpstreamRuntime;
@@ -17,6 +17,24 @@ use tracing::Instrument;
 use crate::error::RuntimeError;
 use crate::platform::{check_capability, PlatformCapability};
 use crate::snapshot::{compile_runtime_snapshot, CompiledRuntimeSnapshot};
+
+/// Pause between retries when a listener's `accept()` keeps failing (for
+/// example fd exhaustion), so the loop does not tight-spin while the system
+/// is already resource-starved.
+const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
+
+/// Log an accept failure, backing off briefly for persistent error classes so
+/// repeated failures cannot hot-spin the accept loop. Transient races (a
+/// queued connection vanishing before `accept`) retry immediately.
+async fn handle_accept_error(context: &str, error: &std::io::Error) {
+    match error.kind() {
+        std::io::ErrorKind::WouldBlock
+        | std::io::ErrorKind::Interrupted
+        | std::io::ErrorKind::ConnectionAborted => {}
+        _ => tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await,
+    }
+    tracing::error!("{context} accept error: {error}");
+}
 
 /// Per-listener connection slot for listener implementations that cannot use
 /// the core TCP listener wrapper (transparent and Unix sockets).
@@ -1411,13 +1429,13 @@ impl ServiceSupervisor {
                         let (stream, _peer) = match accept_result {
                             Ok(s) => s,
                             Err(e) => {
-                                if e.to_string().contains("listener cancelled") {
-                                    break;
-                                }
-                                tracing::error!(
-                                    "transparent accept error on '{}': {e}",
-                                    listener_name
-                                );
+                                // Cancellation is handled by the token select
+                                // above; the inner accept cannot report it.
+                                handle_accept_error(
+                                    &format!("transparent on '{listener_name}'"),
+                                    &e,
+                                )
+                                .await;
                                 continue;
                             }
                         };
@@ -1654,7 +1672,7 @@ impl ServiceSupervisor {
                             result = unix_listener.accept() => match result {
                                 Ok(r) => r,
                                 Err(e) => {
-                                    tracing::error!("unix accept error on '{}': {e}", listener_name);
+                                    handle_accept_error("unix", &e).await;
                                     continue;
                                 }
                             },
@@ -1684,8 +1702,7 @@ impl ServiceSupervisor {
                         let routing = routing.clone();
                         let tls_client_config = tls_client_config.clone();
                         let listener_str = listener_name.clone();
-                        let conn_id =
-                            state.connection_counter.fetch_add(1, Ordering::Relaxed);
+                        let conn_id = state.connection_counter.fetch_add(1, Ordering::Relaxed);
                         let conn_protocols = proto_slice.clone();
                         let conn_auth = auth.clone();
                         let conn_metrics = state.metrics.clone();
@@ -1723,24 +1740,38 @@ impl ServiceSupervisor {
 
                             let stream: eggress_core::BoxStream =
                                 if let Some(ref tls_cfg) = tls_config {
-                                    let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
-                                        .with_certificate_pem(&tls_cfg.cert_pem)
-                                        .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
-                                        .and_then(|b| {
-                                            let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
-                                            b.build()
-                                        }) {
+                                    let server_config =
+                                        match eggress_transport_tls::TlsServerConfigBuilder::new()
+                                            .with_certificate_pem(&tls_cfg.cert_pem)
+                                            .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
+                                            .and_then(|b| {
+                                                let b = if tls_cfg.alpn.is_empty() {
+                                                    b
+                                                } else {
+                                                    b.with_alpn(tls_cfg.alpn.clone())
+                                                };
+                                                b.build()
+                                            }) {
                                             Ok(c) => c,
                                             Err(e) => {
-                                                tracing::error!("TLS config error for unix connection: {e}");
+                                                tracing::error!(
+                                                    "TLS config error for unix connection: {e}"
+                                                );
                                                 active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
-                                    match eggress_transport_tls::tls_accept(Box::new(stream), server_config).await {
+                                    match eggress_transport_tls::tls_accept(
+                                        Box::new(stream),
+                                        server_config,
+                                    )
+                                    .await
+                                    {
                                         Ok(s) => s,
                                         Err(e) => {
-                                            tracing::debug!("TLS accept failed for unix connection: {e}");
+                                            tracing::debug!(
+                                                "TLS accept failed for unix connection: {e}"
+                                            );
                                             active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
@@ -1768,26 +1799,26 @@ impl ServiceSupervisor {
                                 metrics: Some(conn_metrics),
                                 udp: udp_svc,
                                 tls_client_config,
-                                shadowsocks: ss_config.map(
-                                    |ss| eggress_server::accept::InboundShadowsocksConfig {
+                                shadowsocks: ss_config.map(|ss| {
+                                    eggress_server::accept::InboundShadowsocksConfig {
                                         method: ss.method,
                                         password: ss.password,
                                         #[cfg(feature = "pproxy-legacy")]
                                         auth_prefix: ss.auth_prefix.map(String::into_bytes),
                                         #[cfg(feature = "pproxy-legacy")]
                                         plugins: ss.plugins,
-                                    },
-                                ),
+                                    }
+                                }),
                                 #[cfg(feature = "extended")]
                                 shadowsocks_metrics: Some(conn_ss_metrics),
                                 #[cfg(not(feature = "extended"))]
                                 shadowsocks_metrics: None,
-                                trojan: trojan_config.map(
-                                    |t| eggress_server::accept::InboundTrojanConfig {
+                                trojan: trojan_config.map(|t| {
+                                    eggress_server::accept::InboundTrojanConfig {
                                         password: t.password,
                                         fallback: t.fallback,
-                                    },
-                                ),
+                                    }
+                                }),
                                 fixed_target: None,
                                 local_bind: None,
                                 #[cfg(feature = "ssh")]
@@ -2115,10 +2146,10 @@ impl ServiceSupervisor {
                         let conn = match prepared_listener.listener.accept().await {
                             Ok(c) => c,
                             Err(e) => {
-                                if e.to_string().contains("listener cancelled") {
+                                if is_listener_cancelled(&e) {
                                     break;
                                 }
-                                tracing::error!("accept error: {e}");
+                                handle_accept_error("tcp", &e).await;
                                 continue;
                             }
                         };

@@ -11,7 +11,7 @@ use crate::model::{
 use crate::validate::validate_duration;
 
 /// Compiled reverse server configuration with resolved defaults and parsed addresses.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CompiledReverseServerConfig {
     pub id: String,
     pub control_bind: std::net::SocketAddr,
@@ -27,8 +27,29 @@ pub struct CompiledReverseServerConfig {
     pub pproxy_compat: bool,
 }
 
+impl std::fmt::Debug for CompiledReverseServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `auth_password` is redacted so debug logging of the compiled
+        // runtime config can never leak credentials.
+        f.debug_struct("CompiledReverseServerConfig")
+            .field("id", &self.id)
+            .field("control_bind", &self.control_bind)
+            .field("external_bind", &self.external_bind)
+            .field("auth_username", &self.auth_username)
+            .field("auth_password", &"****")
+            .field("max_control_connections", &self.max_control_connections)
+            .field("read_timeout_ms", &self.read_timeout_ms)
+            .field("allow_bind", &self.allow_bind)
+            .field("max_listeners_per_client", &self.max_listeners_per_client)
+            .field("max_streams_per_listener", &self.max_streams_per_listener)
+            .field("max_pending_external", &self.max_pending_external)
+            .field("pproxy_compat", &self.pproxy_compat)
+            .finish()
+    }
+}
+
 /// Compiled reverse client configuration with resolved defaults and parsed addresses.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CompiledReverseClientConfig {
     pub id: String,
     pub server_addr: std::net::SocketAddr,
@@ -43,6 +64,27 @@ pub struct CompiledReverseClientConfig {
     pub drain_grace_ms: u64,
     pub parallel_connections: u32,
     pub pproxy_compat: bool,
+}
+
+impl std::fmt::Debug for CompiledReverseClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `auth_password` is redacted; see CompiledReverseServerConfig.
+        f.debug_struct("CompiledReverseClientConfig")
+            .field("id", &self.id)
+            .field("server_addr", &self.server_addr)
+            .field("server_chain", &self.server_chain)
+            .field("auth_username", &self.auth_username)
+            .field("auth_password", &"****")
+            .field("reconnect_initial_ms", &self.reconnect_initial_ms)
+            .field("reconnect_max_ms", &self.reconnect_max_ms)
+            .field("default_target_host", &self.default_target_host)
+            .field("default_target_port", &self.default_target_port)
+            .field("read_timeout_ms", &self.read_timeout_ms)
+            .field("drain_grace_ms", &self.drain_grace_ms)
+            .field("parallel_connections", &self.parallel_connections)
+            .field("pproxy_compat", &self.pproxy_compat)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -257,11 +299,23 @@ pub struct AdminConfig {
     pub static_content: Vec<StaticRoute>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AdminAuthConfig {
     pub bearer_token: Option<String>,
     pub basic_username: Option<String>,
     pub basic_password: Option<String>,
+}
+
+impl std::fmt::Debug for AdminAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `bearer_token` and `basic_password` are redacted so debug logging
+        // of the compiled admin config can never leak credentials.
+        f.debug_struct("AdminAuthConfig")
+            .field("bearer_token", &"****")
+            .field("basic_username", &self.basic_username)
+            .field("basic_password", &"****")
+            .finish()
+    }
 }
 
 fn compile_reject_reason(s: &str) -> Result<RejectReason, ConfigError> {

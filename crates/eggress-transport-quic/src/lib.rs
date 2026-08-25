@@ -14,11 +14,17 @@ use quinn::crypto::rustls::{
 };
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_MAX_STREAMS: u32 = 1024;
+
+/// Upper bound on concurrently live per-connection tasks spawned by
+/// [`QuicListener::run`]. Each accepted connection holds one permit for its
+/// whole lifetime, so a flood of connections cannot multiply tasks without
+/// limit.
+const MAX_CONCURRENT_CONNECTION_TASKS: usize = 1024;
 
 /// Transport errors with stable, redacted messages.
 #[derive(Debug, thiserror::Error)]
@@ -294,6 +300,14 @@ impl QuicClient {
         self.connection().await
     }
 
+    /// Drop the cached connection so the next use reconnects.
+    ///
+    /// Protocol sessions call this when they detect a dead connection, mirroring
+    /// the recovery path of [`QuicClient::open_stream`].
+    pub async fn reset_connection(&self) {
+        self.connection.lock().await.take();
+    }
+
     /// Stop the endpoint and all cached connections.
     pub fn close(&self) {
         self.endpoint.close(0u32.into(), b"shutdown");
@@ -331,12 +345,20 @@ impl QuicListener {
         F: Fn(BoxStream, SocketAddr) -> Fut + Send + Sync + Clone + 'static,
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {
+        let permits = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTION_TASKS));
         loop {
             let incoming = tokio::select! {
                 incoming = self.endpoint.accept() => incoming,
                 _ = cancel.cancelled() => break,
             };
             let Some(incoming) = incoming else { break };
+            // Bound the number of concurrently live connection tasks. Waiting
+            // here applies backpressure to accepts; select on cancellation so
+            // shutdown is never delayed by a saturated permit pool.
+            let permit = tokio::select! {
+                permit = permits.clone().acquire_owned() => permit,
+                _ = cancel.cancelled() => break,
+            };
             let connection = match incoming.await {
                 Ok(connection) => connection,
                 Err(error) => {
@@ -347,6 +369,7 @@ impl QuicListener {
             let peer = connection.remote_address();
             let handler = handler.clone();
             tokio::spawn(async move {
+                let _permit = permit;
                 loop {
                     match connection.accept_bi().await {
                         Ok((send, recv)) => {

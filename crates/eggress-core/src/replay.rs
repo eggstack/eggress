@@ -73,8 +73,9 @@ impl ReplayStream {
     }
 
     /// Disables sniffing mode. After this call, reads are served directly
-    /// from the underlying stream. The buffer retains the sniffed bytes for
-    /// inspection.
+    /// from the underlying stream. All sniffed bytes have already been
+    /// delivered through `poll_read` during detection; the buffer retains
+    /// them for inspection only.
     pub fn finish_sniff(&mut self) {
         self.sniffing = false;
     }
@@ -133,7 +134,10 @@ impl AsyncRead for ReplayStream {
                 Poll::Pending => Poll::Pending,
             }
         } else {
-            // Not sniffing: delegate directly to the underlying stream.
+            // Not sniffing: delegate directly to the underlying stream. All
+            // sniffed bytes were already delivered through detection reads,
+            // so the buffer is fully consumed here (`read_pos` always
+            // reaches `buffer.len()`); use `buffer()` for inspection only.
             Pin::new(&mut self.inner).poll_read(cx, buf)
         }
     }
@@ -308,5 +312,27 @@ mod tests {
         tx.write_all(b"second").await.unwrap();
         let n = replay.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"second");
+    }
+
+    #[tokio::test]
+    async fn test_finish_sniff_does_not_replay_consumed_prefix() {
+        // Pins the documented contract: sniffed bytes are delivered during
+        // detection reads only. After `finish_sniff`, the stream continues
+        // from the underlying position — the prefix is NOT replayed again.
+        let (mut tx, rx) = tokio::io::duplex(1024);
+        let mut replay = ReplayStream::new(Box::new(rx));
+
+        tx.write_all(b"prefix").await.unwrap();
+        let mut buf = [0u8; 1024];
+        let n = replay.read(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], b"prefix");
+
+        replay.finish_sniff();
+
+        tx.write_all(b"next").await.unwrap();
+        drop(tx);
+        let mut rest = Vec::new();
+        replay.read_to_end(&mut rest).await.unwrap();
+        assert_eq!(&rest, b"next");
     }
 }

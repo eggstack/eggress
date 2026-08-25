@@ -1084,6 +1084,10 @@ struct HttpOnlyStream {
     rewritten: bool,
 }
 
+/// Cap on bytes buffered while the httponly upstream is stalled. Beyond this,
+/// `poll_write` exerts backpressure instead of growing memory without bound.
+const HTTPONLY_MAX_BUFFERED: usize = 64 * 1024;
+
 impl tokio::io::AsyncRead for HttpOnlyStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -1097,11 +1101,21 @@ impl tokio::io::AsyncRead for HttpOnlyStream {
 impl tokio::io::AsyncWrite for HttpOnlyStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
         data: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        self.pending.extend_from_slice(data);
-        Poll::Ready(Ok(data.len()))
+        // Drain buffered bytes into the upstream first; if it is stalled,
+        // propagating `Pending` from the flush engages relay backpressure
+        // instead of buffering without bound.
+        if !self.pending.is_empty() {
+            ready!(self.as_mut().poll_flush(cx))?;
+        }
+        let room = HTTPONLY_MAX_BUFFERED.saturating_sub(self.pending.len());
+        let accepted = data.len().min(room);
+        self.pending.extend_from_slice(&data[..accepted]);
+        // A short write is valid `AsyncWrite` behavior: callers retry with
+        // the remainder once the buffered bytes have drained.
+        Poll::Ready(Ok(accepted))
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {

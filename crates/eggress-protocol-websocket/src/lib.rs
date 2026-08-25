@@ -163,9 +163,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
             Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 WebSocketError::Protocol(e.to_string()),
             ))),
-            // The frame is queued and owned by the sink; the next write gates
-            // on it draining, so backpressure is applied before more data is
-            // accepted.
+            // Deliberate backpressure design, with one caveat: when the
+            // flush pends, the frame is already queued in the sink and this
+            // call still reports `Ok(buf.len())` even though those bytes
+            // have only reached tungstenite's internal buffer, not the wire.
+            // Reporting `Pending` instead would be incorrect (the input was
+            // consumed; a retry would duplicate the frame). The next
+            // `poll_write` gates on the outstanding flush before queueing
+            // more data, `poll_flush` completes it, and `poll_shutdown`
+            // (`poll_close`) drains everything queued — so data is never
+            // stranded as long as callers close or flush before dropping.
             Poll::Pending => Poll::Ready(Ok(buf.len())),
         }
     }
@@ -269,10 +276,28 @@ impl WebSocketTunnelServer {
 /// Complete a server-side WebSocket upgrade and validate an optional proxy
 /// Basic-Auth header. The returned username is present only when credentials
 /// were supplied and validated on this connection.
+///
+/// Uses the default maximum message size; see
+/// [`accept_upgrade_with_auth_and_limit`] to combine authentication with a
+/// custom limit.
 #[allow(clippy::result_large_err)]
 pub async fn accept_upgrade_with_auth<S>(
     stream: S,
     credentials: Option<(&str, &str)>,
+) -> Result<(BoxStream, Option<String>), WebSocketError>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    accept_upgrade_with_auth_and_limit(stream, credentials, DEFAULT_MAX_MESSAGE_SIZE).await
+}
+
+/// Like [`accept_upgrade_with_auth`], but enforces a caller-supplied maximum
+/// WebSocket message size on the tunnel.
+#[allow(clippy::result_large_err)]
+pub async fn accept_upgrade_with_auth_and_limit<S>(
+    stream: S,
+    credentials: Option<(&str, &str)>,
+    max_message_size: usize,
 ) -> Result<(BoxStream, Option<String>), WebSocketError>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -317,7 +342,7 @@ where
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     Ok((
-        WebSocketStreamAdapter::new(ws_stream, DEFAULT_MAX_MESSAGE_SIZE).into_boxed(),
+        WebSocketStreamAdapter::new(ws_stream, max_message_size).into_boxed(),
         user,
     ))
 }

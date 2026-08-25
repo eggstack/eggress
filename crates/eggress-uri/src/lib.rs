@@ -69,10 +69,24 @@ pub struct EndpointSpec {
 }
 
 /// Credential specification.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 pub struct CredentialSpec {
     pub username: String,
     pub password: String,
+}
+
+impl Serialize for CredentialSpec {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Never emit the plaintext password through serialization: any
+        // diagnostic or audit path that JSON-encodes a parsed chain must
+        // stay credential-free, mirroring the redacting `Debug` impl.
+        use serde::ser::SerializeStruct;
+        const PASSWORD_PLACEHOLDER: &str = "****";
+        let mut state = serializer.serialize_struct("CredentialSpec", 2)?;
+        state.serialize_field("username", &self.username)?;
+        state.serialize_field("password", PASSWORD_PLACEHOLDER)?;
+        state.end()
+    }
 }
 
 impl fmt::Debug for CredentialSpec {
@@ -688,6 +702,21 @@ mod tests {
         let spec = ProtocolSpec::Socks5;
         let json = serde_json::to_string(&spec).unwrap();
         assert_eq!(json, "\"Socks5\"");
+    }
+
+    #[test]
+    fn test_credential_serialization_redacts_password() {
+        let creds = CredentialSpec {
+            username: "alice".to_string(),
+            password: "hunter2".to_string(),
+        };
+        let json = serde_json::to_string(&creds).unwrap();
+        assert!(json.contains("alice"), "username should survive: {json}");
+        assert!(
+            !json.contains("hunter2"),
+            "plaintext password must never be serialized: {json}"
+        );
+        assert!(json.contains("****"), "password should be redacted: {json}");
     }
 
     #[test]

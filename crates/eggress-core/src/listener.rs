@@ -17,6 +17,29 @@ pub struct TcpListenerConfig {
     pub connection_limit: usize,
 }
 
+/// Typed payload of the error returned by [`TcpListener::accept`] when the
+/// listener's cancellation token fires.
+///
+/// Accept loops should detect cancellation through [`is_listener_cancelled`]
+/// instead of matching on the error text.
+#[derive(Debug)]
+pub struct ListenerCancelled;
+
+impl std::fmt::Display for ListenerCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("listener cancelled")
+    }
+}
+
+impl std::error::Error for ListenerCancelled {}
+
+/// Returns true when the accept error reports listener cancellation.
+pub fn is_listener_cancelled(error: &std::io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.is::<ListenerCancelled>())
+}
+
 /// An accepted TCP connection.
 pub struct AcceptedConnection {
     pub stream: BoxStream,
@@ -133,9 +156,7 @@ impl TcpListener {
         let (stream, peer_addr) = tokio::select! {
             result = self.listener.accept() => result?,
             _ = self.cancel_token.cancelled() => {
-                return Err(std::io::Error::other(
-                    "listener cancelled",
-                ));
+                return Err(std::io::Error::other(ListenerCancelled));
             }
         };
 

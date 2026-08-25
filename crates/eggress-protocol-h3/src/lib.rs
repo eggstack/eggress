@@ -9,8 +9,13 @@ use eggress_transport_quic::{QuicClient, QuicConnection, QuicError};
 use http::{Request, Response, StatusCode};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
+
+/// Upper bound on concurrently active CONNECT requests per server connection.
+/// Each request holds one permit covering its handler plus its two relay
+/// helper tasks, so a client cannot multiply spawned tasks without limit.
+const MAX_ACTIVE_REQUESTS_PER_CONNECTION: usize = 256;
 
 /// HTTP/3 CONNECT errors.
 #[derive(Debug, thiserror::Error)]
@@ -83,7 +88,24 @@ impl H3Client {
     }
 
     /// Open a multiplexed HTTP/3 CONNECT stream.
+    ///
+    /// On transport-level failure the cached session and QUIC connection are
+    /// dropped and the request is retried once, mirroring the QUIC client's
+    /// reconnect-on-error recovery path. Without this, a session cached over
+    /// a connection killed by an idle timeout or GOAWAY would fail forever.
     pub async fn connect(&self, target: &eggress_core::TargetAddr) -> Result<BoxStream, H3Error> {
+        match self.connect_once(target).await {
+            Err(error @ (H3Error::Quic(_) | H3Error::Connection(_) | H3Error::Stream(_))) => {
+                tracing::debug!(%error, "H3 connect failed; resetting cached session");
+                self.session.lock().await.take();
+                self.quic.reset_connection().await;
+                self.connect_once(target).await
+            }
+            result => result,
+        }
+    }
+
+    async fn connect_once(&self, target: &eggress_core::TargetAddr) -> Result<BoxStream, H3Error> {
         let session = self.session().await?;
         let authority = target.to_string();
         let mut request = Request::builder()
@@ -154,6 +176,7 @@ where
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
     let peer = connection.remote_address();
+    let request_permits = Arc::new(Semaphore::new(MAX_ACTIVE_REQUESTS_PER_CONNECTION));
     let mut h3_connection = h3::server::builder()
         .build(connection.into_h3())
         .await
@@ -203,6 +226,12 @@ where
                 continue;
             }
         }
+        // Bound active requests: acquire before responding so the handler
+        // task and its two relay helper tasks all live under one permit.
+        let permit = tokio::select! {
+            permit = request_permits.clone().acquire_owned() => permit,
+            _ = cancel.cancelled() => break,
+        };
         stream
             .send_response(h3_response(StatusCode::OK))
             .await
@@ -211,6 +240,7 @@ where
         let local = bridge_server_stream(send, recv);
         let handler = handler.clone();
         tokio::spawn(async move {
+            let _permit = permit;
             handler(request, local, peer).await;
         });
     }

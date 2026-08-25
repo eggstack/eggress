@@ -96,10 +96,10 @@ fn is_v4_benchmarking(ip: &std::net::Ipv4Addr) -> bool {
 }
 
 /// Check if an IPv4 address is in the reserved-for-future-use range
-/// (240.0.0.0/4 — first octet >= 240 and not broadcast).
+/// (240.0.0.0/4 — first octet >= 240, including 255.0.0.0/8; the single
+/// broadcast address is additionally classified elsewhere).
 fn is_v4_reserved(ip: &std::net::Ipv4Addr) -> bool {
-    let octets = ip.octets();
-    octets[0] >= 240 && octets[0] < 255
+    ip.octets()[0] >= 240
 }
 
 /// Check if an IPv6 address is in the documentation range (2001:db8::/32).

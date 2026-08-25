@@ -590,6 +590,17 @@ impl EggressHandle {
         self.reload_toml_str(&contents)
     }
 
+    /// Cancel the runtime's shutdown token without joining the supervisor.
+    ///
+    /// Best-effort teardown for finalizers that must not synchronously join
+    /// the service thread: listeners and background tasks stop in the
+    /// background while the handle itself may be abandoned.
+    pub fn cancel(&self) {
+        if let Some(token) = self.token.as_ref() {
+            token.cancel();
+        }
+    }
+
     /// Initiate graceful shutdown.
     pub async fn shutdown(mut self) -> Result<(), EggressError> {
         if let Some(token) = self.token.take() {

@@ -131,16 +131,25 @@ pub async fn server_auth_handshake(
 
     let auth_str = String::from_utf8_lossy(&auth_buf).to_string();
 
-    // Validate if credentials are configured
-    if let (Some(exp_user), Some(exp_pass)) = (expected_user, expected_pass) {
-        let (user, pass) = parse_auth_str(&auth_str);
-        use subtle::ConstantTimeEq;
-        let user_ok: bool = user.as_bytes().ct_eq(exp_user.as_bytes()).into();
-        let pass_ok: bool = pass.as_bytes().ct_eq(exp_pass.as_bytes()).into();
-        if !user_ok || !pass_ok {
-            write_handshake_reject(stream).await?;
-            return Err(ProtocolError::AuthFailed);
+    // Validate if credentials are configured. Exactly one of the two must
+    // fail closed rather than skip validation entirely.
+    match (expected_user, expected_pass) {
+        (Some(exp_user), Some(exp_pass)) => {
+            let (user, pass) = parse_auth_str(&auth_str);
+            use subtle::ConstantTimeEq;
+            let user_ok: bool = user.as_bytes().ct_eq(exp_user.as_bytes()).into();
+            let pass_ok: bool = pass.as_bytes().ct_eq(exp_pass.as_bytes()).into();
+            if !user_ok || !pass_ok {
+                write_handshake_reject(stream).await?;
+                return Err(ProtocolError::AuthFailed);
+            }
         }
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(ProtocolError::ConfigInvalid(
+                "reverse auth requires both username and password to be configured".to_string(),
+            ));
+        }
+        (None, None) => {}
     }
 
     write_handshake_accept(stream).await?;
