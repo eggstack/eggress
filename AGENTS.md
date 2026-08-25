@@ -39,17 +39,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
-For Python-facing changes, build the native wheel in a clean environment and run the relevant Python tests:
+For Python-facing changes, build the extension and run the relevant Python tests:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install "maturin>=1.0,<2.0" pytest "pytest-asyncio>=0.23,<1" "cryptography>=42,<47"
-rm -f target/wheels/eggress-*.whl
-(cd crates/eggress-python && ../../.venv/bin/maturin build --release --out ../../target/wheels)
-.venv/bin/python -m pip install target/wheels/eggress-*.whl
+(cd crates/eggress-python && ../../.venv/bin/maturin develop)
 .venv/bin/python -m pip install --no-deps ./python-pproxy-compat
 .venv/bin/python -m pytest python/tests tests/compat -q
 ```
+
+Run pytest from the repo root: `pytest.ini` forces `--import-mode=importlib` specifically so the `python/eggress` source tree cannot shadow the installed wheel's compiled `_eggress` extension.
 
 Do not automatically run security audits, operating-system matrices, ignored interoperability suites, benchmarks, fuzzing, soak tests, parity-report generation, or release-evidence scripts for an unrelated change. Run specialized checks only when the affected subsystem or compatibility claim requires them.
 
@@ -57,10 +57,10 @@ Dependency and advisory checks are expected for dependency changes and release p
 
 ```bash
 cargo deny check
-cargo audit
+cargo audit --ignore RUSTSEC-2025-0134
 ```
 
-External compatibility checks are opt-in. Examples:
+External compatibility checks are opt-in because they install and launch external implementations:
 
 ```bash
 EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
@@ -69,24 +69,32 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
 EGRESS_REQUIRE_SHADOWSOCKS_INTEROP=1 \
   cargo test -p eggress-cli --test interoperability_shadowsocks -- --ignored --test-threads=1
 
-./scripts/run_strict_pproxy_closure_audit.sh
+./scripts/run_pproxy_certification.sh
 ```
+
+The oracle interpreter must provide `pproxy==2.7.9`; it is resolved from `$EGRESS_ORACLE_PYTHON`, then legacy `$EGRESS_PYTHON_BIN`, then discovery (`find_oracle_python` in `eggress-testkit`). Prebuilt oracle venvs already exist at the repo root (e.g. `.venv-oracle`, `.venv-pproxy-279`).
+
+`fuzz/` is a standalone Cargo workspace; workspace-wide commands do not cover it (`cargo check --manifest-path fuzz/Cargo.toml --bins`).
 
 Ordinary changes do not require generated evidence bundles, uploaded artifacts, screenshots, copied command transcripts, or new completion documents. Record the relevant tests in the commit or pull-request summary when useful.
 
 ## CI boundary
 
-Hosted workflows are smoke signals only; all merge verification remains local. Do not create additional GitHub Actions workflows, release artifact matrices, automated releases, or container publishing without an explicit project-level decision.
+There are three hosted workflows, and one of them is a real release path:
+
+- `.github/workflows/ci.yml`: Ubuntu Rust smoke (fmt check, clippy `-D warnings`, `cargo test --workspace --locked`).
+- `.github/workflows/python-test.yml`: path-scoped Ubuntu/Python 3.12 smoke for the Python packages.
+- `.github/workflows/publish-python.yml`: **fires on every `v*` tag push.** It validates the tag against the workspace version, builds the five-platform wheels plus sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch). Pushing a version tag is a release action, not bookkeeping.
+
+Do not create additional GitHub Actions workflows without an explicit project-level decision. Note that `docs/CI_STATUS.md` and `docs/release/RELEASE_PROCESS.md` still claim tags never trigger publishing; the workflow supersedes that prose.
 
 ## Release policy
 
-Release cadence is manual. The release operator performs local verification, package dry runs, and `cargo publish` directly to crates.io.
-
-Git tags and GitHub Releases are optional manual bookkeeping after crates.io publication. Pushing a tag must not publish packages or create artifacts through GitHub Actions.
+Rust crates.io publication is manual: local verification, dry runs, then `cargo publish` in dependency order (top-level facades last). No workflow publishes crates or creates GitHub Releases.
 
 Crates.io versions are immutable. If a release is defective or partially published, increment the version and roll forward; do not attempt to replace an existing version.
 
-Python/PyPI publication is a separate manual process and is not coupled to the Rust release workflow.
+A version bump must move several places in lockstep: `[workspace.package]` `version` in the root `Cargo.toml`, every internal `=x.y.z` pin under `[workspace.dependencies]`, `crates/eggress-python/pyproject.toml`, and `python-pproxy-compat/pyproject.toml`. The publish workflow hard-fails on tag/version mismatch.
 
 ## Skills
 
@@ -111,36 +119,16 @@ Load a skill with the `skill` tool when a task matches its description. The
 
 ## Workspace map
 
-The workspace contains 26 Rust crates. The principal crates are:
+The root `Cargo.toml` package is `eggress-bench` (Criterion benches in `benches/`). The workspace itself holds 26 crates under `crates/`, grouped by role:
 
-- `eggress-core`: shared types, traits, relay abstractions, and stream boundaries.
-- `eggress-uri`: URI parsing and compatibility grammar.
-- `eggress-routing`: rules, schedulers, health state, and route selection.
-- `eggress-config`: TOML configuration and validation.
-- `eggress-server`: listener and connection orchestration.
-- `eggress-runtime`: supervisor, lifecycle, composition, reload, and shutdown.
-- `eggress-admin`: local admin HTTP server (PAC, metrics, status, route explanation).
-- `eggress-metrics`: Prometheus-compatible metrics registry and bridging.
-- `eggress-udp`: UDP associations and relays.
-- `eggress-protocol-http`: HTTP/1.1 CONNECT and forward proxy, H2 CONNECT.
-- `eggress-protocol-socks`: SOCKS4/4a and SOCKS5 protocol implementations.
-- `eggress-protocol-shadowsocks`: Shadowsocks AEAD and legacy cipher support.
-- `eggress-protocol-trojan`: Trojan protocol with rustls.
-- `eggress-protocol-websocket`: WebSocket tunnel client and server.
-- `eggress-protocol-raw`: Raw TCP passthrough and fixed-target forwarding.
-- `eggress-protocol-reverse`: Reverse/backward proxy control-channel protocol.
-- `eggress-protocol-h3`: HTTP/3 CONNECT (optional, QUIC-based).
-- `eggress-transport-tls`: shared rustls client/server TLS transport.
-- `eggress-transport-ssh`: optional russh SSH upstream transport.
-- `eggress-transport-quic`: optional Quinn QUIC transport.
-- `eggress-system-proxy`: platform system-proxy inspection and configuration.
-- `eggress-cli`: `eggress` and compatibility `pproxy` binaries.
-- `eggress-pproxy-compat`: Rust-side URI translation and compatibility diagnostics.
-- `eggress-embed`: stable in-process Rust API.
-- `eggress-python`: PyO3 binding crate.
-- `eggress-testkit`: oracle, manifest, corpus, and compatibility test utilities.
-- `python/eggress`: canonical Python package.
-- `python-pproxy-compat`: separate package providing the top-level `pproxy` namespace.
+- Foundation: `eggress-core` (shared types, traits, relay, boxed stream boundaries), `eggress-uri` (URI parsing/compatibility grammar), `eggress-config` (TOML schema and validation), `eggress-routing` (rules, schedulers, health state, route selection), `eggress-metrics`.
+- Runtime: `eggress-server` (listener/connection orchestration), `eggress-runtime` (supervisor, lifecycle, reload, shutdown), `eggress-admin` (local admin HTTP: PAC, metrics, status, route explanation), `eggress-udp`, `eggress-system-proxy`.
+- Protocols: `eggress-protocol-{http,socks,shadowsocks,trojan,websocket,raw,reverse,h3}` — HTTP CONNECT/forward + H2, SOCKS4/4a + SOCKS5, Shadowsocks AEAD/legacy, Trojan over rustls, WebSocket tunnel, raw passthrough, reverse control channel, HTTP/3 CONNECT.
+- Transports: `eggress-transport-{tls,ssh,quic}`; ssh/quic are optional features.
+- Facades: `eggress-cli` (installs both `eggress` and compatibility `pproxy` binaries), `eggress-embed` (stable in-process Rust API), `eggress-python` (PyO3 bindings), `eggress-pproxy-compat` (Rust-side URI translation and diagnostics).
+- Test support: `eggress-testkit` (oracle resolution, manifests, corpora, differential harnesses).
+
+Top-level `python/eggress` is the canonical Python package; the separate `python-pproxy-compat/` distribution owns the top-level `pproxy` namespace; `tests/` holds cross-implementation Python tests (`tests/compat`).
 
 ## Architectural invariants
 
