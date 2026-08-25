@@ -97,7 +97,13 @@ impl PortMatcher {
     pub fn matches(&self, port: u16) -> bool {
         match self {
             PortMatcher::Exact(p) => port == *p,
-            PortMatcher::Range { start, end } => port >= *start && port <= *end,
+            PortMatcher::Range { start, end } => {
+                debug_assert!(
+                    start <= end,
+                    "inverted PortMatcher::Range ({start}..{end}) matches nothing"
+                );
+                port >= *start && port <= *end
+            }
             PortMatcher::Set(ports) => ports.contains(&port),
         }
     }

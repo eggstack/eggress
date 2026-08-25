@@ -1094,6 +1094,7 @@ dependencies = [
  "httparse",
  "once_cell",
  "proptest",
+ "sha2 0.10.9",
  "subtle",
  "thiserror",
  "tokio",

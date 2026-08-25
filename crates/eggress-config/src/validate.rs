@@ -112,15 +112,24 @@ pub fn validate_config(config: &ConfigFile) -> Result<(), Vec<ConfigError>> {
 /// Validate configuration against the composition matrix.
 ///
 /// Produces warnings (not errors) for unsupported listener→upstream
-/// protocol combinations. The composition matrix is optional — if
-/// unavailable, no warnings are emitted.
+/// protocol combinations. The composition matrix is resolved relative to the
+/// working directory; if it cannot be loaded, a warning is emitted so the
+/// suppressed checks remain visible.
 pub fn validate_config_composition(config: &ConfigFile) -> Vec<ConfigWarning> {
     let mut warnings = Vec::new();
 
     // Load the composition matrix directly (no testkit dependency)
     let matrix = match load_composition_matrix() {
         Some(m) => m,
-        None => return warnings,
+        None => {
+            warnings.push(ConfigWarning {
+                path: "composition_matrix".to_string(),
+                message: "composition matrix not found relative to the working directory; \
+                          protocol composition warnings are suppressed"
+                    .to_string(),
+            });
+            return warnings;
+        }
     };
 
     // Collect listener protocols from the `protocols` field
@@ -722,6 +731,7 @@ fn validate_rules(
                 rule.host_suffix.is_some(),
                 rule.host_regex.is_some(),
                 rule.destination_port.is_some(),
+                rule.destination_port_regex.is_some(),
                 rule.any.unwrap_or(false),
             ]
             .iter()

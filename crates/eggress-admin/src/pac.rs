@@ -9,6 +9,14 @@ fn js_escape(s: &str) -> String {
             '\n' => result.push_str("\\n"),
             '\r' => result.push_str("\\r"),
             '\t' => result.push_str("\\t"),
+            // U+2028/U+2029 are line terminators in JavaScript and break
+            // string literals even though they are not ASCII controls.
+            '\u{2028}' => result.push_str("\\u2028"),
+            '\u{2029}' => result.push_str("\\u2029"),
+            // Raw C0 controls (e.g. NUL) are invalid inside JS strings.
+            c if (c as u32) < 0x20 => {
+                result.push_str(&format!("\\u{:04x}", c as u32));
+            }
             _ => result.push(c),
         }
     }

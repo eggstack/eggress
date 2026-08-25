@@ -13,6 +13,22 @@ use std::time::Duration;
 #[cfg(feature = "shadowsocks")]
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+
+/// Drop-forget of partially established hops: without this, a failure at hop
+/// N would leak the control connections of hops 0..N-1 until their keepalive
+/// windows expire.
+fn discard_partial_control_channels(
+    control_cancels: &mut Vec<CancellationToken>,
+    control_tasks: &mut Vec<JoinHandle<()>>,
+) {
+    for cancel in control_cancels.drain(..) {
+        cancel.cancel();
+    }
+    for task in control_tasks.drain(..) {
+        task.abort();
+    }
+}
 
 pub async fn open_composed_udp_upstream(
     upstream_id: UpstreamId,
@@ -31,7 +47,7 @@ pub async fn open_composed_udp_upstream(
     for (index, (hop, spec)) in stack.hops().iter().zip(chain.hops.iter()).enumerate() {
         match hop {
             UdpHop::Socks5 { .. } => {
-                let association = open_socks5_udp_upstream(
+                let association = match open_socks5_udp_upstream(
                     Socks5UdpUpstreamConfig {
                         upstream_id: upstream_id.clone(),
                         hop: spec.clone(),
@@ -41,7 +57,13 @@ pub async fn open_composed_udp_upstream(
                     None,
                 )
                 .await
-                .map_err(|error| UdpError::Other(error.to_string()))?;
+                {
+                    Ok(association) => association,
+                    Err(error) => {
+                        discard_partial_control_channels(&mut control_cancels, &mut control_tasks);
+                        return Err(UdpError::Other(error.to_string()));
+                    }
+                };
                 let relay = association.relay_addr;
                 if index == 0 {
                     outer_socket = Some(association.udp_socket.clone());
@@ -53,13 +75,25 @@ pub async fn open_composed_udp_upstream(
             }
             #[cfg(feature = "shadowsocks")]
             UdpHop::Shadowsocks { .. } => {
-                let endpoint = resolve_target(hop.endpoint()).await?;
+                let endpoint = match resolve_target(hop.endpoint()).await {
+                    Ok(endpoint) => endpoint,
+                    Err(error) => {
+                        discard_partial_control_channels(&mut control_cancels, &mut control_tasks);
+                        return Err(error);
+                    }
+                };
                 if index == 0 {
-                    outer_socket = Some(Arc::new(
-                        UdpSocket::bind(udp_bind)
-                            .await
-                            .map_err(|error| UdpError::Other(error.to_string()))?,
-                    ));
+                    let socket = match UdpSocket::bind(udp_bind).await {
+                        Ok(socket) => socket,
+                        Err(error) => {
+                            discard_partial_control_channels(
+                                &mut control_cancels,
+                                &mut control_tasks,
+                            );
+                            return Err(UdpError::Other(error.to_string()));
+                        }
+                    };
+                    outer_socket = Some(Arc::new(socket));
                     outer_relay_addr = Some(endpoint);
                 }
                 transport_targets.push(endpoint);

@@ -23,6 +23,7 @@ pub struct WebSocketStreamAdapter<S> {
     write_half: SplitSink<WebSocketStream<S>, Message>,
     read_buf: BytesMut,
     max_message_size: usize,
+    write_flush_outstanding: bool,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static>
@@ -35,6 +36,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static>
             write_half,
             read_buf: BytesMut::new(),
             max_message_size,
+            write_flush_outstanding: false,
         }
     }
 
@@ -131,14 +133,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        match Pin::new(&mut self.write_half).poll_flush(cx) {
-            Poll::Ready(Ok(())) => {}
-            Poll::Ready(Err(e)) => {
-                return Poll::Ready(Err(std::io::Error::other(WebSocketError::Protocol(
-                    e.to_string(),
-                ))));
+        if self.write_flush_outstanding {
+            match Pin::new(&mut self.write_half).poll_flush(cx) {
+                Poll::Ready(Ok(())) => self.write_flush_outstanding = false,
+                Poll::Ready(Err(e)) => {
+                    return Poll::Ready(Err(std::io::Error::other(WebSocketError::Protocol(
+                        e.to_string(),
+                    ))));
+                }
+                Poll::Pending => return Poll::Pending,
             }
-            Poll::Pending => return Poll::Pending,
         }
 
         match Pin::new(&mut self.write_half).start_send(Message::Binary(buf.to_vec().into())) {
@@ -149,19 +153,29 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
                 ))));
             }
         }
+        self.write_flush_outstanding = true;
 
         match Pin::new(&mut self.write_half).poll_flush(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(buf.len())),
+            Poll::Ready(Ok(())) => {
+                self.write_flush_outstanding = false;
+                Poll::Ready(Ok(buf.len()))
+            }
             Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 WebSocketError::Protocol(e.to_string()),
             ))),
+            // The frame is queued and owned by the sink; the next write gates
+            // on it draining, so backpressure is applied before more data is
+            // accepted.
             Poll::Pending => Poll::Ready(Ok(buf.len())),
         }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match Pin::new(&mut self.write_half).poll_flush(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Ok(())) => {
+                self.write_flush_outstanding = false;
+                Poll::Ready(Ok(()))
+            }
             Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 WebSocketError::Protocol(e.to_string()),
             ))),
@@ -171,7 +185,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match Pin::new(&mut self.write_half).poll_close(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Ok(())) => {
+                self.write_flush_outstanding = false;
+                Poll::Ready(Ok(()))
+            }
             Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 WebSocketError::Protocol(e.to_string()),
             ))),

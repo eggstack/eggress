@@ -345,6 +345,7 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
         if rule.host_suffix.is_none()
             && rule.host_regex.is_none()
             && rule.destination_port.is_none()
+            && rule.destination_port_regex.is_none()
             && !rule.any.unwrap_or(false)
         {
             return Ok(eggress_routing::MatchExpr::HostExact(Arc::from(
@@ -356,6 +357,7 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
         if rule.host_exact.is_none()
             && rule.host_regex.is_none()
             && rule.destination_port.is_none()
+            && rule.destination_port_regex.is_none()
             && !rule.any.unwrap_or(false)
         {
             return Ok(eggress_routing::MatchExpr::HostSuffix(Arc::from(
@@ -367,6 +369,7 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
         if rule.host_exact.is_none()
             && rule.host_suffix.is_none()
             && rule.destination_port.is_none()
+            && rule.destination_port_regex.is_none()
             && !rule.any.unwrap_or(false)
         {
             let re = regex::Regex::new(regex_str).map_err(|e| {
@@ -398,6 +401,7 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
         if rule.host_exact.is_none()
             && rule.host_suffix.is_none()
             && rule.host_regex.is_none()
+            && rule.destination_port_regex.is_none()
             && !rule.any.unwrap_or(false)
         {
             return Ok(eggress_routing::MatchExpr::DestinationPort(

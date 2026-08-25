@@ -22,6 +22,7 @@ tokio-util.workspace = true
 subtle.workspace = true
 h2.workspace = true
 once_cell.workspace = true
+sha2 = "0.10"
 tracing.workspace = true
 
 [dev-dependencies]

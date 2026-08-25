@@ -97,10 +97,14 @@ pub async fn shadowsocks_standalone_udp_relay(
         }
     });
 
-    let mut idle_tick = tokio::time::interval(config.limits.idle_timeout);
+    // One reaper tick suffices: reap_idle_flows enforces both the per-target
+    // and per-client idle timeouts, so it must run at the shorter period.
+    let reap_period = config
+        .limits
+        .idle_timeout
+        .min(config.limits.target_idle_timeout);
+    let mut idle_tick = tokio::time::interval(reap_period);
     idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut target_cleanup_tick = tokio::time::interval(config.limits.target_idle_timeout);
-    target_cleanup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let password_ikm = eggress_protocol_shadowsocks::CipherMethod::password_key_material(
         config.password.as_bytes(),
     );
@@ -371,12 +375,25 @@ pub async fn shadowsocks_standalone_udp_relay(
                                 }
                                 std::collections::hash_map::Entry::Vacant(e) => {
                                     let hop = &chain.hops[0];
-                                    let upstream_addr = resolve_endpoint(&hop.endpoint).await?;
+                                    let upstream_addr = match resolve_endpoint(&hop.endpoint).await
+                                    {
+                                        Ok(addr) => addr,
+                                        Err(_) => {
+                                            config.udp_metrics.record_standalone_rejected();
+                                            drop(pending_lease);
+                                            continue;
+                                        }
+                                    };
 
                                     let udp_socket = Arc::new(
-                                        UdpSocket::bind(local_udp_bind_addr())
-                                            .await
-                                            .map_err(|e| UdpError::Other(e.to_string()))?,
+                                        match UdpSocket::bind(local_udp_bind_addr()).await {
+                                            Ok(socket) => socket,
+                                            Err(_) => {
+                                                config.udp_metrics.record_standalone_rejected();
+                                                drop(pending_lease);
+                                                continue;
+                                            }
+                                        },
                                     );
 
                                     let flow_response_tx = response_tx.clone();
@@ -556,9 +573,6 @@ pub async fn shadowsocks_standalone_udp_relay(
                 }
             }
             _ = idle_tick.tick() => {
-                reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
-            }
-            _ = target_cleanup_tick.tick() => {
                 reap_idle_flows(&mut clients, &config.limits, &config.udp_metrics);
             }
             _ = cancel.cancelled() => {

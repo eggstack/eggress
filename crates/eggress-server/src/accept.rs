@@ -51,7 +51,11 @@ impl AuthReuseCache {
     pub fn record(&self, peer_ip: IpAddr, identity: ClientIdentity) {
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
-        entries.retain(|_, entry| now.duration_since(entry.last_authenticated) <= self.timeout);
+        // Expired entries are removed lazily by `lookup`; only pay for a full
+        // sweep once the cache is actually at capacity.
+        if entries.len() >= self.max_entries {
+            entries.retain(|_, entry| now.duration_since(entry.last_authenticated) <= self.timeout);
+        }
         if entries.len() >= self.max_entries && !entries.contains_key(&peer_ip) {
             if let Some(oldest) = entries
                 .iter()

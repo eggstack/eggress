@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -156,6 +155,15 @@ impl tokio::io::AsyncWrite for H2StreamWrite {
 /// and DNS-rebinding policy are enforced by production listeners before
 /// streams reach this point (`serve_h2_connection` routes through the
 /// executor that applies outbound policy).
+///
+/// # Admission-policy caveat
+///
+/// Domain targets are checked against private/reserved ranges here
+/// (`is_dns_rebinding_risk`), but **IP-literal targets connect directly with
+/// no such check**. This function is therefore NOT a policy boundary: any
+/// caller that relays untrusted CONNECT authorities must apply the same
+/// screening to literal IPs (see `eggress_core::connector::ConnectOptions`)
+/// before invoking it.
 pub async fn h2_connect_relay(
     mut recv_stream: h2::RecvStream,
     send_stream: h2::SendStream<Bytes>,
@@ -424,7 +432,11 @@ pub struct H2PoolKey {
     pub endpoint_port: u16,
     pub use_tls: bool,
     pub server_name: Option<String>,
-    pub auth_hash: Option<u64>,
+    /// SHA-256 digest of the credentials. Pool isolation must not rest on a
+    /// 64-bit non-keyed hash: attacker-chosen `(user, password)` pairs could
+    /// otherwise collide and cross-reuse a pooled connection authenticated
+    /// as another identity.
+    pub auth_hash: Option<[u8; 32]>,
     pub hop_index: usize,
 }
 
@@ -449,10 +461,12 @@ impl H2PoolKey {
         hop_index: usize,
     ) -> Self {
         let auth_hash = auth.map(|(u, p)| {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            u.hash(&mut hasher);
-            p.hash(&mut hasher);
-            hasher.finish()
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(u.as_bytes());
+            hasher.update([0]);
+            hasher.update(p.as_bytes());
+            hasher.finalize().into()
         });
         Self {
             endpoint_host: host.to_string(),

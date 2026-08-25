@@ -1,5 +1,15 @@
 use std::time::{Duration, Instant};
 
+/// Stable process exit codes. These are part of the compatibility surface:
+/// both the `eggress` and `pproxy` binaries must agree on them.
+pub const EXIT_SUCCESS: i32 = 0;
+pub const EXIT_RUNTIME_FAILURE: i32 = 1;
+pub const EXIT_CLI_PARSE_ERROR: i32 = 2;
+pub const EXIT_CONFIG_VALIDATION: i32 = 3;
+pub const EXIT_UNSUPPORTED_FEATURE: i32 = 5;
+pub const EXIT_SIGINT: i32 = 130;
+pub const EXIT_SIGTERM: i32 = 143;
+
 /// Apply the optional Linux pproxy daemon transition after compatibility
 /// parsing and configuration validation. Re-exec keeps the transition safe
 /// under the workspace's `unsafe_code = "deny"` policy and leaves signal,

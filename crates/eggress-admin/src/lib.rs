@@ -346,6 +346,22 @@ mod tests {
     }
 
     #[test]
+    fn pac_escapes_line_separators_and_control_characters() {
+        let config = PacConfig {
+            path: "/pac".to_string(),
+            proxy_directive: "a\u{2028}b\u{2029}c\u{0001}d".to_string(),
+            direct_fallback: false,
+            direct_hosts: vec![],
+            direct_suffixes: vec![],
+        };
+        let pac = generate_pac(&config);
+        assert!(pac.contains("a\\u2028b\\u2029c\\u0001d"));
+        for raw in ['\u{2028}', '\u{2029}', '\u{0001}'] {
+            assert!(!pac.contains(raw));
+        }
+    }
+
+    #[test]
     fn pac_no_fallback_when_disabled() {
         let config = PacConfig {
             path: "/pac".to_string(),

@@ -9,6 +9,10 @@ use crate::error::ShadowsocksError;
 const MAX_FRAME: usize = 32_700;
 const VERIFY_MAX_PAYLOAD: usize = 8_100;
 const TLS_MAX_RECORD: usize = 16 * 1024;
+/// Upper bound on the decompressed size of one verify_deflate frame. Legit
+/// peers frame payloads of at most ~64 KiB before compression; anything
+/// beyond this bound is a decompression bomb from a malicious peer.
+const MAX_DECOMPRESSED_FRAME: usize = 256 * 1024;
 
 /// The six plugin names exported by pproxy 2.7.9.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -247,9 +251,17 @@ fn decode_one(plugin: PproxyPlugin, input: &[u8]) -> Result<(Vec<u8>, usize), Sh
             }
             let mut zlib = vec![0x78, 0x9c];
             zlib.extend_from_slice(&input[2..length]);
-            let mut decoder = flate2::read::ZlibDecoder::new(zlib.as_slice());
+            let mut decoder = std::io::Read::take(
+                flate2::read::ZlibDecoder::new(zlib.as_slice()),
+                MAX_DECOMPRESSED_FRAME as u64 + 1,
+            );
             let mut output = Vec::new();
             std::io::Read::read_to_end(&mut decoder, &mut output).map_err(ShadowsocksError::Io)?;
+            if output.len() > MAX_DECOMPRESSED_FRAME {
+                return Err(ShadowsocksError::Other(
+                    "verify_deflate frame exceeds maximum decompressed size".into(),
+                ));
+            }
             Ok((output, length))
         }
         PproxyPlugin::Tls12TicketAuth => {
@@ -386,5 +398,22 @@ mod tests {
         let mut output = [0u8; 64];
         let count = decoder.take_plain(&mut output);
         assert_eq!(&output[..count], b"compressed payload");
+    }
+
+    #[test]
+    fn verify_deflate_rejects_decompression_bomb() {
+        use std::io::Write;
+
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(9));
+        encoder
+            .write_all(&vec![0u8; MAX_DECOMPRESSED_FRAME * 4])
+            .unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert!(compressed.len() <= u16::MAX as usize);
+
+        let mut frame = (compressed.len() as u16).to_be_bytes().to_vec();
+        frame.extend_from_slice(&compressed[2..]);
+        let error = decode_one(PproxyPlugin::VerifyDeflate, &frame).unwrap_err();
+        assert!(error.to_string().contains("maximum decompressed size"));
     }
 }

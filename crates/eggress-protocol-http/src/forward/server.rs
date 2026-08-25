@@ -351,6 +351,10 @@ const MAX_HEADER_LINES: usize = 128;
 /// Bound a response chunk before converting it to a platform `usize`.
 const MAX_RESPONSE_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
 
+/// Total byte budget for chunked-response trailers after the terminating
+/// zero chunk, so an upstream cannot stream them indefinitely.
+const MAX_TRAILER_BYTES: usize = 64 * 1024;
+
 /// Headers that must not be forwarded across a proxy (RFC 2616 §13.5.1).
 ///
 /// `Transfer-Encoding: chunked` is preserved because the chunked body is
@@ -524,11 +528,13 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
         }
         if let Some((name, value)) = parse_header_line(line) {
             if name.eq_ignore_ascii_case("Content-Length") {
-                content_length = Some(
-                    value
-                        .parse::<u64>()
-                        .map_err(|_| HttpError::InvalidContentLength)?,
-                );
+                let parsed = value
+                    .parse::<u64>()
+                    .map_err(|_| HttpError::InvalidContentLength)?;
+                if content_length.is_some_and(|previous| previous != parsed) {
+                    return Err(HttpError::ConflictingContentLength);
+                }
+                content_length = Some(parsed);
             } else if name.eq_ignore_ascii_case("Transfer-Encoding") {
                 for coding in value.split(',') {
                     let coding_name = coding.trim().split(';').next().unwrap_or("").trim();
@@ -684,9 +690,16 @@ pub async fn forward_response(
                 bytes_forwarded += size_line_buf.len() as u64;
 
                 if chunk_size == 0 {
+                    let mut trailer_total = 0usize;
                     loop {
                         let mut trailer = Vec::new();
                         read_bounded_line_into(upstream, &mut trailer, 8192).await?;
+                        trailer_total += trailer.len();
+                        if trailer_total > MAX_TRAILER_BYTES {
+                            return Err(HttpError::MalformedResponse(
+                                "response trailers exceed maximum total size".into(),
+                            ));
+                        }
                         client.write_all(&trailer).await?;
                         bytes_forwarded += trailer.len() as u64;
                         if trailer.len() >= 2 && &trailer[trailer.len() - 2..] == b"\r\n" {
@@ -1899,6 +1912,54 @@ mod tests {
         assert!(matches!(
             forward_response(&mut upstream, &mut client).await,
             Err(HttpError::InvalidContentLength)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_accepts_equal_duplicate_content_length() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            upstream_write
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello",
+                )
+                .await
+                .unwrap();
+        });
+        let (mut client_read, client_write) = tokio::io::duplex(1024);
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        let result = forward_response(&mut upstream, &mut client).await.unwrap();
+        assert_eq!(result.status, 200);
+        client.shutdown().await.unwrap();
+        let mut buf = Vec::new();
+        client_read.read_to_end(&mut buf).await.unwrap();
+        assert!(String::from_utf8_lossy(&buf).ends_with("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_rejects_conflicting_duplicate_content_length() {
+        use tokio::io::AsyncWriteExt;
+
+        let (upstream_read, mut upstream_write) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            upstream_write
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello",
+                )
+                .await
+                .unwrap();
+        });
+        let (_client_read, client_write) = tokio::io::duplex(1024);
+        let mut upstream: BoxStream = Box::new(upstream_read);
+        let mut client: BoxStream = Box::new(client_write);
+
+        assert!(matches!(
+            forward_response(&mut upstream, &mut client).await,
+            Err(HttpError::ConflictingContentLength)
         ));
     }
 

@@ -51,10 +51,13 @@ impl AsyncWrite for H2StreamAdapter {
 
 /// Serve an HTTP/2 prior-knowledge or TLS/ALPN listener. Each CONNECT stream
 /// is routed independently while the parent connection continues accepting
-/// unrelated streams.
+/// unrelated streams. Stream tasks are spawned onto `tasks` and cancelled via
+/// `cancel` so shutdown coordination can track and drain live tunnels.
 pub async fn serve_h2_connection(
     client: BoxStream,
     config: ConnectionConfig,
+    tasks: &tokio_util::task::TaskTracker,
+    cancel: tokio_util::sync::CancellationToken,
 ) -> Result<(), String> {
     let peer_ip = config.context.source.map(|peer| peer.ip());
     let mut connection = h2::server::handshake(client)
@@ -134,6 +137,7 @@ pub async fn serve_h2_connection(
             writer: eggress_protocol_http::H2StreamWrite::new(send_stream),
         });
         let stream_config = config.clone();
+        let stream_cancel = cancel.child_token();
         let pending = PendingTunnel {
             target,
             client: client_stream,
@@ -141,8 +145,13 @@ pub async fn serve_h2_connection(
             reply_context: ReplyContext::Http2,
             identity,
         };
-        tokio::spawn(async move {
-            let _ = crate::execute::execute(AcceptedSession::Tunnel(pending), &stream_config).await;
+        tasks.spawn(async move {
+            let _ = tokio::select! {
+                _ = stream_cancel.cancelled() => None,
+                result = crate::execute::execute(AcceptedSession::Tunnel(pending), &stream_config) => {
+                    Some(result)
+                }
+            };
         });
     }
 
@@ -259,13 +268,20 @@ mod tests {
         let (echo_addr, echo_task) = eggress_testkit::start_echo_server().await;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let listener_addr = listener.local_addr().unwrap();
+        let tasks = tokio_util::task::TaskTracker::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let server_tasks = tasks.clone();
         let server = tokio::spawn(async move {
             let (stream, peer) = listener.accept().await.unwrap();
-            serve_h2_connection(
+            let result = serve_h2_connection(
                 Box::new(stream),
                 config(peer, eggress_core::ProtocolId::Http2),
+                &server_tasks,
+                cancel,
             )
-            .await
+            .await;
+            tasks.close();
+            result
         });
 
         let stream = tokio::net::TcpStream::connect(listener_addr).await.unwrap();

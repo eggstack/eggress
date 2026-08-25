@@ -321,6 +321,41 @@ upstream_group = "nonexistent"
     }
 
     #[test]
+    fn combined_legacy_matchers_are_rejected() {
+        for extra in [
+            r#"destination_port_regex = "^443$""#,
+            "destination_port = 443",
+        ] {
+            let config = format!(
+                r#"
+[[rules]]
+id = "r1"
+host_exact = "example.com"
+{extra}
+direct = true
+"#
+            );
+            let f = write_config(&config);
+            let result = load_and_validate(f.path().to_str().unwrap());
+            assert!(
+                result.is_err(),
+                "host_exact combined with {extra} must not validate silently"
+            );
+        }
+
+        let config = r#"
+[[rules]]
+id = "r1"
+destination_port_regex = "^443$"
+destination_port = 443
+direct = true
+"#;
+        let f = write_config(config);
+        let result = load_and_validate(f.path().to_str().unwrap());
+        assert!(result.is_err(), "duplicate port matchers must not validate");
+    }
+
+    #[test]
     fn unknown_member_reference_in_group() {
         let config = r#"
 [[upstream_groups]]

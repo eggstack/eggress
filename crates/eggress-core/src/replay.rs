@@ -8,6 +8,10 @@ use crate::BoxStream;
 
 const DEFAULT_MAX_BUFFER: usize = 8 * 1024;
 
+/// Stack-allocated read chunk used while sniffing; avoids a heap allocation
+/// on every poll_read during protocol detection.
+const SNIFF_READ_CHUNK: usize = 2048;
+
 /// A wrapper around a `BoxStream` that provides bounded sniff buffering for
 /// protocol detection. All bytes read during detection are preserved in an
 /// internal buffer. After detection completes, subsequent reads are served
@@ -108,9 +112,9 @@ impl AsyncRead for ReplayStream {
             }
 
             let space = self.max_buffer - self.buffer.len();
-            let read_size = space.min(buf.remaining());
-            let mut temp = vec![0u8; read_size];
-            let mut temp_buf = ReadBuf::new(&mut temp);
+            let mut temp = [0u8; SNIFF_READ_CHUNK];
+            let read_size = space.min(buf.remaining()).min(temp.len());
+            let mut temp_buf = ReadBuf::new(&mut temp[..read_size]);
 
             match Pin::new(&mut self.inner).poll_read(cx, &mut temp_buf) {
                 Poll::Ready(Ok(())) => {

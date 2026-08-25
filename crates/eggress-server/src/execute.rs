@@ -9,7 +9,7 @@ use eggress_core::BoxStream;
 use eggress_core::{TargetAddr, TargetHost};
 use eggress_routing::{RouteRequest, SelectedRoute};
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct SessionReport {
@@ -1081,6 +1081,7 @@ struct HttpOnlyStream {
     inner: BoxStream,
     target: TargetAddr,
     pending: Vec<u8>,
+    rewritten: bool,
 }
 
 impl tokio::io::AsyncRead for HttpOnlyStream {
@@ -1104,27 +1105,34 @@ impl tokio::io::AsyncWrite for HttpOnlyStream {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        if !self.pending.is_empty() {
-            let rewritten = rewrite_request_head(&self.pending, &self.target);
-            self.pending = rewritten;
+        if !self.rewritten && !self.pending.is_empty() {
+            let head_complete = self.pending.windows(4).any(|window| window == b"\r\n\r\n");
+            self.pending = rewrite_request_head(&self.pending, &self.target);
+            self.rewritten = head_complete;
         }
-        let pending = self.pending.clone();
-        match Pin::new(&mut self.inner).poll_write(cx, &pending) {
-            Poll::Ready(Ok(n)) => {
-                self.pending.drain(..n);
-                if self.pending.is_empty() {
-                    Pin::new(&mut self.inner).poll_flush(cx)
-                } else {
-                    Poll::Ready(Ok(()))
+        // The stream type is Unpin, so plain field access keeps the borrows
+        // of `inner` and `pending` disjoint inside the drain loop.
+        let this = self.get_mut();
+        while !this.pending.is_empty() {
+            match Pin::new(&mut this.inner).poll_write(cx, &this.pending) {
+                Poll::Ready(Ok(0)) => {
+                    return Poll::Ready(Err(std::io::Error::new(
+                        std::io::ErrorKind::WriteZero,
+                        "httponly upstream accepted zero bytes",
+                    )));
                 }
+                Poll::Ready(Ok(n)) => {
+                    this.pending.drain(..n);
+                }
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Pending => return Poll::Pending,
             }
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
         }
+        Pin::new(&mut this.inner).poll_flush(cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        let _ = self.as_mut().poll_flush(cx);
+        ready!(self.as_mut().poll_flush(cx))?;
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
@@ -1192,6 +1200,7 @@ impl HopHandler for HttpOnlyHopHandler {
                 inner: stream,
                 target,
                 pending: Vec::new(),
+                rewritten: false,
             }) as BoxStream)
         })
     }
@@ -1812,5 +1821,34 @@ mod tests {
         assert_eq!(rewrite_request_head(partial, &http_only_target()), partial);
         // Empty input stays empty.
         assert!(rewrite_request_head(b"", &http_only_target()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn httponly_stream_rewrites_once_and_drains_on_shutdown() {
+        // A tiny duplex buffer forces the flush loop across multiple polls;
+        // the remaining bytes still contain `\r\n\r\n`, which a second
+        // rewrite pass would mangle ("X-Foo: /bar baz" looks like an
+        // origin-form request line to the rewriter).
+        let (mut peer, inner) = tokio::io::duplex(16);
+        let mut stream = HttpOnlyStream {
+            inner: Box::new(inner),
+            target: http_only_target(),
+            pending: Vec::new(),
+            rewritten: false,
+        };
+        let request =
+            b"GET /path HTTP/1.1\r\nHost: example.com\r\nX-Foo: /bar baz\r\n\r\ntail".as_slice();
+        let expected =
+            b"GET http://target.example:8080/path HTTP/1.1\r\nHost: example.com\r\nX-Foo: /bar baz\r\n\r\ntail";
+        let reader = tokio::spawn(async move {
+            let mut received = Vec::new();
+            peer.read_to_end(&mut received).await.unwrap();
+            received
+        });
+        use tokio::io::AsyncWriteExt;
+        stream.write_all(request).await.unwrap();
+        stream.shutdown().await.unwrap();
+        let received = reader.await.unwrap();
+        assert_eq!(received, expected);
     }
 }

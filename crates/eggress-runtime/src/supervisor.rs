@@ -2161,6 +2161,7 @@ impl ServiceSupervisor {
                         };
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
+                        let stream_tasks = conn_tasks.clone();
                         conn_tasks.spawn(async move {
                             let started = std::time::Instant::now();
 
@@ -2258,7 +2259,10 @@ impl ServiceSupervisor {
                                 let advanced_result = match advanced_protocol {
                                     Some(ProtocolId::Http2) => {
                                         eggress_server::advanced::serve_h2_connection(
-                                            stream, config,
+                                            stream,
+                                            config,
+                                            &stream_tasks,
+                                            conn_cancel.clone(),
                                         )
                                         .await
                                     }

@@ -1,6 +1,11 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
+use eggress_cli::{
+    EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION, EXIT_RUNTIME_FAILURE, EXIT_SUCCESS,
+    EXIT_UNSUPPORTED_FEATURE,
+};
+
 const VERSION: &str = concat!("eggress-pproxy-compat ", env!("CARGO_PKG_VERSION"));
 
 const HELP_TEXT: &str = "\
@@ -68,7 +73,7 @@ fn main() -> ExitCode {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("pproxy: error: {e}");
-                std::process::exit(2); // EXIT_CLI_PARSE_ERROR
+                std::process::exit(EXIT_CLI_PARSE_ERROR);
             }
         }
     } else {
@@ -89,19 +94,19 @@ fn main() -> ExitCode {
 
     if let Some(flag) = pproxy_args.strict_parser_violations().first() {
         eprintln!("pproxy: error: unknown option or positional argument '{flag}'");
-        std::process::exit(2);
+        std::process::exit(EXIT_CLI_PARSE_ERROR);
     }
 
     if let Err(e) = pproxy_args.validate_strict_values() {
         eprintln!("pproxy: error: {e}");
-        std::process::exit(2);
+        std::process::exit(EXIT_CLI_PARSE_ERROR);
     }
 
     let output = match eggress_pproxy_compat::translate_pproxy_args(&pproxy_args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("pproxy: error: {e}");
-            std::process::exit(3); // EXIT_CONFIG_VALIDATION
+            std::process::exit(EXIT_CONFIG_VALIDATION);
         }
     };
 
@@ -127,11 +132,11 @@ fn main() -> ExitCode {
             .any(|b| matches!(b, eggress_pproxy_compat::BlockReason::UnknownFlag(_)))
         {
             eprintln!("Run 'eggress pproxy check -- <args>' for supported options.");
-            std::process::exit(2); // EXIT_CLI_PARSE_ERROR
+            std::process::exit(EXIT_CLI_PARSE_ERROR);
         }
         eprintln!("These features are not supported by eggress and prevent startup.");
         eprintln!("Run 'eggress pproxy check -- <args>' for detailed compatibility report.");
-        std::process::exit(5); // EXIT_UNSUPPORTED_FEATURE
+        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
     }
 
     for w in &gate.warnings {
@@ -151,7 +156,7 @@ fn main() -> ExitCode {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("pproxy: config error: {e}");
-                std::process::exit(3); // EXIT_CONFIG_VALIDATION
+                std::process::exit(EXIT_CONFIG_VALIDATION);
             }
         };
 
@@ -161,11 +166,11 @@ fn main() -> ExitCode {
             Ok(target) => target.to_string(),
             Err(error) => {
                 eprintln!("pproxy: error: {error}");
-                std::process::exit(2);
+                std::process::exit(EXIT_CLI_PARSE_ERROR);
             }
         };
         if rt_config.upstreams.is_empty() {
-            std::process::exit(0);
+            std::process::exit(EXIT_SUCCESS);
         }
         let exit_code = eggress_cli::run_upstream_test(&rt_config, Some(&target), timeout, false);
         std::process::exit(exit_code);
@@ -174,7 +179,7 @@ fn main() -> ExitCode {
     #[cfg(feature = "pproxy-daemon")]
     if let Err(error) = eggress_cli::maybe_daemonize(pproxy_args.daemon) {
         eprintln!("pproxy: error: {error}");
-        std::process::exit(5);
+        std::process::exit(EXIT_UNSUPPORTED_FEATURE);
     }
 
     init_logging(&pproxy_args);
@@ -199,12 +204,12 @@ fn main() -> ExitCode {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {
                 eprintln!("pproxy: runtime error: {e}");
-                std::process::exit(1); // EXIT_RUNTIME_FAILURE
+                std::process::exit(EXIT_RUNTIME_FAILURE);
             }
         }
         Err(e) => {
             eprintln!("pproxy: runtime error: {e}");
-            std::process::exit(1); // EXIT_RUNTIME_FAILURE
+            std::process::exit(EXIT_RUNTIME_FAILURE);
         }
     }
 

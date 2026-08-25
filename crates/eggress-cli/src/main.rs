@@ -4,14 +4,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-const EXIT_SUCCESS: i32 = 0;
-const EXIT_CLI_PARSE_ERROR: i32 = 2;
-const EXIT_CONFIG_VALIDATION: i32 = 3;
-const EXIT_RUNTIME_FAILURE: i32 = 1;
 #[cfg(feature = "pproxy-compat")]
-const EXIT_UNSUPPORTED_FEATURE: i32 = 5;
-const EXIT_SIGINT: i32 = 130;
-const EXIT_SIGTERM: i32 = 143;
+use eggress_cli::EXIT_UNSUPPORTED_FEATURE;
+use eggress_cli::{
+    EXIT_CLI_PARSE_ERROR, EXIT_CONFIG_VALIDATION, EXIT_RUNTIME_FAILURE, EXIT_SIGINT, EXIT_SIGTERM,
+    EXIT_SUCCESS,
+};
 
 use clap::{Parser, Subcommand};
 use eggress_core::listener::{TcpListener, TcpListenerConfig};
