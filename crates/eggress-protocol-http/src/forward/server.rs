@@ -818,9 +818,11 @@ impl ForwardRequest {
 ///
 /// # Returns
 /// The parsed forward request and the target address to connect to.
-pub async fn forward_request(
-    mut stream: BoxStream,
-) -> Result<(ForwardRequest, BoxStream), HttpError> {
+pub async fn forward_request(stream: BoxStream) -> Result<(ForwardRequest, BoxStream), HttpError> {
+    // Buffer reads so the incremental head parse does not issue one
+    // syscall per byte; unconsumed prefetch stays available to later
+    // reads on the returned stream (including keep-alive re-parses).
+    let mut stream: BoxStream = Box::new(tokio::io::BufReader::new(stream));
     let request = read_forward_request(&mut stream).await?;
     Ok((request, stream))
 }

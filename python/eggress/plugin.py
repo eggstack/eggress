@@ -464,9 +464,9 @@ class PluginBridge:
         "_default_timeout",
         "_shutdown",
         "_semaphore",
+        "_semaphore_loop",
         "_active_count",
         "_active_lock",
-        "_active_tasks",
     )
 
     def __init__(
@@ -490,14 +490,25 @@ class PluginBridge:
         self._default_timeout = max(0.001, default_timeout)
         self._shutdown = False
         self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore_loop: Optional[asyncio.AbstractEventLoop] = None
         self._active_count = 0
         self._active_lock = threading.Lock()
-        self._active_tasks: set[asyncio.Task] = set()
 
     def _get_semaphore(self) -> asyncio.Semaphore:
-        """Lazily create the semaphore bound to the running event loop."""
-        if self._semaphore is None:
+        """Lazily create the semaphore bound to the running event loop.
+
+        On Python < 3.10 a ``Semaphore`` binds its loop at construction.
+        If the running loop differs from the one the cached semaphore was
+        built on (e.g. sync :meth:`submit` spins up a throwaway loop),
+        rebuild it so the primitive never crosses loops.
+        """
+        try:
+            loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if self._semaphore is None or self._semaphore_loop is not loop:
             self._semaphore = asyncio.Semaphore(self._max_concurrent)
+            self._semaphore_loop = loop
         return self._semaphore
 
     @property
@@ -585,9 +596,10 @@ class PluginBridge:
         If the maximum number of concurrent callbacks is reached, this
         coroutine suspends until a slot opens.
 
-        Task ownership: each submission creates an ``asyncio.Task`` that
-        is tracked in ``_active_tasks``.  On shutdown, all active tasks
-        are cancelled.
+        Execution model: the callback runs inline within the calling
+        task under the concurrency semaphore; no separate ``asyncio.Task``
+        is created.  Cancellation is delivered by cancelling the calling
+        task.
 
         Args:
             hook_name: Name of the registered callback.
@@ -709,27 +721,19 @@ class PluginBridge:
         """Shut down the bridge.
 
         Prevents new submissions.  Already-executing callbacks continue
-        to completion unless *cancel_active* is True, in which case
-        all tracked tasks are cancelled.
+        to completion; there is no task tracking, so nothing is cancelled
+        (callbacks run inline within their calling tasks).
         """
         self._shutdown = True
 
-    async def shutdown_async(self, cancel_active: bool = False) -> None:
+    async def shutdown_async(self) -> None:
         """Shut down the bridge asynchronously.
 
-        Args:
-            cancel_active: If True, cancel all tracked active tasks.
-                If False (default), active tasks run to completion.
+        Marks the bridge shut down.  Callbacks execute inline within
+        their calling tasks, so there are no tracked tasks to cancel;
+        in-flight submissions simply run to completion.
         """
         self._shutdown = True
-        if cancel_active:
-            for task in list(self._active_tasks):
-                task.cancel()
-            if self._active_tasks:
-                await asyncio.gather(
-                    *list(self._active_tasks), return_exceptions=True
-                )
-            self._active_tasks.clear()
 
     def __repr__(self) -> str:
         state = "shutdown" if self._shutdown else "active"

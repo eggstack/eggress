@@ -89,7 +89,12 @@ pub enum RouteActionSpec {
 #[derive(Debug, Clone)]
 pub enum PortMatcher {
     Exact(u16),
-    Range { start: u16, end: u16 },
+    Range {
+        start: u16,
+        end: u16,
+    },
+    /// Port set. The slice must be sorted ascending so matching can use a
+    /// binary search; construction sites are responsible for sorting.
     Set(Arc<[u16]>),
 }
 
@@ -104,7 +109,7 @@ impl PortMatcher {
                 );
                 port >= *start && port <= *end
             }
-            PortMatcher::Set(ports) => ports.contains(&port),
+            PortMatcher::Set(ports) => ports.binary_search(&port).is_ok(),
         }
     }
 }

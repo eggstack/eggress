@@ -604,8 +604,12 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
                 "must not be empty",
             ));
         }
+        // PortMatcher::Set matches via binary search and requires a
+        // sorted slice.
+        let mut port_set = ports.clone();
+        port_set.sort_unstable();
         matchers.push(eggress_routing::MatchExpr::DestinationPort(
-            eggress_routing::PortMatcher::Set(Arc::from(ports.as_slice())),
+            eggress_routing::PortMatcher::Set(Arc::from(port_set.as_slice())),
         ));
     }
     if let Some(ref cidr) = leaf.destination_cidr {

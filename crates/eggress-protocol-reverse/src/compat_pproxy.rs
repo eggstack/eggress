@@ -11,6 +11,7 @@ use crate::{relay_bidirectional_with_timeout, ProtocolError};
 use eggress_core::{TargetAddr, TargetHost};
 use eggress_uri::{ProtocolSpec, ProxyChainSpec};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -373,7 +374,7 @@ impl PproxyBackwardClient {
                     .unwrap_or_else(|_| TargetHost::Domain(endpoint.host.clone())),
                 port: endpoint.port,
             };
-            stream = connect_jump(stream, jump, &target).await?;
+            stream = connect_jump(stream, jump, &target, self.config.read_timeout_ms).await?;
         }
         Ok(stream)
     }
@@ -454,67 +455,53 @@ impl PproxyBackwardServer {
 
         let accept_cancel = cancel.clone();
         let accept_config = config.clone();
+        let active_control = Arc::new(AtomicUsize::new(0));
         tasks.spawn(async move {
             loop {
                 tokio::select! {
                     result = control_listener.accept() => {
-                        let (mut stream, peer) = match result {
+                        let (stream, peer) = match result {
                             Ok(value) => value,
                             Err(error) => {
                                 warn!(%error, "pproxy backward control accept failed");
                                 continue;
                             }
                         };
+                        // Bound the number of live control-handshake tasks,
+                        // mirroring ReverseServer's `active_control` cap. The
+                        // channel bound only limits queued channels, not
+                        // spawned tasks still waiting on auth or setup.
+                        let max_control_connections =
+                            accept_config.max_control_connections.max(1);
+                        let prev = active_control.fetch_add(1, Ordering::AcqRel);
+                        if prev >= max_control_connections {
+                            active_control.fetch_sub(1, Ordering::Relaxed);
+                            debug!(
+                                %peer,
+                                max = max_control_connections,
+                                "pproxy backward control connection rejected: max reached"
+                            );
+                            drop(stream);
+                            continue;
+                        }
                         let auth = accept_config.auth.clone();
                         let tx = control_tx.clone();
                         let timeout = accept_config.read_timeout_ms;
                         let framing = accept_config.client_framing;
                         let socks5_target = accept_config.socks5_target.clone();
+                        let active_control = active_control.clone();
                         tokio::spawn(async move {
-                            if !auth.is_empty() {
-                                let mut received = vec![0u8; auth.len()];
-                                let read = tokio::time::timeout(
-                                    Duration::from_millis(timeout.max(1)),
-                                    stream.read_exact(&mut received),
-                                ).await;
-                                if !matches!(read, Ok(Ok(_))) || received != auth {
-                                    debug!(%peer, "pproxy backward auth rejected");
-                                    return;
-                                }
-                            }
-                            if matches!(framing, PproxyBackwardFraming::Socks5) {
-                                if let Err(error) = proxy_socks5_setup(&mut stream).await {
-                                    debug!(%peer, %error, "pproxy backward SOCKS5 setup failed");
-                                    return;
-                                }
-                                if let Some((host, port)) = socks5_target {
-                                    if let Err(error) =
-                                        reply_socks5_connect(&mut stream, &host, port).await
-                                    {
-                                        debug!(
-                                            %peer,
-                                            %error,
-                                            "pproxy backward SOCKS5 CONNECT reply failed"
-                                        );
-                                        return;
-                                    }
-                                    // The worker dials the target and sends a
-                                    // SOCKS5 CONNECT reply. Drain it here so the
-                                    // channel only carries application bytes
-                                    // once it is paired with an external client.
-                                    if let Err(error) =
-                                        read_socks5_connect_reply(&mut stream).await
-                                    {
-                                        debug!(
-                                            %peer,
-                                            %error,
-                                            "pproxy backward SOCKS5 CONNECT reply read failed"
-                                        );
-                                        return;
-                                    }
-                                }
-                            }
-                            let _ = tx.send(QueuedChannel { stream }).await;
+                            handle_pproxy_control_channel(
+                                stream,
+                                peer,
+                                auth,
+                                timeout,
+                                framing,
+                                socks5_target,
+                                tx,
+                            )
+                            .await;
+                            active_control.fetch_sub(1, Ordering::Relaxed);
                         });
                     }
                     _ = accept_cancel.cancelled() => break,
@@ -576,6 +563,63 @@ impl PproxyBackwardServer {
     pub fn shutdown(&self) {
         self.cancel.cancel();
     }
+}
+
+/// Authenticate and prepare one accepted pproxy backward control connection,
+/// then queue it for pairing with an external client.
+async fn handle_pproxy_control_channel(
+    mut stream: TcpStream,
+    peer: SocketAddr,
+    auth: Vec<u8>,
+    timeout_ms: u64,
+    framing: PproxyBackwardFraming,
+    socks5_target: Option<(String, u16)>,
+    tx: mpsc::Sender<QueuedChannel>,
+) {
+    if !auth.is_empty() {
+        let mut received = vec![0u8; auth.len()];
+        let read = tokio::time::timeout(
+            Duration::from_millis(timeout_ms.max(1)),
+            stream.read_exact(&mut received),
+        )
+        .await;
+        // Compare in constant time; this token faces the network directly.
+        use subtle::ConstantTimeEq;
+        let auth_ok =
+            matches!(read, Ok(Ok(_))) && bool::from(received.as_slice().ct_eq(auth.as_slice()));
+        if !auth_ok {
+            debug!(%peer, "pproxy backward auth rejected");
+            return;
+        }
+    }
+    if matches!(framing, PproxyBackwardFraming::Socks5) {
+        if let Err(error) = proxy_socks5_setup(&mut stream).await {
+            debug!(%peer, %error, "pproxy backward SOCKS5 setup failed");
+            return;
+        }
+        if let Some((host, port)) = socks5_target {
+            if let Err(error) = reply_socks5_connect(&mut stream, &host, port).await {
+                debug!(
+                    %peer,
+                    %error,
+                    "pproxy backward SOCKS5 CONNECT reply failed"
+                );
+                return;
+            }
+            // The worker dials the target and sends a SOCKS5 CONNECT reply.
+            // Drain it here so the channel only carries application bytes
+            // once it is paired with an external client.
+            if let Err(error) = read_socks5_connect_reply(&mut stream).await {
+                debug!(
+                    %peer,
+                    %error,
+                    "pproxy backward SOCKS5 CONNECT reply read failed"
+                );
+                return;
+            }
+        }
+    }
+    let _ = tx.send(QueuedChannel { stream }).await;
 }
 
 /// Build the raw auth field used by pproxy's ProxySimple.auth property.
@@ -714,6 +758,7 @@ async fn connect_jump(
     mut stream: TcpStream,
     hop: &eggress_uri::ProxyHopSpec,
     target: &TargetAddr,
+    timeout_ms: u64,
 ) -> Result<TcpStream, ProtocolError> {
     match hop.protocols.as_slice() {
         [ProtocolSpec::Http] | [ProtocolSpec::HttpOnly] => {
@@ -730,7 +775,7 @@ async fn connect_jump(
             request.push_str("\r\n");
             stream.write_all(request.as_bytes()).await?;
             let mut response = Vec::new();
-            read_until_headers(&mut stream, &mut response).await?;
+            read_until_headers(&mut stream, &mut response, timeout_ms).await?;
             let status = response
                 .split(|byte| *byte == b' ')
                 .nth(1)
@@ -814,12 +859,33 @@ async fn connect_jump(
 async fn read_until_headers(
     stream: &mut TcpStream,
     output: &mut Vec<u8>,
+    timeout_ms: u64,
 ) -> Result<(), ProtocolError> {
-    let mut byte = [0u8; 1];
+    let timeout = Duration::from_millis(timeout_ms.max(1));
+    let mut chunk = [0u8; 1024];
     while output.len() < 16 * 1024 {
-        stream.read_exact(&mut byte).await?;
-        output.push(byte[0]);
-        if output.ends_with(b"\r\n\r\n") {
+        let read = tokio::time::timeout(timeout, stream.read(&mut chunk)).await;
+        let n = match read {
+            Ok(Ok(n)) => n,
+            Ok(Err(error)) => return Err(error.into()),
+            Err(_) => {
+                return Err(ProtocolError::ConfigInvalid(
+                    "timed out reading proxy jump response headers".into(),
+                ));
+            }
+        };
+        if n == 0 {
+            return Err(ProtocolError::ConnectionClosed);
+        }
+        let scan_start = output.len().saturating_sub(3);
+        output.extend_from_slice(&chunk[..n]);
+        if let Some(index) = output[scan_start..]
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+        {
+            // A CONNECT jump success reply is headers-only, so bytes past
+            // the terminator carry no tunnel payload.
+            output.truncate(scan_start + index + 4);
             return Ok(());
         }
     }

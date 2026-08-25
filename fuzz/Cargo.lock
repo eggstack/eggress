@@ -294,6 +294,7 @@ dependencies = [
  "http",
  "httparse",
  "once_cell",
+ "sha2",
  "subtle",
  "thiserror",
  "tokio",
@@ -318,6 +319,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

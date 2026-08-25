@@ -33,10 +33,14 @@ pub struct ConnectRequest {
 /// The parsed CONNECT request and the stream (with any bytes after the
 /// request head preserved).
 pub async fn handle_connect(
-    mut stream: BoxStream,
+    stream: BoxStream,
     require_auth: bool,
     valid_credentials: Option<(&str, &str)>,
 ) -> Result<(ConnectRequest, BoxStream), HttpError> {
+    // Buffer reads so the incremental head parse does not issue one
+    // syscall per byte; unconsumed prefetch stays available to later
+    // reads on the returned stream.
+    let mut stream: BoxStream = Box::new(tokio::io::BufReader::new(stream));
     let request = read_connect_request(&mut stream).await?;
 
     // Validate authentication if required

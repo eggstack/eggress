@@ -273,8 +273,6 @@ def _parse_function_params(filepath: Path, func_name: str) -> dict[str, Any] | N
                     default_node = args.defaults[offset]
                     if isinstance(default_node, ast.Constant):
                         default = default_node.value
-                    elif isinstance(default_node, ast.NameConstant):
-                        default = default_node.value
                     else:
                         default = f"<ast:{type(default_node).__name__}>"
                 has_default = offset >= 0
@@ -286,8 +284,6 @@ def _parse_function_params(filepath: Path, func_name: str) -> dict[str, Any] | N
                 if i < len(args.kw_defaults) and args.kw_defaults[i] is not None:
                     default_node = args.kw_defaults[i]
                     if isinstance(default_node, ast.Constant):
-                        default = default_node.value
-                    elif isinstance(default_node, ast.NameConstant):
                         default = default_node.value
                     else:
                         default = f"<ast:{type(default_node).__name__}>"

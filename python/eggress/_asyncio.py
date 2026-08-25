@@ -217,15 +217,18 @@ class CloseWaiter:
         self._cleanup_task: Optional[asyncio.Task] = None
 
     def _get_event(self) -> asyncio.Event:
-        """Return the internal event, creating it lazily.
+        """Return the internal event, creating it lazily under ``_lock``.
 
         ``asyncio.Event()`` requires a running loop on Python < 3.10.
         Lazy creation avoids ``RuntimeError`` when the waiter is
-        instantiated outside an async context.
+        instantiated outside an async context.  Creating under the lock
+        keeps concurrent marker/waiter threads from each building their
+        own event (which would strand waiters on a discarded object).
         """
-        if self._event is None:
-            self._event = asyncio.Event()
-        return self._event
+        with self._lock:
+            if self._event is None:
+                self._event = asyncio.Event()
+            return self._event
 
     @property
     def is_closed(self) -> bool:
@@ -285,11 +288,19 @@ class CloseWaiter:
         """
         if self._closed:
             return
+        closing_in_progress = False
         with self._lock:
             if self._closing:
-                # Another close() is in progress — just wait.
-                return self._get_event().wait()
-            self._closing = True
+                closing_in_progress = True
+            else:
+                self._closing = True
+
+        if closing_in_progress:
+            # Another close() is in progress — wait for it to complete.
+            # The event must be awaited here; returning the bare coroutine
+            # would skip waiting entirely.
+            await self._get_event().wait()
+            return
 
         if cleanup is not None:
             try:

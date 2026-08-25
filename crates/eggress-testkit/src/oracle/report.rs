@@ -360,13 +360,19 @@ fn truncate_md(s: &str, max: usize) -> String {
     }
 }
 
+/// Port pattern shared by [`normalize_for_comparison`], compiled once.
+fn port_substitution_regex() -> &'static regex::Regex {
+    static PORT_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PORT_RE.get_or_init(|| regex::Regex::new(r":\d{4,5}").expect("valid port regex"))
+}
+
 /// Normalize a value for comparison (strip ports, versions, etc.).
 pub fn normalize_for_comparison(value: &str, scenario_id: &str) -> String {
     let mut result = value.to_string();
 
-    if let Ok(re) = regex::Regex::new(r":\d{4,5}") {
-        result = re.replace_all(&result, ":PORT").to_string();
-    }
+    result = port_substitution_regex()
+        .replace_all(&result, ":PORT")
+        .into_owned();
 
     if scenario_id.starts_with("cli.") {
         for prefix in &["INFO:", "WARNING:", "DEBUG:", "Listen: "] {

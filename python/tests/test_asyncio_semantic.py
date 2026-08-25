@@ -736,7 +736,7 @@ class TestCallbackContext:
             assert result == "ok"
 
             # shutdown_async should mark as shutdown
-            await bridge.shutdown_async(cancel_active=False)
+            await bridge.shutdown_async()
             assert bridge.is_shutdown
 
             # New submissions should be rejected

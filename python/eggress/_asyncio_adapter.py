@@ -80,8 +80,10 @@ class CompatibleStreamReader:
         if self._eof and not self._buffer:
             return b""
         if n == -1:
-            if not self._eof:
-                await self._fill_buffer(n=0)  # drain everything available
+            # Drain the transport until EOF; ``_fill_buffer(n=0)`` would be
+            # a no-op because its loop condition is never satisfied.
+            while not self._eof:
+                await self._fill_buffer(n=len(self._buffer) + 1)
             data = bytes(self._buffer)
             self._buffer.clear()
             return data
@@ -244,8 +246,17 @@ class CompatibleStreamWriter:
         data = bytes(self._write_buf)
         self._write_buf.clear()
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._stream.write, data)
-        await loop.run_in_executor(None, self._stream.drain)
+        # ``write`` is a single-attempt write that returns the byte count;
+        # loop until everything is sent, then await the async flush so the
+        # Rust-side flush actually runs (it is a coroutine, not executor
+        # work).
+        view = memoryview(data)
+        while view:
+            written = await loop.run_in_executor(None, self._stream.write, view)
+            if written <= 0:
+                raise OSError("outbound stream made no write progress")
+            view = view[written:]
+        await self._stream.drain()
 
     def can_write_eof(self) -> bool:
         """Return ``True`` — this adapter supports half-close."""

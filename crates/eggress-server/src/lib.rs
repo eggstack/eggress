@@ -122,6 +122,11 @@ pub async fn serve_connection(
     client: eggress_core::BoxStream,
     config: ConnectionConfig,
 ) -> SessionReport {
+    // Buffer reads so protocol handshakes that consume the head
+    // incrementally do not issue one syscall per byte. Unconsumed
+    // prefetch stays available to later reads on the same stream.
+    let client: eggress_core::BoxStream = Box::new(tokio::io::BufReader::new(client));
+
     if let Some(metrics) = &config.metrics {
         metrics.record_session_start();
     }
