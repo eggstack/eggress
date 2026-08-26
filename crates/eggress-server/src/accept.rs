@@ -6,9 +6,12 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use base64::Engine;
 use eggress_core::BoxStream;
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{
+    AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
+};
 
 /// Authentication policy for inbound connections.
 /// Bounded compatibility authentication state keyed by source IP.
@@ -868,34 +871,14 @@ async fn accept_socks4(
 }
 
 async fn accept_http(
-    mut stream: BoxStream,
+    stream: BoxStream,
     auth: &InboundAuthentication,
     peer_ip: Option<IpAddr>,
 ) -> Result<AcceptedSession, AcceptError> {
-    // Read the request line to determine method
-    let mut head_buf = Vec::with_capacity(256);
-    let mut temp = [0u8; 1];
-
-    loop {
-        if head_buf.len() >= MAX_HEAD_SIZE {
-            return Err(AcceptError::Protocol(
-                eggress_protocol_http::HttpError::HeaderTooLarge.into(),
-            ));
-        }
-        let n = stream
-            .read(&mut temp)
-            .await
-            .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
-        if n == 0 {
-            return Err(AcceptError::Protocol(
-                eggress_protocol_http::HttpError::MalformedRequest("unexpected EOF".into()).into(),
-            ));
-        }
-        head_buf.push(temp[0]);
-        if head_buf.len() >= 2 && &head_buf[head_buf.len() - 2..] == b"\r\n" {
-            break;
-        }
-    }
+    // Keep the reader buffered so parsing a request head does not issue one
+    // underlying read per byte. Any prefetched body remains in the reader.
+    let mut stream = tokio::io::BufReader::new(stream);
+    let head_buf = read_http_head(&mut stream).await?;
 
     let method = {
         let request_line = String::from_utf8_lossy(&head_buf);
@@ -906,62 +889,16 @@ async fn accept_http(
             .to_ascii_lowercase()
     };
 
-    // Reconstruct stream with the request line bytes prepended
-    let mut stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
-
     if method == "connect" {
-        let request = read_connect_request_from_stream(&mut stream, auth, peer_ip).await?;
+        let request = parse_connect_request(&head_buf, &mut stream, auth, peer_ip).await?;
         Ok(AcceptedSession::Tunnel(PendingTunnel {
             target: request.target,
-            client: stream,
+            client: Box::new(stream),
             protocol: TunnelProtocol::HttpConnect,
             reply_context: ReplyContext::Http,
             identity: request.identity,
         }))
     } else {
-        // Read the complete head to extract Proxy-Authorization before forward_request strips it
-        let mut head_buf = Vec::with_capacity(1024);
-        let mut temp = [0u8; 1];
-        let mut header_count = 0;
-
-        loop {
-            if head_buf.len() >= MAX_HEAD_SIZE {
-                return Err(AcceptError::Protocol(
-                    eggress_protocol_http::HttpError::HeaderTooLarge.into(),
-                ));
-            }
-
-            let n = stream
-                .read(&mut temp)
-                .await
-                .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
-            if n == 0 {
-                return Err(AcceptError::Protocol(
-                    eggress_protocol_http::HttpError::MalformedRequest(
-                        "unexpected EOF reading request".into(),
-                    )
-                    .into(),
-                ));
-            }
-
-            head_buf.push(temp[0]);
-
-            if head_buf.len() >= 4 {
-                let len = head_buf.len();
-                if &head_buf[len - 4..] == b"\r\n\r\n" {
-                    break;
-                }
-                if head_buf.len() >= 2 && &head_buf[len - 2..] == b"\r\n" {
-                    header_count += 1;
-                    if header_count > MAX_HEADER_LINES {
-                        return Err(AcceptError::Protocol(
-                            eggress_protocol_http::HttpError::TooManyHeaders.into(),
-                        ));
-                    }
-                }
-            }
-        }
-
         // Parse Proxy-Authorization from the raw head
         let head_str = String::from_utf8_lossy(&head_buf);
         let cached = cached_identity(auth, peer_ip);
@@ -983,15 +920,12 @@ async fn accept_http(
                     let user_ok: bool = user.as_bytes().ct_eq(username.as_bytes()).into();
                     let pass_ok: bool = pass.as_bytes().ct_eq(password.as_bytes()).into();
                     if !user_ok || !pass_ok {
-                        // Reconstruct stream and send 407
-                        let mut stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
                         let _ = write_proxy_auth_required(&mut stream).await;
                         return Err(AcceptError::AuthenticationFailed);
                     }
                     Some((user, pass))
                 }
                 None => {
-                    let mut stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
                     let _ = write_proxy_auth_required(&mut stream).await;
                     return Err(AcceptError::AuthenticationFailed);
                 }
@@ -1009,7 +943,7 @@ async fn accept_http(
         let _ = proxy_auth; // Auth already validated above
 
         // Reconstruct stream for forward_request
-        let stream: BoxStream = Box::new(PrefixedStream::new(head_buf, stream));
+        let stream: BoxStream = Box::new(PrefixedStream::new(head_buf, Box::new(stream)));
 
         let (request, client_stream) = eggress_protocol_http::forward_request(stream)
             .await
@@ -1030,54 +964,13 @@ struct ConnectRequest {
     identity: ClientIdentity,
 }
 
-async fn read_connect_request_from_stream(
-    stream: &mut BoxStream,
+async fn parse_connect_request<W: AsyncWrite + Unpin>(
+    head_buf: &[u8],
+    stream: &mut W,
     auth: &InboundAuthentication,
     peer_ip: Option<IpAddr>,
 ) -> Result<ConnectRequest, AcceptError> {
-    let mut head_buf = Vec::with_capacity(1024);
-    let mut temp = [0u8; 1];
-    let mut header_count = 0;
-
-    loop {
-        if head_buf.len() >= MAX_HEAD_SIZE {
-            return Err(AcceptError::Protocol(
-                eggress_protocol_http::HttpError::HeaderTooLarge.into(),
-            ));
-        }
-
-        let n = stream
-            .read(&mut temp)
-            .await
-            .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
-        if n == 0 {
-            return Err(AcceptError::Protocol(
-                eggress_protocol_http::HttpError::MalformedRequest(
-                    "unexpected EOF reading request".into(),
-                )
-                .into(),
-            ));
-        }
-
-        head_buf.push(temp[0]);
-
-        if head_buf.len() >= 4 {
-            let len = head_buf.len();
-            if &head_buf[len - 4..] == b"\r\n\r\n" {
-                break;
-            }
-            if head_buf.len() >= 2 && &head_buf[len - 2..] == b"\r\n" {
-                header_count += 1;
-                if header_count > MAX_HEADER_LINES {
-                    return Err(AcceptError::Protocol(
-                        eggress_protocol_http::HttpError::TooManyHeaders.into(),
-                    ));
-                }
-            }
-        }
-    }
-
-    let head_str = String::from_utf8_lossy(&head_buf);
+    let head_str = String::from_utf8_lossy(head_buf);
     let mut lines = head_str.split("\r\n");
 
     let request_line = lines.next().ok_or_else(|| {
@@ -1150,6 +1043,55 @@ async fn read_connect_request_from_stream(
     }
 
     Ok(ConnectRequest { target, identity })
+}
+
+async fn read_http_head<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<Vec<u8>, AcceptError> {
+    let mut head_buf = Vec::with_capacity(1024);
+    let mut line = Vec::with_capacity(256);
+    let mut header_count = 0;
+
+    loop {
+        if head_buf.len() >= MAX_HEAD_SIZE {
+            return Err(AcceptError::Protocol(
+                eggress_protocol_http::HttpError::HeaderTooLarge.into(),
+            ));
+        }
+
+        line.clear();
+        let remaining = MAX_HEAD_SIZE - head_buf.len();
+        let n = reader
+            .take((remaining + 1) as u64)
+            .read_until(b'\n', &mut line)
+            .await
+            .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+        if n == 0 {
+            return Err(AcceptError::Protocol(
+                eggress_protocol_http::HttpError::MalformedRequest(
+                    "unexpected EOF reading request".into(),
+                )
+                .into(),
+            ));
+        }
+
+        if head_buf.len() + line.len() > MAX_HEAD_SIZE {
+            return Err(AcceptError::Protocol(
+                eggress_protocol_http::HttpError::HeaderTooLarge.into(),
+            ));
+        }
+        head_buf.extend_from_slice(&line);
+
+        if line.ends_with(b"\r\n") {
+            header_count += 1;
+            if header_count > MAX_HEADER_LINES {
+                return Err(AcceptError::Protocol(
+                    eggress_protocol_http::HttpError::TooManyHeaders.into(),
+                ));
+            }
+        }
+        if head_buf.ends_with(b"\r\n\r\n") {
+            return Ok(head_buf);
+        }
+    }
 }
 
 fn parse_authority(
@@ -1252,30 +1194,6 @@ fn parse_header_line_str(line: &str) -> Option<(String, String)> {
     Some((name, value))
 }
 
-/// Simple base64 decoder.
-fn base64_decode(input: &str) -> Option<Vec<u8>> {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    let input = input.trim_end_matches('=');
-    let input_bytes = input.as_bytes();
-
-    let mut result = Vec::with_capacity(input_bytes.len() * 3 / 4);
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-
-    for &byte in input_bytes {
-        let val = TABLE.iter().position(|&b| b == byte)? as u32;
-        buf = (buf << 6) | val;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            result.push((buf >> bits) as u8);
-        }
-    }
-
-    Some(result)
-}
-
 /// Parse Basic authentication from a Proxy-Authorization header value.
 fn parse_basic_auth(value: &str) -> Option<(String, String)> {
     let value = value.trim();
@@ -1284,7 +1202,9 @@ fn parse_basic_auth(value: &str) -> Option<(String, String)> {
     }
 
     let encoded = &value[6..];
-    let decoded = base64_decode(encoded)?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .ok()?;
     let decoded_str = String::from_utf8(decoded).ok()?;
     let colon_pos = decoded_str.find(':')?;
     let username = decoded_str[..colon_pos].to_string();
@@ -1293,7 +1213,9 @@ fn parse_basic_auth(value: &str) -> Option<(String, String)> {
 }
 
 /// Write a 407 Proxy Authentication Required response.
-async fn write_proxy_auth_required(stream: &mut BoxStream) -> Result<(), std::io::Error> {
+async fn write_proxy_auth_required<W: AsyncWrite + Unpin>(
+    stream: &mut W,
+) -> Result<(), std::io::Error> {
     let response = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"eggress\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
     stream.write_all(response).await?;
     stream.flush().await?;
@@ -1971,6 +1893,28 @@ mod tests {
         );
 
         server_jh.await.unwrap();
+    }
+
+    #[test]
+    fn test_parse_basic_auth_rejects_invalid_padding() {
+        assert!(parse_basic_auth("Basic dXNlcjpwYXNz=").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_http_head_reader_preserves_prefetched_body() {
+        let (mut client, server) = tokio::io::duplex(1024);
+        client
+            .write_all(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\nbody")
+            .await
+            .unwrap();
+        client.shutdown().await.unwrap();
+
+        let mut reader = tokio::io::BufReader::new(server);
+        let head = read_http_head(&mut reader).await.unwrap();
+        assert!(head.ends_with(b"\r\n\r\n"));
+        let mut body = Vec::new();
+        reader.read_to_end(&mut body).await.unwrap();
+        assert_eq!(body, b"body");
     }
 
     #[tokio::test]

@@ -27,7 +27,7 @@ pub enum AdminError {
 mod tests {
     use super::*;
     use crate::pac::generate_pac;
-    use crate::server::AdminState;
+    use crate::server::{build_response, AdminState};
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -149,6 +149,12 @@ mod tests {
         let (status, body) = http_get(&addr, "/-/health").await;
         assert_eq!(status, 200);
         assert_eq!(body, "ok");
+    }
+
+    #[test]
+    fn invalid_response_status_falls_back_to_internal_error() {
+        let response = build_response(700, "body", "text/plain");
+        assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[tokio::test]

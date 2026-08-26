@@ -246,7 +246,11 @@ uri = "not-a-uri"
         let f = write_config(config);
         let path = f.path().to_str().unwrap();
         let result = load_and_validate(path);
-        assert!(result.is_err());
+        let error = result.unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "configuration error at config: configuration error at upstreams[0]: invalid upstream URI"
+        );
     }
 
     #[test]

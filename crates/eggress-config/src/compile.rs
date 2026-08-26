@@ -1354,11 +1354,8 @@ fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigE
             eggress_routing::upstream::validate_upstream_id(&u.id)
                 .map_err(|e| ConfigError::validation(&format!("upstream {}", u.id), &e))?;
 
-            let chain = eggress_uri::parse_proxy_chain(&u.uri).map_err(|e| {
-                ConfigError::validation(
-                    &format!("upstream {}", u.id),
-                    &format!("invalid URI: {}", e),
-                )
+            let chain = eggress_uri::parse_proxy_chain(&u.uri).map_err(|_e| {
+                ConfigError::validation(&format!("upstream {}", u.id), "invalid upstream URI")
             })?;
 
             let health = compile_health_config(u.health.as_ref()).map_err(|e| match e {

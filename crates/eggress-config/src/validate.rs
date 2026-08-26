@@ -357,10 +357,7 @@ fn validate_upstreams(upstreams: &[crate::model::UpstreamConfig], errors: &mut V
         }
 
         if eggress_uri::parse_proxy_chain(&upstream.uri).is_err() {
-            errors.push(ConfigError::validation(
-                &path,
-                &format!("invalid upstream URI: {}", upstream.uri),
-            ));
+            errors.push(ConfigError::validation(&path, "invalid upstream URI"));
         }
 
         if let Some(ref health) = upstream.health {

@@ -1,5 +1,6 @@
 //! Dedicated listener handlers for multiplexed and upgraded transports.
 
+use base64::Engine;
 use eggress_core::{BoxStream, ClientIdentity, TargetAddr};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -208,21 +209,11 @@ fn h2_target(uri: &http::Uri) -> Result<TargetAddr, String> {
 }
 
 fn parse_basic_auth(value: &str) -> Option<(String, String)> {
-    let encoded = value.strip_prefix("Basic ")?;
-    let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = Vec::with_capacity(encoded.len() * 3 / 4);
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    for byte in encoded.bytes().filter(|byte| *byte != b'=') {
-        let value = table.iter().position(|candidate| *candidate == byte)? as u32;
-        buffer = (buffer << 6) | value;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push((buffer >> bits) as u8);
-        }
-    }
-    let decoded = String::from_utf8(output).ok()?;
+    let encoded = value.strip_prefix("Basic ")?.trim();
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let decoded = String::from_utf8(decoded).ok()?;
     let (user, password) = decoded.split_once(':')?;
     Some((user.to_string(), password.to_string()))
 }

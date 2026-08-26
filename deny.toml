@@ -3,10 +3,10 @@ targets = []
 
 [advisories]
 ignore = [
-    # `rsa` (RUSTSEC-2023-0071, Marvin Attack): pulled transitively by the
-    # optional `russh` `rsa` feature for SSH host-key parsing. No fixed
-    # upstream release is available; tracked against the rustsec advisory.
-    "RUSTSEC-2023-0071",
+    # `time` is pulled only by the rcgen test-certificate dependency. The
+    # fixed release requires Rust 1.88, above this workspace's MSRV 1.85;
+    # keep the exception scoped and revisit it when the MSRV can move.
+    "RUSTSEC-2026-0009",
 ]
 
 # `rustls-pemfile` (RUSTSEC-2025-0134) was replaced by `rustls-pki-types` PEM

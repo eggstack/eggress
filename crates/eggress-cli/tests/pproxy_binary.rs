@@ -139,6 +139,27 @@ fn startup_banner_shows_version_and_listeners() {
 }
 
 #[test]
+fn startup_banner_redacts_uri_credentials() {
+    let (_, stderr) = spawn_and_collect(
+        pproxy_bin().args([
+            "-l",
+            "http://:19811",
+            "-r",
+            "socks5://user:secret@127.0.0.1:1080",
+        ]),
+        3000,
+    );
+    assert!(
+        !stderr.contains("secret"),
+        "startup banner leaked credentials: {stderr}"
+    );
+    assert!(
+        stderr.contains("socks5://****:****@127.0.0.1:1080"),
+        "expected redacted remote in banner, got: {stderr}"
+    );
+}
+
+#[test]
 fn startup_banner_shows_tls_when_ssl() {
     let (_, stderr) = spawn_and_collect(
         pproxy_bin().args([

@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::RwLock;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
@@ -80,10 +80,11 @@ impl HealthCell {
 
     pub fn observe_success(&self, latency: Duration, config: &HealthConfig) {
         let mut snap = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let now = SystemTime::now();
         snap.consecutive_successes = snap.consecutive_successes.saturating_add(1);
         snap.consecutive_failures = 0;
-        snap.last_checked_at = Some(SystemTime::now());
-        snap.last_success_at = Some(SystemTime::now());
+        snap.last_checked_at = Some(now);
+        snap.last_success_at = Some(now);
         snap.last_latency = Some(latency);
         snap.last_error = None;
 
@@ -121,10 +122,11 @@ impl HealthCell {
 
     pub fn observe_failure(&self, error: Option<String>, config: &HealthConfig) {
         let mut snap = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let now = SystemTime::now();
         snap.consecutive_failures = snap.consecutive_failures.saturating_add(1);
         snap.consecutive_successes = 0;
-        snap.last_checked_at = Some(SystemTime::now());
-        snap.last_failure_at = Some(SystemTime::now());
+        snap.last_checked_at = Some(now);
+        snap.last_failure_at = Some(now);
         snap.last_latency = None;
         snap.last_error = error;
 
@@ -173,9 +175,9 @@ pub struct ProbeResult {
 }
 
 pub async fn probe_tcp(target: SocketAddr, timeout: Duration) -> ProbeResult {
-    let start = SystemTime::now();
+    let start = Instant::now();
     let result = tokio::time::timeout(timeout, TcpStream::connect(target)).await;
-    let latency = start.elapsed().unwrap_or_default();
+    let latency = start.elapsed();
 
     match result {
         Ok(Ok(_stream)) => ProbeResult {

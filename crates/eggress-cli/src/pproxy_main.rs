@@ -235,10 +235,10 @@ fn print_startup_banner(
     eprintln!("{VERSION}");
 
     for local in &pproxy_args.local {
-        eprintln!("  listen:   {local}");
+        eprintln!("  listen:   {}", redact_uri(local));
     }
     for remote in &pproxy_args.remotes {
-        eprintln!("  remote:   {remote}");
+        eprintln!("  remote:   {}", redact_uri(remote));
     }
 
     let has_udp = pproxy_args
@@ -275,6 +275,12 @@ fn print_startup_banner(
 
     eprintln!();
     eprintln!("pproxy started, waiting for connections...");
+}
+
+fn redact_uri(uri: &str) -> String {
+    eggress_uri::parse_proxy_chain(uri)
+        .map(|chain| eggress_uri::RedactedUri::new(&chain).to_string())
+        .unwrap_or_else(|_| "<redacted URI>".to_string())
 }
 
 #[cfg(test)]

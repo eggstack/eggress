@@ -42,6 +42,7 @@ eggress-protocol-shadowsocks = { workspace = true, optional = true }
 eggress-protocol-trojan = { workspace = true, optional = true }
 eggress-protocol-websocket = { workspace = true, optional = true }
 bytes.workspace = true
+base64.workspace = true
 h2.workspace = true
 http.workspace = true
 eggress-transport-tls.workspace = true
