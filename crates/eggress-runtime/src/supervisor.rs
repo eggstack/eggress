@@ -61,6 +61,23 @@ impl Drop for ListenerConnectionSlot {
     }
 }
 
+struct ActiveConnectionGuard {
+    active: Arc<AtomicU64>,
+}
+
+impl ActiveConnectionGuard {
+    fn new(active: Arc<AtomicU64>) -> Self {
+        active.fetch_add(1, Ordering::AcqRel);
+        Self { active }
+    }
+}
+
+impl Drop for ActiveConnectionGuard {
+    fn drop(&mut self) {
+        self.active.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// Result of a reload attempt.
 #[derive(Debug)]
 pub enum ReloadResult {
@@ -84,13 +101,22 @@ pub struct RuntimeAdminListenerInfos {
 
 #[cfg(feature = "operations")]
 impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
+    fn generation(&self) -> u64 {
+        self.state.generation()
+    }
+
     fn snapshot(&self) -> AdminSnapshot {
         let snap = self.state.snapshot.load();
-        let addrs = self
-            .state
-            .listener_addrs
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let addrs = match self.state.listener_addrs.lock() {
+            Ok(addrs) => addrs.clone(),
+            Err(error) => {
+                tracing::warn!("listener address state was poisoned; omitting addresses: {error}");
+                let mut addrs = error.into_inner();
+                addrs.clear();
+                self.state.listener_addrs.clear_poison();
+                addrs.clone()
+            }
+        };
         let listeners: Vec<ListenerInfo> = snap
             .listeners
             .iter()
@@ -391,7 +417,7 @@ async fn prepare_shadowsocks_udp_relay(
 fn compute_advertise_ip(
     configured_advertise: Option<std::net::IpAddr>,
     udp_bind_ip: std::net::IpAddr,
-    tcp_peer: std::net::SocketAddr,
+    tcp_peer: Option<std::net::SocketAddr>,
 ) -> Result<std::net::IpAddr, eggress_udp::error::UdpError> {
     if let Some(ip) = configured_advertise {
         return Ok(ip);
@@ -401,13 +427,15 @@ fn compute_advertise_ip(
         return Ok(udp_bind_ip);
     }
 
-    if tcp_peer.ip().is_loopback() {
-        match tcp_peer {
-            std::net::SocketAddr::V4(_) => {
-                return Ok(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-            }
-            std::net::SocketAddr::V6(_) => {
-                return Ok(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
+    if let Some(tcp_peer) = tcp_peer {
+        if tcp_peer.ip().is_loopback() {
+            match tcp_peer {
+                std::net::SocketAddr::V4(_) => {
+                    return Ok(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+                }
+                std::net::SocketAddr::V6(_) => {
+                    return Ok(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
+                }
             }
         }
     }
@@ -431,7 +459,7 @@ impl eggress_server::UdpService for RuntimeUdpService {
     fn create_association(
         &self,
         listener: &str,
-        client_tcp_peer: std::net::SocketAddr,
+        client_tcp_peer: Option<std::net::SocketAddr>,
         identity: eggress_core::ClientIdentity,
         generation: u64,
     ) -> std::pin::Pin<
@@ -940,7 +968,16 @@ impl ServiceSupervisor {
             let metrics_registry = metrics_registry_for_admin;
             // Start health probes inside the runtime context
             {
-                let mut guard = health_for_run.lock().unwrap_or_else(|e| e.into_inner());
+                let mut guard = match health_for_run.lock() {
+                    Ok(guard) => guard,
+                    Err(error) => {
+                        tracing::warn!("health manager state was poisoned; resetting it: {error}");
+                        let mut guard = error.into_inner();
+                        *guard = None;
+                        health_for_run.clear_poison();
+                        guard
+                    }
+                };
                 if let Some(ref mut hm) = *guard {
                     let upstream_runtimes: Vec<Arc<UpstreamRuntime>> =
                         snapshot.load().upstreams.values().cloned().collect();
@@ -1271,10 +1308,17 @@ impl ServiceSupervisor {
                     .iter()
                     .map(|lcfg| addr_map.get(&lcfg.name).copied().flatten())
                     .collect();
-                *state_ref
-                    .listener_addrs
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner()) = addrs;
+                match state_ref.listener_addrs.lock() {
+                    Ok(mut guard) => *guard = addrs,
+                    Err(error) => {
+                        tracing::warn!(
+                            "listener address state was poisoned; resetting it: {error}"
+                        );
+                        let mut guard = error.into_inner();
+                        *guard = addrs;
+                        state_ref.listener_addrs.clear_poison();
+                    }
+                }
             }
 
             #[cfg(feature = "extended")]
@@ -1516,11 +1560,10 @@ impl ServiceSupervisor {
                             }) as Arc<dyn eggress_server::UdpService>
                         });
 
-                        active.fetch_add(1, Ordering::AcqRel);
-
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
                         conn_tasks.spawn(async move {
+                            let _active_guard = ActiveConnectionGuard::new(active);
                             let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
 
@@ -1536,7 +1579,6 @@ impl ServiceSupervisor {
                                             Ok(c) => c,
                                             Err(e) => {
                                                 tracing::error!(%peer, "TLS config error: {e}");
-                                                active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
@@ -1544,7 +1586,6 @@ impl ServiceSupervisor {
                                         Ok(s) => s,
                                         Err(e) => {
                                             tracing::debug!(%peer, "TLS accept failed: {e}");
-                                            active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
                                     }
@@ -1612,8 +1653,6 @@ impl ServiceSupervisor {
                                     )
                                 }
                             };
-
-                            active.fetch_sub(1, Ordering::Release);
 
                             tracing::info!(
                                 protocol = ?report.protocol,
@@ -1730,11 +1769,10 @@ impl ServiceSupervisor {
                             }) as Arc<dyn eggress_server::UdpService>
                         });
 
-                        active.fetch_add(1, Ordering::AcqRel);
-
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
                         conn_tasks.spawn(async move {
+                            let _active_guard = ActiveConnectionGuard::new(active);
                             let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
 
@@ -1757,7 +1795,6 @@ impl ServiceSupervisor {
                                                 tracing::error!(
                                                     "TLS config error for unix connection: {e}"
                                                 );
-                                                active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
@@ -1772,7 +1809,6 @@ impl ServiceSupervisor {
                                             tracing::debug!(
                                                 "TLS accept failed for unix connection: {e}"
                                             );
-                                            active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
                                     }
@@ -1845,8 +1881,6 @@ impl ServiceSupervisor {
                                     )
                                 }
                             };
-
-                            active.fetch_sub(1, Ordering::Release);
 
                             tracing::info!(
                                 protocol = ?report.protocol,
@@ -2168,8 +2202,6 @@ impl ServiceSupervisor {
                         let conn_cancel = conn_cancel.child_token();
                         let generation = state.snapshot.load().generation;
 
-                        active.fetch_add(1, Ordering::AcqRel);
-
                         let tls_config = prepared_listener.tls.clone();
                         let ss_config = prepared_listener.shadowsocks.clone();
                         let trojan_config = prepared_listener.trojan.clone();
@@ -2194,6 +2226,7 @@ impl ServiceSupervisor {
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
                         let stream_tasks = conn_tasks.clone();
                         conn_tasks.spawn(async move {
+                            let _active_guard = ActiveConnectionGuard::new(active);
                             let started = std::time::Instant::now();
 
                             // Apply TLS if configured for this listener
@@ -2214,7 +2247,6 @@ impl ServiceSupervisor {
                                             Ok(c) => c,
                                             Err(e) => {
                                                 tracing::error!(%peer, "TLS config error: {e}");
-                                                active.fetch_sub(1, Ordering::Release);
                                                 return;
                                             }
                                         };
@@ -2227,7 +2259,6 @@ impl ServiceSupervisor {
                                         Ok(s) => s,
                                         Err(e) => {
                                             tracing::debug!(%peer, "TLS accept failed: {e}");
-                                            active.fetch_sub(1, Ordering::Release);
                                             return;
                                         }
                                     }
@@ -2319,7 +2350,6 @@ impl ServiceSupervisor {
                                 if let Err(error) = advanced_result {
                                     tracing::debug!(%peer, %error, "advanced listener ended");
                                 }
-                                active.fetch_sub(1, Ordering::Release);
                                 return;
                             }
 
@@ -2340,8 +2370,6 @@ impl ServiceSupervisor {
                                     )
                                 }
                             };
-
-                            active.fetch_sub(1, Ordering::Release);
 
                             if compatibility_options.debug && report.failure.is_some() {
                                 tracing::error!(
@@ -2614,10 +2642,17 @@ impl ServiceSupervisor {
                 let state_ref = state_ref.clone();
                 let provider: Arc<dyn AdminSnapshotProvider> = listener_infos_provider.clone();
                 if let Ok(addr) = server.local_addr() {
-                    *state_ref
-                        .admin_local_addr
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner()) = Some(addr);
+                    match state_ref.admin_local_addr.lock() {
+                        Ok(mut guard) => *guard = Some(addr),
+                        Err(error) => {
+                            tracing::warn!(
+                                "admin listener address state was poisoned; resetting it: {error}"
+                            );
+                            let mut guard = error.into_inner();
+                            *guard = Some(addr);
+                            state_ref.admin_local_addr.clear_poison();
+                        }
+                    }
                 }
                 let admin_auth = admin_cfg.auth.clone();
                 admin_tasks.spawn(async move {
@@ -3012,6 +3047,20 @@ protocols = ["http"]
     }
 
     #[test]
+    fn active_connections_guard_releases_on_panic() {
+        let active = Arc::new(AtomicU64::new(0));
+        let result = std::panic::catch_unwind({
+            let active = active.clone();
+            move || {
+                let _guard = ActiveConnectionGuard::new(active);
+                panic!("connection task panic");
+            }
+        });
+        assert!(result.is_err());
+        assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
     fn readiness_flag_controls_ready_endpoint() {
         let readiness = Arc::new(AtomicBool::new(true));
         assert!(readiness.load(Ordering::Relaxed));
@@ -3212,7 +3261,7 @@ path = "/tmp/eggress-new.sock"
         let result = compute_advertise_ip(
             Some("10.0.0.1".parse().unwrap()),
             "0.0.0.0".parse().unwrap(),
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
         );
         assert_eq!(
             result.unwrap(),
@@ -3225,7 +3274,7 @@ path = "/tmp/eggress-new.sock"
         let result = compute_advertise_ip(
             None,
             "192.168.1.1".parse().unwrap(),
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
         );
         assert_eq!(
             result.unwrap(),
@@ -3238,7 +3287,7 @@ path = "/tmp/eggress-new.sock"
         let result = compute_advertise_ip(
             None,
             "0.0.0.0".parse().unwrap(),
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
         );
         assert_eq!(
             result.unwrap(),
@@ -3251,7 +3300,7 @@ path = "/tmp/eggress-new.sock"
         let result = compute_advertise_ip(
             None,
             "0.0.0.0".parse().unwrap(),
-            "192.168.1.10:5000".parse().unwrap(),
+            Some("192.168.1.10:5000".parse().unwrap()),
         );
         assert!(
             result.is_err(),
@@ -3260,9 +3309,18 @@ path = "/tmp/eggress-new.sock"
     }
 
     #[test]
+    fn compute_advertise_without_tcp_peer_is_rejected() {
+        let result = compute_advertise_ip(None, "0.0.0.0".parse().unwrap(), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn compute_advertise_ipv6_loopback() {
-        let result =
-            compute_advertise_ip(None, "::".parse().unwrap(), "[::1]:5000".parse().unwrap());
+        let result = compute_advertise_ip(
+            None,
+            "::".parse().unwrap(),
+            Some("[::1]:5000".parse().unwrap()),
+        );
         assert_eq!(
             result.unwrap(),
             std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
@@ -3274,7 +3332,7 @@ path = "/tmp/eggress-new.sock"
         let result = compute_advertise_ip(
             Some("10.0.0.1".parse().unwrap()),
             "192.168.1.1".parse().unwrap(),
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
         );
         assert_eq!(
             result.unwrap(),

@@ -26,7 +26,7 @@ impl UdpAssociationRegistry {
     pub async fn create_association(
         &self,
         listener: &str,
-        client_tcp_peer: SocketAddr,
+        client_tcp_peer: impl Into<Option<SocketAddr>>,
         identity: eggress_core::ClientIdentity,
         generation: u64,
     ) -> Result<Arc<UdpAssociation>, UdpError> {

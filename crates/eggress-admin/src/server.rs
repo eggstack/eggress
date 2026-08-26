@@ -174,6 +174,10 @@ pub struct AdminSnapshot {
 /// reloads immediately take effect on admin endpoints.
 pub trait AdminSnapshotProvider: Send + Sync + 'static {
     fn snapshot(&self) -> AdminSnapshot;
+
+    fn generation(&self) -> u64 {
+        self.snapshot().generation
+    }
 }
 
 /// A `AdminSnapshotProvider` backed by a fixed snapshot. Useful in tests
@@ -210,7 +214,7 @@ impl AdminState {
     }
 
     pub fn generation(&self) -> u64 {
-        self.provider.snapshot().generation
+        self.provider.generation()
     }
 }
 
@@ -241,11 +245,14 @@ pub fn build_response(status: u16, body: impl Into<Bytes>, content_type: &str) -
     } else {
         http::StatusCode::INTERNAL_SERVER_ERROR
     };
-    http::Response::builder()
-        .status(status)
-        .header("content-type", content_type)
-        .body(Full::new(body.into()))
-        .expect("admin response content type is valid")
+    let content_type = http::HeaderValue::from_str(content_type)
+        .unwrap_or_else(|_| http::HeaderValue::from_static("application/octet-stream"));
+    let mut response = http::Response::new(Full::new(body.into()));
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert(http::header::CONTENT_TYPE, content_type);
+    response
 }
 
 pub fn build_json_response(status: u16, body: impl Into<Bytes>) -> AdminResponse {

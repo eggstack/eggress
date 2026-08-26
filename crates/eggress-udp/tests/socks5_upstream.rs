@@ -185,7 +185,7 @@ fn relay_config(routing: Arc<dyn eggress_routing::RouteService>) -> (RelayConfig
         listener: "test".to_string(),
         generation: 1,
         identity: ClientIdentity::Anonymous,
-        client_tcp_peer: test_addr(),
+        client_tcp_peer: Some(test_addr()),
         registry: test_registry(),
         allow_private_egress: true,
     };
@@ -468,7 +468,7 @@ async fn upstream_target_flow_idle_cleanup() {
         listener: "test".to_string(),
         generation: 1,
         identity: ClientIdentity::Anonymous,
-        client_tcp_peer: test_addr(),
+        client_tcp_peer: Some(test_addr()),
         registry: test_registry(),
         allow_private_egress: true,
     };
@@ -532,7 +532,7 @@ async fn upstream_metrics_tracking() {
         listener: "test".to_string(),
         generation: 1,
         identity: ClientIdentity::Anonymous,
-        client_tcp_peer: test_addr(),
+        client_tcp_peer: Some(test_addr()),
         registry: test_registry(),
         allow_private_egress: true,
     };

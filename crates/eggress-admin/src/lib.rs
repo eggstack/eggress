@@ -157,6 +157,16 @@ mod tests {
         assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
     }
 
+    #[test]
+    fn invalid_response_content_type_falls_back_without_panicking() {
+        let response = build_response(200, "body", "text/plain\r\nX-Injected: true");
+        assert_eq!(response.status(), http::StatusCode::OK);
+        assert_eq!(
+            response.headers()[http::header::CONTENT_TYPE],
+            "application/octet-stream"
+        );
+    }
+
     #[tokio::test]
     async fn ready_returns_200() {
         let state = test_state();

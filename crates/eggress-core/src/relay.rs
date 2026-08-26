@@ -90,7 +90,13 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
                     });
                 }
             }
-            Ok((_, Err(_))) | Err(_) => {
+            Ok((direction, Err(error))) => {
+                tracing::debug!(%error, ?direction, "relay direction failed");
+                had_error = true;
+                tasks.abort_all();
+            }
+            Err(error) => {
+                tracing::debug!(%error, "relay direction task failed");
                 had_error = true;
                 tasks.abort_all();
             }

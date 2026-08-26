@@ -58,7 +58,7 @@ pub trait UdpService: Send + Sync {
     fn create_association(
         &self,
         listener: &str,
-        client_tcp_peer: std::net::SocketAddr,
+        client_tcp_peer: Option<std::net::SocketAddr>,
         identity: eggress_core::ClientIdentity,
         generation: u64,
     ) -> std::pin::Pin<

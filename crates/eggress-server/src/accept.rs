@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
@@ -41,8 +41,18 @@ impl AuthReuseCache {
         }
     }
 
+    fn lock_entries(&self) -> MutexGuard<'_, HashMap<IpAddr, AuthReuseEntry>> {
+        self.entries.lock().unwrap_or_else(|error| {
+            tracing::warn!("auth reuse cache was poisoned; clearing it: {error}");
+            let mut entries = error.into_inner();
+            entries.clear();
+            self.entries.clear_poison();
+            entries
+        })
+    }
+
     pub fn lookup(&self, peer_ip: IpAddr) -> Option<ClientIdentity> {
-        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.lock_entries();
         let entry = entries.get(&peer_ip)?;
         if Instant::now().duration_since(entry.last_authenticated) > self.timeout {
             entries.remove(&peer_ip);
@@ -52,7 +62,7 @@ impl AuthReuseCache {
     }
 
     pub fn record(&self, peer_ip: IpAddr, identity: ClientIdentity) {
-        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.lock_entries();
         let now = Instant::now();
         // Expired entries are removed lazily by `lookup`; only pay for a full
         // sweep once the cache is actually at capacity.
@@ -78,7 +88,7 @@ impl AuthReuseCache {
     }
 
     pub fn len(&self) -> usize {
-        self.entries.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.lock_entries().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1226,6 +1236,24 @@ async fn write_proxy_auth_required<W: AsyncWrite + Unpin>(
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn poisoned_auth_cache_is_cleared_before_reuse() {
+        let cache = Arc::new(AuthReuseCache::new(Duration::from_secs(60)));
+        let poisoned = Arc::clone(&cache);
+        let result = std::thread::spawn(move || {
+            let _guard = poisoned.entries.lock().unwrap();
+            panic!("poison auth cache mutex");
+        })
+        .join();
+        assert!(result.is_err());
+
+        cache.record(
+            "192.0.2.1".parse().unwrap(),
+            ClientIdentity::Username("user".to_string()),
+        );
+        assert_eq!(cache.len(), 1);
+    }
 
     #[tokio::test]
     async fn test_accept_socks5() {

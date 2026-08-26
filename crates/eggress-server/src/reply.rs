@@ -4,6 +4,10 @@ use crate::accept::{PendingTunnel, ReplyContext, TunnelProtocol};
 use crate::error::SessionOpenError;
 use eggress_protocol_socks::socks5::server::SocksAddr;
 
+fn unspecified_ipv4() -> std::net::SocketAddr {
+    std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
+}
+
 /// Send a tunnel success reply after route is established.
 pub async fn send_tunnel_success(
     pending: &mut PendingTunnel,
@@ -23,7 +27,7 @@ pub async fn send_tunnel_success(
             eggress_protocol_socks::socks4::server::write_socks4_reply(
                 &mut pending.client,
                 eggress_protocol_socks::socks4::server::Socks4Status::Granted,
-                "0.0.0.0:0".parse().unwrap(),
+                unspecified_ipv4(),
             )
             .await?;
         }
@@ -69,7 +73,7 @@ pub async fn send_tunnel_failure(
             eggress_protocol_socks::socks4::server::write_socks4_reply(
                 &mut pending.client,
                 eggress_protocol_socks::socks4::server::Socks4Status::Failed,
-                "0.0.0.0:0".parse().unwrap(),
+                unspecified_ipv4(),
             )
             .await?;
         }

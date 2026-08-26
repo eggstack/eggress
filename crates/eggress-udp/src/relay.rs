@@ -31,7 +31,7 @@ pub struct RelayConfig {
     pub listener: String,
     pub generation: u64,
     pub identity: ClientIdentity,
-    pub client_tcp_peer: SocketAddr,
+    pub client_tcp_peer: Option<SocketAddr>,
     pub registry: Arc<UdpAssociationRegistry>,
     /// Allow private targets for callers that explicitly permit private egress.
     pub allow_private_egress: bool,
@@ -858,7 +858,7 @@ mod tests {
             listener: "test".to_string(),
             generation: 1,
             identity: ClientIdentity::Anonymous,
-            client_tcp_peer: test_addr(),
+            client_tcp_peer: Some(test_addr()),
             registry: test_registry(),
             allow_private_egress: true,
         }
@@ -1239,7 +1239,7 @@ mod tests {
             listener: "test".to_string(),
             generation: 1,
             identity: ClientIdentity::Anonymous,
-            client_tcp_peer: test_addr(),
+            client_tcp_peer: Some(test_addr()),
             registry: test_registry(),
             allow_private_egress: true,
         }
@@ -1908,7 +1908,7 @@ mod tests {
             listener: "test".to_string(),
             generation: 1,
             identity: ClientIdentity::Anonymous,
-            client_tcp_peer: test_addr(),
+            client_tcp_peer: Some(test_addr()),
             registry,
             allow_private_egress: true,
         };

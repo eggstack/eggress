@@ -818,10 +818,7 @@ async fn execute_udp_associate(
         }
     };
 
-    let client_tcp_peer = config
-        .context
-        .source
-        .unwrap_or_else(|| "127.0.0.1:0".parse().unwrap());
+    let client_tcp_peer = config.context.source;
 
     let gen = config.context.generation;
 

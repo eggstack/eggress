@@ -14,7 +14,7 @@ pub struct UdpAssociationId(pub u64);
 pub struct UdpAssociationMeta {
     pub id: UdpAssociationId,
     pub listener: String,
-    pub client_tcp_peer: SocketAddr,
+    pub client_tcp_peer: Option<SocketAddr>,
     pub client_udp_addr: std::sync::Mutex<Option<SocketAddr>>,
     pub identity: eggress_core::ClientIdentity,
     pub created_at: Instant,
@@ -34,14 +34,14 @@ impl UdpAssociation {
     pub fn new(
         id: UdpAssociationId,
         listener: String,
-        client_tcp_peer: SocketAddr,
+        client_tcp_peer: impl Into<Option<SocketAddr>>,
         identity: eggress_core::ClientIdentity,
         generation: u64,
     ) -> Self {
         let meta = Arc::new(UdpAssociationMeta {
             id,
             listener,
-            client_tcp_peer,
+            client_tcp_peer: client_tcp_peer.into(),
             client_udp_addr: std::sync::Mutex::new(None),
             identity,
             created_at: Instant::now(),

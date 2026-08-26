@@ -136,8 +136,18 @@ impl DirectConnector {
         target: &TargetAddr,
         options: &ConnectOptions,
     ) -> Result<BoxStream, ConnectError> {
-        let addr = resolve_target(target, options.enforce_dns_rebinding_check).await?;
-        let stream = if let Some(local) = options.local_bind {
+        let addrs = resolve_target(target, options.enforce_dns_rebinding_check).await?;
+        connect_to_addrs(&addrs, options.local_bind).await
+    }
+}
+
+async fn connect_to_addrs(
+    addrs: &[SocketAddr],
+    local_bind: Option<SocketAddr>,
+) -> Result<BoxStream, ConnectError> {
+    let mut last_error = None;
+    for &addr in addrs {
+        let result = if let Some(local) = local_bind {
             let socket = if local.is_ipv4() {
                 tokio::net::TcpSocket::new_v4()
             } else {
@@ -145,37 +155,47 @@ impl DirectConnector {
             }
             .map_err(ConnectError::Io)?;
             socket.bind(local).map_err(ConnectError::Io)?;
-            socket.connect(addr).await.map_err(ConnectError::Io)?
+            socket.connect(addr).await.map_err(ConnectError::Io)
         } else {
-            TcpStream::connect(addr).await?
+            TcpStream::connect(addr).await.map_err(ConnectError::Io)
         };
-        Ok(Box::new(stream))
+        match result {
+            Ok(stream) => return Ok(Box::new(stream)),
+            Err(error) => last_error = Some(error),
+        }
     }
+    Err(last_error.unwrap_or_else(|| ConnectError::DnsResolution("no addresses found".to_string())))
 }
 
 async fn resolve_target(
     target: &TargetAddr,
     enforce_dns_rebinding_check: bool,
-) -> Result<SocketAddr, ConnectError> {
+) -> Result<Vec<SocketAddr>, ConnectError> {
     match &target.host {
         TargetHost::Ip(ip) => {
             if enforce_dns_rebinding_check && is_dns_rebinding_risk(ip) {
                 return Err(ConnectError::ReservedTarget(*ip));
             }
-            Ok(SocketAddr::new(*ip, target.port))
+            Ok(vec![SocketAddr::new(*ip, target.port)])
         }
         TargetHost::Domain(domain) => {
             let lookup = format!("{}:{}", domain, target.port);
-            let mut addrs = tokio::net::lookup_host(&lookup)
+            let addrs: Vec<_> = tokio::net::lookup_host(&lookup)
                 .await
-                .map_err(|e| ConnectError::DnsResolution(e.to_string()))?;
-            let resolved = addrs
-                .next()
-                .ok_or_else(|| ConnectError::DnsResolution("no addresses found".to_string()))?;
-            if enforce_dns_rebinding_check && is_dns_rebinding_risk(&resolved.ip()) {
-                return Err(ConnectError::ReservedTarget(resolved.ip()));
+                .map_err(|e| ConnectError::DnsResolution(e.to_string()))?
+                .collect();
+            if addrs.is_empty() {
+                return Err(ConnectError::DnsResolution(
+                    "no addresses found".to_string(),
+                ));
             }
-            Ok(resolved)
+            if enforce_dns_rebinding_check {
+                if let Some(reserved) = addrs.iter().find(|addr| is_dns_rebinding_risk(&addr.ip()))
+                {
+                    return Err(ConnectError::ReservedTarget(reserved.ip()));
+                }
+            }
+            Ok(addrs)
         }
     }
 }
@@ -401,5 +421,19 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(ConnectError::ReservedTarget(_))));
+    }
+
+    #[tokio::test]
+    async fn direct_connect_falls_back_to_next_resolved_address() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let good_addr = listener.local_addr().unwrap();
+        let bad_addr = SocketAddr::new(good_addr.ip(), good_addr.port() + 1);
+
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let stream = connect_to_addrs(&[bad_addr, good_addr], None)
+            .await
+            .expect("second resolved address should be attempted");
+        drop(stream);
+        accept.await.unwrap();
     }
 }

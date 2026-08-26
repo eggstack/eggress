@@ -697,7 +697,7 @@ async fn udp_during_association_active_count_one() {
         .udp_registry
         .create_association(
             "socks-in",
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
             eggress_core::ClientIdentity::Anonymous,
             1,
         )
@@ -719,7 +719,7 @@ async fn udp_after_close_active_count_zero() {
         .udp_registry
         .create_association(
             "socks-in",
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
             eggress_core::ClientIdentity::Anonymous,
             1,
         )
@@ -743,7 +743,7 @@ async fn udp_per_listener_counts_distinguish() {
         .udp_registry
         .create_association(
             "socks-in",
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
             eggress_core::ClientIdentity::Anonymous,
             1,
         )
@@ -753,7 +753,7 @@ async fn udp_per_listener_counts_distinguish() {
         .udp_registry
         .create_association(
             "socks-in",
-            "127.0.0.1:5001".parse().unwrap(),
+            Some("127.0.0.1:5001".parse().unwrap()),
             eggress_core::ClientIdentity::Anonymous,
             1,
         )
@@ -787,7 +787,7 @@ async fn udp_endpoint_no_client_or_target_address() {
         .udp_registry
         .create_association(
             "socks-in",
-            "127.0.0.1:5000".parse().unwrap(),
+            Some("127.0.0.1:5000".parse().unwrap()),
             eggress_core::ClientIdentity::Anonymous,
             1,
         )
