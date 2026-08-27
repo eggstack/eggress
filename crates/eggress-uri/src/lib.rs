@@ -125,6 +125,25 @@ pub struct RedactedUri<'a> {
     chain: &'a ProxyChainSpec,
 }
 
+/// Redact userinfo from an arbitrary proxy URI while preserving its endpoint.
+///
+/// This is intentionally tolerant of URI forms that are not parseable as a
+/// native [`ProxyChainSpec`], so callers can safely use it for diagnostics.
+pub fn redact_proxy_uri(uri: &str) -> String {
+    let Some(scheme_end) = uri.find("://") else {
+        return uri.to_string();
+    };
+    let after_scheme = &uri[scheme_end + 3..];
+    match find_at_outside_brackets(after_scheme) {
+        Some(at_pos) => format!(
+            "{}****@{}",
+            &uri[..scheme_end + 3],
+            &after_scheme[at_pos + 1..]
+        ),
+        None => uri.to_string(),
+    }
+}
+
 impl<'a> RedactedUri<'a> {
     pub fn new(chain: &'a ProxyChainSpec) -> Self {
         Self { chain }
@@ -717,6 +736,14 @@ mod tests {
             "plaintext password must never be serialized: {json}"
         );
         assert!(json.contains("****"), "password should be redacted: {json}");
+    }
+
+    #[test]
+    fn test_redact_proxy_uri_handles_ipv6_and_at_signs() {
+        assert_eq!(
+            redact_proxy_uri("http://user:p@ss@[::1]:8080"),
+            "http://****@[::1]:8080"
+        );
     }
 
     #[test]

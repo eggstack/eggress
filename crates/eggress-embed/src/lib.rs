@@ -557,6 +557,12 @@ impl EggressHandle {
             }
         }
 
+        if prev_snapshot.timeouts != new_rt_config.timeouts {
+            return Err(EggressError::Reload(
+                "timeout configuration changed; restart required".to_string(),
+            ));
+        }
+
         let prev_ref: Option<&eggress_runtime::CompiledRuntimeSnapshot> = Some(&prev_snapshot);
         let new_snapshot =
             eggress_runtime::snapshot::compile_runtime_snapshot(&new_rt_config, prev_ref)

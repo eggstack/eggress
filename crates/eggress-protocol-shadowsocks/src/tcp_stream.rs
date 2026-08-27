@@ -23,6 +23,8 @@ enum ReadState {
     LengthBlock,
     /// Reading `len` bytes of encrypted payload.
     Payload { len: usize },
+    /// A valid zero-length payload has permanently ended the stream.
+    Closed,
 }
 
 /// Bidirectional AEAD stream adapter for Shadowsocks TCP.
@@ -268,6 +270,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
         loop {
             let state = this.read_state;
             match state {
+                ReadState::Closed => return Poll::Ready(Ok(())),
                 ReadState::PeerSalt => {
                     // Read the peer's salt to derive the read subkey.
                     let salt_size = this.method.salt_size();
@@ -358,6 +361,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
 
                     // A zero-length payload signals end-of-stream.
                     if payload_len == 0 {
+                        this.read_state = ReadState::Closed;
                         return Poll::Ready(Ok(()));
                     }
 
@@ -717,13 +721,19 @@ mod tests {
         let wire = encrypt_chunk_standard(method, &subkey, &nonce, b"").unwrap();
         let mut raw_stream = client;
         raw_stream.write_all(&wire).await.unwrap();
-        drop(raw_stream);
 
         // The server should see EOF after the zero-length payload chunk.
         let mut buf = vec![0u8; 64];
         let result = server_stream.read(&mut buf).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0); // EOF
+
+        // EOF is terminal even if the peer violates the protocol and sends
+        // more bytes afterward.
+        raw_stream.write_all(b"ignored").await.unwrap();
+        let result = server_stream.read(&mut buf).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
     }
 
     #[tokio::test]

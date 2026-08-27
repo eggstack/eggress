@@ -153,7 +153,7 @@ mod tests {
         let detectors: Vec<Box<dyn ProtocolDetector>> = vec![
             Box::new(PrefixDetector::new(ProtocolId::Http, b"GET ".to_vec())),
             Box::new(PrefixDetector::new(ProtocolId::Socks5, b"\x05".to_vec())),
-            Box::new(PrefixDetector::new(ProtocolId::Http, b"SSH-".to_vec())),
+            Box::new(PrefixDetector::new(ProtocolId::Http, b"CUSTOM-".to_vec())),
         ];
         ProtocolDispatcher::with_defaults(detectors, handshake_timeout)
     }
@@ -197,11 +197,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dispatch_ssh() {
+    async fn test_dispatch_custom_prefix_as_http() {
         let dispatcher = make_dispatcher(Duration::from_secs(5));
         let (mut tx, rx) = tokio::io::duplex(1024);
 
-        tx.write_all(b"SSH-2.0-OpenSSH_8.9\r\n").await.unwrap();
+        tx.write_all(b"CUSTOM-payload").await.unwrap();
 
         let (proto, _) = dispatcher.dispatch(Box::new(rx)).await.unwrap();
         assert_eq!(proto, ProtocolId::Http);

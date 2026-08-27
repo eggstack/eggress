@@ -165,6 +165,7 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
                         .get(idx)
                         .and_then(|a| *a)
                         .map(|a| a.to_string())
+                        .or_else(|| unix_socket_path.clone())
                         .unwrap_or_default(),
                     protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
                     udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
@@ -428,12 +429,22 @@ fn compute_advertise_ip(
     }
 
     if let Some(tcp_peer) = tcp_peer {
-        if tcp_peer.ip().is_loopback() {
-            match tcp_peer {
-                std::net::SocketAddr::V4(_) => {
+        let peer_is_loopback = tcp_peer.ip().is_loopback()
+            || matches!(
+                tcp_peer.ip(),
+                std::net::IpAddr::V6(ipv6)
+                    if ipv6
+                        .to_ipv4_mapped()
+                        .is_some_and(|ipv4| ipv4.is_loopback())
+            );
+        if peer_is_loopback {
+            // Preserve the family selected by the unspecified UDP bind. This
+            // matters for dual-stack sockets and IPv4-mapped IPv6 peers.
+            match udp_bind_ip {
+                std::net::IpAddr::V4(_) => {
                     return Ok(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
                 }
-                std::net::SocketAddr::V6(_) => {
+                std::net::IpAddr::V6(_) => {
                     return Ok(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
                 }
             }
@@ -852,7 +863,11 @@ impl ServiceSupervisor {
         &self,
         new_config: &eggress_config::compile::RuntimeConfig,
     ) -> Result<(), String> {
-        classify_listeners(&self.rt_config.listeners, &new_config.listeners)
+        classify_listeners(&self.rt_config.listeners, &new_config.listeners)?;
+        if self.rt_config.timeouts != new_config.timeouts {
+            return Err("timeout configuration changed; restart required".to_string());
+        }
+        Ok(())
     }
 
     /// Attempt to reload configuration. Encapsulates the full reload transaction:
@@ -3150,6 +3165,41 @@ protocols = ["http"]
     }
 
     #[test]
+    fn reload_rejects_timeout_change() {
+        let config1 = r#"
+version = 1
+
+[timeouts]
+handshake = "10s"
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+"#;
+        let config2 = r#"
+version = 1
+
+[timeouts]
+handshake = "5s"
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+"#;
+        let f1 = write_config(config1);
+        let f2 = write_config(config2);
+        let sup = ServiceSupervisor::start(f1.path().to_str().unwrap()).unwrap();
+        let new_config =
+            eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
+
+        let result = sup.classify_reload(&new_config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("timeout"));
+    }
+
+    #[test]
     fn reload_rejects_listener_count_change() {
         let config1 = r#"
 version = 1
@@ -3324,6 +3374,19 @@ path = "/tmp/eggress-new.sock"
         assert_eq!(
             result.unwrap(),
             std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        );
+    }
+
+    #[test]
+    fn compute_advertise_preserves_unspecified_bind_family() {
+        let result = compute_advertise_ip(
+            None,
+            "0.0.0.0".parse().unwrap(),
+            Some("[::ffff:127.0.0.1]:5000".parse().unwrap()),
+        );
+        assert_eq!(
+            result.unwrap(),
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
         );
     }
 

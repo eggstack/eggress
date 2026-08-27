@@ -12,6 +12,12 @@ fn fixture_dir() -> std::path::PathBuf {
     path
 }
 
+// To intentionally update a fixture, change its expected fields after
+// running the individual test with `cargo test -p eggress-cli --test
+// pproxy_translation_golden <test-name> -- --nocapture`. These are explicit
+// TOML expectations rather than an auto-blessed snapshot, so regeneration
+// remains reviewable.
+
 fn run_translate(args: &[String]) -> (String, String, i32) {
     let output = eggress_bin()
         .args(["pproxy", "translate", "--"])

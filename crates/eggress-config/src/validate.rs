@@ -691,18 +691,33 @@ fn rule_upstream_group_could_match_udp(rule: &crate::model::RuleConfig) -> bool 
     true
 }
 
+const MAX_MATCH_EXPR_DEPTH: usize = 10;
+
 fn matcher_could_match_udp(matcher: &MatchExprConfig) -> bool {
+    matcher_could_match_udp_limited(matcher, 0)
+}
+
+fn matcher_could_match_udp_limited(matcher: &MatchExprConfig, depth: usize) -> bool {
+    // The full validator rejects deeper expressions. Stay conservative here
+    // so this pre-validation diagnostic never suppresses a useful warning.
+    if depth > MAX_MATCH_EXPR_DEPTH {
+        return true;
+    }
     match matcher {
         MatchExprConfig::Leaf(leaf) => leaf_could_match_udp(leaf),
         MatchExprConfig::Composite(composite) => {
             if let Some(ref all) = composite.all {
-                return all.iter().any(matcher_could_match_udp);
+                return all
+                    .iter()
+                    .all(|child| matcher_could_match_udp_limited(child, depth + 1));
             }
             if let Some(ref any_of) = composite.any_of {
-                return any_of.iter().any(matcher_could_match_udp);
+                return any_of
+                    .iter()
+                    .any(|child| matcher_could_match_udp_limited(child, depth + 1));
             }
             if let Some(ref not) = composite.not {
-                return matcher_could_match_udp(not);
+                return matcher_could_match_udp_limited(not, depth + 1);
             }
             true
         }
@@ -728,19 +743,19 @@ fn validate_rules(
     for (i, rule) in rules.iter().enumerate() {
         let path = format!("rules[{}]", i);
 
-        if rule.match_expr.is_none() {
-            let matcher_count = [
-                rule.host_exact.is_some(),
-                rule.host_suffix.is_some(),
-                rule.host_regex.is_some(),
-                rule.destination_port.is_some(),
-                rule.destination_port_regex.is_some(),
-                rule.any.unwrap_or(false),
-            ]
-            .iter()
-            .filter(|&&b| b)
-            .count();
+        let matcher_count = [
+            rule.host_exact.is_some(),
+            rule.host_suffix.is_some(),
+            rule.host_regex.is_some(),
+            rule.destination_port.is_some(),
+            rule.destination_port_regex.is_some(),
+            rule.any.unwrap_or(false),
+        ]
+        .iter()
+        .filter(|&&b| b)
+        .count();
 
+        if rule.match_expr.is_none() {
             if matcher_count > 1 {
                 errors.push(ConfigError::validation(
                     &path,
@@ -757,7 +772,13 @@ fn validate_rules(
                 }
             }
         } else if let Some(ref match_expr) = rule.match_expr {
-            validate_match_expr(match_expr, &path, errors);
+            if matcher_count > 0 {
+                errors.push(ConfigError::validation(
+                    &path,
+                    "rule must not combine match with legacy matcher fields",
+                ));
+            }
+            validate_match_expr(match_expr, &path, errors, 0);
         }
 
         let action_count = [
@@ -803,7 +824,18 @@ fn validate_match_expr(
     expr: &crate::model::MatchExprConfig,
     path: &str,
     errors: &mut Vec<ConfigError>,
+    depth: usize,
 ) {
+    if depth > MAX_MATCH_EXPR_DEPTH {
+        errors.push(ConfigError::validation(
+            path,
+            &format!(
+                "expression exceeds maximum depth ({})",
+                MAX_MATCH_EXPR_DEPTH
+            ),
+        ));
+        return;
+    }
     match expr {
         crate::model::MatchExprConfig::Composite(composite) => {
             if let Some(ref all) = composite.all {
@@ -814,7 +846,12 @@ fn validate_match_expr(
                     ));
                 }
                 for (j, item) in all.iter().enumerate() {
-                    validate_match_expr(item, &format!("{}.match.all[{}]", path, j), errors);
+                    validate_match_expr(
+                        item,
+                        &format!("{}.match.all[{}]", path, j),
+                        errors,
+                        depth + 1,
+                    );
                 }
             }
             if let Some(ref any_of) = composite.any_of {
@@ -825,11 +862,16 @@ fn validate_match_expr(
                     ));
                 }
                 for (j, item) in any_of.iter().enumerate() {
-                    validate_match_expr(item, &format!("{}.match.any_of[{}]", path, j), errors);
+                    validate_match_expr(
+                        item,
+                        &format!("{}.match.any_of[{}]", path, j),
+                        errors,
+                        depth + 1,
+                    );
                 }
             }
             if let Some(ref not) = composite.not {
-                validate_match_expr(not, &format!("{}.match.not", path), errors);
+                validate_match_expr(not, &format!("{}.match.not", path), errors, depth + 1);
             }
         }
         crate::model::MatchExprConfig::Leaf(leaf) => {
@@ -1279,7 +1321,7 @@ fn warn_protocol_aliases(config: &ConfigFile, warnings: &mut Vec<ConfigWarning>)
         for (i, rule) in rules.iter().enumerate() {
             let base = format!("rules[{i}]");
             if let Some(ref expr) = rule.match_expr {
-                walk_match_expr_for_alias(expr, &format!("{base}.match"), warnings);
+                walk_match_expr_for_alias(expr, &format!("{base}.match"), warnings, 0);
             }
         }
     }
@@ -1289,21 +1331,35 @@ fn walk_match_expr_for_alias(
     expr: &MatchExprConfig,
     path: &str,
     warnings: &mut Vec<ConfigWarning>,
+    depth: usize,
 ) {
+    if depth > MAX_MATCH_EXPR_DEPTH {
+        return;
+    }
     match expr {
         MatchExprConfig::Composite(composite) => {
             if let Some(ref all) = composite.all {
                 for (i, child) in all.iter().enumerate() {
-                    walk_match_expr_for_alias(child, &format!("{path}.all[{i}]"), warnings);
+                    walk_match_expr_for_alias(
+                        child,
+                        &format!("{path}.all[{i}]"),
+                        warnings,
+                        depth + 1,
+                    );
                 }
             }
             if let Some(ref any) = composite.any_of {
                 for (i, child) in any.iter().enumerate() {
-                    walk_match_expr_for_alias(child, &format!("{path}.any_of[{i}]"), warnings);
+                    walk_match_expr_for_alias(
+                        child,
+                        &format!("{path}.any_of[{i}]"),
+                        warnings,
+                        depth + 1,
+                    );
                 }
             }
             if let Some(ref not) = composite.not {
-                walk_match_expr_for_alias(not, &format!("{path}.not"), warnings);
+                walk_match_expr_for_alias(not, &format!("{path}.not"), warnings, depth + 1);
             }
         }
         MatchExprConfig::Leaf(leaf) => {

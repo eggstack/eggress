@@ -15,6 +15,11 @@ pub struct PendingLease {
 }
 
 impl PendingLease {
+    /// Begin best-effort in-flight accounting for the selected upstream.
+    ///
+    /// The lease owns the accounting until it is either transferred to an
+    /// active lease or dropped by a caller that abandons route setup. The
+    /// relaxed atomic is observability accounting, not synchronization.
     pub fn new(upstream: Arc<UpstreamRuntime>) -> Self {
         upstream.in_flight.fetch_add(1, Ordering::Relaxed);
         Self {

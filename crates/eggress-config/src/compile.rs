@@ -118,7 +118,7 @@ impl Default for ProcessConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimeoutConfig {
     pub handshake: std::time::Duration,
     pub connect: std::time::Duration,

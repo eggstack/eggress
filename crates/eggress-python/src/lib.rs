@@ -494,7 +494,7 @@ impl PyConnection {
             "Warning: Connection object was not properly closed. Calling close() in __del__."
         );
         if let Some(handle) = self.handle.take() {
-            match outbound_runtime() {
+            match tokio::runtime::Handle::try_current() {
                 Ok(runtime) => {
                     runtime.spawn(async move {
                         if let Err(error) = handle.shutdown().await {
@@ -718,6 +718,11 @@ impl PyDiagnostic {
     }
 }
 
+/// Return diagnostic-only compatibility information for a pproxy URI.
+///
+/// Entries describe translation warnings and unsupported features; this does
+/// not prove that the URI is executable. Use `check_pproxy_uri` for the
+/// actionable compatibility check.
 #[pyfunction]
 fn diagnostics_for_uri(py: Python<'_>, uri: &str) -> PyResult<Vec<PyDiagnostic>> {
     let parsed = eggress_pproxy_compat::uri::parse_pproxy_uri(uri)
@@ -754,6 +759,14 @@ fn diagnostics_for_uri(py: Python<'_>, uri: &str) -> PyResult<Vec<PyDiagnostic>>
             suggestion: None,
         });
     }
+
+    diagnostics.sort_by_key(|diagnostic| {
+        if diagnostic.tier.as_deref() == Some("unsupported") {
+            0
+        } else {
+            1
+        }
+    });
 
     Ok(diagnostics)
 }
@@ -969,32 +982,8 @@ fn parse_toml_config(py: Python<'_>, toml_str: &str) -> PyResult<Py<PyDict>> {
 }
 
 /// Redact credentials from a config URI for safe display.
-///
-/// The userinfo separator is the LAST unbracketed `@` after the scheme,
-/// not the first; a raw password containing `@` must not be split.
 fn redact_config_uri(uri: &str) -> String {
-    let Some(scheme_end) = uri.find("://") else {
-        return uri.to_string();
-    };
-    let after_scheme = &uri[scheme_end + 3..];
-    let mut last_at: Option<usize> = None;
-    let mut bracket_depth = 0u32;
-    for (i, c) in after_scheme.char_indices() {
-        match c {
-            '[' => bracket_depth += 1,
-            ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            '@' if bracket_depth == 0 => last_at = Some(i),
-            _ => {}
-        }
-    }
-    if let Some(at_pos) = last_at {
-        return format!(
-            "{}****@{}",
-            &uri[..scheme_end + 3],
-            &after_scheme[at_pos + 1..]
-        );
-    }
-    uri.to_string()
+    eggress_uri::redact_proxy_uri(uri)
 }
 
 #[pyfunction]

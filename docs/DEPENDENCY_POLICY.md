@@ -83,6 +83,11 @@ benchmark or fuzz compilation.
   build is ring-only even though test compilation may link against
   `aws-lc-sys` for the in-process mock CA.
 
+The opt-in SSH transport currently inherits `rsa 0.10.0-rc.18` through
+`russh`, which `cargo audit` reports as RUSTSEC-2023-0071 (Marvin timing side
+channel). No fixed upstream release is available; revisit this accepted risk
+when `russh` provides a fixed dependency path.
+
 ### Rationale
 
 The project targets Linux, macOS, and Windows with minimal build prerequisites.

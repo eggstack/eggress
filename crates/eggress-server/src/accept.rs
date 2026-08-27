@@ -667,15 +667,22 @@ pub async fn accept_with_fixed_target_for_peer(
 
             // Password did not match — check for fallback routing
             if let Some(ref fallback_target) = trojan_cfg.fallback {
+                // The password hash and its CRLF delimiter belong to the
+                // rejected Trojan handshake, not to the fallback protocol.
+                // Consume the delimiter and let the fallback see only the
+                // application bytes that follow it.
+                let mut delimiter = [0u8; 2];
+                stream
+                    .read_exact(&mut delimiter)
+                    .await
+                    .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
                 let target: TargetAddr = fallback_target.parse().map_err(|e: String| {
                     AcceptError::Protocol(format!("invalid trojan fallback address: {e}").into())
                 })?;
                 tracing::debug!("trojan auth failed, falling back to {}", fallback_target);
-                let prefixed = PrefixedStream::new(hash_prefix.to_vec(), stream);
-                let client: BoxStream = Box::new(prefixed);
                 return Ok(AcceptedSession::Tunnel(PendingTunnel {
                     target,
-                    client,
+                    client: stream,
                     protocol: TunnelProtocol::Trojan,
                     reply_context: ReplyContext::Trojan,
                     identity: ClientIdentity::Anonymous,
@@ -1608,6 +1615,33 @@ mod tests {
             .unwrap();
 
         server_jh.await.unwrap();
+    }
+
+    #[cfg(feature = "extended")]
+    #[tokio::test]
+    async fn trojan_fallback_drops_rejected_handshake_bytes() {
+        let mut input = vec![b'0'; 56];
+        input.extend_from_slice(b"\r\npayload");
+        let session = accept(
+            Box::new(std::io::Cursor::new(input)),
+            &[ProtocolId::Trojan],
+            &InboundAuthentication::None,
+            None,
+            None,
+            Some(&InboundTrojanConfig {
+                password: "expected".to_string(),
+                fallback: Some("example.com:80".to_string()),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let AcceptedSession::Tunnel(mut pending) = session else {
+            panic!("expected fallback tunnel");
+        };
+        let mut payload = Vec::new();
+        pending.client.read_to_end(&mut payload).await.unwrap();
+        assert_eq!(payload, b"payload");
     }
 
     #[tokio::test]
