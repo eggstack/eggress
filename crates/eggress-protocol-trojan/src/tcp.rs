@@ -9,6 +9,11 @@ use crate::error::TrojanError;
 use crate::hash::password_hash;
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
 
+/// Maximum Trojan domain length accepted from the wire. The protocol encodes
+/// the length in a single byte (max 255), which is already a bounded
+/// allocation.
+const MAX_TROJAN_DOMAIN_LEN: usize = u8::MAX as usize;
+
 /// Build the Trojan request bytes for a target.
 ///
 /// Layout: `hash(56) + CRLF + CONNECT(1) + ATYP(0x03) + domain_len(1) + domain + port(2) + CRLF`.
@@ -154,6 +159,12 @@ pub async fn trojan_accept(
             let domain_len = len_buf[0] as usize;
             if domain_len == 0 {
                 return Err(TrojanError::Protocol("empty domain".into()));
+            }
+            if domain_len > MAX_TROJAN_DOMAIN_LEN {
+                return Err(TrojanError::Protocol(format!(
+                    "domain length {} exceeds maximum {}",
+                    domain_len, MAX_TROJAN_DOMAIN_LEN
+                )));
             }
             let mut domain_buf = vec![0u8; domain_len + 2]; // domain + port
             stream

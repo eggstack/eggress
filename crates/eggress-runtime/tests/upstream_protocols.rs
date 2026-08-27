@@ -967,6 +967,43 @@ upstream_group = "tcp-upstream"
     assert!(result.is_ok(), "shutdown should complete within timeout");
 }
 
+/// Local test-only H2 relay for a plain H2 CONNECT proxy. It intentionally
+/// skips outbound screening because every caller below targets a local fake
+/// upstream.
+async fn h2_connect_relay_unchecked(
+    recv_stream: h2::RecvStream,
+    send_stream: h2::SendStream<bytes::Bytes>,
+    target: eggress_core::TargetAddr,
+) -> Result<(), eggress_protocol_http::H2ConnectError> {
+    let tcp = tokio::net::TcpStream::connect(target.to_string())
+        .await
+        .map_err(eggress_protocol_http::H2ConnectError::Io)?;
+    let (mut tcp_read, mut tcp_write) = tcp.into_split();
+    let mut h2_write = eggress_protocol_http::H2StreamWrite::new(send_stream);
+
+    let h2_to_tcp = async move {
+        let mut h2_read = eggress_protocol_http::H2StreamRead::new(recv_stream);
+        tokio::io::copy(&mut h2_read, &mut tcp_write).await
+    };
+    let tcp_to_h2 = async {
+        tokio::io::copy(&mut tcp_read, &mut h2_write).await?;
+        h2_write.shutdown().await
+    };
+
+    let h2_task = tokio::spawn(h2_to_tcp);
+    let tcp_result = tcp_to_h2.await;
+    let h2_result = tokio::time::timeout(std::time::Duration::from_secs(5), h2_task)
+        .await
+        .map_err(|_| eggress_protocol_http::H2ConnectError::H2("test H2 relay timed out".into()))?
+        .map_err(|error| {
+            eggress_protocol_http::H2ConnectError::H2(format!("test H2 relay failed: {error}"))
+        })?;
+    h2_result.map_err(eggress_protocol_http::H2ConnectError::Io)?;
+    tcp_result
+        .map(|_| ())
+        .map_err(eggress_protocol_http::H2ConnectError::Io)
+}
+
 /// Local test-only accept loop for a plain H2 CONNECT proxy. Mirrors the
 /// removed public `handle_h2_connect`: no auth, no screening — adequate only
 /// as a hermetic fake upstream.
@@ -996,12 +1033,8 @@ async fn handle_h2_connect(
                     let recv_stream = request.into_body();
 
                     tokio::spawn(async move {
-                        if let Err(e) = eggress_protocol_http::h2_connect_relay(
-                            recv_stream,
-                            send_stream,
-                            target,
-                        )
-                        .await
+                        if let Err(e) =
+                            h2_connect_relay_unchecked(recv_stream, send_stream, target).await
                         {
                             eprintln!("h2 connect relay error: {}", e);
                         }
@@ -1227,8 +1260,7 @@ async fn h2_connect_with_auth(
                 let recv_stream = request.into_body();
                 tokio::spawn(async move {
                     if let Err(e) =
-                        eggress_protocol_http::h2_connect_relay(recv_stream, send_stream, target)
-                            .await
+                        h2_connect_relay_unchecked(recv_stream, send_stream, target).await
                     {
                         tracing::warn!("h2 connect relay error: {}", e);
                     }
@@ -2296,12 +2328,7 @@ async fn h2_upstream_goaway_recovery() {
                     let send_stream = send_response.send_response(response, false).unwrap();
                     let recv_stream = request.into_body();
                     tokio::spawn(async move {
-                        let _ = eggress_protocol_http::h2_connect_relay(
-                            recv_stream,
-                            send_stream,
-                            target,
-                        )
-                        .await;
+                        let _ = h2_connect_relay_unchecked(recv_stream, send_stream, target).await;
                     });
                     // Send GOAWAY immediately — the relay will complete on its own.
                     conn.graceful_shutdown();

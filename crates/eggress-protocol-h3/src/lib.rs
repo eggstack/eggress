@@ -348,10 +348,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "insecure-quic")]
     use eggress_transport_quic::{QuicClient, QuicClientConfig, QuicListener, QuicServerConfig};
+    #[cfg(feature = "insecure-quic")]
     use rcgen::{CertificateParams, KeyPair};
+    #[cfg(feature = "insecure-quic")]
     use std::time::Duration;
+    #[cfg(feature = "insecure-quic")]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[cfg(feature = "insecure-quic")]
     use tokio_util::sync::CancellationToken;
 
     #[test]
@@ -362,6 +367,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "insecure-quic")]
     #[tokio::test]
     async fn h3_connect_stream_round_trips_over_quic() {
         let params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();

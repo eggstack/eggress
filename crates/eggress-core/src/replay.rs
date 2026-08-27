@@ -65,17 +65,19 @@ impl ReplayStream {
 
     /// Consumes this `ReplayStream` and returns the underlying stream.
     ///
-    /// All buffered bytes have already been returned to callers during
-    /// detection reads, so the underlying stream is positioned right after
-    /// the sniffed prefix.
+    /// If detection left buffered bytes unread, they remain available through
+    /// the returned stream before reads reach the underlying stream.
     pub fn into_inner(self) -> BoxStream {
-        self.inner
+        if self.buffered_remaining() == 0 {
+            self.inner
+        } else {
+            Box::new(self)
+        }
     }
 
     /// Disables sniffing mode. After this call, reads are served directly
-    /// from the underlying stream. All sniffed bytes have already been
-    /// delivered through `poll_read` during detection; the buffer retains
-    /// them for inspection only.
+    /// from the underlying stream after any unread buffered bytes have been
+    /// delivered.
     pub fn finish_sniff(&mut self) {
         self.sniffing = false;
     }
@@ -93,16 +95,16 @@ impl AsyncRead for ReplayStream {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if self.sniffing {
-            // Serve from buffer first if there are unconsumed bytes.
-            let remaining = self.buffer.len().saturating_sub(self.read_pos);
-            if remaining > 0 {
-                let to_copy = remaining.min(buf.remaining());
-                buf.put_slice(&self.buffer[self.read_pos..self.read_pos + to_copy]);
-                self.read_pos += to_copy;
-                return Poll::Ready(Ok(()));
-            }
+        // Serve buffered bytes first, including after `finish_sniff`.
+        let remaining = self.buffer.len().saturating_sub(self.read_pos);
+        if remaining > 0 {
+            let to_copy = remaining.min(buf.remaining());
+            buf.put_slice(&self.buffer[self.read_pos..self.read_pos + to_copy]);
+            self.read_pos += to_copy;
+            return Poll::Ready(Ok(()));
+        }
 
+        if self.sniffing {
             // Buffer exhausted while sniffing: read more from the underlying
             // stream via a temporary buffer, then copy into our internal buffer.
             if self.buffer.len() >= self.max_buffer {
@@ -334,5 +336,21 @@ mod tests {
         let mut rest = Vec::new();
         replay.read_to_end(&mut rest).await.unwrap();
         assert_eq!(&rest, b"next");
+    }
+
+    #[tokio::test]
+    async fn test_finish_sniff_preserves_unread_prefix() {
+        let (mut tx, rx) = tokio::io::duplex(1024);
+        tx.write_all(b"abcdef").await.unwrap();
+        drop(tx);
+
+        let mut replay = ReplayStream::new(Box::new(rx));
+        let mut sniffed = [0u8; 2];
+        replay.read_exact(&mut sniffed).await.unwrap();
+        replay.finish_sniff();
+
+        let mut rest = Vec::new();
+        replay.read_to_end(&mut rest).await.unwrap();
+        assert_eq!(rest, b"cdef");
     }
 }

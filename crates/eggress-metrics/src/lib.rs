@@ -110,6 +110,29 @@ pub struct H2StreamLabels {
     pub outcome: String,
 }
 
+const MAX_ROUTE_LABEL_LENGTH: usize = 128;
+
+fn bounded_route_label(value: &str) -> String {
+    let mut bounded = String::with_capacity(value.len().min(MAX_ROUTE_LABEL_LENGTH));
+    let mut truncated = false;
+    for character in value.chars() {
+        let character = if character.is_control() {
+            '_'
+        } else {
+            character
+        };
+        if bounded.len() + character.len_utf8() > MAX_ROUTE_LABEL_LENGTH - 3 {
+            truncated = true;
+            break;
+        }
+        bounded.push(character);
+    }
+    if truncated {
+        bounded.push_str("...");
+    }
+    bounded
+}
+
 #[allow(dead_code)]
 pub struct MetricsRegistry {
     registry: Registry,
@@ -1053,9 +1076,9 @@ impl MetricsRegistry {
     pub fn record_route_decision(&self, rule: &str, action: &str, outcome: &str) {
         self.route_decisions
             .get_or_create(&RouteLabels {
-                rule: rule.to_string(),
-                action: action.to_string(),
-                outcome: outcome.to_string(),
+                rule: bounded_route_label(rule),
+                action: bounded_route_label(action),
+                outcome: bounded_route_label(outcome),
             })
             .inc();
     }
@@ -1930,6 +1953,14 @@ mod tests {
         m.record_route_decision("rule1", "direct", "ok");
         let output = m.render_prometheus();
         assert!(output.contains("eggress_route_decisions_total"));
+    }
+
+    #[test]
+    fn route_labels_are_bounded_and_sanitized() {
+        let label = bounded_route_label(&format!("{}\n", "x".repeat(256)));
+        assert_eq!(label.len(), MAX_ROUTE_LABEL_LENGTH);
+        assert!(!label.contains('\n'));
+        assert!(label.ends_with("..."));
     }
 
     #[test]

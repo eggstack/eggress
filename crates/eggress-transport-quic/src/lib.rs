@@ -226,7 +226,7 @@ impl QuicClient {
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect("valid ephemeral address"))
             .map_err(|e| QuicError::Endpoint(e.to_string()))?;
         let client_config = if config.insecure {
-            #[cfg(any(test, debug_assertions, feature = "insecure-quic"))]
+            #[cfg(feature = "insecure-quic")]
             {
                 let mut tls = rustls::ClientConfig::builder()
                     .dangerous()
@@ -237,7 +237,7 @@ impl QuicClient {
                     .map_err(|e| QuicError::Tls(e.to_string()))?;
                 ClientConfig::new(Arc::new(crypto))
             }
-            #[cfg(not(any(test, debug_assertions, feature = "insecure-quic")))]
+            #[cfg(not(feature = "insecure-quic"))]
             {
                 return Err(QuicError::Tls(
                     "insecure QUIC requires the insecure-quic feature".to_string(),
@@ -414,11 +414,11 @@ impl QuicListener {
     }
 }
 
-#[cfg(any(test, debug_assertions, feature = "insecure-quic"))]
+#[cfg(feature = "insecure-quic")]
 #[derive(Debug)]
 struct InsecureVerifier;
 
-#[cfg(any(test, debug_assertions, feature = "insecure-quic"))]
+#[cfg(feature = "insecure-quic")]
 impl rustls::client::danger::ServerCertVerifier for InsecureVerifier {
     fn verify_server_cert(
         &self,
@@ -458,7 +458,7 @@ impl rustls::client::danger::ServerCertVerifier for InsecureVerifier {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "insecure-quic"))]
 mod tests {
     use super::*;
     use rcgen::{CertificateParams, KeyPair};

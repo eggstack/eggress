@@ -466,6 +466,10 @@ pub struct ForwardResponse {
 async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, HttpError> {
     let mut head_buf = Vec::with_capacity(1024);
     let mut temp = [0u8; 1];
+    // Track `\r\n` occurrences during the read so that a flood of empty
+    // header lines cannot slip under MAX_RESPONSE_HEAD_SIZE while still
+    // exceeding the per-line limit.
+    let mut crlf_count: usize = 0;
 
     loop {
         if head_buf.len() >= MAX_RESPONSE_HEAD_SIZE {
@@ -480,6 +484,18 @@ async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, H
         }
 
         head_buf.push(temp[0]);
+
+        if head_buf.len() >= 2 {
+            let len = head_buf.len();
+            if &head_buf[len - 2..] == b"\r\n" {
+                crlf_count += 1;
+                // The status line and the terminating empty line also have
+                // CRLFs, but are not header lines.
+                if crlf_count > MAX_HEADER_LINES + 2 {
+                    return Err(HttpError::TooManyHeaders);
+                }
+            }
+        }
 
         if head_buf.len() >= 4 {
             let len = head_buf.len();
@@ -897,6 +913,11 @@ async fn read_forward_request(stream: &mut BoxStream) -> Result<ForwardRequest, 
     let method = parts[0].to_string();
     let raw_target = parts[1].to_string();
     let version = parts[2].to_string();
+    if version != "HTTP/1.0" && version != "HTTP/1.1" {
+        return Err(HttpError::MalformedRequest(format!(
+            "unsupported HTTP version: {version}"
+        )));
+    }
 
     // Parse absolute-form target: http://host:port/path
     let (target, path) = parse_absolute_uri(&raw_target)?;
@@ -1794,6 +1815,36 @@ mod tests {
         let req = result2.unwrap();
         assert_eq!(req.method, "GET");
         assert_eq!(req.path, "/");
+    }
+
+    #[tokio::test]
+    async fn test_forward_request_rejects_unsupported_http_version() {
+        let (client_read, mut client_write) = tokio::io::duplex(4096);
+        let mut stream: BoxStream = Box::new(client_read);
+        client_write
+            .write_all(b"GET http://example.com/ HTTP/9.9\r\n\r\n")
+            .await
+            .unwrap();
+
+        let error = forward_request_stream(&mut stream).await.unwrap_err();
+        assert!(
+            matches!(error, HttpError::MalformedRequest(message) if message.contains("HTTP/9.9"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_response_header_limit_allows_maximum_header_count() {
+        let (client_read, mut client_write) = tokio::io::duplex(32 * 1024);
+        let mut stream: BoxStream = Box::new(client_read);
+        let mut response = String::from("HTTP/1.1 200 OK\r\n");
+        for index in 0..MAX_HEADER_LINES {
+            response.push_str(&format!("X-Test-{index}: value\r\n"));
+        }
+        response.push_str("\r\n");
+        client_write.write_all(response.as_bytes()).await.unwrap();
+
+        let parsed = read_response_head(&mut stream).await.unwrap();
+        assert_eq!(parsed.headers.len(), MAX_HEADER_LINES);
     }
 
     #[test]

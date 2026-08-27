@@ -241,7 +241,10 @@ pub struct ListenerInfo {
 
 pub fn build_response(status: u16, body: impl Into<Bytes>, content_type: &str) -> AdminResponse {
     let status = if (100..=599).contains(&status) {
-        http::StatusCode::from_u16(status).expect("bounded admin status is valid")
+        match http::StatusCode::from_u16(status) {
+            Ok(status) => status,
+            Err(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+        }
     } else {
         http::StatusCode::INTERNAL_SERVER_ERROR
     };

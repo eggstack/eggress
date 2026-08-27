@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use eggress_core::connector::is_dns_rebinding_risk;
-use eggress_core::{TargetAddr, TargetHost};
+use eggress_core::connector::{ConnectOptions, DirectConnector};
+use eggress_core::{ConnectError, TargetAddr};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 
@@ -15,6 +15,7 @@ pub struct RawTunnelListener {
     listener: TcpListener,
     target: TargetAddr,
     semaphore: Arc<Semaphore>,
+    enforce_dns_rebinding_check: bool,
 }
 
 impl RawTunnelListener {
@@ -24,7 +25,15 @@ impl RawTunnelListener {
             listener,
             target,
             semaphore: Arc::new(Semaphore::new(DEFAULT_MAX_CONNECTIONS)),
+            enforce_dns_rebinding_check: true,
         })
+    }
+
+    #[cfg(test)]
+    async fn bind_unchecked(bind_addr: &str, target: TargetAddr) -> Result<Self, RawTunnelError> {
+        let mut listener = Self::bind(bind_addr, target).await?;
+        listener.enforce_dns_rebinding_check = false;
+        Ok(listener)
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, std::io::Error> {
@@ -43,9 +52,12 @@ impl RawTunnelListener {
                 }
             };
             let target = self.target.clone();
+            let enforce_dns_rebinding_check = self.enforce_dns_rebinding_check;
             tokio::spawn(async move {
                 let _permit = permit;
-                if let Err(e) = handle_raw_connection(stream, target).await {
+                if let Err(e) =
+                    handle_raw_connection(stream, target, enforce_dns_rebinding_check).await
+                {
                     tracing::warn!("raw tunnel error from {}: {}", peer, e);
                 }
             });
@@ -56,32 +68,21 @@ impl RawTunnelListener {
 async fn handle_raw_connection(
     mut client: TcpStream,
     target: TargetAddr,
+    enforce_dns_rebinding_check: bool,
 ) -> Result<(), RawTunnelError> {
-    let mut upstream = match &target.host {
-        TargetHost::Ip(_) => {
-            let target_str = format!("{}:{}", target.host, target.port);
-            TcpStream::connect(&target_str)
-                .await
-                .map_err(|e| RawTunnelError::TargetConnect(e.to_string()))?
-        }
-        TargetHost::Domain(domain) => {
-            let lookup = format!("{}:{}", domain, target.port);
-            let mut addrs = tokio::net::lookup_host(&lookup).await.map_err(|e| {
-                RawTunnelError::TargetConnect(format!("DNS resolution failed: {e}"))
-            })?;
-            let resolved = addrs.next().ok_or_else(|| {
-                RawTunnelError::TargetConnect(
-                    "DNS resolution failed: no addresses found".to_string(),
-                )
-            })?;
-            if is_dns_rebinding_risk(&resolved.ip()) {
-                return Err(RawTunnelError::DnsRebinding(resolved.ip()));
-            }
-            TcpStream::connect(resolved)
-                .await
-                .map_err(|e| RawTunnelError::TargetConnect(e.to_string()))?
-        }
-    };
+    let mut upstream = DirectConnector
+        .connect_with_options(
+            &target,
+            &ConnectOptions {
+                enforce_dns_rebinding_check,
+                ..ConnectOptions::default()
+            },
+        )
+        .await
+        .map_err(|error| match error {
+            ConnectError::ReservedTarget(ip) => RawTunnelError::DnsRebinding(ip),
+            error => RawTunnelError::TargetConnect(error.to_string()),
+        })?;
 
     let (bytes_copied, _) = tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
     tracing::trace!("raw tunnel relayed {} bytes", bytes_copied);
@@ -96,7 +97,7 @@ mod tests {
     #[tokio::test]
     async fn test_bind_success() {
         let target: TargetAddr = "127.0.0.1:9999".parse().unwrap();
-        let listener = RawTunnelListener::bind("127.0.0.1:0", target)
+        let listener = RawTunnelListener::bind_unchecked("127.0.0.1:0", target)
             .await
             .unwrap();
         let addr = listener.local_addr().unwrap();
@@ -107,7 +108,7 @@ mod tests {
     #[tokio::test]
     async fn test_local_addr_returns_listening_address() {
         let target: TargetAddr = "127.0.0.1:9999".parse().unwrap();
-        let listener = RawTunnelListener::bind("127.0.0.1:0", target)
+        let listener = RawTunnelListener::bind_unchecked("127.0.0.1:0", target)
             .await
             .unwrap();
         let addr = listener.local_addr().unwrap();
@@ -137,7 +138,7 @@ mod tests {
         let target: TargetAddr = format!("{}:{}", upstream_addr.ip(), upstream_addr.port())
             .parse()
             .unwrap();
-        let tunnel_listener = RawTunnelListener::bind("127.0.0.1:0", target)
+        let tunnel_listener = RawTunnelListener::bind_unchecked("127.0.0.1:0", target)
             .await
             .unwrap();
         let tunnel_addr = tunnel_listener.local_addr().unwrap();
@@ -161,7 +162,7 @@ mod tests {
     #[tokio::test]
     async fn test_upstream_connect_failure() {
         let target: TargetAddr = "127.0.0.1:1".parse().unwrap();
-        let tunnel_listener = RawTunnelListener::bind("127.0.0.1:0", target)
+        let tunnel_listener = RawTunnelListener::bind_unchecked("127.0.0.1:0", target)
             .await
             .unwrap();
         let tunnel_addr = tunnel_listener.local_addr().unwrap();
@@ -199,7 +200,7 @@ mod tests {
         let target: TargetAddr = format!("{}:{}", upstream_addr.ip(), upstream_addr.port())
             .parse()
             .unwrap();
-        let tunnel_listener = RawTunnelListener::bind("127.0.0.1:0", target)
+        let tunnel_listener = RawTunnelListener::bind_unchecked("127.0.0.1:0", target)
             .await
             .unwrap();
         let tunnel_addr = tunnel_listener.local_addr().unwrap();
@@ -228,5 +229,27 @@ mod tests {
 
         tunnel_handle.abort();
         upstream_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_reserved_literal_target_is_rejected() {
+        let tunnel_listener =
+            RawTunnelListener::bind("127.0.0.1:0", "127.0.0.1:1".parse().unwrap())
+                .await
+                .unwrap();
+        let tunnel_addr = tunnel_listener.local_addr().unwrap();
+        let tunnel_handle = tokio::spawn(async move {
+            tunnel_listener.run().await.unwrap();
+        });
+
+        let mut client = TcpStream::connect(tunnel_addr).await.unwrap();
+        let mut byte = [0u8; 1];
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(1), client.read(&mut byte))
+                .await
+                .unwrap();
+        assert_eq!(result.unwrap(), 0);
+
+        tunnel_handle.abort();
     }
 }

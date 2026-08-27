@@ -856,7 +856,11 @@ pub fn translate_from_uris(
             }),
         });
 
-        let remote = chain.hops.first().expect("validated chain has a hop");
+        let Some(remote) = chain.hops.first() else {
+            return Err(CompatError::InvalidArgs {
+                message: "remote URI contains no proxy hop".to_string(),
+            });
+        };
         let predicate = if let Some(rule) = remote.rule.as_deref().or(remote.rule_suffix.as_deref())
         {
             Some((inline_pproxy_pattern(rule), format!("inline:{idx}")))
@@ -881,10 +885,11 @@ pub fn translate_from_uris(
             crate::uri::parse_pproxy_chain(remote_str).map_err(|e| CompatError::InvalidArgs {
                 message: format!("invalid UDP remote URI '{}': {}", remote_str, e),
             })?;
-        let remote_uri = remote_chain
-            .hops
-            .first()
-            .expect("pproxy chain parser returns at least one hop");
+        let Some(remote_uri) = remote_chain.hops.first() else {
+            return Err(CompatError::InvalidArgs {
+                message: format!("invalid UDP remote URI '{remote_str}': no proxy hop"),
+            });
+        };
 
         // UDP composition is recursive, but intentionally closed over the
         // protocols with a real pproxy UDP path. Unsupported chains are
@@ -997,7 +1002,9 @@ pub fn translate_from_uris(
                 members: vec![route.upstream_id.clone()],
                 fallback: "reject".to_string(),
             });
-            let (pattern, source) = route.predicate.as_ref().expect("checked above");
+            let Some((pattern, source)) = route.predicate.as_ref() else {
+                continue;
+            };
             rules.push(RuleToml {
                 id: format!(
                     "pproxy-route-{}-{}-pattern={}",
@@ -1076,7 +1083,9 @@ pub fn translate_from_uris(
                     members: vec![route.upstream_id.clone()],
                     fallback: "reject".to_string(),
                 });
-                let (pattern, source) = route.predicate.as_ref().expect("checked above");
+                let Some((pattern, source)) = route.predicate.as_ref() else {
+                    continue;
+                };
                 rules.push(RuleToml {
                     id: format!(
                         "pproxy-udp-route-{}-{}-pattern={}",

@@ -67,7 +67,7 @@ eggress-core.workspace = true
 eggress-uri.workspace = true
 eggress-testkit.workspace = true
 rcgen = "0.13"
-eggress-transport-tls.workspace = true
+eggress-transport-tls = { workspace = true, features = ["insecure-tls"] }
 eggress-protocol-trojan.workspace = true
 eggress-protocol-shadowsocks.workspace = true
 eggress-protocol-websocket.workspace = true

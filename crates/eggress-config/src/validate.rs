@@ -291,6 +291,12 @@ fn validate_listeners(listeners: &[crate::model::ListenerConfig], errors: &mut V
                     "auth requires at least one of password or password_env",
                 ));
             }
+            if auth.password.as_deref() == Some("") {
+                errors.push(ConfigError::validation(
+                    &path,
+                    "auth password must not be empty",
+                ));
+            }
         }
 
         if listener.connection_limit == Some(0) {
@@ -873,7 +879,7 @@ fn validate_match_expr(
                 }
             }
             if let Some(ref proto) = leaf.protocol {
-                if !VALID_PROTOCOLS.contains(&proto.as_str()) {
+                if !VALID_PROTOCOLS.contains(&proto.as_str()) && proto != "httponly" {
                     errors.push(ConfigError::validation(
                         &format!("{}.protocol", path),
                         &format!("unknown protocol: {}", proto),
@@ -1263,7 +1269,54 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
         }
     }
 
+    warn_protocol_aliases(config, &mut warnings);
+
     warnings
+}
+
+fn warn_protocol_aliases(config: &ConfigFile, warnings: &mut Vec<ConfigWarning>) {
+    if let Some(ref rules) = config.rules {
+        for (i, rule) in rules.iter().enumerate() {
+            let base = format!("rules[{i}]");
+            if let Some(ref expr) = rule.match_expr {
+                walk_match_expr_for_alias(expr, &format!("{base}.match"), warnings);
+            }
+        }
+    }
+}
+
+fn walk_match_expr_for_alias(
+    expr: &MatchExprConfig,
+    path: &str,
+    warnings: &mut Vec<ConfigWarning>,
+) {
+    match expr {
+        MatchExprConfig::Composite(composite) => {
+            if let Some(ref all) = composite.all {
+                for (i, child) in all.iter().enumerate() {
+                    walk_match_expr_for_alias(child, &format!("{path}.all[{i}]"), warnings);
+                }
+            }
+            if let Some(ref any) = composite.any_of {
+                for (i, child) in any.iter().enumerate() {
+                    walk_match_expr_for_alias(child, &format!("{path}.any_of[{i}]"), warnings);
+                }
+            }
+            if let Some(ref not) = composite.not {
+                walk_match_expr_for_alias(not, &format!("{path}.not"), warnings);
+            }
+        }
+        MatchExprConfig::Leaf(leaf) => {
+            if leaf.protocol.as_deref() == Some("httponly") {
+                warnings.push(ConfigWarning {
+                    path: format!("{path}.protocol"),
+                    message: "'httponly' is a pproxy compatibility alias for 'http' \
+                              and does not select distinct protocol semantics"
+                        .to_string(),
+                });
+            }
+        }
+    }
 }
 
 #[cfg(test)]

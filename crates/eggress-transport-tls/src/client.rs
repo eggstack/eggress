@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
+#[cfg(any(test, feature = "insecure-tls"))]
 use rustls::pki_types::CertificateDer;
 use rustls::ClientConfig;
 
@@ -52,7 +52,7 @@ impl TlsClientConfigBuilder {
     }
 
     /// Accept any server certificate (insecure, for testing only).
-    #[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
+    #[cfg(any(test, feature = "insecure-tls"))]
     pub fn with_insecure(mut self) -> Self {
         // Certificate verification is bypassed for every connection made
         // with this builder; never enable in production deployments.
@@ -76,14 +76,14 @@ impl TlsClientConfigBuilder {
     /// Build the shared `ClientConfig`.
     pub fn build(self) -> Result<Arc<ClientConfig>, TlsError> {
         let mut config = if self.insecure {
-            #[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
+            #[cfg(any(test, feature = "insecure-tls"))]
             {
                 ClientConfig::builder()
                     .dangerous()
                     .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
                     .with_no_client_auth()
             }
-            #[cfg(not(any(test, debug_assertions, feature = "insecure-tls")))]
+            #[cfg(not(any(test, feature = "insecure-tls")))]
             {
                 return Err(TlsError::Handshake(
                     "insecure TLS requires the insecure-tls feature".into(),
@@ -108,11 +108,11 @@ impl Default for TlsClientConfigBuilder {
 
 /// A certificate verifier that accepts any server certificate.
 /// Only for testing — never use in production.
-#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
+#[cfg(any(test, feature = "insecure-tls"))]
 #[derive(Debug)]
 struct InsecureVerifier;
 
-#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]
+#[cfg(any(test, feature = "insecure-tls"))]
 impl rustls::client::danger::ServerCertVerifier for InsecureVerifier {
     fn verify_server_cert(
         &self,

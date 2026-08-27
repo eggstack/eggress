@@ -12,6 +12,7 @@ readme = "README.md"
 
 [features]
 default = []
+insecure-quic = ["eggress-transport-quic/insecure-quic"]
 
 [dependencies]
 base64 = "0.22"

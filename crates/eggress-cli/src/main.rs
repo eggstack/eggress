@@ -20,6 +20,10 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 static CONNECTION_COUNTER: AtomicU64 = AtomicU64::new(1);
 static ACTIVE_CONNECTIONS: AtomicU64 = AtomicU64::new(0);
+/// Notified when an in-flight connection finishes so the shutdown drain loop
+/// can react without polling the counter on a 100 ms timer.
+static ACTIVE_CONNECTIONS_DRAIN: std::sync::LazyLock<tokio::sync::Notify> =
+    std::sync::LazyLock::new(tokio::sync::Notify::new);
 
 #[derive(Parser, Debug)]
 #[command(name = "eggress", version, about = "A multi-protocol TCP proxy")]
@@ -1270,7 +1274,9 @@ async fn run() -> i32 {
             tracing::warn!(active, "drain timeout reached, forcing shutdown");
             break;
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Wake immediately when a connection completes so the drain doesn't
+        // have to wait out a full tick to notice progress.
+        ACTIVE_CONNECTIONS_DRAIN.notified().await;
     }
 
     for h in shutdown_handles.drain(..) {
@@ -1469,6 +1475,7 @@ async fn run_listener(
                 .await;
 
             ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+            ACTIVE_CONNECTIONS_DRAIN.notify_one();
 
             tracing::info!(
                 protocol = ?report.protocol,

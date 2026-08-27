@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+
+static AUTH_CACHE_EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
 use base64::Engine;
 use eggress_core::BoxStream;
@@ -23,6 +26,10 @@ pub struct AuthReuseCache {
     timeout: Duration,
     entries: Mutex<HashMap<IpAddr, AuthReuseEntry>>,
     max_entries: usize,
+    /// Nanosecond timestamp of the last full expiration sweep. Used to bound
+    /// how often `record` may run an O(n) `retain` under the cache lock;
+    /// expired entries are otherwise evicted lazily on `lookup`.
+    last_sweep_nanos: AtomicU64,
 }
 
 struct AuthReuseEntry {
@@ -33,11 +40,17 @@ struct AuthReuseEntry {
 impl AuthReuseCache {
     pub const DEFAULT_MAX_ENTRIES: usize = 4096;
 
+    /// Minimum gap between full expiration sweeps inside `record`. Lookup-time
+    /// expiration still runs on every call, so a long gap only delays the
+    /// reclaim of entries that are never looked up again.
+    const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
+
     pub fn new(timeout: Duration) -> Self {
         Self {
             timeout,
             entries: Mutex::new(HashMap::new()),
             max_entries: Self::DEFAULT_MAX_ENTRIES,
+            last_sweep_nanos: AtomicU64::new(0),
         }
     }
 
@@ -65,9 +78,20 @@ impl AuthReuseCache {
         let mut entries = self.lock_entries();
         let now = Instant::now();
         // Expired entries are removed lazily by `lookup`; only pay for a full
-        // sweep once the cache is actually at capacity.
+        // sweep once the cache is actually at capacity *and* a full
+        // sweep has not run in the last SWEEP_INTERVAL. This caps the
+        // tail-latency hit of an O(n) `retain` under the cache lock.
         if entries.len() >= self.max_entries {
-            entries.retain(|_, entry| now.duration_since(entry.last_authenticated) <= self.timeout);
+            let now_nanos =
+                u64::try_from(now.duration_since(*AUTH_CACHE_EPOCH).as_nanos()).unwrap_or(u64::MAX);
+            let last_sweep = self.last_sweep_nanos.load(Ordering::Relaxed);
+            let interval_nanos = u64::try_from(Self::SWEEP_INTERVAL.as_nanos()).unwrap_or(u64::MAX);
+            if now_nanos.saturating_sub(last_sweep) >= interval_nanos {
+                self.last_sweep_nanos.store(now_nanos, Ordering::Relaxed);
+                entries.retain(|_, entry| {
+                    now.duration_since(entry.last_authenticated) <= self.timeout
+                });
+            }
         }
         if entries.len() >= self.max_entries && !entries.contains_key(&peer_ip) {
             if let Some(oldest) = entries

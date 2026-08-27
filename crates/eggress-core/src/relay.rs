@@ -1,10 +1,19 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::task::JoinSet;
+use tokio::task::{AbortHandle, JoinSet};
 
 use crate::BoxStream;
+
+/// Time to wait for the opposite direction to drain naturally after one side
+/// completes. Without this, a half-closing peer whose FIN is never echoed by
+/// the upstream causes the relay to block forever on the other side's read.
+const RELAY_HALF_CLOSE_DRAIN: Duration = Duration::from_secs(1);
+
+/// Upper bound for a forced abort to take effect after the drain timeout.
+const RELAY_ABORT_GRACE: Duration = Duration::from_secs(1);
 
 /// Reason the relay terminated.
 ///
@@ -65,13 +74,13 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
     let mut tasks = JoinSet::new();
 
     let upstream_counter = Arc::clone(&bytes_upstream);
-    tasks.spawn(async move {
+    let upstream_abort: AbortHandle = tasks.spawn(async move {
         let result = copy_direction(&mut client_read, &mut server_write, &upstream_counter).await;
         (Direction::Upstream, result)
     });
 
     let downstream_counter = Arc::clone(&bytes_downstream);
-    tasks.spawn(async move {
+    let downstream_abort: AbortHandle = tasks.spawn(async move {
         let result = copy_direction(&mut server_read, &mut client_write, &downstream_counter).await;
         (Direction::Downstream, result)
     });
@@ -80,37 +89,89 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
     // Records the first direction to finish cleanly, so diagnostics can tell
     // which side hung up first.
     let mut first_closed: Option<TerminationReason> = None;
-    while let Some(outcome) = tasks.join_next().await {
-        match outcome {
-            Ok((direction, Ok(()))) => {
-                if first_closed.is_none() {
-                    first_closed = Some(match direction {
-                        Direction::Upstream => TerminationReason::ClientClosed,
-                        Direction::Downstream => TerminationReason::ServerClosed,
-                    });
+    // When half-close leaves one side's reader stuck on a peer that never
+    // answers the FIN we sent, the relay aborts the surviving direction after
+    // a short drain window so the connection does not leak.
+    let mut pending_abort: Option<AbortHandle> = None;
+    let mut drain_timed_out = false;
+
+    match tasks.join_next().await {
+        Some(Ok((direction, Ok(())))) => {
+            let reason = match direction {
+                Direction::Upstream => {
+                    pending_abort = Some(downstream_abort.clone());
+                    TerminationReason::ClientClosed
                 }
-            }
-            Ok((direction, Err(error))) => {
-                tracing::debug!(%error, ?direction, "relay direction failed");
+                Direction::Downstream => {
+                    pending_abort = Some(upstream_abort.clone());
+                    TerminationReason::ServerClosed
+                }
+            };
+            first_closed = Some(reason);
+        }
+        Some(Ok((direction, Err(error)))) => {
+            tracing::debug!(%error, ?direction, "relay direction failed");
+            had_error = true;
+            upstream_abort.abort();
+            downstream_abort.abort();
+        }
+        Some(Err(error)) => {
+            tracing::debug!(%error, "relay direction task failed");
+            had_error = true;
+            upstream_abort.abort();
+            downstream_abort.abort();
+        }
+        None => {}
+    }
+
+    if let Some(abort) = pending_abort.as_ref() {
+        match tokio::time::timeout(RELAY_HALF_CLOSE_DRAIN, tasks.join_next()).await {
+            Ok(Some(Ok((_, Ok(()))))) => {}
+            Ok(Some(Ok((direction, Err(error))))) => {
+                tracing::debug!(%error, ?direction, "relay direction failed during drain");
                 had_error = true;
-                tasks.abort_all();
             }
-            Err(error) => {
-                tracing::debug!(%error, "relay direction task failed");
+            Ok(Some(Err(error))) => {
+                tracing::debug!(%error, "relay direction task failed during drain");
                 had_error = true;
-                tasks.abort_all();
+            }
+            Ok(None) => {}
+            Err(_) => {
+                drain_timed_out = true;
+                abort.abort();
+                let _ = tokio::time::timeout(RELAY_ABORT_GRACE, tasks.join_next()).await;
             }
         }
     }
 
+    if !drain_timed_out {
+        while let Some(outcome) = tasks.join_next().await {
+            match outcome {
+                Ok((direction, Err(error))) => {
+                    tracing::debug!(%error, ?direction, "relay direction failed");
+                    had_error = true;
+                }
+                Err(error) => {
+                    tracing::debug!(%error, "relay direction task failed");
+                    had_error = true;
+                }
+                Ok((_, Ok(()))) => {}
+            }
+        }
+    }
+
+    let termination_reason = if drain_timed_out {
+        first_closed.unwrap_or(TerminationReason::Error)
+    } else if had_error {
+        TerminationReason::Error
+    } else {
+        first_closed.unwrap_or(TerminationReason::BothClosed)
+    };
+
     RelayResult {
         bytes_upstream: bytes_upstream.load(Ordering::Relaxed),
         bytes_downstream: bytes_downstream.load(Ordering::Relaxed),
-        termination_reason: if had_error {
-            TerminationReason::Error
-        } else {
-            first_closed.unwrap_or(TerminationReason::BothClosed)
-        },
+        termination_reason,
     }
 }
 
@@ -200,6 +261,45 @@ mod tests {
         assert_eq!(result.termination_reason, TerminationReason::ClientClosed);
 
         jh.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_relay_half_close_server_hangs() {
+        // The upstream reads the client payload and then never writes or closes.
+        // Without the half-close drain + abort, the relay would block forever
+        // on the downstream reader waiting for an EOF that never arrives.
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+
+        let upstream_jh = tokio::spawn(async move {
+            let (mut stream, _) = upstream.accept().await.unwrap();
+            let mut buf = [0u8; 64];
+            let _ = stream.read(&mut buf).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+
+        let proxy_jh = tokio::spawn(async move {
+            let (client_stream, _) = proxy_listener.accept().await.unwrap();
+            let server_stream = tokio::net::TcpStream::connect(upstream_addr).await.unwrap();
+            relay(Box::new(client_stream), Box::new(server_stream)).await
+        });
+
+        let mut client = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        client.write_all(b"data").await.unwrap();
+        client.shutdown().await.unwrap();
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), proxy_jh)
+            .await
+            .expect("relay should not block forever on a hanging upstream")
+            .unwrap();
+        assert_eq!(result.bytes_upstream, 4);
+        assert_eq!(result.bytes_downstream, 0);
+        assert_eq!(result.termination_reason, TerminationReason::ClientClosed);
+
+        upstream_jh.abort();
     }
 
     #[tokio::test]

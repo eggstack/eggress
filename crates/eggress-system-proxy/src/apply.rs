@@ -175,7 +175,18 @@ impl RollbackState {
     pub fn save(&self, path: &PathBuf) -> Result<(), String> {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("failed to serialize rollback state: {e}"))?;
-        std::fs::write(path, json).map_err(|e| format!("failed to write rollback file: {e}"))
+        use std::io::Write;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options
+            .open(path)
+            .and_then(|mut file| file.write_all(json.as_bytes()))
+            .map_err(|e| format!("failed to write rollback file: {e}"))
     }
 
     /// Load rollback state from a JSON file.
@@ -494,6 +505,31 @@ mod tests {
         let loaded = RollbackState::load(&path).unwrap();
         assert_eq!(loaded.platform, "macos");
         assert_eq!(loaded.http_proxy.as_deref(), Some("old-proxy:8080"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rollback_state_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = RollbackState {
+            timestamp: "12345".to_string(),
+            platform: "linux".to_string(),
+            service: None,
+            http_proxy: Some("http://user:secret@proxy:8080".to_string()),
+            https_proxy: None,
+            socks_proxy: None,
+            no_proxy: None,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rollback.json");
+
+        state.save(&path).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]

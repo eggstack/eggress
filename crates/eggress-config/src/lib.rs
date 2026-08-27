@@ -61,7 +61,15 @@ pub fn validate_and_compile_toml_with_warnings(
         let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
         ConfigError::validation("config", &messages.join("; "))
     })?;
-    let warnings = validate::validate_config_security(&config);
+    let mut warnings = validate::validate_config_security(&config);
+    if config.version.is_none() {
+        warnings.push(ConfigWarning {
+            path: "version".to_string(),
+            message:
+                "config version is omitted; add `version = 1` to make the schema contract explicit"
+                    .to_string(),
+        });
+    }
     let rt = compile::compile_config(&config)?;
     Ok((rt, warnings))
 }
@@ -222,6 +230,32 @@ version = 2
             "expected UnsupportedVersion, got {:?}",
             err
         );
+    }
+
+    #[test]
+    fn missing_version_emits_warning() {
+        let (_, warnings) = validate_and_compile_toml_with_warnings("").unwrap();
+        assert!(warnings.iter().any(|warning| {
+            warning.path == "version" && warning.message.contains("version = 1")
+        }));
+    }
+
+    #[test]
+    fn httponly_matcher_emits_compatibility_warning() {
+        let config = r#"
+version = 1
+
+[[rules]]
+id = "legacy-http"
+direct = true
+
+[rules.match]
+protocol = "httponly"
+"#;
+        let (_, warnings) = validate_and_compile_toml_with_warnings(config).unwrap();
+        assert!(warnings.iter().any(|warning| {
+            warning.path == "rules[0].match.protocol" && warning.message.contains("httponly")
+        }));
     }
 
     #[test]
@@ -643,6 +677,26 @@ destination_port_range = [9000, 8000]
             err.to_string().contains("must be <="),
             "expected start<=end error, got: {err}"
         );
+    }
+
+    #[test]
+    fn empty_listener_password_is_rejected() {
+        let config = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[listeners.auth]
+type = "password"
+username = "admin"
+password = ""
+"#;
+        let f = write_config(config);
+        let err = load_and_validate(f.path().to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("auth password must not be empty"));
     }
 
     #[test]

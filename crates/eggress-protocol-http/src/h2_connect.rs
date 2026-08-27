@@ -11,13 +11,14 @@ use bytes::Bytes;
 #[cfg(test)]
 use h2::server::Connection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(test)]
 use tokio::net::TcpStream;
 use tokio::sync::{Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::HttpError;
-use eggress_core::connector::is_dns_rebinding_risk;
-use eggress_core::{TargetAddr, TargetHost};
+use eggress_core::connector::{ConnectOptions, DirectConnector};
+use eggress_core::{BoxStream, ConnectError, TargetAddr};
 
 const H2_RELAY_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -151,41 +152,29 @@ impl tokio::io::AsyncWrite for H2StreamWrite {
 
 /// Relay one established H2 CONNECT stream to `target`.
 ///
-/// Low-level plumbing: the caller owns connection admission. Authentication
-/// and DNS-rebinding policy are enforced by production listeners before
-/// streams reach this point (`serve_h2_connection` routes through the
-/// executor that applies outbound policy).
-///
-/// # Admission-policy caveat
-///
-/// Domain targets are checked against private/reserved ranges here
-/// (`is_dns_rebinding_risk`), but **IP-literal targets connect directly with
-/// no such check**. This function is therefore NOT a policy boundary: any
-/// caller that relays untrusted CONNECT authorities must apply the same
-/// screening to literal IPs (see `eggress_core::connector::ConnectOptions`)
-/// before invoking it.
+/// This low-level helper applies the reserved/private target policy to both
+/// DNS results and literal IP targets. Authentication and connection
+/// admission remain the caller's responsibility.
 pub async fn h2_connect_relay(
     mut recv_stream: h2::RecvStream,
     send_stream: h2::SendStream<Bytes>,
     target: TargetAddr,
 ) -> Result<(), H2ConnectError> {
-    let tcp = match &target.host {
-        TargetHost::Ip(_) => TcpStream::connect(target.to_string()).await?,
-        TargetHost::Domain(domain) => {
-            let lookup = format!("{}:{}", domain, target.port);
-            let mut addrs = tokio::net::lookup_host(&lookup)
-                .await
-                .map_err(|e| H2ConnectError::H2(format!("DNS resolution failed: {e}")))?;
-            let resolved = addrs.next().ok_or_else(|| {
-                H2ConnectError::H2("DNS resolution failed: no addresses found".to_string())
-            })?;
-            if is_dns_rebinding_risk(&resolved.ip()) {
-                return Err(H2ConnectError::DnsRebinding(resolved.ip()));
-            }
-            TcpStream::connect(resolved).await?
-        }
-    };
-    let (mut tcp_read, mut tcp_write) = tcp.into_split();
+    let tcp: BoxStream = DirectConnector
+        .connect_with_options(
+            &target,
+            &ConnectOptions {
+                enforce_dns_rebinding_check: true,
+                ..ConnectOptions::default()
+            },
+        )
+        .await
+        .map_err(|error| match error {
+            ConnectError::ReservedTarget(ip) => H2ConnectError::DnsRebinding(ip),
+            ConnectError::Io(error) => H2ConnectError::Io(error),
+            error => H2ConnectError::H2(error.to_string()),
+        })?;
+    let (mut tcp_read, mut tcp_write) = tokio::io::split(tcp);
     let mut h2_write = H2StreamWrite::new(send_stream);
 
     let h2_to_tcp = async move {
@@ -730,12 +719,6 @@ impl H2PoolRegistry {
 
     /// Get or create a pool for the given key.
     pub fn get_or_create(&self, key: &H2PoolKey) -> Arc<H2ConnectionPool> {
-        {
-            let pools = self.pools.read().unwrap_or_else(|e| e.into_inner());
-            if let Some(pool) = pools.get(key) {
-                return Arc::clone(pool);
-            }
-        }
         let mut pools = self.pools.write().unwrap_or_else(|e| e.into_inner());
         pools
             .entry(key.clone())
@@ -828,7 +811,9 @@ where
         return result;
     }
 
-    // No available connection — create a new one (semaphore limits total)
+    // Existing entries reserve stream capacity with `active_streams`; the
+    // semaphore only limits newly created physical H2 connections.
+    // No available connection — create a new one.
     let _permit = pool.semaphore.acquire().await.map_err(|_| {
         H2_PROTOCOL_METRICS
             .pool_exhausted
@@ -1161,6 +1146,47 @@ mod tests {
         drop(_send_stream);
         conn_handle.abort();
         server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_h2_connect_relay_rejects_reserved_literal_target() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let server_handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut connection = h2::server::handshake(stream).await.unwrap();
+            let (request, mut response) = connection.accept().await.unwrap().unwrap();
+            let send_stream = response
+                .send_response(
+                    http::Response::builder().status(200).body(()).unwrap(),
+                    false,
+                )
+                .unwrap();
+            h2_connect_relay(
+                request.into_body(),
+                send_stream,
+                "127.0.0.1:1".parse().unwrap(),
+            )
+            .await
+        });
+
+        let client_stream = TcpStream::connect(address).await.unwrap();
+        let (mut send_request, connection) = h2::client::handshake(client_stream).await.unwrap();
+        let connection_handle = tokio::spawn(async move { connection.await.ok() });
+        let request = http::Request::builder()
+            .method(http::Method::CONNECT)
+            .uri("127.0.0.1:1")
+            .body(())
+            .unwrap();
+        let (response, _send_stream) = send_request.send_request(request, true).unwrap();
+        let _ = response.await;
+
+        assert!(matches!(
+            server_handle.await.unwrap(),
+            Err(H2ConnectError::DnsRebinding(_))
+        ));
+        connection_handle.abort();
     }
 
     // NOTE: Connection reuse is tested at the integration level in

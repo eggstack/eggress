@@ -1,5 +1,8 @@
 use base64::Engine;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 
 use crate::error::HttpError;
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
@@ -50,11 +53,18 @@ pub fn validate_credentials(value: &str) -> Result<(), HttpError> {
 /// The stream after receiving a 2xx response, ready for bidirectional
 /// forwarding.
 pub async fn http_connect(
-    mut stream: BoxStream,
+    stream: BoxStream,
     target: &TargetAddr,
     auth: Option<(&str, &str)>,
     limits: &HttpConnectLimits,
 ) -> Result<BoxStream, HttpError> {
+    // BufReader preserves any response bytes read ahead of the CONNECT head
+    // while avoiding a syscall for every response byte. Writes delegate to
+    // the same underlying stream so the upgraded connection remains usable.
+    let mut stream: BoxStream = Box::new(BufferedStream {
+        reader: BufReader::new(stream),
+    });
+
     // Validate credentials before sending anything
     if let Some((user, pass)) = auth {
         validate_credentials(user)?;
@@ -97,6 +107,38 @@ pub async fn http_connect(
         502 => Err(HttpError::BadGateway),
         504 => Err(HttpError::GatewayTimeout),
         code => Err(HttpError::UnexpectedStatus(code)),
+    }
+}
+
+struct BufferedStream {
+    reader: BufReader<BoxStream>,
+}
+
+impl AsyncRead for BufferedStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for BufferedStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(self.reader.get_mut()).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(self.reader.get_mut()).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(self.reader.get_mut()).poll_shutdown(cx)
     }
 }
 
