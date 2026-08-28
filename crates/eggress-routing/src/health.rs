@@ -214,7 +214,6 @@ pub fn is_eligible(upstream: &UpstreamRuntime) -> bool {
 pub struct HealthManager {
     cancel: CancellationToken,
     tasks: tokio::task::JoinSet<()>,
-    probe_tasks: std::sync::Arc<std::sync::Mutex<tokio::task::JoinSet<()>>>,
 }
 
 impl HealthManager {
@@ -222,11 +221,11 @@ impl HealthManager {
         Self {
             cancel,
             tasks: tokio::task::JoinSet::new(),
-            probe_tasks: std::sync::Arc::new(std::sync::Mutex::new(tokio::task::JoinSet::new())),
         }
     }
 
     pub fn start_probes(&mut self, upstreams: &[std::sync::Arc<UpstreamRuntime>]) {
+        self.stop_all();
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
 
         for upstream in upstreams {
@@ -234,7 +233,6 @@ impl HealthManager {
             let config = upstream.health_config.clone();
             let cancel = self.cancel.clone();
             let semaphore = semaphore.clone();
-            let probe_tasks = self.probe_tasks.clone();
 
             self.tasks.spawn(async move {
                 let probe = match upstream.health_probe.clone() {
@@ -272,34 +270,20 @@ impl HealthManager {
                             break;
                         }
                     };
-                    let upstream = upstream.clone();
-                    let config = config.clone();
-                    let probe_clone = probe.clone();
-                    let probe_cancel = cancel.clone();
+                    let result = match probe.clone() {
+                        HealthProbe::TcpConnect { target, timeout } => tokio::select! {
+                            _ = cancel.cancelled() => break,
+                            result = probe_tcp(target, timeout) => result,
+                        },
+                    };
 
-                    let mut probe_tasks = probe_tasks
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner());
-                    while probe_tasks.try_join_next().is_some() {}
-                    probe_tasks.spawn(async move {
-                        let result = match probe_clone {
-                            HealthProbe::TcpConnect { target, timeout } => tokio::select! {
-                                _ = probe_cancel.cancelled() => return,
-                                result = probe_tcp(target, timeout) => result,
-                            },
-                        };
+                    if result.success {
+                        upstream.health.observe_success(result.latency, &config);
+                    } else {
+                        upstream.health.observe_failure(result.error, &config);
+                    }
 
-                        if probe_cancel.is_cancelled() {
-                            return;
-                        }
-                        if result.success {
-                            upstream.health.observe_success(result.latency, &config);
-                        } else {
-                            upstream.health.observe_failure(result.error, &config);
-                        }
-
-                        drop(permit);
-                    });
+                    drop(permit);
                 }
             });
         }
@@ -307,10 +291,7 @@ impl HealthManager {
 
     pub fn stop_all(&mut self) {
         self.tasks.abort_all();
-        self.probe_tasks
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .abort_all();
+        while self.tasks.try_join_next().is_some() {}
     }
 }
 

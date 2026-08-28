@@ -59,7 +59,7 @@ pub async fn shadowsocks_connect(
     // The peer will send its own salt, from which we derive the read subkey.
     Ok(Box::new(ShadowsocksAeadStream::new_client(
         stream, method, subkey, password,
-    )))
+    )?))
 }
 
 /// Server-side accept: read the salt, decrypt the address header (sent as a
@@ -143,7 +143,7 @@ pub async fn shadowsocks_accept(
 
     // Data chunks: read nonces start at 2 (address header used 0,1),
     // write nonces start at 0 (first response to client uses nonce 0).
-    let mut ss_stream = ShadowsocksAeadStream::new_server(stream, method, subkey, true, password);
+    let mut ss_stream = ShadowsocksAeadStream::new_server(stream, method, subkey, true, password)?;
     ss_stream.prepend_read_plaintext(&address_plaintext[consumed..]);
 
     Ok((Box::new(ss_stream), target_addr))

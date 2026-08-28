@@ -111,10 +111,10 @@ pub fn encrypt_frame(
     let subkey = method.derive_key(key, salt)?;
 
     // Generate nonce (12 bytes, starts at 0)
-    let nonce_bytes = vec![0u8; nonce_size];
+    let nonce_bytes = [0u8; 12];
 
     // Encrypt
-    let ciphertext = aead_encrypt(method, &subkey, &nonce_bytes, plaintext)?;
+    let ciphertext = aead_encrypt(method, &subkey, &nonce_bytes[..nonce_size], plaintext)?;
 
     // Build output: salt + ciphertext
     let mut output = Vec::with_capacity(salt_size + ciphertext.len());
@@ -150,10 +150,10 @@ pub fn decrypt_frame(
     let subkey = method.derive_key(key, salt)?;
 
     // Generate nonce (12 bytes, starts at 0)
-    let nonce_bytes = vec![0u8; nonce_size];
+    let nonce_bytes = [0u8; 12];
 
     // Decrypt
-    aead_decrypt(method, &subkey, &nonce_bytes, ciphertext)
+    aead_decrypt(method, &subkey, &nonce_bytes[..nonce_size], ciphertext)
 }
 
 /// Encrypt a chunk with AEAD (for streaming).
@@ -324,7 +324,8 @@ pub(crate) fn encrypt_standard_chunks(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, ShadowsocksError> {
     let cipher = AeadCipher::new(method, key)?;
-    let mut output = Vec::new();
+    let chunk_count = plaintext.len().div_ceil(MAX_CHUNK_PAYLOAD);
+    let mut output = Vec::with_capacity(plaintext.len() + chunk_count * (2 + 2 * AEAD_TAG_SIZE));
     let mut current_nonce = [0u8; 12];
     current_nonce.copy_from_slice(nonce);
     for chunk in plaintext.chunks(MAX_CHUNK_PAYLOAD) {
@@ -347,7 +348,7 @@ pub(crate) fn decrypt_standard_chunks(
     let mut current_nonce = [0u8; 12];
     current_nonce.copy_from_slice(nonce);
     let mut offset = 0;
-    let mut plaintext = Vec::new();
+    let mut plaintext = Vec::with_capacity(data.len());
 
     while offset < data.len() {
         if data.len() - offset < 2 + AEAD_TAG_SIZE {

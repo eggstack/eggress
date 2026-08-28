@@ -948,6 +948,13 @@ impl ServiceSupervisor {
         self.state.snapshot.store(new_snapshot.clone());
         self.state.routing.swap_arc(new_snapshot.router.clone());
 
+        if let Some(mut health) = self.health.take() {
+            health.stop_all();
+        }
+        if !new_snapshot.upstreams.is_empty() {
+            self.health = Some(HealthManager::new(self.health_cancel.clone()));
+        }
+
         ReloadResult::Applied {
             generation: gen,
             upstreams: upstream_count,

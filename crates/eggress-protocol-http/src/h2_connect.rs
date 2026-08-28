@@ -165,6 +165,7 @@ pub async fn h2_connect_relay(
             &target,
             &ConnectOptions {
                 enforce_dns_rebinding_check: true,
+                enforce_literal_ip_check: true,
                 ..ConnectOptions::default()
             },
         )

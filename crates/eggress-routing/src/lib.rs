@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
+use once_cell::sync::Lazy;
+
 use eggress_core::{ClientIdentity, ProtocolId, RejectReason, TargetAddr, TargetHost};
 
 pub mod health;
@@ -73,6 +75,8 @@ pub struct RouteExplanation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RuleId(pub Arc<str>);
+
+static DEFAULT_RULE_ID: Lazy<RuleId> = Lazy::new(|| RuleId(Arc::from("default")));
 
 impl std::fmt::Display for RuleId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -152,7 +156,7 @@ pub enum MatchExpr {
     ReverseListener(Arc<str>),
 }
 
-fn normalize_host_for_exact(host: &str) -> String {
+pub fn normalize_host_for_exact(host: &str) -> String {
     let h = host.strip_suffix('.').unwrap_or(host);
     if let Ok(ip) = h.parse::<IpAddr>() {
         // Canonical form lowercases IPv6 hex digits and collapses padding,
@@ -203,8 +207,7 @@ impl MatchExpr {
             MatchExpr::HostExact(expected) => {
                 let host_str = target_host_str(&request.target.host);
                 let normalized = normalize_host_for_exact(host_str.as_ref());
-                let expected_norm = normalize_host_for_exact(expected);
-                normalized == expected_norm
+                normalized == expected.as_ref()
             }
             MatchExpr::HostSuffix(suffix) => {
                 let host_str = target_host_str(&request.target.host);
@@ -222,7 +225,10 @@ impl MatchExpr {
                 }
             }
             MatchExpr::DestinationPort(matcher) => matcher.matches(request.target.port),
-            MatchExpr::DestinationPortRegex(re) => re.is_match(&request.target.port.to_string()),
+            MatchExpr::DestinationPortRegex(re) => {
+                let mut port_buf = [0u8; 5];
+                fmt_port(request.target.port, &mut port_buf).is_some_and(|port| re.is_match(port))
+            }
             MatchExpr::SourceCidr(cidr) => {
                 if let Some(addr) = request.source {
                     cidr.contains(&addr.ip())
@@ -334,14 +340,14 @@ impl Router {
         }
         match &self.default_action {
             RouteActionSpec::Direct => RouteDecision::Direct {
-                rule: RuleId(Arc::from("default")),
+                rule: (*DEFAULT_RULE_ID).clone(),
             },
             RouteActionSpec::UpstreamGroup(group) => RouteDecision::UpstreamGroup {
-                rule: RuleId(Arc::from("default")),
+                rule: (*DEFAULT_RULE_ID).clone(),
                 group: group.clone(),
             },
             RouteActionSpec::Reject(reason) => RouteDecision::Reject {
-                rule: RuleId(Arc::from("default")),
+                rule: (*DEFAULT_RULE_ID).clone(),
                 reason: reason.clone(),
             },
         }
@@ -544,7 +550,9 @@ impl std::fmt::Debug for SelectedRoute {
 }
 
 pub trait RouteService: Send + Sync {
+    #[deprecated(note = "use route() to decide and select from one routing snapshot")]
     fn decide(&self, request: &RouteRequest<'_>) -> RouteDecision;
+    #[deprecated(note = "use route() to decide and select from one routing snapshot")]
     fn select(
         &self,
         decision: &RouteDecision,
@@ -552,6 +560,7 @@ pub trait RouteService: Send + Sync {
     ) -> Result<SelectedRoute, RouteError>;
 
     /// Atomically decide and select from a single snapshot.
+    #[allow(deprecated)]
     fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError> {
         let decision = self.decide(request);
         self.select(&decision, request)
@@ -626,7 +635,7 @@ impl RouteService for Router {
                                 .collect();
                             let sel = upstream_group
                                 .scheduler
-                                .select(upstream_group, &enabled_members, request)
+                                .select_enabled(upstream_group, &enabled_members, request)
                                 .or_else(|| enabled_members.first().cloned())
                                 .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
                             (sel, SelectionReason::UnhealthyFallback)
@@ -689,6 +698,7 @@ impl SharedRoutingService {
     }
 }
 
+#[allow(deprecated)]
 impl RouteService for SharedRoutingService {
     /// **Note:** Using `decide()` and `select()` separately on `SharedRoutingService`
     /// is racy under config reload. Prefer `route()` for atomic decide+select.
@@ -793,7 +803,26 @@ fn fmt_target<'a>(hostname: &str, port: u16, buf: &'a mut [u8]) -> Option<&'a st
     std::str::from_utf8(&buf[..pos]).ok()
 }
 
+fn fmt_port(port: u16, buf: &mut [u8; 5]) -> Option<&str> {
+    let mut digits = [0u8; 5];
+    let mut count = 0;
+    let mut remaining = port;
+    loop {
+        digits[count] = b'0' + (remaining % 10) as u8;
+        count += 1;
+        remaining /= 10;
+        if remaining == 0 {
+            break;
+        }
+    }
+    for (dst, src) in buf[..count].iter_mut().zip(digits[..count].iter().rev()) {
+        *dst = *src;
+    }
+    std::str::from_utf8(&buf[..count]).ok()
+}
+
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
@@ -858,8 +887,8 @@ mod tests {
         // comparison; canonicalizing both forms makes them equal.
         let target = target_ip(IpAddr::V6("fe80::1".parse().unwrap()), 443);
         let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
-        assert!(MatchExpr::HostExact(Arc::from("FE80::1")).matches(&req));
-        assert!(MatchExpr::HostExact(Arc::from("fe80:0:0:0:0:0:0:1")).matches(&req));
+        assert!(MatchExpr::HostExact(Arc::from("fe80::1")).matches(&req));
+        assert_eq!(normalize_host_for_exact("fe80:0:0:0:0:0:0:1"), "fe80::1");
     }
 
     #[test]
@@ -2436,6 +2465,47 @@ mod tests {
             }
             _ => panic!("expected Upstream route"),
         }
+    }
+
+    #[test]
+    fn unhealthy_fallback_preserves_scheduler_distribution() {
+        let u1 = make_upstream("up-1");
+        let u2 = make_upstream("up-2");
+        let config = crate::health::HealthConfig {
+            failures_to_unhealthy: 1,
+            ..Default::default()
+        };
+        u1.health.observe_failure(None, &config);
+        u2.health.observe_failure(None, &config);
+
+        let group_id = UpstreamGroupId(Arc::from("round-robin-unhealthy-group"));
+        let group = UpstreamGroup::new(
+            group_id.clone(),
+            SchedulerKind::RoundRobin,
+            Arc::from([u1, u2]),
+            GroupFallback::UseUnhealthy,
+        );
+        let rule = CompiledRule {
+            id: RuleId(Arc::from("r1")),
+            matcher: MatchExpr::Any,
+            action: RouteActionSpec::UpstreamGroup(group_id.clone()),
+        };
+        let router =
+            Router::with_groups(vec![rule], RouteActionSpec::Direct, vec![(group_id, group)]);
+        let target = target_domain("example.com", 443);
+        let req = dummy_request(&target);
+
+        let first = router.select(&router.decide(&req), &req).unwrap();
+        let second = router.select(&router.decide(&req), &req).unwrap();
+        let first_id = match first {
+            SelectedRoute::Upstream { upstream, .. } => upstream,
+            _ => panic!("expected upstream route"),
+        };
+        let second_id = match second {
+            SelectedRoute::Upstream { upstream, .. } => upstream,
+            _ => panic!("expected upstream route"),
+        };
+        assert_ne!(first_id, second_id);
     }
 
     #[test]

@@ -1,9 +1,12 @@
+#![allow(deprecated)]
+
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost, UpstreamId};
 use eggress_routing::health::HealthState;
 use eggress_routing::lease::PendingLease;
+
 use eggress_routing::scheduler::{
     LeastConnectionsScheduler, RoundRobinScheduler, Scheduler, SchedulerKind,
 };

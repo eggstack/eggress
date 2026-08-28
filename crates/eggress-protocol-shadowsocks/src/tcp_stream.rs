@@ -67,14 +67,16 @@ pub struct ShadowsocksAeadStream<S> {
 
 impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
     /// Create a new AEAD stream (same subkey for both directions — for internal use).
-    pub fn new(inner: S, method: CipherMethod, subkey: Vec<u8>) -> Self {
+    pub fn new(
+        inner: S,
+        method: CipherMethod,
+        subkey: Vec<u8>,
+    ) -> Result<Self, crate::error::ShadowsocksError> {
         let nonce_size = method.nonce_size();
-        let write_cipher = AeadCipher::new(method, &subkey)
-            .expect("derived Shadowsocks subkey must match the cipher method");
-        let read_cipher = AeadCipher::new(method, &subkey)
-            .expect("derived Shadowsocks subkey must match the cipher method");
+        let write_cipher = AeadCipher::new(method, &subkey)?;
+        let read_cipher = AeadCipher::new(method, &subkey)?;
         let subkey = Zeroizing::new(subkey);
-        Self {
+        Ok(Self {
             inner,
             method,
             write_subkey: subkey.clone(),
@@ -89,7 +91,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             read_buf: BytesMut::new(),
             read_state: ReadState::LengthBlock,
             write_buf: BytesMut::new(),
-        }
+        })
     }
 
     /// Create a client-side AEAD stream.
@@ -101,11 +103,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         method: CipherMethod,
         write_subkey: Vec<u8>,
         password: &str,
-    ) -> Self {
+    ) -> Result<Self, crate::error::ShadowsocksError> {
         let nonce_size = method.nonce_size();
-        let write_cipher = AeadCipher::new(method, &write_subkey)
-            .expect("derived Shadowsocks subkey must match the cipher method");
-        Self {
+        let write_cipher = AeadCipher::new(method, &write_subkey)?;
+        Ok(Self {
             inner,
             method,
             write_subkey: Zeroizing::new(write_subkey),
@@ -124,7 +125,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             read_buf: BytesMut::new(),
             read_state: ReadState::PeerSalt,
             write_buf: BytesMut::new(),
-        }
+        })
     }
 
     /// Create a server-side AEAD stream.
@@ -138,11 +139,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         read_subkey: Vec<u8>,
         send_write_salt: bool,
         password: &str,
-    ) -> Self {
+    ) -> Result<Self, crate::error::ShadowsocksError> {
         let nonce_size = method.nonce_size();
-        let read_cipher = AeadCipher::new(method, &read_subkey)
-            .expect("derived Shadowsocks subkey must match the cipher method");
-        Self {
+        let read_cipher = AeadCipher::new(method, &read_subkey)?;
+        Ok(Self {
             inner,
             method,
             write_subkey: Zeroizing::new(Vec::new()), // will be derived when salt is sent
@@ -161,7 +161,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             read_buf: BytesMut::new(),
             read_state: ReadState::LengthBlock,
             write_buf: BytesMut::new(),
-        }
+        })
     }
 
     /// Create a new AEAD stream with explicit starting nonces (legacy/internal).
@@ -171,14 +171,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         subkey: Vec<u8>,
         write_start: u64,
         read_start: u64,
-    ) -> Self {
+    ) -> Result<Self, crate::error::ShadowsocksError> {
         let nonce_size = method.nonce_size();
-        let write_cipher = AeadCipher::new(method, &subkey)
-            .expect("derived Shadowsocks subkey must match the cipher method");
-        let read_cipher = AeadCipher::new(method, &subkey)
-            .expect("derived Shadowsocks subkey must match the cipher method");
+        let write_cipher = AeadCipher::new(method, &subkey)?;
+        let read_cipher = AeadCipher::new(method, &subkey)?;
         let subkey = Zeroizing::new(subkey);
-        Self {
+        Ok(Self {
             inner,
             method,
             write_subkey: subkey.clone(),
@@ -193,7 +191,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
             read_buf: BytesMut::new(),
             read_state: ReadState::LengthBlock,
             write_buf: BytesMut::new(),
-        }
+        })
     }
 
     pub fn into_inner(self) -> S {
@@ -562,14 +560,21 @@ mod tests {
 
     use crate::aead::encrypt_chunk_standard;
 
+    #[test]
+    fn invalid_subkey_returns_error_instead_of_panicking() {
+        let (stream, _) = tokio::io::duplex(64);
+        let result = ShadowsocksAeadStream::new(stream, CipherMethod::Aes256Gcm, vec![0; 16]);
+        assert!(result.is_err());
+    }
+
     #[tokio::test]
     async fn roundtrip_small_data() {
         let (client, server) = tokio::io::duplex(4096);
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x42u8; 32];
 
-        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone());
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone()).unwrap();
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         // Write from client
         client_stream.write_all(b"hello").await.unwrap();
@@ -592,12 +597,13 @@ mod tests {
         let write_subkey = subkey.clone();
 
         let write_handle = tokio::spawn(async move {
-            let mut client_stream = ShadowsocksAeadStream::new(client, method, write_subkey);
+            let mut client_stream =
+                ShadowsocksAeadStream::new(client, method, write_subkey).unwrap();
             client_stream.write_all(&payload).await.unwrap();
             client_stream.flush().await.unwrap();
         });
 
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         let mut received = Vec::new();
         server_stream.read_to_end(&mut received).await.unwrap();
@@ -612,10 +618,10 @@ mod tests {
         let method = CipherMethod::Aes128Gcm;
         let subkey = vec![0x11u8; 16];
 
-        let mut client_a = ShadowsocksAeadStream::new(c1, method, subkey.clone());
-        let mut server_a = ShadowsocksAeadStream::new(s1, method, subkey.clone());
-        let mut client_b = ShadowsocksAeadStream::new(c2, method, subkey.clone());
-        let mut server_b = ShadowsocksAeadStream::new(s2, method, subkey);
+        let mut client_a = ShadowsocksAeadStream::new(c1, method, subkey.clone()).unwrap();
+        let mut server_a = ShadowsocksAeadStream::new(s1, method, subkey.clone()).unwrap();
+        let mut client_b = ShadowsocksAeadStream::new(c2, method, subkey.clone()).unwrap();
+        let mut server_b = ShadowsocksAeadStream::new(s2, method, subkey).unwrap();
 
         // Client A -> Server A -> Client B -> Server B
         client_a.write_all(b"ping").await.unwrap();
@@ -638,8 +644,8 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x55u8; 32];
 
-        let client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone());
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone()).unwrap();
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         // Drop client to signal EOF
         drop(client_stream);
@@ -656,8 +662,8 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x99u8; 32];
 
-        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone());
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone()).unwrap();
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         client_stream.write_all(b"data").await.unwrap();
         client_stream.flush().await.unwrap();
@@ -673,8 +679,8 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x77u8; 32];
 
-        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone());
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone()).unwrap();
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         // Send multiple small writes; each becomes its own AEAD chunk.
         for i in 0..10 {
@@ -700,7 +706,7 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x01u8; 32];
 
-        let stream = ShadowsocksAeadStream::new(client, method, subkey);
+        let stream = ShadowsocksAeadStream::new(client, method, subkey).unwrap();
         let _ = stream.into_inner();
     }
 
@@ -712,7 +718,7 @@ mod tests {
 
         // Use new_with_nonces to start at nonce 0 (for testing raw wire data).
         let mut server_stream =
-            ShadowsocksAeadStream::new_with_nonces(server, method, subkey.clone(), 0, 0);
+            ShadowsocksAeadStream::new_with_nonces(server, method, subkey.clone(), 0, 0).unwrap();
 
         // Manually send a zero-length payload chunk (raw, not through the adapter).
         // Wire format: AEAD(len_u16=0, nonce) + AEAD(empty, nonce+1)
@@ -742,7 +748,7 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x42u8; 32];
 
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey.clone());
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey.clone()).unwrap();
 
         // Manually create wire: encrypt with nonce 2 (first data nonce), then tamper length block
         let mut raw_stream = client;
@@ -791,7 +797,7 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x42u8; 32];
 
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey.clone());
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey.clone()).unwrap();
 
         // Manually create wire: valid length block + tampered payload block
         let mut raw_stream = client;
@@ -880,8 +886,8 @@ mod tests {
         let method = CipherMethod::Aes256Gcm;
         let subkey = vec![0x55u8; 32];
 
-        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone());
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone()).unwrap();
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         let data = b"standard SIP003 framing test";
         client_stream.write_all(data).await.unwrap();
@@ -898,8 +904,8 @@ mod tests {
         let method = CipherMethod::Aes128Gcm;
         let subkey = vec![0x88u8; 16];
 
-        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone());
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut client_stream = ShadowsocksAeadStream::new(client, method, subkey.clone()).unwrap();
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         // Write empty data — should produce a zero-length payload chunk
         client_stream.write_all(b"").await.unwrap();
@@ -923,13 +929,14 @@ mod tests {
         let write_subkey = subkey.clone();
 
         let write_handle = tokio::spawn(async move {
-            let mut client_stream = ShadowsocksAeadStream::new(client, method, write_subkey);
+            let mut client_stream =
+                ShadowsocksAeadStream::new(client, method, write_subkey).unwrap();
             client_stream.write_all(&payload).await.unwrap();
             client_stream.flush().await.unwrap();
             drop(client_stream);
         });
 
-        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey);
+        let mut server_stream = ShadowsocksAeadStream::new(server, method, subkey).unwrap();
 
         // Read in small chunks to exercise partial-read logic
         let mut received = Vec::new();

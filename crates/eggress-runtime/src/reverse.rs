@@ -79,6 +79,7 @@ impl TargetResolver for RouteEngineTargetResolver {
             transport: TransportKind::ReverseTcp,
         };
 
+        #[allow(deprecated)]
         match self.router.decide(&request) {
             RouteDecision::Direct { .. } | RouteDecision::UpstreamGroup { .. } => {
                 TargetResolution::Connect {

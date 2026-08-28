@@ -188,9 +188,9 @@ pub async fn trojan_accept(
                 .read_exact(&mut addr_buf)
                 .await
                 .map_err(TrojanError::Io)?;
-            let ip = std::net::Ipv6Addr::from(
-                <[u8; 16]>::try_from(&addr_buf[..16]).expect("IPv6 address field is 16 bytes"),
-            );
+            let octets = <[u8; 16]>::try_from(&addr_buf[..16])
+                .map_err(|_| TrojanError::Protocol("invalid IPv6 address field".into()))?;
+            let ip = std::net::Ipv6Addr::from(octets);
             let port = u16::from_be_bytes([addr_buf[16], addr_buf[17]]);
             TargetAddr {
                 host: TargetHost::Ip(std::net::IpAddr::V6(ip)),

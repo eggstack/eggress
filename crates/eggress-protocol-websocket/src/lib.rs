@@ -145,7 +145,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> A
             }
         }
 
-        match Pin::new(&mut self.write_half).start_send(Message::Binary(buf.to_vec().into())) {
+        match Pin::new(&mut self.write_half)
+            .start_send(Message::Binary(bytes::Bytes::copy_from_slice(buf)))
+        {
             Ok(()) => {}
             Err(e) => {
                 return Poll::Ready(Err(std::io::Error::other(WebSocketError::Protocol(

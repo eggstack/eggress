@@ -403,7 +403,7 @@ fn compile_matcher(rule: &RuleConfig) -> Result<eggress_routing::MatchExpr, Conf
             && !rule.any.unwrap_or(false)
         {
             return Ok(eggress_routing::MatchExpr::HostExact(Arc::from(
-                exact.as_str(),
+                eggress_routing::normalize_host_for_exact(exact),
             )));
         }
     }
@@ -546,7 +546,7 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
 
     if let Some(ref exact) = leaf.host_exact {
         matchers.push(eggress_routing::MatchExpr::HostExact(Arc::from(
-            exact.as_str(),
+            eggress_routing::normalize_host_for_exact(exact),
         )));
     }
     if let Some(ref suffix) = leaf.host_suffix {

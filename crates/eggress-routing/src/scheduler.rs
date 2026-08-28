@@ -58,6 +58,19 @@ pub trait Scheduler: Send + Sync {
         request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>>;
 
+    /// Select among enabled members without considering health state.
+    ///
+    /// This is used only for `use-unhealthy` fallback. Normal selection must
+    /// continue to use [`Scheduler::select`], which excludes unhealthy peers.
+    fn select_enabled(
+        &self,
+        group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        self.select(group, candidates, request)
+    }
+
     fn preview(
         &self,
         group: &UpstreamGroup,
@@ -78,6 +91,15 @@ impl Scheduler for FirstAvailableScheduler {
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
         candidates.iter().find(|m| is_eligible(m)).cloned()
+    }
+
+    fn select_enabled(
+        &self,
+        _group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        _request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        candidates.iter().find(|m| m.is_enabled()).cloned()
     }
 }
 
@@ -106,35 +128,16 @@ impl Scheduler for RoundRobinScheduler {
         candidates: &[Arc<UpstreamRuntime>],
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
-        if candidates.is_empty() {
-            return None;
-        }
-        let len = candidates.len();
-        let mut current = self.cursor.load(Ordering::Relaxed);
-        loop {
-            let mut found = false;
-            for i in 0..len {
-                let idx = (current as usize + i) % len;
-                if is_eligible(&candidates[idx]) {
-                    found = true;
-                    match self.cursor.compare_exchange(
-                        current,
-                        current.wrapping_add(1),
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => return Some(candidates[idx].clone()),
-                        Err(next) => {
-                            current = next;
-                            break;
-                        }
-                    }
-                }
-            }
-            if !found {
-                return None;
-            }
-        }
+        select_round_robin(&self.cursor, candidates, is_eligible)
+    }
+
+    fn select_enabled(
+        &self,
+        _group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        _request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        select_round_robin(&self.cursor, candidates, |member| member.is_enabled())
     }
 
     fn preview(
@@ -187,17 +190,16 @@ impl Scheduler for RandomScheduler {
         candidates: &[Arc<UpstreamRuntime>],
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
-        if candidates.is_empty() {
-            return None;
-        }
-        let start = self.rng.index(candidates.len())?;
-        for i in 0..candidates.len() {
-            let idx = (start + i) % candidates.len();
-            if is_eligible(&candidates[idx]) {
-                return Some(candidates[idx].clone());
-            }
-        }
-        None
+        select_random(&*self.rng, candidates, is_eligible)
+    }
+
+    fn select_enabled(
+        &self,
+        _group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        _request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        select_random(&*self.rng, candidates, |member| member.is_enabled())
     }
 }
 
@@ -216,6 +218,62 @@ impl Scheduler for LeastConnectionsScheduler {
             .min_by_key(|m| m.current_load())
             .cloned()
     }
+
+    fn select_enabled(
+        &self,
+        _group: &UpstreamGroup,
+        candidates: &[Arc<UpstreamRuntime>],
+        _request: &RouteRequest<'_>,
+    ) -> Option<Arc<UpstreamRuntime>> {
+        candidates
+            .iter()
+            .filter(|m| m.is_enabled())
+            .min_by_key(|m| m.current_load())
+            .cloned()
+    }
+}
+
+fn select_round_robin<F>(
+    cursor: &AtomicU64,
+    candidates: &[Arc<UpstreamRuntime>],
+    eligible: F,
+) -> Option<Arc<UpstreamRuntime>>
+where
+    F: Fn(&UpstreamRuntime) -> bool,
+{
+    if candidates.is_empty() {
+        return None;
+    }
+    let len = candidates.len();
+    let start = cursor.fetch_add(1, Ordering::Relaxed) as usize;
+    for i in 0..len {
+        let idx = (start + i) % len;
+        if eligible(&candidates[idx]) {
+            return Some(candidates[idx].clone());
+        }
+    }
+    None
+}
+
+fn select_random<F>(
+    rng: &dyn RandomIndex,
+    candidates: &[Arc<UpstreamRuntime>],
+    eligible: F,
+) -> Option<Arc<UpstreamRuntime>>
+where
+    F: Fn(&UpstreamRuntime) -> bool,
+{
+    if candidates.is_empty() {
+        return None;
+    }
+    let start = rng.index(candidates.len())?;
+    for i in 0..candidates.len() {
+        let idx = (start + i) % candidates.len();
+        if eligible(&candidates[idx]) {
+            return Some(candidates[idx].clone());
+        }
+    }
+    None
 }
 
 pub fn resolve_scheduler(kind: SchedulerKind) -> Arc<dyn Scheduler> {

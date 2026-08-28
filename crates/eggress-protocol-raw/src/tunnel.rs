@@ -75,6 +75,7 @@ async fn handle_raw_connection(
             &target,
             &ConnectOptions {
                 enforce_dns_rebinding_check,
+                enforce_literal_ip_check: enforce_dns_rebinding_check,
                 ..ConnectOptions::default()
             },
         )

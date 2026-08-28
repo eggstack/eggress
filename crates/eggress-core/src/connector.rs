@@ -9,9 +9,10 @@ use crate::{BoxStream, ConnectError, TargetAddr, TargetHost};
 ///
 /// Used as a domain-resolution guard: after resolving a domain name,
 /// this checks whether the result points to a private/reserved/special-use
-/// range. The same option also applies to literal IP targets so callers get
-/// one consistent policy; the default remains permissive for pproxy
-/// compatibility.
+/// range. Literal IP targets have a separate opt-in check so explicit
+/// local/LAN destinations remain compatible by default. The DNS guard is
+/// enabled by default; callers that require pproxy-compatible permissive
+/// behavior must explicitly disable it.
 ///
 /// Rejected ranges:
 /// - IPv4: loopback (127.0.0.0/8), link-local (169.254.0.0/16),
@@ -123,11 +124,25 @@ pub trait LocalConnector {
 pub struct DirectConnector;
 
 /// Connect options for one outbound socket.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ConnectOptions {
     pub local_bind: Option<SocketAddr>,
-    /// Reject literal IP targets in reserved/private ranges as well as DNS results.
+    /// Reject DNS results in reserved/private ranges. Literal IP targets are
+    /// intentionally allowed for explicit local/LAN proxy compatibility.
     pub enforce_dns_rebinding_check: bool,
+    /// Also reject literal IP targets in reserved/private ranges when the
+    /// caller is operating a stricter security boundary.
+    pub enforce_literal_ip_check: bool,
+}
+
+impl Default for ConnectOptions {
+    fn default() -> Self {
+        Self {
+            local_bind: None,
+            enforce_dns_rebinding_check: true,
+            enforce_literal_ip_check: false,
+        }
+    }
 }
 
 impl DirectConnector {
@@ -136,7 +151,12 @@ impl DirectConnector {
         target: &TargetAddr,
         options: &ConnectOptions,
     ) -> Result<BoxStream, ConnectError> {
-        let addrs = resolve_target(target, options.enforce_dns_rebinding_check).await?;
+        let addrs = resolve_target(
+            target,
+            options.enforce_dns_rebinding_check,
+            options.enforce_literal_ip_check,
+        )
+        .await?;
         connect_to_addrs(&addrs, options.local_bind).await
     }
 }
@@ -170,10 +190,11 @@ async fn connect_to_addrs(
 async fn resolve_target(
     target: &TargetAddr,
     enforce_dns_rebinding_check: bool,
+    enforce_literal_ip_check: bool,
 ) -> Result<Vec<SocketAddr>, ConnectError> {
     match &target.host {
         TargetHost::Ip(ip) => {
-            if enforce_dns_rebinding_check && is_dns_rebinding_risk(ip) {
+            if enforce_literal_ip_check && is_dns_rebinding_risk(ip) {
                 return Err(ConnectError::ReservedTarget(*ip));
             }
             Ok(vec![SocketAddr::new(*ip, target.port)])
@@ -248,9 +269,15 @@ mod tests {
             port: 80,
         };
 
-        assert!(resolve_target(&target, false).await.is_ok());
+        assert!(resolve_target(&target, false, false).await.is_ok());
+        assert!(ConnectOptions::default().enforce_dns_rebinding_check);
         assert!(matches!(
-            resolve_target(&target, true).await,
+            resolve_target(
+                &target,
+                ConnectOptions::default().enforce_dns_rebinding_check,
+                ConnectOptions::default().enforce_literal_ip_check,
+            )
+            .await,
             Err(ConnectError::ReservedTarget(_))
         ));
     }
