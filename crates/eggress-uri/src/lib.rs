@@ -436,6 +436,12 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
         parse_endpoint(endpoint_str)?
     };
 
+    // Empty hosts are valid for listener bind addresses, but proxy-chain hops
+    // are outbound endpoints and cannot be executed without a host.
+    if endpoint.host.is_empty() {
+        return Err(UriParseError::EmptyHost);
+    }
+
     // Parse query parameters
     let rule = parse_query_rule(query_str);
     let insecure = query_str.is_some_and(|query| {
@@ -748,17 +754,17 @@ mod tests {
 
     #[test]
     fn test_simple_http() {
-        let result = parse_proxy_chain("http://:8080").unwrap();
+        let result = parse_proxy_chain("http://host:8080").unwrap();
         assert_eq!(result.hops.len(), 1);
         assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Http]);
-        assert_eq!(result.hops[0].endpoint.host, "");
+        assert_eq!(result.hops[0].endpoint.host, "host");
         assert_eq!(result.hops[0].endpoint.port, 8080);
         assert!(result.hops[0].credentials.is_none());
     }
 
     #[test]
     fn test_simple_socks4() {
-        let result = parse_proxy_chain("socks4://:1080").unwrap();
+        let result = parse_proxy_chain("socks4://host:1080").unwrap();
         assert_eq!(result.hops.len(), 1);
         assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Socks4]);
         assert_eq!(result.hops[0].endpoint.port, 1080);
@@ -766,14 +772,14 @@ mod tests {
 
     #[test]
     fn test_simple_socks5() {
-        let result = parse_proxy_chain("socks5://:1080").unwrap();
+        let result = parse_proxy_chain("socks5://host:1080").unwrap();
         assert_eq!(result.hops.len(), 1);
         assert_eq!(result.hops[0].protocols, vec![ProtocolSpec::Socks5]);
     }
 
     #[test]
     fn test_multiple_protocols() {
-        let result = parse_proxy_chain("http+socks4+socks5://:8080").unwrap();
+        let result = parse_proxy_chain("http+socks4+socks5://host:8080").unwrap();
         assert_eq!(result.hops.len(), 1);
         assert_eq!(
             result.hops[0].protocols,
@@ -787,7 +793,7 @@ mod tests {
 
     #[test]
     fn test_credentials() {
-        let result = parse_proxy_chain("http+socks5://user:pass@:8080").unwrap();
+        let result = parse_proxy_chain("http+socks5://user:pass@host:8080").unwrap();
         assert_eq!(result.hops.len(), 1);
         assert!(result.hops[0].credentials.is_some());
         let creds = result.hops[0].credentials.as_ref().unwrap();
@@ -929,10 +935,9 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_host_with_port() {
+    fn test_empty_host_with_port_is_rejected() {
         let result = parse_proxy_chain("http://:80");
-        // Empty host with port is allowed (format for binding to all interfaces)
-        assert!(result.is_ok());
+        assert!(matches!(result, Err(UriParseError::EmptyHost)));
     }
 
     #[test]

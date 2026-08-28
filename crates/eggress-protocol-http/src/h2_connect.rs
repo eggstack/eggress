@@ -470,6 +470,8 @@ impl H2PoolKey {
 
 /// Metadata for a pooled H2 connection.
 pub struct H2ConnectionEntry {
+    // `send_request` is synchronous and the guard is dropped before awaiting
+    // the response, so this lock never blocks a Tokio worker on I/O.
     sender: Arc<Mutex<h2::client::SendRequest<Bytes>>>,
     conn_handle: tokio::task::JoinHandle<Result<(), h2::Error>>,
     #[allow(dead_code)]
@@ -524,6 +526,8 @@ impl Drop for H2ConnectionEntry {
 
 /// Bounded H2 connection pool with idle timeout and GOAWAY-aware retirement.
 pub struct H2ConnectionPool {
+    // Pool bookkeeping is synchronous and each guard is released before any
+    // async operation; do not hold these locks across an await.
     entries: Mutex<Vec<Arc<H2ConnectionEntry>>>,
     semaphore: Semaphore,
     pool_size: u32,
@@ -701,6 +705,8 @@ pub struct H2PoolStats {
 
 /// Global H2 connection pool registry, keyed by (endpoint_host, endpoint_port, use_tls, server_name, auth_hash).
 pub struct H2PoolRegistry {
+    // Registry access only creates or looks up pools synchronously; no guard
+    // may be held across an async operation.
     pools: std::sync::RwLock<HashMap<H2PoolKey, Arc<H2ConnectionPool>>>,
     default_pool_size: u32,
     default_idle_timeout: Duration,

@@ -15,6 +15,8 @@ pub struct UdpAssociationMeta {
     pub id: UdpAssociationId,
     pub listener: String,
     pub client_tcp_peer: Option<SocketAddr>,
+    // These values are accessed only through synchronous methods; never hold
+    // either guard across an async suspension point.
     pub client_udp_addr: std::sync::Mutex<Option<SocketAddr>>,
     pub identity: eggress_core::ClientIdentity,
     pub created_at: Instant,

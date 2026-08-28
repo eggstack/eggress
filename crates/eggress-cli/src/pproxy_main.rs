@@ -280,7 +280,9 @@ fn print_startup_banner(
 fn redact_uri(uri: &str) -> String {
     eggress_uri::parse_proxy_chain(uri)
         .map(|chain| eggress_uri::RedactedUri::new(&chain).to_string())
-        .unwrap_or_else(|_| "<redacted URI>".to_string())
+        // Listener URIs may use an empty host as a bind address, while
+        // outbound proxy hops reject empty hosts during parsing.
+        .unwrap_or_else(|_| eggress_uri::redact_proxy_uri(uri))
 }
 
 #[cfg(test)]

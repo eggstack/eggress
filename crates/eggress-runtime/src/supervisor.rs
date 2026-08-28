@@ -312,6 +312,29 @@ fn classify_listeners(
     Ok(())
 }
 
+fn classify_reload_config(
+    old_listeners: &[eggress_config::compile::ListenerConfig],
+    old_timeouts: &eggress_config::compile::TimeoutConfig,
+    old_admin: Option<&eggress_config::compile::AdminConfig>,
+    new_config: &eggress_config::compile::RuntimeConfig,
+) -> Result<(), String> {
+    classify_listeners(old_listeners, &new_config.listeners)?;
+    if old_timeouts != &new_config.timeouts {
+        return Err("timeout configuration changed; restart required".to_string());
+    }
+
+    let old_admin_endpoint = old_admin.map(|admin| (admin.enabled, admin.bind.as_str()));
+    let new_admin_endpoint = new_config
+        .admin
+        .as_ref()
+        .map(|admin| (admin.enabled, admin.bind.as_str()));
+    if old_admin_endpoint != new_admin_endpoint {
+        return Err("admin endpoint bind configuration changed; restart required".to_string());
+    }
+
+    Ok(())
+}
+
 struct PreparedListener {
     name: String,
     #[allow(dead_code)] // used only with `operations` feature
@@ -863,11 +886,12 @@ impl ServiceSupervisor {
         &self,
         new_config: &eggress_config::compile::RuntimeConfig,
     ) -> Result<(), String> {
-        classify_listeners(&self.rt_config.listeners, &new_config.listeners)?;
-        if self.rt_config.timeouts != new_config.timeouts {
-            return Err("timeout configuration changed; restart required".to_string());
-        }
-        Ok(())
+        classify_reload_config(
+            &self.rt_config.listeners,
+            &self.rt_config.timeouts,
+            self.rt_config.admin.as_ref(),
+            new_config,
+        )
     }
 
     /// Attempt to reload configuration. Encapsulates the full reload transaction:
@@ -2731,9 +2755,13 @@ impl ServiceSupervisor {
                             }).await;
                             match load_result {
                                 Ok(Ok(new_rt_config)) => {
-                                    // Classify unsupported changes: reject if listener topology changed
-                                    let old_listeners = &snapshot.load().listeners;
-                                    if let Err(reason) = classify_listeners(old_listeners, &new_rt_config.listeners) {
+                                    // Classify unsupported changes before building a new snapshot.
+                                    if let Err(reason) = classify_reload_config(
+                                        &prev_snapshot.listeners,
+                                        &prev_snapshot.timeouts,
+                                        prev_snapshot.admin.as_ref(),
+                                        &new_rt_config,
+                                    ) {
                                         tracing::error!("reload rejected: {reason}");
                                         metrics.record_reload(false);
                                         continue;
@@ -3197,6 +3225,43 @@ protocols = ["http"]
         let result = sup.classify_reload(&new_config);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("timeout"));
+    }
+
+    #[test]
+    fn reload_rejects_admin_bind_change() {
+        let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:9090"
+enabled = false
+"#;
+        let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:8080"
+protocols = ["http"]
+
+[admin]
+bind = "127.0.0.1:9091"
+enabled = false
+"#;
+        let f1 = write_config(config1);
+        let f2 = write_config(config2);
+        let sup = ServiceSupervisor::start(f1.path().to_str().unwrap()).unwrap();
+        let new_config =
+            eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
+
+        let result = sup.classify_reload(&new_config);
+        assert!(result.is_err(), "admin bind change should be rejected");
+        assert!(result.unwrap_err().contains("admin"));
     }
 
     #[test]

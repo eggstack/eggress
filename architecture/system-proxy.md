@@ -113,7 +113,9 @@ Apply: `reg add /f`. Disable: `ProxyEnable /d 0 /f`.
 
 ## Redaction
 
-`redact_proxy_uri` finds last `@`, replaces password before it with `***`.
+`redact_proxy_uri` is shared with `eggress-uri` and masks the complete
+userinfo as `****`, correctly handling bracketed IPv6 endpoints and `@` in
+passwords.
 `redact_proxy_settings` applies this to all values with "proxy" in the key.
 Applied in `inspect_system_proxy_with_runner` for safe logging.
 

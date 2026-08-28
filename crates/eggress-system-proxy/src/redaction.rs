@@ -2,20 +2,9 @@ use std::collections::HashMap;
 
 /// Redact sensitive information from proxy URIs and settings.
 ///
-/// Removes passwords from `user:pass@host` patterns and replaces
-/// them with `***`. Preserves the rest of the URI structure.
-pub fn redact_proxy_uri(uri: &str) -> String {
-    if let Some(at_pos) = uri.rfind('@') {
-        let authority_start = uri.find("://").map_or(0, |pos| pos + 3);
-        let userinfo = &uri[authority_start..at_pos];
-        let suffix = &uri[at_pos..]; // includes @
-        if let Some(colon_pos) = userinfo.rfind(':') {
-            let password_start = authority_start + colon_pos;
-            return format!("{}:***{}", &uri[..password_start], suffix);
-        }
-    }
-    uri.to_string()
-}
+/// URI redaction is shared with `eggress-uri` so bracketed IPv6 endpoints and
+/// passwords containing `@` have one consistent implementation.
+pub use eggress_uri::redact_proxy_uri;
 
 /// Redact proxy settings map values.
 ///
@@ -47,7 +36,7 @@ mod tests {
     fn redact_uri_with_credentials() {
         assert_eq!(
             redact_proxy_uri("http://user:secret@proxy.example.com:8080"),
-            "http://user:***@proxy.example.com:8080"
+            "http://****@proxy.example.com:8080"
         );
     }
 
@@ -63,7 +52,7 @@ mod tests {
     fn redact_uri_with_username_only() {
         assert_eq!(
             redact_proxy_uri("http://user@proxy.example.com:8080"),
-            "http://user@proxy.example.com:8080"
+            "http://****@proxy.example.com:8080"
         );
     }
 
@@ -71,7 +60,7 @@ mod tests {
     fn redact_uri_socks_with_credentials() {
         assert_eq!(
             redact_proxy_uri("socks5://admin:password123@127.0.0.1:1080"),
-            "socks5://admin:***@127.0.0.1:1080"
+            "socks5://****@127.0.0.1:1080"
         );
     }
 
@@ -80,6 +69,14 @@ mod tests {
         assert_eq!(
             redact_proxy_uri("http://proxy.example.com:8080"),
             "http://proxy.example.com:8080"
+        );
+    }
+
+    #[test]
+    fn redact_uri_handles_ipv6_and_at_signs_in_password() {
+        assert_eq!(
+            redact_proxy_uri("http://user:p@ss@[::1]:8080"),
+            "http://****@[::1]:8080"
         );
     }
 
@@ -99,12 +96,12 @@ mod tests {
         let redacted = redact_proxy_settings(&settings);
         assert_eq!(
             redacted.get("http_proxy").unwrap(),
-            "http://user:***@proxy:8080"
+            "http://****@proxy:8080"
         );
         assert_eq!(redacted.get("no_proxy").unwrap(), "localhost,127.0.0.1");
         assert_eq!(
             redacted.get("HTTP_PROXY").unwrap(),
-            "http://admin:***@proxy:8080"
+            "http://****@proxy:8080"
         );
     }
 
@@ -115,7 +112,7 @@ mod tests {
             "http://proxy:8080".to_string(),
         ];
         let redacted = redact_proxy_uris(&uris);
-        assert_eq!(redacted[0], "http://user:***@proxy:8080");
+        assert_eq!(redacted[0], "http://****@proxy:8080");
         assert_eq!(redacted[1], "http://proxy:8080");
     }
 }

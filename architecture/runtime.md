@@ -9,7 +9,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | File | Role |
 |------|------|
 | `src/supervisor.rs` | `ServiceSupervisor` (`start`/`start_from_config[_with_options]`/`run()`/`reload_config()`); `RuntimeState` (readiness, tokens, task trackers, UDP registry, reverse registry); `CompatibilityOptions`; `RuntimeAdminListenerInfos` (`AdminSnapshotProvider`); `classify_listeners`; `compute_advertise_ip`; `ListenerConnectionSlot` |
-| `src/snapshot.rs` | `CompiledRuntimeSnapshot { generation, upstreams, router, health_config, listeners, admin, reverse_servers, reverse_clients }`; `compile_runtime_snapshot(config, previous)` reuses unchanged upstream `Arc`s via ptr-identity when chain+health are identical; increments generation monotonically |
+| `src/snapshot.rs` | `CompiledRuntimeSnapshot { generation, upstreams, router, timeouts, listeners, admin, reverse_servers, reverse_clients }`; `compile_runtime_snapshot(config, previous)` reuses unchanged upstream `Arc`s via ptr-identity when chain+health are identical; increments generation monotonically |
 | `src/reverse.rs` | `RouteEngineTargetResolver` gates reverse-client targets through `SharedRoutingService::decide()` with `transport=ReverseTcp`; routing is an authorization gate, not a redirect |
 | `src/platform.rs` | `PlatformCapability`, `CapabilityStatus`, `check_capability[_with_overrides]()`, `platform_info()` |
 | `src/error.rs` | `RuntimeError` — `Config`, `ListenerBind`, `AdminBind`, `RuntimeInit`, `Other` |

@@ -156,6 +156,8 @@ pub struct UnixListenerConfig {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ShadowsocksListenerConfig {
+    /// Listener credentials are intentionally deserialize-only. Keep this
+    /// type non-serializable unless a redacting serializer is added.
     pub method: String,
     pub password: String,
     #[serde(default)]

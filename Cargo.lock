@@ -1322,6 +1322,7 @@ dependencies = [
 name = "eggress-system-proxy"
 version = "1.0.2"
 dependencies = [
+ "eggress-uri",
  "serde",
  "serde_json",
  "tempfile",

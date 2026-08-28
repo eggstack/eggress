@@ -1230,13 +1230,15 @@ fn validate_listener_udp(
 
 /// Check if a socket address string binds to loopback.
 ///
-/// Returns `true` for `127.x.x.x` and `::1`. Returns `false` for `0.0.0.0`,
-/// `::`, and other non-loopback addresses.
+/// Returns `true` for `127.x.x.x`, `::1`, and IPv4-mapped loopback addresses.
+/// Returns `false` for `0.0.0.0`, `::`, and other non-loopback addresses.
 fn is_loopback_bind(addr: &str) -> bool {
     if let Ok(socket) = addr.parse::<std::net::SocketAddr>() {
         match socket.ip() {
             std::net::IpAddr::V4(v4) => v4.is_loopback(),
-            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+            }
         }
     } else {
         false
@@ -1433,6 +1435,7 @@ mod tests {
         assert!(is_loopback_bind("127.0.0.1:8080"));
         assert!(is_loopback_bind("127.0.0.1:0"));
         assert!(is_loopback_bind("[::1]:8080"));
+        assert!(is_loopback_bind("[::ffff:127.0.0.1]:8080"));
         assert!(!is_loopback_bind("0.0.0.0:8080"));
         assert!(!is_loopback_bind("[::]:8080"));
         assert!(!is_loopback_bind("10.0.0.1:8080"));

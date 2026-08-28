@@ -73,7 +73,8 @@ Key parsing rules:
 - The userinfo separator is the **last** unbracketed `@` after `://` -- a password containing `@` is preserved correctly
 - SSH defaults to port 22 when no port is given
 - Port 0 is rejected (except for Unix protocol)
-- Empty host with port (e.g. `http://:8080`) is allowed for bind-to-all-interfaces
+- Empty hosts are rejected for proxy hops (e.g. `http://:8080`); listener bind
+  addresses are configured separately and may use unspecified addresses
 - Bracket depth is tracked; unmatched `[` or `]` is rejected before hop splitting
 
 ### RedactedUri::Display
@@ -165,7 +166,8 @@ Error messages include hop context (e.g. `"hop 1: missing scheme"`).
 ## Reviewer gotchas
 
 - The `CredentialSpec` derives `Serialize`/`Deserialize` but `Debug` is manually overridden to redact -- do not rely on derived `Debug` for credential safety.
-- `parse_proxy_chain` allows empty host with port (e.g. `http://:8080`). This is intentional for bind-to-all-interfaces use cases.
+- `parse_proxy_chain` rejects empty hosts for proxy hops; listener bind
+  addresses are configured separately.
 - The `+` separator is for protocol stacking within a scheme; `__` is for hop chaining. Do not confuse with URI path separators.
 - `find_at_outside_brackets` finds the **last** unbracketed `@` after `://`. This is critical for passwords containing `@`.
 - Port 0 is rejected for all protocols except Unix (where port is always 0).

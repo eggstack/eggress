@@ -11,6 +11,7 @@ categories = ["network-programming", "api-bindings"]
 readme = "README.md"
 
 [dependencies]
+eggress-uri.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

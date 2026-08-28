@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
@@ -109,7 +110,13 @@ impl PortMatcher {
                 );
                 port >= *start && port <= *end
             }
-            PortMatcher::Set(ports) => ports.binary_search(&port).is_ok(),
+            PortMatcher::Set(ports) => {
+                debug_assert!(
+                    ports.windows(2).all(|window| window[0] <= window[1]),
+                    "PortMatcher::Set must be sorted ascending"
+                );
+                ports.binary_search(&port).is_ok()
+            }
         }
     }
 }
@@ -122,6 +129,11 @@ pub enum MatchExpr {
     Not(Box<MatchExpr>),
     HostExact(Arc<str>),
     HostSuffix(Arc<str>),
+    /// Match the raw host string without normalization.
+    ///
+    /// Unlike `HostExact` and `HostSuffix`, regex matching is case-sensitive
+    /// and preserves a trailing dot. Use an inline `(?i)` flag when a regex
+    /// should match hostnames case-insensitively.
     HostRegex(regex::Regex),
     DestinationCidr(ipnet::IpNet),
     DestinationPort(PortMatcher),
@@ -158,6 +170,29 @@ fn normalize_host_for_exact(host: &str) -> String {
     }
 }
 
+fn target_host_str(host: &TargetHost) -> Cow<'_, str> {
+    match host {
+        TargetHost::Domain(domain) => Cow::Borrowed(domain),
+        TargetHost::Ip(ip) => Cow::Owned(ip.to_string()),
+    }
+}
+
+fn host_matches_suffix(host: &str, suffix: &str) -> bool {
+    let host = host.strip_suffix('.').unwrap_or(host);
+    let suffix = suffix.strip_suffix('.').unwrap_or(suffix);
+
+    if host.eq_ignore_ascii_case(suffix) || host.len() <= suffix.len() {
+        return host.eq_ignore_ascii_case(suffix);
+    }
+
+    let suffix_start = host.len() - suffix.len();
+    host.get(..suffix_start)
+        .zip(host.get(suffix_start..))
+        .is_some_and(|(prefix, host_suffix)| {
+            prefix.ends_with('.') && host_suffix.eq_ignore_ascii_case(suffix)
+        })
+}
+
 impl MatchExpr {
     pub fn matches(&self, request: &RouteRequest<'_>) -> bool {
         match self {
@@ -166,27 +201,18 @@ impl MatchExpr {
             MatchExpr::AnyOf(exprs) => exprs.iter().any(|e| e.matches(request)),
             MatchExpr::Not(inner) => !inner.matches(request),
             MatchExpr::HostExact(expected) => {
-                let host_str = request.target.host.to_string();
-                let normalized = normalize_host_for_exact(&host_str);
+                let host_str = target_host_str(&request.target.host);
+                let normalized = normalize_host_for_exact(host_str.as_ref());
                 let expected_norm = normalize_host_for_exact(expected);
                 normalized == expected_norm
             }
             MatchExpr::HostSuffix(suffix) => {
-                let host_str = request.target.host.to_string();
-                let host_lower = host_str
-                    .strip_suffix('.')
-                    .unwrap_or(&host_str)
-                    .to_ascii_lowercase();
-                let suffix_clean = suffix
-                    .strip_suffix('.')
-                    .unwrap_or(suffix)
-                    .to_ascii_lowercase();
-                let suffix_with_dot = format!(".{}", suffix_clean);
-                host_lower == suffix_clean || host_lower.ends_with(&suffix_with_dot)
+                let host_str = target_host_str(&request.target.host);
+                host_matches_suffix(host_str.as_ref(), suffix)
             }
             MatchExpr::HostRegex(re) => {
-                let host_str = request.target.host.to_string();
-                re.is_match(&host_str)
+                let host_str = target_host_str(&request.target.host);
+                re.is_match(host_str.as_ref())
             }
             MatchExpr::DestinationCidr(cidr) => {
                 if let TargetHost::Ip(ip) = &request.target.host {
@@ -884,6 +910,14 @@ mod tests {
         let target = target_domain("www3.example.com", 80);
         let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
         assert!(MatchExpr::HostRegex(re).matches(&req));
+    }
+
+    #[test]
+    fn host_regex_matches_raw_case() {
+        let target = target_domain("Example.COM", 80);
+        let req = make_request(&target, None, "l", ProtocolId::Http, &ANON);
+        assert!(!MatchExpr::HostRegex(regex::Regex::new(r"^example\.com$").unwrap()).matches(&req));
+        assert!(MatchExpr::HostRegex(regex::Regex::new(r"^Example\.COM$").unwrap()).matches(&req));
     }
 
     #[test]
