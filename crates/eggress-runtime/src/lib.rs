@@ -7,4 +7,6 @@ pub mod supervisor;
 
 pub use error::RuntimeError;
 pub use snapshot::CompiledRuntimeSnapshot;
-pub use supervisor::{CompatibilityOptions, RuntimeState, ServiceSupervisor};
+pub use supervisor::{
+    classify_reload_config, CompatibilityOptions, RuntimeState, ServiceSupervisor,
+};

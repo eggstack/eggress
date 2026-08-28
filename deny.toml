@@ -3,6 +3,9 @@ targets = []
 
 [advisories]
 ignore = [
+    # `russh` currently pulls rsa 0.10.0-rc.18. No fixed upgrade is
+    # available for RUSTSEC-2023-0071; SSH remains an opt-in feature.
+    "RUSTSEC-2023-0071",
     # `time` is pulled only by the rcgen test-certificate dependency. The
     # fixed release requires Rust 1.88, above this workspace's MSRV 1.85;
     # keep the exception scoped and revisit it when the MSRV can move.

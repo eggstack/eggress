@@ -216,6 +216,10 @@ pub struct HealthManager {
     tasks: tokio::task::JoinSet<()>,
 }
 
+fn jittered_delay(base: Duration, sample: f64) -> Duration {
+    base.mul_f64(1.0 + 0.2 * (sample * 2.0 - 1.0))
+}
+
 impl HealthManager {
     pub fn new(cancel: CancellationToken) -> Self {
         Self {
@@ -225,8 +229,17 @@ impl HealthManager {
     }
 
     pub fn start_probes(&mut self, upstreams: &[std::sync::Arc<UpstreamRuntime>]) {
+        let handle = tokio::runtime::Handle::current();
+        self.start_probes_on(&handle, upstreams);
+    }
+
+    pub fn start_probes_on(
+        &mut self,
+        handle: &tokio::runtime::Handle,
+        upstreams: &[std::sync::Arc<UpstreamRuntime>],
+    ) {
         self.stop_all();
-        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(upstreams.len().max(10)));
 
         for upstream in upstreams {
             let upstream = upstream.clone();
@@ -234,58 +247,54 @@ impl HealthManager {
             let cancel = self.cancel.clone();
             let semaphore = semaphore.clone();
 
-            self.tasks.spawn(async move {
-                let probe = match upstream.health_probe.clone() {
-                    Some(p) => p,
-                    None => return,
-                };
-
-                loop {
-                    if cancel.is_cancelled() {
-                        break;
-                    }
-
-                    let base = config.interval;
-                    let jitter_pct = 0.2;
-                    let jitter_signed =
-                        (base.as_millis() as f64 * jitter_pct) * (fastrand::f64() * 2.0 - 1.0);
-                    let delay = if jitter_signed >= 0.0 {
-                        base + Duration::from_millis(jitter_signed as u64)
-                    } else {
-                        base.saturating_sub(Duration::from_millis((-jitter_signed) as u64))
+            self.tasks.spawn_on(
+                async move {
+                    let probe = match upstream.health_probe.clone() {
+                        Some(p) => p,
+                        None => return,
                     };
 
-                    if let Ok(()) = tokio::time::timeout(delay, cancel.cancelled()).await {
-                        break;
-                    }
-
-                    if cancel.is_cancelled() {
-                        break;
-                    }
-
-                    let permit = match semaphore.clone().acquire_owned().await {
-                        Ok(permit) => permit,
-                        Err(error) => {
-                            tracing::warn!(%error, "health probe semaphore closed");
+                    loop {
+                        if cancel.is_cancelled() {
                             break;
                         }
-                    };
-                    let result = match probe.clone() {
-                        HealthProbe::TcpConnect { target, timeout } => tokio::select! {
-                            _ = cancel.cancelled() => break,
-                            result = probe_tcp(target, timeout) => result,
-                        },
-                    };
 
-                    if result.success {
-                        upstream.health.observe_success(result.latency, &config);
-                    } else {
-                        upstream.health.observe_failure(result.error, &config);
+                        let base = config.interval;
+                        let delay = jittered_delay(base, fastrand::f64());
+
+                        if let Ok(()) = tokio::time::timeout(delay, cancel.cancelled()).await {
+                            break;
+                        }
+
+                        if cancel.is_cancelled() {
+                            break;
+                        }
+
+                        let permit = match semaphore.clone().acquire_owned().await {
+                            Ok(permit) => permit,
+                            Err(error) => {
+                                tracing::warn!(%error, "health probe semaphore closed");
+                                break;
+                            }
+                        };
+                        let result = match probe.clone() {
+                            HealthProbe::TcpConnect { target, timeout } => tokio::select! {
+                                _ = cancel.cancelled() => break,
+                                result = probe_tcp(target, timeout) => result,
+                            },
+                        };
+
+                        if result.success {
+                            upstream.health.observe_success(result.latency, &config);
+                        } else {
+                            upstream.health.observe_failure(result.error, &config);
+                        }
+
+                        drop(permit);
                     }
-
-                    drop(permit);
-                }
-            });
+                },
+                handle,
+            );
         }
     }
 
@@ -588,21 +597,13 @@ mod tests {
     #[test]
     fn jitter_range_validation() {
         let base = Duration::from_secs(30);
-        let jitter_pct = 0.2;
         let mut saw_negative = false;
         for _ in 0..1000 {
-            // Mirror the production computation exactly: signed jitter so
-            // both the positive and negative branches are exercised.
-            let jitter_signed =
-                (base.as_millis() as f64 * jitter_pct) * (fastrand::f64() * 2.0 - 1.0);
-            if jitter_signed < 0.0 {
+            let sample = fastrand::f64();
+            if sample < 0.5 {
                 saw_negative = true;
             }
-            let delay = if jitter_signed >= 0.0 {
-                base + Duration::from_millis(jitter_signed as u64)
-            } else {
-                base.saturating_sub(Duration::from_millis((-jitter_signed) as u64))
-            };
+            let delay = jittered_delay(base, sample);
             assert!(delay >= base - Duration::from_secs(6));
             assert!(delay <= base + Duration::from_secs(6));
         }

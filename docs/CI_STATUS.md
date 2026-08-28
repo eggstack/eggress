@@ -61,7 +61,7 @@ Run these only when their trigger condition applies:
 | Check | Trigger |
 |---|---|
 | `cargo deny check` | Dependency, feature, or license-policy changes; release preparation |
-| `cargo audit --ignore RUSTSEC-2025-0134` | Dependency changes; release preparation |
+| `cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009` | Dependency changes; release preparation |
 | pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
 | Shadowsocks external interoperability | Shadowsocks wire-format, cipher, or relay changes |
 | strict closure audit | Explicit compatibility-certification work |

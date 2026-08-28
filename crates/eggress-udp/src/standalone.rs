@@ -52,6 +52,7 @@ pub async fn standalone_udp_relay(
     cancel: CancellationToken,
 ) -> Result<(), UdpError> {
     let mut buf = vec![0u8; config.limits.max_datagram_size];
+    let target_idle_timeout = config.limits.target_idle_timeout;
     let mut clients: HashMap<SocketAddr, ClientFlowState> = HashMap::new();
     let (response_tx, mut response_rx) =
         tokio::sync::mpsc::channel::<ResponseMsg>(RESPONSE_CHANNEL_CAPACITY);
@@ -259,7 +260,7 @@ pub async fn standalone_udp_relay(
                                                     let result = tokio::select! {
                                                         _ = flow_cancel.cancelled() => break,
                                                         result = tokio::time::timeout(
-                                                            std::time::Duration::from_secs(30),
+                                                            target_idle_timeout,
                                                             flow_socket.recv_from(&mut recv_buf),
                                                         ) => result,
                                                     };
@@ -394,7 +395,7 @@ pub async fn standalone_udp_relay(
                                             let result = tokio::select! {
                                                 _ = flow_cancel.cancelled() => break,
                                                 result = tokio::time::timeout(
-                                                    std::time::Duration::from_secs(30),
+                                                    target_idle_timeout,
                                                     flow_socket.recv_from(&mut recv_buf),
                                                 ) => result,
                                             };
@@ -511,7 +512,7 @@ pub async fn standalone_udp_relay(
                                             let result = tokio::select! {
                                                 _ = flow_cancel.cancelled() => break,
                                                 result = tokio::time::timeout(
-                                                    std::time::Duration::from_secs(30),
+                                                    target_idle_timeout,
                                                     flow_socket.recv_from(&mut recv_buf),
                                                 ) => result,
                                             };
@@ -579,6 +580,7 @@ async fn build_direct_flow(
     cancel: &CancellationToken,
 ) -> Result<TargetFlowEntry, UdpError> {
     let flow = UdpTargetFlow::new(target.clone(), local_udp_bind_addr()).await?;
+    let target_idle_timeout = config.limits.target_idle_timeout;
 
     let flow_response_tx = response_tx.clone();
     let flow_metrics = config.udp_metrics.clone();
@@ -592,7 +594,7 @@ async fn build_direct_flow(
             let result = tokio::select! {
                 _ = flow_cancel.cancelled() => break,
                 result = tokio::time::timeout(
-                    std::time::Duration::from_secs(30),
+                    target_idle_timeout,
                     flow_socket.recv(&mut recv_buf),
                 ) => result,
             };

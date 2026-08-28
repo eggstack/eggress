@@ -8,6 +8,8 @@ except ImportError:
 import sys
 from typing import Any, Sequence
 
+_NATIVE_IMPORT_ERROR = None
+
 try:
     from eggress._eggress import (
         EggressError,
@@ -19,7 +21,8 @@ try:
         InternalError,
     )
     _HAS_NATIVE = True
-except ImportError:
+except ImportError as error:
+    _NATIVE_IMPORT_ERROR = error
     _HAS_NATIVE = False
     class EggressError(Exception): pass  # type: ignore[no-redef]
     class ConfigError(EggressError): pass  # type: ignore[no-redef]
@@ -29,15 +32,40 @@ except ImportError:
     class UnsupportedFeatureError(EggressError): pass  # type: ignore[no-redef]
     class InternalError(EggressError): pass  # type: ignore[no-redef]
 
+
+class NativeExtensionError(ImportError, EggressError):
+    """Raised when a native-backed API is used without the extension."""
+
+
+def _raise_native_extension_error(*_args: Any, **_kwargs: Any) -> None:
+    message = (
+        "eggress native extension is unavailable; install the egress wheel "
+        "for the current Python platform"
+    )
+    raise NativeExtensionError(message) from _NATIVE_IMPORT_ERROR
+
+
+class _MissingNative:
+    def __new__(cls, *_args: Any, **_kwargs: Any) -> Any:
+        _raise_native_extension_error()
+
+    @classmethod
+    def from_toml(cls, *_args: Any, **_kwargs: Any) -> Any:
+        return _raise_native_extension_error()
+
+    @classmethod
+    def from_file(cls, *_args: Any, **_kwargs: Any) -> Any:
+        return _raise_native_extension_error()
+
 try:
     from eggress.config import EggressConfig
 except ImportError:
-    EggressConfig = None  # type: ignore[assignment,misc]
+    EggressConfig = _MissingNative  # type: ignore[assignment,misc]
 
 try:
     from eggress.service import EggressService, EggressHandle, AsyncEggressHandle, PPProxyHandle
 except ImportError:
-    EggressService = EggressHandle = AsyncEggressHandle = PPProxyHandle = None  # type: ignore[assignment,misc]
+    EggressService = EggressHandle = AsyncEggressHandle = PPProxyHandle = _MissingNative  # type: ignore[assignment,misc]
 
 try:
     from eggress.pproxy import (
@@ -358,6 +386,7 @@ __all__ = [
     "EggressHandle",
     "AsyncEggressHandle",
     "EggressError",
+    "NativeExtensionError",
     "ConfigError",
     "StartupError",
     "ReloadError",

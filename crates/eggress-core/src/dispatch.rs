@@ -91,7 +91,7 @@ impl ProtocolDispatcher {
                 let n = replay
                     .read(&mut read_buf[..to_read])
                     .await
-                    .map_err(|e| DispatchError::Io(std::io::Error::new(e.kind(), e.to_string())))?;
+                    .map_err(DispatchError::Io)?;
 
                 if n == 0 {
                     // Stream closed before we could determine the protocol.

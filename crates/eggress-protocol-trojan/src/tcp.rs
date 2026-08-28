@@ -103,12 +103,8 @@ pub async fn trojan_accept(
         .as_bytes()
         .ct_eq(expected_hash.as_bytes())
         .into();
-    if !hash_matches {
-        return Err(TrojanError::AuthFailed);
-    }
-
     let delimiter_matches: bool = hash_buf[56..58].ct_eq(b"\r\n").into();
-    if !delimiter_matches {
+    if !(hash_matches & delimiter_matches) {
         // Uniform handling with the hash-mismatch path: a distinguishable
         // error here would leak whether the guessed hash was correct.
         return Err(TrojanError::AuthFailed);

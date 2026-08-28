@@ -61,7 +61,7 @@ Run dependency-policy checks when dependencies, features, licenses, or release i
 
 ```bash
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 ```
 
 These are intentionally not installed and executed by routine CI. Installing auditing tools on every push is slow and duplicates checks whose inputs usually did not change.

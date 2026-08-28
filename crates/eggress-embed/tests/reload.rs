@@ -160,6 +160,43 @@ protocols = ["http"]
 }
 
 #[test]
+fn reload_rejects_admin_endpoint_change() {
+    let config1 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#;
+    let f1 = write_config(config1);
+    let config = eggress_embed::EggressConfig::from_toml_file(f1.path()).unwrap();
+    let handle = eggress_embed::EggressService::new(config)
+        .start_blocking()
+        .unwrap();
+
+    let config2 = r#"
+version = 1
+
+[[listeners]]
+name = "http-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[admin]
+enabled = true
+bind = "127.0.0.1:0"
+"#;
+    let error = handle.reload_toml_str(config2).unwrap_err().to_string();
+    assert!(
+        error.contains("admin endpoint"),
+        "unexpected error: {error}"
+    );
+
+    handle.shutdown_blocking().unwrap();
+}
+
+#[test]
 fn reload_from_file() {
     let config = r#"
 version = 1

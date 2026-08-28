@@ -168,6 +168,14 @@ async fn connect_to_addrs(
     let mut last_error = None;
     for &addr in addrs {
         let result = if let Some(local) = local_bind {
+            let local = match local {
+                SocketAddr::V6(local) => local
+                    .ip()
+                    .to_ipv4_mapped()
+                    .map(|ip| SocketAddr::new(ip.into(), local.port()))
+                    .unwrap_or(local.into()),
+                local => local,
+            };
             let socket = if local.is_ipv4() {
                 tokio::net::TcpSocket::new_v4()
             } else {
@@ -460,6 +468,20 @@ mod tests {
         let stream = connect_to_addrs(&[bad_addr, good_addr], None)
             .await
             .expect("second resolved address should be attempted");
+        drop(stream);
+        accept.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn mapped_ipv6_local_bind_uses_ipv4_socket() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap() });
+
+        let mapped = SocketAddr::new("::ffff:127.0.0.1".parse().unwrap(), 0);
+        let stream = connect_to_addrs(&[addr], Some(mapped))
+            .await
+            .expect("mapped IPv6 local bind should connect to IPv4");
         drop(stream);
         accept.await.unwrap();
     }

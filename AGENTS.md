@@ -58,7 +58,7 @@ Dependency and advisory checks are expected for dependency changes and release p
 
 ```bash
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 ```
 
 External compatibility checks are opt-in because they install and launch external implementations:

@@ -9,6 +9,7 @@ pub trait RandomIndex: Send + Sync {
     fn index(&self, upper: usize) -> Option<usize>;
 }
 
+/// Random source backed by fastrand's process-global generator.
 pub struct FastrandRandom;
 
 impl RandomIndex for FastrandRandom {
@@ -17,6 +18,10 @@ impl RandomIndex for FastrandRandom {
     }
 }
 
+/// Repeatable random source for tests and deterministic callers.
+///
+/// Values are consumed in order and wrap when the input list is exhausted;
+/// the call counter uses wrapping arithmetic at `usize::MAX`.
 pub struct DeterministicRandom {
     values: Mutex<Vec<usize>>,
     counter: AtomicUsize,
@@ -203,7 +208,10 @@ impl Scheduler for RandomScheduler {
     }
 }
 
+/// Selects the least-loaded eligible member, rotating ties for fairness.
 pub struct LeastConnectionsScheduler;
+
+static LEAST_CONNECTIONS_CURSOR: AtomicU64 = AtomicU64::new(0);
 
 impl Scheduler for LeastConnectionsScheduler {
     fn select(
@@ -212,11 +220,7 @@ impl Scheduler for LeastConnectionsScheduler {
         candidates: &[Arc<UpstreamRuntime>],
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
-        candidates
-            .iter()
-            .filter(|m| is_eligible(m))
-            .min_by_key(|m| m.current_load())
-            .cloned()
+        select_least_connections(candidates, is_eligible)
     }
 
     fn select_enabled(
@@ -225,12 +229,28 @@ impl Scheduler for LeastConnectionsScheduler {
         candidates: &[Arc<UpstreamRuntime>],
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
-        candidates
-            .iter()
-            .filter(|m| m.is_enabled())
-            .min_by_key(|m| m.current_load())
-            .cloned()
+        select_least_connections(candidates, |member| member.is_enabled())
     }
+}
+
+fn select_least_connections<F>(
+    candidates: &[Arc<UpstreamRuntime>],
+    eligible: F,
+) -> Option<Arc<UpstreamRuntime>>
+where
+    F: Fn(&UpstreamRuntime) -> bool,
+{
+    let min_load = candidates
+        .iter()
+        .filter(|member| eligible(member))
+        .map(|member| member.current_load())
+        .min()?;
+    let tied: Vec<_> = candidates
+        .iter()
+        .filter(|member| eligible(member) && member.current_load() == min_load)
+        .collect();
+    let index = LEAST_CONNECTIONS_CURSOR.fetch_add(1, Ordering::Relaxed) as usize;
+    Some(tied[index % tied.len()].clone())
 }
 
 fn select_round_robin<F>(
@@ -245,14 +265,12 @@ where
         return None;
     }
     let len = candidates.len();
-    let start = cursor.fetch_add(1, Ordering::Relaxed) as usize;
-    for i in 0..len {
-        let idx = (start + i) % len;
-        if eligible(&candidates[idx]) {
-            return Some(candidates[idx].clone());
-        }
+    let eligible_indices: Vec<usize> = (0..len).filter(|&idx| eligible(&candidates[idx])).collect();
+    if eligible_indices.is_empty() {
+        return None;
     }
-    None
+    let start = cursor.fetch_add(1, Ordering::Relaxed) as usize;
+    Some(candidates[eligible_indices[start % eligible_indices.len()]].clone())
 }
 
 fn select_random<F>(
@@ -266,14 +284,11 @@ where
     if candidates.is_empty() {
         return None;
     }
-    let start = rng.index(candidates.len())?;
-    for i in 0..candidates.len() {
-        let idx = (start + i) % candidates.len();
-        if eligible(&candidates[idx]) {
-            return Some(candidates[idx].clone());
-        }
-    }
-    None
+    let eligible_indices: Vec<usize> = (0..candidates.len())
+        .filter(|&idx| eligible(&candidates[idx]))
+        .collect();
+    let index = rng.index(eligible_indices.len())?;
+    Some(candidates[eligible_indices[index]].clone())
 }
 
 pub fn resolve_scheduler(kind: SchedulerKind) -> Arc<dyn Scheduler> {

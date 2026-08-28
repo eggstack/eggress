@@ -100,23 +100,21 @@ pub struct RuntimeAdminListenerInfos {
 }
 
 #[cfg(feature = "operations")]
+struct RuntimeAdminState {
+    snapshot: Arc<CompiledRuntimeSnapshot>,
+    listener_addrs: Vec<Option<std::net::SocketAddr>>,
+}
+
+#[cfg(feature = "operations")]
 impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
     fn generation(&self) -> u64 {
-        self.state.generation()
+        self.state.admin_snapshot.load().snapshot.generation
     }
 
     fn snapshot(&self) -> AdminSnapshot {
-        let snap = self.state.snapshot.load();
-        let addrs = match self.state.listener_addrs.lock() {
-            Ok(addrs) => addrs.clone(),
-            Err(error) => {
-                tracing::warn!("listener address state was poisoned; omitting addresses: {error}");
-                let mut addrs = error.into_inner();
-                addrs.clear();
-                self.state.listener_addrs.clear_poison();
-                addrs.clone()
-            }
-        };
+        let admin_state = self.state.admin_snapshot.load();
+        let snap = &admin_state.snapshot;
+        let addrs = &admin_state.listener_addrs;
         let listeners: Vec<ListenerInfo> = snap
             .listeners
             .iter()
@@ -130,23 +128,18 @@ impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
                     Some("standard".to_string())
                 };
 
-                let capability_status = if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
-                    let cap = crate::platform::check_capability(
-                        crate::platform::PlatformCapability::LinuxOriginalDstIpv4,
-                    );
-                    Some(cap.to_string())
-                } else {
-                    None
-                };
-
-                let original_dst_support = if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
-                    let cap = crate::platform::check_capability(
-                        crate::platform::PlatformCapability::LinuxOriginalDstIpv4,
-                    );
-                    Some(cap == crate::platform::CapabilityStatus::Available)
-                } else {
-                    None
-                };
+                let (capability_status, original_dst_support) =
+                    if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
+                        let cap = crate::platform::check_capability(
+                            crate::platform::PlatformCapability::LinuxOriginalDstIpv4,
+                        );
+                        (
+                            Some(cap.to_string()),
+                            Some(cap == crate::platform::CapabilityStatus::Available),
+                        )
+                    } else {
+                        (None, None)
+                    };
 
                 let (unix_socket_path, unix_socket_unlink_existing) =
                     if let Some(ref unix_cfg) = lcfg.unix {
@@ -242,22 +235,28 @@ fn classify_listeners(
         }
         match (&old.udp, &new.udp) {
             (Some(old_udp), Some(new_udp)) => {
-                if old_udp.bind != new_udp.bind {
+                if old_udp.bind != new_udp.bind
+                    || old_udp.enabled != new_udp.enabled
+                    || old_udp.mode != new_udp.mode
+                {
                     return Err(format!(
-                        "UDP bind address changed for '{}': '{}' -> '{}'; restart required",
-                        old.name, old_udp.bind, new_udp.bind
+                        "UDP listener configuration changed for '{}'; restart required",
+                        old.name
                     ));
                 }
             }
             (None, Some(new_udp)) => {
-                if !new_udp.bind.ip().is_unspecified() {
-                    return Err(format!(
-                        "UDP bind address added for '{}': '{}'; restart required",
-                        new.name, new_udp.bind
-                    ));
-                }
+                return Err(format!(
+                    "UDP configuration added for '{}': '{}'; restart required",
+                    new.name, new_udp.bind
+                ));
             }
-            (Some(_old_udp), None) => {}
+            (Some(_old_udp), None) => {
+                return Err(format!(
+                    "UDP configuration removed for '{}'; restart required",
+                    old.name
+                ));
+            }
             (None, None) => {}
         }
 
@@ -312,7 +311,7 @@ fn classify_listeners(
     Ok(())
 }
 
-fn classify_reload_config(
+pub fn classify_reload_config(
     old_listeners: &[eggress_config::compile::ListenerConfig],
     old_timeouts: &eggress_config::compile::TimeoutConfig,
     old_admin: Option<&eggress_config::compile::AdminConfig>,
@@ -600,6 +599,11 @@ pub struct RuntimeState {
     pub connection_counter: Arc<AtomicU64>,
     pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
     pub listener_addrs: Arc<Mutex<Vec<Option<std::net::SocketAddr>>>>,
+    #[cfg(feature = "operations")]
+    admin_snapshot: Arc<ArcSwap<RuntimeAdminState>>,
+    pub health: Arc<Mutex<Option<HealthManager>>>,
+    pub health_cancel: CancellationToken,
+    pub health_runtime: Mutex<Option<tokio::runtime::Handle>>,
     pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
     pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
     #[cfg(feature = "extended")]
@@ -617,6 +621,57 @@ impl RuntimeState {
     pub fn generation(&self) -> u64 {
         self.snapshot.load().generation
     }
+
+    #[cfg(feature = "operations")]
+    fn publish_admin_snapshot(&self, snapshot: Arc<CompiledRuntimeSnapshot>) {
+        let listener_addrs = self.admin_snapshot.load().listener_addrs.clone();
+        self.admin_snapshot.store(Arc::new(RuntimeAdminState {
+            snapshot,
+            listener_addrs,
+        }));
+    }
+
+    #[cfg(feature = "operations")]
+    fn publish_admin_listener_addrs(
+        &self,
+        snapshot: Arc<CompiledRuntimeSnapshot>,
+        listener_addrs: Vec<Option<std::net::SocketAddr>>,
+    ) {
+        self.admin_snapshot.store(Arc::new(RuntimeAdminState {
+            snapshot,
+            listener_addrs,
+        }));
+    }
+
+    /// Restart health probes for the upstreams in the current snapshot.
+    pub fn restart_health_probes(&self) {
+        let mut guard = self.health.lock().unwrap_or_else(|error| {
+            tracing::warn!("health manager state was poisoned; resetting it: {error}");
+            let mut guard = error.into_inner();
+            *guard = None;
+            self.health.clear_poison();
+            guard
+        });
+        if let Some(ref mut health) = *guard {
+            health.stop_all();
+        }
+        let upstreams: Vec<Arc<UpstreamRuntime>> =
+            self.snapshot.load().upstreams.values().cloned().collect();
+        if !upstreams.is_empty() {
+            let mut health = HealthManager::new(self.health_cancel.clone());
+            if let Some(handle) = self
+                .health_runtime
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone()
+            {
+                health.start_probes_on(&handle, &upstreams);
+            }
+            *guard = Some(health);
+        } else {
+            *guard = None;
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -629,7 +684,7 @@ pub struct ServiceSupervisor {
     connection_cancel: CancellationToken,
     health_cancel: CancellationToken,
     admin_cancel: CancellationToken,
-    health: Option<HealthManager>,
+    health: Arc<Mutex<Option<HealthManager>>>,
     tasks: TaskTracker,
     connection_tasks: TaskTracker,
     admin_tasks: TaskTracker,
@@ -761,6 +816,17 @@ impl ServiceSupervisor {
             },
         ));
 
+        let cancel = CancellationToken::new();
+        let listener_cancel = CancellationToken::new();
+        let connection_cancel = CancellationToken::new();
+        let health_cancel = CancellationToken::new();
+        let admin_cancel = CancellationToken::new();
+        let health = Arc::new(Mutex::new(if snapshot.load().upstreams.is_empty() {
+            None
+        } else {
+            Some(HealthManager::new(health_cancel.clone()))
+        }));
+
         #[cfg(feature = "reverse")]
         let reverse_metrics = Arc::new(eggress_protocol_reverse::metrics::ReverseMetrics::new());
         let udp_tasks = TaskTracker::new();
@@ -775,6 +841,14 @@ impl ServiceSupervisor {
             connection_counter,
             admin_local_addr: Arc::new(Mutex::new(None)),
             listener_addrs: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "operations")]
+            admin_snapshot: Arc::new(ArcSwap::from_pointee(RuntimeAdminState {
+                snapshot: snapshot.load_full(),
+                listener_addrs: Vec::new(),
+            })),
+            health: health.clone(),
+            health_cancel: health_cancel.clone(),
+            health_runtime: Mutex::new(None),
             udp_registry,
             udp_metrics,
             #[cfg(feature = "extended")]
@@ -794,11 +868,6 @@ impl ServiceSupervisor {
             state.transparent_original_dst_failed_total.clone(),
         );
 
-        let cancel = CancellationToken::new();
-        let listener_cancel = CancellationToken::new();
-        let connection_cancel = CancellationToken::new();
-        let health_cancel = CancellationToken::new();
-        let admin_cancel = CancellationToken::new();
         #[cfg(feature = "ssh")]
         let ssh_sessions = Arc::new(if compatibility_options.compatibility_mode {
             let insecure_acknowledged = std::env::var("EGRESS_SSH_INSECURE_HOST_KEYS")
@@ -822,18 +891,6 @@ impl ServiceSupervisor {
         let tasks = TaskTracker::new();
         let connection_tasks = TaskTracker::new();
 
-        let mut health: Option<HealthManager> = None;
-
-        {
-            let upstream_runtimes: Vec<Arc<UpstreamRuntime>> =
-                snapshot.load().upstreams.values().cloned().collect();
-
-            if !upstream_runtimes.is_empty() {
-                let hm = HealthManager::new(health_cancel.clone());
-                health = Some(hm);
-            }
-        }
-
         let shutdown_grace = rt_config.process.shutdown_grace;
 
         Ok(ServiceSupervisor {
@@ -845,7 +902,7 @@ impl ServiceSupervisor {
             connection_cancel,
             health_cancel,
             admin_cancel,
-            health,
+            health: health.clone(),
             tasks,
             connection_tasks,
             admin_tasks: TaskTracker::new(),
@@ -947,13 +1004,10 @@ impl ServiceSupervisor {
         let new_snapshot = Arc::new(new_snapshot);
         self.state.snapshot.store(new_snapshot.clone());
         self.state.routing.swap_arc(new_snapshot.router.clone());
+        #[cfg(feature = "operations")]
+        self.state.publish_admin_snapshot(new_snapshot.clone());
 
-        if let Some(mut health) = self.health.take() {
-            health.stop_all();
-        }
-        if !new_snapshot.upstreams.is_empty() {
-            self.health = Some(HealthManager::new(self.health_cancel.clone()));
-        }
+        self.state.restart_health_probes();
 
         ReloadResult::Applied {
             generation: gen,
@@ -980,10 +1034,8 @@ impl ServiceSupervisor {
         let tasks = self.tasks.clone();
         let connection_tasks = self.connection_tasks.clone();
         let admin_tasks = self.admin_tasks.clone();
-        let health = std::sync::Arc::new(std::sync::Mutex::new(self.health.take()));
-        #[allow(unused_variables)]
-        let health_clone = health.clone();
-        let health_for_run = health.clone();
+        let health_for_run = self.health.clone();
+        let health_clone = health_for_run.clone();
         let snapshot = self.state.snapshot.clone();
         let state_ref = self.state.clone();
         let rt_config = self.rt_config.clone();
@@ -1005,6 +1057,9 @@ impl ServiceSupervisor {
         let metrics_registry_for_admin = self.metrics_registry.clone();
 
         let run_async = async move {
+            if let Ok(mut runtime) = state_ref.health_runtime.lock() {
+                *runtime = Some(tokio::runtime::Handle::current());
+            }
             #[cfg(feature = "operations")]
             let mut compatibility_system_proxy: Option<
                 eggress_system_proxy::AppliedProxy,
@@ -1354,6 +1409,7 @@ impl ServiceSupervisor {
                     .iter()
                     .map(|lcfg| addr_map.get(&lcfg.name).copied().flatten())
                     .collect();
+                let admin_addrs = addrs.clone();
                 match state_ref.listener_addrs.lock() {
                     Ok(mut guard) => *guard = addrs,
                     Err(error) => {
@@ -1365,6 +1421,8 @@ impl ServiceSupervisor {
                         state_ref.listener_addrs.clear_poison();
                     }
                 }
+                #[cfg(feature = "operations")]
+                state_ref.publish_admin_listener_addrs(state_ref.snapshot.load_full(), admin_addrs);
             }
 
             #[cfg(feature = "extended")]
@@ -2785,6 +2843,8 @@ impl ServiceSupervisor {
                                             let new_snapshot = Arc::new(new_snapshot);
                                             snapshot.store(new_snapshot.clone());
                                             routing.swap_arc(new_snapshot.router.clone());
+                                            #[cfg(feature = "operations")]
+                                            state_ref.publish_admin_snapshot(new_snapshot.clone());
 
                                             metrics.set_config_generation(gen);
                                             metrics.record_reload(true);
@@ -2938,11 +2998,6 @@ impl ServiceSupervisor {
                     RuntimeError::Other(format!("supervisor thread panicked: {message}"))
                 })?
         };
-
-        self.health = std::sync::Arc::try_unwrap(health)
-            .ok()
-            .and_then(|m| m.into_inner().ok())
-            .flatten();
 
         match &result {
             Ok(()) => tracing::info!("eggress stopped"),
@@ -3197,6 +3252,39 @@ protocols = ["http"]
         let new_config = eggress_config::compile::load_and_compile(path).unwrap();
         let result = sup.classify_reload(&new_config);
         assert!(result.is_ok(), "unchanged listeners should be accepted");
+    }
+
+    #[test]
+    fn reload_rejects_udp_topology_changes() {
+        let config_without_udp = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:8080"
+protocols = ["socks5"]
+"#;
+        let config_with_udp = r#"
+version = 1
+
+[[listeners]]
+name = "socks-in"
+bind = "127.0.0.1:8080"
+protocols = ["socks5"]
+
+[listeners.udp]
+enabled = true
+bind = "127.0.0.1:0"
+"#;
+        let f1 = write_config(config_without_udp);
+        let f2 = write_config(config_with_udp);
+        let sup = ServiceSupervisor::start(f1.path().to_str().unwrap()).unwrap();
+        let new_config =
+            eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
+
+        let result = sup.classify_reload(&new_config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("UDP"));
     }
 
     #[test]

@@ -529,39 +529,16 @@ impl EggressHandle {
         let new_rt_config = eggress_config::compile::compile_config(&config)
             .map_err(|e| EggressError::Reload(e.to_string()))?;
 
-        // Classify reload
+        // Classify reload using the same topology and endpoint rules as the
+        // file-backed runtime reload path.
         let prev_snapshot = self.state.snapshot.load();
-        let old_listeners = &prev_snapshot.listeners;
-        let new_listeners = &new_rt_config.listeners;
-
-        if old_listeners.len() != new_listeners.len() {
-            return Err(EggressError::Reload(format!(
-                "listener count changed ({} -> {}); restart required",
-                old_listeners.len(),
-                new_listeners.len()
-            )));
-        }
-
-        for (old, new) in old_listeners.iter().zip(new_listeners.iter()) {
-            if old.name != new.name {
-                return Err(EggressError::Reload(format!(
-                    "listener name changed ('{}' -> '{}'); restart required",
-                    old.name, new.name
-                )));
-            }
-            if old.bind != new.bind {
-                return Err(EggressError::Reload(format!(
-                    "listener bind changed for '{}'; restart required",
-                    old.name
-                )));
-            }
-        }
-
-        if prev_snapshot.timeouts != new_rt_config.timeouts {
-            return Err(EggressError::Reload(
-                "timeout configuration changed; restart required".to_string(),
-            ));
-        }
+        eggress_runtime::classify_reload_config(
+            &prev_snapshot.listeners,
+            &prev_snapshot.timeouts,
+            prev_snapshot.admin.as_ref(),
+            &new_rt_config,
+        )
+        .map_err(EggressError::Reload)?;
 
         let prev_ref: Option<&eggress_runtime::CompiledRuntimeSnapshot> = Some(&prev_snapshot);
         let new_snapshot =
@@ -578,6 +555,7 @@ impl EggressHandle {
         let new_snapshot = Arc::new(new_snapshot);
         self.state.snapshot.store(new_snapshot.clone());
         self.state.routing.swap_arc(new_snapshot.router.clone());
+        self.state.restart_health_probes();
 
         self.state.metrics.set_config_generation(gen);
         self.state.metrics.record_reload(true);

@@ -1590,20 +1590,20 @@ mod tests {
             scheduler.select(&group, &group.members, &req).unwrap().id,
             UpstreamId::new("up-2")
         );
-        // cursor 1: checks idx 1 (u2) -> returns u2
-        assert_eq!(
-            scheduler.select(&group, &group.members, &req).unwrap().id,
-            UpstreamId::new("up-2")
-        );
-        // cursor 2: checks idx 2 (u3) -> returns u3
+        // cursor 1: advances to the next eligible member (u3)
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
             UpstreamId::new("up-3")
         );
-        // cursor 3: wraps to idx 0 (disabled), idx 1 (u2) -> returns u2
+        // cursor 2: wraps to u2
         assert_eq!(
             scheduler.select(&group, &group.members, &req).unwrap().id,
             UpstreamId::new("up-2")
+        );
+        // cursor 3: advances to u3 again
+        assert_eq!(
+            scheduler.select(&group, &group.members, &req).unwrap().id,
+            UpstreamId::new("up-3")
         );
     }
 
@@ -1683,9 +1683,10 @@ mod tests {
         let req = dummy_request(&target);
         let scheduler = LeastConnectionsScheduler;
 
-        // min_by_key is stable, so earlier member wins on tie
+        // Equal loads rotate so repeated selections do not concentrate on the
+        // first member.
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
-        assert_eq!(selected.id, UpstreamId::new("up-1"));
+        assert!(selected.id == UpstreamId::new("up-1") || selected.id == UpstreamId::new("up-2"));
     }
 
     #[test]

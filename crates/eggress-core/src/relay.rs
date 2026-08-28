@@ -53,7 +53,14 @@ where
     loop {
         let n = reader.read(&mut buf).await?;
         if n == 0 {
-            writer.shutdown().await?;
+            if let Err(error) = writer.shutdown().await {
+                if !matches!(
+                    error.kind(),
+                    io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
+                ) {
+                    return Err(error);
+                }
+            }
             return Ok(());
         }
         writer.write_all(&buf[..n]).await?;

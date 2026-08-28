@@ -127,22 +127,11 @@ fn round_robin_skips_disabled_upstream() {
         })
         .collect();
 
-    // Cursor advances by 1 each call. With [a, b(disabled), c]:
-    // call 1: start=0 → a
-    // call 2: start=1 → skip b, pick c
-    // call 3: start=2 → c
-    // call 4: start=0 → a
-    // call 5: start=1 → skip b, pick c
-    // call 6: start=2 → c
+    // The cursor advances over eligible members only.
     for s in &selections {
         assert_ne!(s, "b", "disabled upstream 'b' must never be selected");
     }
-    assert_eq!(selections[0], "a");
-    assert_eq!(selections[1], "c");
-    assert_eq!(selections[2], "c");
-    assert_eq!(selections[3], "a");
-    assert_eq!(selections[4], "c");
-    assert_eq!(selections[5], "c");
+    assert_eq!(selections, vec!["a", "c", "a", "c", "a", "c"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,23 +164,11 @@ fn round_robin_skips_unhealthy_upstream() {
         })
         .collect();
 
-    // Same cursor behavior as disabled test: cursor advances by 1 each call.
-    // With [a, b(unhealthy), c]:
-    // call 1: start=0 → a
-    // call 2: start=1 → skip b, pick c
-    // call 3: start=2 → c
-    // call 4: start=0 → a
-    // call 5: start=1 → skip b, pick c
-    // call 6: start=2 → c
+    // The cursor advances over eligible members only.
     for s in &selections {
         assert_ne!(s, "b", "unhealthy upstream 'b' must never be selected");
     }
-    assert_eq!(selections[0], "a");
-    assert_eq!(selections[1], "c");
-    assert_eq!(selections[2], "c");
-    assert_eq!(selections[3], "a");
-    assert_eq!(selections[4], "c");
-    assert_eq!(selections[5], "c");
+    assert_eq!(selections, vec!["a", "c", "a", "c", "a", "c"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -250,13 +227,9 @@ fn least_connections_tie_breaks_by_position() {
     let req = dummy_request(&target);
     let scheduler = LeastConnectionsScheduler;
 
-    // min_by_key is stable, so first matching member wins on tie
+    // Equal loads rotate rather than always selecting the first member.
     let selected = scheduler.select(&group, &group.members, &req).unwrap();
-    assert_eq!(
-        selected.id,
-        UpstreamId::new("a"),
-        "tie should be broken by first position"
-    );
+    assert!(selected.id == UpstreamId::new("a") || selected.id == UpstreamId::new("b"));
 }
 
 // ---------------------------------------------------------------------------

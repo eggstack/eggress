@@ -84,10 +84,14 @@ impl AuthReuseCache {
         if entries.len() >= self.max_entries {
             let now_nanos =
                 u64::try_from(now.duration_since(*AUTH_CACHE_EPOCH).as_nanos()).unwrap_or(u64::MAX);
-            let last_sweep = self.last_sweep_nanos.load(Ordering::Relaxed);
+            let last_sweep = self.last_sweep_nanos.load(Ordering::Acquire);
             let interval_nanos = u64::try_from(Self::SWEEP_INTERVAL.as_nanos()).unwrap_or(u64::MAX);
-            if now_nanos.saturating_sub(last_sweep) >= interval_nanos {
-                self.last_sweep_nanos.store(now_nanos, Ordering::Relaxed);
+            if now_nanos.saturating_sub(last_sweep) >= interval_nanos
+                && self
+                    .last_sweep_nanos
+                    .compare_exchange(last_sweep, now_nanos, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            {
                 entries.retain(|_, entry| {
                     now.duration_since(entry.last_authenticated) <= self.timeout
                 });

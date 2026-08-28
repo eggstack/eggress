@@ -36,7 +36,7 @@ Run dependency and advisory checks because release inputs are changing:
 
 ```bash
 cargo deny check
-cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071
+cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009
 ```
 
 Run specialized interoperability, Python, performance, or cross-platform checks only when the release contains relevant changes or makes claims that depend on them. The selection policy is in `docs/TESTING.md`.

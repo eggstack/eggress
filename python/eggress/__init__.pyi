@@ -149,6 +149,8 @@ from eggress._eggress import (
     InternalError as InternalError,
 )
 
+class NativeExtensionError(ImportError, EggressError): ...
+
 __version__: str
 
 def start_pproxy(

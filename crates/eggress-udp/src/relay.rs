@@ -176,6 +176,7 @@ async fn handle_client_datagram(
                                     let flow_target = target.clone();
                                     let flow_socket = udp_socket.clone();
                                     let flow_cancel = cancel.clone();
+                                    let target_idle_timeout = config.limits.target_idle_timeout;
 
                                     let recv_task = tokio::spawn(async move {
                                         let mut recv_buf = [0u8; 65535];
@@ -183,7 +184,7 @@ async fn handle_client_datagram(
                                             let result = tokio::select! {
                                                 _ = flow_cancel.cancelled() => break,
                                                 result = tokio::time::timeout(
-                                                    std::time::Duration::from_secs(30),
+                                                    target_idle_timeout,
                                                     flow_socket.recv_from(&mut recv_buf),
                                                 ) => result,
                                             };
@@ -311,6 +312,7 @@ async fn handle_client_datagram(
                             );
                             let flow_password_ikm_for_recv = flow_password_ikm.clone();
                             let flow_cancel = cancel.clone();
+                            let target_idle_timeout = config.limits.target_idle_timeout;
 
                             let recv_task = tokio::spawn(async move {
                                 let mut recv_buf = [0u8; 65535];
@@ -318,7 +320,7 @@ async fn handle_client_datagram(
                                     let result = tokio::select! {
                                         _ = flow_cancel.cancelled() => break,
                                         result = tokio::time::timeout(
-                                            std::time::Duration::from_secs(30),
+                                            target_idle_timeout,
                                             flow_socket.recv_from(&mut recv_buf),
                                         ) => result,
                                     };
@@ -434,13 +436,14 @@ async fn handle_client_datagram(
                             let flow_response_tx = response_tx.clone();
                             let flow_metrics = config.udp_metrics.clone();
                             let flow_cancel = cancel.clone();
+                            let target_idle_timeout = config.limits.target_idle_timeout;
                             let recv_task = tokio::spawn(async move {
                                 let mut recv_buf = [0u8; 65535];
                                 loop {
                                     let result = tokio::select! {
                                         _ = flow_cancel.cancelled() => break,
                                         result = tokio::time::timeout(
-                                            std::time::Duration::from_secs(30),
+                                            target_idle_timeout,
                                             flow_socket.recv_from(&mut recv_buf),
                                         ) => result,
                                     };
@@ -519,6 +522,7 @@ async fn handle_client_datagram(
             let flow_metrics = config.udp_metrics.clone();
             let flow_socket = flow.socket.clone();
             let flow_cancel = cancel.clone();
+            let target_idle_timeout = config.limits.target_idle_timeout;
 
             let recv_task = tokio::spawn(async move {
                 let mut recv_buf = [0u8; 65535];
@@ -526,7 +530,7 @@ async fn handle_client_datagram(
                     let result = tokio::select! {
                         _ = flow_cancel.cancelled() => break,
                         result = tokio::time::timeout(
-                            std::time::Duration::from_secs(30),
+                        target_idle_timeout,
                             flow_socket.recv(&mut recv_buf),
                         ) => result,
                     };
