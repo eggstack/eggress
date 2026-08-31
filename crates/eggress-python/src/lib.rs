@@ -508,7 +508,8 @@ impl PyConnection {
                     // from Python's finalizer. Cancel the runtime token so
                     // listeners and the supervisor wind down in the
                     // background, then leak only this already-closing handle.
-                    handle.cancel();
+                    let mut handle = handle;
+                    handle.cancel_and_cleanup();
                     std::mem::forget(handle);
                 }
             }

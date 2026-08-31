@@ -9,12 +9,13 @@ use std::time::{Duration, Instant};
 
 static AUTH_CACHE_EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
-use base64::Engine;
 use eggress_core::BoxStream;
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
+
+use crate::auth::parse_basic_auth;
 
 /// Authentication policy for inbound connections.
 /// Bounded compatibility authentication state keyed by source IP.
@@ -1240,23 +1241,6 @@ fn parse_header_line_str(line: &str) -> Option<(String, String)> {
 }
 
 /// Parse Basic authentication from a Proxy-Authorization header value.
-fn parse_basic_auth(value: &str) -> Option<(String, String)> {
-    let value = value.trim();
-    if !value.starts_with("Basic ") {
-        return None;
-    }
-
-    let encoded = &value[6..];
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(encoded.trim())
-        .ok()?;
-    let decoded_str = String::from_utf8(decoded).ok()?;
-    let colon_pos = decoded_str.find(':')?;
-    let username = decoded_str[..colon_pos].to_string();
-    let password = decoded_str[colon_pos + 1..].to_string();
-    Some((username, password))
-}
-
 /// Write a 407 Proxy Authentication Required response.
 async fn write_proxy_auth_required<W: AsyncWrite + Unpin>(
     stream: &mut W,
@@ -1983,11 +1967,6 @@ mod tests {
         );
 
         server_jh.await.unwrap();
-    }
-
-    #[test]
-    fn test_parse_basic_auth_rejects_invalid_padding() {
-        assert!(parse_basic_auth("Basic dXNlcjpwYXNz=").is_none());
     }
 
     #[tokio::test]

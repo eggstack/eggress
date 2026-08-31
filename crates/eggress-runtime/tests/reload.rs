@@ -270,3 +270,42 @@ protocols = ["http"]
         other => panic!("expected Rejected for bind change, got {:?}", other),
     }
 }
+
+#[test]
+fn reload_rejects_removing_enabled_transparent_configuration() {
+    let old = eggress_config::validate_and_compile_toml(
+        r#"
+version = 1
+
+[[listeners]]
+name = "redir-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+
+[listeners.transparent]
+enabled = true
+protocol = "redir"
+"#,
+    )
+    .unwrap();
+    let new = eggress_config::validate_and_compile_toml(
+        r#"
+version = 1
+
+[[listeners]]
+name = "redir-in"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#,
+    )
+    .unwrap();
+
+    let result = eggress_runtime::classify_reload_config(
+        &old.listeners,
+        &old.timeouts,
+        old.admin.as_ref(),
+        &new,
+    );
+    let error = result.expect_err("enabled transparent removal must require restart");
+    assert!(error.contains("transparent") && error.contains("restart required"));
+}

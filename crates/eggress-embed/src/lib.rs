@@ -161,8 +161,13 @@ impl EggressService {
             ),
             EggressError,
         > {
-            let mut sup = eggress_runtime::ServiceSupervisor::start(&config_path_clone)
-                .map_err(|e| EggressError::Startup(e.to_string()))?;
+            let mut sup = match eggress_runtime::ServiceSupervisor::start(&config_path_clone) {
+                Ok(sup) => sup,
+                Err(error) => {
+                    let _ = std::fs::remove_file(&config_path_clone);
+                    return Err(EggressError::Startup(error.to_string()));
+                }
+            };
 
             let state = sup.state().clone();
             let token = sup.shutdown_token();
@@ -170,7 +175,10 @@ impl EggressService {
             let run_result = std::thread::Builder::new()
                 .name("eggress-embed-rt".into())
                 .spawn(move || sup.run())
-                .map_err(|e| EggressError::Startup(e.to_string()))?;
+                .map_err(|error| {
+                    let _ = std::fs::remove_file(&config_path_clone);
+                    EggressError::Startup(error.to_string())
+                })?;
 
             // Wait for readiness or failure
             let started = std::time::Instant::now();
@@ -241,6 +249,7 @@ impl EggressService {
                 let mut sup = match eggress_runtime::ServiceSupervisor::start(&config_path_clone) {
                     Ok(s) => s,
                     Err(e) => {
+                        let _ = std::fs::remove_file(&config_path_clone);
                         let _ = ready_tx.send(Err(EggressError::Startup(e.to_string())));
                         return;
                     }
@@ -260,6 +269,7 @@ impl EggressService {
                 let run_handle = match run_handle {
                     Ok(h) => h,
                     Err(e) => {
+                        let _ = std::fs::remove_file(&config_path_clone);
                         let _ = ready_tx.send(Err(EggressError::Startup(e.to_string())));
                         return;
                     }
@@ -288,7 +298,10 @@ impl EggressService {
                     std::thread::sleep(Duration::from_millis(5));
                 }
             })
-            .map_err(|e| EggressError::Startup(e.to_string()))?;
+            .map_err(|e| {
+                let _ = std::fs::remove_file(&config_path);
+                EggressError::Startup(e.to_string())
+            })?;
 
         let (state, token, run_handle, config_path) = ready_rx
             .recv()
@@ -582,6 +595,17 @@ impl EggressHandle {
     pub fn cancel(&self) {
         if let Some(token) = self.token.as_ref() {
             token.cancel();
+        }
+    }
+
+    /// Cancel the runtime and remove the temporary config without joining it.
+    ///
+    /// This is intended for finalizers that must abandon the handle after
+    /// cancellation without retaining credentials in a temporary file.
+    pub fn cancel_and_cleanup(&mut self) {
+        self.cancel();
+        if let Some(path) = self._config_path.take() {
+            let _ = std::fs::remove_file(&path);
         }
     }
 
@@ -929,5 +953,16 @@ mod tests {
             "temp config carries plaintext credentials and must not be group/world readable"
         );
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn cancel_removes_temp_config_file() {
+        let config = super::EggressConfig::from_toml_str("version = 1").unwrap();
+        let mut handle = super::EggressService::new(config).start_blocking().unwrap();
+        let path = handle._config_path.clone().unwrap();
+
+        assert!(std::path::Path::new(&path).exists());
+        handle.cancel_and_cleanup();
+        assert!(!std::path::Path::new(&path).exists());
     }
 }

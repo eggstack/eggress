@@ -1265,6 +1265,7 @@ async fn run() -> i32 {
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
+        let notified = ACTIVE_CONNECTIONS_DRAIN.notified();
         let active = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
         if active == 0 {
             tracing::info!("all connections drained");
@@ -1276,7 +1277,7 @@ async fn run() -> i32 {
         }
         // Wake immediately when a connection completes so the drain doesn't
         // have to wait out a full tick to notice progress.
-        ACTIVE_CONNECTIONS_DRAIN.notified().await;
+        notified.await;
     }
 
     for h in shutdown_handles.drain(..) {

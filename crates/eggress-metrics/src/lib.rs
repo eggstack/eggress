@@ -1481,12 +1481,12 @@ impl MetricsRegistry {
             self.h2_connections_active
                 .set(active.min(i64::MAX as u64) as i64);
 
-            let cur = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
+            let cur_streams_opened = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
             let mut prev = self
                 .h2_prev_streams_opened
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            let delta = cur.saturating_sub(*prev);
+            let delta = cur_streams_opened.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_streams_total
                     .get_or_create(&H2StreamLabels {
@@ -1495,14 +1495,14 @@ impl MetricsRegistry {
                     })
                     .inc_by(delta);
             }
-            *prev = cur;
+            *prev = cur_streams_opened;
 
-            let cur = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
+            let cur_streams_closed = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
             let mut prev = self
                 .h2_prev_streams_closed
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            let delta = cur.saturating_sub(*prev);
+            let delta = cur_streams_closed.saturating_sub(*prev);
             if delta > 0 {
                 self.h2_streams_total
                     .get_or_create(&H2StreamLabels {
@@ -1511,11 +1511,9 @@ impl MetricsRegistry {
                     })
                     .inc_by(delta);
             }
-            *prev = cur;
+            *prev = cur_streams_closed;
 
-            let total_opened = H2_PROTOCOL_METRICS.streams_opened.load(Ordering::Relaxed);
-            let total_closed = H2_PROTOCOL_METRICS.streams_closed.load(Ordering::Relaxed);
-            let active_streams = total_opened.saturating_sub(total_closed);
+            let active_streams = cur_streams_opened.saturating_sub(cur_streams_closed);
             self.h2_streams_active
                 .set(active_streams.min(i64::MAX as u64) as i64);
 

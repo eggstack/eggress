@@ -1,6 +1,5 @@
 //! Dedicated listener handlers for multiplexed and upgraded transports.
 
-use base64::Engine;
 use eggress_core::{BoxStream, ClientIdentity, TargetAddr};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -9,6 +8,7 @@ use crate::accept::{
     auth_credentials, cached_identity, record_authenticated, AcceptedSession, PendingTunnel,
     ReplyContext, TunnelProtocol,
 };
+use crate::auth::parse_basic_auth;
 use crate::ConnectionConfig;
 
 struct H2StreamAdapter {
@@ -206,16 +206,6 @@ fn h2_target(uri: &http::Uri) -> Result<TargetAddr, String> {
     } else {
         format!("{authority}:443").parse()
     }
-}
-
-fn parse_basic_auth(value: &str) -> Option<(String, String)> {
-    let encoded = value.strip_prefix("Basic ")?.trim();
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .ok()?;
-    let decoded = String::from_utf8(decoded).ok()?;
-    let (user, password) = decoded.split_once(':')?;
-    Some((user.to_string(), password.to_string()))
 }
 
 #[cfg(test)]

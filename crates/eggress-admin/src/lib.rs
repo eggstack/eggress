@@ -28,6 +28,7 @@ mod tests {
     use super::*;
     use crate::pac::generate_pac;
     use crate::server::{build_response, AdminState};
+    use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -96,6 +97,25 @@ mod tests {
             reverse_registry: Arc::new(ReverseRegistry::new()),
             metrics_enabled: true,
             auth: None,
+        }
+    }
+
+    struct PacProvider {
+        snapshot: AdminSnapshot,
+        calls: AtomicUsize,
+    }
+
+    impl AdminSnapshotProvider for PacProvider {
+        fn snapshot(&self) -> AdminSnapshot {
+            let mut snapshot = self.snapshot.clone();
+            if self
+                .calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                > 0
+            {
+                snapshot.pac = None;
+            }
+            snapshot
         }
     }
 
@@ -246,6 +266,21 @@ mod tests {
         let (status, body) = http_get(&addr, "/pac").await;
         assert_eq!(status, 404);
         assert!(body.contains("pac not configured"));
+    }
+
+    #[tokio::test]
+    async fn pac_endpoint_uses_one_snapshot_for_path_and_content() {
+        let mut state = test_state();
+        let snapshot = state.snapshot();
+        state.provider = Arc::new(PacProvider {
+            snapshot,
+            calls: AtomicUsize::new(0),
+        });
+
+        let addr = start_server(state).await;
+        let (status, body) = http_get(&addr, "/pac").await;
+        assert_eq!(status, 200);
+        assert!(body.contains("function FindProxyForURL"));
     }
 
     #[tokio::test]

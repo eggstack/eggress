@@ -277,6 +277,12 @@ fn classify_listeners(
                     ));
                 }
             }
+            (Some(old_t), None) if old_t.enabled => {
+                return Err(format!(
+                    "transparent proxy configuration removed for '{}'; restart required",
+                    old.name
+                ));
+            }
             (Some(_old_t), None) => {}
             (None, None) => {}
         }

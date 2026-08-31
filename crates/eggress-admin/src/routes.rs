@@ -361,23 +361,17 @@ pub async fn handle_request(
                 build_not_found()
             }
         }
-        _ if path
-            == state
-                .snapshot()
-                .pac
-                .as_ref()
-                .map(|p| p.path.as_str())
-                .unwrap_or("/pac") =>
-        {
-            if let Some(pac_config) = state.snapshot().pac.as_ref() {
-                let pac = generate_pac(pac_config);
-                build_response(200, pac, "application/x-ns-proxy-autoconfig")
-            } else {
-                build_text_response(404, "pac not configured")
-            }
-        }
         _ => {
-            for route in state.snapshot().static_routes.iter() {
+            let snap = state.snapshot();
+            if path == snap.pac.as_ref().map(|p| p.path.as_str()).unwrap_or("/pac") {
+                if let Some(pac_config) = snap.pac.as_ref() {
+                    let pac = generate_pac(pac_config);
+                    return build_response(200, pac, "application/x-ns-proxy-autoconfig");
+                }
+                return build_text_response(404, "pac not configured");
+            }
+
+            for route in snap.static_routes.iter() {
                 if route.path == path {
                     return serve_static(route);
                 }

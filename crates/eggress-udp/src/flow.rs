@@ -374,25 +374,45 @@ pub fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
             a_addr == b_addr && a_port == b_port
         }
         (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
-            let v6 = std::net::Ipv6Addr::from(*b_addr);
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                v4.octets() == *a_addr && a_port == b_port
-            } else {
-                false
-            }
+            a_port == b_port
+                && ip_addr_equivalent(
+                    std::net::IpAddr::V4((*a_addr).into()),
+                    std::net::IpAddr::V6((*b_addr).into()),
+                )
         }
         (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
-            let v6 = std::net::Ipv6Addr::from(*a_addr);
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                v4.octets() == *b_addr && a_port == b_port
-            } else {
-                false
-            }
+            a_port == b_port
+                && ip_addr_equivalent(
+                    std::net::IpAddr::V6((*a_addr).into()),
+                    std::net::IpAddr::V4((*b_addr).into()),
+                )
         }
         (SocksAddr::Domain(a_dom, a_port), SocksAddr::Domain(b_dom, b_port)) => {
             a_dom == b_dom && a_port == b_port
         }
-        _ => false,
+        (SocksAddr::Domain(domain, port), SocksAddr::IPv4(addr, other_port)) => {
+            *port == *other_port
+                && domain.parse::<std::net::IpAddr>().is_ok_and(|domain_addr| {
+                    ip_addr_equivalent(domain_addr, std::net::IpAddr::V4((*addr).into()))
+                })
+        }
+        (SocksAddr::Domain(domain, port), SocksAddr::IPv6(addr, other_port)) => {
+            *port == *other_port
+                && domain.parse::<std::net::IpAddr>().is_ok_and(|domain_addr| {
+                    ip_addr_equivalent(domain_addr, std::net::IpAddr::V6((*addr).into()))
+                })
+        }
+        (SocksAddr::IPv4(_, _), SocksAddr::Domain(_, _))
+        | (SocksAddr::IPv6(_, _), SocksAddr::Domain(_, _)) => socks_addr_equivalent(b, a),
+    }
+}
+
+fn ip_addr_equivalent(a: std::net::IpAddr, b: std::net::IpAddr) -> bool {
+    match (a, b) {
+        (std::net::IpAddr::V4(a), std::net::IpAddr::V4(b)) => a == b,
+        (std::net::IpAddr::V6(a), std::net::IpAddr::V6(b)) => a == b,
+        (std::net::IpAddr::V4(a), std::net::IpAddr::V6(b))
+        | (std::net::IpAddr::V6(b), std::net::IpAddr::V4(a)) => b.to_ipv4_mapped() == Some(a),
     }
 }
 
@@ -422,5 +442,21 @@ mod tests {
     #[test]
     fn local_udp_bind_addr_is_loopback_ephemeral() {
         assert_eq!(local_udp_bind_addr(), SocketAddr::from(([127, 0, 0, 1], 0)));
+    }
+
+    #[test]
+    fn socks_addr_equivalent_matches_numeric_domains_to_ips() {
+        assert!(socks_addr_equivalent(
+            &SocksAddr::Domain("127.0.0.1".to_string(), 80),
+            &SocksAddr::IPv4([127, 0, 0, 1], 80)
+        ));
+        assert!(socks_addr_equivalent(
+            &SocksAddr::IPv6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 443),
+            &SocksAddr::Domain("::1".to_string(), 443)
+        ));
+        assert!(!socks_addr_equivalent(
+            &SocksAddr::Domain("127.0.0.1".to_string(), 80),
+            &SocksAddr::IPv4([127, 0, 0, 2], 80)
+        ));
     }
 }

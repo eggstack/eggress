@@ -12,7 +12,7 @@ use crate::codec::{decode_packet, encode_socks5_udp_datagram};
 use crate::composed::open_composed_udp_upstream;
 use crate::direct::UdpTargetFlow;
 use crate::error::UdpError;
-use crate::flow::{TargetFlowEntry, UdpFlowKey, UdpFlowKind};
+use crate::flow::{socks_addr_equivalent, TargetFlowEntry, UdpFlowKey, UdpFlowKind};
 use crate::limits::UdpLimits;
 use crate::metrics::UdpMetrics;
 use crate::registry::UdpAssociationRegistry;
@@ -765,38 +765,6 @@ fn socks_to_target_addr(addr: &SocksAddr) -> TargetAddr {
             host: TargetHost::Domain(domain.clone()),
             port: *port,
         },
-    }
-}
-
-fn socks_addr_equivalent(a: &SocksAddr, b: &SocksAddr) -> bool {
-    match (a, b) {
-        (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
-            a_addr == b_addr && a_port == b_port
-        }
-        (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
-            a_addr == b_addr && a_port == b_port
-        }
-        (SocksAddr::IPv4(a_addr, a_port), SocksAddr::IPv6(b_addr, b_port)) => {
-            // Check for IPv4-mapped IPv6: ::ffff:x.x.x.x
-            let v6 = std::net::Ipv6Addr::from(*b_addr);
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                v4.octets() == *a_addr && a_port == b_port
-            } else {
-                false
-            }
-        }
-        (SocksAddr::IPv6(a_addr, a_port), SocksAddr::IPv4(b_addr, b_port)) => {
-            let v6 = std::net::Ipv6Addr::from(*a_addr);
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                v4.octets() == *b_addr && a_port == b_port
-            } else {
-                false
-            }
-        }
-        (SocksAddr::Domain(a_dom, a_port), SocksAddr::Domain(b_dom, b_port)) => {
-            a_dom == b_dom && a_port == b_port
-        }
-        _ => false,
     }
 }
 
