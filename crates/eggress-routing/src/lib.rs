@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-
-use once_cell::sync::Lazy;
+use std::sync::{Arc, LazyLock};
 
 use eggress_core::{ClientIdentity, ProtocolId, RejectReason, TargetAddr, TargetHost};
 
@@ -76,7 +74,7 @@ pub struct RouteExplanation {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RuleId(pub Arc<str>);
 
-static DEFAULT_RULE_ID: Lazy<RuleId> = Lazy::new(|| RuleId(Arc::from("default")));
+static DEFAULT_RULE_ID: LazyLock<RuleId> = LazyLock::new(|| RuleId(Arc::from("default")));
 
 impl std::fmt::Display for RuleId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -367,6 +365,82 @@ impl Router {
         &self.groups
     }
 
+    /// Select an upstream for a previously evaluated decision.
+    pub fn select(
+        &self,
+        decision: &RouteDecision,
+        request: &RouteRequest<'_>,
+    ) -> Result<SelectedRoute, RouteError> {
+        match decision {
+            RouteDecision::Direct { .. } => Ok(SelectedRoute::Direct {
+                decision: decision.clone(),
+                selection_reason: SelectionReason::Normal,
+            }),
+            RouteDecision::Reject { rule, reason } => Err(RouteError::Rejected {
+                rule: rule.clone(),
+                reason: reason.clone(),
+            }),
+            RouteDecision::UpstreamGroup { group, .. } => {
+                let upstream_group = self
+                    .groups
+                    .get(group)
+                    .ok_or_else(|| RouteError::UnknownGroup(group.clone()))?;
+
+                let candidates: Vec<_> = upstream_group
+                    .members
+                    .iter()
+                    .filter(|m| health::is_eligible(m))
+                    .cloned()
+                    .collect();
+
+                let (selected, selection_reason) = if !candidates.is_empty() {
+                    let sel = upstream_group
+                        .scheduler
+                        .select(upstream_group, &candidates, request)
+                        .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
+                    (sel, SelectionReason::Normal)
+                } else {
+                    match &upstream_group.fallback {
+                        upstream::GroupFallback::Reject => {
+                            return Err(RouteError::NoEligibleUpstream(group.clone()));
+                        }
+                        upstream::GroupFallback::Direct => {
+                            return Ok(SelectedRoute::Direct {
+                                decision: decision.clone(),
+                                selection_reason: SelectionReason::DirectFallback,
+                            });
+                        }
+                        upstream::GroupFallback::UseUnhealthy => {
+                            let enabled_members: Vec<_> = upstream_group
+                                .members
+                                .iter()
+                                .filter(|m| m.is_enabled())
+                                .cloned()
+                                .collect();
+                            let sel = upstream_group
+                                .scheduler
+                                .select_enabled(upstream_group, &enabled_members, request)
+                                .or_else(|| enabled_members.first().cloned())
+                                .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
+                            (sel, SelectionReason::UnhealthyFallback)
+                        }
+                    }
+                };
+
+                let pending_lease = lease::PendingLease::new(selected.clone());
+
+                Ok(SelectedRoute::Upstream {
+                    decision: decision.clone(),
+                    group: group.clone(),
+                    upstream: selected.id.clone(),
+                    chain: selected.chain.clone(),
+                    pending_lease,
+                    selection_reason,
+                })
+            }
+        }
+    }
+
     pub fn explain(&self, request: &RouteRequest, generation: u64) -> RouteExplanation {
         let decision = self.decide(request);
         let target = request.target.to_string();
@@ -550,21 +624,8 @@ impl std::fmt::Debug for SelectedRoute {
 }
 
 pub trait RouteService: Send + Sync {
-    #[deprecated(note = "use route() to decide and select from one routing snapshot")]
-    fn decide(&self, request: &RouteRequest<'_>) -> RouteDecision;
-    #[deprecated(note = "use route() to decide and select from one routing snapshot")]
-    fn select(
-        &self,
-        decision: &RouteDecision,
-        request: &RouteRequest<'_>,
-    ) -> Result<SelectedRoute, RouteError>;
-
-    /// Atomically decide and select from a single snapshot.
-    #[allow(deprecated)]
-    fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError> {
-        let decision = self.decide(request);
-        self.select(&decision, request)
-    }
+    /// Decide and select from one routing snapshot.
+    fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -578,83 +639,9 @@ pub enum RouteError {
 }
 
 impl RouteService for Router {
-    fn decide(&self, request: &RouteRequest<'_>) -> RouteDecision {
-        self.decide(request)
-    }
-
-    fn select(
-        &self,
-        decision: &RouteDecision,
-        request: &RouteRequest<'_>,
-    ) -> Result<SelectedRoute, RouteError> {
-        match decision {
-            RouteDecision::Direct { rule: _ } => Ok(SelectedRoute::Direct {
-                decision: decision.clone(),
-                selection_reason: SelectionReason::Normal,
-            }),
-            RouteDecision::Reject { rule, reason } => Err(RouteError::Rejected {
-                rule: rule.clone(),
-                reason: reason.clone(),
-            }),
-            RouteDecision::UpstreamGroup { rule: _, group } => {
-                let upstream_group = self
-                    .groups
-                    .get(group)
-                    .ok_or_else(|| RouteError::UnknownGroup(group.clone()))?;
-
-                let candidates: Vec<_> = upstream_group
-                    .members
-                    .iter()
-                    .filter(|m| health::is_eligible(m))
-                    .cloned()
-                    .collect();
-
-                let (selected, selection_reason) = if !candidates.is_empty() {
-                    let sel = upstream_group
-                        .scheduler
-                        .select(upstream_group, &candidates, request)
-                        .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
-                    (sel, SelectionReason::Normal)
-                } else {
-                    match &upstream_group.fallback {
-                        upstream::GroupFallback::Reject => {
-                            return Err(RouteError::NoEligibleUpstream(group.clone()));
-                        }
-                        upstream::GroupFallback::Direct => {
-                            return Ok(SelectedRoute::Direct {
-                                decision: decision.clone(),
-                                selection_reason: SelectionReason::DirectFallback,
-                            });
-                        }
-                        upstream::GroupFallback::UseUnhealthy => {
-                            let enabled_members: Vec<_> = upstream_group
-                                .members
-                                .iter()
-                                .filter(|m| m.is_enabled())
-                                .cloned()
-                                .collect();
-                            let sel = upstream_group
-                                .scheduler
-                                .select_enabled(upstream_group, &enabled_members, request)
-                                .or_else(|| enabled_members.first().cloned())
-                                .ok_or_else(|| RouteError::NoEligibleUpstream(group.clone()))?;
-                            (sel, SelectionReason::UnhealthyFallback)
-                        }
-                    }
-                };
-
-                let pending_lease = lease::PendingLease::new(selected.clone());
-
-                Ok(SelectedRoute::Upstream {
-                    decision: decision.clone(),
-                    group: group.clone(),
-                    upstream: selected.id.clone(),
-                    chain: selected.chain.clone(),
-                    pending_lease,
-                    selection_reason,
-                })
-            }
-        }
+    fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError> {
+        let decision = self.decide(request);
+        self.select(&decision, request)
     }
 }
 
@@ -685,6 +672,13 @@ impl SharedRoutingService {
         self.inner.load().router.clone()
     }
 
+    /// Evaluate policy against one routing snapshot without selecting an
+    /// upstream. This is for callers, such as reverse routing, that use the
+    /// decision only as an authorization gate.
+    pub fn policy_decision(&self, request: &RouteRequest<'_>) -> RouteDecision {
+        self.inner.load().router.decide(request)
+    }
+
     pub fn swap(&self, router: Router) {
         let new_inner = RoutingServiceInner {
             router: std::sync::Arc::new(router),
@@ -698,24 +692,7 @@ impl SharedRoutingService {
     }
 }
 
-#[allow(deprecated)]
 impl RouteService for SharedRoutingService {
-    /// **Note:** Using `decide()` and `select()` separately on `SharedRoutingService`
-    /// is racy under config reload. Prefer `route()` for atomic decide+select.
-    fn decide(&self, request: &RouteRequest<'_>) -> RouteDecision {
-        self.inner.load().router.decide(request)
-    }
-
-    /// **Note:** Using `decide()` and `select()` separately on `SharedRoutingService`
-    /// is racy under config reload. Prefer `route()` for atomic decide+select.
-    fn select(
-        &self,
-        decision: &RouteDecision,
-        request: &RouteRequest<'_>,
-    ) -> Result<SelectedRoute, RouteError> {
-        self.inner.load().router.select(decision, request)
-    }
-
     fn route(&self, request: &RouteRequest<'_>) -> Result<SelectedRoute, RouteError> {
         let inner = self.inner.load();
         let decision = inner.router.decide(request);
@@ -804,6 +781,7 @@ fn fmt_target<'a>(hostname: &str, port: u16, buf: &'a mut [u8]) -> Option<&'a st
 }
 
 fn fmt_port(port: u16, buf: &mut [u8; 5]) -> Option<&str> {
+    // A u16 has at most five decimal digits (u16::MAX is 65535).
     let mut digits = [0u8; 5];
     let mut count = 0;
     let mut remaining = port;
@@ -1780,7 +1758,7 @@ mod tests {
 
         let target1 = target_domain("first.com", 80);
         let req1 = dummy_request(&target1);
-        let decision1 = service.decide(&req1);
+        let decision1 = service.policy_decision(&req1);
         assert!(matches!(decision1, RouteDecision::Direct { .. }));
 
         let rule2 = CompiledRule {
@@ -1793,11 +1771,11 @@ mod tests {
 
         let target2 = target_domain("second.com", 80);
         let req2 = dummy_request(&target2);
-        let decision2 = service.decide(&req2);
+        let decision2 = service.policy_decision(&req2);
         assert!(matches!(decision2, RouteDecision::Reject { .. }));
 
         let req3 = dummy_request(&target1);
-        let decision3 = service.decide(&req3);
+        let decision3 = service.policy_decision(&req3);
         assert!(matches!(decision3, RouteDecision::Direct { .. }));
     }
 
@@ -1808,8 +1786,8 @@ mod tests {
 
         let target = target_domain("example.com", 80);
         let req = dummy_request(&target);
-        let decision = RouteService::decide(&service, &req);
-        assert!(matches!(decision, RouteDecision::Direct { .. }));
+        let selected = RouteService::route(&service, &req).expect("direct route");
+        assert!(matches!(selected, SelectedRoute::Direct { .. }));
     }
 
     #[test]

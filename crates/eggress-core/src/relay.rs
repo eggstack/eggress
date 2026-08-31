@@ -68,6 +68,20 @@ where
     }
 }
 
+fn termination_reason(
+    first_closed: Option<TerminationReason>,
+    had_error: bool,
+    drain_timed_out: bool,
+) -> TerminationReason {
+    if had_error {
+        TerminationReason::Error
+    } else if drain_timed_out {
+        first_closed.unwrap_or(TerminationReason::Error)
+    } else {
+        first_closed.unwrap_or(TerminationReason::BothClosed)
+    }
+}
+
 /// Relay data bidirectionally between two streams.
 ///
 /// When one side closes its write half, the other side's write half is shut down
@@ -167,13 +181,7 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
         }
     }
 
-    let termination_reason = if drain_timed_out {
-        first_closed.unwrap_or(TerminationReason::Error)
-    } else if had_error {
-        TerminationReason::Error
-    } else {
-        first_closed.unwrap_or(TerminationReason::BothClosed)
-    };
+    let termination_reason = termination_reason(first_closed, had_error, drain_timed_out);
 
     RelayResult {
         bytes_upstream: bytes_upstream.load(Ordering::Relaxed),
@@ -186,6 +194,14 @@ pub async fn relay(client: BoxStream, server: BoxStream) -> RelayResult {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn relay_error_during_drain_takes_precedence_over_close_reason() {
+        assert_eq!(
+            termination_reason(Some(TerminationReason::ClientClosed), true, true),
+            TerminationReason::Error
+        );
+    }
 
     #[tokio::test]
     async fn test_relay_echo() {

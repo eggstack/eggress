@@ -29,7 +29,7 @@ swap.
 | `SelectionReason` | `Normal`, `DirectFallback`, `UnhealthyFallback` |
 | `RouteError` | `Rejected { rule, reason }`, `NoEligibleUpstream(group)`, `UnknownGroup(group)` |
 
-**Traits:** `RouteService` (methods: `decide`, `select`, `route` with default). `Router` and `SharedRoutingService` both implement it. `Router` holds `Vec<CompiledRule>`, `RouteActionSpec` default, `HashMap<UpstreamGroupId, Arc<UpstreamGroup>>`. `SharedRoutingService` wraps `ArcSwap<RoutingServiceInner>`.
+**Traits:** `RouteService` (atomic `route` operation for data-plane callers). `Router` and `SharedRoutingService` both implement it. `Router` holds `Vec<CompiledRule>`, `RouteActionSpec` default, `HashMap<UpstreamGroupId, Arc<UpstreamGroup>>`. `SharedRoutingService` wraps `ArcSwap<RoutingServiceInner>`.
 
 **CompatRegexRule:** parses pproxy-style line rule files; each line compiled to `regex::Regex`, empty/comments skipped. Matches against `hostname:port` via a 320-byte stack buffer (heap fallback). `parse_file` returns 1-indexed line numbers on error.
 
@@ -66,7 +66,7 @@ fn route(&self, request: &RouteRequest) -> Result<SelectedRoute, RouteError> {
 }
 ```
 
-`load()` returns an `Arc<RoutingServiceInner>`. Both `decide` and `select` operate on the same `Arc<Router>`, so a `swap()` during a config reload cannot interleave a new router mid-decision. Separate `decide()` + `select()` calls each do their own `load()` and may see different routers.
+`load()` returns an `Arc<RoutingServiceInner>`. Both policy evaluation and selection operate on the same `Arc<Router>`, so a `swap()` during a config reload cannot interleave a new router mid-route. The public `RouteService` trait exposes only this atomic operation. Callers that need a policy decision without selecting an upstream use `SharedRoutingService::policy_decision()`.
 
 ### Host normalization rules
 
@@ -181,7 +181,7 @@ No Cargo features gate routing functionality (all routing code is always compile
 
 ## Reviewer gotchas
 
-1. **`decide()` + `select()` is racy on `SharedRoutingService`.** Each method does its own `inner.load()`. A config reload between the two calls can cause `select()` to operate on a different `Router` than `decide()`. Always use `route()` in data-plane code.
+1. **Use `RouteService::route()` for data-plane routing.** It keeps policy evaluation and upstream selection on one immutable routing snapshot during reload.
 2. **`is_eligible()` excludes `Recovering` from the unhealthy set.** Recovering upstreams are eligible for selection -- this is intentional to allow traffic to resume as soon as the upstream starts accepting connections.
 3. **`UseUnhealthy` fallback ignores health but respects the `enabled` flag.** A manually disabled upstream is never selected, even under `UseUnhealthy`.
 4. **RoundRobin cursor advances past ineligible members.** The `compare_exchange` loop skips disabled/unhealthy members but still advances the cursor, so the distribution is stable even when members toggle.

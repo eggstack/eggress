@@ -681,6 +681,9 @@ pub async fn accept_with_fixed_target_for_peer(
                     .read_exact(&mut delimiter)
                     .await
                     .map_err(|e| AcceptError::Protocol(Box::new(e)))?;
+                if delimiter != *b"\r\n" {
+                    tracing::warn!(?delimiter, "trojan fallback delimiter was not CRLF");
+                }
                 let target: TargetAddr = fallback_target.parse().map_err(|e: String| {
                     AcceptError::Protocol(format!("invalid trojan fallback address: {e}").into())
                 })?;
@@ -725,8 +728,8 @@ fn detect_http_method(prefix: &[u8]) -> DetectResult {
         if method_token.is_empty() || method_token.len() > 16 {
             return DetectResult::NoMatch;
         }
-        // Check if all bytes are valid HTTP method characters:
-        // uppercase ASCII letters, lowercase ASCII letters, or hyphens
+        // HTTP methods use the RFC token grammar, so extension methods may
+        // legitimately contain lowercase letters and hyphens as well.
         let is_valid_method = method_token
             .iter()
             .all(|&b| b.is_ascii_uppercase() || b == b'-' || b.is_ascii_lowercase());

@@ -131,8 +131,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
     /// Create a server-side AEAD stream.
     ///
     /// - `read_subkey`: derived from the client's salt (for decrypting from client).
-    /// - `send_write_salt`: if true, the server will send a fresh salt before the
-    ///   first data chunk (for interop with standard implementations).
+    /// - `send_write_salt`: must be true so the server can send a fresh salt
+    ///   before its first data chunk (as required by standard implementations).
     pub fn new_server(
         inner: S,
         method: CipherMethod,
@@ -140,6 +140,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ShadowsocksAeadStream<S> {
         send_write_salt: bool,
         password: &str,
     ) -> Result<Self, crate::error::ShadowsocksError> {
+        if !send_write_salt {
+            return Err(crate::error::ShadowsocksError::Other(
+                "server streams must send a write salt".to_string(),
+            ));
+        }
         let nonce_size = method.nonce_size();
         let read_cipher = AeadCipher::new(method, &read_subkey)?;
         Ok(Self {
@@ -781,14 +786,22 @@ mod tests {
         )
         .await;
 
-        match result {
-            Ok(Ok(0)) => {}
-            Ok(Ok(_)) => {
-                panic!("expected decryption failure from tampered length block");
-            }
-            Ok(Err(_)) => {}
-            Err(_) => {}
-        }
+        let result = result.expect("tampered length block must fail promptly");
+        let error = result.expect_err("tampered length block must not produce plaintext or EOF");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn server_without_write_salt_is_rejected() {
+        let (_, server) = tokio::io::duplex(64);
+        let result = ShadowsocksAeadStream::new_server(
+            server,
+            CipherMethod::Aes256Gcm,
+            vec![0x42; 32],
+            false,
+            "password",
+        );
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -829,14 +842,9 @@ mod tests {
         )
         .await;
 
-        match result {
-            Ok(Ok(0)) => {}
-            Ok(Ok(_)) => {
-                panic!("expected decryption failure from tampered payload block");
-            }
-            Ok(Err(_)) => {}
-            Err(_) => {}
-        }
+        let result = result.expect("tampered payload block must fail promptly");
+        let error = result.expect_err("tampered payload block must not produce plaintext or EOF");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[tokio::test]

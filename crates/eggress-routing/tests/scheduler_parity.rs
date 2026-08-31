@@ -284,8 +284,7 @@ fn active_lease_decrements_on_drop() {
 #[test]
 fn direct_fallback_only_when_configured() {
     use eggress_routing::{
-        CompiledRule, MatchExpr, RouteActionSpec, RouteService, Router, RuleId, SelectedRoute,
-        SelectionReason,
+        CompiledRule, MatchExpr, RouteActionSpec, Router, RuleId, SelectedRoute, SelectionReason,
     };
 
     // All upstreams disabled, GroupFallback::Direct
@@ -330,9 +329,7 @@ fn direct_fallback_only_when_configured() {
 
 #[test]
 fn reject_when_all_upstreams_fail() {
-    use eggress_routing::{
-        CompiledRule, MatchExpr, RouteActionSpec, RouteError, RouteService, Router, RuleId,
-    };
+    use eggress_routing::{CompiledRule, MatchExpr, RouteActionSpec, RouteError, Router, RuleId};
 
     let u1 = make_upstream("u1");
     u1.set_enabled(false);

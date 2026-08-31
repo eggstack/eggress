@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
-use eggress_routing::{MatchExpr, RouteActionSpec, RouteRequest, RouteService, Router};
+use eggress_routing::{MatchExpr, RouteActionSpec, RouteRequest, Router};
 
 fn target_domain(host: &str, port: u16) -> TargetAddr {
     TargetAddr {

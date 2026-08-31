@@ -17,9 +17,7 @@ use std::sync::Arc;
 
 use eggress_core::{ClientIdentity, TargetAddr, TargetHost};
 use eggress_protocol_reverse::client::{TargetResolution, TargetResolver};
-use eggress_routing::{
-    RouteDecision, RouteRequest, RouteService, SharedRoutingService, TransportKind,
-};
+use eggress_routing::{RouteDecision, RouteRequest, SharedRoutingService, TransportKind};
 use tracing::warn;
 
 /// Adapter that gates a fixed external target through a `SharedRoutingService`.
@@ -27,7 +25,7 @@ use tracing::warn;
 /// Each call to `resolve()`:
 /// 1. Builds a synthetic `RouteRequest` with `transport = ReverseTcp`,
 ///    `listener = reverse_listener_name`, and `target = (host, port)`.
-/// 2. Calls `router.decide()`. If the decision is `Direct` or
+/// 2. Calls `router.policy_decision()`. If the decision is `Direct` or
 ///    `UpstreamGroup`, returns `TargetResolution::Connect`. For reverse
 ///    traffic, the routing decision is a gate, not a redirect — the
 ///    reverse client always dials the same external target.
@@ -79,8 +77,7 @@ impl TargetResolver for RouteEngineTargetResolver {
             transport: TransportKind::ReverseTcp,
         };
 
-        #[allow(deprecated)]
-        match self.router.decide(&request) {
+        match self.router.policy_decision(&request) {
             RouteDecision::Direct { .. } | RouteDecision::UpstreamGroup { .. } => {
                 TargetResolution::Connect {
                     host: self.target.host.to_string(),

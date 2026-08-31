@@ -606,7 +606,7 @@ async fn execute_http_forward(
                         protocol: None,
                         target: last_target,
                         route: last_route,
-                        bytes_upstream: total_bytes_upstream + head_bytes,
+                        bytes_upstream: total_bytes_upstream,
                         bytes_downstream: total_bytes_downstream,
                         outcome: SessionOutcome::RelayFailed,
                         failure: Some(FailureCategory::Relay),
@@ -1116,10 +1116,12 @@ impl tokio::io::AsyncWrite for HttpOnlyStream {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        if !self.rewritten && !self.pending.is_empty() {
-            let head_complete = self.pending.windows(4).any(|window| window == b"\r\n\r\n");
+        if !self.rewritten
+            && !self.pending.is_empty()
+            && self.pending.windows(4).any(|window| window == b"\r\n\r\n")
+        {
             self.pending = rewrite_request_head(&self.pending, &self.target);
-            self.rewritten = head_complete;
+            self.rewritten = true;
         }
         // The stream type is Unpin, so plain field access keeps the borrows
         // of `inner` and `pending` disjoint inside the drain loop.
