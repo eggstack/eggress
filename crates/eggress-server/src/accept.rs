@@ -14,6 +14,7 @@ use eggress_core::{ClientIdentity, ProtocolId, TargetAddr, TargetHost};
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
+use zeroize::Zeroize;
 
 use crate::auth::parse_basic_auth;
 
@@ -137,6 +138,16 @@ pub enum InboundAuthentication {
         password: String,
         reuse: Arc<AuthReuseCache>,
     },
+}
+
+impl Drop for InboundAuthentication {
+    fn drop(&mut self) {
+        match self {
+            Self::None => {}
+            Self::UsernamePassword { password, .. }
+            | Self::UsernamePasswordWithReuse { password, .. } => password.zeroize(),
+        }
+    }
 }
 
 impl fmt::Debug for InboundAuthentication {
@@ -291,6 +302,12 @@ pub struct InboundShadowsocksConfig {
     pub plugins: Vec<String>,
 }
 
+impl Drop for InboundShadowsocksConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
 /// Configuration for Trojan inbound listener.
 #[derive(Clone)]
 pub struct InboundTrojanConfig {
@@ -299,6 +316,12 @@ pub struct InboundTrojanConfig {
     /// When set, connections with invalid Trojan passwords are relayed to this
     /// target instead of being rejected (matches pproxy's chaining behavior).
     pub fallback: Option<String>,
+}
+
+impl Drop for InboundTrojanConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
 }
 
 /// A stream that returns `prefix` bytes first, then delegates to `inner`.

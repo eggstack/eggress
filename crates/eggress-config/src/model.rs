@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use zeroize::Zeroize;
 
 // Secret-bearing fields (passwords, bearer tokens) are redacted in `Debug`
 // output so `{:?}` of any config value can never leak credentials.
@@ -177,6 +178,12 @@ impl std::fmt::Debug for ShadowsocksListenerConfig {
     }
 }
 
+impl Drop for ShadowsocksListenerConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SsrListenerConfig {
@@ -210,6 +217,12 @@ impl std::fmt::Debug for ListenerTrojanConfig {
     }
 }
 
+impl Drop for ListenerTrojanConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListenerTlsConfig {
@@ -237,6 +250,14 @@ impl std::fmt::Debug for AuthConfig {
             .field("password", &Redacted)
             .field("password_env", &self.password_env)
             .finish()
+    }
+}
+
+impl Drop for AuthConfig {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.password {
+            password.zeroize();
+        }
     }
 }
 
@@ -338,6 +359,14 @@ impl std::fmt::Debug for AdminAuthConfig {
     }
 }
 
+impl Drop for AdminAuthConfig {
+    fn drop(&mut self) {
+        if let Some(token) = &mut self.bearer_token {
+            token.zeroize();
+        }
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdminBasicAuthConfig {
@@ -353,6 +382,14 @@ impl std::fmt::Debug for AdminBasicAuthConfig {
             .field("password", &Redacted)
             .field("password_env", &self.password_env)
             .finish()
+    }
+}
+
+impl Drop for AdminBasicAuthConfig {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.password {
+            password.zeroize();
+        }
     }
 }
 
@@ -421,6 +458,14 @@ impl std::fmt::Debug for ReverseServerConfig {
     }
 }
 
+impl Drop for ReverseServerConfig {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.auth_password {
+            password.zeroize();
+        }
+    }
+}
+
 /// Configuration for a reverse proxy control client.
 ///
 /// The control client connects to a remote reverse server and services
@@ -478,5 +523,13 @@ impl std::fmt::Debug for ReverseClientConfig {
             .field("default_target_port", &self.default_target_port)
             .field("pproxy_compat", &self.pproxy_compat)
             .finish()
+    }
+}
+
+impl Drop for ReverseClientConfig {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.auth_password {
+            password.zeroize();
+        }
     }
 }

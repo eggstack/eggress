@@ -1,4 +1,5 @@
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use zeroize::Zeroizing;
 
 use crate::error::Socks5Error;
 
@@ -326,7 +327,7 @@ pub async fn read_auth_request<R: AsyncRead + Unpin>(
     if plen > MAX_CRED_LEN {
         return Err(Socks5Error::CredentialsTooLong);
     }
-    let mut password_bytes = vec![0u8; plen];
+    let mut password_bytes = Zeroizing::new(vec![0u8; plen]);
     reader.read_exact(&mut password_bytes).await?;
 
     // Compare the raw wire bytes: lossy UTF-8 conversion would map distinct

@@ -13,10 +13,11 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
+use zeroize::Zeroizing;
 
 use crate::error::WebSocketError;
 
-const DEFAULT_MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
+const DEFAULT_MAX_MESSAGE_SIZE: usize = 8 * 1024 * 1024;
 
 pub struct WebSocketStreamAdapter<S> {
     read_half: SplitStream<WebSocketStream<S>>,
@@ -304,7 +305,8 @@ pub async fn accept_upgrade_with_auth_and_limit<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let expected = credentials.map(|(user, pass)| (user.to_string(), pass.to_string()));
+    let expected =
+        credentials.map(|(user, pass)| (user.to_string(), Zeroizing::new(pass.to_string())));
     let accepted_user = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     let accepted_user_for_callback = accepted_user.clone();
     let ws_stream = tokio_tungstenite::accept_hdr_async(
@@ -349,14 +351,14 @@ where
     ))
 }
 
-fn parse_basic_auth(value: &str) -> Option<(String, String)> {
+fn parse_basic_auth(value: &str) -> Option<(String, Zeroizing<String>)> {
     let encoded = value.strip_prefix("Basic ")?;
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .ok()?;
-    let decoded = String::from_utf8(decoded).ok()?;
+    let decoded = Zeroizing::new(String::from_utf8(decoded).ok()?);
     let (user, password) = decoded.split_once(':')?;
-    Some((user.to_string(), password.to_string()))
+    Some((user.to_string(), Zeroizing::new(password.to_string())))
 }
 
 pub struct WebSocketTunnelClient {

@@ -405,11 +405,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ShadowsocksAeadStream<S> {
 
                     this.read_buf.clear();
                     this.read_state = ReadState::LengthBlock;
-                    this.read_plain.extend_from_slice(&plaintext);
-
-                    // We produced plaintext — drain it and return.
-                    let n = cmp::min(this.read_plain.len(), buf.remaining());
-                    buf.put_slice(&this.read_plain.split_to(n));
+                    // Avoid copying through the plaintext queue when the
+                    // caller can accept this whole decrypted chunk.
+                    if plaintext.len() <= buf.remaining() {
+                        buf.put_slice(&plaintext);
+                    } else {
+                        this.read_plain.extend_from_slice(&plaintext);
+                        let n = cmp::min(this.read_plain.len(), buf.remaining());
+                        buf.put_slice(&this.read_plain.split_to(n));
+                    }
                     return Poll::Ready(Ok(()));
                 }
             }

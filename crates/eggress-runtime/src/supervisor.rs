@@ -1014,6 +1014,7 @@ impl ServiceSupervisor {
         self.state.publish_admin_snapshot(new_snapshot.clone());
 
         self.state.restart_health_probes();
+        eggress_protocol_http::H2_POOL_REGISTRY.clear();
 
         ReloadResult::Applied {
             generation: gen,
@@ -1719,12 +1720,12 @@ impl ServiceSupervisor {
                                 tls_client_config,
                                 shadowsocks: ss_config.map(
                                     |ss| eggress_server::accept::InboundShadowsocksConfig {
-                                        method: ss.method,
-                                        password: ss.password,
+                                        method: ss.method.clone(),
+                                        password: ss.password.clone(),
                                         #[cfg(feature = "pproxy-legacy")]
-                                        auth_prefix: ss.auth_prefix.map(String::into_bytes),
+                                        auth_prefix: ss.auth_prefix.clone().map(String::into_bytes),
                                         #[cfg(feature = "pproxy-legacy")]
-                                        plugins: ss.plugins,
+                                        plugins: ss.plugins.clone(),
                                     },
                                 ),
                                 #[cfg(feature = "extended")]
@@ -1733,8 +1734,8 @@ impl ServiceSupervisor {
                                 shadowsocks_metrics: None,
                                 trojan: trojan_config.map(
                                     |t| eggress_server::accept::InboundTrojanConfig {
-                                        password: t.password,
-                                        fallback: t.fallback,
+                                        password: t.password.clone(),
+                                        fallback: t.fallback.clone(),
                                     },
                                 ),
                                 fixed_target: None,
@@ -1947,12 +1948,12 @@ impl ServiceSupervisor {
                                 tls_client_config,
                                 shadowsocks: ss_config.map(|ss| {
                                     eggress_server::accept::InboundShadowsocksConfig {
-                                        method: ss.method,
-                                        password: ss.password,
+                                        method: ss.method.clone(),
+                                        password: ss.password.clone(),
                                         #[cfg(feature = "pproxy-legacy")]
-                                        auth_prefix: ss.auth_prefix.map(String::into_bytes),
+                                        auth_prefix: ss.auth_prefix.clone().map(String::into_bytes),
                                         #[cfg(feature = "pproxy-legacy")]
-                                        plugins: ss.plugins,
+                                        plugins: ss.plugins.clone(),
                                     }
                                 }),
                                 #[cfg(feature = "extended")]
@@ -1961,8 +1962,8 @@ impl ServiceSupervisor {
                                 shadowsocks_metrics: None,
                                 trojan: trojan_config.map(|t| {
                                     eggress_server::accept::InboundTrojanConfig {
-                                        password: t.password,
-                                        fallback: t.fallback,
+                                        password: t.password.clone(),
+                                        fallback: t.fallback.clone(),
                                     }
                                 }),
                                 fixed_target: None,
@@ -2398,12 +2399,12 @@ impl ServiceSupervisor {
                                 tls_client_config: tls_client_config.clone(),
                                 shadowsocks: ss_config.map(|ss| {
                                     eggress_server::accept::InboundShadowsocksConfig {
-                                        method: ss.method,
-                                        password: ss.password,
+                                        method: ss.method.clone(),
+                                        password: ss.password.clone(),
                                         #[cfg(feature = "pproxy-legacy")]
-                                        auth_prefix: ss.auth_prefix.map(String::into_bytes),
+                                        auth_prefix: ss.auth_prefix.clone().map(String::into_bytes),
                                         #[cfg(feature = "pproxy-legacy")]
-                                        plugins: ss.plugins,
+                                        plugins: ss.plugins.clone(),
                                     }
                                 }),
                                 #[cfg(feature = "extended")]
@@ -2412,8 +2413,8 @@ impl ServiceSupervisor {
                                 shadowsocks_metrics: None,
                                 trojan: trojan_config.map(|t| {
                                     eggress_server::accept::InboundTrojanConfig {
-                                        password: t.password,
-                                        fallback: t.fallback,
+                                        password: t.password.clone(),
+                                        fallback: t.fallback.clone(),
                                     }
                                 }),
                                 fixed_target,
@@ -2570,11 +2571,11 @@ impl ServiceSupervisor {
                     let server_config = eggress_protocol_reverse::server::ReverseServerConfig {
                         control_bind: rs_cfg.control_bind,
                         external_bind: Some(rs_cfg.external_bind),
-                        auth_username: rs_cfg.auth_username,
-                        auth_password: rs_cfg.auth_password,
+                        auth_username: rs_cfg.auth_username.clone(),
+                        auth_password: rs_cfg.auth_password.clone(),
                         max_control_connections: rs_cfg.max_control_connections,
                         read_timeout_ms: rs_cfg.read_timeout_ms,
-                        allow_bind: rs_cfg.allow_bind,
+                        allow_bind: rs_cfg.allow_bind.clone(),
                         max_listeners_per_client: rs_cfg.max_listeners_per_client,
                         max_streams_per_listener: rs_cfg.max_streams_per_listener,
                         max_pending_external: rs_cfg.max_pending_external,
@@ -2786,8 +2787,6 @@ impl ServiceSupervisor {
                 });
             }
 
-            readiness.store(true, Ordering::Release);
-
             #[cfg(unix)]
             {
                 let mut sigterm =
@@ -2801,6 +2800,10 @@ impl ServiceSupervisor {
                 if let Err(ref e) = sighup {
                     tracing::warn!("failed to register SIGHUP handler: {e}");
                 }
+
+                // Readiness also means signal handling is installed. This
+                // prevents a reload signal from racing startup.
+                readiness.store(true, Ordering::Release);
 
                 loop {
                     tokio::select! {
@@ -2854,6 +2857,7 @@ impl ServiceSupervisor {
 
                                             metrics.set_config_generation(gen);
                                             metrics.record_reload(true);
+                                            eggress_protocol_http::H2_POOL_REGISTRY.clear();
 
                                             if let Ok(mut guard) = health_clone.lock() {
                                                 if let Some(ref mut hm) = *guard {
@@ -2902,6 +2906,7 @@ impl ServiceSupervisor {
 
             #[cfg(not(unix))]
             {
+                readiness.store(true, Ordering::Release);
                 tokio::select! {
                     _ = cancel.cancelled() => {
                         tracing::info!("shutdown requested via cancel token");

@@ -1,5 +1,6 @@
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use zeroize::Zeroizing;
 
 use crate::error::ShadowsocksError;
 use crate::method::CipherMethod;
@@ -16,7 +17,7 @@ pub async fn run_shadowsocks_server(
 ) -> Result<(), ShadowsocksError> {
     loop {
         let (stream, _) = listener.accept().await?;
-        let password = password.to_string();
+        let password = Zeroizing::new(password.to_string());
         tokio::spawn(async move {
             if let Err(e) = handle_client(stream, password, method).await {
                 eprintln!("client error: {}", e);
@@ -27,7 +28,7 @@ pub async fn run_shadowsocks_server(
 
 async fn handle_client(
     stream: TcpStream,
-    password: String,
+    password: Zeroizing<String>,
     method: CipherMethod,
 ) -> Result<(), ShadowsocksError> {
     let boxed: eggress_core::BoxStream = Box::new(stream);

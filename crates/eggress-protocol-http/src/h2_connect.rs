@@ -657,6 +657,13 @@ impl H2ConnectionPool {
             });
     }
 
+    fn is_empty(&self) -> bool {
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
     /// Release a connection back to the pool after a stream completes.
     pub fn release(&self, entry: &Arc<H2ConnectionEntry>) {
         entry.active_streams.fetch_sub(1, Ordering::AcqRel);
@@ -727,6 +734,7 @@ impl H2PoolRegistry {
     /// Get or create a pool for the given key.
     pub fn get_or_create(&self, key: &H2PoolKey) -> Arc<H2ConnectionPool> {
         let mut pools = self.pools.write().unwrap_or_else(|e| e.into_inner());
+        pools.retain(|_, pool| Arc::strong_count(pool) > 1 || !pool.is_empty());
         pools
             .entry(key.clone())
             .or_insert_with(|| {
@@ -737,6 +745,20 @@ impl H2PoolRegistry {
                 )
             })
             .clone()
+    }
+
+    /// Remove idle pools that are no longer referenced by an active stream.
+    pub fn prune_idle_pools(&self) {
+        let mut pools = self.pools.write().unwrap_or_else(|e| e.into_inner());
+        pools.retain(|_, pool| Arc::strong_count(pool) > 1 || !pool.is_empty());
+    }
+
+    /// Drop all registry-owned pools, for example after a configuration reload.
+    pub fn clear(&self) {
+        self.pools
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Configure default pool settings.
@@ -811,6 +833,7 @@ pub async fn h2_connect_client_pooled<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    H2_POOL_REGISTRY.prune_idle_pools();
     let pool = H2_POOL_REGISTRY.get_or_create(pool_key);
 
     // Try to acquire an existing connection from the pool
@@ -1046,6 +1069,20 @@ mod tests {
         let key2 = H2PoolKey::new("127.0.0.1", 9090, false, None, None);
         let p3 = registry.get_or_create(&key2);
         assert!(!Arc::ptr_eq(&p1, &p3));
+    }
+
+    #[test]
+    fn test_pool_registry_prunes_idle_and_clears() {
+        let registry = H2PoolRegistry::new();
+        let key = H2PoolKey::new("127.0.0.1", 8080, false, None, None);
+        let pool = registry.get_or_create(&key);
+        drop(pool);
+        registry.prune_idle_pools();
+        assert!(registry.pools.read().unwrap().is_empty());
+
+        let _pool = registry.get_or_create(&key);
+        registry.clear();
+        assert!(registry.pools.read().unwrap().is_empty());
     }
 
     #[test]

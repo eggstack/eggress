@@ -504,13 +504,13 @@ impl PyConnection {
                 }
                 Err(error) => {
                     eprintln!("could not schedule shutdown in __del__: {error}");
-                    // Dropping here would synchronously join the service thread
-                    // from Python's finalizer. Cancel the runtime token so
-                    // listeners and the supervisor wind down in the
-                    // background, then leak only this already-closing handle.
-                    let mut handle = handle;
-                    handle.cancel_and_cleanup();
-                    std::mem::forget(handle);
+                    // Do not synchronously join from Python's finalizer, but
+                    // still own the handle until orderly shutdown completes.
+                    let _ = std::thread::Builder::new()
+                        .name("eggress-python-cleanup".into())
+                        .spawn(move || {
+                            let _ = handle.shutdown_blocking();
+                        });
                 }
             }
         }

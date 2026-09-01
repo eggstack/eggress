@@ -19,6 +19,7 @@ bytes.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 subtle.workspace = true
+zeroize.workspace = true
 eggress-core.workspace = true
 
 [dev-dependencies]

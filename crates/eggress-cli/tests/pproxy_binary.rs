@@ -11,6 +11,11 @@ fn pproxy_bin() -> Command {
     cmd
 }
 
+fn run_output(cmd: &mut Command) -> std::process::Output {
+    let _guard = LISTENER_MUTEX.lock().unwrap();
+    cmd.output().expect("failed to run pproxy")
+}
+
 /// Spawn pproxy, capture stderr via temp file, kill after timeout_ms.
 /// Holds LISTENER_MUTEX to prevent port/resource conflicts under parallel execution.
 fn spawn_and_collect(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, String) {
@@ -36,10 +41,7 @@ fn spawn_and_collect(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, String
 
 #[test]
 fn help_flag() {
-    let output = pproxy_bin()
-        .arg("--help")
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().arg("--help"));
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("pproxy compatibility binary"));
@@ -57,10 +59,7 @@ fn help_flag() {
 
 #[test]
 fn help_flag_d_and_log_wording() {
-    let output = pproxy_bin()
-        .arg("--help")
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().arg("--help"));
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     // -d must not claim native-equivalent Python traceback semantics
@@ -85,10 +84,7 @@ fn help_flag_d_and_log_wording() {
 
 #[test]
 fn short_help_flag() {
-    let output = pproxy_bin()
-        .arg("-h")
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().arg("-h"));
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("pproxy compatibility binary"));
@@ -96,10 +92,7 @@ fn short_help_flag() {
 
 #[test]
 fn version_flag() {
-    let output = pproxy_bin()
-        .arg("--version")
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().arg("--version"));
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("eggress-pproxy-compat"));
@@ -218,16 +211,13 @@ fn startup_banner_shows_udp() {
 
 #[test]
 fn unsupported_daemon_flag_fails() {
-    let output = pproxy_bin()
-        .args([
-            "-l",
-            "http://:19805",
-            "-r",
-            "socks5://127.0.0.1:1080",
-            "--daemon",
-        ])
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().args([
+        "-l",
+        "http://:19805",
+        "-r",
+        "socks5://127.0.0.1:1080",
+        "--daemon",
+    ]));
     assert_eq!(
         output.status.code(),
         Some(5),
@@ -293,17 +283,14 @@ fn debug_flag_accepted_independently() {
 fn debug_flag_and_daemon_flag_still_fatal() {
     // Even though -d is independent of --daemon, --daemon remains
     // fatal before startup in pproxy compatibility mode.
-    let output = pproxy_bin()
-        .args([
-            "-l",
-            "http://:19821",
-            "-r",
-            "socks5://127.0.0.1:1080",
-            "-d",
-            "--daemon",
-        ])
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().args([
+        "-l",
+        "http://:19821",
+        "-r",
+        "socks5://127.0.0.1:1080",
+        "-d",
+        "--daemon",
+    ]));
     assert!(
         !output.status.success(),
         "expected non-zero exit for --daemon with -d, got {:?}",
@@ -361,19 +348,13 @@ fn unsupported_ssh_scheme_fails() {
 
 #[test]
 fn missing_value_for_l_fails() {
-    let output = pproxy_bin()
-        .arg("-l")
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().arg("-l"));
     assert!(!output.status.success());
 }
 
 #[test]
 fn missing_value_for_r_fails() {
-    let output = pproxy_bin()
-        .args(["-l", "http://:19809", "-r"])
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().args(["-l", "http://:19809", "-r"]));
     assert!(!output.status.success());
 }
 
@@ -432,17 +413,14 @@ fn auth_flag_starts_compatibility_listener() {
 
 #[test]
 fn malformed_auth_fails() {
-    let output = pproxy_bin()
-        .args([
-            "-l",
-            "http://:19813",
-            "-r",
-            "socks5://127.0.0.1:1080",
-            "--auth",
-            "abc",
-        ])
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().args([
+        "-l",
+        "http://:19813",
+        "-r",
+        "socks5://127.0.0.1:1080",
+        "--auth",
+        "abc",
+    ]));
     assert!(
         !output.status.success(),
         "expected non-zero exit for malformed --auth, got {:?}",
@@ -457,16 +435,13 @@ fn malformed_auth_fails() {
 
 #[test]
 fn unknown_flag_fails() {
-    let output = pproxy_bin()
-        .args([
-            "-l",
-            "http://:19810",
-            "-r",
-            "socks5://127.0.0.1:1080",
-            "--bogus-flag",
-        ])
-        .output()
-        .expect("failed to run pproxy");
+    let output = run_output(pproxy_bin().args([
+        "-l",
+        "http://:19810",
+        "-r",
+        "socks5://127.0.0.1:1080",
+        "--bogus-flag",
+    ]));
     assert!(
         !output.status.success(),
         "expected non-zero exit for unknown flag, got {:?}",
@@ -491,10 +466,7 @@ fn strict_parser_surface_fails_closed_before_startup() {
     ];
 
     for (args, expected) in cases {
-        let output = pproxy_bin()
-            .args(*args)
-            .output()
-            .expect("failed to run pproxy");
+        let output = run_output(pproxy_bin().args(*args));
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(2), "args={args:?}: {stderr}");
         assert!(stderr.contains(expected), "args={args:?}: {stderr}");
@@ -532,17 +504,14 @@ fn test_mode_runs_in_process_no_sibling_binary() {
     // with a target that connects to a non-existent upstream; the test should
     // complete with a failure exit code (unreachable) without needing an
     // `eggress` binary on PATH.
-    let output = pproxy_bin()
-        .args([
-            "-l",
-            "http://:19890",
-            "-r",
-            "socks5://127.0.0.1:19891",
-            "--test",
-            "http://example.com",
-        ])
-        .output()
-        .expect("failed to run pproxy --test");
+    let output = run_output(pproxy_bin().args([
+        "-l",
+        "http://:19890",
+        "-r",
+        "socks5://127.0.0.1:19891",
+        "--test",
+        "http://example.com",
+    ]));
     // The test mode should exit (not hang) and report the upstream as
     // unreachable. Exit code 1 = unreachable (all upstreams failed).
     assert_ne!(

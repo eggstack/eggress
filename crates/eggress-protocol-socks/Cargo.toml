@@ -16,6 +16,7 @@ bytes.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 subtle.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 eggress-testkit.workspace = true

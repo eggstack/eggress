@@ -918,6 +918,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -991,6 +992,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "zeroize",
 ]
 
 [[package]]
@@ -1168,6 +1170,7 @@ dependencies = [
  "subtle",
  "thiserror",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -1201,6 +1204,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -1316,6 +1320,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

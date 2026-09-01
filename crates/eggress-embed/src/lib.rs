@@ -885,24 +885,20 @@ fn redact_uri(uri: &str) -> String {
 /// without following a pre-existing path. On Unix it is also owner-only
 /// (0600) instead of world-readable.
 fn write_temp_config(config: &EggressConfig) -> Result<String, EggressError> {
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir();
-    let file_name = format!("eggress-embed-{}-{id}.toml", std::process::id());
-    let path = dir.join(&file_name);
     use std::io::Write;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options
-        .open(&path)
-        .and_then(|mut file| file.write_all(config.source_toml.as_bytes()))
+    let mut file = tempfile::Builder::new()
+        .prefix("eggress-embed-")
+        .suffix(".toml")
+        .tempfile_in(dir)
+        .map_err(|e| EggressError::Config(format!("failed to create temp config: {e}")))?;
+    file.write_all(config.source_toml.as_bytes())
+        .and_then(|_| file.flush())
         .map_err(|e| EggressError::Config(format!("failed to write temp config: {e}")))?;
-    Ok(path.to_string_lossy().into_owned())
+    file.into_temp_path()
+        .keep()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|e| EggressError::Config(format!("failed to retain temp config: {e}")))
 }
 
 #[cfg(test)]
@@ -953,6 +949,16 @@ mod tests {
             "temp config carries plaintext credentials and must not be group/world readable"
         );
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn temp_config_files_use_distinct_random_names() {
+        let config = super::EggressConfig::from_toml_str("version = 1").unwrap();
+        let first = super::write_temp_config(&config).unwrap();
+        let second = super::write_temp_config(&config).unwrap();
+        assert_ne!(first, second);
+        let _ = std::fs::remove_file(first);
+        let _ = std::fs::remove_file(second);
     }
 
     #[test]

@@ -24,6 +24,7 @@ type HmacSha1 = Hmac<Sha1>;
 const OTA_TAG: u8 = 0x10;
 const OTA_MAC_LEN: usize = 10;
 const MAX_OTA_CHUNK: usize = u16::MAX as usize;
+const MAX_PENDING_WRITE: usize = MAX_OTA_CHUNK + 2 + OTA_MAC_LEN;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlockMode {
@@ -354,9 +355,12 @@ impl CipherState {
             }
             Algorithm::Rc4 | Algorithm::Rc4Md5 => {
                 let rc4_key = if matches!(method.algorithm, Algorithm::Rc4Md5) {
-                    md5_bytes(&[key, iv].concat())
+                    let mut input = Zeroizing::new(Vec::with_capacity(key.len() + iv.len()));
+                    input.extend_from_slice(key);
+                    input.extend_from_slice(iv);
+                    md5_bytes(&input)
                 } else {
-                    key.to_vec()
+                    Zeroizing::new(key.to_vec())
                 };
                 Ok(Rc4State::new(&rc4_key))
             }
@@ -630,19 +634,19 @@ fn apply_block(
     }
 }
 
-fn md5_bytes(data: &[u8]) -> Vec<u8> {
+fn md5_bytes(data: &[u8]) -> Zeroizing<Vec<u8>> {
     use md5::Digest as _;
-    md5::Md5::digest(data).to_vec()
+    Zeroizing::new(md5::Md5::digest(data).to_vec())
 }
 
-fn derive_key(password: &[u8], length: usize) -> Vec<u8> {
+fn derive_key(password: &[u8], length: usize) -> Zeroizing<Vec<u8>> {
     if length == 0 {
-        return password.to_vec();
+        return Zeroizing::new(password.to_vec());
     }
-    let mut out = Vec::with_capacity(length);
-    let mut previous = Vec::new();
+    let mut out = Zeroizing::new(Vec::with_capacity(length));
+    let mut previous = Zeroizing::new(Vec::new());
     while out.len() < length {
-        let mut input = previous;
+        let mut input = previous.clone();
         input.extend_from_slice(password);
         previous = md5_bytes(&input);
         out.extend_from_slice(&previous);
@@ -712,7 +716,7 @@ pub async fn legacy_accept(
     if !iv.is_empty() {
         stream.read_exact(&mut iv).await?;
     }
-    let mut adapter = LegacyStream::server(stream, method, key.clone(), iv.clone())?;
+    let mut adapter = LegacyStream::server(stream, method, key, iv.clone())?;
     let mut first = [0u8; 1];
     adapter.read_exact(&mut first).await?;
     let mut header = first.to_vec();
@@ -823,7 +827,7 @@ impl LegacyStream {
     fn client(
         inner: BoxStream,
         method: LegacyMethod,
-        key: Vec<u8>,
+        key: Zeroizing<Vec<u8>>,
         iv: Vec<u8>,
         write_state: CipherState,
     ) -> Result<Self, ShadowsocksError> {
@@ -834,7 +838,7 @@ impl LegacyStream {
         Ok(Self {
             inner,
             method,
-            key: Zeroizing::new(key),
+            key,
             read_iv: Zeroizing::new(Vec::new()),
             read_state,
             write_iv: Zeroizing::new(iv),
@@ -854,7 +858,7 @@ impl LegacyStream {
     fn server(
         inner: BoxStream,
         method: LegacyMethod,
-        key: Vec<u8>,
+        key: Zeroizing<Vec<u8>>,
         iv: Vec<u8>,
     ) -> Result<Self, ShadowsocksError> {
         let read_state = Some(CipherState::new(method, &key, &iv)?);
@@ -864,7 +868,7 @@ impl LegacyStream {
         Ok(Self {
             inner,
             method,
-            key: Zeroizing::new(key),
+            key,
             read_iv: Zeroizing::new(iv),
             read_state,
             write_iv: Zeroizing::new(Vec::new()),
@@ -1020,6 +1024,12 @@ impl AsyncWrite for LegacyStream {
         cx: &mut Context<'_>,
         data: &[u8],
     ) -> Poll<std::io::Result<usize>> {
+        if data.len() > MAX_PENDING_WRITE {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "legacy cipher write exceeds maximum pending size",
+            )));
+        }
         if self.pending_write.is_empty() {
             if self.write_state.is_none() {
                 let mut iv = vec![0u8; self.method.iv_len()];

@@ -36,6 +36,7 @@ eggress-core.workspace = true
 eggress-config.workspace = true
 eggress-routing.workspace = true
 eggress-server.workspace = true
+eggress-protocol-http.workspace = true
 eggress-admin = { workspace = true, optional = true }
 eggress-metrics.workspace = true
 eggress-uri.workspace = true

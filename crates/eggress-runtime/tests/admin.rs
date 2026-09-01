@@ -7,6 +7,12 @@ use eggress_admin::{
 };
 use eggress_routing::Router;
 
+static SUPERVISOR_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn supervisor_test_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    SUPERVISOR_TEST_MUTEX.lock().await
+}
+
 async fn http_get(addr: &str, path: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
@@ -278,6 +284,7 @@ direct = true
 bind = "127.0.0.1:0"
 enabled = true
 "#;
+    let _supervisor_guard = supervisor_test_guard().await;
     let mut f = tempfile::NamedTempFile::new().unwrap();
     f.write_all(config1.as_bytes()).unwrap();
     f.flush().unwrap();
@@ -322,13 +329,19 @@ enabled = true
             .unwrap();
         f.write_all(config2.as_bytes()).unwrap();
         f.flush().unwrap();
+        f.sync_all().unwrap();
     }
     std::process::Command::new("kill")
         .arg("-HUP")
         .arg(std::process::id().to_string())
         .output()
         .ok();
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    for _ in 0..50 {
+        if state.generation() > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 
     let (_status, body) = http_get(&admin_addr, "/-/routes").await;
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -382,6 +395,7 @@ direct = true
 bind = "127.0.0.1:0"
 enabled = true
 "#;
+    let _supervisor_guard = supervisor_test_guard().await;
     let mut f = tempfile::NamedTempFile::new().unwrap();
     f.write_all(config1.as_bytes()).unwrap();
     f.flush().unwrap();
@@ -427,13 +441,19 @@ enabled = true
             .unwrap();
         f.write_all(config2.as_bytes()).unwrap();
         f.flush().unwrap();
+        f.sync_all().unwrap();
     }
     std::process::Command::new("kill")
         .arg("-HUP")
         .arg(std::process::id().to_string())
         .output()
         .ok();
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    for _ in 0..50 {
+        if state.generation() > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 
     let body2 = r#"{"target":"old.example:443","listener":"http-in","protocol":"http"}"#;
     let (_status, body) = http_post(&admin_addr, "/-/route-explain", body2).await;
@@ -480,6 +500,7 @@ enabled = true
     f.flush().unwrap();
     let path = f.path().to_str().unwrap().to_string();
 
+    let _supervisor_guard = supervisor_test_guard().await;
     let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
     let token = sup.shutdown_token();
     struct AutoShutdown(tokio_util::sync::CancellationToken);
@@ -560,6 +581,7 @@ enabled = true
     f.flush().unwrap();
     let path = f.path().to_str().unwrap().to_string();
 
+    let _supervisor_guard = supervisor_test_guard().await;
     let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
     let token = sup.shutdown_token();
     struct AutoShutdown(tokio_util::sync::CancellationToken);
@@ -628,6 +650,7 @@ enabled = true
     f.flush().unwrap();
     let path = f.path().to_str().unwrap().to_string();
 
+    let _supervisor_guard = supervisor_test_guard().await;
     let mut sup = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
     let token = sup.shutdown_token();
     struct AutoShutdown(tokio_util::sync::CancellationToken);

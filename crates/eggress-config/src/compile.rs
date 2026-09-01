@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use zeroize::Zeroize;
 
 use eggress_core::{ProtocolId, RejectReason};
 use eggress_routing::scheduler::SchedulerKind;
@@ -48,6 +49,14 @@ impl std::fmt::Debug for CompiledReverseServerConfig {
     }
 }
 
+impl Drop for CompiledReverseServerConfig {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.auth_password {
+            password.zeroize();
+        }
+    }
+}
+
 /// Compiled reverse client configuration with resolved defaults and parsed addresses.
 #[derive(Clone)]
 pub struct CompiledReverseClientConfig {
@@ -84,6 +93,14 @@ impl std::fmt::Debug for CompiledReverseClientConfig {
             .field("parallel_connections", &self.parallel_connections)
             .field("pproxy_compat", &self.pproxy_compat)
             .finish()
+    }
+}
+
+impl Drop for CompiledReverseClientConfig {
+    fn drop(&mut self) {
+        if let Some(password) = &mut self.auth_password {
+            password.zeroize();
+        }
     }
 }
 
@@ -315,6 +332,17 @@ impl std::fmt::Debug for AdminAuthConfig {
             .field("basic_username", &self.basic_username)
             .field("basic_password", &"****")
             .finish()
+    }
+}
+
+impl Drop for AdminAuthConfig {
+    fn drop(&mut self) {
+        if let Some(token) = &mut self.bearer_token {
+            token.zeroize();
+        }
+        if let Some(password) = &mut self.basic_password {
+            password.zeroize();
+        }
     }
 }
 
