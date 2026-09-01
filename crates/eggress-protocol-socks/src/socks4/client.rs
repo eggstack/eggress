@@ -4,10 +4,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::error::Socks4Error;
 use super::server::Socks4Status;
+use super::{MAX_DOMAIN_LEN, MAX_USER_ID_LEN};
 use eggress_core::{BoxStream, TargetAddr, TargetHost};
-
-/// Maximum length for the SOCKS4 user ID field.
-const MAX_USER_ID_LEN: usize = 255;
 
 /// Send a SOCKS4/4a CONNECT request through a stream and return the
 /// upgraded stream on success.
@@ -23,6 +21,11 @@ pub async fn socks4_connect(
     if let Some(uid) = user_id {
         if uid.len() > MAX_USER_ID_LEN {
             return Err(Socks4Error::UserIdTooLong);
+        }
+    }
+    if let TargetHost::Domain(domain) = &target.host {
+        if domain.len() > MAX_DOMAIN_LEN {
+            return Err(Socks4Error::DomainTooLong);
         }
     }
 

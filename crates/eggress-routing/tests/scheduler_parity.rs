@@ -194,7 +194,7 @@ fn least_connections_picks_minimum_load() {
 
     let target = target_domain("example.com", 80);
     let req = dummy_request(&target);
-    let scheduler = LeastConnectionsScheduler;
+    let scheduler = LeastConnectionsScheduler::new();
 
     let selected = scheduler.select(&group, &group.members, &req).unwrap();
     assert_eq!(
@@ -225,7 +225,7 @@ fn least_connections_tie_breaks_by_position() {
 
     let target = target_domain("example.com", 80);
     let req = dummy_request(&target);
-    let scheduler = LeastConnectionsScheduler;
+    let scheduler = LeastConnectionsScheduler::new();
 
     // Equal loads rotate rather than always selecting the first member.
     let selected = scheduler.select(&group, &group.members, &req).unwrap();

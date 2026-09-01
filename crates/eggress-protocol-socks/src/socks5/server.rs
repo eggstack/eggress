@@ -306,9 +306,12 @@ pub async fn send_method_selection<W: AsyncWrite + Unpin>(
 
 /// Read and validate username/password authentication from the client.
 ///
-/// Returns Ok(()) on success, or an error if auth fails.
+/// Compares both username and password against the expected values using
+/// constant-time byte comparison. Returns the lossy-decoded username on
+/// success for logging/audit purposes only.
 pub async fn read_auth_request<R: AsyncRead + Unpin>(
     reader: &mut R,
+    expected_username: &str,
     expected_password: &str,
 ) -> Result<String, Socks5Error> {
     let version = reader.read_u8().await?;
@@ -320,7 +323,7 @@ pub async fn read_auth_request<R: AsyncRead + Unpin>(
     if ulen > MAX_CRED_LEN {
         return Err(Socks5Error::CredentialsTooLong);
     }
-    let mut username = vec![0u8; ulen];
+    let mut username = Zeroizing::new(vec![0u8; ulen]);
     reader.read_exact(&mut username).await?;
 
     let plen = reader.read_u8().await? as usize;
@@ -333,15 +336,19 @@ pub async fn read_auth_request<R: AsyncRead + Unpin>(
     // Compare the raw wire bytes: lossy UTF-8 conversion would map distinct
     // invalid sequences to U+FFFD, collapsing them into the same value.
     use subtle::ConstantTimeEq;
-    let passwords_match: bool = password_bytes
+    let username_match: bool = username
+        .as_slice()
+        .ct_eq(expected_username.as_bytes())
+        .into();
+    let password_match: bool = password_bytes
         .as_slice()
         .ct_eq(expected_password.as_bytes())
         .into();
-    if !passwords_match {
+    if !username_match || !password_match {
         return Err(Socks5Error::AuthFailed);
     }
 
-    Ok(String::from_utf8_lossy(&username).to_string())
+    Ok(String::from_utf8_lossy(username.as_slice()).to_string())
 }
 
 /// Send an authentication response to the client.
@@ -486,10 +493,12 @@ pub async fn send_connect_reply<W: AsyncWrite + Unpin>(
 /// # Arguments
 /// * `reader` - The stream to read from.
 /// * `writer` - The stream to write to.
+/// * `username` - If password is required, the expected username.
 /// * `password` - If Some, require username/password authentication with this password.
 pub async fn handle_socks5_handshake<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     reader: &mut R,
     writer: &mut W,
+    username: Option<&str>,
     password: Option<&str>,
 ) -> Result<SocksAddr, Socks5Error> {
     // Step 1: Method negotiation
@@ -498,7 +507,8 @@ pub async fn handle_socks5_handshake<R: AsyncRead + Unpin, W: AsyncWrite + Unpin
 
     // Step 2: Auth (if password required)
     if let Some(pwd) = password {
-        if let Err(e) = read_auth_request(reader, pwd).await {
+        let user = username.unwrap_or("");
+        if let Err(e) = read_auth_request(reader, user, pwd).await {
             // RFC 1929: always answer with a failure status before closing.
             let _ = send_auth_response(writer, false).await;
             return Err(e);
@@ -634,7 +644,9 @@ mod tests {
             .unwrap();
         client.write_all(b"secret").await.unwrap();
 
-        let username = read_auth_request(&mut server, "secret").await.unwrap();
+        let username = read_auth_request(&mut server, "user", "secret")
+            .await
+            .unwrap();
         assert_eq!(username, "user");
 
         send_auth_response(&mut server, true).await.unwrap();
@@ -655,7 +667,7 @@ mod tests {
             .unwrap();
         client.write_all(b"wrong").await.unwrap();
 
-        let result = read_auth_request(&mut server, "secret").await;
+        let result = read_auth_request(&mut server, "user", "secret").await;
         assert!(matches!(result, Err(Socks5Error::AuthFailed)));
     }
 
@@ -806,7 +818,7 @@ mod tests {
         client.write_all(&[255]).await.unwrap();
         client.write_all(password.as_bytes()).await.unwrap();
 
-        let result = read_auth_request(&mut server, &password).await;
+        let result = read_auth_request(&mut server, &username, &password).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), username);
     }
@@ -879,7 +891,9 @@ mod tests {
             .await
             .unwrap();
 
-        let username = read_auth_request(&mut server, "mypass").await.unwrap();
+        let username = read_auth_request(&mut server, "user", "mypass")
+            .await
+            .unwrap();
         assert_eq!(username, "user");
         send_auth_response(&mut server, true).await.unwrap();
 

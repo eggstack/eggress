@@ -59,8 +59,14 @@ impl AuthFailureLimiter {
                     .is_some_and(|started| now.duration_since(started) < AUTH_FAILURE_WINDOW)
             });
             if entries.len() >= MAX_AUTH_FAILURE_ENTRIES {
-                if let Some(ip) = entries.keys().next().copied() {
-                    entries.remove(&ip);
+                // Evict the entry with the oldest window_started (LRU-by-time)
+                // rather than HashMap's arbitrary iteration order.
+                let victim = entries
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.window_started.unwrap_or(now))
+                    .map(|(ip, _)| *ip);
+                if let Some(victim) = victim {
+                    entries.remove(&victim);
                 }
             }
         }

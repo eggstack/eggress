@@ -391,8 +391,7 @@ async fn collect_limited(
 ) -> Result<bytes::Bytes, &'static str> {
     use http_body_util::BodyExt;
 
-    let mut collected = 0usize;
-    let mut chunks = Vec::new();
+    let mut result = bytes::BytesMut::new();
     let mut body = std::pin::pin!(body);
 
     loop {
@@ -400,20 +399,15 @@ async fn collect_limited(
             None => break,
             Some(Ok(frame)) => {
                 if let Some(data) = frame.data_ref() {
-                    collected += data.len();
-                    if collected > max_bytes {
+                    if result.len() + data.len() > max_bytes {
                         return Err("request body too large");
                     }
+                    result.extend_from_slice(data);
                 }
-                chunks.push(frame.into_data().unwrap_or_default());
             }
             Some(Err(_)) => return Err("failed to read request body"),
         }
     }
 
-    let mut result = bytes::BytesMut::with_capacity(collected.min(max_bytes));
-    for chunk in chunks {
-        result.extend_from_slice(&chunk);
-    }
     Ok(result.freeze())
 }

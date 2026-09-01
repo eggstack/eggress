@@ -1180,7 +1180,7 @@ pub fn translate_from_uris(
         pac_enabled,
         pac_path,
         static_content: &static_content,
-    });
+    })?;
 
     Ok(TranslationOutput::new(toml_str)
         .with_warnings(output.warnings)
@@ -1676,7 +1676,7 @@ struct TomlInput<'a> {
     static_content: &'a [StaticContentToml],
 }
 
-fn generate_toml(input: TomlInput<'_>) -> String {
+fn generate_toml(input: TomlInput<'_>) -> Result<String, CompatError> {
     let admin = if input.pac_enabled || !input.static_content.is_empty() {
         Some(AdminToml {
             pac: PacToml {
@@ -1701,8 +1701,9 @@ fn generate_toml(input: TomlInput<'_>) -> String {
         admin,
     };
 
-    toml::to_string_pretty(&config)
-        .unwrap_or_else(|_| "# failed to serialize config\nversion = 1\n".to_string())
+    toml::to_string_pretty(&config).map_err(|e| CompatError::ConfigValidation {
+        message: format!("failed to serialize config: {e}"),
+    })
 }
 
 #[cfg(test)]

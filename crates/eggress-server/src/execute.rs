@@ -52,6 +52,7 @@ pub enum FailureCategory {
     RouteHop,
     UpstreamAuthentication,
     PolicyDenied,
+    UpstreamUnavailable,
     Relay,
     Cancelled,
     Internal,
@@ -145,6 +146,7 @@ impl From<&SessionOpenError> for FailureCategory {
             SessionOpenError::UpstreamAuthentication => FailureCategory::UpstreamAuthentication,
             SessionOpenError::Hop { .. } => FailureCategory::RouteHop,
             SessionOpenError::PolicyDenied => FailureCategory::PolicyDenied,
+            SessionOpenError::UpstreamUnavailable => FailureCategory::UpstreamUnavailable,
             SessionOpenError::Other(_) => FailureCategory::Relay,
         }
     }
@@ -313,6 +315,7 @@ fn failure_reason_label(error: &SessionOpenError) -> &'static str {
         SessionOpenError::UpstreamAuthentication => "auth_failed",
         SessionOpenError::PolicyDenied => "policy_denied",
         SessionOpenError::Hop { .. } => "handshake",
+        SessionOpenError::UpstreamUnavailable => "upstream_unavailable",
         SessionOpenError::Other(_) => "io",
     }
 }
@@ -323,8 +326,8 @@ async fn open_route(
 ) -> Result<OpenedRoute, SessionOpenError> {
     let selected = config.routing.route(request).map_err(|e| match e {
         eggress_routing::RouteError::Rejected { .. } => SessionOpenError::PolicyDenied,
-        eggress_routing::RouteError::NoEligibleUpstream(_)
-        | eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
+        eggress_routing::RouteError::NoEligibleUpstream(_) => SessionOpenError::UpstreamUnavailable,
+        eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
     })?;
 
     let route = route_description(&selected);
@@ -1039,26 +1042,39 @@ pub fn build_chain_executor(
         handlers.push(Box::new(H3HopHandler));
     }
 
-    // Set up TLS wrapper using system roots by default, or the override if provided
-    let tls_wrapper_override = tls_override.cloned();
+    // Set up TLS wrapper that reuses the shared TLS config built above so
+    // we don't re-read and re-parse system roots on every handshake.
+    let tls_wrapper_default = shared_tls_config.clone();
+    fn build_alpn_config(
+        alpn: Option<Vec<Vec<u8>>>,
+    ) -> Result<std::sync::Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        let mut builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+        builder = builder.with_system_roots()?;
+        if let Some(protocols) = alpn {
+            builder = builder.with_alpn(protocols);
+        }
+        Ok(builder.build()?)
+    }
     let tls_wrapper: eggress_core::chain::TlsWrapper =
         Box::new(move |stream, server_name, alpn| {
-            let config_override = tls_wrapper_override.clone();
+            let default = tls_wrapper_default.clone();
             Box::pin(async move {
-                let config = match config_override {
-                    Some(c) => c,
-                    None => {
-                        let mut builder = eggress_transport_tls::TlsClientConfigBuilder::new();
-                        builder = builder.with_system_roots().map_err(
-                            |e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ },
-                        )?;
+                let config = match default {
+                    Some(c) => {
+                        // Rebuild only when the caller asked for ALPN the
+                        // shared config does not already advertise.
                         if let Some(ref protocols) = alpn {
-                            builder = builder.with_alpn(protocols.clone());
+                            if c.alpn_protocols != *protocols {
+                                build_alpn_config(Some(protocols.clone()))?
+                            } else {
+                                c
+                            }
+                        } else {
+                            c
                         }
-                        builder.build().map_err(
-                            |e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) as _ },
-                        )?
                     }
+                    None => build_alpn_config(alpn)?,
                 };
                 eggress_transport_tls::tls_connect(stream, config, &server_name)
                     .await

@@ -29,7 +29,7 @@ impl ShadowsocksMetrics {
     }
 
     pub fn record_tcp_session_closed(&self) {
-        self.tcp_sessions_active.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.tcp_sessions_active);
     }
 
     pub fn record_tcp_upstream_session(&self) {
@@ -57,7 +57,7 @@ impl ShadowsocksMetrics {
     }
 
     pub fn record_tcp_flow_close(&self) {
-        self.tcp_active_flows.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.tcp_active_flows);
     }
 
     pub fn record_udp_packet_in(&self, bytes: u64) {
@@ -85,7 +85,11 @@ impl ShadowsocksMetrics {
     }
 
     pub fn record_udp_flow_close(&self) {
-        self.udp_active_flows.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.udp_active_flows);
+    }
+
+    fn decr_active(counter: &AtomicU64) {
+        let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_sub(1));
     }
 }
 
@@ -193,6 +197,18 @@ mod tests {
         );
         assert_eq!(m.udp_active_flows.load(Ordering::Relaxed), 1);
         m.record_udp_flow_close();
+        assert_eq!(m.udp_active_flows.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn active_gauges_do_not_underflow() {
+        let m = ShadowsocksMetrics::new();
+        // Close without matching open must saturate at 0, not wrap.
+        m.record_tcp_session_closed();
+        m.record_tcp_flow_close();
+        m.record_udp_flow_close();
+        assert_eq!(m.tcp_sessions_active.load(Ordering::Relaxed), 0);
+        assert_eq!(m.tcp_active_flows.load(Ordering::Relaxed), 0);
         assert_eq!(m.udp_active_flows.load(Ordering::Relaxed), 0);
     }
 }

@@ -3,9 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::error::Socks4Error;
-
-/// Maximum length for the SOCKS4 user ID field.
-const MAX_USER_ID_LEN: usize = 255;
+use super::{MAX_DOMAIN_LEN, MAX_USER_ID_LEN};
 
 /// SOCKS4 reply status codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +72,7 @@ pub async fn read_socks4_request<S: tokio::io::AsyncRead + Unpin>(
     let mut user_id_bytes = Vec::with_capacity(64);
     let mut buf = [0u8; 1];
     loop {
-        if user_id_bytes.len() >= MAX_USER_ID_LEN {
+        if user_id_bytes.len() > MAX_USER_ID_LEN {
             return Err(Socks4Error::UserIdTooLong);
         }
         let n = stream.read(&mut buf).await?;
@@ -98,7 +96,7 @@ pub async fn read_socks4_request<S: tokio::io::AsyncRead + Unpin>(
         {
             let mut domain_bytes = Vec::with_capacity(256);
             loop {
-                if domain_bytes.len() >= 255 {
+                if domain_bytes.len() > MAX_DOMAIN_LEN {
                     return Err(Socks4Error::DomainTooLong);
                 }
                 let n = stream.read(&mut buf).await?;
@@ -165,4 +163,80 @@ pub async fn write_socks4_reply<S: tokio::io::AsyncWrite + Unpin>(
     stream.write_all(&reply).await?;
     stream.flush().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encode_request(uid: &[u8], port: u16, domain: Option<&[u8]>) -> Vec<u8> {
+        let mut buf = vec![0x04, 0x01];
+        buf.extend_from_slice(&port.to_be_bytes());
+        // SOCKS4a sentinel IP for domain; otherwise use 127.0.0.1
+        if domain.is_some() {
+            buf.extend_from_slice(&[0, 0, 0, 1]);
+        } else {
+            buf.extend_from_slice(&[127, 0, 0, 1]);
+        }
+        buf.extend_from_slice(uid);
+        buf.push(0x00);
+        if let Some(d) = domain {
+            buf.extend_from_slice(d);
+            buf.push(0x00);
+        }
+        buf
+    }
+
+    #[tokio::test]
+    async fn accepts_max_user_id_length() {
+        let uid = vec![b'A'; MAX_USER_ID_LEN];
+        let req = encode_request(&uid, 80, None);
+        let mut stream: &[u8] = &req;
+        let parsed = read_socks4_request(&mut stream)
+            .await
+            .expect("255-byte UID should parse");
+        assert_eq!(parsed.user_id.len(), MAX_USER_ID_LEN);
+    }
+
+    #[tokio::test]
+    async fn rejects_overlong_user_id() {
+        let uid = vec![b'A'; MAX_USER_ID_LEN + 1];
+        let req = encode_request(&uid, 80, None);
+        let mut stream: &[u8] = &req;
+        let result = read_socks4_request(&mut stream).await;
+        assert!(matches!(result, Err(Socks4Error::UserIdTooLong)));
+    }
+
+    #[tokio::test]
+    async fn accepts_max_domain_length() {
+        let domain = vec![b'a'; MAX_DOMAIN_LEN];
+        let mut req = vec![0x04, 0x01];
+        req.extend_from_slice(&80u16.to_be_bytes());
+        req.extend_from_slice(&[0, 0, 0, 1]); // SOCKS4a sentinel
+        req.push(0x00); // empty user id
+        req.extend_from_slice(&domain);
+        req.push(0x00);
+        let mut stream: &[u8] = &req;
+        let parsed = read_socks4_request(&mut stream)
+            .await
+            .expect("255-byte domain should parse");
+        assert_eq!(
+            parsed.domain.as_ref().map(String::len),
+            Some(MAX_DOMAIN_LEN)
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_overlong_domain() {
+        let domain = vec![b'a'; MAX_DOMAIN_LEN + 1];
+        let mut req = vec![0x04, 0x01];
+        req.extend_from_slice(&80u16.to_be_bytes());
+        req.extend_from_slice(&[0, 0, 0, 1]);
+        req.push(0x00);
+        req.extend_from_slice(&domain);
+        req.push(0x00);
+        let mut stream: &[u8] = &req;
+        let result = read_socks4_request(&mut stream).await;
+        assert!(matches!(result, Err(Socks4Error::DomainTooLong)));
+    }
 }

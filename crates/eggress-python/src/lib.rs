@@ -458,7 +458,8 @@ impl PyConnection {
                 .map_err(|e| ConnectionError::new_err(format!("shutdown error: {e}")))?;
         }
         self.state.store(STATE_CLOSED, Ordering::Release);
-        PY_CONNECTION_LIVE_COUNT.fetch_sub(1, Ordering::Relaxed);
+        let _ = PY_CONNECTION_LIVE_COUNT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_sub(1));
         Ok(())
     }
 
@@ -503,19 +504,21 @@ impl PyConnection {
                     });
                 }
                 Err(error) => {
-                    eprintln!("could not schedule shutdown in __del__: {error}");
-                    // Do not synchronously join from Python's finalizer, but
-                    // still own the handle until orderly shutdown completes.
-                    let _ = std::thread::Builder::new()
-                        .name("eggress-python-cleanup".into())
-                        .spawn(move || {
-                            let _ = handle.shutdown_blocking();
-                        });
+                    // No runtime available: do not spawn a thread during
+                    // interpreter finalization (UB-prone). Drop the handle so
+                    // the runtime can reap it; log the deferred shutdown.
+                    eprintln!(
+                        "could not schedule shutdown in __del__: {error}; \
+                         dropping handle to be reaped by runtime"
+                    );
+                    drop(handle);
                 }
             }
         }
         self.state.store(STATE_CLOSED, Ordering::Release);
-        PY_CONNECTION_LIVE_COUNT.fetch_sub(1, Ordering::Relaxed);
+        // Guard against underflow on double-close paths.
+        let _ = PY_CONNECTION_LIVE_COUNT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_sub(1));
     }
 
     fn __repr__(&self) -> String {
@@ -1660,8 +1663,9 @@ impl Drop for PyOutboundStream {
     fn drop(&mut self) {
         // Dropping the BoxStream closes the transport. Do not block from a
         // destructor: Python may be shutting down and the runtime can be
-        // unavailable at that point.
-        if let Ok(mut state) = self.state.lock() {
+        // unavailable at that point. Use try_lock to avoid blocking the
+        // Python GC while another thread holds the state mutex.
+        if let Ok(mut state) = self.state.try_lock() {
             state.stream.take();
         }
     }
@@ -1711,24 +1715,43 @@ impl PyOutboundStream {
         }
     }
 
+    const MAX_READ_LEN: usize = 16 * 1024 * 1024;
+
     fn read(&self, py: Python<'_>, n: i64) -> PyResult<Vec<u8>> {
         if n < -1 {
             return Err(PyValueError::new_err(
                 "read length must be -1 or non-negative",
             ));
         }
+        let len = if n == -1 {
+            None
+        } else {
+            let len = usize::try_from(n).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "read length does not fit in usize on this platform (n={n})"
+                ))
+            })?;
+            if len > Self::MAX_READ_LEN {
+                return Err(PyValueError::new_err(format!(
+                    "read length {len} exceeds maximum {}",
+                    Self::MAX_READ_LEN
+                )));
+            }
+            Some(len)
+        };
         let runtime = self.runtime.clone();
         self.with_stream(|stream| {
             py.detach(|| {
                 runtime.block_on(async {
-                    if n == -1 {
-                        let mut data = Vec::new();
-                        stream.read_to_end(&mut data).await.map(|_| data)
-                    } else {
-                        let mut data = vec![0_u8; n as usize];
+                    if let Some(len) = len {
+                        let mut data = vec![0_u8; len];
                         let count = stream.read(&mut data).await?;
                         data.truncate(count);
                         Ok(data)
+                    } else {
+                        let mut data = Vec::new();
+                        let mut limited = stream.take(Self::MAX_READ_LEN as u64);
+                        limited.read_to_end(&mut data).await.map(|_| data)
                     }
                 })
             })
@@ -1737,6 +1760,12 @@ impl PyOutboundStream {
     }
 
     fn readexactly(&self, py: Python<'_>, n: usize) -> PyResult<Vec<u8>> {
+        if n > Self::MAX_READ_LEN {
+            return Err(PyValueError::new_err(format!(
+                "readexactly length {n} exceeds maximum {}",
+                Self::MAX_READ_LEN
+            )));
+        }
         let runtime = self.runtime.clone();
         self.with_stream(|stream| {
             py.detach(|| {

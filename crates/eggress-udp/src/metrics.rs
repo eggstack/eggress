@@ -48,7 +48,7 @@ impl UdpMetrics {
     }
 
     pub fn record_association_closed(&self) {
-        self.associations_active.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.associations_active);
     }
 
     pub fn record_association_failure(&self) {
@@ -91,7 +91,7 @@ impl UdpMetrics {
     }
 
     pub fn record_target_flow_closed(&self) {
-        self.target_flows_active.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.target_flows_active);
     }
 
     pub fn record_decode_error(&self) {
@@ -103,7 +103,7 @@ impl UdpMetrics {
     }
 
     pub fn record_target_flow_timeout(&self) {
-        self.target_flows_active.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.target_flows_active);
     }
 
     pub fn record_upstream_association_created(&self) {
@@ -114,8 +114,7 @@ impl UdpMetrics {
     }
 
     pub fn record_upstream_association_closed(&self) {
-        self.upstream_associations_active
-            .fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.upstream_associations_active);
     }
 
     pub fn record_upstream_failure(&self) {
@@ -143,7 +142,7 @@ impl UdpMetrics {
     }
 
     pub fn record_standalone_flow_closed(&self) {
-        self.standalone_flows_active.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.standalone_flows_active);
     }
 
     pub fn record_standalone_packet_in(&self, bytes: u64) {
@@ -168,8 +167,12 @@ impl UdpMetrics {
     }
 
     pub fn record_standalone_flow_reap(&self) {
-        self.standalone_flows_active.fetch_sub(1, Ordering::Relaxed);
+        Self::decr_active(&self.standalone_flows_active);
         self.standalone_flow_reaps.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn decr_active(counter: &AtomicU64) {
+        let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_sub(1));
     }
 }
 
@@ -461,5 +464,24 @@ mod tests {
         metrics.record_standalone_flow_reap();
         assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.standalone_flow_reaps.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn active_gauges_do_not_underflow() {
+        let metrics = UdpMetrics::new();
+        // Each active counter must saturate at 0 when decremented past zero.
+        metrics.record_association_closed();
+        metrics.record_target_flow_closed();
+        metrics.record_target_flow_timeout();
+        metrics.record_upstream_association_closed();
+        metrics.record_standalone_flow_closed();
+        metrics.record_standalone_flow_reap();
+        assert_eq!(metrics.associations_active.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.target_flows_active.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            metrics.upstream_associations_active.load(Ordering::Relaxed),
+            0
+        );
+        assert_eq!(metrics.standalone_flows_active.load(Ordering::Relaxed), 0);
     }
 }

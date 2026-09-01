@@ -14,6 +14,8 @@ pub enum SessionOpenError {
     UpstreamAuthentication,
     #[error("request rejected by policy")]
     PolicyDenied,
+    #[error("no eligible upstream available (transient)")]
+    UpstreamUnavailable,
     #[error("route failed at hop {hop}")]
     Hop {
         hop: usize,

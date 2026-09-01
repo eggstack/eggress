@@ -114,7 +114,6 @@ const MAX_ROUTE_LABEL_LENGTH: usize = 128;
 
 fn bounded_route_label(value: &str) -> String {
     let mut bounded = String::with_capacity(value.len().min(MAX_ROUTE_LABEL_LENGTH));
-    let mut truncated = false;
     for character in value.chars() {
         let character = if character.is_control() {
             '_'
@@ -122,14 +121,13 @@ fn bounded_route_label(value: &str) -> String {
             character
         };
         if bounded.len() + character.len_utf8() > MAX_ROUTE_LABEL_LENGTH - 3 {
-            truncated = true;
-            break;
+            bounded.push_str("...");
+            debug_assert!(bounded.len() <= MAX_ROUTE_LABEL_LENGTH);
+            return bounded;
         }
         bounded.push(character);
     }
-    if truncated {
-        bounded.push_str("...");
-    }
+    debug_assert!(bounded.len() <= MAX_ROUTE_LABEL_LENGTH);
     bounded
 }
 
@@ -1958,6 +1956,23 @@ mod tests {
         let label = bounded_route_label(&format!("{}\n", "x".repeat(256)));
         assert_eq!(label.len(), MAX_ROUTE_LABEL_LENGTH);
         assert!(!label.contains('\n'));
+        assert!(label.ends_with("..."));
+    }
+
+    #[test]
+    fn route_label_boundary_values() {
+        assert_eq!(bounded_route_label("").len(), 0);
+        assert_eq!(
+            bounded_route_label(&"a".repeat(MAX_ROUTE_LABEL_LENGTH)).len(),
+            MAX_ROUTE_LABEL_LENGTH
+        );
+        // Exact boundary: full length input truncates with the ellipsis.
+        let label = bounded_route_label(&"a".repeat(MAX_ROUTE_LABEL_LENGTH + 1));
+        assert_eq!(label.len(), MAX_ROUTE_LABEL_LENGTH);
+        assert!(label.ends_with("..."));
+        // Multibyte char at the boundary does not overflow.
+        let label = bounded_route_label(&("a".repeat(MAX_ROUTE_LABEL_LENGTH - 4) + "\u{2014}"));
+        assert!(label.len() <= MAX_ROUTE_LABEL_LENGTH);
         assert!(label.ends_with("..."));
     }
 

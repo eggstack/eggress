@@ -826,16 +826,12 @@ async fn accept_socks5(
     // Handle auth if required
     let mut identity = cached.unwrap_or(ClientIdentity::Anonymous);
     if selected_method == AUTH_USERNAME_PASSWORD {
-        let (username, password, _) = auth_credentials(auth).expect("auth method requires policy");
-        match read_auth_request(&mut reader, password).await {
+        let (username, password, _) = match auth_credentials(auth) {
+            Some(creds) => creds,
+            None => return Err(AcceptError::AuthenticationFailed),
+        };
+        match read_auth_request(&mut reader, username, password).await {
             Ok(client_username) => {
-                use subtle::ConstantTimeEq;
-                let username_ok: bool =
-                    client_username.as_bytes().ct_eq(username.as_bytes()).into();
-                if !username_ok {
-                    let _ = send_auth_response(&mut writer, false).await;
-                    return Err(AcceptError::AuthenticationFailed);
-                }
                 identity = ClientIdentity::Username(client_username);
                 record_authenticated(auth, peer_ip, &identity);
                 send_auth_response(&mut writer, true)

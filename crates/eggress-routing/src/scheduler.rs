@@ -209,9 +209,23 @@ impl Scheduler for RandomScheduler {
 }
 
 /// Selects the least-loaded eligible member, rotating ties for fairness.
-pub struct LeastConnectionsScheduler;
+pub struct LeastConnectionsScheduler {
+    cursor: AtomicU64,
+}
 
-static LEAST_CONNECTIONS_CURSOR: AtomicU64 = AtomicU64::new(0);
+impl LeastConnectionsScheduler {
+    pub fn new() -> Self {
+        Self {
+            cursor: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Default for LeastConnectionsScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Scheduler for LeastConnectionsScheduler {
     fn select(
@@ -220,7 +234,7 @@ impl Scheduler for LeastConnectionsScheduler {
         candidates: &[Arc<UpstreamRuntime>],
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
-        select_least_connections(candidates, is_eligible)
+        select_least_connections(&self.cursor, candidates, is_eligible)
     }
 
     fn select_enabled(
@@ -229,11 +243,12 @@ impl Scheduler for LeastConnectionsScheduler {
         candidates: &[Arc<UpstreamRuntime>],
         _request: &RouteRequest<'_>,
     ) -> Option<Arc<UpstreamRuntime>> {
-        select_least_connections(candidates, |member| member.is_enabled())
+        select_least_connections(&self.cursor, candidates, |member| member.is_enabled())
     }
 }
 
 fn select_least_connections<F>(
+    cursor: &AtomicU64,
     candidates: &[Arc<UpstreamRuntime>],
     eligible: F,
 ) -> Option<Arc<UpstreamRuntime>>
@@ -249,7 +264,7 @@ where
         .iter()
         .filter(|member| eligible(member) && member.current_load() == min_load)
         .collect();
-    let index = LEAST_CONNECTIONS_CURSOR.fetch_add(1, Ordering::Relaxed) as usize;
+    let index = cursor.fetch_add(1, Ordering::Relaxed) as usize;
     Some(tied[index % tied.len()].clone())
 }
 
@@ -296,7 +311,7 @@ pub fn resolve_scheduler(kind: SchedulerKind) -> Arc<dyn Scheduler> {
         SchedulerKind::FirstAvailable => Arc::new(FirstAvailableScheduler),
         SchedulerKind::RoundRobin => Arc::new(RoundRobinScheduler::new()),
         SchedulerKind::Random => Arc::new(RandomScheduler::new()),
-        SchedulerKind::LeastConnections => Arc::new(LeastConnectionsScheduler),
+        SchedulerKind::LeastConnections => Arc::new(LeastConnectionsScheduler::new()),
     }
 }
 

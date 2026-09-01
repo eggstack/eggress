@@ -1641,7 +1641,7 @@ mod tests {
         );
         let target = target_domain("example.com", 80);
         let req = dummy_request(&target);
-        let scheduler = LeastConnectionsScheduler;
+        let scheduler = LeastConnectionsScheduler::new();
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
         assert_eq!(selected.id, UpstreamId::new("up-1"));
     }
@@ -1659,7 +1659,7 @@ mod tests {
         );
         let target = target_domain("example.com", 80);
         let req = dummy_request(&target);
-        let scheduler = LeastConnectionsScheduler;
+        let scheduler = LeastConnectionsScheduler::new();
 
         // Equal loads rotate so repeated selections do not concentrate on the
         // first member.
@@ -1681,7 +1681,7 @@ mod tests {
         );
         let target = target_domain("example.com", 80);
         let req = dummy_request(&target);
-        let scheduler = LeastConnectionsScheduler;
+        let scheduler = LeastConnectionsScheduler::new();
         let selected = scheduler.select(&group, &group.members, &req).unwrap();
         assert_eq!(selected.id, UpstreamId::new("up-3"));
     }

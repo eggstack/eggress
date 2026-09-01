@@ -110,6 +110,16 @@ impl tokio::io::AsyncWrite for H2StreamWrite {
             self.send_stream.reserve_capacity(buf.len());
             match self.send_stream.poll_capacity(cx) {
                 Poll::Ready(Some(Ok(capacity))) => {
+                    if capacity == 0 {
+                        // h2 advertises zero capacity; `reserve_capacity`
+                        // has registered us for a wake-up. Returning
+                        // `Pending` prevents the AsyncWrite caller from
+                        // busy-looping on `Ok(0)`.
+                        H2_PROTOCOL_METRICS
+                            .flow_control_stalls
+                            .fetch_add(1, Ordering::Relaxed);
+                        return Poll::Pending;
+                    }
                     self.capacity = capacity;
                 }
                 Poll::Ready(Some(Err(e))) => {
@@ -748,8 +758,14 @@ impl H2PoolRegistry {
     }
 
     /// Remove idle pools that are no longer referenced by an active stream.
+    ///
+    /// Pruning acquires a write lock, so we skip the work when the registry
+    /// is small. The threshold keeps contention bounded under H2 load.
     pub fn prune_idle_pools(&self) {
         let mut pools = self.pools.write().unwrap_or_else(|e| e.into_inner());
+        if pools.len() < 64 {
+            return;
+        }
         pools.retain(|_, pool| Arc::strong_count(pool) > 1 || !pool.is_empty());
     }
 
@@ -949,11 +965,15 @@ async fn try_pooled_connection(
             let response = match response_future.await {
                 Ok(r) => r,
                 Err(e) => {
+                    // Balance the try_acquire bump before retiring so the entry
+                    // can be reaped cleanly and other capacity is freed.
+                    entry.active_streams.fetch_sub(1, Ordering::AcqRel);
                     pool.retire(&entry);
                     return Some(Err(e.into()));
                 }
             };
             if response.status() != http::StatusCode::OK {
+                entry.active_streams.fetch_sub(1, Ordering::AcqRel);
                 pool.retire(&entry);
                 if response.status() == http::StatusCode::PROXY_AUTHENTICATION_REQUIRED {
                     H2_PROTOCOL_METRICS
@@ -977,6 +997,7 @@ async fn try_pooled_connection(
         }
         Err(_) => {
             // GOAWAY or connection error — retire this entry, fall through to new connection
+            entry.active_streams.fetch_sub(1, Ordering::AcqRel);
             pool.retire(&entry);
             None
         }
@@ -1077,7 +1098,11 @@ mod tests {
         let key = H2PoolKey::new("127.0.0.1", 8080, false, None, None);
         let pool = registry.get_or_create(&key);
         drop(pool);
+        // Below the prune threshold (64) pruning is a no-op; clearing
+        // always removes every entry.
         registry.prune_idle_pools();
+        assert!(!registry.pools.read().unwrap().is_empty());
+        registry.clear();
         assert!(registry.pools.read().unwrap().is_empty());
 
         let _pool = registry.get_or_create(&key);

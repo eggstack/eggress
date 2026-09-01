@@ -809,11 +809,25 @@ impl ServiceSupervisor {
         let active_connections = Arc::new(AtomicU64::new(0));
         let connection_counter = Arc::new(AtomicU64::new(1));
 
-        let udp_global_limit = rt_config
-            .listeners
-            .iter()
-            .find_map(|l| l.udp.as_ref().map(|u| u.max_associations_global))
-            .unwrap_or(1024);
+        let mut udp_global_limit: Option<usize> = None;
+        for listener in &rt_config.listeners {
+            if let Some(udp) = &listener.udp {
+                let value = udp.max_associations_global;
+                match udp_global_limit {
+                    None => udp_global_limit = Some(value),
+                    Some(existing) if existing != value => {
+                        tracing::warn!(
+                            listener = %listener.name,
+                            existing,
+                            other = value,
+                            "multiple listeners specify udp.max_associations_global with different values; using first"
+                        );
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        let udp_global_limit = udp_global_limit.unwrap_or(1024);
 
         let udp_registry = Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
             eggress_udp::limits::UdpLimits {
@@ -1506,20 +1520,41 @@ impl ServiceSupervisor {
                     .unwrap_or(65535);
                 tasks.spawn(async move {
                     let mut buf = vec![0u8; max_size];
+                    const ECHO_DNS_TIMEOUT: Duration = Duration::from_secs(2);
+                    const ECHO_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+                    const ECHO_RECV_TIMEOUT: Duration = Duration::from_secs(5);
                     let target_socket = if let Some(target) = fixed_target {
-                        let addr = match target.host {
-                            eggress_core::TargetHost::Ip(ip) => std::net::SocketAddr::new(ip, target.port),
-                            eggress_core::TargetHost::Domain(domain) => match tokio::net::lookup_host((domain.as_str(), target.port)).await {
-                                Ok(mut addrs) => match addrs.next() { Some(addr) => addr, None => return },
-                                Err(_) => return,
-                            },
+                        let lookup = async {
+                            match target.host {
+                                eggress_core::TargetHost::Ip(ip) => {
+                                    Ok(std::net::SocketAddr::new(ip, target.port))
+                                }
+                                eggress_core::TargetHost::Domain(domain) => match tokio::net::lookup_host((domain.as_str(), target.port)).await {
+                                    Ok(mut addrs) => match addrs.next() {
+                                        Some(addr) => Ok(addr),
+                                        None => Err(()),
+                                    },
+                                    Err(_) => Err(()),
+                                },
+                            }
+                        };
+                        let addr = match tokio::time::timeout(ECHO_DNS_TIMEOUT, lookup).await {
+                            Ok(Ok(a)) => a,
+                            Ok(Err(())) | Err(_) => return,
                         };
                         let target_socket = match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
                             Ok(s) => s,
                             Err(_) => return,
                         };
-                        if target_socket.connect(addr).await.is_err() { return; }
-                        Some(target_socket)
+                        if tokio::time::timeout(ECHO_CONNECT_TIMEOUT, target_socket.connect(addr))
+                            .await
+                            .map(|r| r.is_ok())
+                            .unwrap_or(false)
+                        {
+                            Some(target_socket)
+                        } else {
+                            return;
+                        }
                     } else { None };
                     let mut response = vec![0u8; max_size];
                     loop {
@@ -1528,7 +1563,9 @@ impl ServiceSupervisor {
                                 Ok((n, peer)) => {
                                     if let Some(ref target_socket) = target_socket {
                                         if target_socket.send(&buf[..n]).await.is_ok() {
-                                            if let Ok(m) = target_socket.recv(&mut response).await { let _ = socket.send_to(&response[..m], peer).await; }
+                                            if let Ok(Ok(m)) = tokio::time::timeout(ECHO_RECV_TIMEOUT, target_socket.recv(&mut response)).await {
+                                                let _ = socket.send_to(&response[..m], peer).await;
+                                            }
                                         }
                                     } else { let _ = socket.send_to(&buf[..n], peer).await; }
                                 }
