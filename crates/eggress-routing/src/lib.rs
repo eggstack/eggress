@@ -106,20 +106,35 @@ impl PortMatcher {
         match self {
             PortMatcher::Exact(p) => port == *p,
             PortMatcher::Range { start, end } => {
-                debug_assert!(
-                    start <= end,
-                    "inverted PortMatcher::Range ({start}..{end}) matches nothing"
-                );
+                if start > end {
+                    debug_assert!(
+                        start <= end,
+                        "inverted PortMatcher::Range ({start}..{end}) matches nothing"
+                    );
+                    tracing::warn!("inverted PortMatcher::Range ({start}..{end}) matches nothing");
+                    return false;
+                }
                 port >= *start && port <= *end
             }
             PortMatcher::Set(ports) => {
-                debug_assert!(
-                    ports.windows(2).all(|window| window[0] <= window[1]),
-                    "PortMatcher::Set must be sorted ascending"
-                );
+                if !ports.windows(2).all(|window| window[0] <= window[1]) {
+                    debug_assert!(false, "PortMatcher::Set must be sorted ascending");
+                    tracing::warn!("PortMatcher::Set is not sorted; using linear scan");
+                    return ports.contains(&port);
+                }
                 ports.binary_search(&port).is_ok()
             }
         }
+    }
+
+    /// Construct a validated range matcher, returning an error if `start > end`.
+    pub fn new_range(start: u16, end: u16) -> Result<Self, String> {
+        if start > end {
+            return Err(format!(
+                "PortMatcher::Range start ({start}) must be <= end ({end})"
+            ));
+        }
+        Ok(PortMatcher::Range { start, end })
     }
 }
 

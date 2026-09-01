@@ -328,6 +328,8 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
             .split_once('?')
             .map_or(before_endpoint, |(endpoint, _)| endpoint);
         let has_earlier_userinfo = before_endpoint.contains('@');
+        // Small per-hop speculative parse (1-3 hops typical); double parse is
+        // bounded and keeps the @-heuristic without extra allocation. B-06.
         let base_is_endpoint = parse_endpoint(base_endpoint).is_ok();
         let trailing_bind_has_endpoint = before_endpoint
             .rsplit_once('@')
@@ -341,6 +343,8 @@ fn parse_hop(hop_str: &str, _hop_index: usize) -> Result<ProxyHopSpec, UriParseE
             base_is_endpoint
         };
         let has_userinfo = !is_trailing_bind;
+        // pproxy @<bind> only accepts IP/socket literals (B-06); hostname
+        // binds are intentionally rejected here.
         let bind_is_address = after_at.parse::<std::net::IpAddr>().is_ok()
             || after_at.parse::<std::net::SocketAddr>().is_ok();
         if has_userinfo || after_at.contains('/') || after_at.contains('?') || !bind_is_address {

@@ -98,6 +98,10 @@ pub fn validate_standalone_target(
                     ));
                 }
             }
+            // Domain targets are deferred: the true private-egress check
+            // happens post-DNS in `eggress_core::connector::is_reserved_or_private_ip`.
+            // This pre-check is best-effort; TOCTOU between validation and lookup
+            // is accepted and documented (B-07).
             _ => {}
         }
     }

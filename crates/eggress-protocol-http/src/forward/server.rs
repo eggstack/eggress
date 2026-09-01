@@ -463,7 +463,13 @@ pub struct ForwardResponse {
 }
 
 /// Read and parse an HTTP response head from the upstream.
-async fn read_response_head(stream: &mut BoxStream) -> Result<ForwardResponse, HttpError> {
+///
+/// `stream` is typically a `BufReader<&mut BoxStream>` so per-byte header
+/// scans are served from the 8 KiB buffer rather than issuing a syscall per
+/// header byte (B-01).
+async fn read_response_head<R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<ForwardResponse, HttpError> {
     let mut head_buf = Vec::with_capacity(1024);
     let mut temp = [0u8; 1];
     // Track `\r\n` occurrences during the read so that a flood of empty
@@ -642,10 +648,14 @@ pub async fn forward_response(
     upstream: &mut BoxStream,
     client: &mut BoxStream,
 ) -> Result<ForwardResult, HttpError> {
+    // Buffer upstream reads so single-byte header scans do not issue a
+    // syscall per header byte (B-01/O-01). The BufReader preserves any
+    // bytes read ahead of the body for the subsequent relay loops.
+    let mut upstream_buf = tokio::io::BufReader::new(&mut *upstream);
     let mut informational_responses = 0;
     let mut bytes_forwarded: u64 = 0;
     let response = loop {
-        let response = read_response_head(upstream).await?;
+        let response = read_response_head(&mut upstream_buf).await?;
         if response.status == 101 {
             return Err(HttpError::UpgradeUnsupported);
         }
@@ -673,7 +683,7 @@ pub async fn forward_response(
             let mut buf = [0u8; 8192];
             while remaining > 0 {
                 let to_read = (remaining as usize).min(buf.len());
-                let n = upstream.read(&mut buf[..to_read]).await?;
+                let n = upstream_buf.read(&mut buf[..to_read]).await?;
                 if n == 0 {
                     return Err(HttpError::MalformedResponse(
                         "unexpected EOF in response body".into(),
@@ -688,7 +698,7 @@ pub async fn forward_response(
             let mut size_line_buf = Vec::new();
             loop {
                 size_line_buf.clear();
-                read_bounded_line_into(upstream, &mut size_line_buf, 1024).await?;
+                read_bounded_line_into(&mut upstream_buf, &mut size_line_buf, 1024).await?;
 
                 let size_str = String::from_utf8_lossy(&size_line_buf);
                 let size_str = size_str.trim_end_matches("\r\n");
@@ -709,7 +719,7 @@ pub async fn forward_response(
                     let mut trailer_total = 0usize;
                     loop {
                         let mut trailer = Vec::new();
-                        read_bounded_line_into(upstream, &mut trailer, 8192).await?;
+                        read_bounded_line_into(&mut upstream_buf, &mut trailer, 8192).await?;
                         trailer_total += trailer.len();
                         if trailer_total > MAX_TRAILER_BYTES {
                             return Err(HttpError::MalformedResponse(
@@ -718,11 +728,10 @@ pub async fn forward_response(
                         }
                         client.write_all(&trailer).await?;
                         bytes_forwarded += trailer.len() as u64;
-                        if trailer.len() >= 2 && &trailer[trailer.len() - 2..] == b"\r\n" {
-                            if &trailer[..2] == b"\r\n" {
-                                break;
-                            }
-                        } else {
+                        if trailer == b"\r\n" {
+                            break;
+                        }
+                        if !trailer.ends_with(b"\r\n") {
                             break;
                         }
                     }
@@ -737,7 +746,7 @@ pub async fn forward_response(
                 let mut buf = [0u8; 8192];
                 while remaining > 0 {
                     let to_read = remaining.min(buf.len());
-                    let n = upstream.read(&mut buf[..to_read]).await?;
+                    let n = upstream_buf.read(&mut buf[..to_read]).await?;
                     if n == 0 {
                         return Ok(ForwardResult {
                             report: ForwardResponseReport { bytes_forwarded },
@@ -758,7 +767,7 @@ pub async fn forward_response(
             eof_framing = true;
             let mut buf = [0u8; 8192];
             loop {
-                let n = upstream.read(&mut buf).await?;
+                let n = upstream_buf.read(&mut buf).await?;
                 if n == 0 {
                     break;
                 }

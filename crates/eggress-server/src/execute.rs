@@ -1041,9 +1041,24 @@ pub fn build_chain_executor(
         handlers.push(Box::new(H3HopHandler));
     }
 
-    // Set up TLS wrapper that reuses the shared TLS config built above so
-    // we don't re-read and re-parse system roots on every handshake.
+    // Pre-build TLS configs per distinct ALPN set so we don't re-read
+    // and re-parse system roots on every handshake (O-05).
     let tls_wrapper_default = shared_tls_config.clone();
+    let tls_wrapper_h2: Option<std::sync::Arc<rustls::ClientConfig>> = if tls_override.is_none() {
+        let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+        match builder.with_system_roots().and_then(|b| {
+            b.with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+                .build()
+        }) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                tracing::debug!("failed to build h2 TLS config: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     fn build_alpn_config(
         alpn: Option<Vec<Vec<u8>>>,
     ) -> Result<std::sync::Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>>
@@ -1058,16 +1073,21 @@ pub fn build_chain_executor(
     let tls_wrapper: eggress_core::chain::TlsWrapper =
         Box::new(move |stream, server_name, alpn| {
             let default = tls_wrapper_default.clone();
+            let h2_cfg = tls_wrapper_h2.clone();
             Box::pin(async move {
                 let config = match default {
                     Some(c) => {
-                        // Rebuild only when the caller asked for ALPN the
-                        // shared config does not already advertise.
                         if let Some(ref protocols) = alpn {
-                            if c.alpn_protocols != *protocols {
-                                build_alpn_config(Some(protocols.clone()))?
-                            } else {
+                            if c.alpn_protocols == *protocols {
                                 c
+                            } else if let Some(h2) = h2_cfg {
+                                if *protocols == vec![b"h2".to_vec(), b"http/1.1".to_vec()] {
+                                    h2
+                                } else {
+                                    build_alpn_config(Some(protocols.clone()))?
+                                }
+                            } else {
+                                build_alpn_config(Some(protocols.clone()))?
                             }
                         } else {
                             c
@@ -1123,10 +1143,18 @@ impl tokio::io::AsyncWrite for HttpOnlyStream {
             ready!(self.as_mut().poll_flush(cx))?;
         }
         let room = HTTPONLY_MAX_BUFFERED.saturating_sub(self.pending.len());
+        if room == 0 && !data.is_empty() {
+            // Backpressure: pending is full after flush attempt, signal
+            // Pending so the caller (which must use `write_all`/retry loop)
+            // waits for the waker instead of busy-spinning on Ok(0).
+            return Poll::Pending;
+        }
         let accepted = data.len().min(room);
         self.pending.extend_from_slice(&data[..accepted]);
         // A short write is valid `AsyncWrite` behavior: callers retry with
-        // the remainder once the buffered bytes have drained.
+        // the remainder once the buffered bytes have drained. Callers must
+        // use `write_all` or explicit retry; a single `write` may return
+        // short and the tail must be retried by the caller.
         Poll::Ready(Ok(accepted))
     }
 

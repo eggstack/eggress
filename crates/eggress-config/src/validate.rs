@@ -700,7 +700,7 @@ fn matcher_could_match_udp(matcher: &MatchExprConfig) -> bool {
 fn matcher_could_match_udp_limited(matcher: &MatchExprConfig, depth: usize) -> bool {
     // The full validator rejects deeper expressions. Stay conservative here
     // so this pre-validation diagnostic never suppresses a useful warning.
-    if depth > MAX_MATCH_EXPR_DEPTH {
+    if depth >= MAX_MATCH_EXPR_DEPTH {
         return true;
     }
     match matcher {
@@ -826,7 +826,7 @@ fn validate_match_expr(
     errors: &mut Vec<ConfigError>,
     depth: usize,
 ) {
-    if depth > MAX_MATCH_EXPR_DEPTH {
+    if depth >= MAX_MATCH_EXPR_DEPTH {
         errors.push(ConfigError::validation(
             path,
             &format!(
@@ -1341,7 +1341,7 @@ fn walk_match_expr_for_alias(
     warnings: &mut Vec<ConfigWarning>,
     depth: usize,
 ) {
-    if depth > MAX_MATCH_EXPR_DEPTH {
+    if depth >= MAX_MATCH_EXPR_DEPTH {
         return;
     }
     match expr {

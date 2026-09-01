@@ -26,6 +26,11 @@ const DEFAULT_MAX_STREAMS: u32 = 1024;
 /// limit.
 const MAX_CONCURRENT_CONNECTION_TASKS: usize = 1024;
 
+/// Upper bound on concurrent per-stream handler tasks inside a QUIC connection.
+/// QUIC transport already limits `max_concurrent_bidi_streams`, but this caps
+/// tokio task spawning for back-pressure (B-10).
+const MAX_CONCURRENT_STREAM_TASKS: usize = 4096;
+
 /// Transport errors with stable, redacted messages.
 #[derive(Debug, thiserror::Error)]
 pub enum QuicError {
@@ -347,6 +352,7 @@ impl QuicListener {
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {
         let permits = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTION_TASKS));
+        let stream_permits = Arc::new(Semaphore::new(MAX_CONCURRENT_STREAM_TASKS));
         loop {
             let incoming = tokio::select! {
                 incoming = self.endpoint.accept() => incoming,
@@ -369,13 +375,23 @@ impl QuicListener {
             };
             let peer = connection.remote_address();
             let handler = handler.clone();
+            let stream_permits = stream_permits.clone();
             tokio::spawn(async move {
                 let _permit = permit;
                 loop {
                     match connection.accept_bi().await {
                         Ok((send, recv)) => {
                             let handler = handler.clone();
+                            let stream_permits = stream_permits.clone();
+                            // Bound per-stream tasks (B-10) so a malicious peer
+                            // cannot exhaust the executor with unbounded spawns.
+                            let Ok(stream_permit) = stream_permits.clone().try_acquire_owned()
+                            else {
+                                tracing::warn!(%peer, "QUIC stream task limit reached; dropping stream");
+                                continue;
+                            };
                             tokio::spawn(async move {
+                                let _stream_permit = stream_permit;
                                 handler(Box::new(QuicStream::new(recv, send)), peer).await;
                             });
                         }

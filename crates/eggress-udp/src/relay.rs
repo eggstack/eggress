@@ -659,9 +659,8 @@ pub async fn udp_relay_loop(
 
                     association.touch();
 
-                    let packet = buf[..n].to_vec();
                     if let Err(e) = handle_client_datagram(
-                        &packet,
+                        &buf[..n],
                         client_addr,
                         &mut flows,
                         &config,

@@ -524,7 +524,7 @@ fn compile_match_config_limited(
             &format!("expression exceeds maximum node count ({})", MAX_NODE_COUNT),
         ));
     }
-    if depth > MAX_EXPRESSION_DEPTH {
+    if depth >= MAX_EXPRESSION_DEPTH {
         return Err(ConfigError::validation(
             "match",
             &format!(

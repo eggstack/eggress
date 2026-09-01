@@ -312,6 +312,60 @@ fn classify_listeners(
             }
             (None, None) => {}
         }
+
+        // Hot-swappable listener metadata: log material changes so reload
+        // observability is not silent. Socket topology is unchanged.
+        if old.protocols != new.protocols {
+            tracing::info!(
+                listener = %old.name,
+                old_protocols = ?old.protocols,
+                new_protocols = ?new.protocols,
+                "listener protocols changed via hot reload"
+            );
+        }
+        // Auth material: compare presence and non-secret fields only.
+        let old_auth_present = old.auth.is_some();
+        let new_auth_present = new.auth.is_some();
+        if old_auth_present != new_auth_present {
+            tracing::info!(
+                listener = %old.name,
+                old_has_auth = old_auth_present,
+                new_has_auth = new_auth_present,
+                "listener auth presence changed via hot reload"
+            );
+        } else if let (Some(old_a), Some(new_a)) = (&old.auth, &new.auth) {
+            if old_a.auth_type != new_a.auth_type || old_a.username != new_a.username {
+                tracing::info!(
+                    listener = %old.name,
+                    "listener auth material changed via hot reload"
+                );
+            }
+        }
+        if old.tls.is_some() != new.tls.is_some() {
+            tracing::info!(
+                listener = %old.name,
+                old_has_tls = old.tls.is_some(),
+                new_has_tls = new.tls.is_some(),
+                "listener TLS presence changed via hot reload"
+            );
+        }
+        if old.shadowsocks.is_some() != new.shadowsocks.is_some()
+            || old.trojan.is_some() != new.trojan.is_some()
+        {
+            tracing::info!(
+                listener = %old.name,
+                "listener shadowsocks/trojan presence changed via hot reload"
+            );
+        }
+        if old.connection_limit != new.connection_limit
+            || old.fixed_target != new.fixed_target
+            || old.local_bind != new.local_bind
+        {
+            tracing::info!(
+                listener = %old.name,
+                "listener connection_limit/fixed_target/local_bind changed via hot reload"
+            );
+        }
     }
 
     Ok(())

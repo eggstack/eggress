@@ -84,8 +84,12 @@ impl AuthReuseCache {
         // sweep has not run in the last SWEEP_INTERVAL. This caps the
         // tail-latency hit of an O(n) `retain` under the cache lock.
         if entries.len() >= self.max_entries {
-            let now_nanos =
-                u64::try_from(now.duration_since(*AUTH_CACHE_EPOCH).as_nanos()).unwrap_or(u64::MAX);
+            let now_nanos = u64::try_from(
+                now.checked_duration_since(*AUTH_CACHE_EPOCH)
+                    .unwrap_or(Duration::ZERO)
+                    .as_nanos(),
+            )
+            .unwrap_or(u64::MAX);
             let last_sweep = self.last_sweep_nanos.load(Ordering::Acquire);
             let interval_nanos = u64::try_from(Self::SWEEP_INTERVAL.as_nanos()).unwrap_or(u64::MAX);
             if now_nanos.saturating_sub(last_sweep) >= interval_nanos
