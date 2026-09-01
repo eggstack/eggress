@@ -31,16 +31,16 @@ impl AeadCipher {
         match method {
             CipherMethod::Aes128Gcm => Aes128Gcm::new_from_slice(key)
                 .map(Self::Aes128)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::Other(e.to_string())),
             CipherMethod::Aes192Gcm => Aes192Gcm::new_from_slice(key)
                 .map(Self::Aes192)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::Other(e.to_string())),
             CipherMethod::Aes256Gcm => Aes256Gcm::new_from_slice(key)
                 .map(Self::Aes256)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::Other(e.to_string())),
             CipherMethod::ChaCha20IetfPoly1305 => ChaCha20Poly1305::new_from_slice(key)
                 .map(Self::ChaCha20)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::Other(e.to_string())),
         }
     }
 
@@ -53,16 +53,16 @@ impl AeadCipher {
         match self {
             Self::Aes128(cipher) => cipher
                 .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::EncryptionFailed(e.to_string())),
             Self::Aes192(cipher) => cipher
                 .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::EncryptionFailed(e.to_string())),
             Self::Aes256(cipher) => cipher
                 .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::EncryptionFailed(e.to_string())),
             Self::ChaCha20(cipher) => cipher
                 .encrypt(nonce, plaintext)
-                .map_err(|e| ShadowsocksError::DecryptionFailed(e.to_string())),
+                .map_err(|e| ShadowsocksError::EncryptionFailed(e.to_string())),
         }
     }
 
@@ -383,14 +383,13 @@ pub(crate) fn decrypt_standard_chunks(
     Ok(plaintext)
 }
 
-/// Increment a nonce by 1 (little-endian in first 8 bytes, increment first byte with carry).
+/// Increment a nonce by 1 (little-endian, full 12-byte counter per SIP003).
 fn nonce_increment(nonce: &[u8], result: &mut [u8]) -> Result<(), ShadowsocksError> {
     if nonce.len() != result.len() {
         return Err(ShadowsocksError::Other("nonce size mismatch".into()));
     }
     result.copy_from_slice(nonce);
-    let end = result.len().min(8);
-    for byte in result[..end].iter_mut() {
+    for byte in result.iter_mut() {
         let (val, carry) = byte.overflowing_add(1);
         *byte = val;
         if !carry {

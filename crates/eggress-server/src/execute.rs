@@ -535,7 +535,6 @@ async fn execute_tunnel(
 /// appropriate upstream. Supports HTTP/1.1 keep-alive semantics: the
 /// connection persists until the client sends `Connection: close` or the
 /// upstream signals close.
-#[allow(unused_assignments)]
 async fn execute_http_forward(
     pending: PendingHttpForward,
     config: &ConnectionConfig,
@@ -546,7 +545,7 @@ async fn execute_http_forward(
     let mut client = pending.client;
     let mut total_bytes_upstream: u64 = 0;
     let mut total_bytes_downstream: u64 = 0;
-    let mut last_target: Option<String> = None;
+    let mut last_target: Option<String>;
     let mut last_rule_id: Option<String> = None;
     let mut last_upstream_group: Option<String> = None;
     let mut last_upstream_id: Option<String> = None;

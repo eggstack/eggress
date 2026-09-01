@@ -49,24 +49,42 @@ impl ReverseRegistry {
         Self::default()
     }
 
+    fn read_lock(
+        &self,
+    ) -> std::sync::RwLockReadGuard<'_, HashMap<ReverseServerId, ReverseServerEntry>> {
+        self.inner.read().unwrap_or_else(|e| {
+            tracing::warn!("reverse registry read lock was poisoned; recovering: {e}");
+            e.into_inner()
+        })
+    }
+
+    fn write_lock(
+        &self,
+    ) -> std::sync::RwLockWriteGuard<'_, HashMap<ReverseServerId, ReverseServerEntry>> {
+        self.inner.write().unwrap_or_else(|e| {
+            tracing::warn!("reverse registry write lock was poisoned; recovering: {e}");
+            e.into_inner()
+        })
+    }
+
     /// Register a reverse server. Replaces any prior entry with the
     /// same id; in practice ids are unique per supervisor generation.
     pub fn register(&self, entry: ReverseServerEntry) {
         let id = entry.id.clone();
-        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.write_lock();
         guard.insert(id, entry);
     }
 
     /// Remove a reverse server entry by id. Called when the
     /// supervisor tears the server down.
     pub fn unregister(&self, id: &ReverseServerId) {
-        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.write_lock();
         guard.remove(id);
     }
 
     /// Snapshot all registered servers' state.
     pub fn snapshot(&self) -> Vec<ReverseServerEntrySnapshot> {
-        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.read_lock();
         guard
             .values()
             .map(|e| ReverseServerEntrySnapshot {
@@ -79,7 +97,7 @@ impl ReverseRegistry {
 
     /// True if no reverse servers are registered.
     pub fn is_empty(&self) -> bool {
-        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.read_lock();
         guard.is_empty()
     }
 }

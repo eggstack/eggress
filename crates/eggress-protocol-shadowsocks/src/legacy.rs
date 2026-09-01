@@ -288,6 +288,18 @@ fn encrypt_block_04<C>(cipher: &C, input: &[u8], output: &mut [u8])
 where
     C: aes::cipher::BlockEncrypt + aes::cipher::BlockSizeUser,
 {
+    // Defensive: caller must ensure block-length slices, but avoid panicking
+    // on malformed input in release builds; zero output on length mismatch.
+    if input.len() != output.len() {
+        debug_assert!(
+            false,
+            "block length mismatch: input {} vs output {}",
+            input.len(),
+            output.len()
+        );
+        output.fill(0);
+        return;
+    }
     let mut block = aes::cipher::Block::<C>::clone_from_slice(input);
     cipher.encrypt_block(&mut block);
     output.copy_from_slice(&block);
@@ -297,7 +309,30 @@ fn encrypt_block_05<C>(cipher: &C, input: &[u8], output: &mut [u8])
 where
     C: blowfish::cipher::BlockCipherEncrypt + blowfish::cipher::BlockSizeUser,
 {
-    let mut block = blowfish::cipher::Block::<C>::try_from(input).expect("valid block length");
+    // Defensive: avoid `expect` panic on invalid block length; zero output
+    // in release and assert in debug for caller bugs.
+    let mut block = match blowfish::cipher::Block::<C>::try_from(input) {
+        Ok(block) => block,
+        Err(_) => {
+            debug_assert!(
+                false,
+                "Blowfish block length mismatch: expected 8, got {}",
+                input.len()
+            );
+            output.fill(0);
+            return;
+        }
+    };
+    if output.len() != block.len() {
+        debug_assert!(
+            false,
+            "Blowfish output length mismatch: expected {}, got {}",
+            block.len(),
+            output.len()
+        );
+        output.fill(0);
+        return;
+    }
     cipher.encrypt_block(&mut block);
     output.copy_from_slice(&block);
 }
@@ -1060,8 +1095,7 @@ impl AsyncWrite for LegacyStream {
         }
         while self.pending_write_pos < self.pending_write.len() {
             let pos = self.pending_write_pos;
-            let pending = self.pending_write[pos..].to_vec();
-            match Pin::new(&mut self.inner).poll_write(cx, &pending) {
+            match Pin::new(&mut self.inner).poll_write(cx, &self.pending_write[pos..]) {
                 Poll::Ready(Ok(0)) => {
                     return Poll::Ready(Err(std::io::Error::new(
                         std::io::ErrorKind::WriteZero,

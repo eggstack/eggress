@@ -40,8 +40,20 @@ struct AuthFailureLimiter {
 }
 
 impl AuthFailureLimiter {
+    fn lock_entries(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::HashMap<std::net::IpAddr, AuthFailure>> {
+        self.entries.lock().unwrap_or_else(|e| {
+            tracing::warn!("auth failure limiter was poisoned; clearing it: {e}");
+            let mut entries = e.into_inner();
+            entries.clear();
+            self.entries.clear_poison();
+            entries
+        })
+    }
+
     fn blocked_for(&self, ip: std::net::IpAddr) -> Option<Duration> {
-        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let entries = self.lock_entries();
         entries.get(&ip).and_then(|entry| {
             entry
                 .blocked_until
@@ -51,7 +63,7 @@ impl AuthFailureLimiter {
 
     fn record_failure(&self, ip: std::net::IpAddr) {
         let now = Instant::now();
-        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.lock_entries();
         if entries.len() >= MAX_AUTH_FAILURE_ENTRIES && !entries.contains_key(&ip) {
             entries.retain(|_, entry| {
                 entry
@@ -85,10 +97,7 @@ impl AuthFailureLimiter {
     }
 
     fn record_success(&self, ip: std::net::IpAddr) {
-        self.entries
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&ip);
+        self.lock_entries().remove(&ip);
     }
 }
 

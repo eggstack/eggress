@@ -19,6 +19,9 @@ pub enum ShadowsocksError {
     #[error("decryption failed: {0}")]
     DecryptionFailed(String),
 
+    #[error("encryption failed: {0}")]
+    EncryptionFailed(String),
+
     #[error("invalid address: {0}")]
     InvalidAddress(String),
 

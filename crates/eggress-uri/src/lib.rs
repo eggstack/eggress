@@ -131,6 +131,16 @@ pub struct RedactedUri<'a> {
 /// native [`ProxyChainSpec`], so callers can safely use it for diagnostics.
 pub fn redact_proxy_uri(uri: &str) -> String {
     let Some(scheme_end) = uri.find("://") else {
+        // No `://` — still redact `user:pass@host` style credentials so
+        // raw `user:pass@host` or base64-decoded blobs never leak when
+        // callers fallback via `unwrap_or_else(|_| redact_proxy_uri(uri))`.
+        if let Some(at_pos) = find_at_outside_brackets(uri) {
+            if uri[..at_pos].contains(':') {
+                return format!("****@{}", &uri[at_pos + 1..]);
+            }
+            // Conservative: any `@` outside brackets may carry userinfo
+            return format!("****@{}", &uri[at_pos + 1..]);
+        }
         return uri.to_string();
     };
     let after_scheme = &uri[scheme_end + 3..];
@@ -632,6 +642,12 @@ fn parse_query_rule(query: Option<&str>) -> Option<String> {
     None
 }
 
+/// Percent-decode `input`, tolerating invalid `%` escapes as literals.
+///
+/// Invalid escapes (e.g. `%ZZ` or trailing `%`) are kept verbatim rather
+/// than rejected. This intentionally mirrors Python `pproxy`/`urllib.parse.unquote`
+/// behaviour so credential round-trips remain compatible; strict rejection
+/// would cause auth mismatches for passwords containing literal `%`.
 fn percent_decode(input: &str) -> Result<String, UriParseError> {
     let mut result = Vec::with_capacity(input.len());
     let bytes = input.as_bytes();
