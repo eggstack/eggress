@@ -326,7 +326,7 @@ async fn open_route(
 ) -> Result<OpenedRoute, SessionOpenError> {
     let selected = config.routing.route(request).map_err(|e| match e {
         eggress_routing::RouteError::Rejected { .. } => SessionOpenError::PolicyDenied,
-        eggress_routing::RouteError::NoEligibleUpstream(_) => SessionOpenError::UpstreamUnavailable,
+        eggress_routing::RouteError::NoEligibleUpstream(_) => SessionOpenError::PolicyDenied,
         eggress_routing::RouteError::UnknownGroup(_) => SessionOpenError::PolicyDenied,
     })?;
 

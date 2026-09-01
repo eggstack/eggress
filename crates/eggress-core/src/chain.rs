@@ -290,25 +290,29 @@ impl ChainExecutor {
         for (i, hop) in chain.iter().enumerate() {
             // Apply TLS wrapping if configured for this hop
             if hop.tls {
-                if let Some(ref tls_wrapper) = self.tls_wrapper {
-                    let server_name = hop
-                        .server_name
-                        .clone()
-                        .unwrap_or_else(|| hop.endpoint.host.clone());
-                    // Set H2 ALPN if this hop uses the HTTP/2 protocol
-                    let alpn = if hop.protocols.contains(&ProtocolSpec::Http2) {
-                        Some(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
-                    } else {
-                        None
-                    };
-                    current_stream = tls_wrapper(current_stream, server_name, alpn)
-                        .await
-                        .map_err(|e| ChainError::HandshakeFailed {
-                            hop_index: i,
-                            protocol: "tls".to_string(),
-                            source: e,
+                let wrapper =
+                    self.tls_wrapper
+                        .as_ref()
+                        .ok_or_else(|| ChainError::InvalidChain {
+                            reason: format!("hop {i}: tls=true but no tls_wrapper configured"),
                         })?;
-                }
+                let server_name = hop
+                    .server_name
+                    .clone()
+                    .unwrap_or_else(|| hop.endpoint.host.clone());
+                // Set H2 ALPN if this hop uses the HTTP/2 protocol
+                let alpn = if hop.protocols.contains(&ProtocolSpec::Http2) {
+                    Some(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+                } else {
+                    None
+                };
+                current_stream = wrapper(current_stream, server_name, alpn)
+                    .await
+                    .map_err(|e| ChainError::HandshakeFailed {
+                        hop_index: i,
+                        protocol: "tls".to_string(),
+                        source: e,
+                    })?;
             }
 
             // Determine the target for this hop's handshake

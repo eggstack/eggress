@@ -239,7 +239,7 @@ impl HealthManager {
         upstreams: &[std::sync::Arc<UpstreamRuntime>],
     ) {
         self.stop_all();
-        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(upstreams.len().max(10)));
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
 
         for upstream in upstreams {
             let upstream = upstream.clone();

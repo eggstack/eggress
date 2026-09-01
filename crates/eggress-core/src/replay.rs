@@ -67,7 +67,8 @@ impl ReplayStream {
     ///
     /// If detection left buffered bytes unread, they remain available through
     /// the returned stream before reads reach the underlying stream.
-    pub fn into_inner(self) -> BoxStream {
+    pub fn into_inner(mut self) -> BoxStream {
+        self.finish_sniff();
         if self.buffered_remaining() == 0 {
             self.inner
         } else {

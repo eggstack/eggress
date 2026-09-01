@@ -308,6 +308,20 @@ impl Drop for InboundShadowsocksConfig {
     }
 }
 
+impl fmt::Debug for InboundShadowsocksConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut ds = f.debug_struct("InboundShadowsocksConfig");
+        ds.field("method", &self.method);
+        ds.field("password", &"***");
+        #[cfg(feature = "pproxy-legacy")]
+        {
+            ds.field("auth_prefix", &self.auth_prefix);
+            ds.field("plugins", &self.plugins);
+        }
+        ds.finish()
+    }
+}
+
 /// Configuration for Trojan inbound listener.
 #[derive(Clone)]
 pub struct InboundTrojanConfig {
@@ -321,6 +335,15 @@ pub struct InboundTrojanConfig {
 impl Drop for InboundTrojanConfig {
     fn drop(&mut self) {
         self.password.zeroize();
+    }
+}
+
+impl fmt::Debug for InboundTrojanConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InboundTrojanConfig")
+            .field("password", &"***")
+            .field("fallback", &self.fallback)
+            .finish()
     }
 }
 

@@ -592,7 +592,7 @@ fn parse_credentials(
         if protocols.contains(&ProtocolSpec::Trojan) && !userinfo.is_empty() {
             return Ok(CredentialSpec {
                 username: String::new(),
-                password: percent_decode(userinfo),
+                password: percent_decode(userinfo)?,
             });
         }
 
@@ -602,8 +602,8 @@ fn parse_credentials(
         });
     };
 
-    let username = percent_decode(&userinfo[..colon_pos]);
-    let password = percent_decode(&userinfo[colon_pos + 1..]);
+    let username = percent_decode(&userinfo[..colon_pos])?;
+    let password = percent_decode(&userinfo[colon_pos + 1..])?;
 
     if username.is_empty() && password.is_empty() {
         return Err(UriParseError::InvalidFormat {
@@ -632,7 +632,7 @@ fn parse_query_rule(query: Option<&str>) -> Option<String> {
     None
 }
 
-fn percent_decode(input: &str) -> String {
+fn percent_decode(input: &str) -> Result<String, UriParseError> {
     let mut result = Vec::with_capacity(input.len());
     let bytes = input.as_bytes();
     let mut i = 0;
@@ -649,7 +649,17 @@ fn percent_decode(input: &str) -> String {
         result.push(bytes[i]);
         i += 1;
     }
-    String::from_utf8_lossy(&result).into_owned()
+    let decoded = String::from_utf8(result).map_err(|_| UriParseError::InvalidFormat {
+        message: "invalid UTF-8 in percent-encoded sequence".to_string(),
+        span: None,
+    })?;
+    if decoded.contains('\0') {
+        return Err(UriParseError::InvalidFormat {
+            message: "NUL byte in percent-decoded credentials".to_string(),
+            span: None,
+        });
+    }
+    Ok(decoded)
 }
 
 fn hex_val(b: u8) -> Option<u8> {

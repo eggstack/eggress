@@ -288,7 +288,8 @@ impl QuicClient {
         let connection = self.connection().await?;
         match connection.open_stream().await {
             Ok(stream) => Ok(stream),
-            Err(_) => {
+            Err(err) => {
+                tracing::debug!(first_error = %err, "quic stream open failed, reconnecting");
                 self.connection.lock().await.take();
                 self.connection().await?.open_stream().await
             }

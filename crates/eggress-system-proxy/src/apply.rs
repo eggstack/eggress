@@ -77,6 +77,9 @@ pub struct RollbackState {
     pub socks_proxy: Option<String>,
     /// Previous no-proxy/bypass list.
     pub no_proxy: Option<String>,
+    /// Original ProxyEnable flag on Windows (true = enabled, false = disabled).
+    #[serde(default)]
+    pub proxy_enabled: Option<bool>,
 }
 
 /// In-memory rollback guard for compatibility `--sys`.
@@ -123,6 +126,11 @@ pub fn apply_compatibility_proxy_with_runner(
     address: std::net::SocketAddr,
     runner: &dyn CommandRunner,
 ) -> Result<AppliedProxy, String> {
+    // M-9: TOCTOU between inspect and apply is best-effort. Another process
+    // may modify proxy settings between inspection and `execute_apply`; the
+    // captured rollback reflects inspection-time values, mitigated by the
+    // RAII `AppliedProxy` guard. Re-inspecting immediately before execute
+    // would narrow the window but not eliminate it.
     let platform = detect_platform();
     let inspection = inspect_system_proxy_with_runner(runner);
     if !inspection.apply_supported {
@@ -251,6 +259,7 @@ pub fn create_rollback(
     service: Option<&str>,
     settings: &SystemProxySettings,
 ) -> RollbackState {
+    let proxy_enabled = settings.raw.get("ProxyEnable").map(|v| v == "1");
     RollbackState {
         timestamp: chrono_timestamp(),
         platform: platform.to_string(),
@@ -259,6 +268,7 @@ pub fn create_rollback(
         https_proxy: settings.https_proxy.clone(),
         socks_proxy: settings.socks_proxy.clone(),
         no_proxy: settings.no_proxy.clone(),
+        proxy_enabled,
     }
 }
 
@@ -356,20 +366,22 @@ pub fn generate_revert_commands(rollback: &RollbackState) -> Vec<Command> {
                         "/f".into(),
                     ],
                 ));
-                commands.push(Command::new(
-                    "reg",
-                    vec![
-                        "add".into(),
-                        key.into(),
-                        "/v".into(),
-                        "ProxyEnable".into(),
-                        "/t".into(),
-                        "REG_DWORD".into(),
-                        "/d".into(),
-                        "1".into(),
-                        "/f".into(),
-                    ],
-                ));
+                if rollback.proxy_enabled.unwrap_or(true) {
+                    commands.push(Command::new(
+                        "reg",
+                        vec![
+                            "add".into(),
+                            key.into(),
+                            "/v".into(),
+                            "ProxyEnable".into(),
+                            "/t".into(),
+                            "REG_DWORD".into(),
+                            "/d".into(),
+                            "1".into(),
+                            "/f".into(),
+                        ],
+                    ));
+                }
             }
             commands
         }
@@ -393,11 +405,11 @@ pub fn generate_revert_commands(rollback: &RollbackState) -> Vec<Command> {
 }
 
 fn chrono_timestamp() -> String {
-    // Use simple timestamp without chrono dependency
+    // Use nanosecond precision to avoid rollback filename collisions within the same second (L-12).
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
+        .as_nanos();
     format!("{now}")
 }
 
@@ -496,6 +508,7 @@ mod tests {
             https_proxy: None,
             socks_proxy: None,
             no_proxy: None,
+            proxy_enabled: None,
         };
 
         let dir = tempfile::tempdir().unwrap();
@@ -520,6 +533,7 @@ mod tests {
             https_proxy: None,
             socks_proxy: None,
             no_proxy: None,
+            proxy_enabled: None,
         };
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rollback.json");
@@ -591,6 +605,7 @@ mod tests {
             https_proxy: None,
             socks_proxy: None,
             no_proxy: None,
+            proxy_enabled: None,
         };
         let commands = generate_revert_commands(&rollback);
         assert!(commands.iter().any(|c| c.to_string().contains("off")));
@@ -619,6 +634,7 @@ mod tests {
             https_proxy: None,
             socks_proxy: None,
             no_proxy: None,
+            proxy_enabled: None,
         };
         let mut applied = AppliedProxy {
             rollback: Some(rollback),

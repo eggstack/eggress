@@ -518,7 +518,45 @@ impl Router {
                                 (None, None)
                             }
                         } else {
-                            (None, None)
+                            match &upstream_group.fallback {
+                                crate::upstream::GroupFallback::Direct
+                                | crate::upstream::GroupFallback::Reject => (None, None),
+                                crate::upstream::GroupFallback::UseUnhealthy => {
+                                    let enabled_members: Vec<_> = upstream_group
+                                        .members
+                                        .iter()
+                                        .filter(|m| m.is_enabled())
+                                        .cloned()
+                                        .collect();
+                                    if enabled_members.is_empty() {
+                                        (None, None)
+                                    } else if let Some(sel) = upstream_group
+                                        .scheduler
+                                        .preview(upstream_group, &enabled_members, request)
+                                        .or_else(|| enabled_members.first().cloned())
+                                    {
+                                        // preview uses is_eligible internally; for enabled
+                                        // unhealthy members it may return None, so fall back
+                                        // to a deterministic first-enabled choice to avoid
+                                        // reporting None while select would return an
+                                        // unhealthy upstream. A non-mutating preview is
+                                        // kept to preserve the `explain_does_not_mutate`
+                                        // invariant.
+                                        let chain_str = format!(
+                                            "{}",
+                                            eggress_uri::RedactedUri::new(&sel.chain)
+                                        );
+                                        (Some(sel.id.to_string()), Some(chain_str))
+                                    } else {
+                                        let sel = &enabled_members[0];
+                                        let chain_str = format!(
+                                            "{}",
+                                            eggress_uri::RedactedUri::new(&sel.chain)
+                                        );
+                                        (Some(sel.id.to_string()), Some(chain_str))
+                                    }
+                                }
+                            }
                         };
 
                         (

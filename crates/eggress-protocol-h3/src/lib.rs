@@ -254,6 +254,14 @@ fn parse_basic_authorization(value: &str) -> Option<(String, String)> {
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())?;
     let (username, password) = decoded.split_once(':')?;
+    if username.contains(['\r', '\n', '\0', '\x7f'])
+        || password.contains(['\r', '\n', '\0', '\x7f'])
+    {
+        return None;
+    }
+    if username.len() > 4096 || password.len() > 4096 {
+        return None;
+    }
     Some((username.to_string(), password.to_string()))
 }
 

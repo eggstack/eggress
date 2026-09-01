@@ -190,6 +190,7 @@ impl EggressService {
                 }
                 if started.elapsed() > timeout {
                     token.cancel();
+                    let _ = std::fs::remove_file(&config_path_clone);
                     let _ = ready_tx.send(Err(EggressError::Startup(
                         "readiness timeout".to_string(),
                     )));
@@ -286,11 +287,11 @@ impl EggressService {
                     if started.elapsed() > timeout {
                         // On timeout, cancel and clean up immediately
                         token.cancel();
+                        let _ = std::fs::remove_file(&config_path_clone);
                         match run_handle.join() {
                             Ok(()) => {}
                             Err(_) => tracing::debug!("runtime thread panicked"),
                         }
-                        let _ = std::fs::remove_file(&config_path_clone);
                         let _ =
                             ready_tx.send(Err(EggressError::Startup("readiness timeout".into())));
                         break;

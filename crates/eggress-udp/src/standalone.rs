@@ -271,14 +271,20 @@ pub async fn standalone_udp_relay(
                                                     }
                                                     if let Ok(upstream_resp) = eggress_protocol_socks::socks5::udp_codec::decode_socks5_udp_datagram(&recv_buf[..n]) {
                                                         if socks_addr_equivalent(&upstream_resp.target, &flow_target) {
-                                                            if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = flow_response_tx.try_send(ResponseMsg {
+                                                            match flow_response_tx.try_send(ResponseMsg {
                                                                 client: flow_client,
                                                                 target: upstream_resp.target.clone(),
                                                                 payload: upstream_resp.payload.to_vec(),
                                                             }) {
-                                                                flow_metrics.record_dropped_response_channel_full();
-                                                                tracing::debug!("UDP response channel full; response datagram dropped");
-                                                            }
+                                            Ok(()) => {},
+                                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                                flow_metrics.record_dropped_response_channel_full();
+                                                tracing::debug!("UDP response channel full; response datagram dropped");
+                                            }
+                                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                                tracing::debug!("udp relay: response channel closed, dropping datagram");
+                                            }
+                                        }
                                                         } else {
                                                             tracing::trace!(
                                                                 "upstream response target mismatch: expected {:?}, got {:?}",
@@ -409,14 +415,20 @@ pub async fn standalone_udp_relay(
                                             {
                                                 let resp_socks_addr = target_to_socks_addr(&resp_target);
                                                 if socks_addr_equivalent(&resp_socks_addr, &flow_target) {
-                                                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = flow_response_tx.try_send(ResponseMsg {
+                                                    match flow_response_tx.try_send(ResponseMsg {
                                                         client: flow_client,
                                                         target: resp_socks_addr,
                                                         payload: resp_payload,
                                                     }) {
-                                                        flow_metrics.record_dropped_response_channel_full();
-                                                        tracing::debug!("UDP response channel full; response datagram dropped");
-                                                    }
+                                            Ok(()) => {},
+                                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                                flow_metrics.record_dropped_response_channel_full();
+                                                tracing::debug!("UDP response channel full; response datagram dropped");
+                                            }
+                                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                                tracing::debug!("udp relay: response channel closed, dropping datagram");
+                                            }
+                                        }
                                                 } else {
                                                     tracing::trace!(
                                                         "shadowsocks upstream response target mismatch: expected {:?}, got {:?}",
@@ -520,14 +532,20 @@ pub async fn standalone_udp_relay(
                                             if let Ok((target, payload)) =
                                                 flow_stack.decode_response(&recv_buf[..n])
                                             {
-                                                if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = flow_response_tx.try_send(ResponseMsg {
+                                                match flow_response_tx.try_send(ResponseMsg {
                                                     client: flow_client,
                                                     target: target_to_socks_addr(&target),
                                                     payload,
                                                 }) {
-                                                    flow_metrics.record_dropped_response_channel_full();
-                                                    tracing::debug!("UDP response channel full; response datagram dropped");
-                                                }
+                                            Ok(()) => {},
+                                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                                flow_metrics.record_dropped_response_channel_full();
+                                                tracing::debug!("UDP response channel full; response datagram dropped");
+                                            }
+                                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                                tracing::debug!("udp relay: response channel closed, dropping datagram");
+                                            }
+                                        }
                                             }
                                         }
                                     });

@@ -1309,6 +1309,12 @@ pub fn validate_config_security(config: &ConfigFile) -> Vec<ConfigWarning> {
                         ),
                     });
                 }
+                // M-11: reverse control auth is sent in plaintext without TLS
+                // at the protocol level; callers must layer TLS externally when
+                // binding non-loopback, even with auth. Documented here as
+                // best-effort advisory — no additional warning emitted to avoid
+                // breaking existing valid configurations that rely on external TLS
+                // termination.
             }
         }
     }
