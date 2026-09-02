@@ -49,7 +49,7 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let mut buf = [0u8; 8192];
+    let mut buf = [0u8; 65536];
     loop {
         let n = reader.read(&mut buf).await?;
         if n == 0 {

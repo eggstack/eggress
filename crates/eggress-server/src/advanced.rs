@@ -66,7 +66,13 @@ pub async fn serve_h2_connection(
         .map_err(|error| format!("H2 handshake failed: {error}"))?;
 
     while let Some(result) = connection.accept().await {
-        let (request, mut response) = result.map_err(|error| error.to_string())?;
+        let (request, mut response) = match result {
+            Ok(pair) => pair,
+            Err(error) => {
+                tracing::warn!(%error, "H2 accept error");
+                continue;
+            }
+        };
         if request.method() != http::Method::CONNECT {
             response.send_reset(h2::Reason::PROTOCOL_ERROR);
             continue;
@@ -76,9 +82,9 @@ pub async fn serve_h2_connection(
             Ok(target) => target,
             Err(_) => {
                 let reply = http::Response::builder().status(400).body(()).unwrap();
-                response
-                    .send_response(reply, true)
-                    .map_err(|error| error.to_string())?;
+                if let Err(error) = response.send_response(reply, true) {
+                    tracing::warn!(%error, "H2 send 400 response failed");
+                }
                 continue;
             }
         };
@@ -109,9 +115,9 @@ pub async fn serve_h2_connection(
                 .header(http::header::PROXY_AUTHENTICATE, "Basic realm=\"eggress\"")
                 .body(())
                 .unwrap();
-            response
-                .send_response(reply, true)
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = response.send_response(reply, true) {
+                tracing::warn!(%error, "H2 send 407 response failed");
+            }
             continue;
         }
 
@@ -127,12 +133,16 @@ pub async fn serve_h2_connection(
             identity
         });
 
-        let send_stream = response
-            .send_response(
-                http::Response::builder().status(200).body(()).unwrap(),
-                false,
-            )
-            .map_err(|error| error.to_string())?;
+        let send_stream = match response.send_response(
+            http::Response::builder().status(200).body(()).unwrap(),
+            false,
+        ) {
+            Ok(stream) => stream,
+            Err(error) => {
+                tracing::warn!(%error, "H2 send 200 response failed");
+                continue;
+            }
+        };
         let client_stream: BoxStream = Box::new(H2StreamAdapter {
             reader: eggress_protocol_http::H2StreamRead::new(request.into_body()),
             writer: eggress_protocol_http::H2StreamWrite::new(send_stream),
@@ -146,13 +156,26 @@ pub async fn serve_h2_connection(
             reply_context: ReplyContext::Http2,
             identity,
         };
+        let target_for_cancel = pending.target.to_string();
         tasks.spawn(async move {
-            let _ = tokio::select! {
-                _ = stream_cancel.cancelled() => None,
+            if let Some(metrics) = &stream_config.metrics {
+                metrics.record_session_start();
+            }
+            let report = tokio::select! {
+                _ = stream_cancel.cancelled() => {
+                    crate::execute::SessionReport::cancelled(
+                        Some("h2".to_string()),
+                        Some(target_for_cancel),
+                        "h2-cancelled".to_string(),
+                    )
+                }
                 result = crate::execute::execute(AcceptedSession::Tunnel(pending), &stream_config) => {
-                    Some(result)
+                    result
                 }
             };
+            if let Some(metrics) = &stream_config.metrics {
+                metrics.record_session(&report);
+            }
         });
     }
 
@@ -185,13 +208,19 @@ pub async fn serve_websocket_connection(
         identity
     });
     let pending = PendingTunnel {
-        target: fixed_target,
+        target: fixed_target.clone(),
         client,
         protocol: TunnelProtocol::WebSocket,
         reply_context: ReplyContext::WebSocket,
         identity,
     };
-    crate::execute::execute(AcceptedSession::Tunnel(pending), &config).await;
+    if let Some(metrics) = &config.metrics {
+        metrics.record_session_start();
+    }
+    let report = crate::execute::execute(AcceptedSession::Tunnel(pending), &config).await;
+    if let Some(metrics) = &config.metrics {
+        metrics.record_session(&report);
+    }
     Ok(())
 }
 

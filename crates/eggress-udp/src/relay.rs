@@ -35,6 +35,8 @@ pub struct RelayConfig {
     pub registry: Arc<UdpAssociationRegistry>,
     /// Allow private targets for callers that explicitly permit private egress.
     pub allow_private_egress: bool,
+    pub upstream_connect_timeout: std::time::Duration,
+    pub upstream_udp_bind: std::net::SocketAddr,
 }
 
 struct ResponseMsg {
@@ -156,8 +158,8 @@ async fn handle_client_datagram(
                         let upstream_config = Socks5UdpUpstreamConfig {
                             upstream_id: upstream.clone(),
                             hop: hop.clone(),
-                            connect_timeout: std::time::Duration::from_secs(10),
-                            udp_bind: "127.0.0.1:0".parse().unwrap(),
+                            connect_timeout: config.upstream_connect_timeout,
+                            udp_bind: config.upstream_udp_bind,
                         };
 
                         match open_socks5_udp_upstream(upstream_config, None).await {
@@ -432,7 +434,7 @@ async fn handle_client_datagram(
                         let flow = match open_composed_udp_upstream(
                             upstream.clone(),
                             (*chain).clone(),
-                            crate::flow::local_udp_bind_addr(),
+                            config.upstream_udp_bind,
                             pending_lease.established(),
                         )
                         .await
@@ -530,8 +532,7 @@ async fn handle_client_datagram(
             e.into_mut()
         }
         std::collections::hash_map::Entry::Vacant(e) => {
-            let flow =
-                UdpTargetFlow::new(request.target.clone(), "127.0.0.1:0".parse().unwrap()).await?;
+            let flow = UdpTargetFlow::new(request.target.clone(), config.upstream_udp_bind).await?;
 
             let target_addr_clone = request.target.clone();
             let flow_response_tx = response_tx.clone();
@@ -854,6 +855,8 @@ mod tests {
             client_tcp_peer: Some(test_addr()),
             registry: test_registry(),
             allow_private_egress: true,
+            upstream_connect_timeout: std::time::Duration::from_secs(10),
+            upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
         }
     }
 
@@ -1235,6 +1238,8 @@ mod tests {
             client_tcp_peer: Some(test_addr()),
             registry: test_registry(),
             allow_private_egress: true,
+            upstream_connect_timeout: std::time::Duration::from_secs(10),
+            upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
         }
     }
 
@@ -1904,6 +1909,8 @@ mod tests {
             client_tcp_peer: Some(test_addr()),
             registry,
             allow_private_egress: true,
+            upstream_connect_timeout: std::time::Duration::from_secs(10),
+            upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
         };
         let cancel = CancellationToken::new();
 

@@ -188,6 +188,8 @@ fn relay_config(routing: Arc<dyn eggress_routing::RouteService>) -> (RelayConfig
         client_tcp_peer: Some(test_addr()),
         registry: test_registry(),
         allow_private_egress: true,
+        upstream_connect_timeout: std::time::Duration::from_secs(10),
+        upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
     };
     (config, udp_metrics)
 }
@@ -471,6 +473,8 @@ async fn upstream_target_flow_idle_cleanup() {
         client_tcp_peer: Some(test_addr()),
         registry: test_registry(),
         allow_private_egress: true,
+        upstream_connect_timeout: std::time::Duration::from_secs(10),
+        upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
     };
 
     let assoc = test_assoc();
@@ -535,6 +539,8 @@ async fn upstream_metrics_tracking() {
         client_tcp_peer: Some(test_addr()),
         registry: test_registry(),
         allow_private_egress: true,
+        upstream_connect_timeout: std::time::Duration::from_secs(10),
+        upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
     };
 
     let assoc = test_assoc();

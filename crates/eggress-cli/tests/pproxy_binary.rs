@@ -11,29 +11,47 @@ fn pproxy_bin() -> Command {
     cmd
 }
 
+struct ProcessGuard(std::process::Child);
+
+impl ProcessGuard {
+    fn new(child: std::process::Child) -> Self {
+        Self(child)
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 fn run_output(cmd: &mut Command) -> std::process::Output {
-    let _guard = LISTENER_MUTEX.lock().unwrap();
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     cmd.output().expect("failed to run pproxy")
 }
 
 /// Spawn pproxy, capture stderr via temp file, kill after timeout_ms.
 /// Holds LISTENER_MUTEX to prevent port/resource conflicts under parallel execution.
 fn spawn_and_collect(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, String) {
-    let _guard = LISTENER_MUTEX.lock().unwrap();
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     let tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
     let stderr_path = tmp.path().to_path_buf();
 
     let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create stderr file");
-    let mut child = cmd
+    let child = cmd
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::from(stderr_file))
         .spawn()
         .expect("failed to spawn pproxy");
 
     thread::sleep(Duration::from_millis(timeout_ms));
-    let _ = child.kill();
-    let status = child.wait().ok().and_then(|s| s.code());
+    // Use RAII guard so child is killed even on panic/timeout paths
+    let mut guard = ProcessGuard::new(child);
+    let _ = guard.0.kill();
+    let status = guard.0.wait().ok().and_then(|s| s.code());
+    std::mem::forget(guard);
 
     let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
     (status, stderr)
@@ -483,15 +501,17 @@ fn spawn_and_collect_inner(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, 
     let stderr_path = tmp.path().to_path_buf();
 
     let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create stderr file");
-    let mut child = cmd
+    let child = cmd
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::from(stderr_file))
         .spawn()
         .expect("failed to spawn pproxy");
 
     thread::sleep(Duration::from_millis(timeout_ms));
-    let _ = child.kill();
-    let status = child.wait().ok().and_then(|s| s.code());
+    let mut guard = ProcessGuard::new(child);
+    let _ = guard.0.kill();
+    let status = guard.0.wait().ok().and_then(|s| s.code());
+    std::mem::forget(guard);
 
     let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
     (status, stderr)

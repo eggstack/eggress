@@ -121,6 +121,10 @@ impl PortMatcher {
                 // Construction sites (including `new_set` and config compilation)
                 // enforce sorting; matching uses binary search without per-call
                 // validation to avoid O(n) scans and log amplification.
+                debug_assert!(
+                    ports.windows(2).all(|w| w[0] < w[1]),
+                    "PortMatcher::Set must be sorted and deduped"
+                );
                 ports.binary_search(&port).is_ok()
             }
         }

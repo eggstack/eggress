@@ -15,8 +15,25 @@ fn eggress_bin() -> Command {
     cmd
 }
 
+#[allow(dead_code)]
+struct ProcessGuard(std::process::Child);
+
+#[allow(dead_code)]
+impl ProcessGuard {
+    fn new(child: std::process::Child) -> Self {
+        Self(child)
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 fn run_with_timeout(args: &[&str], timeout_ms: u64) -> std::process::Output {
-    let _guard = LISTENER_MUTEX.lock().unwrap();
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let mut child = eggress_bin()
         .args(args)
         .stdout(std::process::Stdio::piped())
@@ -64,7 +81,7 @@ fn run_with_timeout(args: &[&str], timeout_ms: u64) -> std::process::Output {
 }
 
 fn run_and_kill(args: &[&str], timeout_ms: u64) -> (Option<i32>, String) {
-    let _guard = LISTENER_MUTEX.lock().unwrap();
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let mut child = eggress_bin()
         .args(args)
         .stdout(std::process::Stdio::null())

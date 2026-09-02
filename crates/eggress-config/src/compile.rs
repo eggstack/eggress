@@ -190,6 +190,8 @@ pub struct CompiledListenerUdpConfig {
     pub allow_private_egress: bool,
     pub max_associations_global: usize,
     pub fixed_target: Option<eggress_core::TargetAddr>,
+    pub upstream_connect_timeout: std::time::Duration,
+    pub upstream_udp_bind: std::net::SocketAddr,
 }
 
 impl Default for CompiledListenerUdpConfig {
@@ -208,6 +210,8 @@ impl Default for CompiledListenerUdpConfig {
             allow_private_egress: true,
             max_associations_global: 1024,
             fixed_target: None,
+            upstream_connect_timeout: std::time::Duration::from_secs(10),
+            upstream_udp_bind: "127.0.0.1:0".parse().unwrap(),
         }
     }
 }
@@ -1179,6 +1183,27 @@ fn compile_listener_udp_config(
         ));
     }
 
+    let upstream_connect_timeout = udp
+        .upstream_connect_timeout
+        .as_deref()
+        .map(validate_duration)
+        .transpose()
+        .map_err(|e| {
+            ConfigError::validation(
+                &format!("{}.upstream_connect_timeout", udp_path),
+                &e.to_string(),
+            )
+        })?
+        .unwrap_or(defaults.upstream_connect_timeout);
+
+    let upstream_udp_bind_str = udp.upstream_udp_bind.as_deref().unwrap_or("127.0.0.1:0");
+    let upstream_udp_bind: std::net::SocketAddr = upstream_udp_bind_str.parse().map_err(|_| {
+        ConfigError::validation(
+            &format!("{}.upstream_udp_bind", udp_path),
+            &format!("invalid socket address: {}", upstream_udp_bind_str),
+        )
+    })?;
+
     Ok(CompiledListenerUdpConfig {
         mode,
         enabled,
@@ -1193,6 +1218,8 @@ fn compile_listener_udp_config(
         allow_private_egress,
         max_associations_global,
         fixed_target,
+        upstream_connect_timeout,
+        upstream_udp_bind,
     })
 }
 
@@ -1371,6 +1398,18 @@ fn compile_upstreams(config: &ConfigFile) -> Result<Vec<UpstreamConfig>, ConfigE
             let chain = eggress_uri::parse_proxy_chain(&u.uri).map_err(|_e| {
                 ConfigError::validation(&format!("upstream {}", u.id), "invalid upstream URI")
             })?;
+
+            for (idx, hop) in chain.hops.iter().enumerate() {
+                if hop.insecure
+                    && (hop.protocols.contains(&eggress_uri::ProtocolSpec::Quic)
+                        || hop.protocols.contains(&eggress_uri::ProtocolSpec::Http3))
+                {
+                    return Err(ConfigError::validation(
+                        &format!("upstream {} hop {}", u.id, idx),
+                        "insecure QUIC/H3 requires the insecure-quic feature; rebuild with --features insecure-quic",
+                    ));
+                }
+            }
 
             let health = compile_health_config(u.health.as_ref()).map_err(|e| match e {
                 ConfigError::Validation { path, message } => {

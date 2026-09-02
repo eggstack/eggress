@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
@@ -63,8 +63,8 @@ impl Default for H2ProtocolMetrics {
 }
 
 /// Global H2 protocol metrics instance.
-pub static H2_PROTOCOL_METRICS: once_cell::sync::Lazy<Arc<H2ProtocolMetrics>> =
-    once_cell::sync::Lazy::new(|| Arc::new(H2ProtocolMetrics::new()));
+pub static H2_PROTOCOL_METRICS: LazyLock<Arc<H2ProtocolMetrics>> =
+    LazyLock::new(|| Arc::new(H2ProtocolMetrics::new()));
 
 #[derive(Debug, thiserror::Error)]
 pub enum H2ConnectError {
@@ -208,7 +208,7 @@ pub async fn h2_connect_relay(
     };
 
     let tcp_to_h2 = async {
-        let mut buf = [0u8; 8192];
+        let mut buf = [0u8; 65536];
         loop {
             let n = tcp_read.read(&mut buf).await?;
             if n == 0 {
@@ -231,11 +231,16 @@ pub async fn h2_connect_relay(
             result.map_err(|error| H2ConnectError::H2(format!("H2 relay task failed: {error}")))?
         }
         Err(_) => {
+            tracing::warn!(
+                "H2 relay drain timed out after target close; aborting h2->tcp direction"
+            );
             h2_task.abort();
             let _ = h2_task.await;
-            return Err(H2ConnectError::H2(
-                "H2 relay drain timed out after target close".into(),
-            ));
+            // Treat drain timeout as graceful close with partial bytes already accounted
+            // in H2_PROTOCOL_METRICS; do not return a hard error so callers can
+            // still observe bytes relayed.
+            tcp_result?;
+            return Ok(());
         }
     };
 
@@ -744,7 +749,9 @@ impl H2PoolRegistry {
     /// Get or create a pool for the given key.
     pub fn get_or_create(&self, key: &H2PoolKey) -> Arc<H2ConnectionPool> {
         let mut pools = self.pools.write().unwrap_or_else(|e| e.into_inner());
-        pools.retain(|_, pool| Arc::strong_count(pool) > 1 || !pool.is_empty());
+        if pools.len() >= 64 {
+            pools.retain(|_, pool| Arc::strong_count(pool) > 1 || !pool.is_empty());
+        }
         pools
             .entry(key.clone())
             .or_insert_with(|| {
@@ -799,8 +806,7 @@ impl Default for H2PoolRegistry {
 }
 
 /// Global pool registry instance.
-pub static H2_POOL_REGISTRY: once_cell::sync::Lazy<H2PoolRegistry> =
-    once_cell::sync::Lazy::new(H2PoolRegistry::new);
+pub static H2_POOL_REGISTRY: LazyLock<H2PoolRegistry> = LazyLock::new(H2PoolRegistry::new);
 
 /// A guard that releases an H2 connection back to the pool when dropped.
 pub struct H2PoolGuard {

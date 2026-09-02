@@ -53,6 +53,11 @@ pub struct AcceptedConnection {
 /// Acquiring a permit only while accepting a socket limits the accept call,
 /// not the lifetime of the connection.  Keeping the permit on the stream
 /// makes the configured connection limit apply to the whole session.
+///
+/// This is the **exclusive** accounting mechanism for TCP listeners.
+/// Transparent/Unix/QUIC paths use `ActiveConnectionGuard` in
+/// `eggress-runtime` instead; a single connection must use one or the other,
+/// never both, to avoid double-counting `active_connections`.
 struct PermitStream {
     inner: BoxStream,
     _permit: OwnedSemaphorePermit,

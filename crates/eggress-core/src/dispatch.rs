@@ -76,7 +76,7 @@ impl ProtocolDispatcher {
     ) -> Result<(ProtocolId, ReplayStream), DispatchError> {
         let mut replay = ReplayStream::with_max_buffer(stream, self.max_sniff);
 
-        let mut read_buf = vec![0u8; 4096];
+        let mut read_buf = [0u8; 4096];
         let mut total_read: usize = 0;
 
         let result = tokio::time::timeout(self.handshake_timeout, async {

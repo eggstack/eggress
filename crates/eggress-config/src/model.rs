@@ -101,6 +101,8 @@ pub struct ListenerUdpConfig {
     pub max_associations_global: Option<usize>,
     #[serde(default)]
     pub fixed_target: Option<String>,
+    pub upstream_connect_timeout: Option<String>,
+    pub upstream_udp_bind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

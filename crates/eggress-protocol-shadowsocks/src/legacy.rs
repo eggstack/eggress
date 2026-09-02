@@ -1014,13 +1014,16 @@ impl AsyncRead for LegacyStream {
                     if self.read_iv.len() < self.method.iv_len() {
                         return Poll::Ready(Ok(()));
                     }
-                    self.read_state = CipherState::new(self.method, &self.key, &self.read_iv).ok();
-                    if self.read_state.is_none() {
-                        return Poll::Ready(Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "invalid legacy cipher state",
-                        )));
-                    }
+                    self.read_state = match CipherState::new(self.method, &self.key, &self.read_iv)
+                    {
+                        Ok(state) => Some(state),
+                        Err(error) => {
+                            return Poll::Ready(Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("invalid legacy cipher state: {error}"),
+                            )));
+                        }
+                    };
                     let tail = &filled[take..];
                     let mut data = tail.to_vec();
                     self.read_state.as_mut().unwrap().apply(&mut data, true);

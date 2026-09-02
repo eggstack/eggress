@@ -61,6 +61,19 @@ impl Drop for ListenerConnectionSlot {
     }
 }
 
+/// Guard for active-connection accounting on non-TCP listeners.
+///
+/// TCP listeners account via `eggress_core::listener::PermitStream` (semaphore
+/// permit held for the whole session). Transparent and Unix listeners use this
+/// counter instead. The two mechanisms are **exclusive** — a connection must
+/// use exactly one, never both, otherwise the `active_connections` metric
+/// double-counts. Call sites below (transparent/Unix/QUIC paths) ensure this
+/// invariant; TCP accept paths must not also create this guard.
+///
+/// Ordering: `AcqRel` on inc pairs with `Release` on dec for visibility of
+/// the counter to the metrics reader. `Relaxed` would also be correct for a
+/// metrics-only counter, but `AcqRel` is kept for consistency with the
+/// previous implementation.
 struct ActiveConnectionGuard {
     active: Arc<AtomicU64>,
 }
@@ -605,6 +618,8 @@ impl eggress_server::UdpService for RuntimeUdpService {
                 client_tcp_peer,
                 registry: registry.clone(),
                 allow_private_egress: udp_config.allow_private_egress,
+                upstream_connect_timeout: udp_config.upstream_connect_timeout,
+                upstream_udp_bind: udp_config.upstream_udp_bind,
             };
 
             let relay_assoc = assoc.clone();
