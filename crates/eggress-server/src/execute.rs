@@ -1006,6 +1006,32 @@ pub fn build_chain_executor(
     #[cfg(not(feature = "extended"))]
     let _shared_tls_config_arc = shared_tls_config.clone();
 
+    // Per-hop `?insecure` requires an insecure verifier. Build it only when
+    // the `insecure-tls` feature is available; otherwise per-hop insecure hops
+    // will be rejected in `ChainExecutor::validate_chain` / `execute` with an
+    // explicit error. The transport's `with_insecure` is feature-gated, so
+    // `cargo test` without the feature intentionally leaves this as `None`.
+    #[cfg(feature = "insecure-tls")]
+    let insecure_shared_tls_config: Option<std::sync::Arc<rustls::ClientConfig>> =
+        if tls_override.is_some() {
+            None
+        } else {
+            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+            match builder
+                .with_system_roots()
+                .map(|b| b.with_insecure())
+                .and_then(|b| b.build())
+            {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    tracing::debug!("failed to build insecure TLS config: {e}");
+                    None
+                }
+            }
+        };
+    #[cfg(not(feature = "insecure-tls"))]
+    let insecure_shared_tls_config: Option<std::sync::Arc<rustls::ClientConfig>> = None;
+
     let mut handlers: Vec<Box<dyn HopHandler>> = vec![
         Box::new(HttpHopHandler),
         Box::new(HttpOnlyHopHandler),
@@ -1019,7 +1045,9 @@ pub fn build_chain_executor(
             metrics: shadowsocks_metrics,
         }));
         handlers.push(Box::new(TrojanHopHandler {
-            tls_config: shared_tls_config_arc,
+            tls_config: shared_tls_config_arc.clone(),
+            insecure_tls_config: insecure_shared_tls_config.clone(),
+            tls_override: tls_override.cloned(),
         }));
         handlers.push(Box::new(WebSocketHopHandler));
     }
@@ -1059,6 +1087,32 @@ pub fn build_chain_executor(
     } else {
         None
     };
+    #[cfg(feature = "insecure-tls")]
+    let insecure_wrapper_default = insecure_shared_tls_config.clone();
+    #[cfg(not(feature = "insecure-tls"))]
+    let insecure_wrapper_default: Option<std::sync::Arc<rustls::ClientConfig>> = None;
+    #[cfg(feature = "insecure-tls")]
+    let insecure_wrapper_h2: Option<std::sync::Arc<rustls::ClientConfig>> =
+        if tls_override.is_none() && insecure_shared_tls_config.is_some() {
+            let builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+            match builder
+                .with_system_roots()
+                .map(|b| b.with_insecure())
+                .and_then(|b| {
+                    b.with_alpn(vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+                        .build()
+                }) {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    tracing::debug!("failed to build insecure h2 TLS config: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+    #[cfg(not(feature = "insecure-tls"))]
+    let insecure_wrapper_h2: Option<std::sync::Arc<rustls::ClientConfig>> = None;
     fn build_alpn_config(
         alpn: Option<Vec<Vec<u8>>>,
     ) -> Result<std::sync::Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>>
@@ -1070,30 +1124,75 @@ pub fn build_chain_executor(
         }
         Ok(builder.build()?)
     }
+    #[cfg(feature = "insecure-tls")]
+    fn build_insecure_alpn_config(
+        alpn: Option<Vec<Vec<u8>>>,
+    ) -> Result<std::sync::Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        let mut builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+        builder = builder.with_system_roots()?;
+        builder = builder.with_insecure();
+        if let Some(protocols) = alpn {
+            builder = builder.with_alpn(protocols);
+        }
+        Ok(builder.build()?)
+    }
+    #[cfg(not(feature = "insecure-tls"))]
+    fn build_insecure_alpn_config(
+        _alpn: Option<Vec<Vec<u8>>>,
+    ) -> Result<std::sync::Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        Err("insecure TLS requires the insecure-tls feature".into())
+    }
     let tls_wrapper: eggress_core::chain::TlsWrapper =
-        Box::new(move |stream, server_name, alpn| {
+        Box::new(move |stream, server_name, alpn, insecure| {
             let default = tls_wrapper_default.clone();
             let h2_cfg = tls_wrapper_h2.clone();
+            let insecure_default = insecure_wrapper_default.clone();
+            let insecure_h2_cfg = insecure_wrapper_h2.clone();
             Box::pin(async move {
-                let config = match default {
-                    Some(c) => {
-                        if let Some(ref protocols) = alpn {
-                            if c.alpn_protocols == *protocols {
+                let config = if insecure {
+                    match insecure_default.clone() {
+                        Some(c) => {
+                            if let Some(ref protocols) = alpn {
+                                if c.alpn_protocols == *protocols {
+                                    c
+                                } else if let Some(h2) = insecure_h2_cfg.clone() {
+                                    if *protocols == vec![b"h2".to_vec(), b"http/1.1".to_vec()] {
+                                        h2
+                                    } else {
+                                        build_insecure_alpn_config(Some(protocols.clone()))?
+                                    }
+                                } else {
+                                    build_insecure_alpn_config(Some(protocols.clone()))?
+                                }
+                            } else {
                                 c
-                            } else if let Some(h2) = h2_cfg {
-                                if *protocols == vec![b"h2".to_vec(), b"http/1.1".to_vec()] {
-                                    h2
+                            }
+                        }
+                        None => build_insecure_alpn_config(alpn)?,
+                    }
+                } else {
+                    match default {
+                        Some(c) => {
+                            if let Some(ref protocols) = alpn {
+                                if c.alpn_protocols == *protocols {
+                                    c
+                                } else if let Some(h2) = h2_cfg {
+                                    if *protocols == vec![b"h2".to_vec(), b"http/1.1".to_vec()] {
+                                        h2
+                                    } else {
+                                        build_alpn_config(Some(protocols.clone()))?
+                                    }
                                 } else {
                                     build_alpn_config(Some(protocols.clone()))?
                                 }
                             } else {
-                                build_alpn_config(Some(protocols.clone()))?
+                                c
                             }
-                        } else {
-                            c
                         }
+                        None => build_alpn_config(alpn)?,
                     }
-                    None => build_alpn_config(alpn)?,
                 };
                 eggress_transport_tls::tls_connect(stream, config, &server_name)
                     .await
@@ -1104,6 +1203,7 @@ pub fn build_chain_executor(
     ChainExecutor::new(handlers)
         .with_tls_wrapper(tls_wrapper)
         .with_shared_tls_config(shared_tls_config)
+        .with_insecure_shared_tls_config(insecure_shared_tls_config)
 }
 
 /// Adapts an origin-form request into the absolute-form request expected by
@@ -1434,6 +1534,8 @@ impl HopHandler for ShadowsocksRHopHandler {
 #[cfg(feature = "extended")]
 struct TrojanHopHandler {
     tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    insecure_tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    tls_override: Option<std::sync::Arc<rustls::ClientConfig>>,
 }
 
 #[cfg(feature = "extended")]
@@ -1450,6 +1552,9 @@ impl HopHandler for TrojanHopHandler {
         _hop_index: usize,
     ) -> HandshakeFuture<'a> {
         let tls_config = self.tls_config.clone();
+        let insecure_tls_config = self.insecure_tls_config.clone();
+        let tls_override = self.tls_override.clone();
+        let insecure = hop.insecure;
         let password = hop.credentials.as_ref().map(|c| c.password.clone());
         let server_name = hop
             .server_name
@@ -1462,15 +1567,21 @@ impl HopHandler for TrojanHopHandler {
                 )) as Box<dyn std::error::Error + Send + Sync>
             })?;
 
-            eggress_protocol_trojan::trojan_connect(
-                stream,
-                target,
-                &password,
-                &server_name,
-                tls_config,
-            )
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+            let chosen = if insecure {
+                if let Some(ovr) = tls_override.clone() {
+                    // Global override is already insecure in tests that set it;
+                    // reuse it for per-hop insecure when available.
+                    Some(ovr)
+                } else {
+                    insecure_tls_config.clone().or(tls_config.clone())
+                }
+            } else {
+                tls_config.clone()
+            };
+
+            eggress_protocol_trojan::trojan_connect(stream, target, &password, &server_name, chosen)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 }

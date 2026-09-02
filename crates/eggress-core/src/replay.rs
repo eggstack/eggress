@@ -127,14 +127,28 @@ impl AsyncRead for ReplayStream {
                         // Underlying stream closed; return EOF.
                         return Poll::Ready(Ok(()));
                     }
-                    self.buffer.extend_from_slice(&temp[..filled]);
+                    self.buffer.extend_from_slice(temp_buf.filled());
                     let to_copy = filled.min(buf.remaining());
                     buf.put_slice(&self.buffer[self.read_pos..self.read_pos + to_copy]);
                     self.read_pos += to_copy;
                     Poll::Ready(Ok(()))
                 }
                 Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-                Poll::Pending => Poll::Pending,
+                Poll::Pending => {
+                    // AsyncRead allows `poll_read` to return `Pending` after
+                    // partially filling the buffer. Propagate buffered bytes
+                    // instead of discarding them.
+                    let filled = temp_buf.filled().len();
+                    if filled > 0 {
+                        self.buffer.extend_from_slice(temp_buf.filled());
+                        let to_copy = filled.min(buf.remaining());
+                        buf.put_slice(&self.buffer[self.read_pos..self.read_pos + to_copy]);
+                        self.read_pos += to_copy;
+                        Poll::Ready(Ok(()))
+                    } else {
+                        Poll::Pending
+                    }
+                }
             }
         } else {
             // Not sniffing: delegate directly to the underlying stream. All

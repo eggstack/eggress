@@ -104,12 +104,15 @@ pub trait HopHandler: Send + Sync {
 ///
 /// Returns the TLS-wrapped stream, or an error if the handshake fails.
 /// The optional `alpn` parameter sets Application-Layer Protocol Negotiation
-/// protocols (e.g. `["h2", "http/1.1"]` for H2 connections).
+/// protocols (e.g. `["h2", "http/1.1"]` for H2 connections). The `insecure`
+/// flag corresponds to `ProxyHopSpec::insecure` (`?insecure` in chain URIs)
+/// and, when true, selects a verifier that accepts any certificate.
 pub type TlsWrapper = Box<
     dyn Fn(
             BoxStream,
             String,
             Option<Vec<Vec<u8>>>,
+            bool,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -140,6 +143,7 @@ pub struct ChainExecutor {
     handlers: Vec<Box<dyn HopHandler>>,
     tls_wrapper: Option<TlsWrapper>,
     shared_tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    insecure_shared_tls_config: Option<std::sync::Arc<rustls::ClientConfig>>,
 }
 
 impl ChainExecutor {
@@ -150,6 +154,7 @@ impl ChainExecutor {
             handlers,
             tls_wrapper: None,
             shared_tls_config: None,
+            insecure_shared_tls_config: None,
         }
     }
 
@@ -169,9 +174,24 @@ impl ChainExecutor {
         self
     }
 
+    /// Set an insecure shared TLS client config used when a hop has
+    /// `insecure = true` (`?insecure` in the URI).
+    pub fn with_insecure_shared_tls_config(
+        mut self,
+        config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    ) -> Self {
+        self.insecure_shared_tls_config = config;
+        self
+    }
+
     /// Get the shared TLS client config, if set.
     pub fn shared_tls_config(&self) -> Option<&std::sync::Arc<rustls::ClientConfig>> {
         self.shared_tls_config.as_ref()
+    }
+
+    /// Get the insecure shared TLS config (if any).
+    pub fn insecure_shared_tls_config(&self) -> Option<&std::sync::Arc<rustls::ClientConfig>> {
+        self.insecure_shared_tls_config.as_ref()
     }
 
     /// Execute a proxy chain to connect to the target.
@@ -306,13 +326,29 @@ impl ChainExecutor {
                 } else {
                     None
                 };
-                current_stream = wrapper(current_stream, server_name, alpn)
+                let insecure = hop.insecure;
+                if insecure && self.insecure_shared_tls_config.is_none() {
+                    // No insecure verifier available in this build; fail
+                    // explicitly rather than silently verifying. When the
+                    // `insecure-tls` feature is enabled the wrapper will
+                    // build an insecure config lazily, so only hard-fail
+                    // on builds without the feature.
+                    #[cfg(not(feature = "insecure-tls"))]
+                    return Err(ChainError::InvalidChain {
+                        reason: format!("hop {i}: insecure=true requires the insecure-tls feature"),
+                    });
+                }
+                current_stream = wrapper(current_stream, server_name, alpn, insecure)
                     .await
                     .map_err(|e| ChainError::HandshakeFailed {
                         hop_index: i,
                         protocol: "tls".to_string(),
                         source: e,
                     })?;
+            } else if hop.insecure {
+                return Err(ChainError::InvalidChain {
+                    reason: format!("hop {i}: insecure=true requires tls=true"),
+                });
             }
 
             // Determine the target for this hop's handshake
@@ -362,6 +398,11 @@ impl ChainExecutor {
             if hop.endpoint.port == 0 && !hop.protocols.contains(&ProtocolSpec::Unix) {
                 return Err(ChainError::InvalidChain {
                     reason: format!("hop {i}: port cannot be 0"),
+                });
+            }
+            if hop.insecure && !hop.tls {
+                return Err(ChainError::InvalidChain {
+                    reason: format!("hop {i}: insecure=true requires tls=true"),
                 });
             }
         }
@@ -1455,7 +1496,7 @@ mod tests {
         let tls_called = Arc::new(AtomicBool::new(false));
         let tls_called_clone = tls_called.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name, _alpn| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name, _alpn, _insecure| {
             let called = tls_called_clone.clone();
             Box::pin(async move {
                 called.store(true, Ordering::Relaxed);
@@ -1500,7 +1541,7 @@ mod tests {
         let tls_called = Arc::new(AtomicBool::new(false));
         let tls_called_clone = tls_called.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name, _alpn| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, _server_name, _alpn, _insecure| {
             let called = tls_called_clone.clone();
             Box::pin(async move {
                 called.store(true, Ordering::Relaxed);
@@ -1543,7 +1584,7 @@ mod tests {
         let captured_name = Arc::new(Mutex::new(None::<String>));
         let captured_name_clone = captured_name.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name, _alpn| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name, _alpn, _insecure| {
             let captured = captured_name_clone.clone();
             Box::pin(async move {
                 *captured.lock().unwrap() = Some(server_name);
@@ -1585,7 +1626,7 @@ mod tests {
         let captured_name = Arc::new(Mutex::new(None::<String>));
         let captured_name_clone = captured_name.clone();
 
-        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name, _alpn| {
+        let tls_wrapper: TlsWrapper = Box::new(move |stream, server_name, _alpn, _insecure| {
             let captured = captured_name_clone.clone();
             Box::pin(async move {
                 *captured.lock().unwrap() = Some(server_name);
@@ -1625,7 +1666,7 @@ mod tests {
         let (handler, _) = MockHandler::new(ProtocolSpec::Http);
         let executor = ChainExecutor::new(vec![Box::new(handler)]);
 
-        let tls_wrapper: TlsWrapper = Box::new(|_stream, _server_name, _alpn| {
+        let tls_wrapper: TlsWrapper = Box::new(|_stream, _server_name, _alpn, _insecure| {
             Box::pin(async move {
                 Err(Box::<dyn std::error::Error + Send + Sync>::from(
                     "TLS handshake failed: certificate rejected",

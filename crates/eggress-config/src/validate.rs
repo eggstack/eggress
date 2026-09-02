@@ -212,8 +212,15 @@ struct CompositionMatrixMinimal {
     cell: Vec<CompositionCellMinimal>,
 }
 
+// Embedded at compile time so embedders (eggress-embed, PyO3, binaries run
+// from another CWD) do not silently suppress composition warnings.
+const EMBEDDED_COMPOSITION_MATRIX: &str =
+    include_str!("../../../docs/parity/composition_matrix.toml");
+
 fn load_composition_matrix() -> Option<CompositionMatrixMinimal> {
-    // Look for the composition matrix relative to the workspace root
+    // Look for the composition matrix relative to the workspace root first so
+    // developers get live updates without recompiling; fall back to the
+    // compile-time embedded copy for embedders and other CWDs.
     let candidates = [
         "docs/parity/composition_matrix.toml",
         "../docs/parity/composition_matrix.toml",
@@ -225,6 +232,9 @@ fn load_composition_matrix() -> Option<CompositionMatrixMinimal> {
                 return Some(matrix);
             }
         }
+    }
+    if let Ok(matrix) = toml::from_str::<CompositionMatrixMinimal>(EMBEDDED_COMPOSITION_MATRIX) {
+        return Some(matrix);
     }
     None
 }
@@ -577,7 +587,14 @@ fn validate_upstream_groups(
             ));
         }
 
+        let mut seen_members = HashSet::new();
         for (j, member) in group.members.iter().enumerate() {
+            if !seen_members.insert(member.as_str()) {
+                errors.push(ConfigError::validation(
+                    &path,
+                    &format!("duplicate member '{}' at index {}", member, j),
+                ));
+            }
             if !upstream_ids.contains(member.as_str()) {
                 errors.push(ConfigError::validation(
                     &path,
@@ -838,6 +855,15 @@ fn validate_match_expr(
     }
     match expr {
         crate::model::MatchExprConfig::Composite(composite) => {
+            let has_all = composite.all.is_some();
+            let has_any = composite.any_of.is_some();
+            let has_not = composite.not.is_some();
+            if !has_all && !has_any && !has_not {
+                errors.push(ConfigError::validation(
+                    &format!("{}.match", path),
+                    "composite must have exactly one of: all, any_of, not",
+                ));
+            }
             if let Some(ref all) = composite.all {
                 if all.is_empty() {
                     errors.push(ConfigError::validation(
@@ -1230,19 +1256,67 @@ fn validate_listener_udp(
 
 /// Check if a socket address string binds to loopback.
 ///
-/// Returns `true` for `127.x.x.x`, `::1`, and IPv4-mapped loopback addresses.
+/// Returns `true` for `127.x.x.x`, `::1`, and IPv4-mapped loopback addresses,
+/// including bare IPs without a port and `localhost` hostnames.
 /// Returns `false` for `0.0.0.0`, `::`, and other non-loopback addresses.
 fn is_loopback_bind(addr: &str) -> bool {
+    // Canonical `SocketAddr` form (host:port, including `[::1]:8080`).
     if let Ok(socket) = addr.parse::<std::net::SocketAddr>() {
-        match socket.ip() {
+        return match socket.ip() {
             std::net::IpAddr::V4(v4) => v4.is_loopback(),
             std::net::IpAddr::V6(v6) => {
                 v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
             }
+        };
+    }
+    // Bare IP without port (e.g. `127.0.0.1`, `::1`, `::ffff:127.0.0.1`).
+    if let Ok(ip) = addr.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => v4.is_loopback(),
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+            }
+        };
+    }
+    // Hostname forms: `localhost` or `localhost:8080`, plus bracketed IPv6
+    // without port. Only `localhost` is treated as loopback at the hostname
+    // layer; other names are conservative non-loopback.
+    let host_part = if addr.starts_with('[') {
+        if let Some(end) = addr.find(']') {
+            let inside = &addr[1..end];
+            // Validate that trailing part is either empty or `:port`.
+            let after = &addr[end + 1..];
+            if after.is_empty() || (after.starts_with(':') && after[1..].parse::<u16>().is_ok()) {
+                inside
+            } else {
+                addr
+            }
+        } else {
+            addr
+        }
+    } else if let Some(colon) = addr.rfind(':') {
+        let host = &addr[..colon];
+        let port_part = &addr[colon + 1..];
+        if port_part.parse::<u16>().is_ok() && !host.is_empty() {
+            host
+        } else {
+            addr
         }
     } else {
-        false
+        addr
+    };
+    if host_part.eq_ignore_ascii_case("localhost") {
+        return true;
     }
+    if let Ok(ip) = host_part.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => v4.is_loopback(),
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+            }
+        };
+    }
+    false
 }
 
 /// Emit security warnings for dangerous config combinations.

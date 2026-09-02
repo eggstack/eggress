@@ -612,18 +612,9 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
                 "must have exactly 2 elements [start, end]",
             ));
         }
-        if range[0] > range[1] {
-            return Err(ConfigError::validation(
-                "destination_port_range",
-                &format!("start ({}) must be <= end ({})", range[0], range[1]),
-            ));
-        }
-        matchers.push(eggress_routing::MatchExpr::DestinationPort(
-            eggress_routing::PortMatcher::Range {
-                start: range[0],
-                end: range[1],
-            },
-        ));
+        let matcher = eggress_routing::PortMatcher::new_range(range[0], range[1])
+            .map_err(|e| ConfigError::validation("destination_port_range", &e))?;
+        matchers.push(eggress_routing::MatchExpr::DestinationPort(matcher));
     }
     if let Some(ref ports) = leaf.destination_port_set {
         if ports.is_empty() {
@@ -632,13 +623,8 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
                 "must not be empty",
             ));
         }
-        // PortMatcher::Set matches via binary search and requires a
-        // sorted slice.
-        let mut port_set = ports.clone();
-        port_set.sort_unstable();
-        matchers.push(eggress_routing::MatchExpr::DestinationPort(
-            eggress_routing::PortMatcher::Set(Arc::from(port_set.as_slice())),
-        ));
+        let matcher = eggress_routing::PortMatcher::new_set(ports.clone());
+        matchers.push(eggress_routing::MatchExpr::DestinationPort(matcher));
     }
     if let Some(ref cidr) = leaf.destination_cidr {
         let net: ipnet::IpNet = cidr.parse().map_err(|e: ipnet::AddrParseError| {

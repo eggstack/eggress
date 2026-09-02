@@ -10,6 +10,9 @@ keywords = ["proxy", "core", "network"]
 categories = ["network-programming"]
 readme = "README.md"
 
+[features]
+insecure-tls = []
+
 [dependencies]
 eggress-uri.workspace = true
 thiserror.workspace = true

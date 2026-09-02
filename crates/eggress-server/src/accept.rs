@@ -82,7 +82,9 @@ impl AuthReuseCache {
         // Expired entries are removed lazily by `lookup`; only pay for a full
         // sweep once the cache is actually at capacity *and* a full
         // sweep has not run in the last SWEEP_INTERVAL. This caps the
-        // tail-latency hit of an O(n) `retain` under the cache lock.
+        // tail-latency hit of an O(n) `retain` under the cache lock. The
+        // interval check is evaluated while the lock is held so the sweep
+        // schedule is time-based rather than lock-contention dependent.
         if entries.len() >= self.max_entries {
             let now_nanos = u64::try_from(
                 now.checked_duration_since(*AUTH_CACHE_EPOCH)
@@ -92,12 +94,8 @@ impl AuthReuseCache {
             .unwrap_or(u64::MAX);
             let last_sweep = self.last_sweep_nanos.load(Ordering::Acquire);
             let interval_nanos = u64::try_from(Self::SWEEP_INTERVAL.as_nanos()).unwrap_or(u64::MAX);
-            if now_nanos.saturating_sub(last_sweep) >= interval_nanos
-                && self
-                    .last_sweep_nanos
-                    .compare_exchange(last_sweep, now_nanos, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok()
-            {
+            if now_nanos.saturating_sub(last_sweep) >= interval_nanos {
+                self.last_sweep_nanos.store(now_nanos, Ordering::Release);
                 entries.retain(|_, entry| {
                     now.duration_since(entry.last_authenticated) <= self.timeout
                 });

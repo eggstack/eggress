@@ -25,6 +25,7 @@ legacy-crypto = ["extended", "eggress-protocol-shadowsocks/legacy-crypto"]
 ssh = ["dep:eggress-transport-ssh"]
 quic = ["dep:eggress-transport-quic", "dep:eggress-protocol-h3"]
 insecure-quic = ["eggress-transport-quic/insecure-quic"]
+insecure-tls = ["eggress-transport-tls/insecure-tls"]
 
 [dev-dependencies]
 eggress-testkit.workspace = true
