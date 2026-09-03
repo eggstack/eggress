@@ -211,7 +211,9 @@ impl ReverseMetrics {
 
     /// Record an error message (truncated to 256 chars).
     pub fn record_error(&self, msg: &str) {
-        let truncated = if msg.chars().count() > MAX_ERROR_LEN {
+        // Early-exit length check (O-06): char_indices().nth(MAX) stops at
+        // the 257th char instead of decoding the whole message first.
+        let truncated = if msg.char_indices().nth(MAX_ERROR_LEN).is_some() {
             let prefix: String = msg.chars().take(MAX_ERROR_LEN).collect();
             format!("{prefix}…")
         } else {

@@ -383,7 +383,9 @@ enabled = true
     let members = json[0]["members"].as_array().unwrap();
     assert_eq!(members[0]["health"], "Unhealthy");
 
-    // Reload with same config
+    // Reload with same config. Same chain+health reuses the upstream Arc
+    // (see upstream_runtime_compatible in eggress-runtime/src/snapshot.rs),
+    // so counters (and Unhealthy) are preserved.
     std::process::Command::new("kill")
         .arg("-HUP")
         .arg(std::process::id().to_string())
@@ -610,14 +612,31 @@ enabled = true
         .arg(std::process::id().to_string())
         .output()
         .ok();
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let (_, body) = http_get(&admin_str, "/-/upstreams").await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let members = json[0]["members"].as_array().unwrap();
-    assert_ne!(
-        members[0]["health"], "Unhealthy",
-        "after reload with threshold=3, upstream should not be Unhealthy yet"
+    // Changed health config builds a fresh UpstreamRuntime Arc (see
+    // upstream_runtime_compatible in eggress-runtime/src/snapshot.rs), so
+    // counters reset to Unknown. The old fixed 500ms sleep raced probe
+    // jitter: 3 probes at min 160ms jitter fit in 500ms and flaked to
+    // Unhealthy under load. Poll for the reset window instead: reload is
+    // async, then the fresh upstream needs 3 failures (~480ms minimum,
+    // typically ~600ms) to flip back to Unhealthy.
+    let mut saw_reset = false;
+    for _ in 0..40 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let (_, body) = http_get(&admin_str, "/-/upstreams").await;
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) else {
+            continue;
+        };
+        let Some(members) = json[0]["members"].as_array() else {
+            continue;
+        };
+        if members[0]["health"] != "Unhealthy" {
+            saw_reset = true;
+            break;
+        }
+    }
+    assert!(
+        saw_reset,
+        "after reload with threshold=3, upstream should reset to non-Unhealthy before accumulating 3 failures"
     );
 
     token.cancel();

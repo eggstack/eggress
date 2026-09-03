@@ -278,7 +278,10 @@ pub(crate) async fn handle_h2_connect(
                         .parse()
                         .map_err(|e: String| H2ConnectError::H2(e))?;
 
-                    let response = http::Response::builder().status(200).body(()).unwrap();
+                    let response = http::Response::builder()
+                        .status(200)
+                        .body(())
+                        .expect("static response builds");
 
                     let send_stream = send_response.send_response(response, false)?;
                     let recv_stream = request.into_body();
@@ -579,8 +582,16 @@ impl H2ConnectionPool {
     fn try_acquire_entry(&self) -> Option<Arc<H2ConnectionEntry>> {
         let now = self.now_ticks();
         let idle_timeout = self.idle_timeout.as_nanos().min(u64::MAX as u128) as u64;
-        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-        for entry in entries.iter() {
+        // Snapshot Arcs out of the pool first (O-04): try_acquire is atomic,
+        // so there is no need to hold the pool mutex while probing entries.
+        let entries: Vec<Arc<H2ConnectionEntry>> = self
+            .entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect();
+        for entry in &entries {
             if now.saturating_sub(entry.last_used.load(Ordering::Acquire)) < idle_timeout
                 && entry.try_acquire(self.max_concurrent_streams)
             {

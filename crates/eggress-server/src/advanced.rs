@@ -81,7 +81,10 @@ pub async fn serve_h2_connection(
         let target = match h2_target(request.uri()) {
             Ok(target) => target,
             Err(_) => {
-                let reply = http::Response::builder().status(400).body(()).unwrap();
+                let reply = http::Response::builder()
+                    .status(400)
+                    .body(())
+                    .expect("static response builds");
                 if let Err(error) = response.send_response(reply, true) {
                     tracing::warn!(%error, "H2 send 400 response failed");
                 }
@@ -114,7 +117,7 @@ pub async fn serve_h2_connection(
                 .status(407)
                 .header(http::header::PROXY_AUTHENTICATE, "Basic realm=\"eggress\"")
                 .body(())
-                .unwrap();
+                .expect("static response builds");
             if let Err(error) = response.send_response(reply, true) {
                 tracing::warn!(%error, "H2 send 407 response failed");
             }
@@ -134,7 +137,10 @@ pub async fn serve_h2_connection(
         });
 
         let send_stream = match response.send_response(
-            http::Response::builder().status(200).body(()).unwrap(),
+            http::Response::builder()
+                .status(200)
+                .body(())
+                .expect("static response builds"),
             false,
         ) {
             Ok(stream) => stream,

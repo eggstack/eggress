@@ -1181,7 +1181,10 @@ async fn run() -> i32 {
         match parse_listener_uri(uri) {
             Ok(spec) => listener_specs.push((uri.clone(), spec)),
             Err(e) => {
-                eprintln!("invalid listener URI '{uri}': {e}");
+                eprintln!(
+                    "invalid listener URI '{}': {e}",
+                    eggress_uri::redact_proxy_uri(uri)
+                );
                 return EXIT_CLI_PARSE_ERROR;
             }
         }
@@ -1201,7 +1204,10 @@ async fn run() -> i32 {
         let handle = tokio::spawn(async move {
             if let Err(e) = run_listener(bind_addr, protocols, routing, auth, metrics, cancel).await
             {
-                tracing::error!("listener '{uri}' error: {e}");
+                tracing::error!(
+                    "listener '{}' error: {e}",
+                    eggress_uri::redact_proxy_uri(&uri)
+                );
             }
         });
         handles.push(handle);
@@ -1679,5 +1685,22 @@ mod tests {
         let (host, port, _path) = parse_admin_url("http://admin.example.com:8080/-/x");
         assert_eq!(host, "admin.example.com");
         assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn listener_uri_redaction_hides_password() {
+        // Regression for credential leak in listener parse/runtime error logs:
+        // both sites must render through redact_proxy_uri.
+        let uri = "socks5://secret_user:super_secret_password_123@127.0.0.1:1080";
+        let redacted = eggress_uri::redact_proxy_uri(uri);
+        assert!(
+            !redacted.contains("super_secret_password_123"),
+            "redacted listener URI leaked password: {redacted}"
+        );
+        assert!(
+            !redacted.contains("secret_user"),
+            "redacted listener URI leaked username: {redacted}"
+        );
+        assert!(redacted.contains("127.0.0.1:1080"));
     }
 }

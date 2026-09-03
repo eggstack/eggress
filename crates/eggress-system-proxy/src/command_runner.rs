@@ -51,7 +51,7 @@ impl MockCommandRunner {
 
     /// Get all recorded calls.
     pub fn calls(&self) -> Vec<(String, Vec<String>)> {
-        self.calls.lock().unwrap().clone()
+        self.calls.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -66,7 +66,7 @@ impl CommandRunner for MockCommandRunner {
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         self.calls
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push((program.to_string(), args_vec.clone()));
 
         for (resp_prog, resp_args, resp_result) in &self.responses {

@@ -4,6 +4,10 @@
 //! the same proxy scenarios. Each test starts both proxies, sends identical
 //! requests, and compares coarse results (success/failure, payload match).
 //!
+//! Split is intentional: this file holds the one-off interop matrix, while
+//! `pproxy_differential.rs` (gated on `EGRESS_RUN_PPROXY_DIFFERENTIAL`) holds
+//! the reusable-harness suite. See that file for harness-based comparisons.
+//!
 //! All tests are `#[ignore]` and require:
 //! - `EGRESS_REQUIRE_EXTERNAL_INTEROP=1` environment variable
 //! - Python 3 with pproxy installed (`pip install pproxy`)

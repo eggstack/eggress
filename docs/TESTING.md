@@ -132,6 +132,23 @@ cargo fuzz run socks5_udp_datagram -- -runs=1000
 
 Routine CI runs on Ubuntu. Validate macOS or Windows when modifying platform-specific code, process supervision, filesystem behavior, system proxy integration, packaging, or release artifacts. Cross-platform matrices are not required for unrelated changes.
 
+## Integration test inventory (narrowest commands)
+
+Less-discoverable suites not covered above; run the narrowest one for the
+subsystem being changed:
+
+```bash
+cargo test -p eggress-runtime --test load -- --ignored  # + EGRESS_REQUIRE_LOAD=1
+cargo test -p eggress-runtime --test scheduler_runtime
+cargo test -p eggress-runtime --test multihop_tcp
+cargo test -p eggress-runtime --test upstream_protocols
+cargo test -p eggress-embed --test proxy_traffic
+cargo test -p eggress-embed --test error_redaction
+cargo test -p eggress-transport-ssh --test openssh -- --ignored  # requires openssh
+```
+
+`zz_debug_ssserver_interaction.rs` is a debug-only helper, not a gate.
+
 ## Test selection rule
 
 A change is adequately verified when:

@@ -79,6 +79,11 @@ pub async fn handle_connect(
 
 /// Read and parse an HTTP CONNECT request from the stream.
 async fn read_connect_request(stream: &mut BoxStream) -> Result<ConnectRequest, HttpError> {
+    // NOTE (O-02): single-byte `read` calls here are served from the
+    // `BufReader` installed by `handle_connect`, not as one syscall per byte,
+    // and stopping exactly at `\r\n\r\n` preserves pipelined post-head bytes.
+    // A chunked rewrite must use fill_buf/consume semantics to avoid
+    // over-reading into the tunneled body; left as-is deliberately.
     let mut head_buf = Vec::with_capacity(1024);
     let mut temp = [0u8; 1];
     let mut header_count = 0;

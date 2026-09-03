@@ -1684,13 +1684,13 @@ impl HopHandler for SshHopHandler {
                 auth,
                 hop_index,
             };
+            // Format once (O-03); previously each branch formatted separately.
+            let target_host = target.host.to_string();
             let result = if target.port == 0 {
-                sessions
-                    .open_unix_channel(key, stream, &target.host.to_string())
-                    .await
+                sessions.open_unix_channel(key, stream, &target_host).await
             } else {
                 sessions
-                    .open_tcp_channel(key, stream, &target.host.to_string(), target.port)
+                    .open_tcp_channel(key, stream, &target_host, target.port)
                     .await
             };
             result.map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)

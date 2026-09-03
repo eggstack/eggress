@@ -272,18 +272,27 @@ impl QuicClient {
     }
 
     async fn connection(&self) -> Result<QuicConnection, QuicError> {
-        let mut guard = self.connection.lock().await;
-        if let Some(connection) = &*guard {
-            return Ok(connection.clone());
+        // Fast path under the lock; the guard is dropped before dialing so a
+        // slow handshake does not serialize all concurrent open_stream()
+        // callers (B-02).
+        if let Some(connection) = self.connection.lock().await.clone() {
+            return Ok(connection);
         }
         let connecting = self
             .endpoint
             .connect_with(self.config.clone(), self.remote, &self.server_name)
             .map_err(|e| QuicError::Connection(e.to_string()))?;
-        let connection = connecting
+        let inner = tokio::time::timeout(Duration::from_secs(10), connecting)
             .await
+            .map_err(|_| QuicError::Connection("quic handshake timed out".to_string()))?
             .map_err(|e| QuicError::Connection(e.to_string()))?;
-        let connection = QuicConnection { inner: connection };
+        let connection = QuicConnection { inner };
+        // Another task may have populated the cache while we dialed; prefer
+        // the existing entry to avoid discarding a usable connection.
+        let mut guard = self.connection.lock().await;
+        if let Some(existing) = &*guard {
+            return Ok(existing.clone());
+        }
         *guard = Some(connection.clone());
         Ok(connection)
     }

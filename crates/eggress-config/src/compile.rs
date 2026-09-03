@@ -676,7 +676,7 @@ fn compile_leaf_matcher(leaf: &LeafMatcher) -> Result<eggress_routing::MatchExpr
 
     match matchers.len() {
         0 => Ok(eggress_routing::MatchExpr::Any),
-        1 => Ok(matchers.into_iter().next().unwrap()),
+        1 => Ok(matchers.into_iter().next().expect("len checked to be 1")),
         _ => Ok(eggress_routing::MatchExpr::All(matchers)),
     }
 }

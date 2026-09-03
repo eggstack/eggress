@@ -4,7 +4,11 @@
 //! protocol-specific client helpers locally (since testkit does not depend on
 //! eggress-core or protocol crates).
 //!
-//! All tests are `#[ignore]` and gated on `EGGRESS_RUN_PPROXY_DIFFERENTIAL=1`.
+//! Split is intentional: this file holds the reusable-harness suite, while
+//! `differential_pproxy.rs` (gated on `EGRESS_REQUIRE_EXTERNAL_INTEROP`)
+//! holds the one-off interop matrix.
+//!
+//! All tests are `#[ignore]` and gated on `EGRESS_RUN_PPROXY_DIFFERENTIAL=1`.
 //!
 //! Run with:
 //! ```bash

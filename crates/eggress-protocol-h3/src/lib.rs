@@ -71,9 +71,11 @@ impl H3Client {
     }
 
     async fn session(&self) -> Result<Arc<H3Session>, H3Error> {
-        let mut guard = self.session.lock().await;
-        if let Some(session) = &*guard {
-            return Ok(session.clone());
+        // Fast path under the lock; drop the guard before the QUIC dial +
+        // H3 handshake so slow handshakes do not serialize all request
+        // tasks (companion to transport-quic B-02).
+        if let Some(session) = self.session.lock().await.clone() {
+            return Ok(session);
         }
         let connection = self.quic.get_connection().await?;
         let (mut driver, sender) = h3::client::new(connection.into_h3())
@@ -83,6 +85,10 @@ impl H3Client {
             let _ = driver.wait_idle().await;
         });
         let session = Arc::new(H3Session { sender });
+        let mut guard = self.session.lock().await;
+        if let Some(existing) = &*guard {
+            return Ok(existing.clone());
+        }
         *guard = Some(session.clone());
         Ok(session)
     }

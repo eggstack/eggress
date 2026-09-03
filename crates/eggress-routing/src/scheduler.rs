@@ -255,17 +255,33 @@ fn select_least_connections<F>(
 where
     F: Fn(&UpstreamRuntime) -> bool,
 {
-    let min_load = candidates
-        .iter()
-        .filter(|member| eligible(member))
-        .map(|member| member.current_load())
-        .min()?;
-    let tied: Vec<_> = candidates
-        .iter()
-        .filter(|member| eligible(member) && member.current_load() == min_load)
-        .collect();
-    let index = cursor.fetch_add(1, Ordering::Relaxed) as usize;
-    Some(tied[index % tied.len()].clone())
+    // Two passes over the slice with no allocation: first the minimum load
+    // among eligible members, then the pick-th tied member in order.
+    let mut min_load: Option<u64> = None;
+    for member in candidates.iter().filter(|m| eligible(m)) {
+        let load = member.current_load();
+        min_load = Some(min_load.map_or(load, |min| min.min(load)));
+    }
+    let min_load = min_load?;
+    let mut tied_count = 0usize;
+    for member in candidates.iter().filter(|m| eligible(m)) {
+        if member.current_load() == min_load {
+            tied_count += 1;
+        }
+    }
+    if tied_count == 0 {
+        return None;
+    }
+    let mut pick = cursor.fetch_add(1, Ordering::Relaxed) as usize % tied_count;
+    for member in candidates.iter().filter(|m| eligible(m)) {
+        if member.current_load() == min_load {
+            if pick == 0 {
+                return Some(member.clone());
+            }
+            pick -= 1;
+        }
+    }
+    None
 }
 
 fn select_round_robin<F>(
@@ -279,13 +295,20 @@ where
     if candidates.is_empty() {
         return None;
     }
-    let len = candidates.len();
-    let eligible_indices: Vec<usize> = (0..len).filter(|&idx| eligible(&candidates[idx])).collect();
-    if eligible_indices.is_empty() {
+    // Count eligible members first so the pick index is uniform over the
+    // eligible set with no per-decision allocation.
+    let eligible_count = candidates.iter().filter(|member| eligible(member)).count();
+    if eligible_count == 0 {
         return None;
     }
-    let start = cursor.fetch_add(1, Ordering::Relaxed) as usize;
-    Some(candidates[eligible_indices[start % eligible_indices.len()]].clone())
+    let mut pick = cursor.fetch_add(1, Ordering::Relaxed) as usize % eligible_count;
+    for member in candidates.iter().filter(|m| eligible(m)) {
+        if pick == 0 {
+            return Some(member.clone());
+        }
+        pick -= 1;
+    }
+    None
 }
 
 fn select_random<F>(
@@ -299,11 +322,15 @@ where
     if candidates.is_empty() {
         return None;
     }
-    let eligible_indices: Vec<usize> = (0..candidates.len())
-        .filter(|&idx| eligible(&candidates[idx]))
-        .collect();
-    let index = rng.index(eligible_indices.len())?;
-    Some(candidates[eligible_indices[index]].clone())
+    let eligible_count = candidates.iter().filter(|member| eligible(member)).count();
+    let mut pick = rng.index(eligible_count)?;
+    for member in candidates.iter().filter(|m| eligible(m)) {
+        if pick == 0 {
+            return Some(member.clone());
+        }
+        pick -= 1;
+    }
+    None
 }
 
 pub fn resolve_scheduler(kind: SchedulerKind) -> Arc<dyn Scheduler> {

@@ -34,9 +34,18 @@ fn count_fds() -> usize {
     0
 }
 
+// Slow load tests are `#[ignore]` and additionally gated on
+// `EGRESS_REQUIRE_LOAD=1` so a stray `--ignored` run does not pay for them.
+fn require_load_gate() {
+    if std::env::var("EGRESS_REQUIRE_LOAD").is_err() {
+        panic!("EGRESS_REQUIRE_LOAD not set");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn load_test_100_concurrent_tcp_sessions() {
+    require_load_gate();
     let config = r#"
 version = 1
 
@@ -108,6 +117,7 @@ direct = true
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn load_test_udp_associations_up_to_limit() {
+    require_load_gate();
     let config = r#"
 version = 1
 
@@ -189,6 +199,7 @@ direct = true
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn load_test_slowloris_handshake() {
+    require_load_gate();
     let config = r#"
 version = 1
 
@@ -317,6 +328,7 @@ direct = true
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn load_test_auth_failure_burst() {
+    require_load_gate();
     let config = r#"
 version = 1
 
@@ -467,6 +479,7 @@ direct = true
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn load_test_udp_association_churn() {
+    require_load_gate();
     let config = r#"
 version = 1
 
