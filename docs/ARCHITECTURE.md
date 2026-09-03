@@ -211,7 +211,7 @@ Rust embed API for in-process embedding:
 
 `eggress-embed::outbound` provides `OutboundConnector` for native Rust outbound connections without temporary local listeners:
 - `OutboundConnector::from_toml(toml)` — create from TOML config
-- `OutboundConnector::from_pproxy_uri(uri)` — create from pproxy URI
+- `OutboundConnector::from_pproxy_uri(uri)` — create from one pproxy remote expression, including `__` multi-hop chains (order preserved, fail-closed, redacted errors)
 - `connector.connect_tcp(target)` — connect to TCP target
 - `connector.connect_tcp_timeout(target, timeout)` — connect with explicit timeout
 

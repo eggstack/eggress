@@ -190,6 +190,23 @@ uri = "socks5://user:pass@10.0.0.1:1080"
     assert_eq!(parsed["version"].as_integer(), Some(1));
 }
 
+#[cfg(feature = "pproxy-compat")]
+#[test]
+fn outbound_malformed_credentialed_chain_redacts_credentials() {
+    let uri = "socks5://user_a:secret_a@127.0.0.1:1080__http://user_b:secret_b@127.0.0.1:8080__";
+    let err = match eggress_embed::outbound::OutboundConnector::from_pproxy_uri(uri) {
+        Ok(_) => panic!("malformed chained input must fail"),
+        Err(err) => err,
+    };
+    let rendered = format!("{err:?} {err}");
+    for secret in ["user_a", "secret_a", "user_b", "secret_b"] {
+        assert!(
+            !rendered.contains(secret),
+            "outbound error leaked {secret:?}: {rendered}"
+        );
+    }
+}
+
 #[test]
 fn to_redacted_toml_preserves_password_containing_at_sign() {
     // Regression: a raw '@' inside the password must not be treated as

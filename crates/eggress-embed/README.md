@@ -40,6 +40,26 @@ println!("Listening on {:?}", handle.bound_addresses());
 handle.shutdown().await?;
 ```
 
+## Native outbound connector (no listener)
+
+`OutboundConnector` executes a pproxy remote expression in-process via
+`ChainExecutor`, without starting a listener. It accepts canonical `__`
+multi-hop chains, preserves hop order, and fails closed on unsupported
+chain members instead of dropping them:
+
+```rust
+let connector = OutboundConnector::from_pproxy_uri(
+    "socks5://127.0.0.1:1080__http://127.0.0.1:8080"
+)?;
+
+let (stream, info) = connector.connect_tcp("api.example.com", 443).await?;
+assert_eq!(info.hop_count, 2);
+```
+
+Requires the `pproxy-compat` feature. Protocol availability remains
+feature-gated, and malformed chained input returns credential-redacted
+errors.
+
 ## Documentation
 
 - [Workspace README](https://github.com/eggstack/eggress/blob/main/README.md)

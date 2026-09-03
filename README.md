@@ -149,6 +149,21 @@ match handle.reload_toml_str(new_config) {
 }
 ```
 
+### Listener-free outbound chains
+
+```rust
+let connector = eggress_embed::outbound::OutboundConnector::from_pproxy_uri(
+    "socks5://127.0.0.1:1080__http://127.0.0.1:8080"
+)?;
+
+let (stream, info) = connector.connect_tcp("api.example.com", 443).await?;
+assert_eq!(info.hop_count, 2);
+```
+
+`from_pproxy_uri()` accepts canonical `__` multi-hop expressions, executes
+them in-process with no listener, and fails closed on unsupported hops.
+Requires the `pproxy-compat` feature.
+
 See the [Embed API reference](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) for full API docs, lifecycle details, feature groups, and limitations.
 
 ## Python library

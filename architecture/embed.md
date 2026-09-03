@@ -54,12 +54,19 @@ Validation chain: `toml::from_str` → version check (must be 1 or absent)
 | Method | Line | Description |
 |---|---|---|
 | `from_toml(config_toml)` | :63 | Compile config, require at least one upstream |
-| `from_pproxy_uri(uri)` | :106 | pproxy URI → translated TOML → connector (feature-gated) |
+| `from_pproxy_uri(uri)` | :106 | Full pproxy remote expression (`__` chains preserved) → validate/translate → connector (feature-gated, fail-closed, redacted errors) |
 | `connect_tcp(host, port)` | :133 | Execute chain, return `(BoxStream, OutboundInfo)` |
 | `connect_tcp_timeout(host, port, timeout)` | :188 | Wraps `connect_tcp` in `tokio::time::timeout` |
 | `associate_udp(target_host, target_port)` | :206 | Returns error — not yet implemented |
 | `upstream_count()` | :219 | Number of configured upstreams |
 | `validate_outbound_config(toml)` | :228 | Static validation, returns hop count |
+
+`from_pproxy_uri()` consumes one complete pproxy remote expression via
+`parse_pproxy_chain()`, preserving every `__` hop in source order. Only a
+single `direct` hop takes the direct fast path; multi-hop expressions
+containing `direct`, backward (`+in`), or feature-disabled roles fail
+closed, and malformed chained input returns credential-redacted errors.
+Execution reuses the existing `ChainExecutor` with no listener.
 
 ## How it works
 
@@ -127,9 +134,9 @@ a stable `&'static str` label for each variant.
 | Feature | Description |
 |---|---|
 | `full` (default) | `common`+`extended`+`operations`+`reverse`+`pproxy-compat`+`pproxy-legacy` |
-| `common` | HTTP, SOCKS4/5, Shadowsocks, Trojan |
-| `extended` | WebSocket, raw, H2 |
-| `pproxy-compat` | Enables `start_blocking_with_compatibility_options` |
+| `common` | HTTP/SOCKS core, TLS transport, UDP, raw |
+| `extended` | Adds Shadowsocks, Trojan, WebSocket |
+| `pproxy-compat` | pproxy URI translation (`from_pproxy_uri`) and compatibility options |
 | `operations` | System proxy integration |
 | `reverse` | Reverse proxy control channel |
 | `ssh` | SSH transport passthrough to runtime |
@@ -185,8 +192,8 @@ Inline tests (`src/lib.rs`):
   bind). Only routing rules, upstreams, and health state can be hot-reloaded.
 - `OutboundConnector::associate_udp()` always returns an error (:210-215)
   — this is an unimplemented stub.
-- `write_temp_config` uses a monatomic counter (:869) for unique filenames;
-  two embed instances in the same process never collide.
+- `write_temp_config` creates an owner-only (`0o600`) tempfile with a random
+  name per call; two embed instances in the same process never collide.
 
 ## See also
 

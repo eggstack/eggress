@@ -124,6 +124,11 @@ For embedding eggress in another Rust process, use the `eggress-embed` crate:
 - `handle.metrics_text()` — Prometheus metrics without HTTP
 - `handle.reload_toml_str()` — hot-reload routing/upstreams
 - `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown
+- `OutboundConnector::from_pproxy_uri()` — one pproxy remote expression,
+  including `__` multi-hop chains (order preserved, no listener, fail-closed
+  on unsupported hops, redacted errors; `pproxy-compat` feature)
+- `OutboundConnector::connect_tcp()` / `connect_tcp_timeout()` — execute the
+  compiled chain in-process via `ChainExecutor`
 
 See `docs/EMBED_API.md` for full reference.
 

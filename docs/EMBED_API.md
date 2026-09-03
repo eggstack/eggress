@@ -126,6 +126,32 @@ assert!(redacted.contains("admin"));
 Upstream URI credentials are also redacted:
 `socks5://user:pass@host:port` → `socks5://****:****@host:port`.
 
+## Native outbound connector (no listener)
+
+`OutboundConnector` compiles a pproxy remote expression and executes the
+chain in-process via `ChainExecutor`, without starting a local listener:
+
+```rust
+let connector = OutboundConnector::from_pproxy_uri(
+    "socks5://127.0.0.1:1080__http://127.0.0.1:8080"
+)?;
+
+let (stream, info) = connector.connect_tcp("api.example.com", 443).await?;
+assert_eq!(info.hop_count, 2);
+```
+
+Contract:
+
+- `from_pproxy_uri()` accepts one pproxy remote expression, including
+  canonical `__` multi-hop chains, preserving hop order.
+- The connector executes the chain in-process; it does not start a local
+  listener, subprocess, or compatibility daemon.
+- Protocol availability remains feature-gated (`ssh`, `quic`, and similar
+  require their features).
+- Unsupported chain semantics fail connector construction instead of being
+  silently dropped or reordered.
+- Malformed chained input returns a credential-redacted diagnostic.
+
 ## Reload
 
 Reload configuration without restarting the process. Only routing, upstreams,
@@ -288,4 +314,6 @@ This API is designed for thin PyO3 wrappers:
 | `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count`, `listeners`, `udp_associations_active`, `upstream_count` |
 | `ListenerStatus` | `name`, `bind`, `local_addr`, `protocols`, `udp_enabled` |
 | `ReloadOutcome` | `Applied { generation, upstreams }` |
+| `OutboundConnector` | `from_toml`, `from_pproxy_uri`, `connect_tcp`, `connect_tcp_timeout`, `upstream_count` |
+| `OutboundInfo` | `local_addr`, `peer_addr`, `hop_count` |
 | `EggressError` | `Config`, `Runtime`, `Startup`, `Reload`, `Shutdown`, `UnsupportedFeature`, `Internal` |

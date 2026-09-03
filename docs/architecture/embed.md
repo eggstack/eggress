@@ -64,8 +64,14 @@ Both paths create a dedicated Tokio runtime on a separate OS thread.
 
 `eggress-embed::outbound` provides `OutboundConnector` for native Rust outbound connections:
 - `OutboundConnector::from_toml(toml)` — create from TOML
-- `OutboundConnector::from_pproxy_uri(uri)` — create from pproxy URI
+- `OutboundConnector::from_pproxy_uri(uri)` — create from one pproxy remote
+  expression, including canonical `__` multi-hop chains (hop order preserved)
 - `connector.connect_tcp(target)` — connect to TCP target
+
+The connector executes the chain in-process with no listener. Only a single
+`direct` hop takes the direct path; unsupported chain members fail
+construction instead of being dropped, and malformed chained input returns
+credential-redacted errors.
 
 ## Dependencies
 
