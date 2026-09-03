@@ -26,6 +26,12 @@ Its complete execution set is:
 3. [`PPROXY_CORRECTIVE_PHASE_3_FEATURE_TOPOLOGY_AND_SIZE.md`](PPROXY_CORRECTIVE_PHASE_3_FEATURE_TOPOLOGY_AND_SIZE.md)
 4. [`PPROXY_CORRECTIVE_PHASE_4_CONTRACT_CI_CLOSURE.md`](PPROXY_CORRECTIVE_PHASE_4_CONTRACT_CI_CLOSURE.md)
 
+A later downstream-embedding audit found one separate adapter defect in the Rust-native `OutboundConnector`: `from_pproxy_uri()` currently reduces a canonical `__` remote chain to its first hop before translation. That correction is intentionally isolated from the completed parity milestones and is governed by:
+
+[`OUTBOUND_CONNECTOR_PPROXY_CHAIN_CORRECTIVE_PASS.md`](OUTBOUND_CONNECTOR_PPROXY_CHAIN_CORRECTIVE_PASS.md)
+
+It reuses the existing pproxy chain parser, translator, and native chain executor; it does not authorize protocol expansion or a new compatibility framework.
+
 ## Goal
 
 Make Eggress a reliable replacement for documented, commonly used `pproxy==2.7.9` configurations while preserving Eggress as a focused Rust proxy rather than rebuilding all of pproxy's historical implementation details.
