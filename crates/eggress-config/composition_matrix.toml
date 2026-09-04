@@ -1,0 +1,536 @@
+# Composition Matrix (Phase A2)
+#
+# Machine-readable composition graph for pproxy parity.
+# Maps protocol×role×traffic_kind combinations to capability IDs and evidence.
+#
+# DO NOT edit by hand — generated from code. Use the validator to check:
+#   python3 scripts/validate_pproxy_parity_manifest.py --check-matrix \
+#       docs/parity/composition_matrix.toml
+#
+# Cross-references pproxy_capability_manifest.toml capability IDs.
+
+[matrix]
+schema_version = "1"
+manifest_ref = "docs/parity/pproxy_capability_manifest.toml"
+description = "Explicit composition graph preventing false parity claims"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TCP Listener Compositions
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "http"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.http_connect.ipv4",
+    "protocol.http_connect.ipv6",
+    "protocol.http_connect.domain",
+    "protocol.http_connect.auth_success",
+    "protocol.http_connect.auth_failure",
+    "protocol.http_connect.refused",
+    "protocol.http_connect.half_close",
+    "protocol.http_connect.fragmented",
+    "protocol.http_connect.timeout",
+    "protocol.http_forward.get",
+    "protocol.http_forward.post_content_length",
+    "protocol.http_forward.head",
+    "protocol.http_forward.chunked",
+    "protocol.http_forward.persistent",
+    "protocol.http_forward.connection_close",
+    "protocol.http_forward.auth_success",
+    "protocol.http_forward.malformed",
+    "protocol.http_forward.upstream_close",
+]
+
+[[cell]]
+protocol = "socks4"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4.connect_ipv4",
+    "protocol.socks4.user_id",
+    "protocol.socks4.refused",
+    "protocol.socks4.malformed",
+]
+
+[[cell]]
+protocol = "socks4a"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4a.connect_domain",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.connect_ipv4",
+    "protocol.socks5.connect_ipv6",
+    "protocol.socks5.connect_domain",
+    "protocol.socks5.connect_refused",
+    "protocol.socks5.auth_success",
+    "protocol.socks5.auth_failure",
+    "protocol.socks5.malformed",
+    "protocol.socks5.half_close",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "listener"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.udp_associate",
+    "protocol.socks5_udp_framing",
+]
+notes = "UDP association via SOCKS5; framing differs from pproxy in edge cases"
+
+[[cell]]
+protocol = "shadowsocks"
+role = "listener"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_tcp",
+]
+notes = "Shadowsocks TCP inbound; AEAD by default, with the unauthenticated legacy-crypto compatibility feature explicitly opt-in"
+
+[[cell]]
+protocol = "shadowsocks"
+role = "listener"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_udp",
+]
+notes = "Shadowsocks UDP inbound; AEAD-only, standard SIP003 framing"
+
+[[cell]]
+protocol = "trojan"
+role = "listener"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "differential"
+capability_ids = [
+    "protocol.trojan_server",
+]
+notes = "Requires TLS; server role with fallback routing; differential test: differential_trojan_auth_failure"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TCP Upstream Compositions
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "http"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.http_connect.ipv4",
+    "protocol.http_connect.ipv6",
+    "protocol.http_connect.domain",
+]
+
+[[cell]]
+protocol = "socks4"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4.connect_ipv4",
+]
+
+[[cell]]
+protocol = "socks4a"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks4a.connect_domain",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.connect_ipv4",
+    "protocol.socks5.connect_ipv6",
+    "protocol.socks5.connect_domain",
+]
+
+[[cell]]
+protocol = "socks5"
+role = "upstream"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.socks5.udp_associate",
+]
+
+[[cell]]
+protocol = "shadowsocks"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_tcp",
+]
+
+[[cell]]
+protocol = "shadowsocks"
+role = "upstream"
+traffic_kind = "udp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = [
+    "protocol.shadowsocks_udp",
+]
+
+[[cell]]
+protocol = "trojan"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "differential"
+capability_ids = [
+    "protocol.trojan_client",
+]
+notes = "ATYP 0x03 (domain) matches pproxy; differential test: differential_trojan_upstream"
+
+[[cell]]
+protocol = "direct"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.direct_tcp",
+    "python.native_outbound_stream",
+]
+
+[[cell]]
+protocol = "direct"
+role = "upstream"
+traffic_kind = "udp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.direct_udp",
+]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Chain Compositions (listener → upstream)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "http"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_http",
+]
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "socks5"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_socks5",
+]
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "socks5"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_socks5",
+]
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "http"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_http",
+]
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "ws"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_ws",
+]
+notes = "WS upstream performs WebSocket handshake over the prior-hop stream"
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "ws"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_ws",
+]
+notes = "WS upstream performs WebSocket handshake over the prior-hop stream"
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "raw"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_raw",
+]
+notes = "Raw is a passthrough that correctly forwards the prior-hop stream"
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "raw"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_raw",
+]
+notes = "Raw is a passthrough that correctly forwards the prior-hop stream"
+
+[[chain]]
+from_protocol = "socks5"
+to_protocol = "h2"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.socks5_to_h2",
+]
+notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)"
+
+[[chain]]
+from_protocol = "http"
+to_protocol = "h2"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.chain.http_to_h2",
+]
+notes = "H2 upstream performs handshake over the prior-hop stream (stream wrapping)"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Runtime-Integrated Advanced Transports (upstream and bounded compatibility listeners)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "ws"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.ws_runtime",
+]
+notes = "WebSocket upstream plus fixed-target compatibility listener; binary-mode byte stream adapter."
+
+[[cell]]
+protocol = "wss"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.ws_runtime",
+]
+notes = "WSS = WebSocket + TLS; upstream plus fixed-target compatibility listener with configured TLS."
+
+[[cell]]
+protocol = "h2"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.h2_runtime",
+]
+notes = "H2 CONNECT upstream plus multiplexed compatibility listener with TLS/ALPN support."
+
+[[cell]]
+protocol = "raw"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = [
+    "protocol.raw_runtime",
+]
+notes = "Raw fixed-target TCP tunnel upstream only; direct connect to target. No listener role."
+
+[[cell]]
+protocol = "ssh"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = ["protocol.ssh_upstream"]
+notes = "Optional ssh feature: direct TCP channels, chained hops, cached sessions, password/key auth, and explicit remote TCP forwarding. SSH listeners remain rejected and host-key acceptance is warning-bearing."
+
+[[cell]]
+protocol = "quic"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = ["protocol.quic"]
+rationale = "Optional raw QUIC stream transport."
+
+[[cell]]
+protocol = "quic"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "docs_only"
+capability_ids = []
+rationale = "UDP-over-QUIC stream mapping is explicitly unsupported."
+
+[[cell]]
+protocol = "h3"
+role = "upstream"
+traffic_kind = "tcp"
+tier = "compatible_with_warning"
+evidence = "integration"
+capability_ids = ["protocol.http3"]
+rationale = "Optional HTTP/3 CONNECT over QUIC."
+
+[[cell]]
+protocol = "h3"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "docs_only"
+capability_ids = []
+rationale = "HTTP/3 UDP association mode is explicitly unsupported."
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Reverse Proxy Compositions
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "direct"
+role = "reverse_server"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+notes = "Reverse/backward proxy server with raw-relay control channel"
+
+[[cell]]
+protocol = "direct"
+role = "reverse_client"
+traffic_kind = "tcp"
+tier = "drop_in"
+evidence = "integration"
+capability_ids = []
+notes = "Reverse/backward proxy client (control client)"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Unsupported Compositions (explicit denials)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[cell]]
+protocol = "http"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+[[cell]]
+protocol = "socks4"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+[[cell]]
+protocol = "socks4a"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+[[cell]]
+protocol = "trojan"
+role = "upstream"
+traffic_kind = "udp"
+tier = "unsupported"
+evidence = "none"
+capability_ids = []
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Constraints (global rules)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[[constraint]]
+type = "chain_max_hops"
+value = 10
+description = "Maximum chain length supported by eggress"
+
+[[constraint]]
+type = "no_udp"
+applies_to = ["http", "socks4", "socks4a", "trojan"]
+description = "These protocols do not support UDP relay"
+
+[[constraint]]
+type = "no_chain"
+applies_to = ["unix", "redir"]
+description = "Unix socket and transparent proxy cannot participate in chains"
+
+[[constraint]]
+type = "requires_tls"
+applies_to = ["trojan", "wss", "h2"]
+description = "These protocols require TLS transport wrapper"
+
+[[constraint]]
+type = "protocol_crate_only"
+applies_to = []
+description = "All protocols are now runtime-integrated (B4 promoted h2)"
+
+[[constraint]]
+type = "upstream_only_no_listener"
+applies_to = ["ws", "wss", "h2", "raw"]
+description = "Advanced transports support upstream/intermediate composition; H2 and fixed-target WS/WSS also have bounded compatibility listener roles"

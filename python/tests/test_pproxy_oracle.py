@@ -138,7 +138,7 @@ class TestModuleExports:
         if not hasattr(pproxy, "__version__"):
             pytest.skip("pproxy.__version__ not available (system pproxy, not compat wheel)")
         v = pproxy.__version__
-        assert v == "1.0.3"
+        assert v == "1.0.4"
 
     def test_snapshot_module_exports_present(self):
         snapshot = _load_snapshot()

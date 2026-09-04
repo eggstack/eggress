@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eggress-pproxy-compat"
-version = "1.0.3"
+version = "1.0.4"
 requires-python = ">=3.9"
 description = "Opt-in top-level pproxy compatibility package for eggress"
 readme = "README.md"
 license = {text = "MIT OR Apache-2.0"}
 authors = [{name = "eggstack"}]
 dependencies = [
-    "eggress==1.0.3",
+    "eggress==1.0.4",
     "cryptography>=42,<47",
 ]
 

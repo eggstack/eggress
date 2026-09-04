@@ -214,8 +214,12 @@ struct CompositionMatrixMinimal {
 
 // Embedded at compile time so embedders (eggress-embed, PyO3, binaries run
 // from another CWD) do not silently suppress composition warnings.
-const EMBEDDED_COMPOSITION_MATRIX: &str =
-    include_str!("../../../docs/parity/composition_matrix.toml");
+// The file is vendored inside the crate (rather than included from
+// `docs/parity/`) because `cargo package` only ships files under the crate
+// directory; an escaping include would break every from-registry build.
+// `docs/parity/composition_matrix.toml` remains canonical —
+// `vendored_matrix_matches_canonical` below enforces byte equality.
+const EMBEDDED_COMPOSITION_MATRIX: &str = include_str!("../composition_matrix.toml");
 
 fn load_composition_matrix() -> Option<CompositionMatrixMinimal> {
     // Look for the composition matrix relative to the workspace root first so
@@ -1460,6 +1464,28 @@ fn walk_match_expr_for_alias(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vendored_matrix_matches_canonical() {
+        // `docs/parity/composition_matrix.toml` is the canonical contract;
+        // the crate ships a vendored copy for `cargo package` self-containment.
+        // From-registry checkouts lack `docs/`, so skip there instead of failing.
+        let canonical_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/parity/composition_matrix.toml"
+        );
+        let Ok(canonical) = std::fs::read_to_string(canonical_path) else {
+            eprintln!("skipping canonical-matrix sync check (no workspace docs/)");
+            return;
+        };
+        assert_eq!(
+            EMBEDDED_COMPOSITION_MATRIX, canonical,
+            "crates/eggress-config/composition_matrix.toml is stale; copy docs/parity/composition_matrix.toml over it"
+        );
+        // The vendored copy must also parse as the expected shape.
+        toml::from_str::<CompositionMatrixMinimal>(EMBEDDED_COMPOSITION_MATRIX)
+            .expect("vendored composition matrix must parse");
+    }
 
     #[test]
     fn zero_durations_rejected_for_timeouts() {
