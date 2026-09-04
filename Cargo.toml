@@ -1,6 +1,6 @@
 [package]
 name = "eggress-bench"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
@@ -37,7 +37,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -95,31 +95,31 @@ h3-quinn = { version = "0.0.10", default-features = false }
 rustls-platform-verifier = "0.7.0"
 
 # Internal crates
-eggress-admin = { version = "=1.0.2", path = "crates/eggress-admin", default-features = false }
-eggress-core = { version = "=1.0.2", path = "crates/eggress-core" }
-eggress-metrics = { version = "=1.0.2", path = "crates/eggress-metrics", default-features = false }
-eggress-uri = { version = "=1.0.2", path = "crates/eggress-uri" }
-eggress-routing = { version = "=1.0.2", path = "crates/eggress-routing" }
-eggress-protocol-http = { version = "=1.0.2", path = "crates/eggress-protocol-http" }
-eggress-protocol-socks = { version = "=1.0.2", path = "crates/eggress-protocol-socks" }
-eggress-protocol-shadowsocks = { version = "=1.0.2", path = "crates/eggress-protocol-shadowsocks" }
-eggress-protocol-trojan = { version = "=1.0.2", path = "crates/eggress-protocol-trojan" }
-eggress-protocol-raw = { version = "=1.0.2", path = "crates/eggress-protocol-raw" }
-eggress-transport-tls = { version = "=1.0.2", path = "crates/eggress-transport-tls" }
-eggress-transport-ssh = { version = "=1.0.2", path = "crates/eggress-transport-ssh" }
-eggress-testkit = { version = "=1.0.2", path = "crates/eggress-testkit" }
-eggress-config = { version = "=1.0.2", path = "crates/eggress-config" }
-eggress-server = { version = "=1.0.2", path = "crates/eggress-server", default-features = false }
-eggress-udp = { version = "=1.0.2", path = "crates/eggress-udp", default-features = false }
-eggress-cli = { version = "=1.0.2", path = "crates/eggress-cli" }
-eggress-runtime = { version = "=1.0.2", path = "crates/eggress-runtime", default-features = false }
-eggress-pproxy-compat = { version = "=1.0.2", path = "crates/eggress-pproxy-compat" }
-eggress-embed = { version = "=1.0.2", path = "crates/eggress-embed", default-features = false }
-eggress-protocol-websocket = { version = "=1.0.2", path = "crates/eggress-protocol-websocket" }
-eggress-protocol-reverse = { version = "=1.0.2", path = "crates/eggress-protocol-reverse" }
-eggress-protocol-h3 = { version = "=1.0.2", path = "crates/eggress-protocol-h3", default-features = false }
-eggress-transport-quic = { version = "=1.0.2", path = "crates/eggress-transport-quic", default-features = false }
-eggress-system-proxy = { version = "=1.0.2", path = "crates/eggress-system-proxy" }
+eggress-admin = { version = "=1.0.3", path = "crates/eggress-admin", default-features = false }
+eggress-core = { version = "=1.0.3", path = "crates/eggress-core" }
+eggress-metrics = { version = "=1.0.3", path = "crates/eggress-metrics", default-features = false }
+eggress-uri = { version = "=1.0.3", path = "crates/eggress-uri" }
+eggress-routing = { version = "=1.0.3", path = "crates/eggress-routing" }
+eggress-protocol-http = { version = "=1.0.3", path = "crates/eggress-protocol-http" }
+eggress-protocol-socks = { version = "=1.0.3", path = "crates/eggress-protocol-socks" }
+eggress-protocol-shadowsocks = { version = "=1.0.3", path = "crates/eggress-protocol-shadowsocks" }
+eggress-protocol-trojan = { version = "=1.0.3", path = "crates/eggress-protocol-trojan" }
+eggress-protocol-raw = { version = "=1.0.3", path = "crates/eggress-protocol-raw" }
+eggress-transport-tls = { version = "=1.0.3", path = "crates/eggress-transport-tls" }
+eggress-transport-ssh = { version = "=1.0.3", path = "crates/eggress-transport-ssh" }
+eggress-testkit = { version = "=1.0.3", path = "crates/eggress-testkit" }
+eggress-config = { version = "=1.0.3", path = "crates/eggress-config" }
+eggress-server = { version = "=1.0.3", path = "crates/eggress-server", default-features = false }
+eggress-udp = { version = "=1.0.3", path = "crates/eggress-udp", default-features = false }
+eggress-cli = { version = "=1.0.3", path = "crates/eggress-cli" }
+eggress-runtime = { version = "=1.0.3", path = "crates/eggress-runtime", default-features = false }
+eggress-pproxy-compat = { version = "=1.0.3", path = "crates/eggress-pproxy-compat" }
+eggress-embed = { version = "=1.0.3", path = "crates/eggress-embed", default-features = false }
+eggress-protocol-websocket = { version = "=1.0.3", path = "crates/eggress-protocol-websocket" }
+eggress-protocol-reverse = { version = "=1.0.3", path = "crates/eggress-protocol-reverse" }
+eggress-protocol-h3 = { version = "=1.0.3", path = "crates/eggress-protocol-h3", default-features = false }
+eggress-transport-quic = { version = "=1.0.3", path = "crates/eggress-transport-quic", default-features = false }
+eggress-system-proxy = { version = "=1.0.3", path = "crates/eggress-system-proxy" }
 
 [dependencies]
 criterion.workspace = true

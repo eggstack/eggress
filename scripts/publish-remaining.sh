@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Publish the remaining 24 eggress-* crates to crates.io in dependency order.
+# Publish all 26 eggress-* crates to crates.io in dependency order.
 #
 # Prerequisites:
 #   - crates.io credentials configured (`cargo login` or $CARGO_REGISTRY_TOKEN`).
 #   - Working tree is on the published commit (clean, no uncommitted changes).
-#   - Any eggress-uri name-deletion cooldown has cleared.
 #
 # Usage: scripts/publish-remaining.sh [--dry-run]
 #
-# Crates already published (do not include here):
-#   eggress-system-proxy 1.0.2
-#   eggress-testkit     1.0.2
+# Tier 1 publishes eggress-testkit and eggress-system-proxy first: several
+# crates dev-depend on the testkit (resolved at publish time) and
+# eggress-python depends on eggress-system-proxy non-optionally, so both must
+# exist in the index before their dependents are published.
 #
-# Total: 24 crates. crates.io rate-limits new publishes to roughly one per 10
+# Total: 26 crates. crates.io rate-limits new publishes to roughly one per 10
 # minutes, so expect ~4h of wall time plus index-propagation waits.
 
 set -euo pipefail
@@ -29,6 +29,7 @@ fi
 # Tiered publish order. Every required internal dep appears in an earlier tier
 # than the crate that depends on it.
 TIERS=(
+    "eggress-testkit eggress-system-proxy"
     "eggress-uri"
     "eggress-core"
     "eggress-protocol-raw eggress-protocol-http eggress-protocol-socks eggress-protocol-websocket eggress-transport-tls eggress-transport-ssh eggress-transport-quic eggress-protocol-reverse eggress-routing eggress-protocol-shadowsocks"
@@ -75,7 +76,7 @@ publish_one() {
     if [[ -z "$DRY_RUN" ]]; then
         local version
         version=$(cargo read-manifest --manifest-path "crates/${crate}/Cargo.toml" 2>/dev/null \
-            | python3 -c "import sys, json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "1.0.2")
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "1.0.3")
         wait_for_index "$crate" "$version"
         # Sleep between publishes to stay under the crates.io rate limit.
         sleep "$PUBLISH_DELAY_SECONDS"
