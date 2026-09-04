@@ -52,7 +52,18 @@ jobs:
               return value
 
           workspace = field("Cargo.toml", "workspace", "package", "version")
-          binding = field("crates/eggress-python/Cargo.toml", "package", "version")
+          binding_manifest = tomllib.loads(Path("crates/eggress-python/Cargo.toml").read_text())
+          binding_version = binding_manifest.get("package", {}).get("version")
+          if isinstance(binding_version, dict):
+              # The binding crate inherits its version from the workspace
+              # (`version.workspace = true`); resolve it the same way cargo does.
+              if binding_version.get("workspace") is not True:
+                  raise SystemExit("::error::crates/eggress-python/Cargo.toml package/version must be a string or workspace-inherited")
+              binding = workspace
+          elif isinstance(binding_version, str) and binding_version:
+              binding = binding_version
+          else:
+              raise SystemExit("::error::crates/eggress-python/Cargo.toml has no string field package/version")
           project = field("crates/eggress-python/pyproject.toml", "project", "version")
           versions = {"workspace": workspace, "binding": binding, "pyproject": project}
           print(*[f"{name} version: {value}" for name, value in versions.items()], sep="\n")
