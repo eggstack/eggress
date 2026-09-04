@@ -341,10 +341,12 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             .venv-test/Scripts/python.exe -m pip install --upgrade pip
             .venv-test/Scripts/python.exe -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+            .venv-test/Scripts/python.exe -m pip install --no-deps ./python-pproxy-compat
             .venv-test/Scripts/python.exe scripts/release_artifact_smoke.py
           else
             .venv-test/bin/python -m pip install --upgrade pip
             .venv-test/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+            .venv-test/bin/python -m pip install --no-deps ./python-pproxy-compat
             .venv-test/bin/python scripts/release_artifact_smoke.py
           fi
           echo "Smoke test passed"
@@ -390,6 +392,7 @@ jobs:
           python -m venv .venv-compat
           .venv-compat/bin/python -m pip install --upgrade pip
           .venv-compat/bin/python -m pip install "${{ steps.find-wheel.outputs.wheel_path }}"
+          .venv-compat/bin/python -m pip install --no-deps ./python-pproxy-compat
           .venv-compat/bin/python scripts/release_artifact_smoke.py
           echo "Python ${{ matrix.python-version }} compat smoke passed"
 
@@ -432,6 +435,7 @@ jobs:
           python -m venv .venv-sdist
           .venv-sdist/bin/python -m pip install --upgrade pip
           .venv-sdist/bin/python -m pip install "${{ steps.find-sdist.outputs.sdist_path }}"
+          .venv-sdist/bin/python -m pip install --no-deps ./python-pproxy-compat
           .venv-sdist/bin/python scripts/release_artifact_smoke.py
           echo "Sdist clean-install smoke passed"
 
