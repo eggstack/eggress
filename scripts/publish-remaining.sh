@@ -37,8 +37,12 @@ TIERS=(
     "eggress-protocol-trojan eggress-protocol-h3 eggress-udp"
     "eggress-config eggress-server"
     "eggress-metrics"
-    "eggress-pproxy-compat eggress-runtime"
-    "eggress-admin eggress-embed eggress-cli"
+    "eggress-pproxy-compat"
+    # eggress-admin must precede eggress-runtime: runtime's optional
+    # `dep:eggress-admin` is still resolved against the index at package time.
+    "eggress-admin"
+    "eggress-runtime"
+    "eggress-embed eggress-cli"
     "eggress-python"
 )
 
