@@ -104,7 +104,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 | Consumer | Usage |
 |---|---|
 | `eggress-server` (`execute.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
-| `eggress-runtime` (`supervisor.rs`) | Listener TLS: builds `TlsServerConfigBuilder` from config, calls `tls_accept` on inbound streams |
+| `eggress-runtime` (`supervisor/connection.rs` `wrap_tls_server()`) | Listener TLS: builds `TlsServerConfigBuilder` from prepared config, calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
 | `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, calls `tls_connect` for the Trojan-over-TLS channel |
 
 ## Security notes

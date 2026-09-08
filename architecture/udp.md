@@ -181,7 +181,7 @@ Unsupported chains are explicitly rejected with metrics. No silent fallback to d
 | Upstream | `upstream_associations_active/total`, `upstream_packets_up/down`, `upstream_failures`, `unsupported_upstream_total` |
 | Standalone | `standalone_flows_active/total`, `standalone_packets_in/out`, `standalone_malformed/rejected_datagrams`, `standalone_flow_reaps` |
 
-Bridged via `MetricsRegistry::set_udp_metrics()` (`eggress-metrics/src/lib.rs:893`); `/-/udp` admin endpoint exposes active/flow gauges.
+Bridged via `MetricsRegistry::set_udp_metrics()` (`eggress-metrics/src/udp.rs`); `/-/udp` admin endpoint exposes active/flow gauges.
 
 ## Test Coverage
 

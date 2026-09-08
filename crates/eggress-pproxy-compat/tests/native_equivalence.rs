@@ -15,9 +15,9 @@ fn compile_via_toml(
 ) -> eggress_config::compile::RuntimeConfig {
     let output = translate_from_uris(args, locals, chains).expect("TOML translate");
     assert!(
-        output.unsupported.is_empty(),
+        output.unsupported().is_empty(),
         "expected supported case, got unsupported: {:?}",
-        output.unsupported
+        output.unsupported()
     );
     eggress_config::validate_and_compile_toml(&output.toml).expect("TOML compile")
 }
@@ -113,8 +113,8 @@ fn http_socks_variants_equivalent() {
         let via_toml = compile_via_toml(&args, &locals, &chains);
         assert_runtime_equivalent(&native.runtime, &via_toml);
         let toml_output = translate_from_uris(&args, &locals, &chains).expect("toml");
-        assert_eq!(native.warnings, toml_output.warnings);
-        assert_eq!(native.unsupported, toml_output.unsupported);
+        assert_eq!(native.warnings(), toml_output.warnings());
+        assert_eq!(native.unsupported(), toml_output.unsupported());
         // TOML renderer must still emit valid TOML.
         assert!(toml_output.toml.contains("version = 1"));
     }
@@ -158,9 +158,9 @@ fn fixed_target_local_bind_rule_equivalent() {
     let toml_result = translate_from_uris(&args, &locals, &chains);
     match (native, toml_result) {
         (Ok(native), Ok(toml_output)) => {
-            assert_eq!(native.warnings, toml_output.warnings);
-            assert_eq!(native.unsupported, toml_output.unsupported);
-            if native.unsupported.is_empty() {
+            assert_eq!(native.warnings(), toml_output.warnings());
+            assert_eq!(native.unsupported(), toml_output.unsupported());
+            if native.unsupported().is_empty() {
                 let via_toml = eggress_config::validate_and_compile_toml(&toml_output.toml)
                     .expect("toml compile");
                 assert_runtime_equivalent(&native.runtime, &via_toml);
@@ -196,9 +196,9 @@ fn outbound_chain_direct_matches_toml_upstream() {
         let output =
             translate_from_uris(&default_args, &[], &[chain.clone()]).expect("toml translate");
         assert!(
-            output.unsupported.is_empty(),
+            output.unsupported().is_empty(),
             "unexpected unsupported for {uri}: {:?}",
-            output.unsupported
+            output.unsupported()
         );
         let runtime =
             eggress_config::validate_and_compile_toml(&output.toml).expect("toml compile");
@@ -225,7 +225,7 @@ fn unsupported_and_warnings_identical() {
     let (args, locals, chains) = case("socks5://127.0.0.1:1080", &["redir://127.0.0.1:1234"]);
     let native = translate_to_runtime_config(&args, &locals, &chains).expect("native");
     let toml_output = translate_from_uris(&args, &locals, &chains).expect("toml");
-    assert_eq!(native.warnings, toml_output.warnings);
-    assert_eq!(native.unsupported, toml_output.unsupported);
-    assert!(!native.unsupported.is_empty());
+    assert_eq!(native.warnings(), toml_output.warnings());
+    assert_eq!(native.unsupported(), toml_output.unsupported());
+    assert!(!native.unsupported().is_empty());
 }

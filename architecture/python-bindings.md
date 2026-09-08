@@ -7,10 +7,20 @@ and module name `eggress._eggress` (abi3-py39).
 
 ## Layout / module map
 
-### Compiled extension (`crates/eggress-python/src/lib.rs`)
+### Compiled extension (`crates/eggress-python/src/`)
 
-Single-file PyO3 module. Registered in `#[pymodule] fn _eggress()` at
-`src/lib.rs:1924`.
+Split by public surface; `lib.rs` is module registration only (`#[pymodule]
+fn _eggress()`, unchanged exported names/hierarchy/abi3 metadata).
+
+| Module | Role |
+|---|---|
+| `errors.rs` | Exception declarations + canonical `map_error()` mapper |
+| `service.rs` | `PyEggressConfig` / `PyEggressService` / `PyEggressHandle` |
+| `connection.rs` | Compatibility `Connection` state machine + connection counters |
+| `compat.rs` | URI inspection, diagnostics, translation, explain/test helpers, reverse summaries |
+| `outbound.rs` | `PyOutboundConnector` / `PyOutboundStream` |
+| `system_proxy.rs` | `PyAppliedSystemProxy` + `apply_system_proxy` |
+| `runtime.rs` | Shared process-wide Tokio runtime helper |
 
 | Category | Symbols | Notes |
 |---|---|---|

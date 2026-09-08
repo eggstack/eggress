@@ -116,7 +116,7 @@ protocols = ["http"]
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
     let sup = eggress_runtime::ServiceSupervisor::start(path).unwrap();
-    let metrics = sup.state().metrics.clone();
+    let metrics = sup.state().runtime_metrics.clone();
     let rendered = metrics.render_prometheus();
     assert!(
         rendered.contains("eggress_connections_active"),

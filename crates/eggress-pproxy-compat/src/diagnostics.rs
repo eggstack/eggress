@@ -380,7 +380,7 @@ impl CompatWarning {
 /// Classify an unsupported feature string into a diagnostic code, tier, and
 /// optional suggestion.
 fn classify_unsupported_feature(
-    feature: &'static str,
+    feature: &str,
 ) -> (DiagnosticCode, &'static str, Option<&'static str>) {
     match feature {
         "daemon" | "backward-jump-chain" | "backward-tls" => (
@@ -410,6 +410,11 @@ fn classify_unsupported_feature(
             DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature,
             "intentional_non_parity",
             Some("use standard Shadowsocks (ss://) with AEAD methods"),
+        ),
+        "trojan-listener" => (
+            DiagnosticCode::UnsupportedProtocol,
+            "unsupported",
+            Some("Trojan listeners require TLS material via --ssl cert,key"),
         ),
         "ssh-listener" => (
             DiagnosticCode::UnsupportedProtocol,
@@ -485,34 +490,13 @@ pub fn classify_unsupported_feature_code(feature: &str) -> DiagnosticCode {
 /// This is the single source of truth for unsupported-feature tier
 /// classification. Python and the canonical manifest must agree with
 /// this function.
-pub fn classify_unsupported_feature_tier(feature: &'static str) -> &'static str {
+pub fn classify_unsupported_feature_tier(feature: &str) -> &'static str {
     let (_, tier, _) = classify_unsupported_feature(feature);
     tier
 }
 
 fn classify_unsupported_feature_inner(feature: &str) -> DiagnosticCode {
-    match feature {
-        "daemon" | "backward-jump-chain" | "backward-tls" => DiagnosticCode::UnsupportedFlag,
-        "system-proxy" | "auth-timeout" => DiagnosticCode::UnsupportedFlag,
-        "chain-unsupported-hop" | "chain-backward-composition" => {
-            DiagnosticCode::UnsupportedProtocol
-        }
-        "ssr-listener" | "ssr-upstream" | "ssr-udp" => {
-            DiagnosticCode::UnsupportedSecuritySensitiveLegacyFeature
-        }
-        "trojan-listener" | "ssh-listener" | "ssh-upstream" | "unix-upstream"
-        | "redir-upstream" | "direct-listener" => DiagnosticCode::UnsupportedProtocol,
-        "socks4-bind" | "socks5-bind" => DiagnosticCode::UnsupportedProtocol,
-        "udp-http-transport"
-        | "udp-https-transport"
-        | "udp-socks4-transport"
-        | "udp-socks4a-transport"
-        | "udp-trojan-transport"
-        | "udp-multihop" => DiagnosticCode::UnsupportedProtocol,
-        "scheme" => DiagnosticCode::UnsupportedProtocol,
-        "legacy-cipher" => DiagnosticCode::InvalidCipherMethod,
-        _ => DiagnosticCode::UnsupportedFlag,
-    }
+    classify_unsupported_feature(feature).0
 }
 
 #[cfg(test)]

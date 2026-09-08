@@ -62,7 +62,7 @@ fn test_translate_advanced_upstream_protocols_to_native_uris() {
             !output.has_unsupported(),
             "{}: {:?}",
             scheme,
-            output.unsupported
+            output.unsupported()
         );
         let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
         assert_eq!(parsed["upstreams"][0]["uri"].as_str(), Some(expected));
@@ -98,7 +98,7 @@ fn test_translate_quic_compatibility_marks_insecure_explicitly() {
         assert!(parsed.get("upstreams").is_some(), "{}", output.toml);
         assert_eq!(parsed["upstreams"][0]["uri"].as_str(), Some(expected));
         assert!(output
-            .warnings
+            .warnings()
             .iter()
             .any(|warning| warning.category == "quic-insecure"));
     }
@@ -202,7 +202,7 @@ fn test_local_bind_reaches_native_chain_and_httponly_listener_is_rejected() {
     ])
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(!output.has_unsupported(), "{:?}", output.unsupported);
+    assert!(!output.has_unsupported(), "{:?}", output.unsupported());
     let parsed: toml::Value = toml::from_str(&output.toml).unwrap();
     let uri = parsed["upstreams"][0]["uri"].as_str().unwrap();
     let chain = eggress_uri::parse_proxy_chain(uri).unwrap();
@@ -211,7 +211,7 @@ fn test_local_bind_reaches_native_chain_and_httponly_listener_is_rejected() {
     let args = PproxyArgs::parse(&["-l".into(), "httponly://:1080".into()]).unwrap();
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output
-        .unsupported
+        .unsupported()
         .iter()
         .any(|item| item.feature == "unsupported-role"
             && item.detail.contains("upstream request adapter")));
@@ -221,12 +221,20 @@ fn test_local_bind_reaches_native_chain_and_httponly_listener_is_rejected() {
 fn test_advanced_transport_listener_roles_are_translated() {
     let h2 = PproxyArgs::parse(&["-l".into(), "h2://:1080".into()]).unwrap();
     let h2_output = translate_pproxy_args(&h2).unwrap();
-    assert!(!h2_output.has_unsupported(), "{:?}", h2_output.unsupported);
+    assert!(
+        !h2_output.has_unsupported(),
+        "{:?}",
+        h2_output.unsupported()
+    );
     assert!(h2_output.toml.contains("protocols = [\"h2\"]"));
 
     let ws = PproxyArgs::parse(&["-l".into(), "ws{127.0.0.1:80}://:1080".into()]).unwrap();
     let ws_output = translate_pproxy_args(&ws).unwrap();
-    assert!(!ws_output.has_unsupported(), "{:?}", ws_output.unsupported);
+    assert!(
+        !ws_output.has_unsupported(),
+        "{:?}",
+        ws_output.unsupported()
+    );
     assert!(ws_output.toml.contains("protocols = [\"websocket\"]"));
 
     let wss = PproxyArgs::parse(&[
@@ -238,7 +246,7 @@ fn test_advanced_transport_listener_roles_are_translated() {
     .unwrap();
     let wss_output = translate_pproxy_args(&wss).unwrap();
     assert!(!wss_output
-        .unsupported
+        .unsupported()
         .iter()
         .any(|u| u.feature == "unsupported-role"));
 }
@@ -256,7 +264,7 @@ fn test_advanced_transport_udp_is_rejected_as_tcp_only() {
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output
-        .unsupported
+        .unsupported()
         .iter()
         .any(|u| u.feature == "unsupported-role"));
     assert!(!output.toml.contains("pproxy-udp-upstream-0"));
@@ -290,7 +298,7 @@ fn test_shadowsocks_listener_is_supported() {
     let output = translate_pproxy_args(&args).unwrap();
     assert!(
         !output
-            .unsupported
+            .unsupported()
             .iter()
             .any(|u| u.feature == "shadowsocks-listener"),
         "shadowsocks listener should no longer be unsupported"
@@ -325,7 +333,10 @@ fn test_toml_has_stable_naming() {
 fn test_direct_mode_warning() {
     let args = PproxyArgs::parse(&["-l".into(), "socks5://127.0.0.1:1080".into()]).unwrap();
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(output.warnings.iter().any(|w| w.category == "direct-mode"));
+    assert!(output
+        .warnings()
+        .iter()
+        .any(|w| w.category == "direct-mode"));
 }
 
 #[test]
@@ -377,7 +388,7 @@ fn test_ssh_upstream_unsupported() {
     {
         assert!(output.has_unsupported());
         assert!(output
-            .unsupported
+            .unsupported()
             .iter()
             .any(|u| u.feature == "ssh-upstream"));
     }
@@ -396,7 +407,7 @@ fn test_unix_upstream_unsupported() {
     assert!(
         !output.has_unsupported(),
         "unexpected diagnostics: {:?}",
-        output.unsupported
+        output.unsupported()
     );
     assert!(output.toml.contains("unix:///tmp/eggress-phase5.sock"));
 }
@@ -413,7 +424,7 @@ fn test_redir_upstream_unsupported() {
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output.has_unsupported());
     assert!(output
-        .unsupported
+        .unsupported()
         .iter()
         .any(|u| u.feature == "redir-upstream"));
 }
@@ -520,7 +531,7 @@ fn test_ul_without_listen_adds_default_socks5() {
     let udp = &listeners[0]["udp"];
     assert_eq!(udp["mode"].as_str(), Some("standalone_pproxy_udp"));
     assert!(output
-        .warnings
+        .warnings()
         .iter()
         .any(|w| w.category == "ul-no-listener"));
 }
@@ -630,7 +641,7 @@ fn test_redir_upstream_still_unsupported() {
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output.has_unsupported());
     assert!(output
-        .unsupported
+        .unsupported()
         .iter()
         .any(|u| u.feature == "redir-upstream"));
 }
@@ -769,10 +780,10 @@ fn test_valid_get_static_content_is_supported() {
     assert!(
         !output.has_unsupported(),
         "unexpected diagnostics: {:?}",
-        output.unsupported
+        output.unsupported()
     );
     assert!(output
-        .warnings
+        .warnings()
         .iter()
         .any(|w| w.category == "get-static-content"));
     assert!(output.toml.contains("/index.html"));
@@ -790,7 +801,7 @@ fn test_malformed_get_static_content_fails_closed() {
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output.has_unsupported());
-    assert!(output.unsupported.iter().any(|u| u.feature == "get-file"));
+    assert!(output.unsupported().iter().any(|u| u.feature == "get-file"));
 }
 
 #[test]
@@ -807,7 +818,7 @@ fn test_unreadable_get_static_content_fails_closed() {
     .unwrap();
     let output = translate_pproxy_args(&args).unwrap();
     assert!(output.has_unsupported());
-    assert!(output.unsupported.iter().any(|u| u.feature == "get-file"));
+    assert!(output.unsupported().iter().any(|u| u.feature == "get-file"));
 }
 
 #[test]
@@ -830,7 +841,7 @@ fn test_test_flag_generates_unknown_warning() {
     );
     // Translation should produce a test-mode warning instead
     let output = translate_pproxy_args(&args).unwrap();
-    assert!(output.warnings.iter().any(|w| w.category == "test-mode"));
+    assert!(output.warnings().iter().any(|w| w.category == "test-mode"));
 }
 
 #[test]
@@ -865,7 +876,7 @@ fn aggregate_tier(args: &[&str]) -> crate::ManifestTier {
     let raw: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
-    crate::classify_aggregate_tier(&output.warnings, &output.unsupported)
+    crate::classify_aggregate_tier(&output.warnings(), &output.unsupported())
 }
 
 #[test]
@@ -879,7 +890,7 @@ fn cross_surface_aggregate_tier_compatible_with_warning_for_direct_mode() {
         .collect();
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
-    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    let tier = crate::classify_aggregate_tier(&output.warnings(), &output.unsupported());
     assert_eq!(tier, crate::ManifestTier::CompatibleWithWarning);
 }
 
@@ -931,7 +942,7 @@ fn cross_surface_aggregate_tier_intentional_non_parity_for_ssh_listener() {
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
     assert!(output.has_unsupported());
-    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    let tier = crate::classify_aggregate_tier(&output.warnings(), &output.unsupported());
     assert_eq!(tier, crate::ManifestTier::IntentionalNonParity);
 }
 
@@ -959,7 +970,7 @@ fn cross_surface_aggregate_tier_unsupported_for_hard_unsupported_feature() {
     #[cfg(not(feature = "daemon"))]
     {
         assert!(output.has_unsupported());
-        let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+        let tier = crate::classify_aggregate_tier(&output.warnings(), &output.unsupported());
         assert_eq!(tier, crate::ManifestTier::Unsupported);
     }
 }
@@ -973,7 +984,7 @@ fn cross_surface_aggregate_tier_drop_in_for_ssr_listener() {
     let parsed = PproxyArgs::parse(&raw).expect("parse");
     let output = translate_pproxy_args(&parsed).expect("translate");
     assert!(!output.has_unsupported());
-    let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+    let tier = crate::classify_aggregate_tier(&output.warnings(), &output.unsupported());
     assert_eq!(tier, crate::ManifestTier::CompatibleWithWarning);
 }
 
@@ -999,7 +1010,7 @@ fn cross_surface_aggregate_tier_unsupported_for_ssh_upstream_in_chain() {
     #[cfg(not(feature = "ssh"))]
     {
         assert!(output.has_unsupported());
-        let tier = crate::classify_aggregate_tier(&output.warnings, &output.unsupported);
+        let tier = crate::classify_aggregate_tier(&output.warnings(), &output.unsupported());
         assert_eq!(tier, crate::ManifestTier::Unsupported);
     }
 }

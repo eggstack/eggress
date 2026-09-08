@@ -18,7 +18,7 @@ New error variant: `ConnectError::ReservedTarget`.
 
 ## Auth failure metrics
 
-`eggress_auth_failures_total` counter in `crates/eggress-metrics/src/lib.rs` tracks all inbound authentication failures. `SessionMetrics` trait in `crates/eggress-server/src/lib.rs` includes `record_auth_failure()`.
+`eggress_auth_failures_total` counter in `crates/eggress-metrics/src/session.rs` tracks all inbound authentication failures. `SessionMetrics` trait in `crates/eggress-server/src/lib.rs` includes `record_auth_failure()` (session-only; runtime/reload/platform metrics live on `eggress_metrics::RuntimeMetrics`).
 
 Incremented at:
 - SOCKS5 username/password auth failure

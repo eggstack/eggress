@@ -456,7 +456,7 @@ impl EggressHandle {
 
     /// Render Prometheus metrics text.
     pub fn metrics_text(&self) -> Result<String, EggressError> {
-        Ok(self.state.metrics.render_prometheus())
+        Ok(self.state.runtime_metrics.render_prometheus())
     }
 
     /// Reload configuration from a TOML string.
@@ -479,7 +479,7 @@ impl EggressHandle {
         // before the canonical transaction must still record a failed reload
         // so file and embed metrics agree.
         let new_rt_config = parse_validate_compile(input).map_err(|message| {
-            self.state.metrics.record_reload(false);
+            self.state.runtime_metrics.record_reload(false);
             EggressError::Reload(message)
         })?;
 

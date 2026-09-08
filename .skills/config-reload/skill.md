@@ -53,7 +53,7 @@ share the core; only `CompatibilityOptions` differ.
 
 ## Adding a new config field
 1. Add to TOML schema in `eggress-config/src/model.rs`
-2. Add validation in `eggress-config/src/validate.rs`
+2. Add validation in `eggress-config/src/validate/` (pick the owning submodule: `listeners`, `upstreams`, `rules`, `core`, `security`, `composition`; orchestration stays in `validate/mod.rs`)
 3. Add compilation to runtime types in `eggress-config/src/compile.rs`
 4. If hot-reloadable: ensure it's in `CompiledRuntimeSnapshot`
 5. If NOT hot-reloadable: add topology validation rejection

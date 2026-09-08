@@ -4,6 +4,7 @@ pub mod diagnostics;
 pub mod error;
 pub mod exit_codes;
 pub mod gate;
+pub mod issues;
 pub mod regex_compat;
 pub mod tier;
 pub mod translate;
@@ -17,6 +18,7 @@ pub use diagnostics::{
 };
 pub use error::CompatError;
 pub use gate::{evaluate as evaluate_execution_gate, BlockReason, ExecutionGate};
+pub use issues::{CompatIssue, IssueSeverity};
 pub use regex_compat::{CompatRegex, PproxyRuleFile, RegexBackend, RegexCompileError};
 pub use tier::{classify_aggregate_tier, manifest_tier_for_category, ManifestTier};
 pub use translate::{

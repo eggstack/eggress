@@ -9,9 +9,9 @@ crate.
 
 | File | Role |
 |------|------|
-| `src/lib.rs` | `serve_connection()` entry point; `ConnectionConfig`, `ConnectionContext`, `SessionMetrics` trait (12 methods), `UdpService` trait, `UdpAssociationHandle`, `NoopMetrics` |
-| `src/accept.rs` | Protocol detection and handshake: `AcceptedSession` (4 variants), `TunnelProtocol` (10 variants), `ReplyContext` (9 variants), `InboundAuthentication`, `AuthReuseCache` (IP-keyed, 4096 entries), `AcceptError`, `PrefixedStream`, `MAX_HEAD_SIZE` (32 KiB), `MAX_HEADER_LINES` (128) |
-| `src/execute.rs` | `execute()` dispatcher; `open_route()` with connect-timeout; `build_chain_executor()`; `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (14 variants), `PooledH2Stream`, `HttpOnlyStream`/`HttpOnlyHopHandler` |
+| `src/lib.rs` | `serve_connection()` entry point; `ConnectionConfig`, `ConnectionContext`, `SessionMetrics` trait (6 session/route/upstream/auth methods; runtime concerns moved to `eggress-metrics::RuntimeMetrics`), `UdpService` trait, `UdpAssociationHandle`, `NoopMetrics` |
+| `src/accept/` | `mod.rs` (entry points + auth/session types) + `handlers.rs` (SOCKS5/SOCKS4/HTTP handshakes), `forward.rs` (CONNECT parsing, authority, 407 challenges), `detect.rs` (first-byte dispatch), `prefixed.rs` (peek-then-delegate stream): `AcceptedSession` (4 variants), `TunnelProtocol` (10 variants), `ReplyContext` (9 variants), `InboundAuthentication`, `AuthReuseCache` (IP-keyed, 4096 entries), `AcceptError`, `MAX_HEAD_SIZE` (32 KiB), `MAX_HEADER_LINES` (128) |
+| `src/execute/` | `mod.rs` (`execute()` dispatcher, `open_route()`, `build_chain_executor()`, `SessionReport`, `SessionOutcome` (7 variants), `FailureCategory` (14 variants)) + `hops.rs` (one `HopHandler` per upstream protocol, `HttpOnlyStream`, `PooledH2Stream`, `target_to_socks_addr`) |
 | `src/reply.rs` | Protocol-correct success/failure replies: `send_tunnel_success()`, `send_tunnel_failure()`, `send_http_forward_failure()`, `send_http_expectation_failed()` (417), `send_http_upgrade_unsupported()` (501) |
 | `src/error.rs` | `SessionOpenError` with `From` impls for `ConnectError`, `ChainError`, `HttpError`, `Socks5Error` |
 | `src/advanced.rs` | `serve_h2_connection()` (H2 multiplexing), `serve_websocket_connection()` (WS upgrade). Gated on `feature = "extended"`. |
@@ -43,13 +43,13 @@ pub struct ConnectionConfig {
 }
 
 pub trait SessionMetrics: Send + Sync {
-    // Core 6 — no defaults: record_session_start, record_session,
+    // Exactly 6, no defaults: record_session_start, record_session,
     //   record_route_decision, record_upstream_open, record_upstream_failure,
     //   record_auth_failure
-    // Optional 6 — default no-op: record_platform_capability_check_failure,
-    //   record_unix_listener_connection_accepted, record_reload,
-    //   set_config_generation, record_udp_association_created, render_prometheus
 }
+// Runtime-only events (reload, generation, platform/unix/transparent,
+// UDP-association fallback, exposition) live on
+// eggress_metrics::RuntimeMetrics, never on this trait.
 pub trait UdpService: Send + Sync { /* create_association, is_enabled, active_count */ }
 ```
 

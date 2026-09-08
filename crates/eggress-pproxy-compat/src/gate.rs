@@ -58,12 +58,12 @@ pub fn evaluate(args: &PproxyArgs, output: &TranslationOutput) -> ExecutionGate 
     for flag in args.strict_parser_violations() {
         blockers.push(BlockReason::UnknownFlag(flag.clone()));
     }
-    for u in &output.unsupported {
-        blockers.push(BlockReason::Unsupported(u.clone()));
+    for u in output.unsupported() {
+        blockers.push(BlockReason::Unsupported(u));
     }
     ExecutionGate {
         blockers,
-        warnings: output.warnings.clone(),
+        warnings: output.warnings(),
     }
 }
 

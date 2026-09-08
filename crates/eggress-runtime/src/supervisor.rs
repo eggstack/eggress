@@ -1,943 +1,69 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use arc_swap::ArcSwap;
 #[cfg(feature = "operations")]
-use eggress_admin::{AdminSnapshot, AdminSnapshotProvider, ListenerInfo};
+use eggress_admin::AdminSnapshotProvider;
 use eggress_core::listener::{is_listener_cancelled, TcpListener, TcpListenerConfig};
 use eggress_core::ProtocolId;
 use eggress_routing::health::HealthManager;
 use eggress_routing::upstream::UpstreamRuntime;
-use eggress_routing::{RouteService, SharedRoutingService};
+use eggress_routing::RouteService;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 
 use crate::error::RuntimeError;
 use crate::platform::{check_capability, PlatformCapability};
-use crate::snapshot::{compile_runtime_snapshot, CompiledRuntimeSnapshot};
 
-/// Pause between retries when a listener's `accept()` keeps failing (for
-/// example fd exhaustion), so the loop does not tight-spin while the system
-/// is already resource-starved.
-const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
-
-/// Log an accept failure, backing off briefly for persistent error classes so
-/// repeated failures cannot hot-spin the accept loop. Transient races (a
-/// queued connection vanishing before `accept`) retry immediately.
-async fn handle_accept_error(context: &str, error: &std::io::Error) {
-    match error.kind() {
-        std::io::ErrorKind::WouldBlock
-        | std::io::ErrorKind::Interrupted
-        | std::io::ErrorKind::ConnectionAborted => {}
-        _ => tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await,
-    }
-    tracing::error!("{context} accept error: {error}");
-}
-
-/// Per-listener connection slot for listener implementations that cannot use
-/// the core TCP listener wrapper (transparent and Unix sockets).
-struct ListenerConnectionSlot {
-    active: Arc<AtomicU64>,
-}
-
-impl ListenerConnectionSlot {
-    fn try_acquire(active: &Arc<AtomicU64>, limit: u64) -> Option<Self> {
-        active
-            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |current| {
-                (current < limit).then_some(current + 1)
-            })
-            .ok()
-            .map(|_| Self {
-                active: active.clone(),
-            })
-    }
-}
-
-impl Drop for ListenerConnectionSlot {
-    fn drop(&mut self) {
-        self.active.fetch_sub(1, Ordering::Release);
-    }
-}
-
-/// Guard for active-connection accounting on non-TCP listeners.
-///
-/// TCP listeners account via `eggress_core::listener::PermitStream` (semaphore
-/// permit held for the whole session). Transparent and Unix listeners use this
-/// counter instead. The two mechanisms are **exclusive** — a connection must
-/// use exactly one, never both, otherwise the `active_connections` metric
-/// double-counts. Call sites below (transparent/Unix/QUIC paths) ensure this
-/// invariant; TCP accept paths must not also create this guard.
-///
-/// Ordering: `AcqRel` on inc pairs with `Release` on dec for visibility of
-/// the counter to the metrics reader. `Relaxed` would also be correct for a
-/// metrics-only counter, but `AcqRel` is kept for consistency with the
-/// previous implementation.
-struct ActiveConnectionGuard {
-    active: Arc<AtomicU64>,
-}
-
-impl ActiveConnectionGuard {
-    fn new(active: Arc<AtomicU64>) -> Self {
-        active.fetch_add(1, Ordering::AcqRel);
-        Self { active }
-    }
-}
-
-impl Drop for ActiveConnectionGuard {
-    fn drop(&mut self) {
-        self.active.fetch_sub(1, Ordering::Release);
-    }
-}
-
-/// Result of a reload attempt.
-#[derive(Debug)]
-pub enum ReloadResult {
-    /// Reload was applied successfully.
-    Applied { generation: u64, upstreams: usize },
-    /// Reload was rejected due to unsupported changes.
-    Rejected { reason: String },
-    /// Reload failed due to a compile or build error.
-    Failed { error: String },
-}
-
-/// Adapter that exposes the runtime's compiled snapshot to the admin server.
-///
-/// Implements `AdminSnapshotProvider` so that admin handlers see live data:
-/// each request reads the current `ArcSwap<CompiledRuntimeSnapshot>` rather
-/// than a startup-captured copy. Reloads take effect on the next request.
+pub(crate) mod accounting;
+pub(crate) mod connection;
 #[cfg(feature = "operations")]
-pub struct RuntimeAdminListenerInfos {
-    state: Arc<RuntimeState>,
-}
+pub(crate) mod operations;
+pub(crate) mod reload;
+pub(crate) mod shutdown;
+pub(crate) mod startup;
+pub(crate) mod state;
+pub(crate) mod udp_runtime;
 
-#[cfg(feature = "operations")]
-struct RuntimeAdminState {
-    snapshot: Arc<CompiledRuntimeSnapshot>,
-    listener_addrs: Vec<Option<std::net::SocketAddr>>,
-}
-
-#[cfg(feature = "operations")]
-impl AdminSnapshotProvider for RuntimeAdminListenerInfos {
-    fn generation(&self) -> u64 {
-        self.state.admin_snapshot.load().snapshot.generation
-    }
-
-    fn snapshot(&self) -> AdminSnapshot {
-        let admin_state = self.state.admin_snapshot.load();
-        let snap = &admin_state.snapshot;
-        let addrs = &admin_state.listener_addrs;
-        let listeners: Vec<ListenerInfo> = snap
-            .listeners
-            .iter()
-            .enumerate()
-            .map(|(idx, lcfg)| {
-                let mode = if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
-                    Some("transparent".to_string())
-                } else if lcfg.unix.is_some() {
-                    Some("unix".to_string())
-                } else {
-                    Some("standard".to_string())
-                };
-
-                let (capability_status, original_dst_support) =
-                    if lcfg.transparent.as_ref().is_some_and(|t| t.enabled) {
-                        let cap = crate::platform::check_capability(
-                            crate::platform::PlatformCapability::LinuxOriginalDstIpv4,
-                        );
-                        (
-                            Some(cap.to_string()),
-                            Some(cap == crate::platform::CapabilityStatus::Available),
-                        )
-                    } else {
-                        (None, None)
-                    };
-
-                let (unix_socket_path, unix_socket_unlink_existing) =
-                    if let Some(ref unix_cfg) = lcfg.unix {
-                        (
-                            Some(unix_cfg.path.display().to_string()),
-                            Some(unix_cfg.unlink_existing),
-                        )
-                    } else {
-                        (None, None)
-                    };
-
-                ListenerInfo {
-                    name: lcfg.name.clone(),
-                    bind: lcfg.bind.clone(),
-                    local_addr: addrs
-                        .get(idx)
-                        .and_then(|a| *a)
-                        .map(|a| a.to_string())
-                        .or_else(|| unix_socket_path.clone())
-                        .unwrap_or_default(),
-                    protocols: lcfg.protocols.iter().map(|p| p.to_string()).collect(),
-                    udp_enabled: lcfg.udp.as_ref().is_some_and(|u| u.enabled),
-                    mode,
-                    capability_status,
-                    original_dst_support,
-                    unix_socket_path,
-                    unix_socket_unlink_existing,
-                }
-            })
-            .collect();
-        AdminSnapshot {
-            generation: snap.generation,
-            router: snap.router.clone(),
-            pac: snap.admin.as_ref().and_then(|a| a.pac.clone()),
-            static_routes: snap
-                .admin
-                .as_ref()
-                .map(|a| a.static_content.clone())
-                .unwrap_or_default(),
-            listeners,
-        }
-    }
-}
-
-/// What is and isn't reloaded on SIGHUP:
-///
-/// **Reloaded (hot-swap, no downtime):**
-/// - Upstream chains and health config (with Arc reuse for unchanged upstreams)
-/// - Upstream groups, schedulers, and fallback policies
-/// - Routing rules and default action
-/// - Admin PAC and static content configuration
-///
-/// **NOT reloaded (requires full restart):**
-/// - Listener socket bindings (bound before readiness)
-/// - Listener socket options (`reuse_port`)
-/// - Listener protocol lists, auth material, TLS material, Shadowsocks/Trojan
-///   config, `connection_limit`, `fixed_target`, `local_bind`, and all UDP
-///   listener settings: the running accept loops and per-connection tasks
-///   clone these values from startup-prepared listener state and never
-///   re-read them from the snapshot.
-/// - Transparent/unix listener configuration
-/// - Process-level settings (log format, log level, shutdown grace)
-/// - Timeout configuration
-/// - Admin bind address
-///
-/// **UDP-specific reload semantics:**
-/// - UDP limits apply to new associations only; existing associations keep their limits.
-/// - UDP bind changes are restart-required.
-/// - UDP advertise address changes are restart-required if socket bind changes.
-/// - Route changes apply immediately to future UDP packets.
-///
-/// Classify whether a reload is supported given old and new listener
-/// configs. Returns `Ok(())` if the reload is safe, or `Err(reason)`
-/// if it should be rejected.
-fn classify_listeners(
-    old_listeners: &[eggress_config::compile::ListenerConfig],
-    new_listeners: &[eggress_config::compile::ListenerConfig],
-) -> Result<(), String> {
-    if old_listeners.len() != new_listeners.len() {
-        return Err(format!(
-            "listener count changed ({} -> {}); restart required",
-            old_listeners.len(),
-            new_listeners.len()
-        ));
-    }
-
-    for (old, new) in old_listeners.iter().zip(new_listeners.iter()) {
-        if old.name != new.name {
-            return Err(format!(
-                "listener name changed ('{}' -> '{}'); restart required",
-                old.name, new.name
-            ));
-        }
-        if old.bind != new.bind {
-            return Err(format!(
-                "listener bind address changed for '{}': '{}' -> '{}'; restart required",
-                old.name, old.bind, new.bind
-            ));
-        }
-        match (&old.udp, &new.udp) {
-            (Some(old_udp), Some(new_udp)) => {
-                // All UDP listener settings are captured into startup-prepared
-                // listener/relay state (`PreparedListener.udp`,
-                // `RuntimeUdpService.udp_config`, standalone relay sockets).
-                // Per-association relay tasks clone that startup state, so any
-                // material UDP change requires a restart.
-                // Socket topology group.
-                if old_udp.bind != new_udp.bind
-                    || old_udp.enabled != new_udp.enabled
-                    || old_udp.mode != new_udp.mode
-                    || old_udp.upstream_udp_bind != new_udp.upstream_udp_bind
-                {
-                    return Err(format!(
-                        "UDP listener configuration changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-                // Association limit group.
-                if old_udp.max_associations != new_udp.max_associations
-                    || old_udp.max_associations_global != new_udp.max_associations_global
-                    || old_udp.max_targets_per_association != new_udp.max_targets_per_association
-                    || old_udp.max_datagram_size != new_udp.max_datagram_size
-                {
-                    return Err(format!(
-                        "UDP listener limits changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-                // Timeout/behavior group.
-                if old_udp.idle_timeout != new_udp.idle_timeout
-                    || old_udp.target_idle_timeout != new_udp.target_idle_timeout
-                    || old_udp.upstream_connect_timeout != new_udp.upstream_connect_timeout
-                    || old_udp.client_pin != new_udp.client_pin
-                    || old_udp.allow_private_egress != new_udp.allow_private_egress
-                    || old_udp.advertise != new_udp.advertise
-                    || old_udp.fixed_target != new_udp.fixed_target
-                {
-                    return Err(format!(
-                        "UDP listener settings changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-            }
-            (None, Some(new_udp)) => {
-                return Err(format!(
-                    "UDP configuration added for '{}': '{}'; restart required",
-                    new.name, new_udp.bind
-                ));
-            }
-            (Some(_old_udp), None) => {
-                return Err(format!(
-                    "UDP configuration removed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (None, None) => {}
-        }
-
-        match (&old.transparent, &new.transparent) {
-            (Some(old_t), Some(new_t)) => {
-                // Transparent accept loops capture their configuration at
-                // startup; protocol selection included.
-                if old_t.enabled != new_t.enabled || old_t.protocol != new_t.protocol {
-                    return Err(format!(
-                        "transparent config changed for '{}': enabled {} -> {}; restart required",
-                        old.name, old_t.enabled, new_t.enabled
-                    ));
-                }
-            }
-            (None, Some(new_t)) => {
-                if new_t.enabled {
-                    return Err(format!(
-                        "transparent proxy enabled for '{}'; restart required",
-                        new.name
-                    ));
-                }
-            }
-            (Some(old_t), None) if old_t.enabled => {
-                return Err(format!(
-                    "transparent proxy configuration removed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (Some(_old_t), None) => {}
-            (None, None) => {}
-        }
-
-        match (&old.unix, &new.unix) {
-            (Some(old_u), Some(new_u)) => {
-                // Unix socket setup (bind, ownership, mode) happens once at
-                // startup; any change requires a restart.
-                if old_u.path != new_u.path
-                    || old_u.unlink_existing != new_u.unlink_existing
-                    || old_u.mode != new_u.mode
-                {
-                    return Err(format!(
-                        "unix socket path changed for '{}': '{}' -> '{}'; restart required",
-                        old.name,
-                        old_u.path.display(),
-                        new_u.path.display()
-                    ));
-                }
-            }
-            (None, Some(_new_u)) => {
-                return Err(format!(
-                    "unix socket added for '{}'; restart required",
-                    new.name
-                ));
-            }
-            (Some(_old_u), None) => {
-                return Err(format!(
-                    "unix socket removed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (None, None) => {}
-        }
-
-        // Startup-captured listener behavior: the running accept loops clone
-        // these values from `PreparedListener` at startup and never re-read
-        // them from the snapshot, so any material change requires a restart.
-        // Comparison groups are explicit (not whole-struct equality) so a
-        // future field addition gets a deliberate classification review.
-        // Socket-option group.
-        if old.reuse_port != new.reuse_port {
-            return Err(format!(
-                "listener socket options changed for '{}'; restart required",
-                old.name
-            ));
-        }
-        // Protocol dispatch group.
-        if old.protocols != new.protocols {
-            return Err(format!(
-                "listener protocols changed for '{}'; restart required",
-                old.name
-            ));
-        }
-        // Auth material group: compare presence and non-secret fields plus
-        // resolved secret presence. Values themselves are never logged.
-        match (&old.auth, &new.auth) {
-            (None, None) => {}
-            (Some(_), None) | (None, Some(_)) => {
-                return Err(format!(
-                    "listener auth presence changed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (Some(old_a), Some(new_a)) => {
-                if old_a.auth_type != new_a.auth_type
-                    || old_a.username != new_a.username
-                    || old_a.password != new_a.password
-                    || old_a.password_env != new_a.password_env
-                {
-                    return Err(format!(
-                        "listener auth material changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-            }
-        }
-        // TLS material group: certificate/key/ALPN feed the per-connection
-        // TLS acceptor built from startup state.
-        match (&old.tls, &new.tls) {
-            (None, None) => {}
-            (Some(_), None) | (None, Some(_)) => {
-                return Err(format!(
-                    "listener TLS presence changed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (Some(old_t), Some(new_t)) => {
-                if old_t.cert_pem != new_t.cert_pem
-                    || old_t.key_pem != new_t.key_pem
-                    || old_t.alpn != new_t.alpn
-                {
-                    return Err(format!(
-                        "listener TLS material changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-            }
-        }
-        // Shadowsocks/Trojan group: cloned into per-connection inbound config.
-        match (&old.shadowsocks, &new.shadowsocks) {
-            (None, None) => {}
-            (Some(_), None) | (None, Some(_)) => {
-                return Err(format!(
-                    "listener shadowsocks presence changed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (Some(old_s), Some(new_s)) => {
-                if old_s.method != new_s.method
-                    || old_s.password != new_s.password
-                    || old_s.auth_prefix != new_s.auth_prefix
-                    || old_s.plugins != new_s.plugins
-                {
-                    return Err(format!(
-                        "listener shadowsocks configuration changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-            }
-        }
-        match (&old.trojan, &new.trojan) {
-            (None, None) => {}
-            (Some(_), None) | (None, Some(_)) => {
-                return Err(format!(
-                    "listener trojan presence changed for '{}'; restart required",
-                    old.name
-                ));
-            }
-            (Some(old_t), Some(new_t)) => {
-                if old_t.password != new_t.password || old_t.fallback != new_t.fallback {
-                    return Err(format!(
-                        "listener trojan configuration changed for '{}'; restart required",
-                        old.name
-                    ));
-                }
-            }
-        }
-        // Connection-behavior group.
-        if old.connection_limit != new.connection_limit
-            || old.fixed_target != new.fixed_target
-            || old.local_bind != new.local_bind
-        {
-            return Err(format!(
-                "listener connection_limit/fixed_target/local_bind changed for '{}'; restart required",
-                old.name
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-pub fn classify_reload_config(
-    old_listeners: &[eggress_config::compile::ListenerConfig],
-    old_timeouts: &eggress_config::compile::TimeoutConfig,
-    old_admin: Option<&eggress_config::compile::AdminConfig>,
-    new_config: &eggress_config::compile::RuntimeConfig,
-) -> Result<(), String> {
-    classify_listeners(old_listeners, &new_config.listeners)?;
-    if old_timeouts != &new_config.timeouts {
-        return Err("timeout configuration changed; restart required".to_string());
-    }
-
-    let old_admin_endpoint = old_admin.map(|admin| (admin.enabled, admin.bind.as_str()));
-    let new_admin_endpoint = new_config
-        .admin
-        .as_ref()
-        .map(|admin| (admin.enabled, admin.bind.as_str()));
-    if old_admin_endpoint != new_admin_endpoint {
-        return Err("admin endpoint bind configuration changed; restart required".to_string());
-    }
-
-    Ok(())
-}
-
-struct PreparedListener {
-    name: String,
-    #[allow(dead_code)] // used only with `operations` feature
-    bind: String,
-    protocols: Vec<ProtocolId>,
-    listener: TcpListener,
-    local_addr: std::net::SocketAddr,
-    auth: eggress_server::accept::InboundAuthentication,
-    handshake_timeout: Duration,
-    udp: Option<eggress_config::compile::CompiledListenerUdpConfig>,
-    tls: Option<eggress_config::compile::CompiledListenerTlsConfig>,
-    shadowsocks: Option<eggress_config::model::ShadowsocksListenerConfig>,
-    trojan: Option<eggress_config::model::ListenerTrojanConfig>,
-    fixed_target: Option<eggress_core::TargetAddr>,
-    local_bind: Option<String>,
-}
-
+pub(crate) use accounting::{handle_accept_error, ActiveConnectionGuard, ListenerConnectionSlot};
+pub(crate) use connection::PreparedListener;
 #[cfg(feature = "quic")]
-struct PreparedQuicListener {
-    name: String,
-    protocols: Vec<ProtocolId>,
-    listener: Arc<eggress_transport_quic::QuicListener>,
-    local_addr: std::net::SocketAddr,
-    auth: eggress_server::accept::InboundAuthentication,
-    handshake_timeout: Duration,
-    connection_limit: u64,
-}
-
+pub(crate) use connection::PreparedQuicListener;
+pub(crate) use connection::{
+    build_connection_config, wrap_tls_server, ConnectionBuildParams, InboundSecurity,
+};
+#[cfg(feature = "operations")]
+pub(crate) use operations::RuntimeAdminListenerInfos;
+pub use reload::{classify_reload_config, ReloadResult};
+pub(crate) use shutdown::{shutdown_ordered, ShutdownPlan};
+pub use state::RuntimeState;
+#[allow(unused_imports)]
+pub(crate) use udp_runtime::compute_advertise_ip;
+pub(crate) use udp_runtime::make_udp_service;
 #[cfg(feature = "extended")]
-type PreparedShadowsocksUdpRelay = (
-    Arc<tokio::net::UdpSocket>,
-    eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig,
-);
-
-#[cfg(feature = "extended")]
-async fn prepare_shadowsocks_udp_relay(
-    prepared_listener: &PreparedListener,
-    udp_cfg: &eggress_config::compile::CompiledListenerUdpConfig,
-    routing: Arc<dyn RouteService>,
-    state: &RuntimeState,
-) -> Result<PreparedShadowsocksUdpRelay, RuntimeError> {
-    let ss = prepared_listener.shadowsocks.as_ref().ok_or_else(|| {
-        RuntimeError::Other(format!(
-            "listener '{}' shadowsocks_udp mode requires shadowsocks config",
-            prepared_listener.name
-        ))
-    })?;
-    let method =
-        eggress_protocol_shadowsocks::CipherMethod::parse_method(&ss.method).map_err(|e| {
-            RuntimeError::Other(format!(
-                "listener '{}' has invalid shadowsocks method '{}': {}",
-                prepared_listener.name, ss.method, e
-            ))
-        })?;
-    let socket = Arc::new(
-        tokio::net::UdpSocket::bind(udp_cfg.bind)
-            .await
-            .map_err(|e| RuntimeError::ListenerBind {
-                addr: udp_cfg.bind.to_string(),
-                source: e,
-            })?,
-    );
-    let local_addr = socket
-        .local_addr()
-        .map_err(|e| RuntimeError::ListenerBind {
-            addr: udp_cfg.bind.to_string(),
-            source: e,
-        })?;
-    tracing::info!(
-        "shadowsocks UDP relay listening on {local_addr} ({})",
-        prepared_listener.name
-    );
-
-    let relay_config = eggress_udp::standalone_shadowsocks::ShadowsocksStandaloneUdpConfig {
-        routing,
-        udp_metrics: state.udp_metrics.clone(),
-        shadowsocks_metrics: Some(state.shadowsocks_metrics.clone()),
-        limits: eggress_udp::limits::UdpLimits::from_listener_config(
-            udp_cfg.max_associations_global,
-            udp_cfg.max_associations,
-            udp_cfg.max_targets_per_association,
-            udp_cfg.max_datagram_size,
-            udp_cfg.idle_timeout,
-            udp_cfg.client_pin,
-            udp_cfg.target_idle_timeout,
-        ),
-        listener: prepared_listener.name.clone(),
-        generation: state.snapshot.load().generation,
-        method,
-        password: ss.password.clone(),
-        allow_private_egress: udp_cfg.allow_private_egress,
-    };
-
-    Ok((socket, relay_config))
-}
-
-/// Compute the advertised IP for the SOCKS5 UDP ASSOCIATE reply.
-///
-/// Derivation rules:
-/// 1. If `advertise` is configured, use it.
-/// 2. Else if UDP bind IP is not unspecified, use UDP bind IP.
-/// 3. Else if TCP peer is loopback, use loopback matching address family.
-/// 4. Else return a config error requiring explicit `advertise`.
-fn compute_advertise_ip(
-    configured_advertise: Option<std::net::IpAddr>,
-    udp_bind_ip: std::net::IpAddr,
-    tcp_peer: Option<std::net::SocketAddr>,
-) -> Result<std::net::IpAddr, eggress_udp::error::UdpError> {
-    if let Some(ip) = configured_advertise {
-        return Ok(ip);
-    }
-
-    if !udp_bind_ip.is_unspecified() {
-        return Ok(udp_bind_ip);
-    }
-
-    if let Some(tcp_peer) = tcp_peer {
-        let peer_is_loopback = tcp_peer.ip().is_loopback()
-            || matches!(
-                tcp_peer.ip(),
-                std::net::IpAddr::V6(ipv6)
-                    if ipv6
-                        .to_ipv4_mapped()
-                        .is_some_and(|ipv4| ipv4.is_loopback())
-            );
-        if peer_is_loopback {
-            // Preserve the family selected by the unspecified UDP bind. This
-            // matters for dual-stack sockets and IPv4-mapped IPv6 peers.
-            match udp_bind_ip {
-                std::net::IpAddr::V4(_) => {
-                    return Ok(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-                }
-                std::net::IpAddr::V6(_) => {
-                    return Ok(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
-                }
-            }
-        }
-    }
-
-    Err(eggress_udp::error::UdpError::Other(
-        "UDP relay requires explicit advertise address when bind is unspecified and client is not loopback".to_string()
-    ))
-}
-
-struct RuntimeUdpService {
-    _listener_name: String,
-    udp_config: eggress_config::compile::CompiledListenerUdpConfig,
-    registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
-    metrics: Arc<dyn eggress_server::SessionMetrics>,
-    udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
-    routing: Arc<SharedRoutingService>,
-    udp_tasks: TaskTracker,
-}
-
-impl eggress_server::UdpService for RuntimeUdpService {
-    fn create_association(
-        &self,
-        listener: &str,
-        client_tcp_peer: Option<std::net::SocketAddr>,
-        identity: eggress_core::ClientIdentity,
-        generation: u64,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<
-                        eggress_server::UdpAssociationHandle,
-                        eggress_udp::error::UdpError,
-                    >,
-                > + Send
-                + 'static,
-        >,
-    > {
-        let registry = self.registry.clone();
-        let metrics = self.metrics.clone();
-        let udp_metrics = self.udp_metrics.clone();
-        let routing = self.routing.clone();
-        let udp_tasks = self.udp_tasks.clone();
-        let udp_config = self.udp_config.clone();
-        let listener = listener.to_string();
-        Box::pin(async move {
-            let assoc = registry
-                .create_association(&listener, client_tcp_peer, identity, generation)
-                .await?;
-            metrics.record_udp_association_created();
-
-            let relay_socket =
-                std::sync::Arc::new(tokio::net::UdpSocket::bind(udp_config.bind).await?);
-            let local_addr = relay_socket.local_addr()?;
-
-            let advertised_ip =
-                compute_advertise_ip(udp_config.advertise, local_addr.ip(), client_tcp_peer)?;
-            let relay_addr = std::net::SocketAddr::new(advertised_ip, local_addr.port());
-
-            let relay_config = eggress_udp::relay::RelayConfig {
-                routing: routing as Arc<dyn RouteService>,
-                udp_metrics: udp_metrics.clone(),
-                limits: eggress_udp::limits::UdpLimits::from_listener_config(
-                    udp_config.max_associations_global,
-                    udp_config.max_associations,
-                    udp_config.max_targets_per_association,
-                    udp_config.max_datagram_size,
-                    udp_config.idle_timeout,
-                    udp_config.client_pin,
-                    udp_config.target_idle_timeout,
-                ),
-                listener: listener.clone(),
-                generation,
-                identity: assoc.meta.identity.clone(),
-                client_tcp_peer,
-                registry: registry.clone(),
-                allow_private_egress: udp_config.allow_private_egress,
-                upstream_connect_timeout: udp_config.upstream_connect_timeout,
-                upstream_udp_bind: udp_config.upstream_udp_bind,
-            };
-
-            let relay_assoc = assoc.clone();
-            let relay_cancel = assoc.cancel.clone();
-            let assoc_id = assoc.id;
-            let relay_udp_metrics = udp_metrics.clone();
-            udp_tasks.spawn(async move {
-                let result = eggress_udp::relay::udp_relay_loop(
-                    relay_socket,
-                    relay_assoc,
-                    relay_config,
-                    relay_cancel,
-                )
-                .await;
-                if let Err(error) = result {
-                    relay_udp_metrics.record_association_failure();
-                    tracing::warn!(
-                        %error,
-                        association_id = ?assoc_id,
-                        "UDP relay ended with error"
-                    );
-                }
-            });
-
-            Ok(eggress_server::UdpAssociationHandle {
-                id: assoc.id,
-                relay_addr,
-                cancel: assoc.cancel.clone(),
-            })
-        })
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.udp_config.enabled
-    }
-
-    fn active_count(
-        &self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = usize> + Send + 'static>> {
-        let registry = self.registry.clone();
-        Box::pin(async move { registry.active_count().await })
-    }
-}
-
-pub struct RuntimeState {
-    pub snapshot: Arc<ArcSwap<CompiledRuntimeSnapshot>>,
-    pub routing: Arc<SharedRoutingService>,
-    pub metrics: Arc<dyn eggress_server::SessionMetrics>,
-    pub readiness: Arc<AtomicBool>,
-    pub start_time: Instant,
-    pub active_connections: Arc<AtomicU64>,
-    pub connection_counter: Arc<AtomicU64>,
-    pub admin_local_addr: Arc<Mutex<Option<std::net::SocketAddr>>>,
-    pub listener_addrs: Arc<Mutex<Vec<Option<std::net::SocketAddr>>>>,
-    #[cfg(feature = "operations")]
-    admin_snapshot: Arc<ArcSwap<RuntimeAdminState>>,
-    pub health: Arc<Mutex<Option<HealthManager>>>,
-    pub health_cancel: CancellationToken,
-    pub health_runtime: Mutex<Option<tokio::runtime::Handle>>,
-    pub udp_registry: Arc<eggress_udp::registry::UdpAssociationRegistry>,
-    pub udp_metrics: Arc<eggress_udp::metrics::UdpMetrics>,
-    #[cfg(feature = "extended")]
-    pub shadowsocks_metrics: Arc<eggress_protocol_shadowsocks::ShadowsocksMetrics>,
-    pub udp_tasks: TaskTracker,
-    pub transparent_accepted_total: Arc<AtomicU64>,
-    pub transparent_original_dst_failed_total: Arc<AtomicU64>,
-    #[cfg(feature = "reverse")]
-    pub reverse_registry: Arc<eggress_admin::ReverseRegistry>,
-    #[cfg(feature = "reverse")]
-    pub reverse_metrics: Arc<eggress_protocol_reverse::metrics::ReverseMetrics>,
-}
-
-impl RuntimeState {
-    pub fn generation(&self) -> u64 {
-        self.snapshot.load().generation
-    }
-
-    /// Canonical reload transaction shared by file-backed supervisor reload,
-    /// SIGHUP handling, and embed string/file reload entry points.
-    ///
-    /// Applies a newly compiled [`eggress_config::compile::RuntimeConfig`] to
-    /// the running state with all side effects centralized:
-    /// classification, snapshot compilation, snapshot publication, routing
-    /// swap, admin publication, health restart, H2 pool invalidation, and
-    /// metrics recording. Failure preserves the prior generation.
-    ///
-    /// Callers differ only in how `new_config` is obtained (file load vs.
-    /// string parse). Supervisors with stored `rt_config` must update that
-    /// bookkeeping on `Applied`; the snapshot itself remains authoritative
-    /// for the next classification.
-    pub fn apply_compiled_config(
-        &self,
-        new_config: &eggress_config::compile::RuntimeConfig,
-    ) -> ReloadResult {
-        let prev_snapshot = self.snapshot.load();
-        if let Err(reason) = classify_reload_config(
-            &prev_snapshot.listeners,
-            &prev_snapshot.timeouts,
-            prev_snapshot.admin.as_ref(),
-            new_config,
-        ) {
-            self.metrics.record_reload(false);
-            return ReloadResult::Rejected { reason };
-        }
-
-        let prev_ref: Option<&CompiledRuntimeSnapshot> = Some(&prev_snapshot);
-        let new_snapshot = match compile_runtime_snapshot(new_config, prev_ref) {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                self.metrics.record_reload(false);
-                return ReloadResult::Failed {
-                    error: format!("snapshot build: {error}"),
-                };
-            }
-        };
-
-        let upstream_count = new_snapshot.upstreams.len();
-        let generation = new_snapshot.generation;
-
-        // Snapshot must be published before the router swap. Readers that
-        // observe the new generation via `snapshot.load()` pull the router
-        // from that same snapshot Arc, so any reader seeing the new
-        // generation also sees the router that belongs to it.
-        let new_snapshot = Arc::new(new_snapshot);
-        self.snapshot.store(new_snapshot.clone());
-        self.routing.swap_arc(new_snapshot.router.clone());
-        #[cfg(feature = "operations")]
-        self.publish_admin_snapshot(new_snapshot.clone());
-
-        self.restart_health_probes();
-        eggress_protocol_http::H2_POOL_REGISTRY.clear();
-
-        self.metrics.set_config_generation(generation);
-        self.metrics.record_reload(true);
-
-        ReloadResult::Applied {
-            generation,
-            upstreams: upstream_count,
-        }
-    }
-
-    #[cfg(feature = "operations")]
-    fn publish_admin_snapshot(&self, snapshot: Arc<CompiledRuntimeSnapshot>) {
-        let listener_addrs = self.admin_snapshot.load().listener_addrs.clone();
-        self.admin_snapshot.store(Arc::new(RuntimeAdminState {
-            snapshot,
-            listener_addrs,
-        }));
-    }
-
-    #[cfg(feature = "operations")]
-    fn publish_admin_listener_addrs(
-        &self,
-        snapshot: Arc<CompiledRuntimeSnapshot>,
-        listener_addrs: Vec<Option<std::net::SocketAddr>>,
-    ) {
-        self.admin_snapshot.store(Arc::new(RuntimeAdminState {
-            snapshot,
-            listener_addrs,
-        }));
-    }
-
-    /// Restart health probes for the upstreams in the current snapshot.
-    pub fn restart_health_probes(&self) {
-        let mut guard = self.health.lock().unwrap_or_else(|error| {
-            tracing::warn!("health manager state was poisoned; resetting it: {error}");
-            let mut guard = error.into_inner();
-            *guard = None;
-            self.health.clear_poison();
-            guard
-        });
-        if let Some(ref mut health) = *guard {
-            health.stop_all();
-        }
-        let upstreams: Vec<Arc<UpstreamRuntime>> =
-            self.snapshot.load().upstreams.values().cloned().collect();
-        if !upstreams.is_empty() {
-            let mut health = HealthManager::new(self.health_cancel.clone());
-            if let Some(handle) = self
-                .health_runtime
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .clone()
-            {
-                health.start_probes_on(&handle, &upstreams);
-            }
-            *guard = Some(health);
-        } else {
-            *guard = None;
-        }
-    }
-}
+pub(crate) use udp_runtime::prepare_shadowsocks_udp_relay;
 
 #[allow(dead_code)]
 pub struct ServiceSupervisor {
-    config_path: Option<String>,
-    state: Arc<RuntimeState>,
-    metrics_registry: Arc<eggress_metrics::MetricsRegistry>,
-    cancel: CancellationToken,
-    listener_cancel: CancellationToken,
-    connection_cancel: CancellationToken,
-    health_cancel: CancellationToken,
-    admin_cancel: CancellationToken,
-    health: Arc<Mutex<Option<HealthManager>>>,
-    tasks: TaskTracker,
-    connection_tasks: TaskTracker,
-    admin_tasks: TaskTracker,
-    shutdown_grace: Duration,
-    rt_config: eggress_config::compile::RuntimeConfig,
-    tls_client_config: Option<std::sync::Arc<rustls::ClientConfig>>,
+    pub(crate) config_path: Option<String>,
+    pub(crate) state: Arc<RuntimeState>,
+    pub(crate) metrics_registry: Arc<eggress_metrics::MetricsRegistry>,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) listener_cancel: CancellationToken,
+    pub(crate) connection_cancel: CancellationToken,
+    pub(crate) health_cancel: CancellationToken,
+    pub(crate) admin_cancel: CancellationToken,
+    pub(crate) health: Arc<Mutex<Option<HealthManager>>>,
+    pub(crate) tasks: TaskTracker,
+    pub(crate) connection_tasks: TaskTracker,
+    pub(crate) admin_tasks: TaskTracker,
+    pub(crate) shutdown_grace: Duration,
+    pub(crate) rt_config: eggress_config::compile::RuntimeConfig,
+    pub(crate) tls_client_config: Option<std::sync::Arc<rustls::ClientConfig>>,
     #[cfg(feature = "ssh")]
-    ssh_sessions: Arc<eggress_transport_ssh::SshSessionCache>,
-    compatibility_options: CompatibilityOptions,
+    pub(crate) ssh_sessions: Arc<eggress_transport_ssh::SshSessionCache>,
+    pub(crate) compatibility_options: CompatibilityOptions,
 }
 
 /// Explicit options used only by the pproxy compatibility executable.
@@ -964,7 +90,7 @@ impl ServiceSupervisor {
             tracing::warn!("config security warning: {warning}");
         }
 
-        Self::init_with_config(
+        startup::init_supervisor(
             rt_config,
             Some(config_path.to_string()),
             CompatibilityOptions::default(),
@@ -981,7 +107,7 @@ impl ServiceSupervisor {
         rt_config: eggress_config::compile::RuntimeConfig,
         config_path: Option<String>,
     ) -> Result<Self, RuntimeError> {
-        Self::init_with_config(rt_config, config_path, CompatibilityOptions::default())
+        startup::init_supervisor(rt_config, config_path, CompatibilityOptions::default())
     }
 
     pub fn start_from_config_with_options(
@@ -989,188 +115,7 @@ impl ServiceSupervisor {
         config_path: Option<String>,
         compatibility_options: CompatibilityOptions,
     ) -> Result<Self, RuntimeError> {
-        Self::init_with_config(rt_config, config_path, compatibility_options)
-    }
-
-    fn init_with_config(
-        rt_config: eggress_config::compile::RuntimeConfig,
-        config_path: Option<String>,
-        compatibility_options: CompatibilityOptions,
-    ) -> Result<Self, RuntimeError> {
-        #[cfg(not(feature = "reverse"))]
-        if !rt_config.reverse_servers.is_empty() || !rt_config.reverse_clients.is_empty() {
-            return Err(RuntimeError::Other(
-                "reverse proxy support not included in this build".to_string(),
-            ));
-        }
-
-        #[cfg(not(feature = "operations"))]
-        if rt_config.admin.as_ref().is_some_and(|a| a.enabled) {
-            return Err(RuntimeError::Other(
-                "admin server support not included in this build; \
-                 enable the 'operations' feature or remove [admin] from config"
-                    .to_string(),
-            ));
-        }
-
-        for lcfg in &rt_config.listeners {
-            if lcfg.unix.is_none() {
-                let _bind_addr: std::net::SocketAddr =
-                    lcfg.bind.parse().map_err(|e| RuntimeError::ListenerBind {
-                        addr: lcfg.bind.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
-                    })?;
-            }
-        }
-
-        let udp_metrics = Arc::new(eggress_udp::metrics::UdpMetrics::new());
-        #[cfg(feature = "extended")]
-        let shadowsocks_metrics = Arc::new(eggress_protocol_shadowsocks::ShadowsocksMetrics::new());
-
-        let metrics_registry = Arc::new(eggress_metrics::MetricsRegistry::new());
-        metrics_registry.set_udp_metrics(udp_metrics.clone());
-        #[cfg(feature = "extended")]
-        {
-            metrics_registry.set_shadowsocks_metrics(shadowsocks_metrics.clone());
-        }
-        let metrics: Arc<dyn eggress_server::SessionMetrics> = metrics_registry.clone();
-        let readiness = Arc::new(AtomicBool::new(false));
-
-        let snapshot = compile_runtime_snapshot(&rt_config, None)
-            .map_err(|e| RuntimeError::Config(e.to_string()))?;
-        let snapshot = Arc::new(ArcSwap::from_pointee(snapshot));
-
-        let routing = Arc::new(SharedRoutingService::new_arc(
-            snapshot.load().router.clone(),
-        ));
-
-        let active_connections = Arc::new(AtomicU64::new(0));
-        let connection_counter = Arc::new(AtomicU64::new(1));
-
-        let mut udp_global_limit: Option<usize> = None;
-        for listener in &rt_config.listeners {
-            if let Some(udp) = &listener.udp {
-                let value = udp.max_associations_global;
-                match udp_global_limit {
-                    None => udp_global_limit = Some(value),
-                    Some(existing) if existing != value => {
-                        tracing::warn!(
-                            listener = %listener.name,
-                            existing,
-                            other = value,
-                            "multiple listeners specify udp.max_associations_global with different values; using first"
-                        );
-                    }
-                    Some(_) => {}
-                }
-            }
-        }
-        let udp_global_limit = udp_global_limit.unwrap_or(1024);
-
-        let udp_registry = Arc::new(eggress_udp::registry::UdpAssociationRegistry::new(
-            eggress_udp::limits::UdpLimits {
-                max_associations_global: udp_global_limit,
-                ..Default::default()
-            },
-        ));
-
-        let cancel = CancellationToken::new();
-        let listener_cancel = CancellationToken::new();
-        let connection_cancel = CancellationToken::new();
-        let health_cancel = CancellationToken::new();
-        let admin_cancel = CancellationToken::new();
-        let health = Arc::new(Mutex::new(if snapshot.load().upstreams.is_empty() {
-            None
-        } else {
-            Some(HealthManager::new(health_cancel.clone()))
-        }));
-
-        #[cfg(feature = "reverse")]
-        let reverse_metrics = Arc::new(eggress_protocol_reverse::metrics::ReverseMetrics::new());
-        let udp_tasks = TaskTracker::new();
-
-        let state = Arc::new(RuntimeState {
-            snapshot: snapshot.clone(),
-            routing: routing.clone(),
-            metrics: metrics.clone(),
-            readiness,
-            start_time: Instant::now(),
-            active_connections,
-            connection_counter,
-            admin_local_addr: Arc::new(Mutex::new(None)),
-            listener_addrs: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(feature = "operations")]
-            admin_snapshot: Arc::new(ArcSwap::from_pointee(RuntimeAdminState {
-                snapshot: snapshot.load_full(),
-                listener_addrs: Vec::new(),
-            })),
-            health: health.clone(),
-            health_cancel: health_cancel.clone(),
-            health_runtime: Mutex::new(None),
-            udp_registry,
-            udp_metrics,
-            #[cfg(feature = "extended")]
-            shadowsocks_metrics,
-            udp_tasks: udp_tasks.clone(),
-            transparent_accepted_total: Arc::new(AtomicU64::new(0)),
-            transparent_original_dst_failed_total: Arc::new(AtomicU64::new(0)),
-            #[cfg(feature = "reverse")]
-            reverse_registry: Arc::new(eggress_admin::ReverseRegistry::new()),
-            #[cfg(feature = "reverse")]
-            reverse_metrics,
-        });
-
-        // Bridge transparent proxy atomics to MetricsRegistry for /metrics
-        metrics_registry.set_transparent_counters(
-            state.transparent_accepted_total.clone(),
-            state.transparent_original_dst_failed_total.clone(),
-        );
-
-        #[cfg(feature = "ssh")]
-        let ssh_sessions = Arc::new(if compatibility_options.compatibility_mode {
-            let insecure_acknowledged = std::env::var("EGRESS_SSH_INSECURE_HOST_KEYS")
-                .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
-                .unwrap_or(false);
-            if insecure_acknowledged {
-                eggress_transport_ssh::SshSessionCache::new_compatibility()
-            } else {
-                tracing::warn!(
-                    "compatibility mode would disable SSH host-key verification; \
-                     keeping known_hosts verification enabled. To explicitly \
-                     accept unverified SSH host keys (MITM risk), set \
-                     EGRESS_SSH_INSECURE_HOST_KEYS=1"
-                );
-                eggress_transport_ssh::SshSessionCache::new()
-            }
-        } else {
-            eggress_transport_ssh::SshSessionCache::new()
-        });
-
-        let tasks = TaskTracker::new();
-        let connection_tasks = TaskTracker::new();
-
-        let shutdown_grace = rt_config.process.shutdown_grace;
-
-        Ok(ServiceSupervisor {
-            config_path,
-            state,
-            metrics_registry,
-            cancel,
-            listener_cancel,
-            connection_cancel,
-            health_cancel,
-            admin_cancel,
-            health: health.clone(),
-            tasks,
-            connection_tasks,
-            admin_tasks: TaskTracker::new(),
-            shutdown_grace,
-            rt_config,
-            tls_client_config: None,
-            #[cfg(feature = "ssh")]
-            ssh_sessions,
-            compatibility_options,
-        })
+        startup::init_supervisor(rt_config, config_path, compatibility_options)
     }
 
     pub fn state(&self) -> &Arc<RuntimeState> {
@@ -1207,7 +152,7 @@ impl ServiceSupervisor {
         let new_rt_config = match eggress_config::compile::load_and_compile(&config_path) {
             Ok(c) => c,
             Err(e) => {
-                self.state.metrics.record_reload(false);
+                self.state.runtime_metrics.record_reload(false);
                 return ReloadResult::Failed {
                     error: format!("config load: {e}"),
                 };
@@ -1235,6 +180,7 @@ impl ServiceSupervisor {
         let cancel = self.cancel.clone();
         #[allow(unused_variables)]
         let metrics = self.state.metrics.clone();
+        let runtime_metrics = self.state.runtime_metrics.clone();
         let readiness = self.state.readiness.clone();
         #[cfg(feature = "operations")]
         let admin_state_ref = self.state.clone();
@@ -1404,7 +350,9 @@ impl ServiceSupervisor {
                         let capability = check_capability(PlatformCapability::LinuxOriginalDstIpv4);
                         if capability != crate::platform::CapabilityStatus::Available {
                             #[cfg(feature = "operations")]
-                            state_ref.metrics.record_platform_capability_check_failure();
+                            state_ref
+                                .runtime_metrics
+                                .record_platform_capability_check_failure();
                             let _cap_span = tracing::info_span!(
                                 "capability_check_failed",
                                 capability = %PlatformCapability::LinuxOriginalDstIpv4,
@@ -1883,17 +831,8 @@ impl ServiceSupervisor {
                         let ss_config = ss_cfg.clone();
                         let trojan_config = trojan_cfg.clone();
 
-                        let udp_svc = udp_cfg.as_ref().map(|udp_config| {
-                            Arc::new(RuntimeUdpService {
-                                _listener_name: listener_name.clone(),
-                                udp_config: udp_config.clone(),
-                                registry: state.udp_registry.clone(),
-                                metrics: state.metrics.clone(),
-                                udp_metrics: state.udp_metrics.clone(),
-                                routing: routing.clone(),
-                                udp_tasks: state.udp_tasks.clone(),
-                            }) as Arc<dyn eggress_server::UdpService>
-                        });
+                        let udp_svc =
+                            make_udp_service(&state, &routing, &listener_name, udp_cfg.as_ref());
 
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
@@ -1902,71 +841,39 @@ impl ServiceSupervisor {
                             let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
 
-                            let stream: eggress_core::BoxStream =
-                                if let Some(ref tls_cfg) = tls_config {
-                                    let server_config = match eggress_transport_tls::TlsServerConfigBuilder::new()
-                                        .with_certificate_pem(&tls_cfg.cert_pem)
-                                        .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
-                                        .and_then(|b| {
-                                            let b = if tls_cfg.alpn.is_empty() { b } else { b.with_alpn(tls_cfg.alpn.clone()) };
-                                            b.build()
-                                        }) {
-                                            Ok(c) => c,
-                                            Err(e) => {
-                                                tracing::error!(%peer, "TLS config error: {e}");
-                                                return;
-                                            }
-                                        };
-                                    match eggress_transport_tls::tls_accept(Box::new(stream), server_config).await {
-                                        Ok(s) => s,
-                                        Err(e) => {
-                                            tracing::debug!(%peer, "TLS accept failed: {e}");
-                                            return;
-                                        }
-                                    }
-                                } else {
-                                    Box::new(stream)
-                                };
+                            let Some(stream) = wrap_tls_server(
+                                Box::new(stream),
+                                tls_config.as_ref(),
+                                peer,
+                            )
+                            .await
+                            else {
+                                return;
+                            };
 
-                            let config = eggress_server::ConnectionConfig {
+                            let config = build_connection_config(ConnectionBuildParams {
                                 routing: routing as Arc<dyn RouteService>,
-                                context: eggress_server::ConnectionContext {
-                                    source: Some(peer),
-                                    listener: listener_str.clone(),
-                                    generation,
-                                },
+                                listener: listener_str.clone(),
+                                peer: Some(peer),
+                                generation,
                                 handshake_timeout: hs_timeout,
                                 connect_timeout,
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
-                                metrics: Some(conn_metrics),
+                                metrics: conn_metrics,
                                 udp: udp_svc,
                                 tls_client_config,
-                                shadowsocks: ss_config.map(
-                                    |ss| eggress_server::accept::InboundShadowsocksConfig {
-                                        method: ss.method.clone(),
-                                        password: ss.password.clone(),
-                                        #[cfg(feature = "pproxy-legacy")]
-                                        auth_prefix: ss.auth_prefix.clone().map(String::into_bytes),
-                                        #[cfg(feature = "pproxy-legacy")]
-                                        plugins: ss.plugins.clone(),
-                                    },
-                                ),
-                                #[cfg(feature = "extended")]
-                                shadowsocks_metrics: Some(conn_ss_metrics),
-                                #[cfg(not(feature = "extended"))]
-                                shadowsocks_metrics: None,
-                                trojan: trojan_config.map(
-                                    |t| eggress_server::accept::InboundTrojanConfig {
-                                        password: t.password.clone(),
-                                        fallback: t.fallback.clone(),
-                                    },
-                                ),
+                                security: InboundSecurity {
+                                    shadowsocks: ss_config,
+                                    trojan: trojan_config,
+                                },
                                 fixed_target: None,
                                 local_bind: None,
+                                #[cfg(feature = "extended")]
+                                shadowsocks_metrics: conn_ss_metrics,
                                 #[cfg(feature = "ssh")]
                                 ssh_sessions: Some(conn_ssh_sessions),
-                            };
+                            });
 
                             let report = tokio::select! {
                                 report = eggress_server::serve_connection(stream, config)
@@ -2071,7 +978,9 @@ impl ServiceSupervisor {
                             }
                         };
 
-                        state.metrics.record_unix_listener_connection_accepted();
+                        state
+                            .runtime_metrics
+                            .record_unix_listener_connection_accepted();
 
                         let routing = routing.clone();
                         let tls_client_config = tls_client_config.clone();
@@ -2092,17 +1001,8 @@ impl ServiceSupervisor {
                         let socket_path_clone = socket_path.clone();
                         let listener_str_for_span = listener_str.clone();
 
-                        let udp_svc = udp_cfg.as_ref().map(|udp_config| {
-                            Arc::new(RuntimeUdpService {
-                                _listener_name: listener_name.clone(),
-                                udp_config: udp_config.clone(),
-                                registry: state.udp_registry.clone(),
-                                metrics: state.metrics.clone(),
-                                udp_metrics: state.udp_metrics.clone(),
-                                routing: routing.clone(),
-                                udp_tasks: state.udp_tasks.clone(),
-                            }) as Arc<dyn eggress_server::UdpService>
-                        });
+                        let udp_svc =
+                            make_udp_service(&state, &routing, &listener_name, udp_cfg.as_ref());
 
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
@@ -2111,90 +1011,40 @@ impl ServiceSupervisor {
                             let _connection_slot = connection_slot;
                             let started = std::time::Instant::now();
 
-                            let stream: eggress_core::BoxStream =
-                                if let Some(ref tls_cfg) = tls_config {
-                                    let server_config =
-                                        match eggress_transport_tls::TlsServerConfigBuilder::new()
-                                            .with_certificate_pem(&tls_cfg.cert_pem)
-                                            .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
-                                            .and_then(|b| {
-                                                let b = if tls_cfg.alpn.is_empty() {
-                                                    b
-                                                } else {
-                                                    b.with_alpn(tls_cfg.alpn.clone())
-                                                };
-                                                b.build()
-                                            }) {
-                                            Ok(c) => c,
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "TLS config error for unix connection: {e}"
-                                                );
-                                                return;
-                                            }
-                                        };
-                                    match eggress_transport_tls::tls_accept(
-                                        Box::new(stream),
-                                        server_config,
-                                    )
-                                    .await
-                                    {
-                                        Ok(s) => s,
-                                        Err(e) => {
-                                            tracing::debug!(
-                                                "TLS accept failed for unix connection: {e}"
-                                            );
-                                            return;
-                                        }
-                                    }
-                                } else {
-                                    Box::new(stream)
-                                };
-
                             let peer = std::net::SocketAddr::new(
                                 std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
                                 0,
                             );
 
-                            let config = eggress_server::ConnectionConfig {
+                            let Some(stream) =
+                                wrap_tls_server(Box::new(stream), tls_config.as_ref(), peer).await
+                            else {
+                                return;
+                            };
+
+                            let config = build_connection_config(ConnectionBuildParams {
                                 routing: routing as Arc<dyn RouteService>,
-                                context: eggress_server::ConnectionContext {
-                                    source: Some(peer),
-                                    listener: listener_str,
-                                    generation,
-                                },
+                                listener: listener_str,
+                                peer: Some(peer),
+                                generation,
                                 handshake_timeout: hs_timeout,
                                 connect_timeout,
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
-                                metrics: Some(conn_metrics),
+                                metrics: conn_metrics,
                                 udp: udp_svc,
                                 tls_client_config,
-                                shadowsocks: ss_config.map(|ss| {
-                                    eggress_server::accept::InboundShadowsocksConfig {
-                                        method: ss.method.clone(),
-                                        password: ss.password.clone(),
-                                        #[cfg(feature = "pproxy-legacy")]
-                                        auth_prefix: ss.auth_prefix.clone().map(String::into_bytes),
-                                        #[cfg(feature = "pproxy-legacy")]
-                                        plugins: ss.plugins.clone(),
-                                    }
-                                }),
-                                #[cfg(feature = "extended")]
-                                shadowsocks_metrics: Some(conn_ss_metrics),
-                                #[cfg(not(feature = "extended"))]
-                                shadowsocks_metrics: None,
-                                trojan: trojan_config.map(|t| {
-                                    eggress_server::accept::InboundTrojanConfig {
-                                        password: t.password.clone(),
-                                        fallback: t.fallback.clone(),
-                                    }
-                                }),
+                                security: InboundSecurity {
+                                    shadowsocks: ss_config,
+                                    trojan: trojan_config,
+                                },
                                 fixed_target: None,
                                 local_bind: None,
+                                #[cfg(feature = "extended")]
+                                shadowsocks_metrics: conn_ss_metrics,
                                 #[cfg(feature = "ssh")]
                                 ssh_sessions: Some(conn_ssh_sessions),
-                            };
+                            });
 
                             let report = tokio::select! {
                                 report = eggress_server::serve_connection(stream, config)
@@ -2460,33 +1310,29 @@ impl ServiceSupervisor {
                                         return;
                                     };
                                     let generation = state.snapshot.load().generation;
-                                    let config = eggress_server::ConnectionConfig {
+                                    let config = build_connection_config(ConnectionBuildParams {
                                         routing: routing as Arc<dyn RouteService>,
-                                        context: eggress_server::ConnectionContext {
-                                            source: Some(peer),
-                                            listener: listener_name,
-                                            generation,
-                                        },
+                                        listener: listener_name,
+                                        peer: Some(peer),
+                                        generation,
                                         handshake_timeout: handshake_timeout_for_listener,
                                         connect_timeout,
                                         protocols,
                                         authentication: auth,
-                                        metrics: Some(state.metrics.clone()),
+                                        metrics: state.metrics.clone(),
                                         udp: None,
                                         tls_client_config,
-                                        shadowsocks: None,
-                                        #[cfg(feature = "extended")]
-                                        shadowsocks_metrics: Some(
-                                            state.shadowsocks_metrics.clone(),
-                                        ),
-                                        #[cfg(not(feature = "extended"))]
-                                        shadowsocks_metrics: None,
-                                        trojan: None,
+                                        security: InboundSecurity {
+                                            shadowsocks: None,
+                                            trojan: None,
+                                        },
                                         fixed_target: None,
                                         local_bind: None,
+                                        #[cfg(feature = "extended")]
+                                        shadowsocks_metrics: state.shadowsocks_metrics.clone(),
                                         #[cfg(feature = "ssh")]
                                         ssh_sessions,
-                                    };
+                                    });
                                     let _ = eggress_server::serve_connection(stream, config).await;
                                     drop(slot);
                                 }
@@ -2543,20 +1389,12 @@ impl ServiceSupervisor {
                         let fixed_target = prepared_listener.fixed_target.clone();
                         let local_bind = prepared_listener.local_bind.clone();
 
-                        let udp_svc = if let Some(ref udp_config) = prepared_listener.udp {
-                            Some(Arc::new(RuntimeUdpService {
-                                _listener_name: prepared_listener.name.clone(),
-                                udp_config: udp_config.clone(),
-                                registry: state.udp_registry.clone(),
-                                metrics: state.metrics.clone(),
-                                udp_metrics: state.udp_metrics.clone(),
-                                routing: routing.clone(),
-                                udp_tasks: state.udp_tasks.clone(),
-                            })
-                                as Arc<dyn eggress_server::UdpService>)
-                        } else {
-                            None
-                        };
+                        let udp_svc = make_udp_service(
+                            &state,
+                            &routing,
+                            &prepared_listener.name,
+                            prepared_listener.udp.as_ref(),
+                        );
                         #[cfg(feature = "ssh")]
                         let conn_ssh_sessions = listener_ssh_sessions.clone();
                         let stream_tasks = conn_tasks.clone();
@@ -2565,41 +1403,12 @@ impl ServiceSupervisor {
                             let started = std::time::Instant::now();
 
                             // Apply TLS if configured for this listener
-                            let stream: eggress_core::BoxStream =
-                                if let Some(ref tls_cfg) = tls_config {
-                                    let server_config =
-                                        match eggress_transport_tls::TlsServerConfigBuilder::new()
-                                            .with_certificate_pem(&tls_cfg.cert_pem)
-                                            .and_then(|b| b.with_key_pem(&tls_cfg.key_pem))
-                                            .and_then(|b| {
-                                                let b = if tls_cfg.alpn.is_empty() {
-                                                    b
-                                                } else {
-                                                    b.with_alpn(tls_cfg.alpn.clone())
-                                                };
-                                                b.build()
-                                            }) {
-                                            Ok(c) => c,
-                                            Err(e) => {
-                                                tracing::error!(%peer, "TLS config error: {e}");
-                                                return;
-                                            }
-                                        };
-                                    match eggress_transport_tls::tls_accept(
-                                        Box::new(conn.stream),
-                                        server_config,
-                                    )
+                            let Some(stream) =
+                                wrap_tls_server(Box::new(conn.stream), tls_config.as_ref(), peer)
                                     .await
-                                    {
-                                        Ok(s) => s,
-                                        Err(e) => {
-                                            tracing::debug!(%peer, "TLS accept failed: {e}");
-                                            return;
-                                        }
-                                    }
-                                } else {
-                                    Box::new(conn.stream)
-                                };
+                            else {
+                                return;
+                            };
 
                             #[cfg(feature = "extended")]
                             let advanced_protocol = conn_protocols.first().copied();
@@ -2607,45 +1416,29 @@ impl ServiceSupervisor {
                             let advanced_is_single = conn_protocols.len() == 1;
                             #[cfg(feature = "extended")]
                             let advanced_fixed_target = fixed_target.clone();
-                            let config = eggress_server::ConnectionConfig {
+                            let config = build_connection_config(ConnectionBuildParams {
                                 routing: routing as Arc<dyn RouteService>,
-                                context: eggress_server::ConnectionContext {
-                                    source: Some(peer),
-                                    listener: listener_str,
-                                    generation,
-                                },
+                                listener: listener_str,
+                                peer: Some(peer),
+                                generation,
                                 handshake_timeout: prepared_listener.handshake_timeout,
                                 connect_timeout,
                                 protocols: conn_protocols,
                                 authentication: conn_auth,
-                                metrics: Some(conn_metrics),
+                                metrics: conn_metrics,
                                 udp: udp_svc,
                                 tls_client_config: tls_client_config.clone(),
-                                shadowsocks: ss_config.map(|ss| {
-                                    eggress_server::accept::InboundShadowsocksConfig {
-                                        method: ss.method.clone(),
-                                        password: ss.password.clone(),
-                                        #[cfg(feature = "pproxy-legacy")]
-                                        auth_prefix: ss.auth_prefix.clone().map(String::into_bytes),
-                                        #[cfg(feature = "pproxy-legacy")]
-                                        plugins: ss.plugins.clone(),
-                                    }
-                                }),
-                                #[cfg(feature = "extended")]
-                                shadowsocks_metrics: Some(conn_ss_metrics),
-                                #[cfg(not(feature = "extended"))]
-                                shadowsocks_metrics: None,
-                                trojan: trojan_config.map(|t| {
-                                    eggress_server::accept::InboundTrojanConfig {
-                                        password: t.password.clone(),
-                                        fallback: t.fallback.clone(),
-                                    }
-                                }),
+                                security: InboundSecurity {
+                                    shadowsocks: ss_config,
+                                    trojan: trojan_config,
+                                },
                                 fixed_target,
                                 local_bind,
+                                #[cfg(feature = "extended")]
+                                shadowsocks_metrics: conn_ss_metrics,
                                 #[cfg(feature = "ssh")]
                                 ssh_sessions: Some(conn_ssh_sessions),
-                            };
+                            });
 
                             #[cfg(feature = "extended")]
                             if matches!(
@@ -3072,11 +1865,11 @@ impl ServiceSupervisor {
                                     }
                                 }
                                 Ok(Err(e)) => {
-                                    metrics.record_reload(false);
+                                    runtime_metrics.record_reload(false);
                                     tracing::error!("reload failed (config load): {e}");
                                 }
                                 Err(join_err) => {
-                                    metrics.record_reload(false);
+                                    runtime_metrics.record_reload(false);
                                     tracing::error!("reload task panicked: {join_err}");
                                 }
                             }
@@ -3098,66 +1891,24 @@ impl ServiceSupervisor {
                 }
             }
 
-            // 1. Set readiness false (admin /-/ready will report 503 during drain)
-            readiness.store(false, Ordering::Release);
-
-            // 2. Stop listeners (no new connections accepted)
-            listener_cancel.cancel();
-
-            // 3. Stop health probes
-            health_cancel.cancel();
-
-            // 4. Close all UDP associations
-            state_ref.udp_registry.close_all().await;
-
-            // 5. Wait for UDP relay tasks to complete
-            state_ref.udp_tasks.close();
-            let _ = tokio::time::timeout(shutdown_grace, state_ref.udp_tasks.wait()).await;
-
-            // 6. Wait for listener accept loops to exit so they cannot hand
-            //    new connections to the connection tracker.
-            tasks.close();
-            tasks.wait().await;
-
-            // 7. Drain active connections within the grace period; force-cancel
-            //    afterwards. Admin stays up through this window so operators
-            //    can observe drain progress via /-/ready, /-/status, /metrics.
-            tracing::info!("draining active connections");
-
-            let deadline = tokio::time::Instant::now() + shutdown_grace;
-            loop {
-                let active = active_connections.load(Ordering::Acquire);
-                if active == 0 {
-                    tracing::info!("all connections drained");
-                    break;
-                }
-                if tokio::time::Instant::now() >= deadline {
-                    tracing::warn!(active, "drain timeout reached, forcing shutdown");
-                    connection_cancel.cancel();
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-
-            // 8. Wait for connection tasks (either drained naturally or force-cancelled)
-            connection_tasks.close();
-            connection_tasks.wait().await;
-
-            #[cfg(feature = "ssh")]
-            ssh_sessions.shutdown().await;
-
-            // 9. Now that the proxy has fully stopped accepting and serving
-            //    traffic, stop the admin server. /-/ready has been reporting
-            //    503 since step 1.
-            admin_cancel.cancel();
-            admin_tasks.close();
-            admin_tasks.wait().await;
-
-            #[cfg(feature = "operations")]
-            if let Some(mut proxy) = compatibility_system_proxy {
-                proxy.restore().map_err(RuntimeError::Other)?;
-            }
-
+            shutdown_ordered(ShutdownPlan {
+                readiness: readiness.clone(),
+                listener_cancel: listener_cancel.clone(),
+                health_cancel: health_cancel.clone(),
+                connection_cancel: connection_cancel.clone(),
+                admin_cancel: admin_cancel.clone(),
+                state: state_ref.clone(),
+                tasks: tasks.clone(),
+                connection_tasks: connection_tasks.clone(),
+                admin_tasks: admin_tasks.clone(),
+                active_connections: active_connections.clone(),
+                shutdown_grace,
+                #[cfg(feature = "ssh")]
+                ssh_sessions: ssh_sessions.clone(),
+                #[cfg(feature = "operations")]
+                compatibility_system_proxy,
+            })
+            .await?;
             Ok::<_, RuntimeError>(())
         };
 
@@ -3204,6 +1955,7 @@ impl ServiceSupervisor {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::atomic::AtomicBool;
     use tempfile::NamedTempFile;
 
     use crate::snapshot::compile_runtime_snapshot;

@@ -1,7 +1,7 @@
 # Metrics
 
 Eggress exposes Prometheus-compatible metrics via the admin `/metrics` endpoint.
-The metric registry is implemented in `crates/eggress-metrics/src/lib.rs`.
+The metric registry is implemented in `crates/eggress-metrics/src/` (`lib.rs` facade; `registry`, `session`, `runtime`, `udp`, `shadowsocks`, `h2`, `render`, `labels` modules).
 
 ## Metric Names
 

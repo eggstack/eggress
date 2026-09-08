@@ -15,7 +15,7 @@ state after compilation.
 | `src/model.rs` | Serde types mirroring the TOML schema: ConfigFile, listeners, upstreams, groups, rules, timeouts, process, admin, reverse servers/clients |
 | `src/lib.rs` | Public entry points (`load_and_validate`, `validate_and_compile_toml`, `_with_warnings` variants), integration tests |
 | `src/compile.rs` | Validation -> compiled RuntimeConfig; resolves secrets, CLI-flag compatibility, default synthesis |
-| `src/validate.rs` | Structural validation (duplicates, unknown refs, bad URIs/durations/regex/CIDR) and security warnings |
+| `src/validate/` | `mod.rs` (`validate_config` orchestrator) + `composition.rs` (protocol matrix), `listeners.rs` (bindings/auth/TLS/UDP), `upstreams.rs` (chains/health/H2/groups/transports), `rules.rs` (matchers/group refs), `core.rs` (durations/timeouts/process/admin), `security.rs` (dangerous-combination + alias warnings) |
 | `src/file.rs` | Bounded file loading (1 MB limit with TOCTOU guard) |
 | `src/error.rs` | `ConfigError` and `ConfigWarning` types |
 

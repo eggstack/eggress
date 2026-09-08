@@ -18,6 +18,12 @@ pub use execute::{build_chain_executor, FailureCategory, SessionReport};
 use eggress_routing::RouteService;
 
 /// Trait for recording session metrics. Implemented by external crates.
+///
+/// Narrowed to session, route, upstream, and auth events actually required by
+/// the server data plane. Runtime-only concerns (reload, generation,
+/// platform/transparent/unix events, UDP association lifecycle, exposition)
+/// belong to `eggress_metrics::RuntimeMetrics`, which the runtime and embed
+/// layers use directly; the server never sees that interface.
 pub trait SessionMetrics: Send + Sync {
     fn record_session_start(&self);
     fn record_session(&self, report: &SessionReport);
@@ -25,14 +31,6 @@ pub trait SessionMetrics: Send + Sync {
     fn record_upstream_open(&self, protocol: &str, outcome: &str);
     fn record_upstream_failure(&self, protocol: &str, reason: &str);
     fn record_auth_failure(&self);
-    fn record_platform_capability_check_failure(&self) {}
-    fn record_unix_listener_connection_accepted(&self) {}
-    fn record_reload(&self, _success: bool) {}
-    fn set_config_generation(&self, _generation: u64) {}
-    fn record_udp_association_created(&self) {}
-    fn render_prometheus(&self) -> String {
-        String::new()
-    }
 }
 
 /// No-op implementation of SessionMetrics for builds without operations support.

@@ -10,14 +10,15 @@ diagnostics, and the fail-closed startup gate.
 
 | File | Role |
 |---|---|
-| `lib.rs` | Public re-exports: `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatRegex`, `PproxyRuleFile` |
+| `lib.rs` | Public re-exports: `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatIssue`, `IssueSeverity`, `CompatRegex`, `PproxyRuleFile` |
 | `args.rs` | `PproxyArgs`: frozen pproxy 2.7.9 flag parser; strict violations for unknown flags/values |
 | `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — separate parser from native eggress grammar |
-| `translate.rs` | `translate_pproxy_args()` / `translate_from_uris()` -> TOML (presentation) + warnings/unsupported; `translate_to_runtime_config()` / `translate_pproxy_args_to_native()` -> native `RuntimeConfig` (no TOML string) + same warnings/unsupported; `compile_chain_to_native()` -> native `ProxyChainSpec` (outbound, no TOML) |
+| `translate/` | Split by semantic area: `entry` (arg-level entry points + `CombinedTranslation`), `intermediates` (shared semantic builder), `model` (TOML structs shared by builder/renderers), `rules` (patterns/rule files), `toml_render` (presentation-only TOML), `native` (native compilation + `NativeTranslation`) |
+| `issues.rs` | `CompatIssue` (severity, code, category/feature tags, tier, message, suggestion) — the single stored diagnostic model; `IssueSeverity::{Warning, Unsupported, Info}` |
 | `tier.rs` | `ManifestTier` enum (5 variants) + `classify_aggregate_tier` + `manifest_tier_for_category` |
 | `diagnostics.rs` | `DiagnosticCode` enum (26 variants), `StructuredDiagnostic` JSON output, `classify_unsupported_feature_tier` |
 | `gate.rs` | `ExecutionGate` / `BlockReason` — fail-closed startup gate |
-| `warnings.rs` | `CompatWarning`, `UnsupportedFeature`, `TranslationOutput` |
+| `warnings.rs` | `CompatWarning`/`UnsupportedFeature` (legacy view types) + `TranslationOutput { toml, issues }` storing typed issues with `warnings()`/`unsupported()`/`diagnostics()` views |
 | `exit_codes.rs` | 10 stable exit codes (0-7, 130, 143) |
 | `error.rs` | `CompatError` enum |
 | `regex_compat.rs` | `CompatRegex`, `PproxyRuleFile`, `RegexBackend` — pproxy line-based rule-file parsing |
@@ -59,8 +60,8 @@ native_equivalent > drop_in. Unknown categories/features fail closed to
 
 `evaluate(args, output)` at `gate.rs:56` combines:
 1. Parser-side unknown flags (`args.strict_parser_violations()`) -> `BlockReason::UnknownFlag`
-2. Translator-side unsupported features (`output.unsupported`) -> `BlockReason::Unsupported`
-3. Benign warnings (`output.warnings`) -> no block
+2. Translator-side unsupported features (`output.unsupported()` view) -> `BlockReason::Unsupported`
+3. Benign warnings (`output.warnings()` view) -> no block
 
 `ExecutionGate.allows_start()` returns `false` if any blocker exists.
 The CLI binary and `eggress pproxy run` both apply this gate before startup.
@@ -84,8 +85,9 @@ optional `tier`, `message`, optional `suggestion`.
 
 ### Unsupported feature classification (`diagnostics.rs:382`)
 
-`classify_unsupported_feature` maps feature strings to
-`(DiagnosticCode, tier, suggestion)` triples. Key mappings:
+`classify_unsupported_feature` is the single canonical table mapping feature
+strings to `(DiagnosticCode, tier, suggestion)` triples (code/tier helpers
+delegate to it). Key mappings:
 
 | Feature | Code | Tier |
 |---|---|---|

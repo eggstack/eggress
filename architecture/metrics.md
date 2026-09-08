@@ -8,13 +8,23 @@ delta-promotion to avoid double-counting.
 
 ## Module map
 
-Single file `src/lib.rs` (approx 2800 lines including tests).
+Split by metric domain (`src/`); names, labels, and recording semantics are
+unchanged from the former single-file `lib.rs`. Ownership rules: subsystem
+atomics are canonical for UDP/Shadowsocks/H2/transparent counters (mirrored
+by saturating-delta promotion because `Counter` is increment-only); labeled
+`Family` objects stay canonical in the registry (subsystems emit events, own
+no parallel labeled totals). Full table in `src/lib.rs` crate docs.
 
 | Component | Role |
 |---|---|
-| `MetricsRegistry` | Owns all Prometheus `Counter`/`Gauge`/`Family` fields, plus `Mutex<Option<...>>` bridged-snapshot slots and prev-value tracking for delta math |
-| `SessionMetrics` impl | Bridges `eggress_server::SessionMetrics` trait to `MetricsRegistry` methods |
-| `render_prometheus()` | Delta-promotes all bridged counters, then encodes to Prometheus text format |
+| `registry.rs` | `MetricsRegistry` struct (fields `pub(crate)`), `new()` (family registration), `Default` |
+| `labels.rs` | Label sets (`RouteLabels`, `UpstreamLabels`, `DecodeErrorLabels`, `UpstreamOpenLabels`, `UpstreamFailureLabels`, `UnsupportedTransportLabels`, `H2ConnectionLabels`, `H2StreamLabels`) + bounded route labels |
+| `session.rs` | `SessionMetrics` impl (session/route/upstream/auth only) + direct recording methods |
+| `runtime.rs` | `RuntimeMetrics` trait + impl (reload, generation, platform, transparent, unix, UDP-association fallback, exposition) + transparent bridge promotion |
+| `udp.rs` | UDP bridge (`BridgedUdpSnapshot`, `set_udp_metrics`, direct methods, delta promotion) |
+| `shadowsocks.rs` | Shadowsocks bridge (feature `extended`) |
+| `h2.rs` | H2 recording, `H2MetricsSnapshot`, global-atomic promotion |
+| `render.rs` | `render_prometheus()` — promote all bridges, then encode (idempotent totals) |
 | Label structs | `RouteLabels`, `UpstreamLabels`, `DecodeErrorLabels`, `UpstreamOpenLabels`, `UpstreamFailureLabels`, `UnsupportedTransportLabels`, `H2ConnectionLabels`, `H2StreamLabels` |
 | `H2MetricsSnapshot` | Returned by `h2_snapshot()` for programmatic H2 metric access |
 
@@ -22,7 +32,7 @@ Single file `src/lib.rs` (approx 2800 lines including tests).
 
 ### SessionMetrics trait implementation
 
-The `MetricsRegistry` implements `eggress_server::SessionMetrics` (`src/lib.rs:15-63`):
+The `MetricsRegistry` implements `eggress_server::SessionMetrics` (`src/session.rs`, narrowed to 6 session/route/upstream/auth methods) and `RuntimeMetrics` (`src/runtime.rs`, 10 runtime/reload/platform/exposition methods):
 
 | Trait method | Behavior |
 |---|---|
@@ -76,7 +86,7 @@ All families except `eggress_udp_decode_errors_total`, `eggress_upstream_health`
 
 ### Bridge delta-promotion mechanics
 
-Bridged subsystems (UDP, Shadowsocks, transparent proxy) use their own `AtomicU64` counters for hot-path recording. The `render_prometheus()` method (`src/lib.rs:1084-1608`) promotes these into Prometheus counters:
+Bridged subsystems (UDP, Shadowsocks, transparent proxy) use their own `AtomicU64` counters for hot-path recording. The `render_prometheus()` method (`src/render.rs`, via per-domain `sync_*` in `src/udp.rs`, `src/shadowsocks.rs`, `src/h2.rs`, `src/runtime.rs`) promotes these into Prometheus counters:
 
 1. **Lock the snapshot mutex** (poison-tolerant via `unwrap_or_else(|e| e.into_inner())`).
 2. **For each counter field**: `cur = source.load(Relaxed)`, `delta = cur.saturating_sub(prev)`, `if delta > 0 { prometheus_counter.inc_by(delta) }`, `prev = cur`.
@@ -86,20 +96,20 @@ This pattern guarantees that each scrape increments Prometheus counters by exact
 
 ### H2 bridge from global atomics
 
-H2 metrics originate from `H2_PROTOCOL_METRICS` (`eggress-protocol-http/src/h2_connect.rs:65-66`), a `Lazy<Arc<H2ProtocolMetrics>>` with 10 `AtomicU64` fields (`connections_opened`, `connections_closed`, `streams_opened`, `streams_closed`, `goaway_received`, `handshake_failures`, `auth_failures`, `flow_control_stalls`, `pool_exhausted`, `bytes_relayed`). `render_prometheus()` reads these and applies delta-promotion (`src/lib.rs:1437-1568`). Active counts are `opened - closed`.
+H2 metrics originate from `H2_PROTOCOL_METRICS` (`eggress-protocol-http/src/h2_connect.rs:65-66`), a `Lazy<Arc<H2ProtocolMetrics>>` with 10 `AtomicU64` fields (`connections_opened`, `connections_closed`, `streams_opened`, `streams_closed`, `goaway_received`, `handshake_failures`, `auth_failures`, `flow_control_stalls`, `pool_exhausted`, `bytes_relayed`). `sync_h2()` (`src/h2.rs`) applies delta-promotion at render time. Active counts are `opened - closed`.
 
 ### Transparent proxy and decode error bridges
 
-`set_transparent_counters()` (`src/lib.rs:1700-1709`) stores two `Arc<AtomicU64>` from the supervisor. `render_prometheus()` delta-promotes them (`src/lib.rs:1570-1604`).
+`set_transparent_counters()` (`src/runtime.rs`) stores two `Arc<AtomicU64>` from the supervisor. `sync_transparent()` delta-promotes them at render time.
 
-Bridged UDP decode errors are incremented per `kind` label AND aggregated as `kind="total"` during delta promotion (`src/lib.rs:1203-1213`). Direct `record_udp_decode_error(kind)` calls also create per-kind series.
+Bridged UDP decode errors are incremented per `kind` label AND aggregated as `kind="total"` during delta promotion (`src/udp.rs`). Direct `record_udp_decode_error(kind)` calls also create per-kind series.
 
 ## Error and failure model
 
 - Mutex poisoning is handled gracefully (`unwrap_or_else(|e| e.into_inner())`) on every `lock()` call. A poisoned mutex from a panic in a bridge setup path will not block `render_prometheus()`.
 - `saturating_sub` prevents underflow if a source counter is reset or wraps (should not happen with `AtomicU64`, but defensive).
-- `config_generation` is capped at `i64::MAX` before casting (`src/lib.rs:1074`).
-- `encode()` is infallible for `String` output (`src/lib.rs:1607`).
+- `config_generation` is capped at `i64::MAX` before casting (`src/runtime.rs`).
+- `encode()` is infallible for `String` output (`src/render.rs`).
 
 ## Configuration and features
 
@@ -108,8 +118,8 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 
 ## Security notes
 
-- **No secrets in labels** (enforced by test `labels_no_secrets` at `src/lib.rs:1946-1966`).
-- **No IP addresses in bridged metrics** (enforced by test `bridge_no_privacy_leak` at `src/lib.rs:2494-2505`).
+- **No secrets in labels** (enforced by test `labels_no_secrets` in `src/tests.rs`).
+- **No IP addresses in bridged metrics** (enforced by test `bridge_no_privacy_leak` in `src/tests.rs`).
 - Label cardinality is bounded by construction: `RouteLabels` is bounded by rule count x action x outcome; `UpstreamLabels` by upstream count; `DecodeErrorLabels` by decode error kind set; H2 labels by upstream ID and stream outcome.
 
 ## Concurrency and lifecycle
@@ -124,7 +134,7 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 
 | Test | What it covers |
 |---|---|
-| `metric_names_are_stable` (src/lib.rs:1849-1922) | All 70+ Prometheus metric names are asserted present in output -- name stability regression guard |
+| `metric_names_are_stable` (src/tests.rs) | All 70+ Prometheus metric names are asserted present in output -- name stability regression guard |
 | `counter_increments` | `record_route_decision` increments correctly |
 | `gauge_returns_to_zero` | `set_upstream_health` gauge toggles between 1 and 0 |
 | `labels_no_secrets` | Session reports with target data do not leak passwords/secrets/tokens into output |
@@ -132,11 +142,11 @@ Bridged UDP decode errors are incremented per `kind` label AND aggregated as `ki
 | `session_recording_updates_all_metrics` | `record_session_start` + `record_session` updates active/total/bytes |
 | `session_failure_increments_failures` | `SessionOutcome::RouteFailed` increments `connection_failures_total` |
 | `reload_success_and_failure` | Reload counters track success/failure correctly |
-| `bridge_delta_tracking_across_renders` (src/lib.rs:2462-2492) | First render: no deltas. Second render after recording: deltas appear. Third render with no activity: counters stay at previous value (no double-count) |
+| `bridge_delta_tracking_across_renders` (src/tests.rs) | First render: no deltas. Second render after recording: deltas appear. Third render with no activity: counters stay at previous value (no double-count) |
 | `bridge_*_appear_in_prometheus` (20+ tests) | Each bridged counter family (packets, bytes, drops, decode errors, target flows, upstream, standalone flows, malformed, rejected, reaps) appears in Prometheus output |
 | `bridge_active_*_gauge_returns_to_zero` (4 tests) | Gauges for associations, target flows, standalone flows all return to 0 after create+close pairs |
 | `transparent_proxy_*` | Transparent proxy counters, bridged counters |
-| `h2_protocol_metrics_appear_in_prometheus` (src/lib.rs:2767-2824) | H2 global atomics are promoted into Prometheus output |
+| `h2_protocol_metrics_appear_in_prometheus` (src/tests.rs) | H2 global atomics are promoted into Prometheus output |
 | `bridge_no_privacy_leak` | No IP addresses (127.0.0.1, 192.168) in bridged output |
 | `upstream_open_metric_records_by_protocol_and_outcome` | Family labels are correctly separated |
 | `new_metrics_parseable` | All output lines remain parseable after recording upstream/transport events |
@@ -150,9 +160,9 @@ Verify: `cargo test -p eggress-metrics`
 3. **`record_session` decrements `connections_active`.** This means `connections_active` is incremented by `record_session_start` and decremented by `record_session`. If `record_session` is never called (crash before session end), `connections_active` leaks upward until restart.
 4. **`saturating_sub` can mask counter resets.** If a `AtomicU64` counter is reset to 0 (not expected in production), `saturating_sub` produces 0 delta instead of panicking. The Prometheus counter will appear to stall rather than underflow.
 5. **Shadowsocks metrics are feature-gated.** Without `extended`, the `ss_*` family is never registered. PromQL queries targeting these metrics will 404 unless the build includes the feature.
-6. **`decode_errors` is both per-kind and aggregated.** The bridge increments a `kind="total"` label during delta promotion (`src/lib.rs:1207-1211`) AND direct `record_udp_decode_error(kind)` calls create per-kind series. Both appear in Prometheus output; the `total` is the sum of all kinds seen since last render.
+6. **`decode_errors` is both per-kind and aggregated.** The bridge increments a `kind="total"` label during delta promotion (`src/udp.rs`) AND direct `record_udp_decode_error(kind)` calls create per-kind series. Both appear in Prometheus output; the `total` is the sum of all kinds seen since last render.
 7. **H2 stream labels use a fixed `upstream_id: "h2"`.** The bridge does not carry per-upstream identity because `H2_PROTOCOL_METRICS` is a global singleton, not per-connection.
-8. **Transparent proxy has both direct and bridged paths.** `record_transparent_connection_accepted` directly increments the counter. `set_transparent_counters` bridges supervisor atomics. Both paths feed the same Prometheus counter; calling both would double-count.
+8. **Transparent proxy has a bridged path and direct fallbacks.** Production uses supervisor atomics via `set_transparent_counters` + delta promotion. The direct `record_transparent_*` methods feed the same counters for unbridged contexts only; calling both for the same event would double-count (same rule now enforced for UDP associations in `RuntimeUdpService`, which records via the relay subsystem counter only).
 
 ## See also
 
