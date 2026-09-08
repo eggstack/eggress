@@ -19,7 +19,11 @@ pub use error::CompatError;
 pub use gate::{evaluate as evaluate_execution_gate, BlockReason, ExecutionGate};
 pub use regex_compat::{CompatRegex, PproxyRuleFile, RegexBackend, RegexCompileError};
 pub use tier::{classify_aggregate_tier, manifest_tier_for_category, ManifestTier};
-pub use translate::{translate_from_uris, translate_pproxy_args};
+pub use translate::{
+    compile_chain_to_native, translate_from_uris, translate_pproxy_args,
+    translate_pproxy_args_to_native, translate_to_runtime_config, CombinedTranslation,
+    NativeTranslation,
+};
 pub use uri::{PproxyChain, PproxyPluginSpec, PproxyUri};
 pub use warnings::{CompatWarning, TranslationOutput, UnsupportedFeature};
 

@@ -13,7 +13,7 @@ diagnostics, and the fail-closed startup gate.
 | `lib.rs` | Public re-exports: `PproxyArgs`, `translate_pproxy_args`, `translate_from_uris`, `classify_aggregate_tier`, `evaluate_execution_gate`, `ManifestTier`, `DiagnosticCode`, `StructuredDiagnostic`, `CompatRegex`, `PproxyRuleFile` |
 | `args.rs` | `PproxyArgs`: frozen pproxy 2.7.9 flag parser; strict violations for unknown flags/values |
 | `uri.rs` | `PproxyUri`/`PproxyChain`/`PproxyPluginSpec` — separate parser from native eggress grammar |
-| `translate.rs` | `translate_pproxy_args()` / `translate_from_uris()` -> TOML + warnings + unsupported list |
+| `translate.rs` | `translate_pproxy_args()` / `translate_from_uris()` -> TOML (presentation) + warnings/unsupported; `translate_to_runtime_config()` / `translate_pproxy_args_to_native()` -> native `RuntimeConfig` (no TOML string) + same warnings/unsupported; `compile_chain_to_native()` -> native `ProxyChainSpec` (outbound, no TOML) |
 | `tier.rs` | `ManifestTier` enum (5 variants) + `classify_aggregate_tier` + `manifest_tier_for_category` |
 | `diagnostics.rs` | `DiagnosticCode` enum (26 variants), `StructuredDiagnostic` JSON output, `classify_unsupported_feature_tier` |
 | `gate.rs` | `ExecutionGate` / `BlockReason` — fail-closed startup gate |
@@ -101,13 +101,20 @@ optional `tier`, `message`, optional `suggestion`.
 1. **Argument parsing**: `PproxyArgs::parse()` freezes the pproxy 2.7.9 CLI
    grammar. Unknown flags are collected as `strict_parser_violations()`.
 
-2. **Translation**: `translate_pproxy_args()` converts parsed args to eggress
-   TOML. `translate_from_uris()` does the same from pre-parsed URI objects.
-   Both produce `TranslationOutput { toml, warnings, unsupported }`.
+2. **Semantic translation**: shared `build_intermediates()` produces typed
+   `TranslationIntermediates` (listeners/upstreams/groups/rules/reverse/
+   pac). TOML rendering (`translate_pproxy_args()` / `translate_from_uris()`
+   → `TranslationOutput { toml, warnings, unsupported }`) and native
+   compilation (`translate_to_runtime_config()` /
+   `translate_pproxy_args_to_native()` → `NativeTranslation` /
+   `CombinedTranslation { runtime, warnings, unsupported }`) are both
+   renderers over the same intermediates — no `toml::to_string` /
+   `toml::from_str` round trip in the native path. Outbound
+   (`compile_chain_to_native()` → `ProxyChainSpec`) bypasses TOML entirely.
 
 3. **Gate evaluation**: `evaluate_execution_gate()` combines parser violations
    and unsupported features into an `ExecutionGate`. The gate is checked
-   before any runtime startup, system modification, or temp config creation.
+   before any runtime startup or system modification (no temp config exists).
 
 4. **Tier classification**: `classify_aggregate_tier()` picks the worst tier
    from all diagnostics. The `PyTranslationResult.tier` getter in the Python

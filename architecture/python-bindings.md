@@ -26,7 +26,7 @@ Single-file PyO3 module. Registered in `#[pymodule] fn _eggress()` at
 | `service.py` | `EggressService` (pre-start builder), `EggressHandle` (sync), `AsyncEggressHandle` (async via `AsyncBridge`); `PPProxyHandle` type alias |
 | `connection.py` | `Connection` — managed proxy service (listener + relay); wraps `PyConnection` with state machine and `ConnectionState` enum |
 | `async_connection.py` | `AsyncConnection` — async wrapper with loop-affinity enforcement via `AsyncBridge`/`CloseWaiter` |
-| `outbound.py` | `OutboundConnector`, `OutboundStream`, `AsyncOutboundStream` — native outbound TCP without listener; `from_pproxy_uri`/`from_toml` factories |
+| `outbound.py` | `OutboundConnector`, `OutboundStream`, `AsyncOutboundStream` (bridge-backed: `AsyncBridge` loop-affinity + `CloseWaiter` idempotent close/wait; `read`/`readexactly`/`drain`/`write_eof` via `AsyncBridge.run`, `aconnect_tcp` via `wrap_blocking_call`) — native outbound TCP without listener; `from_pproxy_uri` (direct native, no TOML) / `from_toml` factories |
 | `pproxy.py` | `Server`, `PPProxyService`, `TranslationResult`, `CompatibilityReport`, `Diagnostic`, `UriInfo`, `check_pproxy_uri`, `translate_pproxy_args`, route/test helpers; pproxy-flavored facade |
 | `_pproxy_proxy.py` | `ProxyDirect`, `ProxySimple`, `ProxyBackward`, `ProxyH2`, `ProxySSH`, `ProxyQUIC`, `ProxyH3`, `AuthTable` — pproxy 2.7.9 server object model (structural) |
 | `protocol.py` | Protocol object model: `BaseProtocol`, `HTTP`, `Socks4`, `Socks5`, `SS`, `SSR`, `Trojan`, `WS`, `H2`, `H3`, `SSH`, `Transparent`, `Redir`, `Pf`, `Tunnel`, `Echo`; `MAPPINGS`/`_PROTOCOL_REGISTRY` dicts; `get_protos`, `accept`, `udp_accept` |
@@ -113,14 +113,21 @@ Server(listen=[...], remote=[...])
    usable after the connector is dropped.
 
 4. **Connection lifecycle**: `PyConnection` uses `AtomicU8` state machine
-   (`src/lib.rs:324-329`) with `begin_close` CAS loop (`src/lib.rs:544-555`).
+   with `begin_close` CAS loop. `PyConnection::new` uses combined native
+   translation (`translate_pproxy_args_to_native` → `EggressConfig::from_compiled`,
+   no TOML re-parse for startup; TOML retained only for `config` display).
    `__del__` spawns async shutdown on the outbound runtime; on runtime failure
-   the handle is leaked via `std::mem::forget` (`src/lib.rs:510`).
+   the handle is leaked via `std::mem::forget`.
 
-5. **Async bridge**: `AsyncBridge` (`python/eggress/_asyncio.py:322`) binds
-   on first use, enforces loop affinity, runs blocking calls via
-   `run_in_executor`, and propagates cancellation. `CloseWaiter` provides
-   idempotent, race-safe close/wait semantics.
+5. **Async bridge** (single maintained pattern): `AsyncBridge`
+   (`python/eggress/_asyncio.py`) binds on first use, enforces loop affinity,
+   runs blocking calls via `run_in_executor` *inside the bridge only*, preserves
+   contextvars, and propagates cancellation. `CloseWaiter` provides idempotent,
+   race-safe, multi-waiter close/wait. `AsyncConnection`, `AsyncEggressHandle`,
+   and `AsyncOutboundStream` all use it; `OutboundConnector.aconnect_tcp`,
+   `Connection.aclose`/`await_closed`, and `CompatibleStreamWriter.drain` use
+   `wrap_blocking_call`. Direct `run_in_executor` outside `_asyncio.py` is
+   limited to the documented `plugin.py` user-callback timeout exception.
 
 ## Namespace / boundary rules
 

@@ -3,7 +3,10 @@
 Turns user TOML into a validated, compiled `RuntimeConfig`. This is the only
 place the configuration surface is defined; CLI flags, embed API, and Python
 bindings all funnel through it. Single compilation pass: anything invalid fails
-before any socket is bound.
+before any socket is bound. `RuntimeConfig` is the canonical in-memory
+handoff to runtime startup (`start_from_config`) and to the reload
+transaction (`apply_compiled_config`); source TOML is ancillary display
+state after compilation.
 
 ## Module map
 

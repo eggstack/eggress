@@ -20,14 +20,30 @@ Use when modifying configuration schema, TOML parsing, hot-reload behavior, or t
 - Admin endpoint bind address
 - Reverse endpoint topology (servers/clients spawned once at startup)
 
-## Reload flow
-1. Candidate snapshot compiled from new TOML
-2. Startup-captured listener changes rejected (any field above); only
-   routing/upstream/group/health/PAC changes pass classification
-3. Router swapped atomically via `ArcSwap`
-4. Snapshot swapped via `Arc<ArcSwap<CompiledRuntimeSnapshot>>`
-5. Health tasks stopped and restarted from new snapshot
-6. Old state untouched on failure
+## Reload flow (one canonical transaction)
+
+`RuntimeState::apply_compiled_config(new_config)` owns all mutation.
+File (`ServiceSupervisor::reload_config`), SIGHUP, and embed
+(`reload_toml_str` / `reload_toml_file` / `reload_compiled`) differ only in
+how `new_config` is obtained.
+
+1. Classify via `classify_reload_config` on the live snapshot (reject any
+   field above); only routing/upstream/group/health/PAC pass
+2. `compile_runtime_snapshot(new, Some(prev))` (Arc reuse on identical
+   chain+health); failure preserves generation + records `record_reload(false)`
+3. Snapshot `store()` before `routing.swap_arc()`, then admin publish,
+   `restart_health_probes()`, `H2_POOL_REGISTRY.clear()`,
+   `set_config_generation` + `record_reload(true)`
+4. Supervisor updates stored `rt_config` only on `Applied` (snapshot is
+   authoritative for next classification)
+
+## Startup (in-memory, no temp file)
+
+`EggressConfig` stores compiled `RuntimeConfig` (canonical) + ancillary source
+TOML. `EggressService::start/start_blocking` consume `into_compiled()` via
+shared `startup_in_memory(rt, options)` → `start_from_config_with_options(rt,
+None, _)`; `_config_path=None`, SIGHUP disabled. Native and compat startup
+share the core; only `CompatibilityOptions` differ.
 
 ## Key types
 - `CompiledRuntimeSnapshot` — single authoritative runtime snapshot

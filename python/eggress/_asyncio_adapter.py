@@ -23,6 +23,7 @@ import asyncio
 import io
 from typing import Any, Optional
 
+from eggress._asyncio import wrap_blocking_call
 from eggress.outbound import AsyncOutboundStream, OutboundConnector
 
 
@@ -263,14 +264,18 @@ class CompatibleStreamWriter:
             return
         data = bytes(self._write_buf)
         self._write_buf.clear()
-        loop = asyncio.get_running_loop()
         # ``write`` is a single-attempt write that returns the byte count;
         # loop until everything is sent, then await the async flush so the
         # Rust-side flush actually runs (it is a coroutine, not executor
         # work).
         view = memoryview(data)
         while view:
-            written = await loop.run_in_executor(None, self._stream.write, view)
+            # Blocking single-attempt write via maintained bridge (no direct
+            # run_in_executor outside the canonical bridge implementation).
+            # `bytes(view)` copies the remaining slice for thread safety;
+            # view slicing itself stays zero-copy.
+            chunk = bytes(view)
+            written = await wrap_blocking_call(self._stream.write, chunk)
             if written <= 0:
                 raise OSError("outbound stream made no write progress")
             view = view[written:]

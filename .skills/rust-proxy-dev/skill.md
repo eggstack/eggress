@@ -117,16 +117,18 @@ Listens on a filesystem socket path for local-only deployments.
 For embedding eggress in another Rust process, use the `eggress-embed` crate:
 
 - `EggressConfig::from_toml_str()` / `from_toml_file()` — parse and validate config
-- `EggressService::new(config).start_blocking()` — blocking start, returns `EggressHandle`
+- `EggressConfig::from_toml_str` validates once via shared `parse_validate_compile` and stores compiled `RuntimeConfig` (canonical) + source TOML (ancillary)
+- `EggressService::new(config).start_blocking()` — in-memory blocking start (no temp file, `_config_path=None`), returns `EggressHandle`
 - `EggressService::new(config).start().await` — async start within a Tokio runtime
 - `handle.bound_addresses()` — discover listener ports (supports port-0)
 - `handle.status()` — generation, readiness, uptime, active connections
 - `handle.metrics_text()` — Prometheus metrics without HTTP
 - `handle.reload_toml_str()` — hot-reload routing/upstreams
 - `handle.shutdown()` / `shutdown_blocking()` — graceful shutdown
-- `OutboundConnector::from_pproxy_uri()` — one pproxy remote expression,
-  including `__` multi-hop chains (order preserved, no listener, fail-closed
-  on unsupported hops, redacted errors; `pproxy-compat` feature)
+- `OutboundConnector::from_pproxy_uri()` — one pproxy remote expression via
+  direct native `compile_chain_to_native()` (typed `PproxyChain` →
+  `ProxyChainSpec`, no TOML string; `__` order preserved, no listener,
+  fail-closed, redacted errors; `pproxy-compat` feature)
 - `OutboundConnector::connect_tcp()` / `connect_tcp_timeout()` — execute the
   compiled chain in-process via `ChainExecutor`
 

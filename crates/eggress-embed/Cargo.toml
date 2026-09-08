@@ -29,6 +29,7 @@ eggress-core = { workspace = true }
 eggress-metrics.workspace = true
 eggress-pproxy-compat = { workspace = true, optional = true }
 eggress-protocol-socks = { workspace = true }
+eggress-routing = { workspace = true }
 eggress-runtime = { workspace = true }
 eggress-server = { workspace = true }
 eggress-uri = { workspace = true }
@@ -37,10 +38,11 @@ tokio-util = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-tempfile = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+eggress-protocol-http = { workspace = true }
+eggress-config = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 tokio-test = { workspace = true }
 

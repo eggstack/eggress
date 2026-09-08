@@ -472,3 +472,15 @@ When compatibility evidence changes, run the active manifest and matrix
 validators, the canonical-manifest test, and the relevant paired pproxy or
 external interoperability suite. Skipped optional or external tests are not
 evidence of a pass.
+
+## Phase 2 convergence tests
+
+- `crates/eggress-embed/tests/reload_convergence.rs` — file/string/native
+  reload equivalence via canonical `apply_compiled_config` (routing accept,
+  upstream/H2, health, listener reject, malformed, metrics, admin/status).
+- `crates/eggress-pproxy-compat/tests/native_equivalence.rs` — direct native
+  vs TOML-render/reparse equivalence + identical warnings/unsupported +
+  outbound chain match + credential redaction.
+- `python/tests/test_asyncio_bridge_convergence.py` — shared
+  AsyncBridge/CloseWaiter contracts across AsyncConnection/outbound
+  (no direct `run_in_executor` outside bridge + documented plugin exception).

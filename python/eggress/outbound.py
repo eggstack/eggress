@@ -39,6 +39,8 @@ import asyncio
 import warnings
 from typing import Any
 
+from eggress._asyncio import AsyncBridge, CloseWaiter, wrap_blocking_call
+
 try:
     from eggress._eggress import (
         PyOutboundConnector as _PyOutboundConnector,
@@ -136,15 +138,21 @@ class OutboundStream:
 class AsyncOutboundStream:
     """Asyncio adapter for a native outbound stream.
 
-    Network operations run in a worker thread and the event-loop thread is
-    never blocked. The underlying Rust stream remains the owner of the
+    Network operations run through the maintained :class:`AsyncBridge`
+    (worker thread, contextvars preservation, cancellation propagation) so
+    the event-loop thread is never blocked. Loop affinity is enforced
+    first-use (cross-loop misuse raises ``LoopAffinityError`` before native
+    work). Close/wait are idempotent and multi-waiter safe via
+    :class:`CloseWaiter`. The underlying Rust stream remains the owner of the
     transport and can be closed deterministically.
     """
 
-    __slots__ = ("_inner",)
+    __slots__ = ("_inner", "_bridge", "_waiter")
 
     def __init__(self, inner: _PyOutboundStream) -> None:
         self._inner = inner
+        self._bridge = AsyncBridge(label="AsyncOutboundStream")
+        self._waiter = CloseWaiter()
 
     @property
     def closed(self) -> bool:
@@ -165,30 +173,46 @@ class AsyncOutboundStream:
         return self._inner.get_extra_info(name, default)
 
     async def read(self, n: int = -1) -> bytes:
-        loop = asyncio.get_running_loop()
-        return bytes(await loop.run_in_executor(None, self._inner.read, n))
+        return bytes(await self._bridge.run(self._inner.read, n))
 
     async def readexactly(self, n: int) -> bytes:
-        loop = asyncio.get_running_loop()
-        return bytes(await loop.run_in_executor(None, self._inner.readexactly, n))
+        return bytes(await self._bridge.run(self._inner.readexactly, n))
 
     def write(self, data: bytes) -> int:
+        # Sync lightweight accessor: underlying Rust `write` does a single
+        # blocking send via the shared outbound runtime. Callers in async
+        # contexts should prefer `await drain()` after buffering (see
+        # CompatibleStreamWriter) to avoid blocking the loop thread on large
+        # sends. Kept sync for pproxy source-compat; not routed via bridge
+        # to avoid an extra thread-pool hop per trivial call.
         return self._inner.write(data)
 
     async def drain(self) -> None:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._inner.drain)
+        await self._bridge.run(self._inner.drain)
 
     async def write_eof(self) -> None:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._inner.write_eof)
+        await self._bridge.run(self._inner.write_eof)
 
     def close(self) -> None:
-        self._inner.close()
+        # Non-blocking (drops the Rust stream); safe from any thread.
+        # Mark waiter so async waiters unblock without extra executor work.
+        try:
+            self._inner.close()
+        finally:
+            self._waiter.mark_closed()
+            self._bridge.close()
 
     async def wait_closed(self) -> None:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._inner.wait_closed)
+        # Idempotent, multi-waiter safe; no executor submission for this
+        # trivial close (avoids one thread-pool hop per wait).
+        if not self._waiter.is_closed:
+            # Ensure underlying is closed (idempotent) before waiting.
+            try:
+                self._inner.close()
+            except Exception:
+                pass
+            self._waiter.mark_closed()
+        await self._waiter.wait_closed()
 
     async def __aenter__(self) -> AsyncOutboundStream:
         return self
@@ -307,10 +331,13 @@ class OutboundConnector:
     async def aconnect_tcp(
         self, host: str, port: int, timeout: float | None = None
     ) -> AsyncOutboundStream:
-        """Open a native TCP stream without blocking the event-loop thread."""
-        loop = asyncio.get_running_loop()
-        inner = await loop.run_in_executor(
-            None, self._inner.connect_tcp, host, port, timeout
+        """Open a native TCP stream without blocking the event-loop thread.
+
+        Uses the maintained bridge helper (contextvars preservation,
+        cancellation propagation) rather than direct ``run_in_executor``.
+        """
+        inner = await wrap_blocking_call(
+            self._inner.connect_tcp, host, port, timeout
         )
         return AsyncOutboundStream(inner)
 

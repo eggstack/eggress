@@ -118,3 +118,20 @@ with the workspace (see the release skill); classifiers list Python 3.9–3.13;
 - `docs/adr/ADR_python_import_and_distribution_strategy.md`
 - `docs/PYPI_RELEASE.md` — tag-triggered publish procedure
 - `architecture/python-bindings.md`, `architecture/pproxy-compat.md`
+
+## AsyncBridge convergence (Phase 2)
+
+One maintained pattern: `AsyncBridge` (loop-affinity first-use binding,
+contextvars, cancellation) + `CloseWaiter` (idempotent, multi-waiter
+close/wait) + `wrap_blocking_call` (one-shot blocking calls).
+
+- `AsyncConnection`, `AsyncEggressHandle`, `AsyncOutboundStream` use
+  `AsyncBridge`; `AsyncOutboundStream` also uses `CloseWaiter` (sync `close`
+  is non-blocking + marks waiter; async `wait_closed` needs no executor).
+- `OutboundConnector.aconnect_tcp`, `Connection.aclose`/`await_closed`,
+  `CompatibleStreamWriter.drain` use `wrap_blocking_call`.
+- Direct `loop.run_in_executor` outside `python/eggress/_asyncio.py` is banned
+  except the documented `plugin.py` user-callback timeout exception.
+- `PyConnection::new` uses combined native translation
+  (`translate_pproxy_args_to_native` → `EggressConfig::from_compiled`); TOML
+  retained only for `config` display.

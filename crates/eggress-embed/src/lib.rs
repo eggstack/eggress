@@ -60,36 +60,83 @@ pub use error::EggressError;
 /// Parsed and validated eggress configuration.
 ///
 /// Construct via [`EggressConfig::from_toml_str`] or [`EggressConfig::from_toml_file`].
+///
+/// The validated compiled [`eggress_config::compile::RuntimeConfig`] is the
+/// canonical startup handoff; the retained TOML source is ancillary state kept
+/// only for round-trip display (`source_toml`/`to_redacted_toml`) and must not
+/// be required to start the service.
 #[derive(Clone)]
 pub struct EggressConfig {
+    compiled: eggress_config::compile::RuntimeConfig,
     source_toml: String,
+}
+
+/// Parse, version-check, validate, and compile TOML exactly once.
+///
+/// Single shared boundary for all TOML-string entry points
+/// (`EggressConfig::from_toml_str`, `OutboundConnector::from_toml` /
+/// `validate_outbound_config`, `EggressHandle::reload_toml_str`). Callers map
+/// the message-only error to their own `EggressError` variant
+/// (`Config` vs `Reload`) so reload failures still record metrics.
+pub(crate) fn parse_validate_compile(
+    input: &str,
+) -> Result<eggress_config::compile::RuntimeConfig, String> {
+    let config: eggress_config::model::ConfigFile =
+        toml::from_str(input).map_err(|e| e.to_string())?;
+
+    if let Some(version) = config.version {
+        if version != 1 {
+            return Err(format!("unsupported config version: {version}"));
+        }
+    }
+
+    eggress_config::validate::validate_config(&config).map_err(|errors| {
+        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        messages.join("; ")
+    })?;
+
+    eggress_config::compile::compile_config(&config).map_err(|e| e.to_string())
 }
 
 impl EggressConfig {
     /// Parse a TOML configuration string.
+    ///
+    /// Validation and compilation happen exactly once via the shared
+    /// [`parse_validate_compile`] boundary; the resulting compiled runtime
+    /// configuration is stored for in-memory supervisor startup with no
+    /// filesystem round trip.
     pub fn from_toml_str(input: &str) -> Result<Self, EggressError> {
-        let config: eggress_config::model::ConfigFile =
-            toml::from_str(input).map_err(|e| EggressError::Config(e.to_string()))?;
-
-        if let Some(version) = config.version {
-            if version != 1 {
-                return Err(EggressError::Config(format!(
-                    "unsupported config version: {version}"
-                )));
-            }
-        }
-
-        eggress_config::validate::validate_config(&config).map_err(|errors| {
-            let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-            EggressError::Config(messages.join("; "))
-        })?;
-
-        let _inner = eggress_config::compile::compile_config(&config)
-            .map_err(|e| EggressError::Config(e.to_string()))?;
+        let compiled = parse_validate_compile(input).map_err(EggressError::Config)?;
 
         Ok(Self {
+            compiled,
             source_toml: input.to_string(),
         })
+    }
+
+    /// Construct from an already-compiled runtime configuration.
+    ///
+    /// `source_toml` is ancillary display state (may be empty when the config
+    /// originated natively, e.g. pproxy direct compilation). Startup uses
+    /// only `compiled`.
+    pub fn from_compiled(
+        compiled: eggress_config::compile::RuntimeConfig,
+        source_toml: String,
+    ) -> Self {
+        Self {
+            compiled,
+            source_toml,
+        }
+    }
+
+    /// Borrow the canonical compiled runtime configuration.
+    pub fn compiled(&self) -> &eggress_config::compile::RuntimeConfig {
+        &self.compiled
+    }
+
+    /// Consume into the canonical compiled runtime configuration.
+    pub fn into_compiled(self) -> eggress_config::compile::RuntimeConfig {
+        self.compiled
     }
 
     /// Load and validate a TOML configuration file.
@@ -101,6 +148,9 @@ impl EggressConfig {
     }
 
     /// Return the original TOML source text.
+    ///
+    /// For configs built natively via [`EggressConfig::from_compiled`] this
+    /// may be empty; startup never depends on it.
     pub fn source_toml(&self) -> &str {
         &self.source_toml
     }
@@ -149,10 +199,13 @@ impl EggressService {
     /// The caller must be inside a Tokio runtime. The service binds listeners,
     /// starts health probes, and enters the event loop on a background task.
     /// Returns once readiness is achieved or startup fails.
+    ///
+    /// Startup consumes the validated in-memory compiled configuration
+    /// directly via `ServiceSupervisor::start_from_config`; no temporary
+    /// config file round trip is performed.
     pub async fn start(self) -> Result<EggressHandle, EggressError> {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        let config_path = write_temp_config(&self.config)?;
-        let config_path_clone = config_path.clone();
+        let rt_config = self.config.into_compiled();
 
         let join = tokio::task::spawn_blocking(move || -> Result<
             (
@@ -161,53 +214,15 @@ impl EggressService {
             ),
             EggressError,
         > {
-            let mut sup = match eggress_runtime::ServiceSupervisor::start(&config_path_clone) {
-                Ok(sup) => sup,
-                Err(error) => {
-                    let _ = std::fs::remove_file(&config_path_clone);
-                    return Err(EggressError::Startup(error.to_string()));
-                }
-            };
-
-            let state = sup.state().clone();
-            let token = sup.shutdown_token();
-
-            let run_result = std::thread::Builder::new()
-                .name("eggress-embed-rt".into())
-                .spawn(move || sup.run())
-                .map_err(|error| {
-                    let _ = std::fs::remove_file(&config_path_clone);
-                    EggressError::Startup(error.to_string())
-                })?;
-
-            // Wait for readiness or failure
-            let started = std::time::Instant::now();
-            let timeout = Duration::from_secs(30);
-            loop {
-                if state.readiness.load(Ordering::Acquire) {
-                    let _ = ready_tx.send(Ok((state.clone(), token.clone())));
-                    break;
-                }
-                if started.elapsed() > timeout {
-                    token.cancel();
-                    let _ = std::fs::remove_file(&config_path_clone);
-                    let _ = ready_tx.send(Err(EggressError::Startup(
-                        "readiness timeout".to_string(),
-                    )));
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
+            let (state, token, run_handle) =
+                startup_in_memory(rt_config, eggress_runtime::CompatibilityOptions::default())?;
+            let _ = ready_tx.send(Ok((state.clone(), token.clone())));
 
             // Wait for the run thread to finish (shutdown)
-            match run_result.join() {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => tracing::debug!(%e, "runtime exited with error"),
+            match run_handle.join() {
+                Ok(()) => {}
                 Err(_) => tracing::debug!("runtime thread panicked"),
             }
-
-            // Clean up temp config file
-            let _ = std::fs::remove_file(&config_path_clone);
 
             Ok((state, token))
         });
@@ -228,7 +243,7 @@ impl EggressService {
             state,
             token: Some(token),
             _run_handle: None,
-            _config_path: Some(config_path),
+            _config_path: None,
             _runtime_task: Some(join),
             reload_mutex: std::sync::Mutex::new(()),
         })
@@ -236,83 +251,21 @@ impl EggressService {
 
     /// Start the service with a dedicated runtime thread (blocking).
     ///
-    /// This spawns a background thread that creates a Tokio runtime and runs
-    /// the proxy. Blocks until readiness is achieved or startup fails.
-    /// Returns a handle that owns the runtime thread.
+    /// This spawns the supervisor run loop on a background thread and blocks
+    /// until readiness is achieved or startup fails. Returns a handle that
+    /// owns the runtime thread.
+    ///
+    /// Startup consumes the validated in-memory compiled configuration
+    /// directly; no temporary config file is written.
     pub fn start_blocking(self) -> Result<EggressHandle, EggressError> {
-        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
-        let config_path = write_temp_config(&self.config)?;
-        let config_path_clone = config_path.clone();
-
-        let _thread_handle = std::thread::Builder::new()
-            .name("eggress-embed-rt".into())
-            .spawn(move || {
-                let mut sup = match eggress_runtime::ServiceSupervisor::start(&config_path_clone) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        let _ = std::fs::remove_file(&config_path_clone);
-                        let _ = ready_tx.send(Err(EggressError::Startup(e.to_string())));
-                        return;
-                    }
-                };
-
-                let state = sup.state().clone();
-                let token = sup.shutdown_token();
-
-                let run_handle = std::thread::Builder::new()
-                    .name("eggress-embed-run".into())
-                    .spawn(move || {
-                        if let Err(e) = sup.run() {
-                            tracing::error!("supervisor exited with error: {e}");
-                        }
-                    });
-
-                let run_handle = match run_handle {
-                    Ok(h) => h,
-                    Err(e) => {
-                        let _ = std::fs::remove_file(&config_path_clone);
-                        let _ = ready_tx.send(Err(EggressError::Startup(e.to_string())));
-                        return;
-                    }
-                };
-
-                // Wait for readiness
-                let started = std::time::Instant::now();
-                let timeout = Duration::from_secs(30);
-                loop {
-                    if state.readiness.load(Ordering::Acquire) {
-                        let _ = ready_tx.send(Ok((state, token, run_handle, config_path_clone)));
-                        break;
-                    }
-                    if started.elapsed() > timeout {
-                        // On timeout, cancel and clean up immediately
-                        token.cancel();
-                        let _ = std::fs::remove_file(&config_path_clone);
-                        match run_handle.join() {
-                            Ok(()) => {}
-                            Err(_) => tracing::debug!("runtime thread panicked"),
-                        }
-                        let _ =
-                            ready_tx.send(Err(EggressError::Startup("readiness timeout".into())));
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-            })
-            .map_err(|e| {
-                let _ = std::fs::remove_file(&config_path);
-                EggressError::Startup(e.to_string())
-            })?;
-
-        let (state, token, run_handle, config_path) = ready_rx
-            .recv()
-            .map_err(|_| EggressError::Startup("startup channel dropped".into()))??;
-
+        let rt_config = self.config.into_compiled();
+        let (state, token, run_handle) =
+            startup_in_memory(rt_config, eggress_runtime::CompatibilityOptions::default())?;
         Ok(EggressHandle {
             state,
             token: Some(token),
             _run_handle: Some(run_handle),
-            _config_path: Some(config_path),
+            _config_path: None,
             _runtime_task: None,
             reload_mutex: std::sync::Mutex::new(()),
         })
@@ -323,74 +276,15 @@ impl EggressService {
     /// This variant is used by the Python `pproxy` entry point so compatibility
     /// options such as `--auth`, `--sys`, `-d`, and `-v` reach the runtime
     /// without going through a temporary config file or the native defaults.
+    /// Native and compatibility startup share [`startup_in_memory`];
+    /// only the options differ.
     #[cfg(feature = "pproxy-compat")]
     pub fn start_blocking_with_compatibility_options(
         self,
         compatibility_options: eggress_runtime::CompatibilityOptions,
     ) -> Result<EggressHandle, EggressError> {
-        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
-        let source_toml = self.config.source_toml.clone();
-        let rt_config = eggress_config::validate_and_compile_toml_with_warnings(&source_toml)
-            .map(|(config, _)| config)
-            .map_err(|e| EggressError::Config(e.to_string()))?;
-
-        std::thread::Builder::new()
-            .name("eggress-embed-rt".into())
-            .spawn(move || {
-                let mut supervisor =
-                    match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
-                        rt_config,
-                        None,
-                        compatibility_options,
-                    ) {
-                        Ok(supervisor) => supervisor,
-                        Err(error) => {
-                            let _ = ready_tx.send(Err(EggressError::Startup(error.to_string())));
-                            return;
-                        }
-                    };
-
-                let state = supervisor.state().clone();
-                let token = supervisor.shutdown_token();
-                let run_handle = std::thread::Builder::new()
-                    .name("eggress-embed-run".into())
-                    .spawn(move || {
-                        if let Err(error) = supervisor.run() {
-                            tracing::error!("supervisor exited with error: {error}");
-                        }
-                    });
-
-                let run_handle = match run_handle {
-                    Ok(handle) => handle,
-                    Err(error) => {
-                        let _ = ready_tx.send(Err(EggressError::Startup(error.to_string())));
-                        return;
-                    }
-                };
-
-                let started = std::time::Instant::now();
-                let timeout = Duration::from_secs(30);
-                loop {
-                    if state.readiness.load(Ordering::Acquire) {
-                        let _ = ready_tx.send(Ok((state, token, run_handle)));
-                        break;
-                    }
-                    if started.elapsed() > timeout {
-                        token.cancel();
-                        let _ = run_handle.join();
-                        let _ =
-                            ready_tx.send(Err(EggressError::Startup("readiness timeout".into())));
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-            })
-            .map_err(|e| EggressError::Startup(e.to_string()))?;
-
-        let (state, token, run_handle) = ready_rx
-            .recv()
-            .map_err(|_| EggressError::Startup("startup channel dropped".into()))??;
-
+        let rt_config = self.config.into_compiled();
+        let (state, token, run_handle) = startup_in_memory(rt_config, compatibility_options)?;
         Ok(EggressHandle {
             state,
             token: Some(token),
@@ -402,6 +296,54 @@ impl EggressService {
     }
 }
 
+/// Shared in-memory startup used by native and compatibility paths.
+///
+/// Creates the supervisor from an already-compiled [`eggress_config::compile::RuntimeConfig`]
+/// with explicit compatibility options, spawns the blocking `run()` thread,
+/// and waits for readiness. No config file is read or written.
+fn startup_in_memory(
+    rt_config: eggress_config::compile::RuntimeConfig,
+    options: eggress_runtime::CompatibilityOptions,
+) -> Result<
+    (
+        Arc<eggress_runtime::RuntimeState>,
+        tokio_util::sync::CancellationToken,
+        std::thread::JoinHandle<()>,
+    ),
+    EggressError,
+> {
+    let mut supervisor = eggress_runtime::ServiceSupervisor::start_from_config_with_options(
+        rt_config, None, options,
+    )
+    .map_err(|error| EggressError::Startup(error.to_string()))?;
+
+    let state = supervisor.state().clone();
+    let token = supervisor.shutdown_token();
+
+    let run_handle = std::thread::Builder::new()
+        .name("eggress-embed-run".into())
+        .spawn(move || {
+            if let Err(error) = supervisor.run() {
+                tracing::error!("supervisor exited with error: {error}");
+            }
+        })
+        .map_err(|error| EggressError::Startup(error.to_string()))?;
+
+    let started = std::time::Instant::now();
+    let timeout = Duration::from_secs(30);
+    loop {
+        if state.readiness.load(Ordering::Acquire) {
+            return Ok((state, token, run_handle));
+        }
+        if started.elapsed() > timeout {
+            token.cancel();
+            let _ = run_handle.join();
+            return Err(EggressError::Startup("readiness timeout".to_string()));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 /// Handle to a running eggress service.
 ///
 /// Provides access to bound addresses, status, metrics, reload, and shutdown.
@@ -409,19 +351,23 @@ impl EggressService {
 ///
 /// # Thread ownership
 ///
-/// The handle owns exactly one of two mutually exclusive thread models:
+/// The handle owns exactly one of two mutually exclusive thread models.
+/// Both paths share [`startup_in_memory`]; only compatibility options differ.
 ///
 /// **Async path** (`start()`):
-/// - A Tokio blocking-pool thread runs the startup sequence and then blocks on
-///   `run_result.join()` for the lifetime of the service.
-/// - A dedicated OS thread (`"eggress-embed-rt"`) owns `ServiceSupervisor::run()`.
+/// - A Tokio blocking-pool thread runs in-memory startup and then blocks on
+///   the run thread join for the lifetime of the service.
+/// - A dedicated OS thread (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
 /// - `_runtime_task` wraps the blocking task's JoinHandle as a Tokio task.
 ///
 /// **Blocking path** (`start_blocking()`):
-/// - An outer OS thread (`"eggress-embed-rt"`) handles startup, sends results
-///   through a channel, and terminates.
-/// - An inner OS thread (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
-/// - `_run_handle` holds the inner thread's JoinHandle directly.
+/// - Startup runs in the caller thread; a single OS thread
+///   (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
+/// - `_run_handle` holds that thread's JoinHandle directly.
+///
+/// No temporary config file is created; the supervisor starts from the
+/// in-memory compiled `RuntimeConfig` and SIGHUP reload is disabled
+/// (`config_path=None`).
 ///
 /// # Drop behavior
 ///
@@ -517,67 +463,66 @@ impl EggressHandle {
     ///
     /// Returns the outcome of the reload attempt. On success, the generation
     /// is incremented. On rejection, the old configuration remains active.
+    ///
+    /// File and embed reload share the canonical
+    /// [`eggress_runtime::RuntimeState::apply_compiled_config`] transaction;
+    /// this entry point differs only in how the new configuration is obtained
+    /// (string parse/validate/compile). Metrics, admin publication, health
+    /// restart, and pool invalidation are owned by that transaction.
     pub fn reload_toml_str(&self, input: &str) -> Result<ReloadOutcome, EggressError> {
         let _guard = self
             .reload_mutex
             .lock()
             .map_err(|_| EggressError::Reload("concurrent reload in progress".to_string()))?;
 
-        // Parse and validate the new config
-        let config: eggress_config::model::ConfigFile =
-            toml::from_str(input).map_err(|e| EggressError::Reload(e.to_string()))?;
-
-        if let Some(version) = config.version {
-            if version != 1 {
-                return Err(EggressError::Reload(format!(
-                    "unsupported config version: {version}"
-                )));
-            }
-        }
-
-        eggress_config::validate::validate_config(&config).map_err(|errors| {
-            let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-            EggressError::Reload(messages.join("; "))
+        // Parse/validate/compile once via the shared boundary. Failures
+        // before the canonical transaction must still record a failed reload
+        // so file and embed metrics agree.
+        let new_rt_config = parse_validate_compile(input).map_err(|message| {
+            self.state.metrics.record_reload(false);
+            EggressError::Reload(message)
         })?;
 
-        let new_rt_config = eggress_config::compile::compile_config(&config)
-            .map_err(|e| EggressError::Reload(e.to_string()))?;
+        // `_guard` is held; call the canonical transaction directly to avoid
+        // re-locking `reload_mutex` via `reload_compiled`.
+        match self.state.apply_compiled_config(&new_rt_config) {
+            eggress_runtime::ReloadResult::Applied {
+                generation,
+                upstreams,
+            } => Ok(ReloadOutcome::Applied {
+                generation,
+                upstreams,
+            }),
+            eggress_runtime::ReloadResult::Rejected { reason } => Err(EggressError::Reload(reason)),
+            eggress_runtime::ReloadResult::Failed { error } => Err(EggressError::Reload(error)),
+        }
+    }
 
-        // Classify reload using the same topology and endpoint rules as the
-        // file-backed runtime reload path.
-        let prev_snapshot = self.state.snapshot.load();
-        eggress_runtime::classify_reload_config(
-            &prev_snapshot.listeners,
-            &prev_snapshot.timeouts,
-            prev_snapshot.admin.as_ref(),
-            &new_rt_config,
-        )
-        .map_err(EggressError::Reload)?;
-
-        let prev_ref: Option<&eggress_runtime::CompiledRuntimeSnapshot> = Some(&prev_snapshot);
-        let new_snapshot =
-            eggress_runtime::snapshot::compile_runtime_snapshot(&new_rt_config, prev_ref)
-                .map_err(|e| EggressError::Reload(format!("snapshot build: {e}")))?;
-
-        let gen = new_snapshot.generation;
-        let upstreams = new_snapshot.upstreams.len();
-
-        // Snapshot must be published before the router swap. Readers that observe
-        // the new generation via `snapshot.load()` pull the router from that
-        // same snapshot Arc, so any reader seeing the new generation also sees
-        // the router that belongs to it.
-        let new_snapshot = Arc::new(new_snapshot);
-        self.state.snapshot.store(new_snapshot.clone());
-        self.state.routing.swap_arc(new_snapshot.router.clone());
-        self.state.restart_health_probes();
-
-        self.state.metrics.set_config_generation(gen);
-        self.state.metrics.record_reload(true);
-
-        Ok(ReloadOutcome::Applied {
-            generation: gen,
-            upstreams,
-        })
+    /// Apply an already-compiled runtime configuration.
+    ///
+    /// Thin wrapper over the canonical reload transaction for native
+    /// (non-TOML) producers such as direct pproxy compilation. Parse
+    /// failures cannot occur here; classification/snapshot failures are
+    /// reported by the canonical transaction and mapped to reload errors.
+    pub fn reload_compiled(
+        &self,
+        new_config: &eggress_config::compile::RuntimeConfig,
+    ) -> Result<ReloadOutcome, EggressError> {
+        let _guard = self
+            .reload_mutex
+            .lock()
+            .map_err(|_| EggressError::Reload("concurrent reload in progress".to_string()))?;
+        match self.state.apply_compiled_config(new_config) {
+            eggress_runtime::ReloadResult::Applied {
+                generation,
+                upstreams,
+            } => Ok(ReloadOutcome::Applied {
+                generation,
+                upstreams,
+            }),
+            eggress_runtime::ReloadResult::Rejected { reason } => Err(EggressError::Reload(reason)),
+            eggress_runtime::ReloadResult::Failed { error } => Err(EggressError::Reload(error)),
+        }
     }
 
     /// Reload configuration from a file.
@@ -599,15 +544,14 @@ impl EggressHandle {
         }
     }
 
-    /// Cancel the runtime and remove the temporary config without joining it.
+    /// Cancel the runtime without joining it.
     ///
     /// This is intended for finalizers that must abandon the handle after
-    /// cancellation without retaining credentials in a temporary file.
+    /// cancellation. No temporary config file exists (in-memory startup), so
+    /// only the shutdown token is cancelled.
     pub fn cancel_and_cleanup(&mut self) {
         self.cancel();
-        if let Some(path) = self._config_path.take() {
-            let _ = std::fs::remove_file(&path);
-        }
+        let _ = self._config_path.take();
     }
 
     /// Initiate graceful shutdown.
@@ -624,9 +568,7 @@ impl EggressHandle {
             })
             .await;
         }
-        if let Some(path) = self._config_path.take() {
-            let _ = std::fs::remove_file(&path);
-        }
+        let _ = self._config_path.take();
         Ok(())
     }
 
@@ -645,9 +587,7 @@ impl EggressHandle {
                 let _ = task.await;
             });
         }
-        if let Some(path) = self._config_path.take() {
-            let _ = std::fs::remove_file(&path);
-        }
+        let _ = self._config_path.take();
         Ok(())
     }
 }
@@ -675,9 +615,7 @@ impl Drop for EggressHandle {
                 });
             }
         }
-        if let Some(path) = self._config_path.take() {
-            let _ = std::fs::remove_file(&path);
-        }
+        let _ = self._config_path.take();
     }
 }
 
@@ -826,28 +764,6 @@ fn redact_toml_value_inner(value: &mut toml::Value) {
     }
 }
 
-/// Write config to a temporary file for the supervisor.
-///
-/// The TOML may carry plaintext upstream credentials, so the file is created
-/// without following a pre-existing path. On Unix it is also owner-only
-/// (0600) instead of world-readable.
-fn write_temp_config(config: &EggressConfig) -> Result<String, EggressError> {
-    let dir = std::env::temp_dir();
-    use std::io::Write;
-    let mut file = tempfile::Builder::new()
-        .prefix("eggress-embed-")
-        .suffix(".toml")
-        .tempfile_in(dir)
-        .map_err(|e| EggressError::Config(format!("failed to create temp config: {e}")))?;
-    file.write_all(config.source_toml.as_bytes())
-        .and_then(|_| file.flush())
-        .map_err(|e| EggressError::Config(format!("failed to write temp config: {e}")))?;
-    file.into_temp_path()
-        .keep()
-        .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|e| EggressError::Config(format!("failed to retain temp config: {e}")))
-}
-
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
@@ -882,40 +798,103 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn temp_config_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
+    fn temp_embed_files() -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(std::env::temp_dir())
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                    .filter(|path| {
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .is_some_and(|name| name.starts_with("eggress-embed-"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 
-        let config = super::EggressConfig::from_toml_str("version = 1").unwrap();
-        let path = super::write_temp_config(&config).unwrap();
-        let metadata = std::fs::metadata(&path).unwrap();
+    #[test]
+    fn from_toml_str_validates_once_and_compiles_in_memory() {
+        let input = r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"#;
+        let config = super::EggressConfig::from_toml_str(input).unwrap();
+        assert_eq!(config.source_toml(), input);
+        assert_eq!(config.compiled().listeners.len(), 1);
+        assert_eq!(config.compiled().listeners[0].name, "socks");
+    }
+
+    #[test]
+    fn blocking_start_succeeds_from_in_memory_config_without_tempfile() {
+        let before = temp_embed_files();
+        let config = super::EggressConfig::from_toml_str(
+            r#"
+version = 1
+
+[[listeners]]
+name = "socks"
+bind = "127.0.0.1:0"
+protocols = ["socks5"]
+"#,
+        )
+        .unwrap();
+        let handle = super::EggressService::new(config).start_blocking().unwrap();
+        assert!(handle._config_path.is_none());
+        let status = handle.status();
+        assert_eq!(status.listener_count, 1);
+        assert!(!handle.bound_addresses().listeners.is_empty());
+        let after = temp_embed_files();
         assert_eq!(
-            metadata.permissions().mode() & 0o777,
-            0o600,
-            "temp config carries plaintext credentials and must not be group/world readable"
+            before, after,
+            "in-memory startup must not create eggress-embed-*.toml temp files"
         );
-        let _ = std::fs::remove_file(&path);
+        handle.shutdown_blocking().unwrap();
     }
 
     #[test]
-    fn temp_config_files_use_distinct_random_names() {
+    fn startup_does_not_require_writable_temp_dir() {
+        // Startup must not depend on writing a temp TOML file: even when the
+        // temp directory already contains no writable assumption, startup
+        // creates no new temp file. This replaces the old owner-only temp
+        // file permission test; eliminating the temp file removes plaintext
+        // credential persistence entirely.
+        let before = temp_embed_files();
         let config = super::EggressConfig::from_toml_str("version = 1").unwrap();
-        let first = super::write_temp_config(&config).unwrap();
-        let second = super::write_temp_config(&config).unwrap();
-        assert_ne!(first, second);
-        let _ = std::fs::remove_file(first);
-        let _ = std::fs::remove_file(second);
+        let handle = super::EggressService::new(config).start_blocking().unwrap();
+        assert!(handle._config_path.is_none());
+        assert_eq!(before, temp_embed_files());
+        handle.shutdown_blocking().unwrap();
     }
 
     #[test]
-    fn cancel_removes_temp_config_file() {
+    fn cancel_and_cleanup_without_tempfile_is_idempotent() {
         let config = super::EggressConfig::from_toml_str("version = 1").unwrap();
         let mut handle = super::EggressService::new(config).start_blocking().unwrap();
-        let path = handle._config_path.clone().unwrap();
-
-        assert!(std::path::Path::new(&path).exists());
+        assert!(handle._config_path.is_none());
         handle.cancel_and_cleanup();
-        assert!(!std::path::Path::new(&path).exists());
+        handle.cancel_and_cleanup();
+    }
+
+    #[tokio::test]
+    async fn async_start_succeeds_from_in_memory_config() {
+        let config = super::EggressConfig::from_toml_str(
+            r#"
+version = 1
+
+[[listeners]]
+name = "http"
+bind = "127.0.0.1:0"
+protocols = ["http"]
+"#,
+        )
+        .unwrap();
+        let handle = super::EggressService::new(config).start().await.unwrap();
+        assert_eq!(handle.status().listener_count, 1);
+        handle.shutdown().await.unwrap();
     }
 }

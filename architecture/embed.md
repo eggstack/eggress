@@ -18,13 +18,14 @@ listeners entirely. Designed as the binding target for PyO3.
 
 | Method | Line | Description |
 |---|---|---|
-| `from_toml_str(input)` | :70 | Parse, version-check, validate, compile; stores source TOML |
+| `from_toml_str(input)` | `src/lib.rs` | Parse, version-check, validate, compile once via shared `parse_validate_compile`; stores compiled `RuntimeConfig` + ancillary source TOML |
+| `from_compiled(compiled, source)` | `src/lib.rs` | Construct from native `RuntimeConfig` (pproxy direct path); startup uses only `compiled` |
+| `compiled()` / `into_compiled()` | `src/lib.rs` | Borrow/consume the canonical compiled handoff |
 | `from_toml_file(path)` | :96 | Read file then delegate to `from_toml_str` |
 | `source_toml()` | :104 | Return raw TOML text |
 | `to_redacted_toml()` | :113 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
 
-Validation chain: `toml::from_str` → version check (must be 1 or absent)
-→ `validate_config()` → `compile_config()`.
+Validation chain (single shared boundary `parse_validate_compile`): `toml::from_str` → version check (must be 1 or absent) → `validate_config()` → `compile_config()`. `OutboundConnector::from_toml` / `validate_outbound_config` and `reload_toml_str` reuse the same boundary; reload maps failures to `Reload` + metrics.
 
 ### EggressService (`src/lib.rs:127`)
 
@@ -33,9 +34,9 @@ Validation chain: `toml::from_str` → version check (must be 1 or absent)
 | `new(config)` | :133 | Wrap a validated config |
 | `from_toml_str(input)` | :138 | Convenience: parse + new |
 | `from_toml_file(path)` | :143 | Convenience: file parse + new |
-| `start()` async | :152 | Start inside caller's Tokio runtime |
-| `start_blocking()` | :233 | Start on dedicated OS threads |
-| `start_blocking_with_compatibility_options()` | :313 | pproxy-compat entry point (feature-gated) |
+| `start()` async | `src/lib.rs` | In-memory `start_from_config` (no temp file) inside caller's Tokio runtime |
+| `start_blocking()` | `src/lib.rs` | In-memory `start_from_config` (no temp file); single `eggress-embed-run` thread |
+| `start_blocking_with_compatibility_options()` | `src/lib.rs` | Same `startup_in_memory` core with explicit `CompatibilityOptions`; only options differ |
 
 ### EggressHandle (`src/lib.rs:419`)
 
@@ -54,66 +55,69 @@ Validation chain: `toml::from_str` → version check (must be 1 or absent)
 | Method | Line | Description |
 |---|---|---|
 | `from_toml(config_toml)` | :63 | Compile config, require at least one upstream |
-| `from_pproxy_uri(uri)` | :106 | Full pproxy remote expression (`__` chains preserved) → validate/translate → connector (feature-gated, fail-closed, redacted errors) |
+| `from_pproxy_uri(uri)` | `src/outbound.rs` | Full pproxy `__` chain → `compile_chain_to_native` (typed `PproxyChain` → native `ProxyChainSpec`, no TOML string) → minimal `RuntimeConfig` → connector (fail-closed, redacted errors) |
 | `connect_tcp(host, port)` | :133 | Execute chain, return `(BoxStream, OutboundInfo)` |
 | `connect_tcp_timeout(host, port, timeout)` | :188 | Wraps `connect_tcp` in `tokio::time::timeout` |
 | `associate_udp(target_host, target_port)` | :206 | Returns error — not yet implemented |
 | `upstream_count()` | :219 | Number of configured upstreams |
 | `validate_outbound_config(toml)` | :228 | Static validation, returns hop count |
 
-`from_pproxy_uri()` consumes one complete pproxy remote expression via
-`parse_pproxy_chain()`, preserving every `__` hop in source order. Only a
-single `direct` hop takes the direct fast path; multi-hop expressions
-containing `direct`, backward (`+in`), or feature-disabled roles fail
-closed, and malformed chained input returns credential-redacted errors.
-Execution reuses the existing `ChainExecutor` with no listener.
+`from_pproxy_uri()` parses via `parse_pproxy_chain()`, preserving every `__`
+hop in source order, then calls `compile_chain_to_native()` (validation +
+`build_chain_config_uri` → `parse_proxy_chain`, no TOML). Only a single
+`direct` hop takes the direct fast path; multi-hop `direct`, backward (`+in`),
+or unsupported roles fail closed with redacted errors. Execution reuses
+`ChainExecutor` with no listener.
 
 ## How it works
 
 ### Async path (`start()`)
 
-1. Writes config to a temp file via `write_temp_config()` (:867) — on Unix,
-   file is created with mode `0o600` (:877-883).
-2. Spawns `tokio::task::spawn_blocking` which calls
-   `ServiceSupervisor::start(&config_path)`.
-3. Inside that blocking task, spawns a dedicated OS thread
-   `"eggress-embed-rt"` (:171) that runs `sup.run()`.
-4. Polls `state.readiness` every 5ms for up to 30 seconds (:176-191).
-5. Returns `EggressHandle` with `RuntimeState`, `CancellationToken`, and
-   the Tokio task join handle.
+1. Consumes `EggressConfig::into_compiled()` (validated once, no filesystem).
+2. Spawns `tokio::task::spawn_blocking` which calls shared
+   `startup_in_memory(rt_config, CompatibilityOptions::default())` →
+   `ServiceSupervisor::start_from_config_with_options(rt_config, None, _)`.
+3. Inside, spawns a single OS thread `"eggress-embed-run"` that owns
+   `sup.run()`.
+4. Polls `state.readiness` every 5ms for up to 30 seconds; on timeout cancels
+   and joins before returning startup error (no leaked thread).
+5. Sends `(state, token)` via oneshot, then blocks on run-thread join for
+   service lifetime. Returns `EggressHandle` with `_config_path=None`
+   (SIGHUP disabled; in-memory service pretends no config file).
 
 ### Blocking path (`start_blocking()`)
 
-1. Spawns outer OS thread `"eggress-embed-rt"` (:238) for startup.
-2. Inside that thread, spawns inner OS thread `"eggress-embed-run"` (:252-254)
-   that owns `ServiceSupervisor::run()`.
-3. Sends `(state, token, run_handle, config_path)` through a
-   `sync_channel(1)`.
-4. Returns `EggressHandle` with the run thread's `JoinHandle`.
+1. Calls the same shared `startup_in_memory(rt_config, options)` directly in
+   the caller thread (no outer thread, no channel).
+2. `startup_in_memory` creates the supervisor from memory, spawns
+   `"eggress-embed-run"`, waits readiness (cancel+join on timeout).
+3. Returns `EggressHandle` with the run thread's `JoinHandle` and
+   `_config_path=None`.
+
+Native and compatibility startup share `startup_in_memory`; only
+`CompatibilityOptions` differ.
 
 ### Reload semantics
 
-`reload_toml_str()` (:520-581):
-
-1. Acquires `reload_mutex` (prevents concurrent reloads).
-2. Parses, validates, compiles new config.
-3. Rejects startup-captured listener changes (count, names, bind addresses,
-   `reuse_port`, protocols, auth, TLS, Shadowsocks/Trojan config,
-   `connection_limit`/`fixed_target`/`local_bind`, all UDP settings,
-   transparent/unix config) — returns error, restart required. Routing,
-   upstream/group, health, and PAC/static changes pass through.
-4. Builds new `CompiledRuntimeSnapshot` via `compile_runtime_snapshot()`.
-5. Publishes new snapshot via `store()`, swaps router via `swap_arc()`.
-6. Returns `ReloadOutcome::Applied { generation, upstreams }`.
+`reload_toml_str()` / `reload_compiled()` delegate to the canonical
+`RuntimeState::apply_compiled_config()` transaction (see `runtime.md`).
+File (`reload_toml_file`), string, and native entry points differ only in how
+the new `RuntimeConfig` is obtained (file read vs string
+`parse_validate_compile` vs already-compiled). The transaction owns
+classification, snapshot build, snapshot/routing/admin publication, health
+restart, H2 pool clear, and metrics (`set_config_generation` + `record_reload`
+on success *and* failure). Rejected/failed reloads preserve generation.
+`reload_compiled()` is the native entry point for direct pproxy compilation
+(no TOML string).
 
 ### Drop behavior
 
-`Drop for EggressHandle` (:635-662):
+`Drop for EggressHandle`:
 - Cancels the shutdown token.
 - Blocking path: joins run thread directly.
 - Async path: creates a throwaway `tokio::runtime::Runtime`, awaits task
   with a 5-second timeout.
-- Removes temp config file.
+- Clears `_config_path` (always `None`; no temp file exists).
 
 ## Error & failure model
 
@@ -148,8 +152,9 @@ a stable `&'static str` label for each variant.
 
 ## Security notes
 
-- Temp config file is `0o600` on Unix (:834-838) since TOML may carry
-  plaintext upstream credentials.
+- No temp config file exists (in-memory startup); plaintext credentials never
+  touch the filesystem via embed startup. Retained source TOML (ancillary
+  display state) stays in memory only.
 - `to_redacted_toml()` walks the TOML tree generically (:788-827):
   - Keys matching `REDACTED_SECRET_KEYS` (`password`, `password_env`,
     `secret`, `secret_ref`, `token`, `api_key`, `apikey`, `credentials`)
@@ -184,10 +189,12 @@ a stable `&'static str` label for each variant.
 | `tests/error_redaction.rs` | Credential redaction in errors, `to_redacted_toml`, category labels |
 
 Inline tests (`src/lib.rs`):
-- `listener_addr_prefers_bound_address` (:900)
-- `listener_addr_falls_back_to_configured_bind` (:909)
-- `listener_addr_uses_default_for_invalid_configured_bind` (:919)
-- `temp_config_file_is_owner_only` (Unix, :928)
+- `listener_addr_*` helpers
+- `from_toml_str_validates_once_and_compiles_in_memory`
+- `blocking_start_succeeds_from_in_memory_config_without_tempfile`
+  (asserts `_config_path=None` + no `eggress-embed-*.toml` created)
+- `startup_does_not_require_writable_temp_dir`
+- `async_start_succeeds_from_in_memory_config`
 
 ## Reviewer gotchas
 
@@ -199,8 +206,8 @@ Inline tests (`src/lib.rs`):
   bind). Only routing rules, upstreams, and health state can be hot-reloaded.
 - `OutboundConnector::associate_udp()` always returns an error (:210-215)
   — this is an unimplemented stub.
-- `write_temp_config` creates an owner-only (`0o600`) tempfile with a random
-  name per call; two embed instances in the same process never collide.
+- No temp file exists; `EggressHandle._config_path` is always `None`.
+  In-memory services never pretend to have a config file (SIGHUP disabled).
 
 ## See also
 

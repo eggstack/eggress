@@ -125,55 +125,45 @@ impl OutboundConnector {
                 direct: true,
             });
         }
-        if chain.hops.iter().any(|hop| hop.is_backward()) {
-            return Err(EggressError::UnsupportedFeature {
-                feature: "backward-upstream".to_string(),
-                message: format!(
-                    "pproxy chain '{}' uses a backward (+in) role which OutboundConnector cannot execute",
-                    chain.redacted_display()
-                ),
-            });
-        }
-        let unsupported = eggress_pproxy_compat::uri::validate_chain_hops(&chain);
-        if !unsupported.is_empty() {
-            let roles = unsupported
-                .iter()
-                .map(|(_, scheme)| scheme.clone())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(EggressError::UnsupportedFeature {
-                feature: "chain-unsupported-hop".to_string(),
-                message: format!(
-                    "pproxy chain '{}' contains unsupported hop role(s): {}",
-                    chain.redacted_display(),
-                    roles
-                ),
-            });
-        }
-        let default_args = eggress_pproxy_compat::PproxyArgs::default_args();
-        let chains = [chain.clone()];
-        let output = eggress_pproxy_compat::translate_from_uris(&default_args, &[], &chains)
+        // Direct native compilation: typed `PproxyChain` -> native
+        // `ProxyChainSpec` with no TOML serialize/parse round trip. Validation
+        // (backward, unsupported hops, plugins, local-bind, schemes) lives in
+        // the compatibility crate so direct and TOML paths agree.
+        let native_chain = eggress_pproxy_compat::translate::compile_chain_to_native(&chain)
             .map_err(|e| map_compat_translate_error(&chain, uri, &redacted_expr, e))?;
-        if !output.unsupported.is_empty() {
-            let first_feature = output.unsupported[0].feature.to_string();
-            let details = output
-                .unsupported
-                .iter()
-                .map(|u| u.to_string())
-                .collect::<Vec<_>>()
-                .join("; ");
-            let details = scrub_message_with_chain(&chain, uri, &redacted_expr, details);
-            return Err(EggressError::UnsupportedFeature {
-                feature: first_feature,
-                message: format!(
-                    "pproxy chain '{}' is not executable outbound: {}",
-                    chain.redacted_display(),
-                    details
-                ),
-            });
+        if native_chain.hops.is_empty() {
+            return Err(EggressError::Config(format!(
+                "pproxy chain '{}' produced an empty native chain",
+                chain.redacted_display()
+            )));
         }
-        Self::from_toml(&output.toml)
-            .map_err(|e| sanitize_connector_error(&chain, uri, &redacted_expr, e))
+        let upstream = eggress_config::compile::UpstreamConfig {
+            id: "pproxy-upstream-0".to_string(),
+            chain: native_chain,
+            health: Default::default(),
+            h2: None,
+        };
+        let runtime_config = eggress_config::compile::RuntimeConfig {
+            process: Default::default(),
+            timeouts: Default::default(),
+            listeners: Vec::new(),
+            upstreams: vec![upstream],
+            groups: Vec::new(),
+            rules: Vec::new(),
+            default_action: eggress_routing::RouteActionSpec::Direct,
+            admin: None,
+            reverse_servers: Vec::new(),
+            reverse_clients: Vec::new(),
+        };
+        #[cfg(feature = "ssh")]
+        let chain_executor = eggress_server::build_chain_executor(None, None, None);
+        #[cfg(not(feature = "ssh"))]
+        let chain_executor = eggress_server::build_chain_executor(None, None);
+        Ok(Self {
+            runtime_config: Some(std::sync::Arc::new(runtime_config)),
+            chain_executor,
+            direct: false,
+        })
     }
 
     /// Connect to a target host:port through the configured proxy chain.
@@ -274,25 +264,12 @@ impl OutboundConnector {
     /// Validate that the config is usable for outbound connections.
     ///
     /// Returns the number of hops in the first upstream's chain.
+    ///
+    /// Parsing/validation/compilation goes through the shared
+    /// [`crate::parse_validate_compile`] boundary exactly once.
     pub fn validate_outbound_config(config_toml: &str) -> Result<usize, EggressError> {
-        let config: eggress_config::model::ConfigFile =
-            toml::from_str(config_toml).map_err(|e| EggressError::Config(e.to_string()))?;
-
-        if let Some(version) = config.version {
-            if version != 1 {
-                return Err(EggressError::Config(format!(
-                    "unsupported config version: {version}"
-                )));
-            }
-        }
-
-        eggress_config::validate::validate_config(&config).map_err(|errors| {
-            let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-            EggressError::Config(messages.join("; "))
-        })?;
-
-        let runtime_config = eggress_config::compile::compile_config(&config)
-            .map_err(|e| EggressError::Config(e.to_string()))?;
+        let runtime_config =
+            crate::parse_validate_compile(config_toml).map_err(EggressError::Config)?;
 
         if runtime_config.upstreams.is_empty() {
             return Err(EggressError::Config(
@@ -573,39 +550,6 @@ fn map_compat_translate_error(
             }
         }
         _ => EggressError::Config(message),
-    }
-}
-
-#[cfg(feature = "pproxy-compat")]
-fn sanitize_connector_error(
-    chain: &eggress_pproxy_compat::uri::PproxyChain,
-    uri: &str,
-    redacted_expr: &str,
-    error: EggressError,
-) -> EggressError {
-    match error {
-        EggressError::Config(message) => {
-            EggressError::Config(scrub_message_with_chain(chain, uri, redacted_expr, message))
-        }
-        EggressError::Runtime(message) => {
-            EggressError::Runtime(scrub_message_with_chain(chain, uri, redacted_expr, message))
-        }
-        EggressError::Startup(message) => {
-            EggressError::Startup(scrub_message_with_chain(chain, uri, redacted_expr, message))
-        }
-        EggressError::Reload(message) => {
-            EggressError::Reload(scrub_message_with_chain(chain, uri, redacted_expr, message))
-        }
-        EggressError::Shutdown(message) => {
-            EggressError::Shutdown(scrub_message_with_chain(chain, uri, redacted_expr, message))
-        }
-        EggressError::UnsupportedFeature { feature, message } => EggressError::UnsupportedFeature {
-            feature,
-            message: scrub_message_with_chain(chain, uri, redacted_expr, message),
-        },
-        EggressError::Internal(message) => {
-            EggressError::Internal(scrub_message_with_chain(chain, uri, redacted_expr, message))
-        }
     }
 }
 

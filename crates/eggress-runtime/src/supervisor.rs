@@ -802,6 +802,70 @@ impl RuntimeState {
         self.snapshot.load().generation
     }
 
+    /// Canonical reload transaction shared by file-backed supervisor reload,
+    /// SIGHUP handling, and embed string/file reload entry points.
+    ///
+    /// Applies a newly compiled [`eggress_config::compile::RuntimeConfig`] to
+    /// the running state with all side effects centralized:
+    /// classification, snapshot compilation, snapshot publication, routing
+    /// swap, admin publication, health restart, H2 pool invalidation, and
+    /// metrics recording. Failure preserves the prior generation.
+    ///
+    /// Callers differ only in how `new_config` is obtained (file load vs.
+    /// string parse). Supervisors with stored `rt_config` must update that
+    /// bookkeeping on `Applied`; the snapshot itself remains authoritative
+    /// for the next classification.
+    pub fn apply_compiled_config(
+        &self,
+        new_config: &eggress_config::compile::RuntimeConfig,
+    ) -> ReloadResult {
+        let prev_snapshot = self.snapshot.load();
+        if let Err(reason) = classify_reload_config(
+            &prev_snapshot.listeners,
+            &prev_snapshot.timeouts,
+            prev_snapshot.admin.as_ref(),
+            new_config,
+        ) {
+            self.metrics.record_reload(false);
+            return ReloadResult::Rejected { reason };
+        }
+
+        let prev_ref: Option<&CompiledRuntimeSnapshot> = Some(&prev_snapshot);
+        let new_snapshot = match compile_runtime_snapshot(new_config, prev_ref) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.metrics.record_reload(false);
+                return ReloadResult::Failed {
+                    error: format!("snapshot build: {error}"),
+                };
+            }
+        };
+
+        let upstream_count = new_snapshot.upstreams.len();
+        let generation = new_snapshot.generation;
+
+        // Snapshot must be published before the router swap. Readers that
+        // observe the new generation via `snapshot.load()` pull the router
+        // from that same snapshot Arc, so any reader seeing the new
+        // generation also sees the router that belongs to it.
+        let new_snapshot = Arc::new(new_snapshot);
+        self.snapshot.store(new_snapshot.clone());
+        self.routing.swap_arc(new_snapshot.router.clone());
+        #[cfg(feature = "operations")]
+        self.publish_admin_snapshot(new_snapshot.clone());
+
+        self.restart_health_probes();
+        eggress_protocol_http::H2_POOL_REGISTRY.clear();
+
+        self.metrics.set_config_generation(generation);
+        self.metrics.record_reload(true);
+
+        ReloadResult::Applied {
+            generation,
+            upstreams: upstream_count,
+        }
+    }
+
     #[cfg(feature = "operations")]
     fn publish_admin_snapshot(&self, snapshot: Arc<CompiledRuntimeSnapshot>) {
         let listener_addrs = self.admin_snapshot.load().listener_addrs.clone();
@@ -1125,32 +1189,12 @@ impl ServiceSupervisor {
         self
     }
 
-    /// Classify whether a reload is supported given old and new listener configs.
-    /// Returns `Ok(())` if the reload is safe, or `Err(reason)` if it should be rejected.
-    ///
-    /// UDP-specific reload semantics:
-    /// - UDP bind changes are restart-required.
-    /// - UDP advertise address changes are restart-required if socket bind changes.
-    /// - UDP limits apply to new associations only; existing ones keep their limits.
-    /// - Route changes apply immediately to future UDP packets.
-    fn classify_reload(
-        &self,
-        new_config: &eggress_config::compile::RuntimeConfig,
-    ) -> Result<(), String> {
-        classify_reload_config(
-            &self.rt_config.listeners,
-            &self.rt_config.timeouts,
-            self.rt_config.admin.as_ref(),
-            new_config,
-        )
-    }
-
     /// Attempt to reload configuration. Encapsulates the full reload transaction:
     /// 1. Load and compile new config
-    /// 2. Classify unsupported changes (reject if listener topology changed)
-    /// 3. Build new snapshot with previous snapshot for Arc reuse
-    /// 4. Update stored rt_config for subsequent reloads
-    /// 5. Atomically swap routing and snapshot
+    /// 2. Delegate to the canonical [`RuntimeState::apply_compiled_config`]
+    ///    transaction (classification, snapshot build, publish, routing swap,
+    ///    admin publish, health restart, pool invalidation, metrics).
+    /// 3. Update stored rt_config for subsequent reloads on success.
     pub fn reload_config(&mut self) -> ReloadResult {
         let config_path = match self.config_path {
             Some(ref p) => p.clone(),
@@ -1163,51 +1207,21 @@ impl ServiceSupervisor {
         let new_rt_config = match eggress_config::compile::load_and_compile(&config_path) {
             Ok(c) => c,
             Err(e) => {
+                self.state.metrics.record_reload(false);
                 return ReloadResult::Failed {
                     error: format!("config load: {e}"),
                 };
             }
         };
 
-        if let Err(reason) = self.classify_reload(&new_rt_config) {
-            return ReloadResult::Rejected { reason };
+        let result = self.state.apply_compiled_config(&new_rt_config);
+        if matches!(result, ReloadResult::Applied { .. }) {
+            // Keep the configuration used by the next reload in sync. The
+            // snapshot remains authoritative for classification; this stored
+            // copy only supports file-backed bookkeeping.
+            self.rt_config = new_rt_config;
         }
-
-        let prev_snapshot = self.state.snapshot.load();
-        let prev_ref: Option<&CompiledRuntimeSnapshot> = Some(&prev_snapshot);
-        let new_snapshot = match compile_runtime_snapshot(&new_rt_config, prev_ref) {
-            Ok(s) => s,
-            Err(e) => {
-                return ReloadResult::Failed {
-                    error: format!("snapshot build: {e}"),
-                };
-            }
-        };
-
-        let upstream_count = new_snapshot.upstreams.len();
-        let gen = new_snapshot.generation;
-
-        // Keep the configuration used by the next reload in sync before making
-        // the new snapshot visible to readers.
-        self.rt_config = new_rt_config;
-
-        // Snapshot must be published before the router swap. Readers that observe
-        // the new generation via `snapshot.load()` pull the router from that
-        // same snapshot Arc, so any reader seeing the new generation also sees
-        // the router that belongs to it.
-        let new_snapshot = Arc::new(new_snapshot);
-        self.state.snapshot.store(new_snapshot.clone());
-        self.state.routing.swap_arc(new_snapshot.router.clone());
-        #[cfg(feature = "operations")]
-        self.state.publish_admin_snapshot(new_snapshot.clone());
-
-        self.state.restart_health_probes();
-        eggress_protocol_http::H2_POOL_REGISTRY.clear();
-
-        ReloadResult::Applied {
-            generation: gen,
-            upstreams: upstream_count,
-        }
+        result
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
@@ -1230,7 +1244,6 @@ impl ServiceSupervisor {
         let connection_tasks = self.connection_tasks.clone();
         let admin_tasks = self.admin_tasks.clone();
         let health_for_run = self.health.clone();
-        let health_clone = health_for_run.clone();
         let snapshot = self.state.snapshot.clone();
         let state_ref = self.state.clone();
         let rt_config = self.rt_config.clone();
@@ -3032,72 +3045,29 @@ impl ServiceSupervisor {
                         }
                         _ = async { sighup.as_mut().ok()?.recv().await }, if sighup.is_ok() && !config_path.is_empty() => {
                             tracing::info!("reload signal received, reloading config from {config_path}");
-                            let prev_snapshot = snapshot.load();
-                            let prev_ref: Option<&CompiledRuntimeSnapshot> = Some(&prev_snapshot);
                             let config_path_clone = config_path.clone();
                             let load_result = tokio::task::spawn_blocking(move || {
                                 eggress_config::compile::load_and_compile(&config_path_clone)
                             }).await;
                             match load_result {
                                 Ok(Ok(new_rt_config)) => {
-                                    // Classify unsupported changes before building a new snapshot.
-                                    if let Err(reason) = classify_reload_config(
-                                        &prev_snapshot.listeners,
-                                        &prev_snapshot.timeouts,
-                                        prev_snapshot.admin.as_ref(),
-                                        &new_rt_config,
-                                    ) {
-                                        tracing::error!("reload rejected: {reason}");
-                                        metrics.record_reload(false);
-                                        continue;
-                                    }
-                                    match compile_runtime_snapshot(&new_rt_config, prev_ref) {
-                                        Ok(new_snapshot) => {
-                                            let upstream_count = new_snapshot.upstreams.len();
-                                            let gen = new_snapshot.generation;
-
-                                            // Snapshot must be published before the router swap so any reader
-                                            // observing the new generation via
-                                            // `snapshot.load()` also sees the
-                                            // matching router.
-                                            let new_snapshot = Arc::new(new_snapshot);
-                                            snapshot.store(new_snapshot.clone());
-                                            routing.swap_arc(new_snapshot.router.clone());
-                                            #[cfg(feature = "operations")]
-                                            state_ref.publish_admin_snapshot(new_snapshot.clone());
-
-                                            metrics.set_config_generation(gen);
-                                            metrics.record_reload(true);
-                                            eggress_protocol_http::H2_POOL_REGISTRY.clear();
-
-                                            if let Ok(mut guard) = health_clone.lock() {
-                                                if let Some(ref mut hm) = *guard {
-                                                    hm.stop_all();
-                                                }
-                                                let upstream_runtimes: Vec<Arc<UpstreamRuntime>> = snapshot
-                                                    .load()
-                                                    .upstreams
-                                                    .values()
-                                                    .cloned()
-                                                    .collect();
-                                                if !upstream_runtimes.is_empty() {
-                                                    let mut hm = HealthManager::new(health_cancel.clone());
-                                                    hm.start_probes(&upstream_runtimes);
-                                                    *guard = Some(hm);
-                                                } else {
-                                                    *guard = None;
-                                                }
-                                            }
-
+                                    // Single canonical transaction owns
+                                    // classification, snapshot build, publish,
+                                    // routing/admin/health/pool/metrics side
+                                    // effects. Metrics are recorded inside.
+                                    match state_ref.apply_compiled_config(&new_rt_config) {
+                                        ReloadResult::Applied { generation: gen, upstreams: upstream_count } => {
                                             tracing::info!(
                                                 generation = gen,
                                                 upstreams = upstream_count,
                                                 "config reloaded successfully"
                                             );
                                         }
-                                        Err(e) => {
-                                            metrics.record_reload(false);
-                                            tracing::error!("reload failed (snapshot build): {e}");
+                                        ReloadResult::Rejected { reason } => {
+                                            tracing::error!("reload rejected: {reason}");
+                                        }
+                                        ReloadResult::Failed { error } => {
+                                            tracing::error!("reload failed (snapshot build): {error}");
                                         }
                                     }
                                 }
@@ -3422,7 +3392,13 @@ protocols = ["http"]
 
         let sup = ServiceSupervisor::start(path1).unwrap();
         let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err(), "listener name change should be rejected");
         assert!(result.unwrap_err().contains("name changed"));
     }
@@ -3452,7 +3428,13 @@ protocols = ["http"]
 
         let sup = ServiceSupervisor::start(path1).unwrap();
         let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err(), "listener bind change should be rejected");
         assert!(result.unwrap_err().contains("bind"));
     }
@@ -3472,7 +3454,13 @@ protocols = ["http"]
 
         let sup = ServiceSupervisor::start(path).unwrap();
         let new_config = eggress_config::compile::load_and_compile(path).unwrap();
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_ok(), "unchanged listeners should be accepted");
     }
 
@@ -3504,7 +3492,13 @@ bind = "127.0.0.1:0"
         let new_config =
             eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
 
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("UDP"));
     }
@@ -3539,7 +3533,13 @@ protocols = ["http"]
         let new_config =
             eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
 
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("timeout"));
     }
@@ -3576,7 +3576,13 @@ enabled = false
         let new_config =
             eggress_config::compile::load_and_compile(f2.path().to_str().unwrap()).unwrap();
 
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err(), "admin bind change should be rejected");
         assert!(result.unwrap_err().contains("admin"));
     }
@@ -3611,7 +3617,13 @@ protocols = ["socks5"]
 
         let sup = ServiceSupervisor::start(path1).unwrap();
         let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err(), "listener count change should be rejected");
         assert!(result.unwrap_err().contains("listener count"));
     }
@@ -3644,7 +3656,13 @@ enabled = true
 
         let sup = ServiceSupervisor::start(path1).unwrap();
         let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(
             result.is_err(),
             "transparent enabled change should be rejected"
@@ -3683,7 +3701,13 @@ path = "/tmp/eggress-new.sock"
 
         let sup = ServiceSupervisor::start(path1).unwrap();
         let new_config = eggress_config::compile::load_and_compile(path2).unwrap();
-        let result = sup.classify_reload(&new_config);
+        let snap = sup.state.snapshot.load();
+        let result = classify_reload_config(
+            &snap.listeners,
+            &snap.timeouts,
+            snap.admin.as_ref(),
+            &new_config,
+        );
         assert!(result.is_err(), "unix path change should be rejected");
         assert!(result.unwrap_err().contains("unix socket path"));
     }

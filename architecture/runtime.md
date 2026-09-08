@@ -19,6 +19,7 @@ health probes, reverse routing gate, and ordered shutdown.
 | Symbol | Notes |
 |--------|-------|
 | `ServiceSupervisor::start(path)` | Load config from file, enable SIGHUP reload |
+| `RuntimeState::apply_compiled_config(new_config)` | Canonical reload transaction: classify → snapshot build → publish snapshot/routing/admin → health restart → H2 clear → metrics (success *and* failure); preserves generation on reject/fail |
 | `ServiceSupervisor::start_from_config(cfg, path)` | Config from memory; SIGHUP only if `path` is `Some` |
 | `ServiceSupervisor::start_from_config_with_options(cfg, path, compat)` | Compatibility flags (pproxy compat, `--sys`, debug, verbosity) |
 | `ServiceSupervisor::run(&mut self)` | Blocking; owns signal loop and shutdown sequence |
@@ -66,24 +67,32 @@ Code at `src/supervisor.rs:2733-2786`:
 
 Each concern uses its own `CancellationToken` or `TaskTracker`.
 
-## Reload path
+## Reload path (one canonical transaction)
 
-1. `load_and_compile(config_path)` — file I/O via `spawn_blocking`.
-2. `classify_listeners` rejects startup-captured changes: count, name, bind,
-   `reuse_port`, protocols, auth material, TLS material, Shadowsocks/Trojan
-   config, `connection_limit`/`fixed_target`/`local_bind`, all UDP listener
-   settings, transparent config (enabled + protocol), unix socket
-   config (path + options). Routing, upstream/group, health, and PAC/static
-   changes pass through.
-3. `compile_runtime_snapshot(&new_config, prev_ref)` — Arc reuse when
-   `old.chain == new.chain && old.health_config == new.health`.
-4. `self.rt_config = new_rt_config` — kept in sync before snapshot publish.
-5. **Snapshot before router swap**: `snapshot.store(new_snapshot)` then
-   `routing.swap_arc(router)`. Readers seeing new generation see matching
-   router.
-6. Health probes restarted from new upstreams.
+`RuntimeState::apply_compiled_config(&new_config)` owns all state mutation.
+`reload_config()` (file), SIGHUP handling, and embed
+`reload_toml_str` / `reload_compiled` / `reload_toml_file` differ only in how
+`new_config` is obtained (file `load_and_compile` vs string
+`parse_validate_compile` vs already-compiled).
 
-On failure, old snapshot stays live; `reload_failures_total` increments.
+1. Classify via `classify_reload_config` on the live snapshot (not stored
+   `rt_config`): rejects count, name, bind, `reuse_port`, protocols, auth,
+   TLS, Shadowsocks/Trojan, `connection_limit`/`fixed_target`/`local_bind`,
+   all UDP settings, transparent/unix. Routing, upstream/group, health,
+   PAC/static pass through. Records `record_reload(false)` on reject.
+2. `compile_runtime_snapshot(&new_config, Some(prev))` — Arc reuse when
+   `old.chain == new.chain && old.health_config == new.health`. Records
+   `record_reload(false)` on snapshot-build failure; old snapshot stays live.
+3. **Snapshot before router swap**: `snapshot.store()` then
+   `routing.swap_arc()`, then `publish_admin_snapshot` (operations),
+   `restart_health_probes()`, `H2_POOL_REGISTRY.clear()`,
+   `set_config_generation(gen)` + `record_reload(true)`.
+4. Supervisor `reload_config()` updates stored `rt_config` only on `Applied`
+   (snapshot remains authoritative for next classification).
+
+SIGHUP uses the same transaction (no duplicated classify/snapshot/publish/
+health/metrics code). Embed string/file reloads record parse failures as
+`record_reload(false)` before the transaction so file/embed metrics agree.
 
 ## Arc identity reuse rules
 

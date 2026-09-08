@@ -228,6 +228,13 @@ class CallbackWrapper:
                     timeout=effective_timeout,
                 )
             else:
+                # Exceptional direct `run_in_executor` (not via AsyncBridge):
+                # user-supplied plugin callbacks (not native blocking work)
+                # require per-call timeout + reentrancy-flag isolation. The
+                # canonical bridge (`wrap_blocking_call`) has no timeout
+                # parameter and preserves caller context, while here sync
+                # callbacks must NOT inherit the reentrancy flag. Documented
+                # here as the single allowed non-bridge executor use.
                 loop = asyncio.get_running_loop()
                 bound = functools.partial(ctx.run, self._callback, *args, **kwargs)
                 value = await asyncio.wait_for(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import warnings
+
+from eggress._asyncio import wrap_blocking_call
 from enum import Enum
 from typing import Any, Optional, Sequence
 
@@ -169,12 +170,13 @@ class Connection:
         self.close()
 
     async def aclose(self) -> None:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.close)
+        # Blocking shutdown (joins service threads) via maintained bridge:
+        # contextvars preservation + cancellation propagation, no direct
+        # run_in_executor outside the canonical bridge.
+        await wrap_blocking_call(self.close)
 
     async def await_closed(self) -> None:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.wait_closed)
+        await wrap_blocking_call(self.wait_closed)
 
     def __enter__(self) -> Connection:
         return self

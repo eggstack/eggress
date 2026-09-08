@@ -360,20 +360,23 @@ impl PyConnection {
         let parsed = eggress_pproxy_compat::PproxyArgs::parse(&all_args)
             .map_err(|e| ConnectionError::new_err(format!("argument parse error: {e}")))?;
 
-        let output = py
-            .detach(|| eggress_pproxy_compat::translate_pproxy_args(&parsed))
+        // Typed native translation: intermediates -> TOML (display) + RuntimeConfig
+        // (startup) in one build, no TOML serialize/parse round trip for startup.
+        let combined = py
+            .detach(|| eggress_pproxy_compat::translate_pproxy_args_to_native(&parsed))
             .map_err(|e| ConnectionError::new_err(format!("translation failed: {e}")))?;
 
-        if output.has_unsupported() {
-            let features: Vec<_> = output.unsupported.iter().map(|u| u.feature).collect();
+        if combined.has_unsupported() {
+            let features: Vec<_> = combined.unsupported.iter().map(|u| u.feature).collect();
             return Err(UnsupportedFeatureError::new_err(format!(
                 "unsupported features: {}",
                 features.join(", ")
             )));
         }
 
-        let config = eggress_embed::EggressConfig::from_toml_str(&output.toml)
-            .map_err(|e| ConnectionError::new_err(format!("config error: {e}")))?;
+        let output_toml = combined.toml.clone();
+        let config =
+            eggress_embed::EggressConfig::from_compiled(combined.runtime, output_toml.clone());
         let service = eggress_embed::EggressService::new(config);
         let handle = py
             .detach(|| service.start_blocking())
@@ -388,7 +391,7 @@ impl PyConnection {
         Ok(Self {
             state: Arc::new(AtomicU8::new(STATE_CREATED)),
             handle: Some(handle),
-            config_toml: output.toml,
+            config_toml: output_toml,
             bound_addr: bound,
             remote_addr: None,
             peername: None,
