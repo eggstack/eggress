@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Baseline
 
@@ -297,11 +297,78 @@ Phase 2 is complete only when:
 
 ## Closure record
 
-When implemented, update this file in place with:
+Implemented in commit `edca5ab` (single commit on `main`, ahead of the
+roadmap baseline `93a205c` and after Phase 1 closure `cf1aba1`).
 
-- implementation commit range;
-- canonical startup function(s);
-- canonical reload transaction function/type;
-- direct compatibility compilation entry points;
-- Python bridge entry point used by async wrappers;
-- tests demonstrating equivalence with prior public behavior.
+Canonical startup: `startup_in_memory(rt_config, options)` in
+`crates/eggress-embed/src/lib.rs` (shared by native `start()` /
+`start_blocking()` and compat `start_blocking_with_compatibility_options()`;
+only `CompatibilityOptions` differ) via
+`ServiceSupervisor::start_from_config_with_options(rt, None, options)`.
+`EggressConfig` stores compiled `RuntimeConfig` (canonical) + ancillary
+source TOML via shared `parse_validate_compile`; `_config_path=None`,
+SIGHUP disabled, no `write_temp_config` round trip.
+
+Canonical reload transaction:
+`RuntimeState::apply_compiled_config(&RuntimeConfig) -> ReloadResult` in
+`crates/eggress-runtime/src/supervisor.rs` owns classification (snapshot
+authoritative), snapshot build (Arc reuse), snapshot/routing/admin publish,
+`restart_health_probes()`, `H2_POOL_REGISTRY.clear()`, and metrics
+(`set_config_generation` + `record_reload` on success *and* failure).
+`ServiceSupervisor::reload_config()` (file), SIGHUP handling, and embed
+`reload_toml_str` / `reload_toml_file` / `reload_compiled` differ only in
+config acquisition; supervisor updates stored `rt_config` only on `Applied`.
+
+Direct compatibility compilation (no TOML string in native paths):
+- `compile_chain_to_native(&PproxyChain) -> ProxyChainSpec` in
+  `crates/eggress-pproxy-compat/src/translate.rs` (outbound; validation
+  mirrors remote handling, `build_chain_config_uri` → `parse_proxy_chain`).
+- Shared `build_intermediates()` produces typed `TranslationIntermediates`;
+  `generate_toml()` (presentation/`--dump-config`) and
+  `intermediates_to_config_file()` (direct `ConfigFile` mapping, no
+  `to_string`/`from_str`) are renderers over it.
+- `translate_to_runtime_config()` → `NativeTranslation { runtime, warnings,
+  unsupported }` and `translate_pproxy_args_to_native()` →
+  `CombinedTranslation { toml, runtime, warnings, unsupported }`
+  (single intermediates build for both renderers).
+- `OutboundConnector::from_pproxy_uri()` consumes `compile_chain_to_native`
+  into a minimal `RuntimeConfig` (no TOML); `PyConnection::new` consumes
+  `CombinedTranslation` via `EggressConfig::from_compiled` (TOML retained
+  only for `config` display).
+
+Python bridge: `AsyncBridge.run` / `wrap_blocking_call` + `CloseWaiter` in
+`python/eggress/_asyncio.py`. `AsyncOutboundStream` (bridge loop-affinity +
+waiter idempotent close/wait, no executor for trivial wait),
+`OutboundConnector.aconnect_tcp`, `Connection.aclose`/`await_closed`, and
+`CompatibleStreamWriter.drain` route via the bridge. Direct
+`run_in_executor` remains only inside the bridge itself plus the documented
+`plugin.py` user-callback timeout exception.
+
+Regression/equivalence tests:
+- reload: `crates/eggress-embed/tests/reload_convergence.rs` (6 tests:
+  routing accept via string+file, upstream/H2 clear, health via
+  string+compiled, listener reject on all entry points, malformed metrics,
+  admin/status generation agreement);
+- translation: `crates/eggress-pproxy-compat/tests/native_equivalence.rs`
+  (5 tests: HTTP/SOCKS variants, TLS/SS/Trojan, fixed-target/local-bind/rule
+  parity handling, outbound chain match, identical warnings/unsupported);
+- async: `python/tests/test_asyncio_bridge_convergence.py` (6 passed,
+  1 skipped: no direct executor outside bridge, bridge/waiter lifecycle,
+  close idempotent/multi-waiter, wait cancellation safety, contextvars,
+  cross-loop `LoopAffinityError`, bounded `ResourceWarning` finalizer);
+- embed unit: `from_toml_str_validates_once`, in-memory startup with no
+  `eggress-embed-*.toml` + `_config_path=None`, async start.
+
+Verification at closure: `cargo fmt --all -- --check`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`
+(2704 passed, 151 ignored), rebuilt PyO3 (`maturin develop`) +
+`pytest python/tests tests/compat` (2273 passed, 115 skipped).
+No external oracle suite (compatibility tiers unchanged; internal
+representation only). README/AGENTS.md reviewed: no temp-file/TOML-IR claims
+to prune, no changes needed. Architecture docs (`embed`, `runtime`,
+`config`, `pproxy-compat`, `python-bindings`) and skills (`config-reload`,
+`python-bindings`, `rust-proxy-dev`, `testing`) updated to canonical flows.
+
+No scope expansion: no new protocols, manifests, workflows, or crates;
+`eggress-routing` added to `eggress-embed` deps only to name
+`RouteActionSpec::Direct` for the minimal outbound `RuntimeConfig`.
