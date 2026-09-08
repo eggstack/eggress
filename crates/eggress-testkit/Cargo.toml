@@ -15,6 +15,7 @@ name = "strict-report"
 path = "src/bin/strict_report.rs"
 
 [dependencies]
+eggress-uri = { workspace = true }
 tokio.workspace = true
 tempfile.workspace = true
 serde.workspace = true

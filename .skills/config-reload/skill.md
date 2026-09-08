@@ -11,12 +11,19 @@ Use when modifying configuration schema, TOML parsing, hot-reload behavior, or t
 
 ## What is NOT hot-reloadable (requires restart)
 - Listener topology (count, names, bind addresses)
-- UDP bind address
+- Listener behavior captured at startup: protocols, auth material, TLS
+  material, Shadowsocks/Trojan config, `connection_limit`, `fixed_target`,
+  `local_bind`, `reuse_port`
+- All UDP listener settings (bind, mode, limits, timeouts, advertise, ...)
+- Transparent/unix listener configuration
+- Timeout configuration
 - Admin endpoint bind address
+- Reverse endpoint topology (servers/clients spawned once at startup)
 
 ## Reload flow
 1. Candidate snapshot compiled from new TOML
-2. Unsupported topology changes rejected (listener count, bind addresses, names)
+2. Startup-captured listener changes rejected (any field above); only
+   routing/upstream/group/health/PAC changes pass classification
 3. Router swapped atomically via `ArcSwap`
 4. Snapshot swapped via `Arc<ArcSwap<CompiledRuntimeSnapshot>>`
 5. Health tasks stopped and restarted from new snapshot
@@ -43,6 +50,9 @@ Use when modifying configuration schema, TOML parsing, hot-reload behavior, or t
 - Check that reload tests cover the new field behavior
 
 ## Common mistakes
-- Adding a field that should be hot-reloadable to listener config
+- Adding a listener field without a classification review: every
+  startup-captured field must be rejected in `classify_listeners`
+  (explicit comparison groups, not whole-struct equality)
 - Not rejecting topology changes in the reload validator
+- Claiming a setting is hot-reloadable when accept loops clone it at startup
 - Forgetting to bridge new metrics into the Prometheus registry

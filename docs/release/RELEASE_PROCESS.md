@@ -58,6 +58,11 @@ cargo publish --dry-run -p <crate-name>
 
 A dry-run failure is a packaging defect. Fix it before publishing rather than adding CI automation around it.
 
+The tiered helper (`scripts/publish-remaining.sh`) performs the same
+verification on every invocation: it never passes `--no-verify`, and it
+self-checks that invariant (anchored to `cargo publish` command lines) before
+publishing anything.
+
 ## 3. Publish dependency-first
 
 Publish crates in dependency order. Leaf libraries must be available in the crates.io index before crates that depend on them can be published. The CLI or other top-level facade should be published last.

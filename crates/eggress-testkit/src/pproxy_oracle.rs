@@ -194,47 +194,28 @@ pub fn redact_credentials(data: &[u8]) -> String {
     redact_uri_credentials(&text)
 }
 
+/// Scrub proxy credentials from free-form oracle transcript text.
+///
+/// Delegates to the canonical tolerant redactor
+/// ([`eggress_uri::redact_proxy_uri`]) so every credential-bearing scheme is
+/// covered without maintaining a parallel scheme whitelist here. The match is
+/// deliberately generic: any `scheme://...@...` userinfo is stripped while
+/// credential-free text passes through unchanged.
 fn redact_uri_credentials(text: &str) -> String {
-    let mut result = text.to_string();
-
-    let patterns = [
-        "socks4://",
-        "socks4a://",
-        "socks5://",
-        "http://",
-        "https://",
-        "ss://",
-        "trojan://",
-    ];
-
-    for scheme in &patterns {
-        let mut offset = 0;
-        while let Some(scheme_pos) = result[offset..].find(scheme) {
-            let abs_pos = offset + scheme_pos;
-            let after_scheme = abs_pos + scheme.len();
-            if let Some(at_rel) = result[after_scheme..].find('@') {
-                let cred_start = after_scheme;
-                let cred_end = after_scheme + at_rel;
-                let colon_pos = result[cred_start..cred_end].find(':');
-                if colon_pos.is_some() {
-                    let rest = result[cred_end + 1..].to_string();
-                    // Match the `****:****@` redaction convention used by the
-                    // other layers (embed, pproxy-compat, python bindings) so
-                    // differential transcripts never carry proxy usernames.
-                    const REDACTED_PREFIX: &str = "****:****@";
-                    let redacted = format!("{REDACTED_PREFIX}{rest}");
-                    result = format!("{}{}", &result[..cred_start], redacted);
-                    offset = cred_start + REDACTED_PREFIX.len();
-                } else {
-                    offset = cred_end;
-                }
-            } else {
-                break;
-            }
-        }
+    // Fast path: skip allocation-free scan when no URI-like content exists.
+    if !text.contains("://") && !text.contains('@') {
+        return text.to_string();
     }
-
-    result
+    // The canonical redactor handles one URI-like string; transcripts may
+    // embed several across whitespace, so apply it per whitespace-separated
+    // token to avoid one malformed span suppressing the rest.
+    // (`split_inclusive` keeps each delimiter attached to its token, so
+    // concatenation reconstructs the input exactly.)
+    let mut out = String::with_capacity(text.len());
+    for token in text.split_inclusive(char::is_whitespace) {
+        out.push_str(&eggress_uri::redact_proxy_uri(token));
+    }
+    out
 }
 
 async fn wait_for_output_ready(
@@ -486,8 +467,8 @@ mod tests {
         assert!(!redacted.contains("pw0rd"));
         assert!(!redacted.contains("user:"), "username must be redacted");
         assert!(!redacted.contains("admin:"), "username must be redacted");
-        assert!(redacted.contains("****:****@127.0.0.1:1080"));
-        assert!(redacted.contains("****:****@0.0.0.0:8080"));
+        assert!(redacted.contains("****@127.0.0.1:1080"));
+        assert!(redacted.contains("****@0.0.0.0:8080"));
     }
 
     #[test]
@@ -540,17 +521,34 @@ mod tests {
     fn test_redact_uri_credentials() {
         assert_eq!(
             redact_uri_credentials("socks5://user:pass@host:1080"),
-            "socks5://****:****@host:1080"
+            "socks5://****@host:1080"
         );
 
         assert_eq!(
             redact_uri_credentials("http://admin:secret@proxy:8080"),
-            "http://****:****@proxy:8080"
+            "http://****@proxy:8080"
         );
 
         assert_eq!(
             redact_uri_credentials("socks5://127.0.0.1:1080"),
             "socks5://127.0.0.1:1080"
+        );
+
+        // Schemes outside the old hardcoded whitelist are covered by the
+        // canonical redactor.
+        assert_eq!(
+            redact_uri_credentials("ssh://deploy:s3cret@build.internal:22"),
+            "ssh://****@build.internal:22"
+        );
+        assert_eq!(
+            redact_uri_credentials("h3://user:pass@[2001:db8::1]:443"),
+            "h3://****@[2001:db8::1]:443"
+        );
+
+        // Multi-token transcripts redact each credentialed token.
+        assert_eq!(
+            redact_uri_credentials("dial socks5://a:b@h1:1080 then http://c:d@h2:8080 ok"),
+            "dial socks5://****@h1:1080 then http://****@h2:8080 ok"
         );
     }
 

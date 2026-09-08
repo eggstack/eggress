@@ -140,8 +140,43 @@ uri = "socks5://myuser:my_password_42@10.0.0.1:1080"
         !redacted.contains("myuser"),
         "redacted TOML should not contain URI username"
     );
-    assert!(redacted.contains("****:****@"));
+    assert!(redacted.contains("****@"));
     assert!(redacted.contains("10.0.0.1:1080"));
+}
+
+#[test]
+fn to_redacted_toml_hides_previously_unlisted_scheme_credentials() {
+    // Regression: the old embed-local scheme whitelist omitted `socks4a`,
+    // `httponly`, the `shadowsocks` long form, `ssr`, `ssh`, `h3`/`quic`,
+    // and `+`-composite schemes. Redaction now funnels through the canonical
+    // tolerant redactor, so any `scheme://` userinfo is stripped regardless
+    // of scheme. (`ssh`/`h3`/`quic` upstreams need opt-in features to
+    // validate, so this default-feature test uses `socks4a`/`httponly`,
+    // which the old whitelist also omitted.)
+    let config = eggress_embed::EggressConfig::from_toml_str(
+        r#"
+version = 1
+
+[[upstreams]]
+id = "up-socks4a"
+uri = "socks4a://s4user:s4pass@10.0.0.1:1080"
+
+[[upstreams]]
+id = "up-httponly"
+uri = "httponly://huser:hpass@10.0.0.2:8080"
+"#,
+    )
+    .unwrap();
+
+    let redacted = config.to_redacted_toml().unwrap();
+    for secret in ["s4user", "s4pass", "huser", "hpass"] {
+        assert!(
+            !redacted.contains(secret),
+            "redacted TOML leaked {secret:?}: {redacted}"
+        );
+    }
+    assert!(redacted.contains("socks4a://****@10.0.0.1:1080"));
+    assert!(redacted.contains("httponly://****@10.0.0.2:8080"));
 }
 
 #[test]
@@ -236,5 +271,5 @@ uri = "socks5://admin:s3cret_p@ssw0rd@10.0.0.1:1080"
         !redacted.contains("admin"),
         "redacted TOML leaked username: {redacted}"
     );
-    assert!(redacted.contains("****:****@10.0.0.1:1080"));
+    assert!(redacted.contains("****@10.0.0.1:1080"));
 }

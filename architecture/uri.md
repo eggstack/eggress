@@ -86,6 +86,16 @@ Renders the chain with credentials masked:
 - IPv6 hosts are bracketed: `[::1]:port`
 - `hop.tls` appends `+tls` to the protocol list in output
 
+### redact_proxy_uri (canonical tolerant redactor)
+
+`redact_proxy_uri()` (`lib.rs:132`) is the single authority for scrubbing
+credentials from arbitrary URI-like strings in logs, diagnostics, redacted
+TOML, and oracle transcripts. It is scheme-agnostic (keyed on `://`, last
+unbracketed `@` wins) and returns `scheme://****@host`, or the input
+unchanged when no userinfo is present. `eggress-embed`
+(`to_redacted_toml`) and `eggress-testkit` (oracle transcript scrubbing)
+both delegate to it instead of maintaining scheme whitelists.
+
 ### CredentialSpec
 
 - `Debug` impl: username visible, password replaced with `"****"`

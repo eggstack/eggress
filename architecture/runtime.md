@@ -69,8 +69,12 @@ Each concern uses its own `CancellationToken` or `TaskTracker`.
 ## Reload path
 
 1. `load_and_compile(config_path)` — file I/O via `spawn_blocking`.
-2. `classify_listeners` rejects topology changes (count, name, bind, UDP
-   bind, transparent toggle, unix socket path/add/remove).
+2. `classify_listeners` rejects startup-captured changes: count, name, bind,
+   `reuse_port`, protocols, auth material, TLS material, Shadowsocks/Trojan
+   config, `connection_limit`/`fixed_target`/`local_bind`, all UDP listener
+   settings, transparent config (enabled + protocol), unix socket
+   config (path + options). Routing, upstream/group, health, and PAC/static
+   changes pass through.
 3. `compile_runtime_snapshot(&new_config, prev_ref)` — Arc reuse when
    `old.chain == new.chain && old.health_config == new.health`.
 4. `self.rt_config = new_rt_config` — kept in sync before snapshot publish.
@@ -115,12 +119,16 @@ Startup failures are structured `Result` errors, never panics.
 | `ssh` | `SshSessionCache`, SSH session shutdown |
 | `quic` | QUIC/HTTP3 listener binding |
 
-**Hot-reloadable:** rules, groups, upstreams, health config, PAC/static,
-listener metadata, reverse config.
+**Hot-reloadable:** rules, groups, upstreams, health config, PAC/static.
 
-**Restart required:** listener bindings, log level/format, shutdown grace,
-timeouts, admin bind, UDP bind/advertise, transparent toggle, unix socket
-path.
+**Restart required:** listener bindings, `reuse_port`, protocols, auth, TLS,
+Shadowsocks/Trojan config, `connection_limit`, `fixed_target`, `local_bind`,
+all UDP listener settings, transparent/unix config, log level/format,
+shutdown grace, timeouts, admin bind. Reverse endpoint topology
+(servers/clients) is likewise startup-captured — reload swaps the snapshot
+and routing, but reverse accept/reconnect tasks are spawned once at startup
+(see Phase 2 control-plane convergence); reverse target authorization still
+follows current routing.
 
 ## Concurrency
 

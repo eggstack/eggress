@@ -1342,6 +1342,7 @@ dependencies = [
  "eggress-config",
  "eggress-pproxy-compat",
  "eggress-runtime",
+ "eggress-uri",
  "rcgen",
  "regex",
  "rustls",

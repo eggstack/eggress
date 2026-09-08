@@ -155,8 +155,9 @@ Contract:
 ## Reload
 
 Reload configuration without restarting the process. Only routing, upstreams,
-groups, and health config are hot-swapped. Listener bind changes are rejected
-(restart required).
+groups, and health config are hot-swapped. Listener changes (bind, protocols,
+auth, TLS, Shadowsocks/Trojan, connection limits/targets, UDP settings,
+transparent/unix config) are rejected (restart required).
 
 ```rust
 # let config = eggress_embed::EggressConfig::from_toml_str(r#"

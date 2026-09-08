@@ -143,8 +143,26 @@ class CompatibleStreamReader:
         raise asyncio.IncompleteReadError(bytes(self._buffer), -1)
 
     async def readline(self) -> bytes:
-        """Read until a newline (``\\n``) or EOF."""
-        return await self.readuntil(b"\n")
+        """Read one line, ending at ``\\n`` or EOF.
+
+        Matches :meth:`asyncio.StreamReader.readline`: returns data through
+        and including ``\\n`` when present; returns the remaining buffered
+        bytes on EOF without ``\\n``; returns ``b""`` when already at clean
+        EOF with no buffered data. Unlike :meth:`readuntil`, reaching EOF
+        without a newline is not an error.
+        """
+        while True:
+            idx = self._buffer.find(b"\n")
+            if idx >= 0:
+                end = idx + 1
+                data = bytes(self._buffer[:end])
+                del self._buffer[:end]
+                return data
+            if self._eof:
+                data = bytes(self._buffer)
+                self._buffer.clear()
+                return data
+            await self._fill_buffer(n=len(self._buffer) + 1)
 
     # ------------------------------------------------------------------
     # pproxy-specific helpers
@@ -174,7 +192,7 @@ class CompatibleStreamReader:
         """Return ``True`` if the stream is at EOF and the buffer is empty."""
         return self._eof and not self._buffer
 
-    async def __aiter__(self) -> "CompatibleStreamReader":
+    def __aiter__(self) -> "CompatibleStreamReader":
         return self
 
     async def __anext__(self) -> bytes:

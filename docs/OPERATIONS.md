@@ -44,7 +44,6 @@ See [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for full TOML schema.
 | Upstream chains | Health config, Arc reuse for unchanged upstreams |
 | Upstream groups | Schedulers, fallback policies |
 | Routing rules | All rules, default action |
-| Listener metadata | Name, bind, protocols, auth (not socket binding) |
 | Admin config | PAC and static content configuration |
 
 ### What is NOT reloaded (requires full restart)
@@ -52,21 +51,29 @@ See [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for full TOML schema.
 | Component | Reason |
 |-----------|--------|
 | Listener socket bindings | Bound before readiness; cannot re-bind |
+| Listener protocols, auth, TLS, Shadowsocks/Trojan config | Cloned into accept loops from startup-prepared state |
+| Listener `connection_limit`, `fixed_target`, `local_bind`, `reuse_port` | Startup-captured runtime behavior |
+| UDP listener settings (bind, mode, limits, timeouts, advertise, etc.) | Relay/association state built at startup |
+| Transparent/unix listener config | Socket setup happens once at startup |
 | Process settings | Log format, log level, shutdown grace |
 | Timeout configuration | Used at startup for connection setup |
 | Admin bind address | Bound at startup |
-| UDP bind address | Socket bound at startup |
 
 ### UDP-specific reload semantics
 
-- UDP limits apply to **new** associations only; existing keep their limits
-- UDP bind changes require restart
+- UDP listener settings are startup-captured: any change requires a restart.
+  (Previously documented per-association limit updates do not apply — the
+  relay reads limits from startup-prepared listener state, so the reload
+  classifier rejects UDP changes rather than silently ignoring them.)
 - Route changes apply immediately to future UDP packets
 
 ### Reload outcomes
 
 - **Applied**: Config loaded, classified, snapshot built, router swapped. Logged with generation and upstream count.
-- **Rejected**: Listener topology changed (count, name, bind, UDP bind). `eggress_reload_total` incremented, `eggress_reload_failures_total` incremented.
+- **Rejected**: Listener change requiring restart (count, name, bind, protocols,
+  auth, TLS, Shadowsocks/Trojan, connection limits/targets, UDP settings,
+  transparent/unix config) or timeout/admin-bind change. `eggress_reload_total`
+  incremented, `eggress_reload_failures_total` incremented.
 - **Failed**: Config parse error or snapshot build error. Both counters incremented.
 
 ## Shutdown Behavior

@@ -21,7 +21,7 @@ listeners entirely. Designed as the binding target for PyO3.
 | `from_toml_str(input)` | :70 | Parse, version-check, validate, compile; stores source TOML |
 | `from_toml_file(path)` | :96 | Read file then delegate to `from_toml_str` |
 | `source_toml()` | :104 | Return raw TOML text |
-| `to_redacted_toml()` | :113 | TOML with credentials replaced by `****` / `****:****@` |
+| `to_redacted_toml()` | :113 | TOML with secrets replaced by `****` and URI userinfo by `****@` |
 
 Validation chain: `toml::from_str` → version check (must be 1 or absent)
 → `validate_config()` → `compile_config()`.
@@ -44,8 +44,8 @@ Validation chain: `toml::from_str` → version check (must be 1 or absent)
 | `bound_addresses()` | :430 | `BoundAddresses` with listener + admin addrs |
 | `status()` | :458 | `ServiceStatus`: generation, readiness, connections, uptime, listeners |
 | `metrics_text()` | :498 | Prometheus metrics text |
-| `reload_toml_str(input)` | :506 | Hot-reload routing/upstream; rejects listener topology changes |
-| `reload_toml_file(path)` | :586 | File-based reload |
+| `reload_toml_str(input)` | :520 | Hot-reload routing/upstream/groups/health; rejects startup-captured listener changes |
+| `reload_toml_file(path)` | :584 | File-based reload |
 | `shutdown()` async | :594 | Cancel token + join runtime |
 | `shutdown_blocking()` | :614 | Blocking shutdown |
 
@@ -93,12 +93,15 @@ Execution reuses the existing `ChainExecutor` with no listener.
 
 ### Reload semantics
 
-`reload_toml_str()` (:506-583):
+`reload_toml_str()` (:520-581):
 
 1. Acquires `reload_mutex` (prevents concurrent reloads).
 2. Parses, validates, compiles new config.
-3. Compares listener topology (count, names, bind addresses). Changes
-   require a full restart — returns error.
+3. Rejects startup-captured listener changes (count, names, bind addresses,
+   `reuse_port`, protocols, auth, TLS, Shadowsocks/Trojan config,
+   `connection_limit`/`fixed_target`/`local_bind`, all UDP settings,
+   transparent/unix config) — returns error, restart required. Routing,
+   upstream/group, health, and PAC/static changes pass through.
 4. Builds new `CompiledRuntimeSnapshot` via `compile_runtime_snapshot()`.
 5. Publishes new snapshot via `store()`, swaps router via `swap_arc()`.
 6. Returns `ReloadOutcome::Applied { generation, upstreams }`.
@@ -145,17 +148,21 @@ a stable `&'static str` label for each variant.
 
 ## Security notes
 
-- Temp config file is `0o600` on Unix (:877-883) since TOML may carry
+- Temp config file is `0o600` on Unix (:834-838) since TOML may carry
   plaintext upstream credentials.
-- `to_redacted_toml()` walks the TOML tree generically (:777-805):
+- `to_redacted_toml()` walks the TOML tree generically (:788-827):
   - Keys matching `REDACTED_SECRET_KEYS` (`password`, `password_env`,
     `secret`, `secret_ref`, `token`, `api_key`, `apikey`, `credentials`)
     have their string values replaced with `****`.
-  - Strings matching `looks_like_proxy_uri()` (scheme in eggress-supported
-    set) are passed through `redact_uri()` which replaces `user:pass@`
-    with `****:****@`.
-- `redact_uri()` (:841-861) finds the LAST unbracketed `@` after the
-  scheme to handle passwords containing `@`.
+  - Strings containing `://` are passed through the canonical tolerant
+    redactor `eggress_uri::redact_proxy_uri()`, which strips `user:pass@`
+    and `user@` userinfo for any scheme (last unbracketed `@` wins, so
+    passwords containing `@` stay covered) and emits `scheme://****@host`.
+    There is no embed-local scheme whitelist.
+- Outbound error paths (`outbound.rs`, feature `pproxy-compat`) parse hops
+  via `eggress_pproxy_compat` and fall back to a scheme-agnostic
+  last-`@`-outside-brackets scrubber that additionally masks `#` auth
+  fragments; over-redaction is preferred to leakage there.
 
 ## Concurrency & lifecycle
 

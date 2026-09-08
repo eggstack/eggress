@@ -27,6 +27,15 @@ if [[ "${1:-}" == "--dry-run" ]]; then
     DRY_RUN="--dry-run"
 fi
 
+# Self-check: Cargo package verification must never be bypassed. Fail fast if
+# a `--no-verify` flag is ever reintroduced into an actual publish command.
+# (Anchored to command lines so mentions in comments/strings don't match.)
+if grep -Eq '^[[:space:]]*cargo publish.*--no-verify' "$SCRIPT_DIR/publish-remaining.sh"; then
+    echo "ERROR: publish helper must not pass cargo publish --no-verify;" >&2
+    echo "see docs/release/RELEASE_PROCESS.md step 2 (package verification)." >&2
+    exit 1
+fi
+
 # Tiered publish order. Every required internal dep appears in an earlier tier
 # than the crate that depends on it.
 TIERS=(
@@ -77,7 +86,11 @@ publish_one() {
     echo "=================================================================="
     echo "Publishing $crate (delay ${PUBLISH_DELAY_SECONDS}s)"
     echo "=================================================================="
-    cargo publish $DRY_RUN -p "$crate" --no-verify
+    # NOTE: no `--no-verify` here by policy. Both dry-run and real publish
+    # perform full Cargo package verification (`docs/release/RELEASE_PROCESS.md`
+    # step 2); a dry-run failure is a packaging defect to fix, not to bypass.
+    # A self-check below asserts this invariant on every invocation.
+    cargo publish $DRY_RUN -p "$crate"
     if [[ -z "$DRY_RUN" ]]; then
         local version
         version=$(cargo read-manifest --manifest-path "crates/${crate}/Cargo.toml" 2>/dev/null \

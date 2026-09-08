@@ -57,8 +57,9 @@ impl From<std::io::Error> for TransparentError {
 /// Transparent TCP listener wrapper.
 ///
 /// Wraps a `TcpListener` with transparent proxy capabilities, allowing
-/// retrieval of the original destination for connections intercepted by
-/// iptables/nftables REDIRECT or TPROXY rules.
+/// retrieval of the original destination (via `SO_ORIGINAL_DST`) for
+/// connections intercepted by iptables/nftables REDIRECT rules. TPROXY
+/// (`IP_TRANSPARENT`) is not implemented.
 pub struct TransparentListener {
     inner: tokio::net::TcpListener,
 }

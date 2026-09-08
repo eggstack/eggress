@@ -48,7 +48,9 @@ pub fn diagnostic_platform_unsupported(feature: &str) -> String {
     match feature {
         "redir" => {
             "Transparent proxy (redir) is platform-dependent. \
-             Linux: fully supported with iptables REDIRECT/TPROXY. \
+             Linux: supported with iptables/nftables REDIRECT rules (original \
+             destination recovered via SO_ORIGINAL_DST); TPROXY \
+             (IP_TRANSPARENT) is not implemented. \
              macOS: not directly supported (pf-based redirect requires manual setup). \
              Windows: not supported without third-party drivers."
                 .to_string()
@@ -171,6 +173,14 @@ mod tests {
     fn test_diagnostic_platform_unsupported_redir() {
         let diag = diagnostic_platform_unsupported("redir");
         assert!(diag.contains("Linux") || diag.contains("macOS"));
+        // The diagnostic must not overstate TPROXY support: REDIRECT via
+        // SO_ORIGINAL_DST is implemented, TPROXY (IP_TRANSPARENT) is not.
+        assert!(diag.contains("REDIRECT"));
+        assert!(diag.contains("TPROXY"));
+        assert!(
+            diag.contains("not implemented"),
+            "diagnostic must distinguish unimplemented TPROXY: {diag}"
+        );
     }
 
     #[test]

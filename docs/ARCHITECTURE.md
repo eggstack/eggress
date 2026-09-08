@@ -556,9 +556,11 @@ Encoding produces a SOCKS5 UDP response datagram with the same structure. The co
 
 ### Reload limitations
 
+- Listener behavior settings (protocols, auth, TLS, Shadowsocks/Trojan,
+  connection limits/targets, UDP settings, transparent/unix config) are
+  startup-captured: changes require a restart and are rejected on reload.
 - UDP bind address changes require a restart.
 - UDP advertise address changes require a restart if the socket bind changes.
-- UDP limit changes (idle timeout, target idle timeout, max datagram size, client pin) apply only to new associations created after reload.
 - Route changes apply immediately to future UDP packets.
 - The legacy `udp_enabled = true` flag is retained for backward compatibility and synthesized to default UDP config when no `[listeners.udp]` section is present.
 

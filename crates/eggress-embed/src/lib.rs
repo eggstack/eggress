@@ -790,10 +790,12 @@ const REDACTED_SECRET_KEYS: &[&str] = &[
 /// Walks the tree generically rather than only enumerating known paths:
 /// - Any string whose key matches a known credential-bearing name is
 ///   replaced with `****`.
-/// - Any string that looks like a proxy URI (`scheme://...`) is passed
-///   through [`redact_uri`] so `user:pass@` and `user@` authorities are
-///   stripped. This covers `upstreams[].uri`, per-hop credentials, PAC
-///   fields, and any future field that embeds a proxy URI.
+/// - Any string containing `://` is passed through the canonical tolerant
+///   redactor [`eggress_uri::redact_proxy_uri`], which strips `user:pass@`
+///   and `user@` userinfo for any scheme. The scheme check is deliberately
+///   generic (presence of `://`) so credential-bearing URIs using schemes
+///   added after this code was written cannot leak. Strings without
+///   userinfo are returned unchanged.
 fn redact_toml_value(value: &mut toml::Value) {
     redact_toml_value_inner(value);
 }
@@ -817,67 +819,11 @@ fn redact_toml_value_inner(value: &mut toml::Value) {
                 redact_toml_value_inner(item);
             }
         }
-        toml::Value::String(s) if looks_like_proxy_uri(s) => {
-            *s = redact_uri(s);
+        toml::Value::String(s) if s.contains("://") => {
+            *s = eggress_uri::redact_proxy_uri(s);
         }
         _ => {}
     }
-}
-
-/// Heuristic: a string is treated as a proxy URI if it starts with
-/// `scheme://` where `scheme` is one of the eggress-supported schemes.
-fn looks_like_proxy_uri(s: &str) -> bool {
-    let Some(colon) = s.find("://") else {
-        return false;
-    };
-    let scheme = &s[..colon];
-    matches!(
-        scheme,
-        "socks5"
-            | "socks4"
-            | "http"
-            | "https"
-            | "ss"
-            | "trojan"
-            | "h2"
-            | "ws"
-            | "wss"
-            | "raw"
-            | "tunnel"
-            | "redir"
-            | "unix"
-    )
-}
-
-/// Redact credentials embedded in a proxy URI.
-///
-/// Transforms `proto://user:pass@host:port` into `proto://****:****@host:port`.
-/// Also redacts username-only authorities (`proto://user@host:port`) so that
-/// bare usernames never leak into diagnostic or `redacted_*` output.
-/// If no `userinfo` is present, the URI is returned unchanged.
-///
-/// The userinfo separator is the LAST unbracketed `@` after the scheme;
-/// a raw password containing `@` must not be treated as a separator.
-fn redact_uri(uri: &str) -> String {
-    if let Some(scheme_end) = uri.find("://") {
-        let rest = &uri[scheme_end + 3..];
-        // Find LAST unbracketed '@' so a raw '@' in the password is preserved.
-        let mut last_at: Option<usize> = None;
-        let mut bracket_depth = 0u32;
-        for (i, c) in rest.char_indices() {
-            match c {
-                '[' => bracket_depth += 1,
-                ']' => bracket_depth = bracket_depth.saturating_sub(1),
-                '@' if bracket_depth == 0 => last_at = Some(i),
-                _ => {}
-            }
-        }
-        if let Some(at_pos) = last_at {
-            let authority_after = &rest[at_pos + 1..];
-            return format!("{}://****:****@{}", &uri[..scheme_end], authority_after);
-        }
-    }
-    uri.to_string()
 }
 
 /// Write config to a temporary file for the supervisor.

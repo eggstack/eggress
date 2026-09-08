@@ -34,7 +34,7 @@ Single-file PyO3 module. Registered in `#[pymodule] fn _eggress()` at
 | `plugin.py` | `PluginRegistry`, `PluginBridge`, `CallbackWrapper` — bounded async callback bridge with timeout/cancellation/reentrancy detection |
 | `wrapper.py` | `TLS`, `Plugin`, `Chain`, `normalize_chain` — composition helpers for protocol wrapping |
 | `_asyncio.py` | `AsyncBridge`, `CloseWaiter`, `LoopAffinityError` — core async bridge with loop-affinity enforcement, cancellation propagation, idempotent close |
-| `_asyncio_adapter.py` | `CompatibleStreamReader`/`CompatibleStreamWriter` wrapping `AsyncOutboundStream` into asyncio StreamReader/StreamWriter interface |
+| `_asyncio_adapter.py` | `CompatibleStreamReader`/`CompatibleStreamWriter` wrapping `AsyncOutboundStream` into asyncio StreamReader/StreamWriter interface (`readline()` matches stdlib EOF semantics; `__aiter__` returns `self` synchronously; `readuntil()` keeps `IncompleteReadError`) |
 | `_compat.py` | `get_running_loop`, `HAS_TASKGROUP`, `CANCELLED_ERROR_BASE` — Python version shims |
 | `config.py` | `EggressConfig` — wraps `PyEggressConfig` with `from_toml`/`from_file` |
 | `exceptions.py` | Re-exports all exception types into a single import point |
@@ -145,6 +145,8 @@ Server(listen=[...], remote=[...])
 | `python/tests/test_plugin.py` | PluginBridge/PluginRegistry |
 | `python/tests/test_wrapper.py` | Chain/TLS/Plugin wrappers |
 | `python/tests/test_asyncio_semantic.py` | AsyncBridge/CloseWaiter semantics |
+| `python/tests/test_asyncio_adapter_helpers.py` | `CompatibleStreamReader` pproxy helpers (`read_w`/`read_n`/`read_until`/`rollback`) |
+| `python/tests/test_asyncio_readline.py` | `readline()` stdlib EOF parity, `__aiter__`/`__anext__` iteration, `readuntil()` error preservation |
 | `python/tests/test_config.py`, `test_config_explain.py` | Config parsing/explanation |
 | `python/tests/test_errors.py` | Exception hierarchy |
 | `python/tests/test_milestone_c_*.py` | Implementation detail tests (Tier 0) |

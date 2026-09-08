@@ -126,7 +126,8 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Trojan client, server, and authentication
 - [x] Trojan TCP target framing
 - [x] Domain length validation (1-255 bytes)
-- [ ] Trojan fallback routing
+- [x] Trojan fallback routing (relay to configured `fallback` target on auth
+      failure; `crates/eggress-runtime/tests/trojan.rs::trojan_fallback_on_auth_failure`)
 
 ## WebSocket
 
