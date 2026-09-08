@@ -2,7 +2,104 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Closure record
+
+- Implementation commit: `46945f4` (single commit on `main`, on top of
+  `28ae0eb` which closed Phase 2).
+- Verification at closure: `cargo fmt --all -- --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, `cargo test --workspace
+  --locked` (2704 passed), `cargo check --manifest-path fuzz/Cargo.toml
+  --bins`, maturin build + `pytest python/tests tests/compat` (2273
+  passed). No external oracle/interop suites (no compatibility behavior
+  changed). `fuzz/Cargo.lock` pins refreshed to 1.0.4 as a side effect of
+  the required fuzz check.
+
+### Final runtime module map (`crates/eggress-runtime/src/`)
+
+`supervisor.rs` is now the orchestration facade (`ServiceSupervisor` public
+API, `CompatibilityOptions`, listener-prep dispatch, transport accept loops,
+admin/signal orchestration) plus `supervisor/{accounting, connection,
+operations, reload, shutdown, startup, state, udp_runtime}.rs`:
+
+| Module | Responsibility |
+|---|---|
+| `accounting.rs` | `ListenerConnectionSlot`, `ActiveConnectionGuard`, accept-error backoff |
+| `connection.rs` | `PreparedListener`/`PreparedQuicListener`, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
+| `operations.rs` | `RuntimeAdminListenerInfos` over the live snapshot |
+| `reload.rs` | `ReloadResult`, `classify_listeners()`, `classify_reload_config()` |
+| `shutdown.rs` | `ShutdownPlan` + `shutdown_ordered()` (ordering preserved exactly) |
+| `startup.rs` | `init_supervisor()`, `resolve_udp_global_limit()`, `build_ssh_sessions()` |
+| `state.rs` | `RuntimeState` + canonical `apply_compiled_config` transaction |
+| `udp_runtime.rs` | `RuntimeUdpService`, `make_udp_service()`, `compute_advertise_ip()`, Shadowsocks relay prep |
+
+Duplicated TLS wrapping + `ConnectionConfig` assembly across
+standard/transparent/Unix/QUIC paths is replaced by the shared helpers
+(~250 lines removed from the accept paths; `supervisor.rs` 3811 -> ~2500
+lines including tests).
+
+### Metrics ownership (Model A — subsystem counters canonical)
+
+Subsystem atomics own UDP relay/standalone, Shadowsocks, H2, and transparent
+counters; the registry mirrors them by saturating-delta promotion at render
+time (retained necessarily: `prometheus_client::Counter` is increment-only).
+Prometheus `Family` objects stay canonical for labeled metrics (route
+decisions, upstream open/failure, H2 streams). `SessionMetrics` narrowed to
+6 session methods; new `RuntimeMetrics` trait (10 methods) owns
+reload/generation/platform/unix/transparent/UDP-association/exposition.
+Genuine duplicate removed: `RuntimeUdpService` no longer increments the
+registry UDP total directly (it double-counted with the relay
+subsystem+bridge path). Direct record methods remain as documented
+unbridged fallbacks, never called alongside a bridge for the same event.
+`eggress-metrics/src/` is now
+`labels/registry/session/runtime/udp/shadowsocks/h2/render/tests` + facade.
+
+### Canonical compatibility issue type
+
+`eggress_pproxy_compat::issues::CompatIssue { severity, code, category,
+feature, feature_id, tier, message, suggestion }` with
+`IssueSeverity::{Warning, Unsupported, Info}`. `TranslationOutput`,
+`CombinedTranslation`, and `NativeTranslation` store `issues: Vec<CompatIssue>`;
+`warnings()`/`unsupported()`/`diagnostics()` are views. The two drifted
+unsupported-feature tables in `diagnostics.rs` are unified into one
+(canonical `classify_unsupported_feature`; code/tier helpers delegate), and
+the missing `trojan-listener` arm was added. `translate.rs` is now
+`translate/{entry, intermediates, model, rules, native, toml_render,
+tests}` + facade.
+
+### Final PyO3 module map (`crates/eggress-python/src/`)
+
+`lib.rs` (registration only) + `errors` (exceptions + `map_error`) +
+`service` (`PyEggressConfig/Service/Handle`) + `connection` (compat
+`Connection` + counters) + `compat` (URI/diagnostics/translation/explain
+surface) + `outbound` (connector/stream) + `system_proxy` + `runtime`
+(shared Tokio runtime). Exported names, exception hierarchy, and abi3
+metadata unchanged (49 symbols; 2273 Python tests pass).
+
+### WS5 extractions
+
+`eggress-config/src/validate/` (`composition`, `listeners`, `upstreams`,
+`rules`, `core`, `security` + orchestrator + tests);
+`eggress-server/src/accept/` (`handlers`, `forward`, `detect`, `prefixed` +
+facade + tests); `eggress-server/src/execute/` (`hops` + facade + tests).
+No new crates; no public API or behavior change.
+
+### Deliberately rejected / deferred
+
+- A common accept-loop trait across TCP/transparent/Unix/QUIC: the socket
+  APIs differ (`TcpListener::accept` vs transparent inner accept vs Unix vs
+  QUIC `run`/`accept_connection`); unification would add complexity for no
+  behavior gain. Shared per-connection behavior (accounting/TLS/config/UDP)
+  is unified instead.
+- QUIC/H3 `ConnectionConfig` construction stays inline: the H3 path builds
+  a `PendingTunnel` + `execute()` directly (no `serve_connection`), so it
+  does not share the stream-listener shape.
+- Prometheus `Counter` mirrors were not replaced by direct exposition:
+  that would be a metrics schema redesign, explicitly out of scope.
+- `H2ConnectionLabels` retained as a public (currently unused) label struct
+  rather than removed, to avoid shrinking the public metrics surface in a
+  maintenance phase.
 
 ## Baseline
 
