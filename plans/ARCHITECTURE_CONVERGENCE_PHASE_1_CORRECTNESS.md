@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Baseline
 
@@ -271,11 +271,58 @@ Phase 1 is complete only when:
 
 ## Closure record
 
-When implemented, update this file in place with:
+Implemented in commit `5771326` (single commit on `main`, ahead of the
+roadmap baseline).
 
-- `IMPLEMENTED` status;
-- implementation commit range;
-- concise list of listener fields classified restart-required;
-- location of redaction and asyncio regression tests;
-- release-helper verification performed;
-- any capability manifest entries changed and the evidence used.
+Listener fields classified restart-required (all startup-captured into
+`PreparedListener` / per-connection clones / `RuntimeUdpService`):
+`reuse_port`, `protocols`, auth (presence, type, username, resolved
+password), TLS (presence, cert, key, ALPN), Shadowsocks (presence, method,
+password, auth prefix, plugins), Trojan (presence, password, fallback),
+`connection_limit`, `fixed_target`, `local_bind`, all
+`CompiledListenerUdpConfig` fields (socket-topology, limit, and
+timeout/behavior groups), transparent `enabled` + `protocol`, unix
+`path` + `unlink_existing` + `mode`. Routing, upstream/group, health, and
+PAC/static changes remain hot-reloadable. Explicit comparison groups are
+used instead of whole-struct equality so future fields get deliberate
+review.
+
+Regression tests:
+- reload classification + SIGHUP end-to-end data-plane tests:
+  `crates/eggress-runtime/tests/reload.rs` (18 tests: `reload_rejects_*`,
+  `reload_accepts_*`, `rejected_auth_reload_preserves_data_plane`,
+  `accepted_routing_reload_observed_by_new_connection`);
+- redaction: `crates/eggress-embed/tests/error_redaction.rs`
+  (`to_redacted_toml_hides_previously_unlisted_scheme_credentials`,
+  `socks4a`/`httponly` schemes the old whitelist omitted) and
+  `crates/eggress-testkit/src/pproxy_oracle.rs::test_redact_uri_credentials`
+  (new `ssh`/`h3` cases);
+- asyncio contracts: `python/tests/test_asyncio_readline.py` (22 tests:
+  stdlib `readline()` EOF parity incl. same-byte-sequence comparison
+  against `asyncio.StreamReader`, sync `__aiter__`, `async for` final-line
+  semantics, preserved `readuntil()` errors).
+
+Release-helper verification: `cargo publish --dry-run --allow-dirty`
+passes for `eggress-testkit` (leaf), `eggress-config` (intermediate),
+`eggress-cli` (top-level facade), `eggress-embed`, and `eggress-runtime`;
+the helper self-checks for `--no-verify` on every invocation. Full
+26-crate helper dry-run deferred per phase policy (representative
+verification plus command/path review recorded here).
+
+Capability manifest: no entries changed — audit confirmed
+`protocol.trojan_server` (`drop_in`, fallback) and `uri.scheme_redir`
+(`native_equivalent`, SO_ORIGINAL_DST/REDIRECT) already match the tested
+implementation. Corrected human-facing drift only: `diagnose.rs` redir
+wording (REDIRECT supported, TPROXY not implemented),
+`TransparentListener` doc comment, and the `docs/CAPABILITIES.md` Trojan
+fallback checklist.
+
+Verification at closure: `cargo fmt --all -- --check`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`
+(2691 passed, 151 ignored), Python adapter/redaction/diagnostics/semantic
+suites (192 passed), `tests/compat` (63 passed).
+
+No structural refactor from later phases was pulled forward, except
+documenting the observed reverse-endpoint startup-capture boundary in
+`architecture/runtime.md` and the `config-reload` skill as a truthfulness
+note (behavior unification remains Phase 2 work).
