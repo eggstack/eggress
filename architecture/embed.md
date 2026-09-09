@@ -54,7 +54,7 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 
 | Method | Line | Description |
 |---|---|---|
-| `from_toml(config_toml)` | :63 | Compile config, require at least one upstream |
+| `from_toml(config_toml)` | `src/outbound.rs` | Parse/validate/compile via shared `parse_validate_compile`, then require at least one upstream + non-empty chain (outbound-only checks) |
 | `from_pproxy_uri(uri)` | `src/outbound.rs` | Full pproxy `__` chain → `compile_chain_to_native` (typed `PproxyChain` → native `ProxyChainSpec`, no TOML string) → minimal `RuntimeConfig` → connector (fail-closed, redacted errors) |
 | `connect_tcp(host, port)` | :133 | Execute chain, return `(BoxStream, OutboundInfo)` |
 | `connect_tcp_timeout(host, port, timeout)` | :188 | Wraps `connect_tcp` in `tokio::time::timeout` |
@@ -69,10 +69,15 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 Fixed-target connected semantics over existing UDP primitives, no hidden
 listener:
 
-- Direct: `UdpSocket::bind("127.0.0.1:0")` + `connect(resolved target)` for
-  `direct://` connectors.
+- Direct: family-aware wildcard bind (`0.0.0.0:0` for IPv4, `[::]:0`
+  for IPv6, selected from the resolved destination) + `connect(resolved
+  target)` for `direct://` connectors. Never loopback-bound.
 - Single-hop SOCKS5: `open_socks5_udp_upstream()` (TCP control + UDP
   ASSOCIATE handshake) with SOCKS5 datagram encode/decode per send/recv.
+  The caller passes an unspecified hint (`0.0.0.0:0`, or `[::]:0` for
+  IPv6-literal proxy hosts); the primitive family-corrects the effective
+  bind against the negotiated relay (`effective_udp_bind`), so IPv6
+  relays use `[::]:0` instead of failing on IPv4 loopback.
 - Target validation via `validate_standalone_target(allow_private_egress=true)`
   (multicast/broadcast/unspecified/port-zero rejected; private/loopback allowed
   because the caller explicitly selected the destination) plus

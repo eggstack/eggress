@@ -12,6 +12,22 @@ pub async fn start_udp_echo_server() -> SocketAddr {
     addr
 }
 
+/// Best-effort IPv6 loopback echo server for family-aware tests.
+///
+/// Returns `None` when the host has no IPv6 loopback (callers must
+/// capability-skip rather than treat absence as success).
+pub async fn try_start_udp_echo_server_ipv6() -> Option<SocketAddr> {
+    let socket = tokio::net::UdpSocket::bind("[::1]:0").await.ok()?;
+    let addr = socket.local_addr().ok()?;
+    tokio::spawn(async move {
+        let mut buf = [0u8; 65535];
+        while let Ok((n, peer)) = socket.recv_from(&mut buf).await {
+            let _ = socket.send_to(&buf[..n], peer).await;
+        }
+    });
+    Some(addr)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Socks5TestMode {
     NoAuth,
@@ -38,15 +54,34 @@ pub struct Socks5UdpTestServer {
 
 impl Socks5UdpTestServer {
     pub async fn start(config: Socks5TestServerConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        Self::start_on("127.0.0.1:0", "127.0.0.1:0", config).await
+    }
+
+    /// IPv6 loopback variant for family-aware relay tests.
+    ///
+    /// Binds TCP and per-association UDP sockets to `[::1]:0`. Callers
+    /// must capability-skip on `Err` when IPv6 loopback is unavailable.
+    pub async fn start_ipv6(
+        config: Socks5TestServerConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::start_on("[::1]:0", "[::1]:0", config).await
+    }
+
+    async fn start_on(
+        tcp_bind: &str,
+        udp_bind: &str,
+        config: Socks5TestServerConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let tcp_listener = tokio::net::TcpListener::bind(tcp_bind).await?;
         let tcp_addr = tcp_listener.local_addr()?;
 
-        let udp_socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await?;
+        let udp_socket = tokio::net::UdpSocket::bind(udp_bind).await?;
         let udp_relay_addr = config.relay_addr.unwrap_or(udp_socket.local_addr()?);
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         let mode = config.mode;
+        let per_conn_bind = udp_bind.to_string();
         tokio::spawn(async move {
             loop {
                 let (stream, _peer) = match tcp_listener.accept().await {
@@ -55,7 +90,7 @@ impl Socks5UdpTestServer {
                 };
 
                 let mode = mode.clone();
-                let udp_socket = match tokio::net::UdpSocket::bind("127.0.0.1:0").await {
+                let udp_socket = match tokio::net::UdpSocket::bind(per_conn_bind.as_str()).await {
                     Ok(s) => s,
                     Err(_) => continue,
                 };

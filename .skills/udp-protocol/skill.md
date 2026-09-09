@@ -8,7 +8,7 @@ Use when working with UDP associations, datagram relay, upstream SOCKS5 relay, o
 - Each target gets its own `UdpTargetFlow` (connected UDP socket) for reliable response demux
 - Client address pinning is enabled by default
 - Listener UDP supports direct, one-hop SOCKS5/Shadowsocks (AEAD), and composed SOCKS5/Shadowsocks multi-hop chains via `open_composed_udp_upstream`; HTTP/MASQUE/Trojan UDP remain unsupported
-- Listener-free outbound (`OutboundConnector::associate_udp`, fixed-target, no hidden listener) supports direct + single-hop SOCKS5 only; composed/Shadowsocks in that surface fail with `UnsupportedFeature`
+- Listener-free outbound (`OutboundConnector::associate_udp`, fixed-target, no hidden listener) supports direct + single-hop SOCKS5 only (IPv4/IPv6; direct uses family-aware `0.0.0.0:0`/`[::]:0` wildcard, SOCKS5 bind is family-corrected via `effective_udp_bind`); composed/Shadowsocks in that surface fail with `UnsupportedFeature`
 - Shadowsocks upstream is supported one-hop using standard AEAD UDP packets;
   standalone inbound Shadowsocks uses the explicit pproxy PacketCipher format
   and must not be conflated with the standard upstream path.

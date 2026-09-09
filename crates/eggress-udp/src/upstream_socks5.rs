@@ -68,7 +68,44 @@ pub struct Socks5UdpUpstreamConfig {
     pub upstream_id: UpstreamId,
     pub hop: ProxyHopSpec,
     pub connect_timeout: Duration,
+    /// Preferred local UDP bind for the upstream socket.
+    ///
+    /// The effective bind is family-corrected against the negotiated
+    /// relay address (see [`effective_udp_bind`]): when the requested
+    /// family matches the relay family it is used as-is (preserving
+    /// operator-configured listener binds); on mismatch a wildcard
+    /// ephemeral bind for the relay family is used so IPv6 relays do
+    /// not fail with a cryptic address-family OS error.
     pub udp_bind: SocketAddr,
+}
+
+/// Wildcard ephemeral bind matching the relay address family.
+///
+/// IPv4 relays bind `0.0.0.0:0`; IPv6 relays bind `[::]:0`. Kept local
+/// to the UDP subsystem; not a generalized datagram socket factory.
+pub fn wildcard_udp_bind_for_relay(relay: &SocketAddr) -> SocketAddr {
+    match relay {
+        SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+        SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
+    }
+}
+
+/// Effective local bind for a SOCKS5 UDP upstream socket.
+///
+/// Returns `requested` when its family matches `relay`; otherwise
+/// returns the wildcard bind for the relay family. This preserves
+/// existing IPv4 listener behavior (configured `127.0.0.1:0` or
+/// operator `upstream_udp_bind`) while making IPv6 relays usable.
+pub fn effective_udp_bind(requested: SocketAddr, relay: &SocketAddr) -> SocketAddr {
+    let same_family = matches!(
+        (&requested, &relay),
+        (SocketAddr::V4(_), SocketAddr::V4(_)) | (SocketAddr::V6(_), SocketAddr::V6(_))
+    );
+    if same_family {
+        requested
+    } else {
+        wildcard_udp_bind_for_relay(relay)
+    }
 }
 
 pub struct Socks5UdpUpstreamAssociation {
@@ -149,7 +186,12 @@ async fn open_socks5_udp_upstream_inner(
         relay_addr
     };
 
-    let udp_socket = tokio::net::UdpSocket::bind(config.udp_bind)
+    // The relay family is known here (post-ASSOCIATE, post-unspecified
+    // substitution), so select a family-compatible local bind. IPv4
+    // callers keep their requested bind; IPv6 relays get `[::]:0`
+    // instead of a hard-coded IPv4 loopback failure.
+    let effective_bind = effective_udp_bind(config.udp_bind, &relay_addr);
+    let udp_socket = tokio::net::UdpSocket::bind(effective_bind)
         .await
         .map_err(UdpUpstreamError::Io)?;
     let udp_socket = Arc::new(udp_socket);
@@ -177,10 +219,12 @@ async fn resolve_endpoint(
     let host = if endpoint.host.is_empty() {
         "127.0.0.1"
     } else {
-        &endpoint.host
+        endpoint.host.as_str()
     };
 
-    let socket_addr = tokio::net::lookup_host(format!("{}:{}", host, endpoint.port))
+    // Tuple form handles bare IPv6 literals (`::1`) without requiring
+    // bracketed `[::1]:port` string formatting.
+    let socket_addr = tokio::net::lookup_host((host, endpoint.port))
         .await?
         .next()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no addresses found"))?;
@@ -802,5 +846,60 @@ mod tests {
             UdpUpstreamError::DomainTooLong.reason_label(),
             "domain_too_long"
         );
+    }
+
+    #[test]
+    fn wildcard_bind_matches_relay_family() {
+        let v4: SocketAddr = "192.0.2.1:1080".parse().unwrap();
+        let v6: SocketAddr = "[2001:db8::1]:1080".parse().unwrap();
+        assert_eq!(
+            wildcard_udp_bind_for_relay(&v4),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
+        );
+        assert_eq!(
+            wildcard_udp_bind_for_relay(&v6),
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
+        );
+    }
+
+    #[test]
+    fn effective_bind_preserves_matching_family() {
+        let requested_v4: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let relay_v4: SocketAddr = "192.0.2.1:1080".parse().unwrap();
+        assert_eq!(effective_udp_bind(requested_v4, &relay_v4), requested_v4);
+
+        let requested_v6: SocketAddr = "[::1]:0".parse().unwrap();
+        let relay_v6: SocketAddr = "[2001:db8::1]:1080".parse().unwrap();
+        assert_eq!(effective_udp_bind(requested_v6, &relay_v6), requested_v6);
+    }
+
+    #[test]
+    fn effective_bind_corrects_family_mismatch() {
+        // Historical IPv4 loopback hint must not fail IPv6 relays with a
+        // cryptic OS error; it corrects to the IPv6 wildcard.
+        let requested_v4: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let relay_v6: SocketAddr = "[::1]:1080".parse().unwrap();
+        assert_eq!(
+            effective_udp_bind(requested_v4, &relay_v6),
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
+        );
+
+        let requested_v6: SocketAddr = "[::1]:0".parse().unwrap();
+        let relay_v4: SocketAddr = "192.0.2.1:1080".parse().unwrap();
+        assert_eq!(
+            effective_udp_bind(requested_v6, &relay_v4),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_endpoint_accepts_bare_ipv6_literal() {
+        let endpoint = eggress_uri::EndpointSpec {
+            host: "::1".to_string(),
+            port: 1080,
+        };
+        let addr = resolve_endpoint(&endpoint).await.unwrap();
+        assert!(addr.is_ipv6());
+        assert_eq!(addr.port(), 1080);
     }
 }

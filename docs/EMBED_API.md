@@ -165,7 +165,9 @@ let n = assoc.recv(&mut buf).await?;
 assoc.close();
 ```
 
-- Direct and single-hop SOCKS5 upstream are supported; composed multi-hop
+- Direct and single-hop SOCKS5 upstream are supported over IPv4 and IPv6
+  (direct binds `0.0.0.0:0` / `[::]:0` by destination family; SOCKS5 local
+  bind is family-corrected to the relay); composed multi-hop
   and Shadowsocks UDP in this surface fail with `UnsupportedFeature`.
 - `send_timeout` / `recv_timeout` bound one datagram; timeouts do not close
   the association.

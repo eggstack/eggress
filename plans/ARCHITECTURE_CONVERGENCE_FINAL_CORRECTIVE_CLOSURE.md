@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Baseline
 
@@ -238,14 +238,16 @@ This corrective plan can be marked **IMPLEMENTED** only when all are true:
 
 ## Closure record
 
-When complete, replace this section with:
-
-- implementation commit/range;
-- exact canonical helper now used by `OutboundConnector::from_toml()`;
-- final direct IPv4/IPv6 bind strategy;
-- final SOCKS5 UDP IPv6 behavior;
-- principal regression test names/locations;
-- broad verification result;
-- confirmation that no roadmap scope was reopened.
+- Implementation commit: TBD (filled on push; this section updated in place, no separate completion document).
+- Canonical helper: `OutboundConnector::from_toml()` in `crates/eggress-embed/src/outbound.rs` now delegates to `crate::parse_validate_compile(config_toml)` (`crates/eggress-embed/src/lib.rs:81-99`) with `map_err(EggressError::Config)`. No direct `toml::from_str` / `validate_config` / `compile_config` remains in that constructor. Outbound-only post-compilation checks (non-empty upstreams, non-empty first chain) are preserved.
+- Direct IPv4/IPv6 bind strategy: after `resolve_udp_target`, `wildcard_bind_for_resolved(&resolved)` selects `0.0.0.0:0` for IPv4 and `[::]:0` for IPv6 (`crates/eggress-embed/src/outbound.rs`). Direct listener-free UDP never binds loopback. DNS keeps current first-address selection (tuple-form `lookup_host`); no Happy-Eyeballs subsystem introduced.
+- SOCKS5 UDP IPv6 behavior: family-compatible (IPv6 relays work). `eggress-udp/src/upstream_socks5.rs` adds `wildcard_udp_bind_for_relay()` / `effective_udp_bind()`; `open_socks5_udp_upstream_inner` computes the relay first (post-ASSOCIATE + unspecified substitution), then binds the family-matched effective address (requested bind preserved on family match, wildcard corrected on mismatch). Outbound passes an unspecified hint (`0.0.0.0:0`, or `[::]:0` for IPv6-literal proxy hosts). Listener IPv4 behavior is preserved (matching family uses the configured `upstream_udp_bind`). No structured IPv6-unsupported limitation was needed. Endpoint resolution uses tuple-form `lookup_host` so bare `::1` proxy hosts resolve.
+- Principal regression tests:
+  - `crates/eggress-embed/src/outbound.rs`: `from_toml_canonical_version_equivalence`, `from_toml_canonical_malformed_equivalence`, `from_toml_canonical_validation_equivalence`, `from_toml_no_upstreams_outbound_specific`, `from_toml_empty_chain_branch_preserved`, `from_toml_supported_http_socks_tls`, `wildcard_bind_matches_resolved_family`, `outbound_udp_direct_ipv6_echo_round_trip` (capability-skips without IPv6 loopback), `outbound_udp_direct_ipv4_uses_wildcard_family_bind`, `outbound_udp_socks5_ipv6_relay_round_trip` (capability-skips without IPv6 loopback).
+  - `crates/eggress-udp/src/upstream_socks5.rs`: `wildcard_bind_matches_relay_family`, `effective_bind_preserves_matching_family`, `effective_bind_corrects_family_mismatch`, `resolve_endpoint_accepts_bare_ipv6_literal`.
+  - `crates/eggress-udp/tests/socks5_upstream.rs`: `upstream_ipv6_relay_uses_family_compatible_bind` (capability-skips without IPv6 loopback).
+  - `crates/eggress-udp/src/testkit.rs`: `try_start_udp_echo_server_ipv6`, `Socks5UdpTestServer::start_ipv6` helpers.
+- Broad verification (local, pre-push): `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --locked` 2756 passed, 151 ignored, 0 failed (125 suites); `cargo check --manifest-path fuzz/Cargo.toml --bins` clean. Focused: `cargo test -p eggress-embed` 85 passed; `cargo test -p eggress-udp` 264 passed.
+- Scope confirmation: only the two authorized workstreams plus narrow doc updates for affected surfaces (`architecture/embed.md`, `architecture/udp.md`, `docs/EMBED_API.md`, `README.md`, `.skills/udp-protocol/skill.md`) landed. No MASQUE/Trojan/Shadowsocks-listener-free/multi-hop/Happy-Eyeballs/listener-topology/TPROXY/reverse-TLS/cert-reload/features/crates/CI-workflow/parity-manifest/API-redesign changes. `AGENTS.md` required no change (no stale bind/constructor detail). No new CI jobs (IPv6 tests capability-skip locally).
 
 Do not create a separate completion/evidence document.

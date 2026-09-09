@@ -399,8 +399,10 @@ async fn resolve_udp_target(
             port,
         )),
         SocksAddr::Domain(_, _) => {
-            let lookup = format!("{host}:{port}");
-            let mut addrs = tokio::net::lookup_host(&lookup).await.map_err(|e| {
+            // Tuple form handles DNS without brittle `host:port` string
+            // formatting. Current selection semantics (first address) are
+            // preserved; no Happy-Eyeballs subsystem is introduced here.
+            let mut addrs = tokio::net::lookup_host((host, port)).await.map_err(|e| {
                 EggressError::Runtime(format!("dns resolution failed for {host}:{port}: {e}"))
             })?;
             addrs.next().ok_or_else(|| {
@@ -409,6 +411,18 @@ async fn resolve_udp_target(
                 ))
             })
         }
+    }
+}
+
+/// Wildcard ephemeral bind matching a resolved destination family.
+///
+/// IPv4 destinations bind `0.0.0.0:0`; IPv6 destinations bind `[::]:0`.
+/// Listener-free direct UDP never binds loopback; the destination is
+/// caller-selected so a normal ephemeral wildcard source is correct.
+fn wildcard_bind_for_resolved(resolved: &std::net::SocketAddr) -> std::net::SocketAddr {
+    match resolved {
+        std::net::SocketAddr::V4(_) => "0.0.0.0:0".parse().expect("ipv4 wildcard parses"),
+        std::net::SocketAddr::V6(_) => "[::]:0".parse().expect("ipv6 wildcard parses"),
     }
 }
 
@@ -451,14 +465,17 @@ fn map_socks5_upstream_error(e: eggress_udp::upstream_socks5::UdpUpstreamError) 
 /// Resolve a proxy endpoint address (host:port) to a SocketAddr.
 ///
 /// For IP addresses, returns directly. For domains, performs DNS lookup.
+/// Tuple-form lookup handles bare IPv6 literals (`::1`) without
+/// bracketed-string formatting.
 async fn resolve_endpoint_addr(
     endpoint: &eggress_uri::EndpointSpec,
 ) -> Option<std::net::SocketAddr> {
     if let Ok(ip) = endpoint.host.parse::<std::net::IpAddr>() {
         return Some(std::net::SocketAddr::new(ip, endpoint.port));
     }
-    let lookup = format!("{}:{}", endpoint.host, endpoint.port);
-    let mut addresses = tokio::net::lookup_host(&lookup).await.ok()?;
+    let mut addresses = tokio::net::lookup_host((endpoint.host.as_str(), endpoint.port))
+        .await
+        .ok()?;
     addresses.next()
 }
 
@@ -476,25 +493,14 @@ pub struct OutboundConnector {
 
 impl OutboundConnector {
     /// Create a connector from a TOML config string.
+    ///
+    /// TOML parsing, version checking, validation, and compilation go
+    /// through the shared [`crate::parse_validate_compile`] boundary so
+    /// embed entry points cannot drift in version/validation semantics.
+    /// Only outbound-specific post-compilation checks live here.
     pub fn from_toml(config_toml: &str) -> Result<Self, EggressError> {
-        let config: eggress_config::model::ConfigFile =
-            toml::from_str(config_toml).map_err(|e| EggressError::Config(e.to_string()))?;
-
-        if let Some(version) = config.version {
-            if version != 1 {
-                return Err(EggressError::Config(format!(
-                    "unsupported config version: {version}"
-                )));
-            }
-        }
-
-        eggress_config::validate::validate_config(&config).map_err(|errors| {
-            let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-            EggressError::Config(messages.join("; "))
-        })?;
-
-        let runtime_config = eggress_config::compile::compile_config(&config)
-            .map_err(|e| EggressError::Config(e.to_string()))?;
+        let runtime_config =
+            crate::parse_validate_compile(config_toml).map_err(EggressError::Config)?;
 
         if runtime_config.upstreams.is_empty() {
             return Err(EggressError::Config("no upstreams configured".to_string()));
@@ -681,7 +687,11 @@ impl OutboundConnector {
 
         if self.direct {
             let resolved = resolve_udp_target(&target_socks, target_host, target_port).await?;
-            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0")
+            // Family-aware wildcard bind: `0.0.0.0:0` for IPv4, `[::]:0`
+            // for IPv6. Never loopback-bound; the destination is
+            // caller-selected.
+            let bind = wildcard_bind_for_resolved(&resolved);
+            let socket = tokio::net::UdpSocket::bind(bind)
                 .await
                 .map_err(|e| EggressError::Runtime(format!("udp bind failed: {e}")))?;
             socket
@@ -708,12 +718,24 @@ impl OutboundConnector {
                 let hop = chain.hops.first().ok_or_else(|| {
                     EggressError::Config("upstream chain is empty".to_string())
                 })?;
+                // Unspecified bind hint matching the proxy endpoint family
+                // where known (IPv6 literals get `[::]:0`, otherwise
+                // `0.0.0.0:0`). The upstream primitive family-corrects
+                // against the negotiated relay address, so domain relays
+                // resolving to IPv6 are still handled without a hard-coded
+                // IPv4 loopback failure.
+                let udp_bind: std::net::SocketAddr =
+                    if hop.endpoint.host.parse::<std::net::Ipv6Addr>().is_ok() {
+                        "[::]:0".parse().expect("ipv6 wildcard parses")
+                    } else {
+                        "0.0.0.0:0".parse().expect("ipv4 wildcard parses")
+                    };
                 let assoc = eggress_udp::upstream_socks5::open_socks5_udp_upstream(
                     eggress_udp::upstream_socks5::Socks5UdpUpstreamConfig {
                         upstream_id: eggress_core::UpstreamId::new(upstream.id.as_str()),
                         hop: hop.clone(),
                         connect_timeout: OUTBOUND_UDP_CONNECT_TIMEOUT,
-                        udp_bind: "127.0.0.1:0".parse().expect("loopback bind parses"),
+                        udp_bind,
                     },
                     Some(target_socks.clone()),
                 )
@@ -1130,6 +1152,177 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    fn toml_with_version(version: u32) -> String {
+        format!(
+            r#"
+            version = {version}
+            [[upstreams]]
+            id = "up"
+            uri = "socks5://127.0.0.1:1080"
+        "#
+        )
+    }
+
+    fn toml_with_uri(uri: &str) -> String {
+        format!(
+            r#"
+            version = 1
+            [[upstreams]]
+            id = "up"
+            uri = "{uri}"
+        "#
+        )
+    }
+
+    #[test]
+    fn from_toml_canonical_version_equivalence() {
+        // Shared parse/version boundary: unsupported version must surface
+        // through the same public error class/message family as
+        // `EggressConfig::from_toml_str`.
+        let input = toml_with_version(99);
+        let outbound_err = match OutboundConnector::from_toml(&input) {
+            Err(e) => e,
+            Ok(_) => panic!("version 99 must fail"),
+        };
+        let config_err = match crate::EggressConfig::from_toml_str(&input) {
+            Err(e) => e,
+            Ok(_) => panic!("version 99 must fail"),
+        };
+        match (&outbound_err, &config_err) {
+            (EggressError::Config(a), EggressError::Config(b)) => {
+                assert!(
+                    a.contains("unsupported config version"),
+                    "outbound version error family changed: {a}"
+                );
+                assert!(
+                    b.contains("unsupported config version"),
+                    "config version error family changed: {b}"
+                );
+                assert_eq!(a, b, "canonical boundary must agree on version errors");
+            }
+            _ => panic!("version mismatch must be Config in both entry points"),
+        }
+    }
+
+    #[test]
+    fn from_toml_canonical_malformed_equivalence() {
+        let input = "not valid toml {{{";
+        let outbound_err = match OutboundConnector::from_toml(input) {
+            Err(e) => e,
+            Ok(_) => panic!("malformed TOML must fail"),
+        };
+        let config_err = match crate::EggressConfig::from_toml_str(input) {
+            Err(e) => e,
+            Ok(_) => panic!("malformed TOML must fail"),
+        };
+        match (&outbound_err, &config_err) {
+            (EggressError::Config(a), EggressError::Config(b)) => {
+                assert_eq!(a, b, "canonical boundary must agree on TOML parse errors");
+            }
+            _ => panic!("malformed TOML must be Config in both entry points"),
+        }
+    }
+
+    #[test]
+    fn from_toml_canonical_validation_equivalence() {
+        // Passes TOML parsing but fails `validate_config` (invalid upstream
+        // URI). Both entry points must classify it as `Config` with the
+        // identical shared-boundary message.
+        let input = toml_with_uri("://bad-uri");
+        let outbound_err = match OutboundConnector::from_toml(&input) {
+            Err(e) => e,
+            Ok(_) => panic!("invalid URI must fail"),
+        };
+        let config_err = match crate::EggressConfig::from_toml_str(&input) {
+            Err(e) => e,
+            Ok(_) => panic!("invalid URI must fail"),
+        };
+        match (&outbound_err, &config_err) {
+            (EggressError::Config(a), EggressError::Config(b)) => {
+                assert_eq!(a, b, "canonical boundary must agree on validation errors");
+            }
+            _ => panic!("validation failure must be Config in both entry points"),
+        }
+    }
+
+    #[test]
+    fn from_toml_no_upstreams_outbound_specific() {
+        // Valid shared config (no upstreams) constructs via `EggressConfig`
+        // but fails the outbound-only post-compilation check.
+        let input = r#"
+            version = 1
+            [[listeners]]
+            name = "test"
+            bind = "127.0.0.1:0"
+            protocols = ["socks5"]
+        "#;
+        assert!(
+            crate::EggressConfig::from_toml_str(input).is_ok(),
+            "shared boundary should accept upstream-free config"
+        );
+        let err = match OutboundConnector::from_toml(input) {
+            Err(e) => e,
+            Ok(_) => panic!("upstream-free config must fail for outbound"),
+        };
+        assert!(
+            err.to_string().contains("no upstreams configured"),
+            "outbound-specific condition changed: {err}"
+        );
+        let validate_err = OutboundConnector::validate_outbound_config(input).unwrap_err();
+        assert!(
+            validate_err.to_string().contains("no upstreams"),
+            "validate_outbound_config condition changed: {validate_err}"
+        );
+    }
+
+    #[test]
+    fn from_toml_empty_chain_branch_preserved() {
+        // Empty chains are not constructible through TOML fixtures:
+        // `parse_proxy_chain("")` fails before compilation, so any
+        // upstream URI reaching compilation yields at least one hop.
+        // This pins that valid configs never hit the defensive
+        // `upstream chain is empty` branch while the branch itself
+        // remains explicit in `from_toml`.
+        let input = toml_with_uri("socks5://127.0.0.1:1080");
+        let connector = OutboundConnector::from_toml(&input).unwrap();
+        assert_eq!(connector.upstream_count(), 1);
+        // An empty URI fails shared validation, not the empty-chain
+        // branch, proving the branch is unreachable via TOML but preserved.
+        let empty_uri = toml_with_uri("");
+        let err = match OutboundConnector::from_toml(&empty_uri) {
+            Err(e) => e,
+            Ok(_) => panic!("empty URI must fail"),
+        };
+        assert!(
+            matches!(err, EggressError::Config(_)),
+            "empty URI must stay Config, got {err:?}"
+        );
+        assert!(
+            !err.to_string().contains("upstream chain is empty"),
+            "empty URI must fail in shared validation, not empty-chain branch: {err}"
+        );
+    }
+
+    #[test]
+    fn from_toml_supported_http_socks_tls() {
+        for uri in [
+            "socks5://127.0.0.1:1080",
+            "http://127.0.0.1:8080",
+            "socks5+tls://127.0.0.1:1080",
+        ] {
+            let input = toml_with_uri(uri);
+            let connector = OutboundConnector::from_toml(&input)
+                .unwrap_or_else(|e| panic!("supported uri {uri} must construct: {e}"));
+            assert_eq!(connector.upstream_count(), 1);
+            // Shared entry point agrees on success for representative
+            // supported configs (no behavior change).
+            assert!(
+                crate::EggressConfig::from_toml_str(&input).is_ok(),
+                "shared boundary must accept {uri}"
+            );
+        }
+    }
+
     #[test]
     fn test_from_pproxy_uri() {
         let connector = OutboundConnector::from_pproxy_uri("socks5://127.0.0.1:1080").unwrap();
@@ -1312,6 +1505,118 @@ mod tests {
             assert_eq!(&buf[..n], msg.as_bytes());
         }
         assoc.close();
+    }
+
+    #[test]
+    fn wildcard_bind_matches_resolved_family() {
+        let v4: std::net::SocketAddr = "192.0.2.1:53".parse().unwrap();
+        let v6: std::net::SocketAddr = "[2001:db8::1]:53".parse().unwrap();
+        assert!(wildcard_bind_for_resolved(&v4).is_ipv4());
+        assert!(wildcard_bind_for_resolved(&v6).is_ipv6());
+        // Direct outbound never uses loopback binds.
+        assert!(!wildcard_bind_for_resolved(&v4).ip().is_loopback());
+        assert!(!wildcard_bind_for_resolved(&v6).ip().is_loopback());
+    }
+
+    #[cfg(feature = "pproxy-compat")]
+    #[tokio::test]
+    async fn outbound_udp_direct_ipv6_echo_round_trip() {
+        let Some(echo) = eggress_udp::testkit::try_start_udp_echo_server_ipv6().await else {
+            eprintln!("SKIP outbound_udp_direct_ipv6_echo_round_trip: IPv6 loopback unavailable");
+            return;
+        };
+        let connector = OutboundConnector::from_pproxy_uri("direct://").unwrap();
+        assert_eq!(connector.active_udp_associations(), 0);
+        let assoc = connector.associate_udp("::1", echo.port()).await.unwrap();
+        // Family-compatible local bind: IPv6 destination must yield an
+        // IPv6 local socket, not an IPv4 loopback socket.
+        let local = assoc.local_addr().expect("direct IPv6 has local addr");
+        assert!(
+            local.is_ipv6(),
+            "IPv6 target must use IPv6 local bind, got {local}"
+        );
+        assert_eq!(connector.active_udp_associations(), 1);
+        assoc.send(b"hello udp6").await.unwrap();
+        let mut buf = [0u8; 65535];
+        let n = tokio::time::timeout(Duration::from_secs(5), assoc.recv(&mut buf))
+            .await
+            .expect("ipv6 echo recv timed out")
+            .unwrap();
+        assert_eq!(&buf[..n], b"hello udp6");
+        let target = assoc.target();
+        assert_eq!(target.port, echo.port());
+        assoc.close();
+        assert!(assoc.is_closed());
+        assert_eq!(connector.active_udp_associations(), 0);
+        // Idempotent close preserves exactly-once accounting for IPv6.
+        assoc.close();
+        assert_eq!(connector.active_udp_associations(), 0);
+    }
+
+    #[cfg(feature = "pproxy-compat")]
+    #[tokio::test]
+    async fn outbound_udp_direct_ipv4_uses_wildcard_family_bind() {
+        let echo = start_raw_udp_echo().await;
+        let connector = OutboundConnector::from_pproxy_uri("direct://").unwrap();
+        let assoc = connector
+            .associate_udp("127.0.0.1", echo.port())
+            .await
+            .unwrap();
+        let local = assoc.local_addr().expect("direct IPv4 has local addr");
+        assert!(
+            local.is_ipv4(),
+            "IPv4 target must use IPv4 local bind, got {local}"
+        );
+        assoc.close();
+    }
+
+    #[cfg(feature = "pproxy-compat")]
+    #[tokio::test]
+    async fn outbound_udp_socks5_ipv6_relay_round_trip() {
+        use eggress_udp::testkit::{Socks5TestMode, Socks5TestServerConfig, Socks5UdpTestServer};
+        let server = match Socks5UdpTestServer::start_ipv6(Socks5TestServerConfig {
+            mode: Socks5TestMode::Echo,
+            relay_addr: None,
+        })
+        .await
+        {
+            Ok(server) => server,
+            Err(e) => {
+                eprintln!(
+                    "SKIP outbound_udp_socks5_ipv6_relay_round_trip: IPv6 loopback unavailable: {e}"
+                );
+                return;
+            }
+        };
+        assert!(
+            server.tcp_addr.is_ipv6(),
+            "ipv6 test server must listen on IPv6, got {}",
+            server.tcp_addr
+        );
+        let uri = format!("socks5://{}", server.tcp_addr);
+        let connector = OutboundConnector::from_pproxy_uri(&uri).unwrap();
+        let assoc = connector.associate_udp("127.0.0.1", 53).await.unwrap();
+        // Relay is IPv6: local UDP socket must be IPv6 for send_to to work.
+        let relay = assoc.relay_addr().expect("socks5 has relay addr");
+        assert!(relay.is_ipv6(), "IPv6 relay expected, got {relay}");
+        let local = assoc
+            .local_addr()
+            .expect("socks5 ipv6 relay has local addr");
+        assert!(
+            local.is_ipv6(),
+            "IPv6 relay must use IPv6 local bind, got {local}"
+        );
+        // No silent fallback to direct: relay addr present proves the
+        // configured SOCKS5 upstream was selected.
+        assoc.send(b"via socks5 ipv6").await.unwrap();
+        let mut buf = [0u8; 65535];
+        let n = tokio::time::timeout(Duration::from_secs(5), assoc.recv(&mut buf))
+            .await
+            .expect("ipv6 relay echo timed out")
+            .unwrap();
+        assert_eq!(&buf[..n], b"via socks5 ipv6");
+        assoc.close();
+        assert_eq!(connector.active_udp_associations(), 0);
     }
 
     #[cfg(feature = "pproxy-compat")]

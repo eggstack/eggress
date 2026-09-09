@@ -165,8 +165,9 @@ them in-process with no listener, and fails closed on unsupported hops.
 Requires the `pproxy-compat` feature.
 
 Listener-free UDP (`associate_udp`) supports fixed-target direct and
-single-hop SOCKS5 relay with idempotent close; composed/Shadowsocks UDP in
-this surface fail with structured errors. Native reverse control channels
+single-hop SOCKS5 relay over IPv4/IPv6 with idempotent close;
+composed/Shadowsocks UDP in this surface fail with structured errors.
+Native reverse control channels
 support opt-in server-authenticated TLS with optional mTLS
 (`[[reverse_servers.tls]]` / `[[reverse_clients.tls]]`); `pproxy_compat` wire
 remains plaintext.

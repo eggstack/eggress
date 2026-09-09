@@ -659,3 +659,47 @@ async fn upstream_associate_timeout_is_bounded() {
         "associate stall should return Timeout"
     );
 }
+
+#[tokio::test]
+async fn upstream_ipv6_relay_uses_family_compatible_bind() {
+    let upstream = match Socks5UdpTestServer::start_ipv6(Socks5TestServerConfig {
+        mode: Socks5TestMode::Echo,
+        relay_addr: None,
+    })
+    .await
+    {
+        Ok(server) => server,
+        Err(e) => {
+            eprintln!(
+                "SKIP upstream_ipv6_relay_uses_family_compatible_bind: IPv6 unavailable: {e}"
+            );
+            return;
+        }
+    };
+    assert!(
+        upstream.tcp_addr.is_ipv6(),
+        "ipv6 test server must listen on IPv6, got {}",
+        upstream.tcp_addr
+    );
+    // Intentionally request the historical IPv4 loopback bind: the
+    // primitive must family-correct to `[::]:0` for the IPv6 relay
+    // instead of failing with an address-family OS error.
+    let mut config = upstream_config_for_timeout_test(upstream.tcp_addr, None);
+    config.connect_timeout = std::time::Duration::from_secs(5);
+    config.udp_bind = "127.0.0.1:0".parse().unwrap();
+    let assoc = open_socks5_udp_upstream(config, None)
+        .await
+        .expect("ipv6 relay handshake must succeed");
+    assert!(
+        assoc.relay_addr.is_ipv6(),
+        "relay must be IPv6, got {}",
+        assoc.relay_addr
+    );
+    let local = assoc.udp_socket.local_addr().unwrap();
+    assert!(
+        local.is_ipv6(),
+        "IPv6 relay must yield IPv6 local bind, got {local}"
+    );
+    assoc.control_cancel.cancel();
+    assoc.control_task.abort();
+}

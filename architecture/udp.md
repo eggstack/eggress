@@ -95,9 +95,11 @@ Client -> recv_from() -> pin/touch -> decode_packet() -> validate_standalone_tar
 
 ```
 -> udp_capability(&chain) == SupportedSocks5
--> open_socks5_udp_upstream() [upstream_socks5.rs:94-172]:
+-> open_socks5_udp_upstream() [upstream_socks5.rs]:
      TCP connect -> SOCKS5 method+auth -> UDP ASSOCIATE cmd
-     -> bind UDP "127.0.0.1:0" -> spawn control keepalive (300s read timeout)
+     -> bind UDP (requested `udp_bind`, family-corrected to the relay
+        via `effective_udp_bind`; IPv6 relays use `[::]:0`)
+     -> spawn control keepalive (300s read timeout)
 -> Socks5UdpTargetFlow::send():
      encode_socks5_udp_datagram(target, payload) -> udp_socket.send_to(relay_addr)
 -> recv task: decode_socks5_udp_datagram() -> verify target -> try_send()
@@ -158,9 +160,14 @@ First valid packet pins `SocketAddr`; mismatches return `ClientAddressMismatch`.
 Fixed-target associations without a listener, built directly over the same
 primitives (no hidden SOCKS listener):
 
-- Direct: bound `UdpSocket` connected to the resolved target.
+- Direct: wildcard `UdpSocket` (`0.0.0.0:0` / `[::]:0` selected from the
+  resolved destination family) connected to the resolved target. IPv4 and
+  IPv6 loopback both work where the host provides IPv6.
 - Single-hop SOCKS5: `open_socks5_udp_upstream()` + per-datagram
-  `encode_socks5_udp_datagram` / `decode_socks5_udp_datagram`.
+  `encode_socks5_udp_datagram` / `decode_socks5_udp_datagram`. The
+  effective local bind is family-corrected against the negotiated relay
+  (`effective_udp_bind` / `wildcard_udp_bind_for_relay` in
+  `upstream_socks5.rs`); IPv6 relays bind `[::]:0`.
 - Validation: `validate_standalone_target(allow_private_egress=true)` +
   `validate_datagram_size(65535)`; DNS failures surface as `Runtime(dns ...)`.
 - Unsupported (HTTP, multi-hop, composed, Shadowsocks in this surface):
