@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Baseline
 
@@ -148,12 +148,9 @@ This roadmap is complete only when all are true:
 
 ## Closure record
 
-When implementation is complete, update this file in place:
-
-- change `PLANNED` to `IMPLEMENTED`;
-- record the implementation commit range;
-- summarize any scope item closed as unnecessary;
-- link the principal regression tests and resulting canonical startup/reload/translation paths;
-- record which deferred items remain intentionally out of scope.
+- Implementation commit range: phases 1–3 closed in prior `plans: close ...` commits through `b906010`; phase 4 implemented in `de460fc` (`convergence phase 4: listener-free outbound UDP and native reverse TLS/mTLS`).
+- No scope item closed as unnecessary; all four registered plans implemented with code-backed tests.
+- Principal regression/acceptance tests: phase 1 reload/redaction/stream/release-helper defects; phase 2 in-memory startup, canonical reload transaction, direct pproxy-to-native compilation, AsyncBridge convergence; phase 3 internal decomposition with metrics/diagnostic ownership; phase 4 `eggress-embed --lib udp` (direct + SOCKS5, lifecycle), `eggress-protocol-reverse --test tls` (server-auth, mTLS policy, SNI, reconnect, shutdown, redaction), `eggress-config --lib reverse` (TLS compile), `eggress-runtime --test reverse_runtime` (+ TLS spawn smoke) and `reverse_interop` ungated. Canonical paths: `EggressConfig::parse_validate_compile` → `startup_in_memory` → `apply_compiled_config`; `compile_chain_to_native` (no TOML round trip); shared TLS builders; `udp_capability` + `open_socks5_udp_upstream`.
+- Deferred items remain out of scope: MASQUE/CONNECT-UDP, H3 expansion, TPROXY, IPv6 transparent OD, Trojan UDP, TLS hot reload, extra reverse modes, crate merges, independent versioning, distribution redesign, plugin registries, BoxStream replacement, new hosted CI gates. Routine CI topology unchanged; crates.io remains manual.
 
 Do not create a separate completion/evidence document.

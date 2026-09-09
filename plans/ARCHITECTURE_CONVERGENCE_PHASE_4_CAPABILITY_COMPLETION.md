@@ -2,7 +2,7 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
 
 ## Baseline
 
@@ -307,11 +307,9 @@ Phase 4 is complete only when:
 
 ## Closure record
 
-When implemented, update this file in place with:
-
-- implementation commit range;
-- final outbound UDP API shape and supported upstream modes;
-- final reverse TLS/mTLS config fields;
-- principal lifecycle/security test locations;
-- any explicitly unsupported UDP chain types;
-- confirmation that deferred features remained out of scope.
+- Implementation commit: `de460fc` (`convergence phase 4: listener-free outbound UDP and native reverse TLS/mTLS`), on top of `b906010` (phase 3 close).
+- Final outbound UDP API (`crates/eggress-embed/src/outbound.rs`): fixed-target `UdpAssociation` with `send/recv/send_timeout/recv_timeout/close/wait_closed/is_closed/local_addr/target/relay_addr`, `OutboundConnector::associate_udp/associate_udp_timeout/active_udp_associations`. Supported: direct routing and single-hop SOCKS5 UDP relay via `open_socks5_udp_upstream` + SOCKS5 datagram codec. No hidden listener.
+- Final reverse TLS/mTLS config: `[[reverse_servers.tls]]` (`cert`, `key`, optional `client_ca`, `require_client_cert`) and `[[reverse_clients.tls]]` (`ca` optional/system-roots default, required `server_name`, optional `client_cert`/`client_key` pair); compiled to `CompiledReverseServerTls`/`CompiledReverseClientTls` with PEM validation at compile; protocol types `ReverseServerTlsConfig`/`ReverseClientTlsConfig` build via shared `eggress-transport-tls` (server `with_client_ca_pem`/`with_require_client_cert`, client `with_client_cert_pem`); TLS wraps control TCP before auth; `pproxy_compat` + TLS rejected.
+- Principal tests: `eggress-embed --lib udp` (12 tests: direct echo/multi, SOCKS5 echo, unsupported/multi-hop, DNS, oversized, timeout-no-leak, close idempotency, drop accounting, reuse); `eggress-protocol-reverse --test tls` (9 tests: trusted success, untrusted reject, SNI mismatch, mTLS accept/no-cert/untrusted-CA, reconnect after transient, shutdown interrupts handshake, redaction); `eggress-config --lib reverse` (12 compile/validation tests); `eggress-runtime --test reverse_runtime reverse_tls_server_and_client_spawn`; existing plaintext suites (`eggress-protocol-reverse --lib`, `reverse_runtime`, `reverse_interop` ungated) remain green.
+- Explicitly unsupported UDP in listener-free surface: HTTP/SOCKS4/multi-protocol single-hop, multi-hop non-composed, composed multi-hop SOCKS5/Shadowsocks, and Shadowsocks UDP — all fail as `UnsupportedFeature`, never silent fallback. Python does not expose UDP associations (Rust-only surface, documented).
+- Deferred items remained out of scope: MASQUE/CONNECT-UDP, QUIC reverse control, TLS interception/MITM, ACME/provisioning, hot certificate reload, TPROXY, IPv6 transparent completion, Trojan UDP, arbitrary UDP-over-every-protocol, generalized datagram traits, discovery/mesh. No new crates, no new hosted CI workflows, no pproxy parity upgrade (manifest notes scope native vs pproxy-wire TLS).
