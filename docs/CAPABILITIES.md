@@ -18,6 +18,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Unix-domain listener
 - [x] Direct TCP connector
 - [x] Native `OutboundConnector` — `from_toml()`, `from_pproxy_uri()`, `connect_tcp()`, `connect_tcp_timeout()`; Python sync/async native stream wrappers
+- [x] Listener-free `OutboundConnector::associate_udp()` — fixed-target UDP via direct routing and single-hop SOCKS5 upstream; structured unsupported-composition errors; idempotent close/cancellation (Rust; Python UDP not exposed)
 - [x] Replayable protocol sniff buffer
 - [x] Mixed inbound protocol autodetection
 - [x] Half-close-aware bidirectional relay
@@ -161,15 +162,14 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Reverse acceptor (control channel + external listener)
 - [x] Reverse control client with auto-reconnect
 - [x] Plaintext control-channel handshake
+- [x] Native reverse control-channel TLS (server-authenticated) with optional mTLS via shared rustls transport; `pproxy_compat` wire remains plaintext
 - [x] pproxy URI translation (`socks5+in://`, `bind://`, `listen://`, `backward://`, `rebind://`)
-- [x] TOML `[reverse_servers]` / `[reverse_clients]` config model
+- [x] TOML `[reverse_servers]` / `[reverse_clients]` config model (including `[*.tls]` blocks)
 - [x] Reverse listener access policy (allowlist)
 - [x] Reverse admin endpoints
 - [x] Real pproxy 2.7.9 oracle payload evidence for raw and SOCKS5 `+in`
       backward compositions via the gated `reverse_interop` tests
-- [ ] Built-in TLS for control channel (use stunnel or external TLS)
-- [ ] Reverse/backward TLS composition (unsupported; reuse the native
-      access-policy and listener topology)
+- [ ] Reverse/backward TLS composition with pproxy (unsupported; native TLS does not imply pproxy interop)
 - [ ] Reverse UDP (intentional — pproxy does not support UDP reverse)
 
 ## Transparent proxying

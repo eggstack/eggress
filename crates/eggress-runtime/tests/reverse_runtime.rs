@@ -446,7 +446,7 @@ id = "rev-srv-missing-env"
 control_bind = "127.0.0.1:0"
 external_bind = "127.0.0.1:0"
 auth_username = "admin"
-auth_password_env = "EGGRESS_TEST_MISSING_VAR_98765"
+auth_password_env = "EGRESS_TEST_MISSING_VAR_98765"
 "#;
     let f = write_config(config);
     let path = f.path().to_str().unwrap();
@@ -462,4 +462,71 @@ auth_password_env = "EGGRESS_TEST_MISSING_VAR_98765"
             );
         }
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reverse_tls_server_and_client_spawn() {
+    // End-to-end supervisor wiring for native reverse TLS: cert files are
+    // written to temp, TOML references them, and the supervisor must start
+    // with the TLS control channel without altering pproxy-compat paths.
+    let cert_params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+    let key_pair = rcgen::KeyPair::generate().unwrap();
+    let cert_der = cert_params.self_signed(&key_pair).unwrap();
+    let cert_pem = cert_der.pem();
+    let key_pem = key_pair.serialize_pem();
+
+    let cert_file = tempfile::NamedTempFile::new().unwrap();
+    let key_file = tempfile::NamedTempFile::new().unwrap();
+    let ca_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(cert_file.path(), &cert_pem).unwrap();
+    std::fs::write(key_file.path(), &key_pem).unwrap();
+    std::fs::write(ca_file.path(), &cert_pem).unwrap();
+
+    let control_port = find_available_port().await;
+
+    let config = format!(
+        r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-tls-srv"
+control_bind = "127.0.0.1:{}"
+external_bind = "127.0.0.1:0"
+
+[reverse_servers.tls]
+cert = "{}"
+key = "{}"
+
+[[reverse_clients]]
+id = "rev-tls-cli"
+server_addr = "127.0.0.1:{}"
+default_target_host = "127.0.0.1"
+default_target_port = 80
+
+[reverse_clients.tls]
+ca = "{}"
+server_name = "localhost"
+"#,
+        control_port.port(),
+        cert_file.path().display().to_string().replace('\\', "/"),
+        key_file.path().display().to_string().replace('\\', "/"),
+        control_port.port(),
+        ca_file.path().display().to_string().replace('\\', "/"),
+    );
+
+    let f = write_config(&config);
+    let path = f.path().to_str().unwrap().to_string();
+
+    let mut supervisor = eggress_runtime::ServiceSupervisor::start(&path).unwrap();
+    let state = supervisor.state().clone();
+    let cancel_token = supervisor.shutdown_token();
+    let handle = tokio::task::spawn_blocking(move || supervisor.run());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        state.readiness.load(Ordering::Relaxed),
+        "TLS supervisor should be ready"
+    );
+    cancel_token.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(5), handle).await;
+    assert!(result.is_ok(), "TLS supervisor should shut down");
 }

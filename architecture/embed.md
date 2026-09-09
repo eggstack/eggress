@@ -58,9 +58,31 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 | `from_pproxy_uri(uri)` | `src/outbound.rs` | Full pproxy `__` chain → `compile_chain_to_native` (typed `PproxyChain` → native `ProxyChainSpec`, no TOML string) → minimal `RuntimeConfig` → connector (fail-closed, redacted errors) |
 | `connect_tcp(host, port)` | :133 | Execute chain, return `(BoxStream, OutboundInfo)` |
 | `connect_tcp_timeout(host, port, timeout)` | :188 | Wraps `connect_tcp` in `tokio::time::timeout` |
-| `associate_udp(target_host, target_port)` | :206 | Returns error — not yet implemented |
+| `associate_udp(target_host, target_port)` | `src/outbound.rs` | Listener-free fixed-target UDP: direct or single-hop SOCKS5 via `eggress-udp` primitives, no hidden listener |
+| `associate_udp_timeout(host, port, timeout)` | `src/outbound.rs` | Same with establishment timeout |
+| `active_udp_associations()` | `src/outbound.rs` | Live listener-free UDP count (increment on create, decrement on close/drop) |
 | `upstream_count()` | :219 | Number of configured upstreams |
 | `validate_outbound_config(toml)` | :228 | Static validation, returns hop count |
+
+### Outbound UDP (`associate_udp`)
+
+Fixed-target connected semantics over existing UDP primitives, no hidden
+listener:
+
+- Direct: `UdpSocket::bind("127.0.0.1:0")` + `connect(resolved target)` for
+  `direct://` connectors.
+- Single-hop SOCKS5: `open_socks5_udp_upstream()` (TCP control + UDP
+  ASSOCIATE handshake) with SOCKS5 datagram encode/decode per send/recv.
+- Target validation via `validate_standalone_target(allow_private_egress=true)`
+  (multicast/broadcast/unspecified/port-zero rejected; private/loopback allowed
+  because the caller explicitly selected the destination) plus
+  `validate_datagram_size(65535)`.
+- Unsupported chains (HTTP, multi-hop, composed, Shadowsocks UDP in this
+  surface) fail with `UnsupportedFeature`, never silent direct fallback.
+- `UdpAssociation::send/recv/send_timeout/recv_timeout/close/wait_closed`,
+  `is_closed`, `local_addr`, `target`, `relay_addr` (SOCKS5 only). Close is
+  idempotent; drop decrements `active_udp_associations()` exactly once and
+  aborts the SOCKS5 control keepalive.
 
 `from_pproxy_uri()` parses via `parse_pproxy_chain()`, preserving every `__`
 hop in source order, then calls `compile_chain_to_native()` (validation +
@@ -204,8 +226,9 @@ Inline tests (`src/lib.rs`):
   service doesn't become ready in time, the handle is not returned.
 - `reload_toml_str` rejects ANY listener topology change (count, name, or
   bind). Only routing rules, upstreams, and health state can be hot-reloaded.
-- `OutboundConnector::associate_udp()` always returns an error (:210-215)
-  — this is an unimplemented stub.
+- `OutboundConnector::associate_udp()` supports direct + single-hop SOCKS5;
+  composed/Shadowsocks UDP in this surface fail with `UnsupportedFeature`.
+  Python does not expose UDP associations; Rust is the supported surface.
 - No temp file exists; `EggressHandle._config_path` is always `None`.
   In-memory services never pretend to have a config file (SIGHUP disabled).
 

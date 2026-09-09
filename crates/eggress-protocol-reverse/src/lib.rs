@@ -1,11 +1,11 @@
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub mod client;
 pub mod compat_pproxy;
 pub mod metrics;
 pub mod server;
+pub mod tls;
 
 /// Handshake response: accept.
 pub const HANDSHAKE_ACCEPT: u8 = 0x01;
@@ -26,6 +26,8 @@ pub enum ProtocolError {
     BindDenied(std::net::SocketAddr),
     #[error("invalid configuration: {0}")]
     ConfigInvalid(String),
+    #[error("tls error: {0}")]
+    Tls(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -51,11 +53,17 @@ pub enum ControlState {
 /// handshakes are replayable. Wrap the control channel in TLS when it leaves
 /// a trusted network; see also `ReverseServerConfig::validate`, which refuses
 /// unauthenticated non-loopback external binds.
-pub async fn write_auth(
-    stream: &mut TcpStream,
+///
+/// Generic over any async stream so the same framing works over plaintext
+/// TCP and TLS-wrapped control channels.
+pub async fn write_auth<S>(
+    stream: &mut S,
     username: &str,
     password: &str,
-) -> Result<(), ProtocolError> {
+) -> Result<(), ProtocolError>
+where
+    S: AsyncWrite + Unpin,
+{
     let auth = format!("{}:{}\n", username, password);
     stream.write_all(auth.as_bytes()).await?;
     stream.flush().await?;
@@ -63,7 +71,10 @@ pub async fn write_auth(
 }
 
 /// Read and validate the 1-byte handshake response.
-pub async fn read_handshake(stream: &mut TcpStream) -> Result<(), ProtocolError> {
+pub async fn read_handshake<S>(stream: &mut S) -> Result<(), ProtocolError>
+where
+    S: AsyncRead + Unpin,
+{
     let mut buf = [0u8; 1];
     stream.read_exact(&mut buf).await?;
     if buf[0] == HANDSHAKE_REJECT {
@@ -73,23 +84,32 @@ pub async fn read_handshake(stream: &mut TcpStream) -> Result<(), ProtocolError>
 }
 
 /// Write the 1-byte handshake response (accept).
-pub async fn write_handshake_accept(stream: &mut TcpStream) -> Result<(), ProtocolError> {
+pub async fn write_handshake_accept<S>(stream: &mut S) -> Result<(), ProtocolError>
+where
+    S: AsyncWrite + Unpin,
+{
     stream.write_all(&[HANDSHAKE_ACCEPT]).await?;
     Ok(())
 }
 
 /// Write the 1-byte handshake response (reject).
-pub async fn write_handshake_reject(stream: &mut TcpStream) -> Result<(), ProtocolError> {
+pub async fn write_handshake_reject<S>(stream: &mut S) -> Result<(), ProtocolError>
+where
+    S: AsyncWrite + Unpin,
+{
     stream.write_all(&[HANDSHAKE_REJECT]).await?;
     Ok(())
 }
 
 /// Perform the client-side auth handshake: send credentials, read response.
-pub async fn client_auth_handshake(
-    stream: &mut TcpStream,
+pub async fn client_auth_handshake<S>(
+    stream: &mut S,
     username: &str,
     password: &str,
-) -> Result<(), ProtocolError> {
+) -> Result<(), ProtocolError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     write_auth(stream, username, password).await?;
     read_handshake(stream).await
 }
@@ -99,17 +119,19 @@ pub async fn client_auth_handshake(
 /// Returns the redacted auth representation `user:****` (never the password)
 /// so callers can log it without leaking credentials. The full raw bytes are
 /// only retained for the duration of the auth phase and then dropped.
-pub async fn server_auth_handshake(
-    stream: &mut TcpStream,
+pub async fn server_auth_handshake<S>(
+    stream: &mut S,
     expected_user: Option<&str>,
     expected_pass: Option<&str>,
-) -> Result<String, ProtocolError> {
+) -> Result<String, ProtocolError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     // Read auth bytes (newline-delimited user:pass string).
     // Cap at 4 KiB to prevent unbounded memory growth from malicious clients.
     const MAX_AUTH_BYTES: u64 = 4096;
     let mut auth_buf = Vec::with_capacity(1024);
     {
-        use tokio::io::AsyncReadExt;
         let mut limited = (&mut *stream).take(MAX_AUTH_BYTES);
         let mut reader = tokio::io::BufReader::new(&mut limited);
         reader.read_until(b'\n', &mut auth_buf).await?;
@@ -183,8 +205,8 @@ fn parse_auth_str(auth: &str) -> (&str, &str) {
 ///
 /// Takes ownership of both streams and relays until either side closes.
 pub async fn relay_bidirectional(
-    stream_a: TcpStream,
-    stream_b: TcpStream,
+    stream_a: tokio::net::TcpStream,
+    stream_b: tokio::net::TcpStream,
 ) -> Result<(), ProtocolError> {
     relay_bidirectional_with_timeout(stream_a, stream_b, None).await
 }
@@ -194,8 +216,23 @@ pub async fn relay_bidirectional(
 /// EOF — half-close is preserved so the still-open direction can drain
 /// any application bytes the peer already produced.
 pub async fn relay_bidirectional_with_timeout(
-    stream_a: TcpStream,
-    stream_b: TcpStream,
+    stream_a: tokio::net::TcpStream,
+    stream_b: tokio::net::TcpStream,
+    idle_timeout: Option<Duration>,
+) -> Result<(), ProtocolError> {
+    let a: eggress_core::BoxStream = Box::new(stream_a);
+    let b: eggress_core::BoxStream = Box::new(stream_b);
+    relay_bidirectional_boxed(a, b, idle_timeout).await
+}
+
+/// Relay between boxed streams (plaintext TCP boxed, or TLS-wrapped).
+///
+/// Used when the control channel is TLS-protected while the external side
+/// remains plaintext TCP. Half-close semantics match
+/// [`relay_bidirectional_with_timeout`].
+pub async fn relay_bidirectional_boxed(
+    stream_a: eggress_core::BoxStream,
+    stream_b: eggress_core::BoxStream,
     idle_timeout: Option<Duration>,
 ) -> Result<(), ProtocolError> {
     let (mut a_read, mut a_write) = tokio::io::split(stream_a);

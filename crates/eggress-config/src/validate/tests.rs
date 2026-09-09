@@ -286,6 +286,7 @@ fn warn_reverse_control_bind_without_auth() {
             max_streams: None,
             heartbeat_interval: None,
             pproxy_compat: false,
+            tls: None,
         }]),
         reverse_clients: None,
     };
@@ -317,6 +318,7 @@ fn no_warn_reverse_control_bind_with_auth() {
             max_streams: None,
             heartbeat_interval: None,
             pproxy_compat: false,
+            tls: None,
         }]),
         reverse_clients: None,
     };
@@ -347,6 +349,7 @@ fn no_warn_reverse_control_bind_with_env_auth() {
             max_streams: None,
             heartbeat_interval: None,
             pproxy_compat: false,
+            tls: None,
         }]),
         reverse_clients: None,
     };

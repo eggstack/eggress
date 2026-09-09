@@ -11,6 +11,63 @@ use crate::model::{
 };
 use crate::validate::validate_duration;
 
+/// Compiled TLS material for a native reverse server control channel.
+#[derive(Clone)]
+pub struct CompiledReverseServerTls {
+    pub cert_pem: Vec<u8>,
+    pub key_pem: Vec<u8>,
+    pub client_ca_pem: Option<Vec<u8>>,
+    pub require_client_cert: bool,
+}
+
+impl std::fmt::Debug for CompiledReverseServerTls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompiledReverseServerTls")
+            .field("has_cert", &!self.cert_pem.is_empty())
+            .field("has_key", &!self.key_pem.is_empty())
+            .field("has_client_ca", &self.client_ca_pem.is_some())
+            .field("require_client_cert", &self.require_client_cert)
+            .finish()
+    }
+}
+
+impl Drop for CompiledReverseServerTls {
+    fn drop(&mut self) {
+        self.key_pem.zeroize();
+        if let Some(ref mut ca) = self.client_ca_pem {
+            ca.zeroize();
+        }
+    }
+}
+
+/// Compiled TLS material for a native reverse client control channel.
+#[derive(Clone)]
+pub struct CompiledReverseClientTls {
+    pub ca_pem: Option<Vec<u8>>,
+    pub server_name: String,
+    pub client_cert_pem: Option<Vec<u8>>,
+    pub client_key_pem: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for CompiledReverseClientTls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompiledReverseClientTls")
+            .field("has_ca", &self.ca_pem.is_some())
+            .field("server_name", &self.server_name)
+            .field("has_client_cert", &self.client_cert_pem.is_some())
+            .field("has_client_key", &self.client_key_pem.is_some())
+            .finish()
+    }
+}
+
+impl Drop for CompiledReverseClientTls {
+    fn drop(&mut self) {
+        if let Some(ref mut key) = self.client_key_pem {
+            key.zeroize();
+        }
+    }
+}
+
 /// Compiled reverse server configuration with resolved defaults and parsed addresses.
 #[derive(Clone)]
 pub struct CompiledReverseServerConfig {
@@ -26,6 +83,7 @@ pub struct CompiledReverseServerConfig {
     pub max_streams_per_listener: u32,
     pub max_pending_external: u32,
     pub pproxy_compat: bool,
+    pub tls: Option<CompiledReverseServerTls>,
 }
 
 impl std::fmt::Debug for CompiledReverseServerConfig {
@@ -45,6 +103,7 @@ impl std::fmt::Debug for CompiledReverseServerConfig {
             .field("max_streams_per_listener", &self.max_streams_per_listener)
             .field("max_pending_external", &self.max_pending_external)
             .field("pproxy_compat", &self.pproxy_compat)
+            .field("tls", &self.tls)
             .finish()
     }
 }
@@ -73,6 +132,7 @@ pub struct CompiledReverseClientConfig {
     pub drain_grace_ms: u64,
     pub parallel_connections: u32,
     pub pproxy_compat: bool,
+    pub tls: Option<CompiledReverseClientTls>,
 }
 
 impl std::fmt::Debug for CompiledReverseClientConfig {
@@ -92,6 +152,7 @@ impl std::fmt::Debug for CompiledReverseClientConfig {
             .field("drain_grace_ms", &self.drain_grace_ms)
             .field("parallel_connections", &self.parallel_connections)
             .field("pproxy_compat", &self.pproxy_compat)
+            .field("tls", &self.tls)
             .finish()
     }
 }
@@ -1777,6 +1838,15 @@ fn compile_reverse_servers(
                 })?
                 .unwrap_or(300_000);
 
+            if s.pproxy_compat && s.tls.is_some() {
+                return Err(ConfigError::validation(
+                    &format!("{}.tls", path),
+                    "reverse TLS is not supported with pproxy_compat (wire must remain byte-compatible plaintext)",
+                ));
+            }
+
+            let tls = compile_reverse_server_tls(s.tls.as_ref(), &path)?;
+
             Ok(CompiledReverseServerConfig {
                 id: s.id.clone(),
                 control_bind,
@@ -1790,9 +1860,75 @@ fn compile_reverse_servers(
                 max_streams_per_listener: max_streams,
                 max_pending_external: 1024,
                 pproxy_compat: s.pproxy_compat,
+                tls,
             })
         })
         .collect()
+}
+
+fn compile_reverse_server_tls(
+    tls: Option<&crate::model::ReverseServerTlsConfig>,
+    path: &str,
+) -> Result<Option<CompiledReverseServerTls>, ConfigError> {
+    let tls = match tls {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    if tls.require_client_cert && tls.client_ca.is_none() {
+        return Err(ConfigError::validation(
+            &format!("{}.tls", path),
+            "reverse server mTLS requires client_ca when require_client_cert is set",
+        ));
+    }
+    let cert_pem = std::fs::read(&tls.cert).map_err(|e| {
+        ConfigError::validation(
+            &format!("{}.tls.cert", path),
+            &format!("failed to read cert file: {}", e),
+        )
+    })?;
+    let key_pem = std::fs::read(&tls.key).map_err(|e| {
+        ConfigError::validation(
+            &format!("{}.tls.key", path),
+            &format!("failed to read key file: {}", e),
+        )
+    })?;
+    let client_ca_pem = tls
+        .client_ca
+        .as_deref()
+        .map(|p| {
+            std::fs::read(p).map_err(|e| {
+                ConfigError::validation(
+                    &format!("{}.tls.client_ca", path),
+                    &format!("failed to read client CA file: {}", e),
+                )
+            })
+        })
+        .transpose()?;
+    // Validate PEM at compile time via the shared TLS builders so malformed
+    // material fails before any listener binds.
+    {
+        let mut builder = eggress_transport_tls::TlsServerConfigBuilder::new()
+            .with_certificate_pem(&cert_pem)
+            .and_then(|b| b.with_key_pem(&key_pem));
+        if let Some(ref ca_pem) = client_ca_pem {
+            builder = builder.and_then(|b| b.with_client_ca_pem(ca_pem));
+        }
+        if tls.require_client_cert {
+            builder = builder.map(|b| b.with_require_client_cert(true));
+        }
+        builder.map_err(|e| {
+            ConfigError::validation(
+                &format!("{}.tls", path),
+                &format!("invalid TLS config: {}", e),
+            )
+        })?;
+    }
+    Ok(Some(CompiledReverseServerTls {
+        cert_pem,
+        key_pem,
+        client_ca_pem,
+        require_client_cert: tls.require_client_cert,
+    }))
 }
 
 fn compile_reverse_clients(
@@ -1872,6 +2008,15 @@ fn compile_reverse_clients(
                 ));
             }
 
+            if c.pproxy_compat && c.tls.is_some() {
+                return Err(ConfigError::validation(
+                    &format!("{}.tls", path),
+                    "reverse TLS is not supported with pproxy_compat (wire must remain byte-compatible plaintext)",
+                ));
+            }
+
+            let tls = compile_reverse_client_tls(c.tls.as_ref(), &path)?;
+
             Ok(CompiledReverseClientConfig {
                 id: c.id.clone(),
                 server_addr,
@@ -1889,9 +2034,110 @@ fn compile_reverse_clients(
                 drain_grace_ms: 5_000,
                 parallel_connections,
                 pproxy_compat: c.pproxy_compat,
+                tls,
             })
         })
         .collect()
+}
+
+fn compile_reverse_client_tls(
+    tls: Option<&crate::model::ReverseClientTlsConfig>,
+    path: &str,
+) -> Result<Option<CompiledReverseClientTls>, ConfigError> {
+    let tls = match tls {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    if tls.server_name.is_empty() {
+        return Err(ConfigError::validation(
+            &format!("{}.tls.server_name", path),
+            "reverse client TLS requires a server_name for SNI/verification",
+        ));
+    }
+    // Validate SNI now rather than during the first reconnect.
+    {
+        let _ = rustls::pki_types::ServerName::try_from(tls.server_name.clone()).map_err(|_| {
+            ConfigError::validation(
+                &format!("{}.tls.server_name", path),
+                &format!("invalid server_name '{}'", tls.server_name),
+            )
+        })?;
+    }
+    if tls.client_cert.is_some() != tls.client_key.is_some() {
+        return Err(ConfigError::validation(
+            &format!("{}.tls", path),
+            "reverse client mTLS requires both client_cert and client_key",
+        ));
+    }
+    let ca_pem = tls
+        .ca
+        .as_deref()
+        .map(|p| {
+            std::fs::read(p).map_err(|e| {
+                ConfigError::validation(
+                    &format!("{}.tls.ca", path),
+                    &format!("failed to read CA file: {}", e),
+                )
+            })
+        })
+        .transpose()?;
+    let client_cert_pem = tls
+        .client_cert
+        .as_deref()
+        .map(|p| {
+            std::fs::read(p).map_err(|e| {
+                ConfigError::validation(
+                    &format!("{}.tls.client_cert", path),
+                    &format!("failed to read client cert file: {}", e),
+                )
+            })
+        })
+        .transpose()?;
+    let client_key_pem = tls
+        .client_key
+        .as_deref()
+        .map(|p| {
+            std::fs::read(p).map_err(|e| {
+                ConfigError::validation(
+                    &format!("{}.tls.client_key", path),
+                    &format!("failed to read client key file: {}", e),
+                )
+            })
+        })
+        .transpose()?;
+    // Validate PEM via shared builders.
+    {
+        let mut builder = eggress_transport_tls::TlsClientConfigBuilder::new();
+        builder = match ca_pem.as_deref() {
+            Some(ca) => builder.with_custom_ca_pem(ca).map_err(|e| {
+                ConfigError::validation(
+                    &format!("{}.tls.ca", path),
+                    &format!("invalid CA PEM: {}", e),
+                )
+            })?,
+            None => builder.with_system_roots().map_err(|e| {
+                ConfigError::validation(
+                    &format!("{}.tls", path),
+                    &format!("TLS system roots unavailable: {}", e),
+                )
+            })?,
+        };
+        if let (Some(cert), Some(key)) = (client_cert_pem.as_ref(), client_key_pem.as_ref()) {
+            builder = builder.with_client_cert_pem(cert, key);
+        }
+        builder.build().map_err(|e| {
+            ConfigError::validation(
+                &format!("{}.tls", path),
+                &format!("invalid TLS config: {}", e),
+            )
+        })?;
+    }
+    Ok(Some(CompiledReverseClientTls {
+        ca_pem,
+        server_name: tls.server_name.clone(),
+        client_cert_pem,
+        client_key_pem,
+    }))
 }
 
 /// Resolve a password from either an explicit value or an environment variable.

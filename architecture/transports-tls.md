@@ -23,6 +23,7 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | `new()` | Empty root store, no ALPN, no override, not insecure |
 | `with_system_roots()` | Extends root store from `webpki_roots::TLS_SERVER_ROOTS` |
 | `with_custom_ca_pem(pem_bytes)` | Replaces root store with parsed PEM CA certs |
+| `with_client_cert_pem(cert_pem, key_pem)` | mTLS client identity (both required; malformed PEM fails at `build`) |
 | `with_alpn(protocols)` | Sets ALPN protocol list (e.g., `b"h2"`, `b"http/1.1"`) |
 | `with_h2_alpn()` | Shortcut: `vec![b"h2", b"http/1.1"]` |
 | `with_server_name_override(name)` | Default SNI when `tls_connect` has no explicit name |
@@ -36,6 +37,8 @@ The only TLS implementation in the workspace (no OpenSSL anywhere). Wraps
 | `new()` | Empty cert chain, no key, no ALPN |
 | `with_certificate_pem(cert_pem)` | Parses PEM cert chain; fails if empty |
 | `with_key_pem(key_pem)` | Parses PKCS#8 private key from PEM |
+| `with_client_ca_pem(ca_pem)` | mTLS trust roots for client certs (verified when presented) |
+| `with_require_client_cert(bool)` | Require a valid client cert; fails at `build` without client CA |
 | `with_alpn(protocols)` | Sets ALPN protocol list |
 | `with_h2_alpn()` | Shortcut: `vec![b"h2", b"http/1.1"]` |
 | `build()` | Returns `Arc<ServerConfig>`. Fails if missing key or empty cert chain |
@@ -106,15 +109,17 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 | `eggress-server` (`execute.rs`) | Upstream `+tls` hops: builds `TlsClientConfigBuilder` with system roots or custom CA, calls `tls_connect` on the box stream |
 | `eggress-runtime` (`supervisor/connection.rs` `wrap_tls_server()`) | Listener TLS: builds `TlsServerConfigBuilder` from prepared config, calls `tls_accept` on inbound streams (shared by standard/transparent/Unix paths) |
 | `eggress-protocol-trojan` (`tcp.rs`) | Trojan client: builds `TlsClientConfigBuilder` with system roots, calls `tls_connect` for the Trojan-over-TLS channel |
+| `eggress-protocol-reverse` (`tls.rs`, `server.rs`, `client.rs`) | Native reverse control TLS/mTLS: server builds once via `TlsServerConfigBuilder` (+ optional client CA/require), client builds once via `TlsClientConfigBuilder` (+ optional client cert/key) and reuses `Arc` across reconnects; `tls_accept`/`tls_connect` wrap control TCP before reverse framing |
 
 ## Security notes
 
 - **Insecure mode is triple-gated.** `with_insecure()` is only available under `#[cfg(any(test, debug_assertions, feature = "insecure-tls"))]`. If the feature is not enabled, `build()` returns `TlsError::Handshake("insecure TLS requires the insecure-tls feature")`. This prevents accidental use in release builds.
 - **Empty PEM is an error.** `load_pem_roots(b"")` returns `PemParse("no certificates found in PEM root material")`. This prevents silently trusting everything when CA material is misconfigured.
-- **No client auth.** Both client and server configs use `with_no_client_auth()`. Mutual TLS is not supported.
+- **Client auth defaults to none; mTLS is opt-in.** See above for the explicit builders.
 - **PKCS#8 only.** `load_private_key_pem` uses `PrivatePkcs8KeyDer::from_pem_slice`. Other key formats (RSA, EC) are not supported.
 - **Ring provider only.** The crypto provider is hardcoded to ring. No alternative providers are supported.
 - **No session resumption.** The builder does not configure session tickets or session caching.
+- **mTLS is explicit.** Server `require_client_cert` without client CA fails at `build`; client cert without key fails at `build`. Reverse `pproxy_compat` + TLS is rejected at config compile (wire must stay plaintext).
 
 ## Concurrency and lifecycle
 
@@ -167,7 +172,7 @@ Both `tls_connect` and `tls_accept` use `tokio-rustls`:
 - **`insecure-tls` feature escape hatch.** The `with_insecure()` method and `InsecureVerifier` are compiled only when `test || debug_assertions || feature = "insecure-tls"`. Auditing trust paths requires grepping for `insecure-tls` in `Cargo.toml` files.
 - **`load_pem_certs` vs `load_pem_roots`.** `load_pem_certs` returns raw `CertificateDer` values and does NOT fail on empty input. `load_pem_roots` builds a `RootCertStore` and DOES fail on empty input. These have different error semantics for the same "empty PEM" case.
 - **`with_custom_ca_pem` replaces, not extends.** It sets `builder.root_store = roots`, discarding any previously loaded roots (including system roots). Call `with_system_roots()` first if you need both.
-- **No `with_client_auth`.** Both sides use `with_no_client_auth()`. If mutual TLS is needed, the builder API would need extension.
+- **No `with_client_auth`.** Both sides default to `with_no_client_auth()`; use `with_client_ca_pem`/`with_require_client_cert` (server) and `with_client_cert_pem` (client) for mutual TLS.
 - **`install_default_crypto_provider` warning is not an error.** A warning is logged (not returned) when the provider is already installed. The `Err` is silently dropped in the `if let Err` pattern at `lib.rs:16`.
 - **PEM parsing uses `CertificateDer::pem_slice_iter`.** This iterates all PEM objects in the slice. If the PEM contains non-cert objects (e.g., private keys), they are included in the iterator and may cause `RootCertStore::add` to fail with a type error.
 

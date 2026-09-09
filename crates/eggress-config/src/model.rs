@@ -413,6 +413,41 @@ pub struct StaticContentToml {
     pub body: Option<String>,
 }
 
+/// TLS configuration for a native reverse server control channel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReverseServerTlsConfig {
+    /// Path to the server certificate chain PEM file.
+    pub cert: String,
+    /// Path to the server private key PEM file (PKCS#8).
+    pub key: String,
+    /// Optional path to client CA roots PEM for mutual TLS.
+    #[serde(default)]
+    pub client_ca: Option<String>,
+    /// Require and validate a client certificate. Requires `client_ca`.
+    #[serde(default)]
+    pub require_client_cert: bool,
+}
+
+/// TLS configuration for a native reverse client control channel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReverseClientTlsConfig {
+    /// Optional path to custom CA roots PEM. When absent, system roots are
+    /// used, consistent with existing upstream TLS policy.
+    #[serde(default)]
+    pub ca: Option<String>,
+    /// SNI / server name for verification. Required when TLS is configured
+    /// because `server_addr` is an IP literal.
+    pub server_name: String,
+    /// Optional client certificate PEM path for mutual TLS.
+    #[serde(default)]
+    pub client_cert: Option<String>,
+    /// Optional client private key PEM path for mutual TLS.
+    #[serde(default)]
+    pub client_key: Option<String>,
+}
+
 /// Configuration for a reverse proxy server (acceptor side).
 ///
 /// The reverse server accepts control connections from remote clients and
@@ -442,6 +477,10 @@ pub struct ReverseServerConfig {
     /// Eggress reverse framing.
     #[serde(default)]
     pub pproxy_compat: bool,
+    /// Optional TLS for the native control channel. Not supported with
+    /// `pproxy_compat` (byte-compatible wire must remain plaintext).
+    #[serde(default)]
+    pub tls: Option<ReverseServerTlsConfig>,
 }
 
 impl std::fmt::Debug for ReverseServerConfig {
@@ -456,6 +495,7 @@ impl std::fmt::Debug for ReverseServerConfig {
             .field("max_streams", &self.max_streams)
             .field("heartbeat_interval", &self.heartbeat_interval)
             .field("pproxy_compat", &self.pproxy_compat)
+            .field("tls", &self.tls)
             .finish()
     }
 }
@@ -506,6 +546,10 @@ pub struct ReverseClientConfig {
     /// Eggress reverse framing.
     #[serde(default)]
     pub pproxy_compat: bool,
+    /// Optional TLS for the native control channel. Not supported with
+    /// `pproxy_compat`.
+    #[serde(default)]
+    pub tls: Option<ReverseClientTlsConfig>,
 }
 
 impl std::fmt::Debug for ReverseClientConfig {
@@ -524,6 +568,7 @@ impl std::fmt::Debug for ReverseClientConfig {
             .field("default_target_host", &self.default_target_host)
             .field("default_target_port", &self.default_target_port)
             .field("pproxy_compat", &self.pproxy_compat)
+            .field("tls", &self.tls)
             .finish()
     }
 }

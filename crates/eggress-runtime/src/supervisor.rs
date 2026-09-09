@@ -1585,6 +1585,14 @@ impl ServiceSupervisor {
                         });
                         continue;
                     }
+                    let server_tls = rs_cfg.tls.as_ref().map(|t| {
+                        eggress_protocol_reverse::tls::ReverseServerTlsConfig {
+                            cert_pem: t.cert_pem.clone(),
+                            key_pem: t.key_pem.clone(),
+                            client_ca_pem: t.client_ca_pem.clone(),
+                            require_client_cert: t.require_client_cert,
+                        }
+                    });
                     let server_config = eggress_protocol_reverse::server::ReverseServerConfig {
                         control_bind: rs_cfg.control_bind,
                         external_bind: Some(rs_cfg.external_bind),
@@ -1596,6 +1604,7 @@ impl ServiceSupervisor {
                         max_listeners_per_client: rs_cfg.max_listeners_per_client,
                         max_streams_per_listener: rs_cfg.max_streams_per_listener,
                         max_pending_external: rs_cfg.max_pending_external,
+                        tls: server_tls,
                     };
                     // Defense-in-depth: validate the configuration before
                     // spawning the task so unsafe configurations fail at
@@ -1692,6 +1701,14 @@ impl ServiceSupervisor {
                             });
                             continue;
                         }
+                        let client_tls = rc_cfg.tls.as_ref().map(|t| {
+                            eggress_protocol_reverse::tls::ReverseClientTlsConfig {
+                                ca_pem: t.ca_pem.clone(),
+                                server_name: t.server_name.clone(),
+                                client_cert_pem: t.client_cert_pem.clone(),
+                                client_key_pem: t.client_key_pem.clone(),
+                            }
+                        });
                         let client_config = eggress_protocol_reverse::client::ReverseClientConfig {
                             server_addr: rc_cfg.server_addr,
                             auth_username: rc_cfg.auth_username.clone(),
@@ -1702,7 +1719,8 @@ impl ServiceSupervisor {
                             default_target_port: rc_cfg.default_target_port,
                             read_timeout_ms: rc_cfg.read_timeout_ms,
                             drain_grace_ms: rc_cfg.drain_grace_ms,
-                            ..Default::default()
+                            target_connect_timeout_ms: 10_000,
+                            tls: client_tls,
                         };
                         let mut client =
                             eggress_protocol_reverse::client::ReverseClient::new(client_config);

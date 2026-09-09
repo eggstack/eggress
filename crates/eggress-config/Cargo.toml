@@ -20,6 +20,7 @@ eggress-udp.workspace = true
 eggress-uri.workspace = true
 eggress-routing.workspace = true
 eggress-transport-tls.workspace = true
+rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 toml.workspace = true
 thiserror.workspace = true

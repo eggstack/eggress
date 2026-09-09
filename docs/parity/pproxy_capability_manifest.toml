@@ -816,7 +816,7 @@ status = "supported_difference"
 strict_closure_required = false
 strict_phase = "10"
 diagnostic = "reverse-proxy-warning"
-notes = "TCP-only raw relay; no built-in TLS; plaintext auth possible; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind."
+notes = "TCP-only raw relay; pproxy wire has no TLS (native framing supports opt-in TLS via [[reverse_servers.tls]]); plaintext auth possible on pproxy wire; defense-in-depth validation refuses non-loopback external_bind without auth+allow_bind."
 
 [[capability]]
 id = "uri.scheme_listen"
@@ -839,7 +839,7 @@ implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs
 status = "supported_difference"
 strict_closure_required = false
 strict_phase = "10"
-notes = "Alias for bind://; same reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal)."
+notes = "Alias for bind://; same pproxy-wire caveats (no TLS on pproxy wire; native framing supports opt-in TLS; plaintext auth; non-loopback refusal)."
 
 [[capability]]
 id = "uri.scheme_backward"
@@ -863,7 +863,7 @@ status = "supported_difference"
 strict_closure_required = true
 strict_phase = "5"
 diagnostic = "reverse-proxy-warning"
-notes = "TCP-only raw relay; no built-in TLS; plaintext auth possible."
+notes = "TCP-only raw relay; pproxy wire has no TLS (native framing supports opt-in TLS via [[reverse_clients.tls]]); plaintext auth possible on pproxy wire."
 
 [[capability]]
 id = "uri.scheme_rebind"
@@ -886,7 +886,7 @@ implementation = "crates/eggress-uri and crates/eggress-pproxy-compat/src/uri.rs
 status = "supported_difference"
 strict_closure_required = false
 strict_phase = "10"
-notes = "Alias for backward://; same reverse proxy caveats (no TLS, plaintext auth)."
+notes = "Alias for backward://; same pproxy-wire caveats (no TLS on pproxy wire; native framing supports opt-in TLS; plaintext auth)."
 
 [[capability]]
 id = "uri.scheme_raw"
@@ -1050,7 +1050,7 @@ status = "supported_difference"
 strict_closure_required = false
 strict_phase = "10"
 diagnostic = "reverse-proxy-warning"
-notes = "Activates reverse/backward mode; inherits reverse proxy caveats (no TLS, plaintext auth, non-loopback refusal). Raw and SOCKS5 +in compositions have real pproxy 2.7.9 oracle payload evidence via the gated reverse_interop tests; reverse/backward TLS composition remains unsupported."
+notes = "Activates reverse/backward mode; inherits pproxy-wire caveats (no TLS on pproxy wire; native framing supports opt-in TLS; plaintext auth; non-loopback refusal). Raw and SOCKS5 +in compositions have real pproxy 2.7.9 oracle payload evidence via the gated reverse_interop tests; reverse/backward TLS composition remains unsupported."
 
 [[capability]]
 id = "uri.chain_separator"
@@ -2688,7 +2688,7 @@ status = "supported_difference"
 strict_closure_required = false
 strict_phase = "10"
 diagnostic = "reverse-proxy-warning"
-notes = "Raw and SOCKS5 +in compositions have real pproxy 2.7.9 oracle payload evidence; reverse/backward TLS composition remains unsupported; QUIC reverse behavior is separately feature-qualified behind the quic feature; the native reverse listener topology remains a distinct stronger protocol."
+notes = "Raw and SOCKS5 +in compositions have real pproxy 2.7.9 oracle payload evidence; pproxy-wire reverse/backward TLS composition remains unsupported (native framing supports opt-in TLS, which does not imply pproxy interop); QUIC reverse behavior is separately feature-qualified behind the quic feature; the native reverse listener topology remains a distinct stronger protocol."
 caveat_class = "translator_scope_gap"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

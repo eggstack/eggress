@@ -2261,4 +2261,238 @@ mode = "standalone_pproxy_udp"
         let udp = rt.listeners[0].udp.as_ref().unwrap();
         assert_eq!(udp.mode, eggress_udp::UdpMode::StandalonePproxyUdp);
     }
+
+    fn write_pem_files(cert_pem: &str, key_pem: &str) -> (NamedTempFile, NamedTempFile) {
+        let cert_file = NamedTempFile::new().unwrap();
+        let key_file = NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), cert_pem).unwrap();
+        std::fs::write(key_file.path(), key_pem).unwrap();
+        (cert_file, key_file)
+    }
+
+    fn self_signed_pair() -> (String, String) {
+        let params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        (cert.pem(), key.serialize_pem())
+    }
+
+    #[test]
+    fn reverse_server_tls_accepted() {
+        let (cert_pem, key_pem) = self_signed_pair();
+        let (cert_file, key_file) = write_pem_files(&cert_pem, &key_pem);
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-tls"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+
+[reverse_servers.tls]
+cert = "{}"
+key = "{}"
+"#,
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        let rt = load_and_validate(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(rt.reverse_servers.len(), 1);
+        assert!(rt.reverse_servers[0].tls.is_some());
+    }
+
+    #[test]
+    fn reverse_server_tls_require_without_ca_rejected() {
+        let (cert_pem, key_pem) = self_signed_pair();
+        let (cert_file, key_file) = write_pem_files(&cert_pem, &key_pem);
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-tls"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+
+[reverse_servers.tls]
+cert = "{}"
+key = "{}"
+require_client_cert = true
+"#,
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        assert!(load_and_validate(f.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn reverse_server_tls_malformed_pem_rejected() {
+        let cert_file = NamedTempFile::new().unwrap();
+        let key_file = NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), "not pem").unwrap();
+        std::fs::write(key_file.path(), "not pem").unwrap();
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-tls"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+
+[reverse_servers.tls]
+cert = "{}"
+key = "{}"
+"#,
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        assert!(load_and_validate(f.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn reverse_server_tls_with_pproxy_compat_rejected() {
+        let (cert_pem, key_pem) = self_signed_pair();
+        let (cert_file, key_file) = write_pem_files(&cert_pem, &key_pem);
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-tls"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+pproxy_compat = true
+
+[reverse_servers.tls]
+cert = "{}"
+key = "{}"
+"#,
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        assert!(load_and_validate(f.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn reverse_client_tls_accepted() {
+        let (cert_pem, _) = self_signed_pair();
+        let ca_file = NamedTempFile::new().unwrap();
+        std::fs::write(ca_file.path(), &cert_pem).unwrap();
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-tls"
+server_addr = "127.0.0.1:8443"
+default_target_host = "127.0.0.1"
+default_target_port = 80
+
+[reverse_clients.tls]
+ca = "{}"
+server_name = "localhost"
+"#,
+            ca_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        let rt = load_and_validate(f.path().to_str().unwrap()).unwrap();
+        assert_eq!(rt.reverse_clients.len(), 1);
+        let tls = rt.reverse_clients[0].tls.as_ref().unwrap();
+        assert_eq!(tls.server_name, "localhost");
+    }
+
+    #[test]
+    fn reverse_client_tls_missing_server_name_rejected() {
+        let config = r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-tls"
+server_addr = "127.0.0.1:8443"
+default_target_host = "127.0.0.1"
+default_target_port = 80
+
+[reverse_clients.tls]
+server_name = ""
+"#;
+        let f = write_config(config);
+        assert!(load_and_validate(f.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn reverse_client_tls_cert_without_key_rejected() {
+        let (cert_pem, _) = self_signed_pair();
+        let cert_file = NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), &cert_pem).unwrap();
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-tls"
+server_addr = "127.0.0.1:8443"
+default_target_host = "127.0.0.1"
+default_target_port = 80
+
+[reverse_clients.tls]
+server_name = "localhost"
+client_cert = "{}"
+"#,
+            cert_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        assert!(load_and_validate(f.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn reverse_client_tls_with_pproxy_compat_rejected() {
+        let config = r#"
+version = 1
+
+[[reverse_clients]]
+id = "rev-cli-tls"
+server_addr = "127.0.0.1:8443"
+default_target_host = "127.0.0.1"
+default_target_port = 80
+pproxy_compat = true
+
+[reverse_clients.tls]
+server_name = "localhost"
+"#;
+        let f = write_config(config);
+        assert!(load_and_validate(f.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn reverse_tls_debug_redacts_key_material() {
+        let (cert_pem, key_pem) = self_signed_pair();
+        let (cert_file, key_file) = write_pem_files(&cert_pem, &key_pem);
+        let config = format!(
+            r#"
+version = 1
+
+[[reverse_servers]]
+id = "rev-tls"
+control_bind = "127.0.0.1:0"
+external_bind = "127.0.0.1:0"
+
+[reverse_servers.tls]
+cert = "{}"
+key = "{}"
+"#,
+            cert_file.path().display().to_string().replace('\\', "/"),
+            key_file.path().display().to_string().replace('\\', "/")
+        );
+        let f = write_config(&config);
+        let rt = load_and_validate(f.path().to_str().unwrap()).unwrap();
+        let rendered = format!("{:?}", rt.reverse_servers[0]);
+        assert!(!rendered.contains(&key_pem));
+        assert!(!rendered.contains("BEGIN PRIVATE KEY"));
+    }
 }

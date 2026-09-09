@@ -164,6 +164,13 @@ assert_eq!(info.hop_count, 2);
 them in-process with no listener, and fails closed on unsupported hops.
 Requires the `pproxy-compat` feature.
 
+Listener-free UDP (`associate_udp`) supports fixed-target direct and
+single-hop SOCKS5 relay with idempotent close; composed/Shadowsocks UDP in
+this surface fail with structured errors. Native reverse control channels
+support opt-in server-authenticated TLS with optional mTLS
+(`[[reverse_servers.tls]]` / `[[reverse_clients.tls]]`); `pproxy_compat` wire
+remains plaintext.
+
 See the [Embed API reference](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) for full API docs, lifecycle details, feature groups, and limitations.
 
 ## Python library

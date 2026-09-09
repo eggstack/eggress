@@ -10,6 +10,8 @@ pub struct TlsServerConfigBuilder {
     cert_chain: Vec<CertificateDer<'static>>,
     key_der: Option<PrivatePkcs8KeyDer<'static>>,
     alpn_protocols: Vec<Vec<u8>>,
+    client_ca_pem: Option<Vec<u8>>,
+    require_client_cert: bool,
 }
 
 impl TlsServerConfigBuilder {
@@ -19,6 +21,8 @@ impl TlsServerConfigBuilder {
             cert_chain: Vec::new(),
             key_der: None,
             alpn_protocols: Vec::new(),
+            client_ca_pem: None,
+            require_client_cert: false,
         }
     }
 
@@ -34,6 +38,30 @@ impl TlsServerConfigBuilder {
         let key = load_private_key_pem(key_pem)?;
         self.key_der = Some(key);
         Ok(self)
+    }
+
+    /// Load client CA roots for mutual TLS from PEM bytes.
+    ///
+    /// When combined with [`TlsServerConfigBuilder::with_require_client_cert`],
+    /// the server requires and validates a client certificate signed by one
+    /// of these roots. Without the require flag, client certs are verified
+    /// when presented but not required.
+    pub fn with_client_ca_pem(mut self, ca_pem: &[u8]) -> Result<Self, TlsError> {
+        let store = crate::roots::load_pem_roots(ca_pem)?;
+        // Retain PEM bytes so `build` can reconstruct the verifier without
+        // holding a non-cloneable store across builder moves.
+        let _ = store;
+        self.client_ca_pem = Some(ca_pem.to_vec());
+        Ok(self)
+    }
+
+    /// Require a valid client certificate (mutual TLS).
+    ///
+    /// Validation in [`TlsServerConfigBuilder::build`] fails when this is set
+    /// without client CA roots.
+    pub fn with_require_client_cert(mut self, require: bool) -> Self {
+        self.require_client_cert = require;
+        self
     }
 
     /// Set ALPN protocols (e.g., `b"h2"`, `b"http/1.1"`).
@@ -55,9 +83,32 @@ impl TlsServerConfigBuilder {
             return Err(TlsError::MissingCertificateChain);
         }
 
-        let mut config = ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(self.cert_chain, key.into())?;
+        if self.require_client_cert && self.client_ca_pem.is_none() {
+            return Err(TlsError::Handshake(
+                "mTLS requires client CA roots when require_client_cert is set".to_string(),
+            ));
+        }
+
+        let mut config = if let Some(ref ca_pem) = self.client_ca_pem {
+            let roots = crate::roots::load_pem_roots(ca_pem)?;
+            let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
+                .build()
+                .map_err(|e| TlsError::Handshake(format!("invalid client CA verifier: {e}")))?;
+            if self.require_client_cert {
+                ServerConfig::builder()
+                    .with_client_cert_verifier(verifier)
+                    .with_single_cert(self.cert_chain, key.into())?
+            } else {
+                // Verify client certs when presented, but do not require one.
+                ServerConfig::builder()
+                    .with_client_cert_verifier(verifier)
+                    .with_single_cert(self.cert_chain, key.into())?
+            }
+        } else {
+            ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(self.cert_chain, key.into())?
+        };
 
         config.alpn_protocols = self.alpn_protocols;
         Ok(Arc::new(config))
@@ -103,6 +154,8 @@ mod tests {
         let builder = TlsServerConfigBuilder::new();
         assert!(builder.cert_chain.is_empty());
         assert!(builder.key_der.is_none());
+        assert!(builder.client_ca_pem.is_none());
+        assert!(!builder.require_client_cert);
     }
 
     #[test]

@@ -152,6 +152,27 @@ Contract:
   silently dropped or reordered.
 - Malformed chained input returns a credential-redacted diagnostic.
 
+### Listener-free UDP (`associate_udp`)
+
+Fixed-target UDP without a listener, built over `eggress-udp` primitives:
+
+```rust
+let connector = OutboundConnector::from_pproxy_uri("direct://")?;
+let assoc = connector.associate_udp("127.0.0.1", 53).await?;
+assoc.send(b"ping").await?;
+let mut buf = [0u8; 65535];
+let n = assoc.recv(&mut buf).await?;
+assoc.close();
+```
+
+- Direct and single-hop SOCKS5 upstream are supported; composed multi-hop
+  and Shadowsocks UDP in this surface fail with `UnsupportedFeature`.
+- `send_timeout` / `recv_timeout` bound one datagram; timeouts do not close
+  the association.
+- `close()` is idempotent; drop releases sockets/control tasks and decrements
+  `active_udp_associations()`.
+- Python does not expose UDP associations; Rust is the supported surface.
+
 ## Reload
 
 Reload configuration without restarting the process. Only routing, upstreams,

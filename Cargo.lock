@@ -988,6 +988,7 @@ dependencies = [
  "ipnet",
  "rcgen",
  "regex",
+ "rustls",
  "serde",
  "tempfile",
  "thiserror",
@@ -1025,6 +1026,7 @@ dependencies = [
  "eggress-routing",
  "eggress-runtime",
  "eggress-server",
+ "eggress-udp",
  "eggress-uri",
  "tempfile",
  "thiserror",
@@ -1122,7 +1124,10 @@ version = "1.0.4"
 dependencies = [
  "bytes",
  "eggress-core",
+ "eggress-transport-tls",
  "eggress-uri",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "subtle",
@@ -1130,6 +1135,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

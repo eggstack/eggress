@@ -8,13 +8,14 @@ Use when implementing or modifying reverse/backward proxy functionality for NAT 
 - Server (acceptor) binds a control listener + external listener; client (control) connects to the server and relays traffic to local targets
 - Each control connection carries exactly one proxy session (pproxy backward model)
 - When the session ends, the client reconnects with exponential backoff
-- Plaintext TCP by default — no built-in TLS
+- Native control channel supports opt-in server-authenticated TLS with optional mTLS via the shared rustls transport (`[[reverse_servers.tls]]` / `[[reverse_clients.tls]]`); `pproxy_compat` wire remains plaintext
 
 ## Key crates
 - `eggress-protocol-reverse` — wire format, auth handshake, bidirectional relay
-  - `src/lib.rs` — constants (`HANDSHAKE_ACCEPT`/`REJECT`), auth parsing/redaction, `relay_bidirectional()`, `ControlState` enum
-  - `src/server.rs` — `ReverseServer` acceptor: control connection pool, external client dispatch, `allow_bind` enforcement, defense-in-depth `validate()`
-  - `src/client.rs` — `ReverseClient` control client: auto-reconnect with backoff, `TargetResolver` trait, `TargetResolution` enum
+  - `src/lib.rs` — constants (`HANDSHAKE_ACCEPT`/`REJECT`), auth parsing/redaction, `relay_bidirectional()`, `relay_bidirectional_boxed()` (BoxStream for TLS), `ControlState` enum
+  - `src/tls.rs` — `ReverseServerTlsConfig` / `ReverseClientTlsConfig` (PEM validation, shared-transport builders, redacted Debug)
+  - `src/server.rs` — `ReverseServer` acceptor: control connection pool, external client dispatch, `allow_bind` enforcement, defense-in-depth `validate()` (incl. TLS), optional `tls` (TLS before auth, `tls_accept`)
+  - `src/client.rs` — `ReverseClient` control client: auto-reconnect with backoff, reused `Arc<ClientConfig>` + SNI, `TargetResolver` trait, `TargetResolution` enum
   - `src/metrics.rs` — `ReverseMetrics` (Prometheus counters/gauges) and `ReverseMetricsSnapshot`
 - `eggress-runtime/src/reverse.rs` — `RouteEngineTargetResolver` adapter bridging the route engine to `TargetResolver`
 - `eggress-runtime/src/supervisor.rs` — spawns reverse servers/clients, manages lifecycle
@@ -42,6 +43,12 @@ auth_password = "pass"
 # auth_password_env = "REV_PASS"   # Alternative: read password from env
 max_streams = 1024                  # Max concurrent streams per control client
 heartbeat_interval = "30s"
+
+[reverse_servers.tls]
+cert = "/etc/eggress/rev-cert.pem"
+key = "/etc/eggress/rev-key.pem"
+# client_ca = "/etc/eggress/rev-client-ca.pem"
+# require_client_cert = true
 ```
 
 ### `[[reverse_clients]]` (control side)
@@ -57,6 +64,12 @@ heartbeat_interval = "30s"
 parallel_connections = 1            # Number of parallel control connections
 default_target_host = "127.0.0.1"  # Fallback target host
 default_target_port = 80           # Fallback target port
+
+[reverse_clients.tls]
+ca = "/etc/eggress/rev-ca.pem"     # Optional; defaults to system roots
+server_name = "rev.example.com"    # Required SNI/verification name
+# client_cert = "/etc/eggress/rev-client-cert.pem"
+# client_key = "/etc/eggress/rev-client-key.pem"
 ```
 
 ## pproxy URI schemes
@@ -68,10 +81,11 @@ The reverse proxy supports these pproxy-compatible URI schemes:
 - `+in` modifier — enables parallel inbound connections (maps to `parallel_connections`)
 
 ## Security
-- **Plaintext by default** — no built-in TLS; wrap with external TLS termination if needed
+- **Plaintext by default; native TLS opt-in** — use `[[reverse_servers.tls]]` / `[[reverse_clients.tls]]` (server-authenticated, optional mTLS via shared rustls transport) when control traffic leaves a trusted network; `pproxy_compat` + TLS is rejected
 - **Defense-in-depth validation** — `ReverseServerConfig::validate()` rejects unsafe configs:
   - Non-loopback `external_bind` requires both `auth_username`/`auth_password` AND a non-empty `allow_bind` allowlist
   - Loopback bind is always allowed without auth
+  - TLS: `require_client_cert` without `client_ca` fails; client cert without key fails; missing/invalid `server_name` fails; malformed PEM fails at config compile
 - **`allow_bind` allowlist** — restricts which external addresses the server will bind; enforced at startup before binding
 - **Auth required for non-loopback** — server refuses to start if non-loopback external bind lacks auth + allowlist
 - **Credentials never logged** — `redact_auth()` returns `user:****` form
@@ -84,7 +98,7 @@ The reverse proxy supports these pproxy-compatible URI schemes:
 ## Limitations
 - **TCP only** — no UDP support through reverse tunnels
 - **No multiplexing** — one session per control connection (pproxy backward model)
-- **No built-in TLS** — must be added externally
+- **No pproxy-wire TLS** — native TLS does not imply pproxy interop; `pproxy_compat` wire stays plaintext
 - **No jump chains through reverse** — reverse proxy clients/servers are leaf endpoints, not chain hops
 - **No multiplexed streams** — each control connection carries exactly one proxy session
 
@@ -92,6 +106,10 @@ The reverse proxy supports these pproxy-compatible URI schemes:
 ```bash
 # Unit tests
 cargo test -p eggress-protocol-reverse
+
+# TLS/mTLS control-channel tests
+cargo test -p eggress-protocol-reverse --test tls
+cargo test -p eggress-transport-tls
 
 # Integration tests
 cargo test -p eggress-protocol-reverse --test integration

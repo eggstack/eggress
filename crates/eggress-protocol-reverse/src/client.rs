@@ -1,5 +1,5 @@
 use crate::metrics::ReverseMetrics;
-use crate::{client_auth_handshake, relay_bidirectional_with_timeout, ControlState, ProtocolError};
+use crate::{client_auth_handshake, ControlState, ProtocolError};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Configuration for a reverse proxy control client.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReverseClientConfig {
     /// Address of the reverse server to connect to.
     pub server_addr: SocketAddr,
@@ -31,6 +31,40 @@ pub struct ReverseClientConfig {
     pub drain_grace_ms: u64,
     /// Timeout for target connect attempts in milliseconds. 0 = no timeout.
     pub target_connect_timeout_ms: u64,
+    /// Optional TLS for the control channel. When present, the TCP control
+    /// stream is wrapped with Rustls before reverse framing/authentication.
+    pub tls: Option<crate::tls::ReverseClientTlsConfig>,
+}
+
+impl std::fmt::Debug for ReverseClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReverseClientConfig")
+            .field("server_addr", &self.server_addr)
+            .field("auth_username", &self.auth_username)
+            .field(
+                "auth_password",
+                &self.auth_password.as_deref().map(|_| "****"),
+            )
+            .field("reconnect_initial_ms", &self.reconnect_initial_ms)
+            .field("reconnect_max_ms", &self.reconnect_max_ms)
+            .field("default_target_host", &self.default_target_host)
+            .field("default_target_port", &self.default_target_port)
+            .field("read_timeout_ms", &self.read_timeout_ms)
+            .field("drain_grace_ms", &self.drain_grace_ms)
+            .field("target_connect_timeout_ms", &self.target_connect_timeout_ms)
+            .field("tls", &self.tls)
+            .finish()
+    }
+}
+
+impl ReverseClientConfig {
+    /// Validate TLS material before any connection attempt.
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if let Some(ref tls) = self.tls {
+            tls.validate()?;
+        }
+        Ok(())
+    }
 }
 
 impl Default for ReverseClientConfig {
@@ -46,6 +80,7 @@ impl Default for ReverseClientConfig {
             read_timeout_ms: 60_000,
             drain_grace_ms: 5_000,
             target_connect_timeout_ms: 10_000,
+            tls: None,
         }
     }
 }
@@ -140,6 +175,21 @@ impl ReverseClient {
 
     /// Run the reverse client with automatic reconnection.
     pub async fn run(&self) -> Result<(), ProtocolError> {
+        // Validate TLS material once before any dial so impossible combos
+        // fail fast instead of retrying forever.
+        self.config.validate()?;
+
+        // Build the immutable TLS client config once and reuse it across
+        // reconnect attempts rather than rebuilding roots per try.
+        let tls_client_config: Option<(Arc<rustls::ClientConfig>, String)> =
+            match self.config.tls.as_ref() {
+                Some(tls) => {
+                    let cfg = tls.build_client_config()?;
+                    Some((cfg, tls.server_name.clone()))
+                }
+                None => None,
+            };
+
         let mut backoff_ms = self.config.reconnect_initial_ms;
 
         loop {
@@ -147,7 +197,7 @@ impl ReverseClient {
                 break;
             }
             let session_start = Instant::now();
-            match self.run_session().await {
+            match self.run_session(tls_client_config.as_ref()).await {
                 Ok(()) => {
                     if let Some(ref m) = self.metrics {
                         m.record_state_duration(
@@ -195,10 +245,22 @@ impl ReverseClient {
         Ok(())
     }
 
-    /// Run a single session with the server.
-    async fn run_session(&self) -> Result<(), ProtocolError> {
+    /// Run a single session with the server. TLS (when configured) wraps the
+    /// TCP stream before reverse framing so credentials are never sent in
+    /// plaintext. The shared client config is reused across reconnects.
+    async fn run_session(
+        &self,
+        tls: Option<&(Arc<rustls::ClientConfig>, String)>,
+    ) -> Result<(), ProtocolError> {
         let connecting_start = Instant::now();
-        let stream = TcpStream::connect(&self.config.server_addr).await?;
+        let tcp = tokio::select! {
+            result = TcpStream::connect(&self.config.server_addr) => {
+                result?
+            }
+            _ = self.cancel.cancelled() => {
+                return Err(ProtocolError::ConnectionClosed);
+            }
+        };
         if let Some(ref m) = self.metrics {
             m.record_state_duration(
                 ControlState::Connecting,
@@ -211,13 +273,34 @@ impl ReverseClient {
             "connected to reverse server"
         );
 
+        // TLS handshake before any reverse bytes when configured.
+        let mut boxed: eggress_core::BoxStream = if let Some((cfg, server_name)) = tls {
+            let tcp_boxed: eggress_core::BoxStream = Box::new(tcp);
+            let handshake = eggress_transport_tls::tls_connect(tcp_boxed, cfg.clone(), server_name);
+            tokio::select! {
+                result = handshake => {
+                    result.map_err(|e| {
+                        let msg = format!("reverse control TLS handshake failed: {e}");
+                        if let Some(m) = self.metrics.as_ref() {
+                            m.record_error(&msg);
+                        }
+                        ProtocolError::Tls(msg)
+                    })?
+                }
+                _ = self.cancel.cancelled() => {
+                    return Err(ProtocolError::ConnectionClosed);
+                }
+            }
+        } else {
+            Box::new(tcp)
+        };
+
         // Authenticate
         let authenticating_start = Instant::now();
-        let stream = if let (Some(ref username), Some(ref password)) =
+        if let (Some(ref username), Some(ref password)) =
             (&self.config.auth_username, &self.config.auth_password)
         {
-            let mut s = stream;
-            client_auth_handshake(&mut s, username, password).await?;
+            client_auth_handshake(&mut boxed, username, password).await?;
             if let Some(ref m) = self.metrics {
                 m.record_state_duration(
                     ControlState::Authenticating,
@@ -228,18 +311,15 @@ impl ReverseClient {
                 state = ?ControlState::Authenticating,
                 "authentication successful"
             );
-            s
         } else {
             // No auth: just read the handshake response
-            let mut s = stream;
-            crate::read_handshake(&mut s).await?;
+            crate::read_handshake(&mut boxed).await?;
             if let Some(ref m) = self.metrics {
                 m.record_state_duration(
                     ControlState::Authenticating,
                     authenticating_start.elapsed().as_millis() as u64,
                 );
             }
-            s
         };
 
         if let Some(ref m) = self.metrics {
@@ -273,9 +353,10 @@ impl ReverseClient {
                             state = ?ControlState::Ready,
                             "connected to target, relaying"
                         );
-                        relay_bidirectional_with_timeout(
-                            stream,
-                            target_stream,
+                        let target_boxed: eggress_core::BoxStream = Box::new(target_stream);
+                        crate::relay_bidirectional_boxed(
+                            boxed,
+                            target_boxed,
                             (self.config.read_timeout_ms > 0)
                                 .then(|| Duration::from_millis(self.config.read_timeout_ms)),
                         )

@@ -228,6 +228,7 @@ dependencies = [
  "eggress-uri",
  "ipnet",
  "regex",
+ "rustls",
  "serde",
  "thiserror",
  "toml",

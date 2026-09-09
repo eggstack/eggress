@@ -9,9 +9,10 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | Native auth handshake: `write_auth` sends `user:pass\n`, `read_handshake` reads 1-byte verdict (0x01 accept / 0x00 reject), `server_auth_handshake` orchestrates full server-side flow, `redact_auth` for logs, `ControlState` enum, half-close-preserving `relay_bidirectional_with_timeout`, auth payload cap 4096 bytes, 100 ms delay on auth failure |
-| `src/server.rs` | `ReverseServer`: control listener pools authenticated channels via `mpsc`; external connections pop a channel and relay. `ReverseServerConfig::validate()` enforces defense-in-depth: non-loopback external bind requires BOTH auth credentials AND non-empty `allow_bind` allowlist. `ReverseServerState` atomic counters for admin hooks |
-| `src/client.rs` | `ReverseClient`: connect, auth, resolve target via `TargetResolver` trait, relay, reconnect. Backoff: 1 s initial, doubling, 30 s cap. `DefaultTargetResolver` returns configured host/port or rejects |
+| `src/lib.rs` | Native auth handshake: `write_auth` sends `user:pass\n`, `read_handshake` reads 1-byte verdict (0x01 accept / 0x00 reject), `server_auth_handshake` orchestrates full server-side flow, `redact_auth` for logs, `ControlState` enum, half-close-preserving `relay_bidirectional_with_timeout` + `relay_bidirectional_boxed` (BoxStream for TLS), auth payload cap 4096 bytes, 100 ms delay on auth failure. Auth/handshake are generic over `AsyncRead+AsyncWrite` so plaintext TCP and TLS share framing |
+| `src/tls.rs` | `ReverseServerTlsConfig` / `ReverseClientTlsConfig`: PEM validation, `build_server_config` / `build_client_config` via `eggress-transport-tls`, redacted `Debug`, zeroizing `Drop` |
+| `src/server.rs` | `ReverseServer`: control listener pools authenticated channels via `mpsc`; external connections pop a channel and relay. `ReverseServerConfig::validate()` enforces defense-in-depth: non-loopback external bind requires BOTH auth credentials AND non-empty `allow_bind` allowlist. `ReverseServerState` atomic counters for admin hooks. Optional `tls` wraps control TCP with `tls_accept` before auth; external relay stays plaintext TCP via `relay_bidirectional_boxed` |
+| `src/client.rs` | `ReverseClient`: connect, TLS (`tls_connect` with reused `Arc<ClientConfig>` + SNI) before auth, resolve target via `TargetResolver` trait, relay via `relay_bidirectional_boxed`, reconnect. Backoff: 1 s initial, doubling, 30 s cap. `DefaultTargetResolver` returns configured host/port or rejects |
 | `src/compat_pproxy.rs` | `PproxyBackwardClient`/`PproxyBackwardServer`: raw byte-pipe and SOCKS5-framed channel adapters matching upstream pproxy backward wires. Auth bytes are NOT newline-terminated (differs from native protocol) |
 | `src/metrics.rs` | `ReverseMetrics`: control conns active/accepted/rejected, auth failures, reconnects, heartbeat failures, streams opened/closed, per-state timing, Prometheus export |
 
@@ -39,17 +40,17 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 
 | Symbol | Kind | Notes |
 |---|---|---|
-| `ReverseServerConfig` | struct | `control_bind`, `external_bind`, `auth_*`, `max_control_connections`, `read_timeout_ms`, `allow_bind`, `max_listeners_per_client`, `max_streams_per_listener`, `max_pending_external` |
-| `ReverseServerConfig::validate()` | method | Fails if non-loopback external bind without auth + allowlist |
-| `ReverseServerConfig::is_bind_allowed(addr)` | method | Checks `allow_bind` list; `None`/empty means all allowed |
-| `ReverseServer` | struct | `new`, `set_metrics`, `state_handle`, `cancel_token`, `run`, `shutdown` |
+| `ReverseServerConfig` | struct | `control_bind`, `external_bind`, `auth_*`, `max_control_connections`, `read_timeout_ms`, `allow_bind`, `max_listeners_per_client`, `max_streams_per_listener`, `max_pending_external`, `tls: Option<ReverseServerTlsConfig>` |
+| `ReverseServerConfig::validate()` | method | Fails if non-loopback external bind without auth + allowlist; also validates TLS material |
+| `ReverseServer` | struct | `new`, `set_metrics`, `state_handle`, `cancel_token`, `run`, `shutdown` (TLS server config built once, reused per handshake; handshake is cancel-aware) |
 | `ReverseServerState` | struct | Atomic counters: `active_control`, `active_streams`, `pending_external`, `denied_bind`, `dropped_stream_limit`, `dropped_pending_limit` |
 
 ### Client (`client.rs`)
 
 | Symbol | Kind | Notes |
 |---|---|---|
-| `ReverseClientConfig` | struct | `server_addr`, `auth_*`, `reconnect_initial_ms` (1000), `reconnect_max_ms` (30000), `default_target_*`, `read_timeout_ms`, `drain_grace_ms`, `target_connect_timeout_ms` |
+| `ReverseClientConfig` | struct | `server_addr`, `auth_*`, `reconnect_initial_ms` (1000), `reconnect_max_ms` (30000), `default_target_*`, `read_timeout_ms`, `drain_grace_ms`, `target_connect_timeout_ms`, `tls: Option<ReverseClientTlsConfig>` (`ca_pem`, `server_name` required, optional mTLS cert/key) |
+| `ReverseClientConfig::validate()` | method | Validates TLS material (server_name, cert/key pairing) before any dial |
 | `TargetResolution` | enum | `Connect { host, port }` or `Reject { reason }` |
 | `TargetResolver` | trait | `fn resolve(&self) -> TargetResolution` |
 | `DefaultTargetResolver` | struct | Returns configured target or Reject |
@@ -66,12 +67,24 @@ compatible adapters (raw and SOCKS5-framed backward channels).
 
 ## Wire format / protocol mechanics
 
-### Native handshake
+### Native handshake (plaintext or TLS)
+
+TLS (when configured) wraps the TCP control stream before any reverse bytes:
+
+```
+TCP connect/accept
+      |
+      v
+eggress-transport-tls client/server wrapper (server-authenticated; mTLS optional)
+      |
+      v
+reverse control framing + reverse auth (user:pass\n + 0x01/0x00)
+```
 
 ```
 Client                              Server
   |                                    |
-  |--- user:pass\n ------------------>|  (write_auth)
+  |--- user:pass\n ------------------>|  (write_auth, over TLS when configured)
   |                                    |  server_auth_handshake reads up to 4096 bytes
   |                                    |  until \n; validates with ConstantTimeEq
   |<----------- 0x01 (accept) --------|  (or 0x00 reject + 100ms delay)
@@ -141,7 +154,8 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 | `AuthRequired` | Auth expected but not provided | Connection closed |
 | `ConnectionClosed` | Empty auth payload (EOF before `\n`) | Connection closed |
 | `BindDenied(addr)` | External bind not in `allow_bind` | Server refuses to start |
-| `ConfigInvalid(msg)` | Validation failure (e.g., non-loopback without auth) | Server refuses to start |
+| `ConfigInvalid(msg)` | Validation failure (e.g., non-loopback without auth, bad TLS material) | Server refuses to start |
+| `Tls(msg)` | TLS handshake/verification failure (untrusted cert, SNI mismatch, missing client cert) | Connection closed, client backs off and reconnects; message is redacted (no key material) |
 | `Io(e)` | Underlying TCP error | Propagated |
 
 ### Reconnect backoff parameters
@@ -156,8 +170,8 @@ The pproxy compat adapter does NOT send or read the 0x01/0x00 accept/reject byte
 
 ## Security notes
 
-- **Plaintext auth.** Credentials cross the wire as `user:pass\n` with no challenge. Captured handshakes are replayable. Wrap the control channel in TLS when it leaves a trusted network.
-- **Defense-in-depth validation.** `ReverseServerConfig::validate()` refuses non-loopback external binds without BOTH auth AND an explicit `allow_bind` allowlist. This is enforced at startup, not per-connection.
+- **Plaintext auth without TLS.** Credentials cross the wire as `user:pass\n` with no challenge. Captured handshakes are replayable. Prefer `[[reverse_servers.tls]]` / `[[reverse_clients.tls]]` (server-authenticated TLS, optional mTLS) when control traffic leaves a trusted network; see `docs/CONFIG_REFERENCE.md`.
+- **TLS uses shared infrastructure.** `src/tls.rs` builds via `eggress-transport-tls` builders (no reverse-specific crypto). Server `require_client_cert` without `client_ca` fails at validation/build; client cert without key fails; missing/invalid `server_name` fails; malformed PEM fails at config compile. `pproxy_compat` + TLS is rejected (wire must stay byte-compatible plaintext).
 - **Constant-time comparison.** `server_auth_handshake` uses `subtle::ConstantTimeEq` for credential validation.
 - **Auth failure delay.** 100 ms sleep (`AUTH_FAILURE_DELAY` at `server.rs:16`) after failed auth to slow brute-force attempts.
 - **Auth payload cap.** 4096 bytes maximum (`MAX_AUTH_BYTES` at `lib.rs:109`). Prevents unbounded memory growth from malicious clients.

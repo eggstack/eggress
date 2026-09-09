@@ -153,6 +153,22 @@ First valid packet pins `SocketAddr`; mismatches return `ClientAddressMismatch`.
 | `target_idle_timeout` | 30s |
 | `max_standalone_flows` | 0 (falls back to `max_associations_global`) |
 
+## Listener-free outbound UDP (`eggress-embed::outbound`)
+
+Fixed-target associations without a listener, built directly over the same
+primitives (no hidden SOCKS listener):
+
+- Direct: bound `UdpSocket` connected to the resolved target.
+- Single-hop SOCKS5: `open_socks5_udp_upstream()` + per-datagram
+  `encode_socks5_udp_datagram` / `decode_socks5_udp_datagram`.
+- Validation: `validate_standalone_target(allow_private_egress=true)` +
+  `validate_datagram_size(65535)`; DNS failures surface as `Runtime(dns ...)`.
+- Unsupported (HTTP, multi-hop, composed, Shadowsocks in this surface):
+  `UnsupportedFeature`, never silent fallback.
+- Lifecycle: `send/recv/send_timeout/recv_timeout/close/wait_closed`,
+  idempotent close, drop decrements `OutboundConnector::active_udp_associations()`
+  and aborts the SOCKS5 control keepalive. See `architecture/embed.md`.
+
 ## Unsupported Chains Policy
 
 `udp_capability()` (`udp_capability.rs:40-93`):

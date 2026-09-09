@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rustls::pki_types::pem::PemObject;
 #[cfg(any(test, feature = "insecure-tls"))]
 use rustls::pki_types::CertificateDer;
 use rustls::ClientConfig;
@@ -12,6 +13,8 @@ pub struct TlsClientConfigBuilder {
     alpn_protocols: Vec<Vec<u8>>,
     server_name_override: Option<String>,
     insecure: bool,
+    client_cert_pem: Option<Vec<u8>>,
+    client_key_pem: Option<Vec<u8>>,
 }
 
 impl TlsClientConfigBuilder {
@@ -22,6 +25,8 @@ impl TlsClientConfigBuilder {
             alpn_protocols: Vec::new(),
             server_name_override: None,
             insecure: false,
+            client_cert_pem: None,
+            client_key_pem: None,
         }
     }
 
@@ -38,6 +43,16 @@ impl TlsClientConfigBuilder {
         let mut builder = self;
         builder.root_store = roots;
         Ok(builder)
+    }
+
+    /// Load a client certificate/key pair for mutual TLS.
+    ///
+    /// Both parts are required together; providing only one fails at
+    /// [`TlsClientConfigBuilder::build`] time with a structured error.
+    pub fn with_client_cert_pem(mut self, cert_pem: &[u8], key_pem: &[u8]) -> Self {
+        self.client_cert_pem = Some(cert_pem.to_vec());
+        self.client_key_pem = Some(key_pem.to_vec());
+        self
     }
 
     /// Set ALPN protocols (e.g., `b"h2"`, `b"http/1.1"`).
@@ -75,13 +90,49 @@ impl TlsClientConfigBuilder {
 
     /// Build the shared `ClientConfig`.
     pub fn build(self) -> Result<Arc<ClientConfig>, TlsError> {
+        if self.client_cert_pem.is_some() != self.client_key_pem.is_some() {
+            return Err(TlsError::Handshake(
+                "mTLS client config requires both client certificate and key".to_string(),
+            ));
+        }
+
+        // Parse optional mTLS identity up front so malformed PEM fails here
+        // with a structured error rather than during the first handshake.
+        let client_identity: Option<(
+            Vec<rustls::pki_types::CertificateDer<'static>>,
+            rustls::pki_types::PrivateKeyDer<'static>,
+        )> = match (self.client_cert_pem, self.client_key_pem) {
+            (Some(cert_pem), Some(key_pem)) => {
+                let certs = crate::roots::load_pem_certs(&cert_pem)?;
+                if certs.is_empty() {
+                    return Err(TlsError::NoCertificatesFound);
+                }
+                let key = rustls::pki_types::PrivatePkcs8KeyDer::from_pem_slice(&key_pem)
+                    .map_err(|e| TlsError::PemParse(e.to_string()))
+                    .map(rustls::pki_types::PrivateKeyDer::Pkcs8)?;
+                Some((certs, key))
+            }
+            (None, None) => None,
+            _ => {
+                return Err(TlsError::Handshake(
+                    "mTLS client config requires both client certificate and key".to_string(),
+                ));
+            }
+        };
+
         let mut config = if self.insecure {
             #[cfg(any(test, feature = "insecure-tls"))]
             {
-                ClientConfig::builder()
-                    .dangerous()
-                    .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
-                    .with_no_client_auth()
+                match client_identity {
+                    Some((certs, key)) => ClientConfig::builder()
+                        .dangerous()
+                        .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
+                        .with_client_auth_cert(certs, key)?,
+                    None => ClientConfig::builder()
+                        .dangerous()
+                        .with_custom_certificate_verifier(Arc::new(InsecureVerifier))
+                        .with_no_client_auth(),
+                }
             }
             #[cfg(not(any(test, feature = "insecure-tls")))]
             {
@@ -90,9 +141,14 @@ impl TlsClientConfigBuilder {
                 ));
             }
         } else {
-            ClientConfig::builder()
-                .with_root_certificates(self.root_store)
-                .with_no_client_auth()
+            match client_identity {
+                Some((certs, key)) => ClientConfig::builder()
+                    .with_root_certificates(self.root_store)
+                    .with_client_auth_cert(certs, key)?,
+                None => ClientConfig::builder()
+                    .with_root_certificates(self.root_store)
+                    .with_no_client_auth(),
+            }
         };
 
         config.alpn_protocols = self.alpn_protocols;

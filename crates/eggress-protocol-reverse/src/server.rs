@@ -1,8 +1,5 @@
 use crate::metrics::ReverseMetrics;
-use crate::{
-    redact_auth, relay_bidirectional_with_timeout, server_auth_handshake, ControlState,
-    ProtocolError,
-};
+use crate::{redact_auth, server_auth_handshake, ControlState, ProtocolError};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -19,7 +16,7 @@ const AUTH_FAILURE_DELAY: Duration = Duration::from_millis(100);
 ///
 /// The server accepts control connections from remote clients and dispatches
 /// externally-accepted connections back through the control channel.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReverseServerConfig {
     /// Address to bind the control listener on.
     pub control_bind: SocketAddr,
@@ -46,6 +43,10 @@ pub struct ReverseServerConfig {
     /// Maximum number of concurrent external clients queued while waiting
     /// for a control connection. Excess clients are dropped.
     pub max_pending_external: u32,
+    /// Optional TLS for the control channel. When present, the TCP control
+    /// stream is wrapped with Rustls before reverse framing/authentication.
+    /// External listener traffic remains plaintext TCP.
+    pub tls: Option<crate::tls::ReverseServerTlsConfig>,
 }
 
 impl Default for ReverseServerConfig {
@@ -61,7 +62,30 @@ impl Default for ReverseServerConfig {
             max_listeners_per_client: 1,
             max_streams_per_listener: 1024,
             max_pending_external: 1024,
+            tls: None,
         }
+    }
+}
+
+impl std::fmt::Debug for ReverseServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // auth_password and TLS key material are never printed.
+        f.debug_struct("ReverseServerConfig")
+            .field("control_bind", &self.control_bind)
+            .field("external_bind", &self.external_bind)
+            .field("auth_username", &self.auth_username)
+            .field(
+                "auth_password",
+                &self.auth_password.as_deref().map(|_| "****"),
+            )
+            .field("max_control_connections", &self.max_control_connections)
+            .field("read_timeout_ms", &self.read_timeout_ms)
+            .field("allow_bind", &self.allow_bind)
+            .field("max_listeners_per_client", &self.max_listeners_per_client)
+            .field("max_streams_per_listener", &self.max_streams_per_listener)
+            .field("max_pending_external", &self.max_pending_external)
+            .field("tls", &self.tls)
+            .finish()
     }
 }
 
@@ -91,7 +115,8 @@ impl ReverseServerConfig {
     ///
     /// This is a defense-in-depth check: it catches misconfigurations that
     /// would otherwise expose the reverse proxy to unauthenticated network
-    /// clients.
+    /// clients. TLS material is validated here as well so impossible
+    /// combinations fail before any socket is bound.
     pub fn validate(&self) -> Result<(), ProtocolError> {
         if let Some(external) = self.external_bind {
             // Non-loopback external bind requires BOTH authentication
@@ -116,6 +141,9 @@ impl ReverseServerConfig {
                     )));
                 }
             }
+        }
+        if let Some(ref tls) = self.tls {
+            tls.validate()?;
         }
         Ok(())
     }
@@ -262,6 +290,17 @@ impl ReverseServer {
         let state = self.state.clone();
         let metrics = self.metrics.clone();
 
+        // Build TLS server config once when configured; reconnects and
+        // per-connection handshakes reuse the immutable Arc.
+        let tls_server_config: Option<Arc<rustls::ServerConfig>> = match config.tls.as_ref() {
+            Some(tls) => Some(tls.build_server_config().map_err(|e| {
+                // Validation already ran in `validate`, but build can still
+                // fail on malformed PEM that validation deferred.
+                crate::ProtocolError::Tls(format!("reverse server TLS build failed: {e}"))
+            })?),
+            None => None,
+        };
+
         // Channel for available control connections
         let (control_tx, control_rx) = mpsc::channel::<ControlStream>(256);
 
@@ -271,6 +310,7 @@ impl ReverseServer {
         let control_tx_clone = control_tx.clone();
         let metrics_clone = metrics.clone();
         let state_clone = state.clone();
+        let tls_clone = tls_server_config.clone();
         let control_task = tokio::spawn(async move {
             Self::accept_control_connections(
                 control_listener,
@@ -279,6 +319,7 @@ impl ReverseServer {
                 control_tx_clone,
                 metrics_clone,
                 state_clone,
+                tls_clone,
             )
             .await;
         });
@@ -356,6 +397,7 @@ impl ReverseServer {
         control_tx: mpsc::Sender<ControlStream>,
         metrics: Option<Arc<ReverseMetrics>>,
         state: Arc<ReverseServerState>,
+        tls_config: Option<Arc<rustls::ServerConfig>>,
     ) {
         loop {
             tokio::select! {
@@ -383,6 +425,8 @@ impl ReverseServer {
                             let control_tx = control_tx.clone();
                             let metrics = metrics.clone();
                             let state = state.clone();
+                            let tls_config = tls_config.clone();
+                            let cancel = cancel.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = Self::handle_control_connection(
                                     stream,
@@ -391,6 +435,8 @@ impl ReverseServer {
                                     control_tx,
                                     metrics.as_deref(),
                                     state.clone(),
+                                    tls_config,
+                                    cancel,
                                 ).await {
                                     state.active_control.fetch_sub(1, Ordering::Relaxed);
                                     debug!(peer = %peer_addr, error = %e, "control connection handler error");
@@ -410,22 +456,51 @@ impl ReverseServer {
         }
     }
 
-    /// Handle a single control connection: authenticate and add to pool.
+    /// Handle a single control connection: TLS (if configured), authenticate,
+    /// and add to pool. TLS wraps the TCP stream before reverse framing so
+    /// credentials never cross in plaintext when configured.
+    #[allow(clippy::too_many_arguments)]
     async fn handle_control_connection(
-        mut stream: TcpStream,
+        stream: TcpStream,
         peer_addr: SocketAddr,
         config: Arc<ReverseServerConfig>,
         control_tx: mpsc::Sender<ControlStream>,
         metrics: Option<&ReverseMetrics>,
         state: Arc<ReverseServerState>,
+        tls_config: Option<Arc<rustls::ServerConfig>>,
+        cancel: CancellationToken,
     ) -> Result<(), ProtocolError> {
         info!(peer = %peer_addr, state = ?ControlState::Connecting, "new control connection");
+
+        // Wrap with TLS before any reverse bytes when configured. The
+        // handshake is cancel-aware so shutdown interrupts pending
+        // handshakes cleanly.
+        let mut boxed: eggress_core::BoxStream = if let Some(tls_cfg) = tls_config {
+            let tcp_boxed: eggress_core::BoxStream = Box::new(stream);
+            let handshake = eggress_transport_tls::tls_accept(tcp_boxed, tls_cfg);
+            tokio::select! {
+                result = handshake => {
+                    result.map_err(|e| {
+                        let msg = format!("reverse control TLS handshake failed: {e}");
+                        if let Some(m) = metrics {
+                            m.record_error(&msg);
+                        }
+                        ProtocolError::Tls(msg)
+                    })?
+                }
+                _ = cancel.cancelled() => {
+                    return Err(ProtocolError::ConnectionClosed);
+                }
+            }
+        } else {
+            Box::new(stream)
+        };
 
         // Authenticate if configured
         let redacted = if config.auth_username.is_some() && config.auth_password.is_some() {
             let authenticating_start = Instant::now();
             let result = server_auth_handshake(
-                &mut stream,
+                &mut boxed,
                 config.auth_username.as_deref(),
                 config.auth_password.as_deref(),
             )
@@ -464,7 +539,7 @@ impl ReverseServer {
             }
         } else {
             // No auth configured: send accept handshake
-            crate::write_handshake_accept(&mut stream).await?;
+            crate::write_handshake_accept(&mut boxed).await?;
             info!(
                 peer = %peer_addr,
                 state = ?ControlState::Authenticating,
@@ -477,7 +552,7 @@ impl ReverseServer {
         };
 
         let ctrl = ControlStream {
-            stream,
+            stream: boxed,
             peer_addr,
             redacted_auth: redacted,
         };
@@ -581,12 +656,15 @@ impl ReverseServer {
                                             m.record_stream_opened();
                                             m.record_state_duration(ControlState::Ready, 0);
                                         }
-                                        let relay_result = relay_bidirectional_with_timeout(
-                                            external_stream,
-                                            control.stream,
-                                            idle_timeout,
-                                        )
-                                        .await;
+                                        let external_boxed: eggress_core::BoxStream =
+                                            Box::new(external_stream);
+                                        let relay_result =
+                                            crate::relay_bidirectional_boxed(
+                                                external_boxed,
+                                                control.stream,
+                                                idle_timeout,
+                                            )
+                                            .await;
                                         match relay_result {
                                             Ok(()) => {
                                                 debug!(peer = %peer_addr, "relay finished cleanly");
@@ -634,9 +712,10 @@ impl ReverseServer {
 }
 
 /// A control stream paired with metadata, used when handing the stream off
-/// from the auth phase to the relay phase.
+/// from the auth phase to the relay phase. The stream is boxed so plaintext
+/// TCP and TLS-wrapped control channels share the relay path.
 pub struct ControlStream {
-    pub stream: TcpStream,
+    pub stream: eggress_core::BoxStream,
     pub peer_addr: SocketAddr,
     pub redacted_auth: Option<String>,
 }

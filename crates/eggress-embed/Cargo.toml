@@ -32,6 +32,7 @@ eggress-protocol-socks = { workspace = true }
 eggress-routing = { workspace = true }
 eggress-runtime = { workspace = true }
 eggress-server = { workspace = true }
+eggress-udp = { workspace = true }
 eggress-uri = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -381,6 +381,7 @@ pub(crate) fn intermediates_to_config_file(
             max_streams: None,
             heartbeat_interval: None,
             pproxy_compat: server.pproxy_compat,
+            tls: None,
         })
         .collect();
 
@@ -401,6 +402,7 @@ pub(crate) fn intermediates_to_config_file(
             default_target_host: None,
             default_target_port: None,
             pproxy_compat: client.pproxy_compat,
+            tls: None,
         })
         .collect();
 

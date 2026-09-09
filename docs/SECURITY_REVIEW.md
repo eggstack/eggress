@@ -133,13 +133,12 @@ Adversaries may include malicious clients on the network, compromised upstream p
 
 **Reverse / Backward Proxy Security** (`eggress-protocol-reverse/`):
 
-- **Plaintext control channel by default**: The reverse protocol uses raw TCP with auth sent as plaintext `user:pass` bytes. The pproxy-compatible wire format (1-byte handshake + raw auth) is intentional and matches upstream behavior.
-- **No built-in TLS**: The control channel has no TLS support. Operators must wrap the control connection with stunnel, haproxy, or use a WireGuard tunnel when traversing untrusted networks.
+- **Plaintext control channel by default**: The reverse protocol uses raw TCP with auth sent as plaintext `user:pass` bytes. The pproxy-compatible wire format (1-byte handshake + raw auth) is intentional and matches upstream behavior. Native framing supports opt-in server-authenticated TLS with optional mTLS via `[[reverse_servers.tls]]` / `[[reverse_clients.tls]]` (shared rustls transport, TLS before auth); `pproxy_compat` wire remains plaintext.
 - **Auth bypass risk**: If `auth_username` and `auth_password` are both `None` on a `[[reverse_servers]]` table, any host that can reach the control port can connect. Recommended: always configure `auth_username` and `auth_password` (or `auth_password_env`) when binding to a non-loopback address.
-- **Auth replay**: The same `user:pass` bytes are accepted on every reconnect. There is no nonce, challenge-response, or forward secrecy. Operators needing forward secrecy must add TLS over the control channel.
-- **Listener bind access control**: There is no built-in allowlist in the current implementation. Operators exposing public listeners must restrict the `control_bind` address at the OS / firewall level. An `allow_bind` policy is planned but not yet implemented.
+- **Auth replay**: The same `user:pass` bytes are accepted on every reconnect. There is no nonce, challenge-response, or forward secrecy. Operators needing forward secrecy must enable native control-channel TLS.
+- **Listener bind access control**: Non-loopback `external_bind` requires both auth credentials and a non-empty `allow_bind` allowlist (enforced at startup via `ReverseServerConfig::validate()`).
 - **Recommended hardening**:
-  - Use TLS over the control channel via stunnel or equivalent.
+  - Prefer native control-channel TLS (server-authenticated, mTLS where appropriate); use an external wrapper only for `pproxy_compat` wire.
   - Configure strong `auth_password` (use `auth_password_env` for environment injection rather than plaintext in config).
   - Restrict `control_bind` to loopback or a known VPC interface.
   - Run firewall rules to limit which hosts can reach the control port.

@@ -4,24 +4,25 @@
 Use when working with UDP associations, datagram relay, upstream SOCKS5 relay, or adding UDP transport support.
 
 ## Architecture overview
-- TCP SOCKS5 control connection owns the UDP association lifetime
+- TCP SOCKS5 control connection owns the UDP association lifetime (listener path)
 - Each target gets its own `UdpTargetFlow` (connected UDP socket) for reliable response demux
 - Client address pinning is enabled by default
-- Direct forwarding and one-hop SOCKS5 upstream are supported
-- Multi-hop chains and HTTP/MASQUE are NOT supported for UDP
+- Listener UDP supports direct, one-hop SOCKS5/Shadowsocks (AEAD), and composed SOCKS5/Shadowsocks multi-hop chains via `open_composed_udp_upstream`; HTTP/MASQUE/Trojan UDP remain unsupported
+- Listener-free outbound (`OutboundConnector::associate_udp`, fixed-target, no hidden listener) supports direct + single-hop SOCKS5 only; composed/Shadowsocks in that surface fail with `UnsupportedFeature`
 - Shadowsocks upstream is supported one-hop using standard AEAD UDP packets;
   standalone inbound Shadowsocks uses the explicit pproxy PacketCipher format
   and must not be conflated with the standard upstream path.
 
 ## Key types (`eggress-udp`)
-- `UdpAssociation` — association state machine
+- `UdpAssociation` — listener association state machine (not the embed outbound type)
 - `UdpAssociationRegistry` — bounded tracking with global/per-listener limits
 - `UdpTargetFlow` — connected UDP socket per target
-- `UdpFlowKind` — Direct or Socks5Upstream
+- `UdpFlowKind` — Direct, Socks5Upstream, ShadowsocksUpstream, Composed
 - `UdpFlowKey` — typed flow key enum
 - `UdpLimits` — configurable constraints
 - `UdpMetrics` — Prometheus counters/gauges
 - `UdpRelayCapability` — classifies chains as supported/unsupported
+- `eggress-embed::outbound::UdpAssociation` — fixed-target listener-free outbound (`send/recv/close`, direct + single SOCKS5)
 
 ## Adding UDP support to a new upstream protocol
 
@@ -43,6 +44,7 @@ Use when working with UDP associations, datagram relay, upstream SOCKS5 relay, o
 - `cargo test -p eggress-runtime udp` — integration tests
 - `cargo test -p eggress-udp socks5_upstream` — upstream relay tests
 - `cargo test -p eggress-runtime udp_upstream` — runtime upstream tests
+- `cargo test -p eggress-embed --lib udp` — listener-free outbound UDP (direct + SOCKS5, lifecycle)
 
 ## Config example
 ```toml

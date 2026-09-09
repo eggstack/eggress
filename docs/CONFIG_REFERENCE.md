@@ -333,7 +333,7 @@ The wire format matches pproxy's raw-relay protocol:
 - 1-byte handshake (`0x01` = accept, `0x00` = reject)
 - Raw `user:pass` auth bytes sent by the client
 - One session per control channel (no multiplexing)
-- TCP only (no UDP, no built-in TLS)
+- TCP only (no UDP); TLS is opt-in via `[reverse_servers.tls]` (native framing only)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -344,6 +344,8 @@ The wire format matches pproxy's raw-relay protocol:
 | `auth_password_env` | string | no | Environment variable containing the authentication password |
 | `max_streams` | integer | no | Max concurrent streams per client (default: 1024) |
 | `heartbeat_interval` | duration string | no | Heartbeat interval to detect dead connections (default: `"300s"`) |
+| `pproxy_compat` | boolean | no | Use pproxy 2.7.9 raw backward wire instead of native framing (default: `false`; incompatible with `tls`) |
+| `tls` | table | no | Native control-channel TLS (see below; incompatible with `pproxy_compat`) |
 
 ```toml
 [[reverse_servers]]
@@ -353,6 +355,12 @@ auth_username = "tunnel"
 auth_password_env = "RS_AUTH_PASSWORD"
 max_streams = 512
 heartbeat_interval = "60s"
+
+[reverse_servers.tls]
+cert = "/etc/eggress/rev-cert.pem"
+key = "/etc/eggress/rev-key.pem"
+# client_ca = "/etc/eggress/rev-client-ca.pem"
+# require_client_cert = true
 ```
 
 ### Concurrency and pproxy Compatibility
@@ -374,12 +382,13 @@ TCP relay. This ensures interoperability with pproxy clients and servers.
 
 The reverse control channel is **plaintext TCP by default**. Operators MUST:
 
-- Use TLS via an external wrapper (stunnel, haproxy, or a WireGuard tunnel)
-  when control traffic traverses untrusted networks.
+- Prefer built-in native TLS (`[reverse_servers.tls]` / `[reverse_clients.tls]`)
+  with server authentication (and mTLS where appropriate) when control traffic
+  traverses untrusted networks. TLS is applied before reverse framing so auth
+  credentials are never sent in plaintext when configured.
 - Restrict `control_bind` to a loopback or VPC-internal address when TLS is
-  not in use. There is no built-in bind allowlist in the current
-  implementation; restrict at the OS / firewall level until the
-  `allow_bind` policy lands in a follow-up phase.
+  not in use. Non-loopback `external_bind` additionally requires both auth
+  credentials and a non-empty `allow_bind` policy (enforced at startup).
 - Configure strong `auth_password` (use `auth_password_env` for environment
   injection rather than embedding plaintext in config).
 - Apply firewall rules to limit which hosts can reach the control port.
@@ -390,7 +399,7 @@ The reverse control channel is **plaintext TCP by default**. Operators MUST:
 
 - **UDP reverse mode**: Not supported. Reverse sessions are TCP-only.
 - **Jump chains through reverse**: Chains cannot transit a reverse hop.
-- **TLS on the control channel**: Not built-in. Use stunnel or equivalent.
+- **TLS with `pproxy_compat`**: Not supported. The pproxy wire must remain byte-compatible plaintext; use native framing with `tls` instead.
 
 ---
 
@@ -415,6 +424,8 @@ above for protocol details).
 | `reconnect_initial` | duration string | no | Initial reconnect backoff (default: `"1s"`) |
 | `reconnect_max` | duration string | no | Max reconnect backoff (default: `"30s"`) |
 | `heartbeat_interval` | duration string | no | Heartbeat interval to keep the control channel alive and the reverse control read timeout (default: `"60s"`) |
+| `pproxy_compat` | boolean | no | Use pproxy 2.7.9 raw backward wire instead of native framing (default: `false`; incompatible with `tls`) |
+| `tls` | table | no | Native control-channel TLS (see below; incompatible with `pproxy_compat`) |
 
 ```toml
 [[reverse_clients]]
@@ -425,7 +436,17 @@ auth_password_env = "RC_AUTH_PASSWORD"
 reconnect_initial = "2s"
 reconnect_max = "30s"
 heartbeat_interval = "15s"
+
+[reverse_clients.tls]
+ca = "/etc/eggress/rev-ca.pem"
+server_name = "rev.example.com"
+# client_cert = "/etc/eggress/rev-client-cert.pem"
+# client_key = "/etc/eggress/rev-client-key.pem"
 ```
+
+`[reverse_clients.tls]` fields: `ca` (optional PEM path; defaults to system
+roots), `server_name` (required SNI/verification name), `client_cert` /
+`client_key` (optional mTLS pair; both required together).
 
 ### Example: Reverse Server + Client Pair
 

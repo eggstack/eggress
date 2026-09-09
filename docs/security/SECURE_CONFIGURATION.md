@@ -116,7 +116,7 @@ max_streams = 256
 
 1. **Always configure `auth_username` and `auth_password`** (or `auth_password_env`). Without auth, any host that can reach the control port can proxy through your server.
 2. **Restrict `control_bind`** to loopback or a VPC-internal address unless remote clients are explicitly needed.
-3. **Use TLS over the control channel** via stunnel, haproxy, or WireGuard when traversing untrusted networks. There is no built-in TLS on the control channel.
+3. **Prefer built-in native TLS** (`[reverse_servers.tls]` / `[reverse_clients.tls]`, server-authenticated with optional mTLS) when control traffic traverses untrusted networks; external wrappers remain an option for `pproxy_compat` wire.
 4. **Monitor** `eggress_reverse_control_connections_rejected_total` for unauthorized attempts.
 5. **Apply firewall rules** to limit which hosts can reach the control port.
 
@@ -198,7 +198,7 @@ Never commit config files with credentials to version control.
 | UDP standalone mode | Disabled | Disabled unless on trusted network |
 | Reverse control auth | None | `auth_password_env` required |
 | Reverse control bind | Configurable | Loopback or VPC-internal |
-| Reverse control TLS | None | External wrapper (stunnel/WireGuard) |
+| Reverse control TLS | None | Built-in `[reverse_servers.tls]` / `[reverse_clients.tls]` (or external wrapper for `pproxy_compat`) |
 | Config credentials | Plaintext in file | `password_env` + file permissions `0600` |
 | Routing default | `direct` | `reject` (deny-by-default) |
 | Metrics | Off | On, behind admin bind |

@@ -219,8 +219,9 @@ The Python binding exposes the same connector through `PyOutboundConnector` and
 returns a `PyOutboundStream`. The pure-Python `OutboundStream` and
 `AsyncOutboundStream` wrappers provide read/write/half-close/close operations,
 release the GIL around native blocking work, and do not bind a temporary local
-listener. `ProxyConnection` delegates to this path. UDP remains listener-based;
-`associate_udp()` is intentionally not advertised as a completed Python API.
+listener. `ProxyConnection` delegates to this path. Listener-free UDP
+(`associate_udp`, direct + single-hop SOCKS5) is a completed Rust API;
+Python does not expose UDP associations.
 
 The canonical `eggress` wheel owns the `eggress` namespace. The optional
 `eggress-pproxy-compat` distribution owns the bounded top-level `pproxy`
@@ -603,7 +604,7 @@ Parallel connections: multiple `reverse_clients` entries or `parallel_connection
 
 ### Security model
 
-- **Plaintext by default** — no built-in TLS on control or external channels; wrap in an external TLS layer or deploy in a trusted network
+- **Plaintext by default; native TLS opt-in** — control channels support server-authenticated TLS with optional mTLS via `[[reverse_servers.tls]]` / `[[reverse_clients.tls]]` (shared rustls transport, TLS before auth); external channels remain plaintext TCP; `pproxy_compat` wire remains plaintext
 - **Defense-in-depth validation** — `ReverseServerConfig::validate()` rejects non-loopback external binds without both authentication and an explicit `allow_bind` allowlist
 - **Auth required for non-loopback** — non-loopback `external_bind` requires `auth_username`/`auth_password` and a non-empty `allow_bind`
 - **Loopback exempt** — loopback binds skip auth/allowlist requirements for local development
@@ -636,7 +637,7 @@ reconnect_max = "30s"
 
 - **TCP only** — no UDP reverse mode
 - **No multiplexing** — each control connection carries exactly one proxy session (matching pproxy's backward model)
-- **No built-in TLS** — control and external channels are plaintext; TLS must be added externally or via `+tls` transport
+- **No pproxy-wire TLS** — native TLS does not imply pproxy interop; `pproxy_compat` control channels stay plaintext
 - **No heartbeat** — control state tracking exists but active keepalive probes are not yet implemented
 - **Single session per connection** — no stream multiplexing over the control channel; parallel connections are achieved by spawning multiple independent control channels
 
