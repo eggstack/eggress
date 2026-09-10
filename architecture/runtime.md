@@ -8,7 +8,7 @@ health probes, reverse routing gate, and ordered shutdown.
 
 | File | Role |
 |------|------|
-| `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility`/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + `SystemProxyRequest`, listener-prep dispatch, transport accept loops, admin/signal orchestration |
+| `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility` + deprecated legacy `start_from_config_with_options` shim/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + legacy `CompatibilityOptions` adapter + `SystemProxyRequest`, listener-prep dispatch, transport accept loops, admin/signal orchestration |
 | `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
 | `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` + `classify_reload_config()` (restart-required contract) |
@@ -30,6 +30,8 @@ health probes, reverse routing gate, and ordered shutdown.
 | `RuntimeState::apply_compiled_config(new_config)` | Canonical reload transaction: classify → snapshot build → publish snapshot/routing/admin → health restart → H2 clear → metrics (success *and* failure); preserves generation on reject/fail |
 | `ServiceSupervisor::start_from_config(cfg, path)` | Config from memory; SIGHUP only if `path` is `Some`; passes no compatibility state (`None`) |
 | `ServiceSupervisor::start_from_config_with_compatibility(cfg, path, hooks)` | Explicit pproxy compat path; `hooks: CompatibilityRuntimeHooks` built via `from_facade()` (auth reuse handle, `--sys` opt-in, SSH env decision) |
+| `CompatibilityRuntimeHooks::from_legacy_options(options)` | Canonical legacy conversion; `auth_timeout`/`system_proxy`/`compatibility_mode` become narrow hooks, `debug`/`verbose_level` ignored (facade-owned logging) |
+| `ServiceSupervisor::start_from_config_with_options(cfg, path, options)` | Deprecated legacy source-compatible shim; converts via `from_legacy_options` then delegates to the canonical path (`start_from_config` when empty, otherwise `start_from_config_with_compatibility`); emits one warning for non-default legacy logging fields |
 | `ServiceSupervisor::run(&mut self)` | Blocking; owns signal loop and shutdown sequence |
 | `ServiceSupervisor::reload_config(&mut self)` | Load-and-swap without blocking signal loop |
 | `ServiceSupervisor::shutdown_token()` | Exposes master cancel for external callers |
@@ -54,6 +56,32 @@ pproxy syntax/policy
 | `verbose_level: u8` | Removed | Presentation policy separated from log-level selection; extra `pproxy connection event` / `traffic stats` logs deleted (no event bus introduced) |
 
 Native startup passes `None`; compatibility passes `Some(hooks)`.
+
+### Closure legacy shim (source compatibility, not state)
+
+```
+CompatibilityOptions / start_from_config_with_options
+    = legacy public source-compatible facade
+    -> converts immediately to CompatibilityRuntimeHooks
+
+CompatibilityRuntimeHooks / start_from_config_with_compatibility
+    = canonical typed runtime path
+
+ServiceSupervisor internal state
+    = Option<CompatibilityRuntimeHooks>, never CompatibilityOptions
+```
+
+`CompatibilityOptions` restores the pre-Phase-3 field names/types
+(`compatibility_mode`, `auth_timeout`, `system_proxy`, `debug`,
+`verbose_level`) as a DTO only. `from_legacy_options()` maps `Some(timeout)`
+to a bounded `AuthReuseCache` (`None` stays `None`; the CLI 30-day default
+stays facade-owned via `effective_auth_timeout()`), `system_proxy` to the
+narrow post-bind hook, and `compatibility_mode` to `allow_insecure_ssh_host_keys`
+only when `EGRESS_SSH_INSECURE_HOST_KEYS` is explicitly acknowledged
+(non-compat stays secure even with the variable set). `debug`/`verbose_level`
+never re-enter supervisor state; the shim emits at most one warning that
+logging is facade-owned via `PproxyArgs::default_log_level()` with `RUST_LOG`
+precedence.
 
 ## Startup sequence
 

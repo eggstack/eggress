@@ -36,7 +36,8 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 | `from_toml_file(path)` | :143 | Convenience: file parse + new |
 | `start()` async | `src/lib.rs` | In-memory `start_from_config` (no temp file) inside caller's Tokio runtime |
 | `start_blocking()` | `src/lib.rs` | In-memory `start_from_config` (no temp file); single `eggress-embed-run` thread |
-| `start_blocking_with_compatibility_options(hooks)` | `src/lib.rs` | Same `startup_in_memory` core with explicit `CompatibilityRuntimeHooks`; only hooks differ (`None` native vs `Some` compat) |
+| `start_blocking_with_compatibility_options(options)` | `src/lib.rs` | Deprecated legacy source-compatible facade (`CompatibilityOptions`); converts via `from_legacy_options` then shares `startup_in_memory` (empty maps to `None`) |
+| `start_blocking_with_compatibility_hooks(hooks)` | `src/lib.rs` | Preferred typed path with explicit `CompatibilityRuntimeHooks`; same `startup_in_memory` core (`Some` compat) |
 
 ### EggressHandle (`src/lib.rs:419`)
 
@@ -123,7 +124,10 @@ or unsupported roles fail closed with redacted errors. Execution reuses
 
 Native and compatibility startup share `startup_in_memory`; only
 compatibility hooks differ (`None` native vs `Some(CompatibilityRuntimeHooks)`
-for `--auth` reuse / `--sys`). `-d`/`-v` never enter the supervisor.
+for `--auth` reuse / `--sys`). `-d`/`-v` never enter the supervisor. The legacy
+`CompatibilityOptions` facade exists only for source compatibility and converts
+immediately; new Rust/Python code uses
+`start_blocking_with_compatibility_hooks`.
 
 ### Reload semantics
 

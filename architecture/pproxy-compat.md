@@ -145,6 +145,20 @@ The generic supervisor owns only `Option<CompatibilityRuntimeHooks>`
 No parser diagnostics, CLI log state, URI semantics, or broad
 `compatibility_mode` boolean live in runtime.
 
+Legacy source compatibility (closure shim, not state):
+
+```
+CompatibilityOptions / start_from_config_with_options
+    = legacy public source-compatible facade
+    -> converts immediately to CompatibilityRuntimeHooks
+
+CompatibilityRuntimeHooks / start_from_config_with_compatibility
+    = canonical typed runtime path
+
+ServiceSupervisor internal state
+    = Option<CompatibilityRuntimeHooks>, never CompatibilityOptions
+```
+
 ## How it works
 
 1. **Argument parsing**: `PproxyArgs::parse()` freezes the pproxy 2.7.9 CLI

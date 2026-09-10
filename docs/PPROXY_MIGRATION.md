@@ -234,9 +234,9 @@ Example diagnostic codes (non-exhaustive; the manifest is authoritative):
 | `privilege_capability_missing` | Linux-only feature on macOS |
 | `external_dependency_missing` | Required external tool not found |
 
-Diagnostics are produced by the `StructuredDiagnostic` type in
-The internal `eggress-pproxy-compat` crate powers these diagnostics and they
-are serializable to JSON. It is not a separate Python distribution.
+Diagnostics are produced by the `StructuredDiagnostic` type in the internal
+`eggress-pproxy-compat` crate and are serializable to JSON. The Rust crate is
+not a separate Python distribution.
 
 The pproxy 2.7.9 CLI argument shapes are preserved: `--pac` takes a path,
 `--test` takes a URL, and repeatable `--get` takes `PATH,FILE` values. The

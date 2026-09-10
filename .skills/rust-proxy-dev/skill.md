@@ -165,10 +165,10 @@ See `docs/EMBED_API.md` for full reference.
   the admin route, while verbosity selects Rust tracing defaults (`debug` for
   one or two occurrences, `trace` for three or more) unless `RUST_LOG` is set.
 - `-d` selects a debug-level default tracing filter via the shared
-  `PproxyArgs::default_log_level` helper and promotes compatibility session
-  failures to visible error diagnostics. It is independent of `-v` and
-  `--daemon`; Python traceback bytes are not reproduced. Explicit `RUST_LOG`
-  remains authoritative.
+  `PproxyArgs::default_log_level` helper. It is independent of `-v` and
+  `--daemon`; Python traceback bytes are not reproduced and no per-session
+  failure presentation lives in runtime (generic `connection completed` log
+  only). Explicit `RUST_LOG` remains authoritative.
 - `--sys` is supported in pproxy compatibility mode through the existing
   system-proxy backend. It applies after listener bind, prefers a local
   SOCKS5 listener over HTTP, and restores captured settings on shutdown or
@@ -181,16 +181,20 @@ See `docs/EMBED_API.md` for full reference.
 - `--auth <seconds>` enables bounded, process-local source-IP authentication
   reuse when listener credentials are configured. Native mode never enables
   this cache implicitly.
-- `-v/-vv/-vvv` maps to RUST_LOG defaults: 0→info, 1-2→debug, 3+→trace, and
-  compatibility session reports add connection events at `-v` and byte totals
-  at `-vv` without a duplicate metrics store.
+- `-v/-vv/-vvv` maps to RUST_LOG defaults: 0→info, 1-2→debug, 3+→trace
+  (saturating). No per-session connection-event or traffic-stat presentation
+  path exists; the contract is log-level translation only (supported
+  difference, locked by `default_log_level` unit tests plus standalone/nested
+  process tests on deterministic debug/trace markers).
 - Both the standalone `pproxy` binary and `eggress pproxy run` apply the
   same fail-closed policy through the shared gate. Unknown, unsupported,
   and non-equivalent options cannot start a partial service from either
   entry point.
 - `python -m pproxy` and the installed console script use the same native
-  parser/action contract and pass `--auth`, `--sys`, `-d`, and `-v` to the
-  compatibility supervisor. Do not reimplement those semantics in Python.
+  parser/action contract: `--auth`/`--sys` reach the supervisor as typed
+  `CompatibilityRuntimeHooks`, while `-d`/`-v` are resolved as facade logging
+  via `default_log_level()` before startup and never enter the supervisor.
+  Do not reimplement those semantics in Python.
 - Startup banner prints version, listeners, remotes, UDP, TLS, PAC to stderr
 - Tests: `cargo test -p eggress-cli --test pproxy_binary` and
   `cargo test -p eggress-cli --test pproxy_run_process`

@@ -271,15 +271,53 @@ impl EggressService {
 
     /// Start a compatibility service from the validated in-memory config.
     ///
-    /// This variant is used by the Python `pproxy` entry point so runtime
-    /// compatibility hooks such as `--auth` reuse and `--sys` reach the
-    /// runtime without going through a temporary config file or the native
-    /// defaults. `-d`/`-v` log policy is resolved by the caller via
-    /// `default_log_level()`/`init_pproxy_logging` and never enters the
-    /// supervisor. Native and compatibility startup share
-    /// [`startup_in_memory`]; only the hooks differ (`None` vs `Some`).
+    /// Legacy source-compatible facade: accepts [`eggress_runtime::CompatibilityOptions`]
+    /// so pre-Phase-3 Rust callers keep compiling, converts immediately via
+    /// `CompatibilityRuntimeHooks::from_legacy_options`, then shares the same
+    /// [`startup_in_memory`] core as the typed hook path. An empty conversion
+    /// preserves native-equivalent behavior (`None` hooks).
+    ///
+    /// `debug`/`verbose_level` are accepted for source compatibility but do not
+    /// configure tracing; logging policy stays facade-owned. New code should
+    /// use [`EggressService::start_blocking_with_compatibility_hooks`].
     #[cfg(feature = "pproxy-compat")]
+    #[deprecated(
+        note = "use start_blocking_with_compatibility_hooks with CompatibilityRuntimeHooks"
+    )]
     pub fn start_blocking_with_compatibility_options(
+        self,
+        options: eggress_runtime::CompatibilityOptions,
+    ) -> Result<EggressHandle, EggressError> {
+        if options.debug || options.verbose_level != 0 {
+            tracing::warn!(
+                "legacy CompatibilityOptions debug/verbose_level are presentation-only \
+                 and do not configure runtime tracing; resolve logging at the facade \
+                 via default_log_level() before startup"
+            );
+        }
+        let hooks = eggress_runtime::CompatibilityRuntimeHooks::from_legacy_options(&options);
+        let hooks = if hooks.is_empty() { None } else { Some(hooks) };
+        let rt_config = self.config.into_compiled();
+        let (state, token, run_handle) = startup_in_memory(rt_config, hooks)?;
+        Ok(EggressHandle {
+            state,
+            token: Some(token),
+            _run_handle: Some(run_handle),
+            _config_path: None,
+            _runtime_task: None,
+            reload_mutex: std::sync::Mutex::new(()),
+        })
+    }
+
+    /// Start a compatibility service with explicit typed runtime hooks.
+    ///
+    /// Preferred new API for maintained Rust/Python callers. Shares the same
+    /// [`startup_in_memory`] core as the legacy facade; only the hooks differ
+    /// (`None` native vs `Some` compat). `-d`/`-v` log policy is resolved by
+    /// the caller via `default_log_level()`/`init_pproxy_logging` and never
+    /// enters the supervisor.
+    #[cfg(feature = "pproxy-compat")]
+    pub fn start_blocking_with_compatibility_hooks(
         self,
         hooks: eggress_runtime::CompatibilityRuntimeHooks,
     ) -> Result<EggressHandle, EggressError> {
@@ -901,5 +939,38 @@ protocols = ["http"]
         let handle = super::EggressService::new(config).start().await.unwrap();
         assert_eq!(handle.status().listener_count, 1);
         handle.shutdown().await.unwrap();
+    }
+
+    #[cfg(feature = "pproxy-compat")]
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_compatibility_options_embed_surface_type_checks() {
+        use std::time::Duration;
+
+        // Fails to compile if the pre-Phase-3 embed signature disappears.
+        fn accepts_legacy(
+            service: super::EggressService,
+            options: eggress_runtime::CompatibilityOptions,
+        ) -> Result<super::EggressHandle, super::EggressError> {
+            service.start_blocking_with_compatibility_options(options)
+        }
+
+        fn accepts_hooks(
+            service: super::EggressService,
+            hooks: eggress_runtime::CompatibilityRuntimeHooks,
+        ) -> Result<super::EggressHandle, super::EggressError> {
+            service.start_blocking_with_compatibility_hooks(hooks)
+        }
+
+        // Uncalled bodies above force type checking; exercise the DTO shape too.
+        let _options = eggress_runtime::CompatibilityOptions {
+            compatibility_mode: true,
+            auth_timeout: Some(Duration::from_secs(60)),
+            system_proxy: false,
+            debug: true,
+            verbose_level: 2,
+        };
+        let _ = accepts_legacy as fn(_, _) -> _;
+        let _ = accepts_hooks as fn(_, _) -> _;
     }
 }

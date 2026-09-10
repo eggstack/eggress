@@ -793,6 +793,9 @@ fn handle_pproxy_run(args: &PproxyRun) {
     }
 
     tracing::info!("starting eggress with pproxy-compatible config");
+    // Deterministic verbosity markers for process-level regression tests.
+    tracing::debug!("compatibility debug verbosity active");
+    tracing::trace!("compatibility trace verbosity active");
 
     #[cfg(feature = "ssh")]
     if !eggress_runtime::ssh_insecure_acknowledged() {

@@ -241,26 +241,42 @@ assert_eq!(status.listeners.len(), 1);
 
 ### Thread ownership model
 
-The handle owns exactly one of two mutually exclusive thread models:
+The handle owns exactly one of two mutually exclusive thread models.
+Both paths share `startup_in_memory`; only compatibility hooks differ
+(`None` native vs `Some` compatibility).
 
 **Async path** (`start()`):
-- A Tokio blocking-pool thread runs the startup sequence and then blocks on
-  `run_result.join()` for the lifetime of the service.
-- A dedicated OS thread (`"eggress-embed-rt"`) owns `ServiceSupervisor::run()`.
+- A Tokio blocking-pool thread runs in-memory startup and then blocks on
+  the run thread join for the lifetime of the service.
+- A dedicated OS thread (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
 - `_runtime_task` wraps the blocking task's JoinHandle as a Tokio task.
 
 **Blocking path** (`start_blocking()`):
-- An outer OS thread (`"eggress-embed-rt"`) handles startup, sends results
-  through a channel, and terminates.
-- An inner OS thread (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
-- `_run_handle` holds the inner thread's JoinHandle directly.
+- Startup runs in the caller thread; a single OS thread
+  (`"eggress-embed-run"`) owns `ServiceSupervisor::run()`.
+- `_run_handle` holds that thread's JoinHandle directly.
 
-No extra orchestration thread remains after startup in either path.
+No temporary config file is created; the supervisor starts from the
+in-memory compiled `RuntimeConfig` and SIGHUP reload is disabled
+(`config_path=None`).
+
+### Compatibility startup
+
+- `start_blocking_with_compatibility_options(CompatibilityOptions)` —
+  deprecated legacy source-compatible facade; converts immediately via
+  `CompatibilityRuntimeHooks::from_legacy_options` and shares
+  `startup_in_memory` (empty maps to native `None`).
+- `start_blocking_with_compatibility_hooks(CompatibilityRuntimeHooks)` —
+  preferred typed path for maintained Rust/Python callers; same core with
+  explicit `Some(hooks)`.
+
+`-d`/`-v` never enter the supervisor; logging is facade-owned via
+`PproxyArgs::default_log_level()` with `RUST_LOG` precedence.
 
 ### Shutdown behavior
 
 - **`shutdown()`** (async) and **`shutdown_blocking()`** perform orderly
-  shutdown: cancel token → join supervisor → clean temp config. These are
+  shutdown: cancel token → join supervisor. These are
   idempotent (second call is a no-op).
 - **Dropping `EggressHandle`** cancels the shutdown token and performs a
   best-effort join with a 5-second timeout on the async path. Explicit
@@ -286,7 +302,8 @@ Use `error.category()` to get a short label for programmatic matching.
 
 ## Limitations
 
-- The embed API requires a temp config file on disk (supervisor reads from path).
+- Startup is in-memory from the compiled `RuntimeConfig`; no temp config file
+  is written and none is required.
 - `ServiceSupervisor::run()` creates its own Tokio runtime internally.
 - Listener bind changes require a full restart (not reloadable).
 - No logging initialization unless explicitly configured in TOML.
@@ -332,7 +349,7 @@ This API is designed for thin PyO3 wrappers:
 | Type | Methods |
 |------|---------|
 | `EggressConfig` | `from_toml_str`, `from_toml_file`, `source_toml`, `to_redacted_toml` |
-| `EggressService` | `new`, `from_toml_str`, `from_toml_file`, `start`, `start_blocking` |
+| `EggressService` | `new`, `from_toml_str`, `from_toml_file`, `start`, `start_blocking`, `start_blocking_with_compatibility_options` (deprecated legacy facade), `start_blocking_with_compatibility_hooks` (preferred) |
 | `EggressHandle` | `bound_addresses`, `status`, `metrics_text`, `reload_toml_str`, `reload_toml_file`, `shutdown`, `shutdown_blocking` |
 | `BoundAddresses` | `listener` (lookup by name) |
 | `ServiceStatus` | `generation`, `readiness`, `active_connections`, `uptime_secs`, `listener_count`, `listeners`, `udp_associations_active`, `upstream_count` |

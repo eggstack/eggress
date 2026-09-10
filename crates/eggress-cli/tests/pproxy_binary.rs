@@ -560,3 +560,167 @@ fn in_memory_startup_no_tempfile() {
         "expected successful in-memory startup, got: {stderr}",
     );
 }
+
+// --- Post-Phase-3 -d/-v observable contract (closure) ---
+//
+// Tracing goes to stdout; the banner goes to stderr. These helpers capture
+// both so the wiring (not only `default_log_level()`) is protected without
+// depending on timestamps/ANSI.
+
+fn pproxy_bin_without_log_env() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_pproxy"));
+    cmd.env_remove("RUST_LOG");
+    cmd
+}
+
+fn pproxy_bin_with_log(value: &str) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_pproxy"));
+    cmd.env("RUST_LOG", value);
+    cmd
+}
+
+fn spawn_and_collect_both(cmd: &mut Command, timeout_ms: u64) -> (Option<i32>, String, String) {
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+    let stdout_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+    let stderr_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+    let stdout_path = stdout_tmp.path().to_path_buf();
+    let stderr_path = stderr_tmp.path().to_path_buf();
+
+    let stdout_file = std::fs::File::create(&stdout_path).expect("failed to create stdout file");
+    let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create stderr file");
+    let child = cmd
+        .stdout(std::process::Stdio::from(stdout_file))
+        .stderr(std::process::Stdio::from(stderr_file))
+        .spawn()
+        .expect("failed to spawn pproxy");
+
+    thread::sleep(Duration::from_millis(timeout_ms));
+    let mut guard = ProcessGuard::new(child);
+    let _ = guard.0.kill();
+    let status = guard.0.wait().ok().and_then(|s| s.code());
+    std::mem::forget(guard);
+
+    let stdout = std::fs::read_to_string(&stdout_path).unwrap_or_default();
+    let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+    (status, stdout, stderr)
+}
+
+#[test]
+fn help_verbosity_wording_matches_runtime_contract() {
+    let output = run_output(pproxy_bin().arg("--help"));
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("traffic stats"),
+        "-vv help must not promise removed traffic-stat output: {stdout}"
+    );
+    assert!(
+        stdout.contains("Increase compatibility tracing verbosity"),
+        "-v help should describe tracing verbosity: {stdout}"
+    );
+    assert!(
+        stdout.contains("Debug-level compatibility diagnostics"),
+        "-d help should describe debug diagnostics: {stdout}"
+    );
+}
+
+#[test]
+fn verbosity_default_hides_debug_and_trace_markers() {
+    let (_, stdout, stderr) = spawn_and_collect_both(
+        pproxy_bin_without_log_env().args(["-l", "http://:19910"]),
+        2500,
+    );
+    assert!(
+        stderr.contains("listen:"),
+        "expected banner on stderr, got: {stderr}"
+    );
+    assert!(
+        stdout.contains("starting eggress with pproxy-compatible config"),
+        "expected startup info on stdout, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility debug verbosity active"),
+        "default must not emit debug marker, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility trace verbosity active"),
+        "default must not emit trace marker, got: {stdout}"
+    );
+}
+
+#[test]
+fn verbosity_v_shows_debug_not_trace() {
+    let (_, stdout, _) = spawn_and_collect_both(
+        pproxy_bin_without_log_env().args(["-l", "http://:19911", "-v"]),
+        2500,
+    );
+    assert!(
+        stdout.contains("compatibility debug verbosity active"),
+        "-v must emit debug marker, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility trace verbosity active"),
+        "-v must not emit trace marker, got: {stdout}"
+    );
+}
+
+#[test]
+fn verbosity_d_shows_debug_not_trace() {
+    let (_, stdout, _) = spawn_and_collect_both(
+        pproxy_bin_without_log_env().args(["-l", "http://:19912", "-d"]),
+        2500,
+    );
+    assert!(
+        stdout.contains("compatibility debug verbosity active"),
+        "-d must emit debug marker, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility trace verbosity active"),
+        "-d must not emit trace marker, got: {stdout}"
+    );
+}
+
+#[test]
+fn verbosity_vvv_shows_debug_and_trace() {
+    let (_, stdout, _) = spawn_and_collect_both(
+        pproxy_bin_without_log_env().args(["-l", "http://:19913", "-vvv"]),
+        2500,
+    );
+    assert!(
+        stdout.contains("compatibility debug verbosity active"),
+        "-vvv must emit debug marker, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("compatibility trace verbosity active"),
+        "-vvv must emit trace marker, got: {stdout}"
+    );
+}
+
+#[test]
+fn rust_log_restrictive_suppresses_vvv_markers() {
+    let (_, stdout, _) = spawn_and_collect_both(
+        pproxy_bin_with_log("warn").args(["-l", "http://:19914", "-vvv"]),
+        2500,
+    );
+    assert!(
+        !stdout.contains("compatibility debug verbosity active"),
+        "explicit RUST_LOG=warn must suppress -vvv debug marker, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility trace verbosity active"),
+        "explicit RUST_LOG=warn must suppress -vvv trace marker, got: {stdout}"
+    );
+}
+
+#[test]
+fn rust_log_permissive_enables_debug_without_flag() {
+    let (_, stdout, _) = spawn_and_collect_both(
+        pproxy_bin_with_log("debug").args(["-l", "http://:19915"]),
+        2500,
+    );
+    assert!(
+        stdout.contains("compatibility debug verbosity active"),
+        "explicit RUST_LOG=debug must enable debug marker without -v, got: {stdout}"
+    );
+}

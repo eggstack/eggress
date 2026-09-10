@@ -101,7 +101,7 @@ impl PyEggressService {
             eggress_runtime::ssh_insecure_acknowledged(),
         );
         let handle = py
-            .detach(|| svc.start_blocking_with_compatibility_options(hooks))
+            .detach(|| svc.start_blocking_with_compatibility_hooks(hooks))
             .map_err(|e| map_error(py, e))?;
         Ok(PyEggressHandle {
             inner: Some(handle),

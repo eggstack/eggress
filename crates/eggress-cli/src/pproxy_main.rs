@@ -29,8 +29,8 @@ OPTIONS:
     -b <PATTERN>           Block rule pattern (regex)
     -a <SECONDS>           Alive/health check interval
     -s <SCHEDULER>         Scheduler (rr, fa, rc, lc)
-    -d                     Debug traceback/error visibility (repeatable)
-    -v                     Verbose connection output (repeatable; -vv adds traffic stats)
+    -d                     Debug-level compatibility diagnostics
+    -v                     Increase compatibility tracing verbosity (repeatable)
     --ssl <CERT,KEY>       Enable TLS on listeners
     --pac <PATH>           Serve PAC content at PATH
     --test <URL>           Test the supplied target and exit
@@ -188,6 +188,11 @@ fn main() -> ExitCode {
     init_logging(&pproxy_args);
 
     tracing::info!("starting eggress with pproxy-compatible config");
+    // Deterministic verbosity markers for process-level regression tests.
+    // `debug` is visible at `-d`/`-v`/`-vv` and above; `trace` only at `-vvv`
+    // and above. Explicit `RUST_LOG` remains authoritative via `init_logging`.
+    tracing::debug!("compatibility debug verbosity active");
+    tracing::trace!("compatibility trace verbosity active");
 
     #[cfg(feature = "ssh")]
     if !eggress_runtime::ssh_insecure_acknowledged() {

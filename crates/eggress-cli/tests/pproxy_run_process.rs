@@ -449,3 +449,132 @@ fn test_pproxy_run_test_mode_in_process() {
         String::from_utf8_lossy(&output.stderr),
     );
 }
+
+// --- Nested -d/-v wiring (closure): same markers as standalone, compact format.
+
+fn eggress_bin_without_log_env() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eggress"));
+    cmd.env_remove("RUST_LOG");
+    cmd
+}
+
+fn eggress_bin_with_log(value: &str) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_eggress"));
+    cmd.env("RUST_LOG", value);
+    cmd
+}
+
+fn run_nested_and_collect_both(args: &[&str], timeout_ms: u64) -> (Option<i32>, String, String) {
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let stdout_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+    let stderr_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+    let stdout_path = stdout_tmp.path().to_path_buf();
+    let stderr_path = stderr_tmp.path().to_path_buf();
+    let stdout_file = std::fs::File::create(&stdout_path).expect("failed to create stdout file");
+    let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create stderr file");
+    let mut child = eggress_bin_without_log_env()
+        .args(args)
+        .stdout(std::process::Stdio::from(stdout_file))
+        .stderr(std::process::Stdio::from(stderr_file))
+        .spawn()
+        .expect("failed to spawn eggress");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = std::fs::read_to_string(&stdout_path).unwrap_or_default();
+                let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+                return (status.code(), stdout, stderr);
+            }
+            Ok(None) if start.elapsed().as_millis() <= timeout_ms as u128 => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let status = child.wait().expect("failed to wait for killed process");
+                let stdout = std::fs::read_to_string(&stdout_path).unwrap_or_default();
+                let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+                return (status.code(), stdout, stderr);
+            }
+            Err(e) => panic!("failed to check process status: {e}"),
+        }
+    }
+}
+
+fn run_nested_with_log_and_collect_both(
+    log_value: &str,
+    args: &[&str],
+    timeout_ms: u64,
+) -> (Option<i32>, String, String) {
+    let _guard = LISTENER_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let stdout_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+    let stderr_tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+    let stdout_path = stdout_tmp.path().to_path_buf();
+    let stderr_path = stderr_tmp.path().to_path_buf();
+    let stdout_file = std::fs::File::create(&stdout_path).expect("failed to create stdout file");
+    let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create stderr file");
+    let mut child = eggress_bin_with_log(log_value)
+        .args(args)
+        .stdout(std::process::Stdio::from(stdout_file))
+        .stderr(std::process::Stdio::from(stderr_file))
+        .spawn()
+        .expect("failed to spawn eggress");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = std::fs::read_to_string(&stdout_path).unwrap_or_default();
+                let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+                return (status.code(), stdout, stderr);
+            }
+            Ok(None) if start.elapsed().as_millis() <= timeout_ms as u128 => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let status = child.wait().expect("failed to wait for killed process");
+                let stdout = std::fs::read_to_string(&stdout_path).unwrap_or_default();
+                let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+                return (status.code(), stdout, stderr);
+            }
+            Err(e) => panic!("failed to check process status: {e}"),
+        }
+    }
+}
+
+#[test]
+fn test_pproxy_run_verbosity_v_shows_debug_not_trace() {
+    let port = next_listener_port();
+    let listener = format!("http://:{port}");
+    let (_, stdout, _) = run_nested_and_collect_both(
+        &["pproxy", "run", "--", "-l", listener.as_str(), "-v"],
+        2500,
+    );
+    assert!(
+        stdout.contains("compatibility debug verbosity active"),
+        "nested -v must emit debug marker, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility trace verbosity active"),
+        "nested -v must not emit trace marker, got: {stdout}"
+    );
+}
+
+#[test]
+fn test_pproxy_run_rust_log_restrictive_suppresses_vvv() {
+    let port = next_listener_port();
+    let listener = format!("http://:{port}");
+    let (_, stdout, _) = run_nested_with_log_and_collect_both(
+        "warn",
+        &["pproxy", "run", "--", "-l", listener.as_str(), "-vvv"],
+        2500,
+    );
+    assert!(
+        !stdout.contains("compatibility debug verbosity active"),
+        "nested RUST_LOG=warn must suppress -vvv debug marker, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("compatibility trace verbosity active"),
+        "nested RUST_LOG=warn must suppress -vvv trace marker, got: {stdout}"
+    );
+}

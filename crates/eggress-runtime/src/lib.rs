@@ -8,6 +8,6 @@ pub mod supervisor;
 pub use error::RuntimeError;
 pub use snapshot::CompiledRuntimeSnapshot;
 pub use supervisor::{
-    classify_reload_config, ssh_insecure_acknowledged, CompatibilityRuntimeHooks, ReloadResult,
-    RuntimeState, ServiceSupervisor, SystemProxyRequest,
+    classify_reload_config, ssh_insecure_acknowledged, CompatibilityOptions,
+    CompatibilityRuntimeHooks, ReloadResult, RuntimeState, ServiceSupervisor, SystemProxyRequest,
 };

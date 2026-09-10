@@ -226,7 +226,7 @@ eggress maintains a behavior-oriented compatibility contract against the pinned
 truth lives in the [compatibility matrix](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
 and [capability manifest](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml);
 this section is a high-level summary only. Native Eggress capability does not
-automatically imply exact pproxy compatibility — the manifest/matrix tier
+automatically imply exact pproxy compatibility — the manifest/matrix status
 (`matched`, `supported_difference`, `platform_limited`,
 `intentional_non_parity`) is authoritative.
 
@@ -234,7 +234,7 @@ The bundled `eggress.pproxy` module provides URI-mode translation, CLI flag tran
 
 ### Key boundaries
 
-- **Trojan** — client and server roles implemented natively; see the matrix for the tier
+- **Trojan** — client and server roles implemented natively; see the matrix for the status
 - **`--daemon`** — Linux opt-in behind the `pproxy-daemon` feature; fails closed otherwise
 - **`--sys`** — supported with warning; applies the bound local listener and restores prior settings
 - **SSH listeners** — upstream-only; requires opt-in `ssh` feature

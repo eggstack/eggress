@@ -45,7 +45,12 @@ shared `startup_in_memory(rt, None)` → `start_from_config(rt, None)`;
 compat uses `startup_in_memory(rt, Some(hooks))` →
 `start_from_config_with_compatibility(rt, None, hooks)`; `_config_path=None`,
 SIGHUP disabled. Native and compat startup share the core; only
-`CompatibilityRuntimeHooks` (`None` vs `Some`) differ.
+`CompatibilityRuntimeHooks` (`None` vs `Some`) differ. Legacy
+`CompatibilityOptions` / `start_from_config_with_options` /
+`start_blocking_with_compatibility_options` remain as deprecated
+source-compatible adapters converting via `from_legacy_options`; supervisor
+state is `Option<CompatibilityRuntimeHooks>` only, and `-d`/`-v` never enter
+the supervisor.
 
 ## Key types
 - `CompiledRuntimeSnapshot` — single authoritative runtime snapshot

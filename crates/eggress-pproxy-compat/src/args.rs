@@ -1119,6 +1119,76 @@ mod tests {
         assert_eq!(args.default_log_level(), "info");
     }
 
+    #[test]
+    fn test_default_log_level_vvvv_saturates_to_trace() {
+        for flag in ["-vvvv", "-vvvvv", "-vvvvvvvv"] {
+            let args =
+                PproxyArgs::parse(&["-l".into(), "http://:8080".into(), flag.into()]).unwrap();
+            assert_eq!(
+                args.default_log_level(),
+                "trace",
+                "flag {flag} should saturate to trace"
+            );
+        }
+    }
+
+    #[test]
+    fn test_default_log_level_clustered_mixed_forms() {
+        // `-dv` / `-vd` carry one debug + one verbose count -> debug.
+        for flag in ["-dv", "-vd", "-ddv", "-vvd", "-dvv"] {
+            let args =
+                PproxyArgs::parse(&["-l".into(), "http://:8080".into(), flag.into()]).unwrap();
+            assert!(args.debug, "flag {flag} should set debug");
+            assert!(args.verbose_level >= 1, "flag {flag} should count verbose");
+        }
+        let dv = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-dv".into()]).unwrap();
+        assert_eq!(dv.default_log_level(), "debug");
+        let vd = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-vd".into()]).unwrap();
+        assert_eq!(vd.default_log_level(), "debug");
+        let dvv = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-dvv".into()]).unwrap();
+        assert_eq!(dvv.verbose_level, 2);
+        assert_eq!(dvv.default_log_level(), "debug");
+    }
+
+    #[test]
+    fn test_default_log_level_clustered_trace_forms() {
+        // Three or more verbose counts via clustered/mixed flags -> trace.
+        let dvvv =
+            PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-dvvv".into()]).unwrap();
+        assert_eq!(dvvv.verbose_level, 3);
+        assert_eq!(dvvv.default_log_level(), "trace");
+
+        let mixed = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-dv".into(),
+            "-vv".into(),
+        ])
+        .unwrap();
+        assert_eq!(mixed.verbose_level, 3);
+        assert_eq!(mixed.default_log_level(), "trace");
+    }
+
+    #[test]
+    fn test_default_log_level_repeated_flags_accumulate() {
+        let args = PproxyArgs::parse(&[
+            "-l".into(),
+            "http://:8080".into(),
+            "-v".into(),
+            "-v".into(),
+            "-v".into(),
+        ])
+        .unwrap();
+        assert_eq!(args.verbose_level, 3);
+        assert_eq!(args.default_log_level(), "trace");
+
+        let dd = PproxyArgs::parse(&["-l".into(), "http://:8080".into(), "-d".into(), "-d".into()])
+            .unwrap();
+        assert!(dd.debug);
+        assert_eq!(dd.debug_level, 2);
+        assert_eq!(dd.default_log_level(), "debug");
+    }
+
     /// Table-driven arity test sourced from the checked-in baseline.
     /// Ensures that every value-taking option in the baseline correctly
     /// requires a value and fails when missing.

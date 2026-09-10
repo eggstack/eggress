@@ -102,6 +102,10 @@ pub struct SystemProxyRequest;
 ///
 /// Native startup passes `None`; compatibility startup passes
 /// `Some(hooks)` via `start_from_config_with_compatibility`.
+///
+/// Legacy callers that still construct [`CompatibilityOptions`] should convert
+/// via [`CompatibilityRuntimeHooks::from_legacy_options`]; the legacy DTO never
+/// enters supervisor state.
 #[derive(Clone, Default)]
 pub struct CompatibilityRuntimeHooks {
     pub auth_reuse: Option<Arc<eggress_server::accept::AuthReuseCache>>,
@@ -145,6 +149,86 @@ impl CompatibilityRuntimeHooks {
             allow_insecure_ssh_host_keys,
         }
     }
+
+    /// Canonical conversion from the legacy public facade DTO.
+    ///
+    /// Ownership: `auth_timeout`/`system_proxy`/`compatibility_mode` are
+    /// interpreted here once at the boundary; the supervisor never stores
+    /// [`CompatibilityOptions`].
+    ///
+    /// - `auth_timeout: Some(d)` becomes a bounded process-local
+    ///   `AuthReuseCache`; `None` means no reuse cache. The pproxy CLI's
+    ///   30-day default lives in `PproxyArgs::effective_auth_timeout()` at the
+    ///   facade, not here.
+    /// - `system_proxy: true` becomes `Some(SystemProxyRequest)` (post-bind
+    ///   opt-in); `false` becomes `None` (no OS mutation).
+    /// - `compatibility_mode` is consumed into `allow_insecure_ssh_host_keys`
+    ///   and never becomes a generic runtime mode flag: insecure SSH is
+    ///   permitted only when `compatibility_mode` is true **and**
+    ///   `ssh_insecure_acknowledged()` observes the explicit
+    ///   `EGRESS_SSH_INSECURE_HOST_KEYS` opt-in. Non-compatibility startup
+    ///   stays secure even if the variable is set.
+    /// - `debug`/`verbose_level` are legacy presentation inputs and are
+    ///   intentionally ignored here; logging policy is facade-owned (see
+    ///   `PproxyArgs::default_log_level()`). The legacy startup shim emits a
+    ///   single warning for non-default values.
+    pub fn from_legacy_options(options: &CompatibilityOptions) -> Self {
+        Self {
+            auth_reuse: options
+                .auth_timeout
+                .map(eggress_server::accept::AuthReuseCache::new)
+                .map(Arc::new),
+            system_proxy: options.system_proxy.then_some(SystemProxyRequest),
+            allow_insecure_ssh_host_keys: options.compatibility_mode && ssh_insecure_acknowledged(),
+        }
+    }
+
+    /// Whether this hook set carries no compatibility state.
+    ///
+    /// Used by the legacy startup shim to preserve native-equivalent behavior
+    /// for `CompatibilityOptions::default()` instead of fabricating hooks.
+    pub fn is_empty(&self) -> bool {
+        self.auth_reuse.is_none()
+            && self.system_proxy.is_none()
+            && !self.allow_insecure_ssh_host_keys
+    }
+}
+
+/// Legacy public source-compatible facade DTO.
+///
+/// This type exists only so pre-Phase-3 Rust callers keep compiling. It must
+/// not become a field on `ServiceSupervisor`, `RuntimeState`, connection
+/// configuration, or other generic runtime state. New code should use
+/// [`CompatibilityRuntimeHooks`] plus facade-level logging initialization.
+///
+/// - `auth_timeout`/`system_proxy` translate into narrow runtime hooks via
+///   [`CompatibilityRuntimeHooks::from_legacy_options`];
+/// - `compatibility_mode` exists for source compatibility and controls only
+///   the legacy SSH host-key disposition (insecure only with explicit
+///   `EGRESS_SSH_INSECURE_HOST_KEYS` opt-in);
+/// - `debug`/`verbose_level` are legacy presentation inputs that cannot safely
+///   configure an already-initialized process-global tracing subscriber from
+///   deep runtime code and are therefore ignored apart from a single facade
+///   warning in the legacy startup shim.
+#[derive(Debug, Clone, Default)]
+pub struct CompatibilityOptions {
+    /// Legacy compatibility-mode selector. Consumed during conversion into
+    /// the narrow `allow_insecure_ssh_host_keys` hook boolean; never stored
+    /// as a generic runtime mode flag.
+    pub compatibility_mode: bool,
+    /// Optional per-client source-IP auth reuse interval. `None` means no
+    /// reuse cache for low-level legacy callers (the CLI facade applies its
+    /// own `effective_auth_timeout()` default).
+    pub auth_timeout: Option<Duration>,
+    /// Legacy `--sys` selector. Maps only to the narrow post-bind
+    /// `SystemProxyRequest` hook.
+    pub system_proxy: bool,
+    /// Legacy presentation input. Accepted for source compatibility; does not
+    /// configure runtime tracing.
+    pub debug: bool,
+    /// Legacy presentation input. Accepted for source compatibility; does not
+    /// configure runtime tracing.
+    pub verbose_level: u8,
 }
 
 /// Whether the operator explicitly acknowledged unverified SSH host keys.
@@ -198,6 +282,59 @@ impl ServiceSupervisor {
         hooks: CompatibilityRuntimeHooks,
     ) -> Result<Self, RuntimeError> {
         startup::init_supervisor(rt_config, config_path, Some(hooks))
+    }
+
+    /// Legacy source-compatible startup shim.
+    ///
+    /// Restored so pre-Phase-3 callers of
+    /// `start_from_config_with_options(RuntimeConfig, Option<String>,
+    /// CompatibilityOptions)` keep compiling. Converts the legacy DTO via
+    /// [`CompatibilityRuntimeHooks::from_legacy_options`] and delegates to the
+    /// canonical Phase 3 startup path without duplicating supervisor
+    /// initialization:
+    ///
+    /// ```text
+    /// start_from_config_with_options(... CompatibilityOptions)
+    ///     -> legacy conversion
+    ///     -> start_from_config_with_compatibility(... hooks)
+    ///     -> startup::init_supervisor(... Some(hooks))
+    /// ```
+    ///
+    /// A default legacy value preserves native-equivalent behavior by
+    /// delegating to `start_from_config()` (no fabricated hooks).
+    /// `debug`/`verbose_level` are accepted for source compatibility but do
+    /// not configure tracing; a single warning explains that logging policy
+    /// is facade-owned. New code should use
+    /// `start_from_config_with_compatibility` with
+    /// [`CompatibilityRuntimeHooks`].
+    #[deprecated(note = "use start_from_config_with_compatibility with CompatibilityRuntimeHooks")]
+    pub fn start_from_config_with_options(
+        rt_config: eggress_config::compile::RuntimeConfig,
+        config_path: Option<String>,
+        compatibility_options: CompatibilityOptions,
+    ) -> Result<Self, RuntimeError> {
+        if compatibility_options.debug || compatibility_options.verbose_level != 0 {
+            tracing::warn!(
+                "legacy CompatibilityOptions debug/verbose_level are presentation-only \
+                 and do not configure runtime tracing; resolve logging at the facade \
+                 via PproxyArgs::default_log_level() before startup"
+            );
+        }
+        #[cfg(feature = "ssh")]
+        if compatibility_options.compatibility_mode && !ssh_insecure_acknowledged() {
+            tracing::warn!(
+                "compatibility mode would disable SSH host-key verification; \
+                 keeping known_hosts verification enabled. To explicitly \
+                 accept unverified SSH host keys (MITM risk), set \
+                 EGRESS_SSH_INSECURE_HOST_KEYS=1"
+            );
+        }
+        let hooks = CompatibilityRuntimeHooks::from_legacy_options(&compatibility_options);
+        if hooks.is_empty() {
+            Self::start_from_config(rt_config, config_path)
+        } else {
+            Self::start_from_config_with_compatibility(rt_config, config_path, hooks)
+        }
     }
 
     pub fn state(&self) -> &Arc<RuntimeState> {
@@ -2647,5 +2784,217 @@ path = "/tmp/eggress-new.sock"
             result.unwrap(),
             std::net::IpAddr::V4("10.0.0.1".parse().unwrap())
         );
+    }
+
+    // --- Legacy CompatibilityOptions source-compat + conversion (closure) ---
+
+    static LEGACY_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_legacy_env_reset(f: impl FnOnce()) {
+        let _guard = LEGACY_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let saved = std::env::var("EGRESS_SSH_INSECURE_HOST_KEYS").ok();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        match saved {
+            Some(v) => std::env::set_var("EGRESS_SSH_INSECURE_HOST_KEYS", v),
+            None => std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS"),
+        }
+        if let Err(e) = result {
+            std::panic::resume_unwind(e);
+        }
+    }
+
+    fn minimal_runtime_config() -> eggress_config::compile::RuntimeConfig {
+        eggress_config::compile::RuntimeConfig {
+            process: eggress_config::compile::ProcessConfig::default(),
+            timeouts: eggress_config::compile::TimeoutConfig::default(),
+            listeners: vec![],
+            upstreams: vec![],
+            groups: vec![],
+            rules: vec![],
+            default_action: RouteActionSpec::Direct,
+            admin: None,
+            reverse_servers: vec![],
+            reverse_clients: vec![],
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_compatibility_options_source_surface_type_checks() {
+        // Fails to compile if the pre-Phase-3 public field names/types disappear.
+        let options = crate::CompatibilityOptions {
+            compatibility_mode: true,
+            auth_timeout: Some(Duration::from_secs(60)),
+            system_proxy: false,
+            debug: true,
+            verbose_level: 2,
+        };
+        assert!(options.compatibility_mode);
+        assert_eq!(options.auth_timeout, Some(Duration::from_secs(60)));
+        assert!(!options.system_proxy);
+        assert!(options.debug);
+        assert_eq!(options.verbose_level, 2);
+        let cloned = options.clone();
+        let _debug = format!("{cloned:?}");
+        let _default = crate::CompatibilityOptions::default();
+
+        // Old runtime entry-point shape must keep type-checking.
+        let _method: fn(
+            eggress_config::compile::RuntimeConfig,
+            Option<String>,
+            crate::CompatibilityOptions,
+        ) -> Result<ServiceSupervisor, crate::RuntimeError> =
+            ServiceSupervisor::start_from_config_with_options;
+
+        // Conversion entry point must keep its canonical shape.
+        let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+        assert!(hooks.auth_reuse.is_some());
+    }
+
+    #[test]
+    fn legacy_default_options_convert_to_empty_hooks() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(
+                &crate::CompatibilityOptions::default(),
+            );
+            assert!(hooks.auth_reuse.is_none());
+            assert!(hooks.system_proxy.is_none());
+            assert!(!hooks.allow_insecure_ssh_host_keys);
+            assert!(hooks.is_empty());
+        });
+    }
+
+    #[test]
+    fn legacy_auth_timeout_maps_to_cache() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let options = crate::CompatibilityOptions {
+                auth_timeout: Some(Duration::from_secs(30)),
+                ..Default::default()
+            };
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+            assert!(hooks.auth_reuse.is_some());
+            assert!(hooks.system_proxy.is_none());
+        });
+    }
+
+    #[test]
+    fn legacy_system_proxy_maps_to_narrow_hook() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let options = crate::CompatibilityOptions {
+                system_proxy: true,
+                ..Default::default()
+            };
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+            assert!(hooks.system_proxy.is_some());
+            assert!(hooks.auth_reuse.is_none());
+        });
+    }
+
+    #[test]
+    fn legacy_logging_fields_do_not_enter_hooks() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let options = crate::CompatibilityOptions {
+                debug: true,
+                verbose_level: 3,
+                ..Default::default()
+            };
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+            assert!(hooks.is_empty());
+        });
+    }
+
+    #[test]
+    fn legacy_compat_mode_without_env_stays_secure() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let options = crate::CompatibilityOptions {
+                compatibility_mode: true,
+                ..Default::default()
+            };
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+            assert!(!hooks.allow_insecure_ssh_host_keys);
+        });
+    }
+
+    #[test]
+    fn legacy_compat_mode_with_false_env_stays_secure() {
+        with_legacy_env_reset(|| {
+            std::env::set_var("EGRESS_SSH_INSECURE_HOST_KEYS", "0");
+            let options = crate::CompatibilityOptions {
+                compatibility_mode: true,
+                ..Default::default()
+            };
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+            assert!(!hooks.allow_insecure_ssh_host_keys);
+        });
+    }
+
+    #[test]
+    fn legacy_compat_mode_with_accepted_env_allows_insecure() {
+        for accepted in ["1", "true", "yes"] {
+            with_legacy_env_reset(|| {
+                std::env::set_var("EGRESS_SSH_INSECURE_HOST_KEYS", accepted);
+                let options = crate::CompatibilityOptions {
+                    compatibility_mode: true,
+                    ..Default::default()
+                };
+                let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+                assert!(
+                    hooks.allow_insecure_ssh_host_keys,
+                    "accepted value {accepted:?} should allow insecure SSH"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn legacy_non_compat_mode_with_accepted_env_stays_secure() {
+        with_legacy_env_reset(|| {
+            std::env::set_var("EGRESS_SSH_INSECURE_HOST_KEYS", "1");
+            let options = crate::CompatibilityOptions {
+                compatibility_mode: false,
+                ..Default::default()
+            };
+            let hooks = CompatibilityRuntimeHooks::from_legacy_options(&options);
+            assert!(!hooks.allow_insecure_ssh_host_keys);
+        });
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_start_shim_default_preserves_native_hooks() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let sup = ServiceSupervisor::start_from_config_with_options(
+                minimal_runtime_config(),
+                None,
+                crate::CompatibilityOptions::default(),
+            )
+            .unwrap();
+            assert!(sup.compatibility_hooks.is_none());
+        });
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_start_shim_nonempty_produces_hooks() {
+        with_legacy_env_reset(|| {
+            std::env::remove_var("EGRESS_SSH_INSECURE_HOST_KEYS");
+            let sup = ServiceSupervisor::start_from_config_with_options(
+                minimal_runtime_config(),
+                None,
+                crate::CompatibilityOptions {
+                    auth_timeout: Some(Duration::from_secs(5)),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let hooks = sup.compatibility_hooks.as_ref().unwrap();
+            assert!(hooks.auth_reuse.is_some());
+        });
     }
 }
