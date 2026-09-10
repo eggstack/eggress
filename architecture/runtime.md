@@ -8,8 +8,8 @@ health probes, reverse routing gate, and ordered shutdown.
 
 | File | Role |
 |------|------|
-| `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config[_with_options]`/`run()`/`reload_config()`), `CompatibilityOptions`, listener-prep dispatch, transport accept loops, admin/signal orchestration |
-| `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions()` |
+| `src/supervisor.rs` | Orchestration facade: `ServiceSupervisor` public API (`start`/`start_from_config`/`start_from_config_with_compatibility`/`run()`/`reload_config()`), `CompatibilityRuntimeHooks` + `SystemProxyRequest`, listener-prep dispatch, transport accept loops, admin/signal orchestration |
+| `src/supervisor/startup.rs` | `init_supervisor()` (feature gates, bind pre-validation, metrics/UDP/health wiring, `RuntimeState` assembly), `resolve_udp_global_limit()`, `build_ssh_sessions(allow_insecure: bool)` |
 | `src/supervisor/state.rs` | `RuntimeState` (snapshot, routing, session + runtime metrics, readiness, accounting, UDP registry, health, reverse state) + canonical `apply_compiled_config` transaction |
 | `src/supervisor/reload.rs` | `ReloadResult`, `classify_listeners()` + `classify_reload_config()` (restart-required contract) |
 | `src/supervisor/connection.rs` | `PreparedListener`/`PreparedQuicListener`, shared `wrap_tls_server()`, `build_connection_config()` (`ConnectionBuildParams`, `InboundSecurity`) |
@@ -28,13 +28,32 @@ health probes, reverse routing gate, and ordered shutdown.
 |--------|-------|
 | `ServiceSupervisor::start(path)` | Load config from file, enable SIGHUP reload |
 | `RuntimeState::apply_compiled_config(new_config)` | Canonical reload transaction: classify → snapshot build → publish snapshot/routing/admin → health restart → H2 clear → metrics (success *and* failure); preserves generation on reject/fail |
-| `ServiceSupervisor::start_from_config(cfg, path)` | Config from memory; SIGHUP only if `path` is `Some` |
-| `ServiceSupervisor::start_from_config_with_options(cfg, path, compat)` | Compatibility flags (pproxy compat, `--sys`, debug, verbosity) |
+| `ServiceSupervisor::start_from_config(cfg, path)` | Config from memory; SIGHUP only if `path` is `Some`; passes no compatibility state (`None`) |
+| `ServiceSupervisor::start_from_config_with_compatibility(cfg, path, hooks)` | Explicit pproxy compat path; `hooks: CompatibilityRuntimeHooks` built via `from_facade()` (auth reuse handle, `--sys` opt-in, SSH env decision) |
 | `ServiceSupervisor::run(&mut self)` | Blocking; owns signal loop and shutdown sequence |
 | `ServiceSupervisor::reload_config(&mut self)` | Load-and-swap without blocking signal loop |
 | `ServiceSupervisor::shutdown_token()` | Exposes master cancel for external callers |
 | `RuntimeState::generation()` | Reads `snapshot.load().generation` |
 | `compile_runtime_snapshot(rt, prev)` | `Result<CompiledRuntimeSnapshot, Box<dyn Error>>` |
+
+## Compatibility ownership (Phase 3)
+
+```
+pproxy syntax/policy
+      -> compatibility lowering / CLI startup decisions
+      -> compiled native runtime config + narrow runtime-only hooks
+      -> generic runtime/data plane
+```
+
+| Old `CompatibilityOptions` field | Disposition | Rationale |
+|---|---|---|
+| `compatibility_mode: bool` | Removed (generic); replaced by `allow_insecure_ssh_host_keys: bool` in hooks | Generic mode branched unrelated behavior; SSH policy is now a narrow typed bool resolved by the facade from `EGRESS_SSH_INSECURE_HOST_KEYS` via `ssh_insecure_acknowledged()` |
+| `auth_timeout: Option<Duration>` | Removed; replaced by `auth_reuse: Option<Arc<AuthReuseCache>>` pre-built by the facade | Supervisor no longer interprets pproxy arg semantics; it threads the typed inbound-auth handle. Cache stays monotonic/bounded (4096)/process-local per `eggress-server::accept` |
+| `system_proxy: bool` | Narrowed to `system_proxy: Option<SystemProxyRequest>` | Explicit post-bind opt-in; `None` (native) never mutates OS state; apply/rollback stays idempotent and lifecycle-safe |
+| `debug: bool` | Removed | Pre-start adapter policy; CLI resolves `-d` via `default_log_level()` before construction with `RUST_LOG` precedence; extra failure log deleted, generic `connection completed` remains |
+| `verbose_level: u8` | Removed | Presentation policy separated from log-level selection; extra `pproxy connection event` / `traffic stats` logs deleted (no event bus introduced) |
+
+Native startup passes `None`; compatibility passes `Some(hooks)`.
 
 ## Startup sequence
 
@@ -49,8 +68,10 @@ health probes, reverse routing gate, and ordered shutdown.
    readiness so bind failures surface as startup errors.
 8. Reverse servers/clients spawned (feature `reverse`), each with master
    cancel clone.
-9. System proxy applied (`--sys` + `operations` feature) after bind but
-   before accept loops; failure is a startup error.
+9. System proxy applied only when `Some(SystemProxyRequest)` (`--sys` +
+   `operations` feature) after bind but before accept loops; failure is a
+   startup error. Transport accept-loop orchestration is otherwise unchanged
+   (no generic listener framework introduced).
 10. `readiness.store(true)` — `/-/ready` returns 200.
 11. Signal loop enters: `tokio::select!` over cancel, `ctrl_c`, SIGTERM,
     SIGHUP (reload only when `config_path` is `Some`).

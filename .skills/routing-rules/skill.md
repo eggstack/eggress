@@ -11,11 +11,11 @@ Use when adding new routing rules, matchers, schedulers, or modifying route sele
 
 ## Adding a new matcher
 
-1. Add the match variant to `MatchExpr` in `eggress-routing/src/rule.rs`
+1. Add the match variant to `MatchExpr` in `eggress-routing/src/matcher.rs` (data types in `model.rs`, rule struct in `rule.rs`)
 2. Add parsing in `eggress-config/src/model.rs` (TOML deserialization)
-3. Add compilation in `eggress-config/src/compile.rs`
-4. Add matching logic in `eggress-routing/src/rule.rs`
-5. Add `route-explain` support in `eggress-admin/src/routes.rs`
+3. Add compilation in `eggress-config/src/compile/rules.rs` (DTOs in `compile/model.rs`)
+4. Add matching logic in `eggress-routing/src/matcher.rs` (`MatchExpr::matches`)
+5. Add `route-explain` support in `eggress-admin/src/routes.rs` (DTO built in `eggress-routing/src/explain.rs`)
 6. Add tests
 
 ## Key types (`eggress-routing`)
@@ -27,9 +27,9 @@ Use when adding new routing rules, matchers, schedulers, or modifying route sele
 - `PendingLease`/`ActiveLease` — connection accounting
 
 ## Adding a new scheduler
-1. Implement the scheduler in `eggress-routing/src/scheduler/`
+1. Implement the scheduler in `eggress-routing/src/scheduler.rs`
 2. Register it in the scheduler factory
-3. Add TOML string variant
+3. Add TOML string variant (compilation in `eggress-config/src/compile/upstreams.rs`)
 4. Add unit tests with deterministic scenarios
 
 ## Testing

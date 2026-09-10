@@ -20,7 +20,7 @@ Use when implementing or modifying reverse/backward proxy functionality for NAT 
 - `eggress-runtime/src/reverse.rs` — `RouteEngineTargetResolver` adapter bridging the route engine to `TargetResolver`
 - `eggress-runtime/src/supervisor.rs` — spawns reverse servers/clients, manages lifecycle
 - `eggress-config/src/model.rs` — `ReverseServerConfig`, `ReverseClientConfig` TOML models
-- `eggress-config/src/compile.rs` — `CompiledReverseServerConfig`, `CompiledReverseClientConfig`
+- `eggress-config/src/compile/model.rs` — `CompiledReverseServerConfig`, `CompiledReverseClientConfig` DTOs; compilation in `compile/reverse.rs`
 
 ## Wire format
 1. Client connects to server control port

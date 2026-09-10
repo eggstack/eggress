@@ -41,9 +41,11 @@ how `new_config` is obtained.
 
 `EggressConfig` stores compiled `RuntimeConfig` (canonical) + ancillary source
 TOML. `EggressService::start/start_blocking` consume `into_compiled()` via
-shared `startup_in_memory(rt, options)` → `start_from_config_with_options(rt,
-None, _)`; `_config_path=None`, SIGHUP disabled. Native and compat startup
-share the core; only `CompatibilityOptions` differ.
+shared `startup_in_memory(rt, None)` → `start_from_config(rt, None)`;
+compat uses `startup_in_memory(rt, Some(hooks))` →
+`start_from_config_with_compatibility(rt, None, hooks)`; `_config_path=None`,
+SIGHUP disabled. Native and compat startup share the core; only
+`CompatibilityRuntimeHooks` (`None` vs `Some`) differ.
 
 ## Key types
 - `CompiledRuntimeSnapshot` — single authoritative runtime snapshot
@@ -54,7 +56,7 @@ share the core; only `CompatibilityOptions` differ.
 ## Adding a new config field
 1. Add to TOML schema in `eggress-config/src/model.rs`
 2. Add validation in `eggress-config/src/validate/` (pick the owning submodule: `listeners`, `upstreams`, `rules`, `core`, `security`, `composition`; orchestration stays in `validate/mod.rs`)
-3. Add compilation to runtime types in `eggress-config/src/compile.rs`
+3. Add compilation to runtime types in `eggress-config/src/compile/` (pick the owning domain: `listeners`, `upstreams`, `rules`, `reverse`, `process`; DTOs in `compile/model.rs`, facade stays in `compile/mod.rs`)
 4. If hot-reloadable: ensure it's in `CompiledRuntimeSnapshot`
 5. If NOT hot-reloadable: add topology validation rejection
 6. Update example-config.toml

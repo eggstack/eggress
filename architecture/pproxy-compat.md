@@ -123,6 +123,28 @@ concepts are never added to the native AST. Outbound validation in
 for single tokens and keeps only the historical `quic+http` combined forms
 plus `ssh`/`unix`/`redir` roles explicit.
 
+## Runtime ownership boundary
+
+```
+pproxy syntax/policy
+      -> compatibility lowering / CLI startup decisions
+      -> compiled native runtime config + narrow runtime-only hooks
+      -> generic runtime/data plane
+```
+
+The facade (`eggress-cli`, `eggress-pproxy-compat`, `PproxyArgs`) owns:
+`-d`/`-v` log-level selection via `default_log_level()` (with `RUST_LOG`
+precedence), structured compatibility warnings, and translation to native
+TOML/`RuntimeConfig`. It resolves `--auth` via `effective_auth_timeout()`
+into a pre-built `AuthReuseCache`, `--sys` into `Some(SystemProxyRequest)`,
+and SSH env via `ssh_insecure_acknowledged()`.
+
+The generic supervisor owns only `Option<CompatibilityRuntimeHooks>`
+(`auth_reuse` handle, `system_proxy` post-bind hook,
+`allow_insecure_ssh_host_keys` bool). Native startup passes `None`.
+No parser diagnostics, CLI log state, URI semantics, or broad
+`compatibility_mode` boolean live in runtime.
+
 ## How it works
 
 1. **Argument parsing**: `PproxyArgs::parse()` freezes the pproxy 2.7.9 CLI

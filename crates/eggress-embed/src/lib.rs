@@ -214,8 +214,7 @@ impl EggressService {
             ),
             EggressError,
         > {
-            let (state, token, run_handle) =
-                startup_in_memory(rt_config, eggress_runtime::CompatibilityOptions::default())?;
+            let (state, token, run_handle) = startup_in_memory(rt_config, None)?;
             let _ = ready_tx.send(Ok((state.clone(), token.clone())));
 
             // Wait for the run thread to finish (shutdown)
@@ -259,8 +258,7 @@ impl EggressService {
     /// directly; no temporary config file is written.
     pub fn start_blocking(self) -> Result<EggressHandle, EggressError> {
         let rt_config = self.config.into_compiled();
-        let (state, token, run_handle) =
-            startup_in_memory(rt_config, eggress_runtime::CompatibilityOptions::default())?;
+        let (state, token, run_handle) = startup_in_memory(rt_config, None)?;
         Ok(EggressHandle {
             state,
             token: Some(token),
@@ -273,18 +271,20 @@ impl EggressService {
 
     /// Start a compatibility service from the validated in-memory config.
     ///
-    /// This variant is used by the Python `pproxy` entry point so compatibility
-    /// options such as `--auth`, `--sys`, `-d`, and `-v` reach the runtime
-    /// without going through a temporary config file or the native defaults.
-    /// Native and compatibility startup share [`startup_in_memory`];
-    /// only the options differ.
+    /// This variant is used by the Python `pproxy` entry point so runtime
+    /// compatibility hooks such as `--auth` reuse and `--sys` reach the
+    /// runtime without going through a temporary config file or the native
+    /// defaults. `-d`/`-v` log policy is resolved by the caller via
+    /// `default_log_level()`/`init_pproxy_logging` and never enters the
+    /// supervisor. Native and compatibility startup share
+    /// [`startup_in_memory`]; only the hooks differ (`None` vs `Some`).
     #[cfg(feature = "pproxy-compat")]
     pub fn start_blocking_with_compatibility_options(
         self,
-        compatibility_options: eggress_runtime::CompatibilityOptions,
+        hooks: eggress_runtime::CompatibilityRuntimeHooks,
     ) -> Result<EggressHandle, EggressError> {
         let rt_config = self.config.into_compiled();
-        let (state, token, run_handle) = startup_in_memory(rt_config, compatibility_options)?;
+        let (state, token, run_handle) = startup_in_memory(rt_config, Some(hooks))?;
         Ok(EggressHandle {
             state,
             token: Some(token),
@@ -299,11 +299,12 @@ impl EggressService {
 /// Shared in-memory startup used by native and compatibility paths.
 ///
 /// Creates the supervisor from an already-compiled [`eggress_config::compile::RuntimeConfig`]
-/// with explicit compatibility options, spawns the blocking `run()` thread,
-/// and waits for readiness. No config file is read or written.
+/// with optional compatibility hooks (`None` for native, `Some` for pproxy
+/// compatibility), spawns the blocking `run()` thread, and waits for
+/// readiness. No config file is read or written.
 fn startup_in_memory(
     rt_config: eggress_config::compile::RuntimeConfig,
-    options: eggress_runtime::CompatibilityOptions,
+    hooks: Option<eggress_runtime::CompatibilityRuntimeHooks>,
 ) -> Result<
     (
         Arc<eggress_runtime::RuntimeState>,
@@ -312,9 +313,12 @@ fn startup_in_memory(
     ),
     EggressError,
 > {
-    let mut supervisor = eggress_runtime::ServiceSupervisor::start_from_config_with_options(
-        rt_config, None, options,
-    )
+    let mut supervisor = match hooks {
+        Some(hooks) => eggress_runtime::ServiceSupervisor::start_from_config_with_compatibility(
+            rt_config, None, hooks,
+        ),
+        None => eggress_runtime::ServiceSupervisor::start_from_config(rt_config, None),
+    }
     .map_err(|error| EggressError::Startup(error.to_string()))?;
 
     let state = supervisor.state().clone();
@@ -352,7 +356,8 @@ fn startup_in_memory(
 /// # Thread ownership
 ///
 /// The handle owns exactly one of two mutually exclusive thread models.
-/// Both paths share [`startup_in_memory`]; only compatibility options differ.
+/// Both paths share [`startup_in_memory`]; only compatibility hooks differ
+/// (`None` native vs `Some` compatibility).
 ///
 /// **Async path** (`start()`):
 /// - A Tokio blocking-pool thread runs in-memory startup and then blocks on

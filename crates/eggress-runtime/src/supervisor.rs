@@ -63,22 +63,100 @@ pub struct ServiceSupervisor {
     pub(crate) tls_client_config: Option<std::sync::Arc<rustls::ClientConfig>>,
     #[cfg(feature = "ssh")]
     pub(crate) ssh_sessions: Arc<eggress_transport_ssh::SshSessionCache>,
-    pub(crate) compatibility_options: CompatibilityOptions,
+    pub(crate) compatibility_hooks: Option<CompatibilityRuntimeHooks>,
 }
 
-/// Explicit options used only by the pproxy compatibility executable.
-/// Native configuration startup always uses the default value.
-#[derive(Debug, Clone, Default)]
-pub struct CompatibilityOptions {
-    /// Whether the caller is the explicitly opt-in pproxy compatibility executable.
-    pub compatibility_mode: bool,
-    pub auth_timeout: Option<Duration>,
-    pub system_proxy: bool,
-    /// Compatibility-only debug propagation. Native Eggress never enables it.
-    pub debug: bool,
-    /// Compatibility verbosity count, used for human-readable session and
-    /// traffic events backed by the normal session reports.
-    pub verbose_level: u8,
+/// Explicit opt-in for `--sys`: apply the selected local HTTP/SOCKS5 listener
+/// as the OS system proxy after bind, restoring on shutdown.
+///
+/// This is a narrow post-bind runtime hook, not ordinary listener
+/// configuration: pproxy-style startup may bind an ephemeral port whose actual
+/// address is required before OS state can be applied. Native startup passes
+/// `None` (no OS mutation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SystemProxyRequest;
+
+/// Minimal residual compatibility surface for runtime/post-bind behavior.
+///
+/// Only state that genuinely requires runtime participation lives here:
+///
+/// - `auth_reuse`: pre-built source-IP auth reuse cache for pproxy `--auth`.
+///   The compatibility facade computes the timeout via
+///   `PproxyArgs::effective_auth_timeout()` and constructs
+///   `AuthReuseCache::new(timeout)` before startup; the generic supervisor
+///   never interprets pproxy argument semantics, it only threads the typed
+///   handle into inbound authentication.
+/// - `system_proxy`: opt-in post-bind OS proxy hook (`--sys`). `None` means
+///   no OS mutation.
+/// - `allow_insecure_ssh_host_keys`: narrow SSH host-key policy resolved by
+///   the compatibility facade from `EGRESS_SSH_INSECURE_HOST_KEYS`. Native
+///   startup never sets it.
+///
+/// Pre-start adapter policy is intentionally absent: `-d`/`-v` log-level
+/// selection is resolved by the CLI facade via
+/// `PproxyArgs::default_log_level()` before supervisor construction with
+/// explicit `RUST_LOG` precedence, and structured compatibility warnings stay
+/// in `eggress-pproxy-compat`. The generic supervisor consumes ordinary
+/// tracing and emits one generic `connection completed` log backed by normal
+/// session reports.
+///
+/// Native startup passes `None`; compatibility startup passes
+/// `Some(hooks)` via `start_from_config_with_compatibility`.
+#[derive(Clone, Default)]
+pub struct CompatibilityRuntimeHooks {
+    pub auth_reuse: Option<Arc<eggress_server::accept::AuthReuseCache>>,
+    pub system_proxy: Option<SystemProxyRequest>,
+    pub allow_insecure_ssh_host_keys: bool,
+}
+
+impl std::fmt::Debug for CompatibilityRuntimeHooks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompatibilityRuntimeHooks")
+            .field("auth_reuse", &self.auth_reuse.is_some())
+            .field("system_proxy", &self.system_proxy)
+            .field(
+                "allow_insecure_ssh_host_keys",
+                &self.allow_insecure_ssh_host_keys,
+            )
+            .finish()
+    }
+}
+
+impl CompatibilityRuntimeHooks {
+    /// Build the canonical pproxy compatibility hooks from already-parsed
+    /// facade decisions.
+    ///
+    /// `auth_timeout` is the fully-resolved reuse interval (typically
+    /// `PproxyArgs::effective_auth_timeout()`); `system_proxy` mirrors `--sys`;
+    /// `allow_insecure_ssh_host_keys` mirrors
+    /// `ssh_insecure_acknowledged()` (explicit `EGRESS_SSH_INSECURE_HOST_KEYS`
+    /// opt-in). This keeps pproxy argument interpretation in the facade while
+    /// giving runtime a single typed construction point.
+    pub fn from_facade(
+        auth_timeout: Duration,
+        system_proxy: bool,
+        allow_insecure_ssh_host_keys: bool,
+    ) -> Self {
+        Self {
+            auth_reuse: Some(Arc::new(eggress_server::accept::AuthReuseCache::new(
+                auth_timeout,
+            ))),
+            system_proxy: system_proxy.then_some(SystemProxyRequest),
+            allow_insecure_ssh_host_keys,
+        }
+    }
+}
+
+/// Whether the operator explicitly acknowledged unverified SSH host keys.
+///
+/// The compatibility facade calls this before startup; the generic supervisor
+/// consumes only the resulting bool. `1`/`true`/`yes` opts into
+/// `SshSessionCache::new_compatibility()` (MITM risk); anything else keeps
+/// `known_hosts` verification.
+pub fn ssh_insecure_acknowledged() -> bool {
+    std::env::var("EGRESS_SSH_INSECURE_HOST_KEYS")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
 }
 
 impl ServiceSupervisor {
@@ -90,11 +168,7 @@ impl ServiceSupervisor {
             tracing::warn!("config security warning: {warning}");
         }
 
-        startup::init_supervisor(
-            rt_config,
-            Some(config_path.to_string()),
-            CompatibilityOptions::default(),
-        )
+        startup::init_supervisor(rt_config, Some(config_path.to_string()), None)
     }
 
     /// Start from an already-validated [`RuntimeConfig`] without reading a file.
@@ -103,19 +177,27 @@ impl ServiceSupervisor {
     /// is enabled. When `None` (in-memory/compatibility startup), SIGHUP
     /// reload is disabled because there is no stable user-authored config
     /// file to reload from.
+    ///
+    /// Native startup passes no compatibility state (`None`).
     pub fn start_from_config(
         rt_config: eggress_config::compile::RuntimeConfig,
         config_path: Option<String>,
     ) -> Result<Self, RuntimeError> {
-        startup::init_supervisor(rt_config, config_path, CompatibilityOptions::default())
+        startup::init_supervisor(rt_config, config_path, None)
     }
 
-    pub fn start_from_config_with_options(
+    /// Start from an already-validated [`RuntimeConfig`] with explicit
+    /// compatibility runtime hooks.
+    ///
+    /// Only the pproxy compatibility facades use this path, passing hooks
+    /// built via `CompatibilityRuntimeHooks::from_facade`. Native startup
+    /// uses `start`/`start_from_config` (no compatibility state).
+    pub fn start_from_config_with_compatibility(
         rt_config: eggress_config::compile::RuntimeConfig,
         config_path: Option<String>,
-        compatibility_options: CompatibilityOptions,
+        hooks: CompatibilityRuntimeHooks,
     ) -> Result<Self, RuntimeError> {
-        startup::init_supervisor(rt_config, config_path, compatibility_options)
+        startup::init_supervisor(rt_config, config_path, Some(hooks))
     }
 
     pub fn state(&self) -> &Arc<RuntimeState> {
@@ -194,7 +276,7 @@ impl ServiceSupervisor {
         let state_ref = self.state.clone();
         let rt_config = self.rt_config.clone();
         let tls_client_config = self.tls_client_config.clone();
-        let compatibility_options = self.compatibility_options.clone();
+        let compatibility_hooks = self.compatibility_hooks.clone();
         #[cfg(feature = "ssh")]
         let ssh_sessions = self.ssh_sessions.clone();
 
@@ -255,10 +337,11 @@ impl ServiceSupervisor {
             let mut prepared = Vec::new();
             #[cfg(feature = "quic")]
             let mut prepared_quic = Vec::<PreparedQuicListener>::new();
-            let compatibility_auth_reuse = compatibility_options
-                .auth_timeout
-                .map(eggress_server::accept::AuthReuseCache::new)
-                .map(Arc::new);
+            // The facade pre-builds the typed reuse handle; runtime only
+            // threads it into inbound authentication (no pproxy arg parsing).
+            let compatibility_auth_reuse = compatibility_hooks
+                .as_ref()
+                .and_then(|hooks| hooks.auth_reuse.clone());
             #[cfg(unix)]
             let mut unix_listener_args = Vec::new();
             let mut transparent_listener_args = Vec::new();
@@ -1119,8 +1202,15 @@ impl ServiceSupervisor {
             // All compatibility TCP listeners are bound before this point,
             // so --sys can use the actual selected port. Apply before any
             // accept loop or admin task is started; an apply failure is
-            // therefore still a pre-run startup error.
-            if compatibility_options.system_proxy {
+            // therefore still a pre-run startup error. Only present when the
+            // compatibility facade explicitly opted in via
+            // `CompatibilityRuntimeHooks { system_proxy: Some(..) }`; native
+            // startup (`None`) never mutates OS proxy state.
+            if compatibility_hooks
+                .as_ref()
+                .and_then(|hooks| hooks.system_proxy)
+                .is_some()
+            {
                 #[cfg(feature = "operations")]
                 {
                     let selected = compatibility_proxy_selection.ok_or_else(|| {
@@ -1499,42 +1589,22 @@ impl ServiceSupervisor {
                                 }
                             };
 
-                            if compatibility_options.debug && report.failure.is_some() {
-                                tracing::error!(
-                                    protocol = ?report.protocol,
-                                    target = ?report.target,
-                                    route = %report.route,
-                                    outcome = ?report.outcome,
-                                    failure = ?report.failure,
-                                    "pproxy debug connection failure",
-                                );
-                            } else {
-                                tracing::info!(
-                                    protocol = ?report.protocol,
-                                    target = ?report.target,
-                                    route = %report.route,
-                                    outcome = ?report.outcome,
-                                    bytes_upstream = report.bytes_upstream,
-                                    bytes_downstream = report.bytes_downstream,
-                                    duration_ms = started.elapsed().as_millis() as u64,
-                                    "connection completed",
-                                );
-                            }
-                            if compatibility_options.verbose_level >= 1 {
-                                tracing::info!(
-                                    protocol = ?report.protocol,
-                                    target = ?report.target,
-                                    route = %report.route,
-                                    "pproxy connection event",
-                                );
-                            }
-                            if compatibility_options.verbose_level >= 2 {
-                                tracing::info!(
-                                    bytes_upstream = report.bytes_upstream,
-                                    bytes_downstream = report.bytes_downstream,
-                                    "pproxy traffic stats",
-                                );
-                            }
+                            // Generic session reporting: one `connection completed`
+                            // line backed by the normal session report. pproxy
+                            // `-d`/`-v` presentation policy is resolved by the
+                            // CLI facade via `default_log_level()` before
+                            // startup; no compatibility verbosity state lives
+                            // in the supervisor.
+                            tracing::info!(
+                                protocol = ?report.protocol,
+                                target = ?report.target,
+                                route = %report.route,
+                                outcome = ?report.outcome,
+                                bytes_upstream = report.bytes_upstream,
+                                bytes_downstream = report.bytes_downstream,
+                                duration_ms = started.elapsed().as_millis() as u64,
+                                "connection completed",
+                            );
                         });
                     }
                 });

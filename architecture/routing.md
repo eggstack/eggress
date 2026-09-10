@@ -9,7 +9,13 @@ swap.
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | `MatchExpr` (17 variants + 4 composites), `CompiledRule`, `RouteRequest`, `RouteDecision`, `Router` (`decide`/`select`/`route`/`explain`), `RouteService` trait, `SharedRoutingService` (arc-swap), `SelectedRoute` + `SelectionReason`, `RouteError`, `CompatRegexRule`, host normalization |
+| `src/lib.rs` | Public facade/re-exports only (no matching/selection logic) |
+| `src/model.rs` | IDs, request/result/action types: `TransportKind`, `UpstreamGroupId`, `RuleId`, `RouteActionSpec`, `RouteRequest`, `RouteDecision`, `SelectedRoute` + `SelectionReason`, `RouteError`, `RouteService` trait, explanation DTOs |
+| `src/matcher.rs` | `MatchExpr` (17 variants + 4 composites), `PortMatcher` (`new_range`/`new_set`), `normalize_host_for_exact`, suffix/host helpers; matching semantics preserved exactly |
+| `src/rule.rs` | `CompiledRule` (id + matcher + action) |
+| `src/router.rs` | `Router` (`decide`/`select`) + `RouteService` impls, `RoutingServiceInner`, `SharedRoutingService` (arc-swap) |
+| `src/explain.rs` | `Router::explain()` DTO construction (non-mutating preview preserved) |
+| `src/compat.rs` | `CompatRegexRule` + `RegexError` (pproxy `host:port` formatting) |
 | `src/upstream.rs` | `UpstreamRuntime` (chain, enabled flag, load counters, health cell, probe, config), `UpstreamGroup` (members + scheduler + fallback), `GroupFallback`, `validate_upstream_id` / `validate_group` |
 | `src/scheduler.rs` | `SchedulerKind`: FirstAvailable, RoundRobin, Random, LeastConnections; `Scheduler` trait with `select` + `preview`; injectable `RandomIndex` for deterministic tests |
 | `src/health.rs` | Six-state machine (`HealthState`), `HealthCell` (RwLock), `HealthConfig`, `HealthManager` (probe tasks + semaphore), `is_eligible`, `probe_tcp` |
@@ -37,11 +43,11 @@ swap.
 
 ### Rule evaluation: first-match-wins + default
 
-`Router::decide()` at `src/lib.rs:279-310` iterates `self.rules` in order. The first `CompiledRule` whose `matcher.matches(request)` returns `true` produces the `RouteDecision`. If no rule matches, the `default_action` applies with `RuleId("default")`.
+`Router::decide()` at `src/router.rs` iterates `self.rules` in order. The first `CompiledRule` whose `matcher.matches(request)` returns `true` produces the `RouteDecision`. If no rule matches, the `default_action` applies with `RuleId("default")`.
 
 ### Selection flow
 
-`Router::select()` at `src/lib.rs:538-612`:
+`Router::select()` at `src/router.rs`:
 
 1. **Direct** -- returns `SelectedRoute::Direct` immediately.
 2. **Reject** -- returns `Err(RouteError::Rejected)`.
@@ -58,7 +64,7 @@ swap.
 ### SharedRoutingService::route() atomicity
 
 ```rust
-// src/lib.rs:671-675
+// src/router.rs
 fn route(&self, request: &RouteRequest) -> Result<SelectedRoute, RouteError> {
     let inner = self.inner.load();          // ONE snapshot
     let decision = inner.router.decide(request);
@@ -70,7 +76,7 @@ fn route(&self, request: &RouteRequest) -> Result<SelectedRoute, RouteError> {
 
 ### Host normalization rules
 
-`normalize_host_for_exact()` at `src/lib.rs:138-147`:
+`normalize_host_for_exact()` at `src/matcher.rs`:
 - Strips trailing `.` (e.g. `example.com.` -> `example.com`).
 - If parseable as `IpAddr`, canonicalizes via `ip.to_string()` (lowercases IPv6 hex, collapses padding). So `FE80::1` equals `fe80::1` and `fe80:0:0:0:0:0:0:1`.
 - Otherwise, `to_ascii_lowercase()`.
@@ -124,7 +130,7 @@ This two-phase design means `in_flight` tracks route-selection-to-upstream-open 
 
 ### CompatRegexRule matching
 
-`CompatRegexRule::matches()` at `src/lib.rs:716-724`: formats `hostname:port` into a stack buffer (320 bytes), falls back to `format!()` for oversized targets. The regex runs against this combined string, not the hostname alone.
+`CompatRegexRule::matches()` at `src/compat.rs`: formats `hostname:port` into a stack buffer (320 bytes), falls back to `format!()` for oversized targets. The regex runs against this combined string, not the hostname alone.
 
 ## Error and failure model
 
@@ -152,7 +158,7 @@ No Cargo features gate routing functionality (all routing code is always compile
 
 - `SourceCidr` / `SourcePort` match against `request.source` which is the peer socket address. Spoofable at the transport layer if the listener does not enforce real peer addresses (e.g. transparent proxy with netfilter).
 - `CompatRegexRule` compiles user-supplied regex. Regexes are bounded by `regex::Regex` complexity limits (DFA size). No user-controlled regex can cause exponential backtracking due to the regex crate's guarantees.
-- Credentials and secret-bearing URIs are redacted before logging; `RouteExplanation::chain` uses `RedactedUri::new()` (`src/lib.rs:397`).
+- Credentials and secret-bearing URIs are redacted before logging; `RouteExplanation::chain` uses `RedactedUri::new()` (`src/explain.rs`).
 - `validate_upstream_id()` at `src/upstream.rs:21-28` enforces `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` to prevent label injection.
 
 ## Concurrency and lifecycle
@@ -168,14 +174,14 @@ No Cargo features gate routing functionality (all routing code is always compile
 
 | Area | Files / tests | What is covered |
 |---|---|---|
-| MatchExpr | `src/lib.rs:796-1323` | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
-| Router decide/select | `src/lib.rs:1155-1244` | first-match-wins, default action, upstream group, reject, accessor methods |
+| MatchExpr | `src/matcher.rs` + `src/lib.rs` tests | 30+ tests: host exact/suffix/regex, CIDR IPv4/v6, port exact/range/set, source CIDR/port, listener, protocol, identity, composite All/AnyOf/Not, empty All/AnyOf |
+| Router decide/select | `src/router.rs` + `src/lib.rs` tests | first-match-wins, default action, upstream group, reject, accessor methods |
 | Health state machine | `src/health.rs:306-508` | 15+ tests: every state transition, thread safety (100 threads), eligibility, timestamps, failure resets counter, Disabled terminal |
 | Jitter | `src/health.rs:572-596` | 1000 iterations, validates +/- 20% range |
 | Probe | `src/health.rs:536-560` | TCP probe success, failure, timeout |
-| Schedulers | `src/lib.rs:1431-1456`, `src/scheduler.rs:230-312` | FirstAvailable order, disabled skip, RoundRobin, Random determinism, LeastConnections |
-| Lease RAII | `src/lib.rs:1389-1429` | PendingLease decrement on drop, established->active, ActiveLease decrement on drop |
-| CompatRegexRule | `src/lib.rs:1247-1294` | Parse valid/invalid, file parsing, line numbers, hostname:port matching |
+| Schedulers | `src/scheduler.rs:230-312` | FirstAvailable order, disabled skip, RoundRobin, Random determinism, LeastConnections |
+| Lease RAII | `src/lease.rs` + `src/lib.rs` tests | PendingLease decrement on drop, established->active, ActiveLease decrement on drop |
+| CompatRegexRule | `src/compat.rs` + `src/lib.rs` tests | Parse valid/invalid, file parsing, line numbers, hostname:port matching |
 | Properties | `tests/properties.rs` | Proptest-based property tests |
 | Scheduler parity | `tests/scheduler_parity.rs` | Cross-scheduler behavioral equivalence |
 

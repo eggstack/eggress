@@ -76,12 +76,13 @@ class EggressService:
         if self._compatibility_options is None:
             handle = self._inner.start()
         else:
+            # Only runtime hooks reach the supervisor; -d/-v log policy is
+            # resolved via default_log_level()/init_pproxy_logging before
+            # startup and never enters generic supervisor state.
             options = self._compatibility_options
             handle = self._inner.start_with_compatibility_options(
                 int(options["auth_timeout_seconds"]),
                 bool(options["system_proxy"]),
-                bool(options["debug"]),
-                int(options["verbose_level"]),
             )
         return EggressHandle(handle)
 

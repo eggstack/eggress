@@ -65,8 +65,11 @@ router from `-l`/`-r` flags. Default listener is `http://127.0.0.1:8080`
 8. `--test` target → `run_upstream_test()` then exit (:163-177).
 9. `--daemon` → `maybe_daemonize()` (Linux only) (:179-183).
 10. `validate_and_compile_toml_with_warnings()` on translated TOML (:154-161).
-11. `ServiceSupervisor::start_from_config_with_options()` with
-    `CompatibilityOptions` (:192-214).
+11. Resolve `-d`/`-v` into the tracing filter via `default_log_level()`
+    (`RUST_LOG` precedence) in `init_logging`, then build
+    `CompatibilityRuntimeHooks::from_facade(effective_auth_timeout(),
+    system_proxy, ssh_insecure_acknowledged())` and call
+    `ServiceSupervisor::start_from_config_with_compatibility()`.
 
 ## Shared library (src/lib.rs)
 
@@ -185,10 +188,13 @@ Opt-in suites are gated by env vars (`EGRESS_REQUIRE_EXTERNAL_INTEROP=1`,
 - `run_async_test()` (:236-261) detects whether a Tokio runtime is already
   current. If so, it spawns a dedicated OS thread with a new multi-thread
   runtime to avoid nested runtime panics.
-- `pproxy_run` sets `CompatibilityOptions` (:786-792) including
-  `auth_timeout`, `system_proxy`, `debug`, `verbose_level` from parsed
-  pproxy args. No config file path is provided, so SIGHUP reload is
-  disabled in compat mode.
+- `pproxy_run` builds `CompatibilityRuntimeHooks` from parsed pproxy args:
+  `AuthReuseCache::new(effective_auth_timeout())` (always, preserving the
+  30-day default), `--sys` as `Some(SystemProxyRequest)`, SSH env via
+  `ssh_insecure_acknowledged()` (warns when verification stays on under
+  `ssh` feature). `-d`/`-v` never enter the supervisor; they were resolved
+  into the tracing filter before construction. No config file path is
+  provided, so SIGHUP reload is disabled in compat mode.
 
 ## See also
 

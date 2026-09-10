@@ -14,7 +14,7 @@ state after compilation.
 |---|---|
 | `src/model.rs` | Serde types mirroring the TOML schema: ConfigFile, listeners, upstreams, groups, rules, timeouts, process, admin, reverse servers/clients |
 | `src/lib.rs` | Public entry points (`load_and_validate`, `validate_and_compile_toml`, `_with_warnings` variants), integration tests |
-| `src/compile.rs` | Validation -> compiled RuntimeConfig; resolves secrets, CLI-flag compatibility, default synthesis |
+| `src/compile/` | Compilation by domain (`mod.rs` facade + `compile_config`/`load_and_compile`/`resolve_password`/`parse_duration_opt`); `model.rs` (RuntimeConfig + compiled DTOs), `listeners.rs` (listener/TLS/UDP/transparent/unix), `upstreams.rs` (chains/groups/health/H2), `rules.rs` (matchers/actions/rules), `reverse.rs` (reverse server/client + TLS), `process.rs` (process/timeouts/admin). Reuses `validate/`; no validation duplicated. `parse -> validate -> compile` stays one-way |
 | `src/validate/` | `mod.rs` (`validate_config` orchestrator) + `composition.rs` (protocol matrix), `listeners.rs` (bindings/auth/TLS/UDP), `upstreams.rs` (chains/health/H2/groups/transports), `rules.rs` (matchers/group refs), `core.rs` (durations/timeouts/process/admin), `security.rs` (dangerous-combination + alias warnings) |
 | `src/file.rs` | Bounded file loading (1 MB limit with TOCTOU guard) |
 | `src/error.rs` | `ConfigError` and `ConfigWarning` types |
@@ -94,9 +94,9 @@ Leaf matcher fields (in `MatchExprConfig::Leaf`):
 
 Composite matchers enforce depth limit (10) and node count limit (100).
 
-### RuntimeConfig (`compile.rs`)
+### RuntimeConfig (`compile/model.rs`)
 
-Compiled output with all defaults resolved: process config (log defaults: text/info/30s), timeout config (10s/30s), compiled listeners, upstreams (parsed chains + health + h2), groups (scheduler + members + fallback), compiled rules, default action (Direct), admin config (127.0.0.1:9090 default), reverse server/client configs.
+Compiled output with all defaults resolved: process config (log defaults: text/info/30s), timeout config (10s/30s), compiled listeners, upstreams (parsed chains + health + h2), groups (scheduler + members + fallback), compiled rules, default action (Direct), admin config (127.0.0.1:9090 default), reverse server/client configs. Public types stay reachable at `eggress_config::compile::…` via `compile/mod.rs` re-exports.
 
 ## How it works (control flow)
 
@@ -104,13 +104,13 @@ Compiled output with all defaults resolved: process config (log defaults: text/i
 TOML string
   -> toml::from_str()           [model.rs types]
   -> version check              [must be 1 or absent]
-  -> validate_config()          [validate.rs: structural checks]
-  -> validate_config_security() [validate.rs: non-fatal warnings]
-  -> compile_config()           [compile.rs: resolve defaults, secrets, URIs]
+  -> validate_config()          [validate/: structural checks]
+  -> validate_config_security() [validate/: non-fatal warnings]
+  -> compile_config()           [compile/: resolve defaults, secrets, URIs]
   -> RuntimeConfig
 ```
 
-### Secret resolution (`compile.rs:resolve_password`)
+### Secret resolution (`compile/mod.rs:resolve_password`)
 
 Secrets are resolved at compile time from three sources:
 1. **Inline**: `password = "secret"` -- used directly
@@ -122,7 +122,7 @@ Resolution rules:
 - If both `password` and `password_env` are set for admin auth, it is an error
 - Resolved value replaces the source in the compiled output; no references remain
 
-### Legacy `udp_enabled` synthesis (`compile.rs`)
+### Legacy `udp_enabled` synthesis (`compile/listeners.rs`)
 
 | `udp_enabled` | `[listeners.udp]` | Result |
 |---|---|---|
@@ -198,8 +198,8 @@ Non-fatal warnings emitted during `validate_config_security()`:
 | Module | Test count | Key coverage |
 |---|---|---|
 | `lib.rs` | ~80 | Minimal config, full config, all sections, invalid TOML, unsupported version, invalid duration/URI, duplicate names/IDs, unknown references, combined legacy matchers rejected, recursive matchers (all/any_of/not/nested), leaf matchers (port range/set/identity/CIDR/regex), health config (all/partial/defaults/invalid), PAC/static content config, UDP config (nested/legacy synthesis/conflict/SOCKS5 requirement/transport validation), TLS listener config |
-| `validate.rs` | ~15 | Zero durations rejected, loopback detection, security warnings (listener/admin/reverse), non-loopback without auth warned, loopback not warned, authed listener not warned |
-| `compile.rs` | ~12 | Process/admin defaults, protocol compilation, reject reasons, matcher compilation, UDP mode compilation, health compilation, H2 config, reverse server/client compilation (incl. `[*.tls]` PEM validation; `pproxy_compat` + TLS rejected) |
+| `validate/` | ~15 | Zero durations rejected, loopback detection, security warnings (listener/admin/reverse), non-loopback without auth warned, loopback not warned, authed listener not warned |
+| `compile/` | ~12 | Process/admin defaults, protocol compilation, reject reasons, matcher compilation, UDP mode compilation, health compilation, H2 config, reverse server/client compilation (incl. `[*.tls]` PEM validation; `pproxy_compat` + TLS rejected) |
 | **Total** | **107** | |
 
 ## Reviewer gotchas

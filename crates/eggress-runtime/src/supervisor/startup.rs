@@ -22,7 +22,7 @@ use crate::snapshot::compile_runtime_snapshot;
 #[cfg(feature = "operations")]
 use super::operations::RuntimeAdminState;
 use super::state::RuntimeState;
-use super::{CompatibilityOptions, ServiceSupervisor};
+use super::{CompatibilityRuntimeHooks, ServiceSupervisor};
 
 /// Reject configurations the current feature set cannot run, and pre-validate
 /// listener bind addresses so malformed binds fail before any state exists.
@@ -86,27 +86,17 @@ pub(crate) fn resolve_udp_global_limit(
     udp_global_limit.unwrap_or(1024)
 }
 
-/// Build the SSH session cache, honoring the compatibility-mode host-key
-/// policy (explicit opt-in via `EGRESS_SSH_INSECURE_HOST_KEYS` only).
+/// Build the SSH session cache from the narrow compatibility decision.
+///
+/// The compatibility facade resolves `EGRESS_SSH_INSECURE_HOST_KEYS` via
+/// `super::ssh_insecure_acknowledged()` before startup; the supervisor only
+/// consumes the resulting bool. Native startup always passes `false`.
 #[cfg(feature = "ssh")]
 pub(crate) fn build_ssh_sessions(
-    compatibility_mode: bool,
+    allow_insecure_host_keys: bool,
 ) -> Arc<eggress_transport_ssh::SshSessionCache> {
-    Arc::new(if compatibility_mode {
-        let insecure_acknowledged = std::env::var("EGRESS_SSH_INSECURE_HOST_KEYS")
-            .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
-            .unwrap_or(false);
-        if insecure_acknowledged {
-            eggress_transport_ssh::SshSessionCache::new_compatibility()
-        } else {
-            tracing::warn!(
-                "compatibility mode would disable SSH host-key verification; \
-                 keeping known_hosts verification enabled. To explicitly \
-                 accept unverified SSH host keys (MITM risk), set \
-                 EGRESS_SSH_INSECURE_HOST_KEYS=1"
-            );
-            eggress_transport_ssh::SshSessionCache::new()
-        }
+    Arc::new(if allow_insecure_host_keys {
+        eggress_transport_ssh::SshSessionCache::new_compatibility()
     } else {
         eggress_transport_ssh::SshSessionCache::new()
     })
@@ -117,7 +107,7 @@ pub(crate) fn build_ssh_sessions(
 pub(crate) fn init_supervisor(
     rt_config: eggress_config::compile::RuntimeConfig,
     config_path: Option<String>,
-    compatibility_options: CompatibilityOptions,
+    compatibility_hooks: Option<CompatibilityRuntimeHooks>,
 ) -> Result<ServiceSupervisor, RuntimeError> {
     validate_startup_config(&rt_config)?;
 
@@ -209,7 +199,11 @@ pub(crate) fn init_supervisor(
     );
 
     #[cfg(feature = "ssh")]
-    let ssh_sessions = build_ssh_sessions(compatibility_options.compatibility_mode);
+    let ssh_sessions = build_ssh_sessions(
+        compatibility_hooks
+            .as_ref()
+            .is_some_and(|hooks| hooks.allow_insecure_ssh_host_keys),
+    );
 
     let tasks = TaskTracker::new();
     let connection_tasks = TaskTracker::new();
@@ -234,6 +228,6 @@ pub(crate) fn init_supervisor(
         tls_client_config: None,
         #[cfg(feature = "ssh")]
         ssh_sessions,
-        compatibility_options,
+        compatibility_hooks,
     })
 }

@@ -79,29 +79,29 @@ impl PyEggressService {
         })
     }
 
-    /// Start with the compatibility-only runtime options parsed from pproxy
+    /// Start with the compatibility-only runtime hooks parsed from pproxy
     /// arguments. Native Eggress service startup never uses this path.
+    ///
+    /// Only `--auth` reuse and `--sys` reach the supervisor as typed hooks;
+    /// `-d`/`-v` log policy is resolved by the caller via
+    /// `default_log_level()`/`init_pproxy_logging` before startup.
     fn start_with_compatibility_options(
         &mut self,
         py: Python<'_>,
         auth_timeout_seconds: u64,
         system_proxy: bool,
-        debug: bool,
-        verbose_level: u8,
     ) -> PyResult<PyEggressHandle> {
         let svc = self
             .inner
             .take()
             .ok_or_else(|| EggressError::new_err("service already started"))?;
-        let options = eggress_runtime::CompatibilityOptions {
-            compatibility_mode: true,
-            auth_timeout: Some(Duration::from_secs(auth_timeout_seconds)),
+        let hooks = eggress_runtime::CompatibilityRuntimeHooks::from_facade(
+            Duration::from_secs(auth_timeout_seconds),
             system_proxy,
-            debug,
-            verbose_level,
-        };
+            eggress_runtime::ssh_insecure_acknowledged(),
+        );
         let handle = py
-            .detach(|| svc.start_blocking_with_compatibility_options(options))
+            .detach(|| svc.start_blocking_with_compatibility_options(hooks))
             .map_err(|e| map_error(py, e))?;
         Ok(PyEggressHandle {
             inner: Some(handle),

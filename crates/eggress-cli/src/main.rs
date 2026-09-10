@@ -794,20 +794,29 @@ fn handle_pproxy_run(args: &PproxyRun) {
 
     tracing::info!("starting eggress with pproxy-compatible config");
 
+    #[cfg(feature = "ssh")]
+    if !eggress_runtime::ssh_insecure_acknowledged() {
+        tracing::warn!(
+            "compatibility mode would disable SSH host-key verification; \
+             keeping known_hosts verification enabled. To explicitly \
+             accept unverified SSH host keys (MITM risk), set \
+             EGRESS_SSH_INSECURE_HOST_KEYS=1"
+        );
+    }
+
     // Start from the in-memory RuntimeConfig. No config file path is provided,
     // so SIGHUP reload is disabled (there is no stable user-authored config
     // file to reload from in compatibility mode).
-    let compatibility_options = eggress_runtime::CompatibilityOptions {
-        compatibility_mode: true,
-        auth_timeout: Some(pproxy_args.effective_auth_timeout()),
-        system_proxy: pproxy_args.system_proxy,
-        debug: pproxy_args.debug,
-        verbose_level: pproxy_args.verbose_level,
-    };
-    match eggress_runtime::ServiceSupervisor::start_from_config_with_options(
-        rt_config,
-        None,
-        compatibility_options,
+    //
+    // `-d`/`-v` were already resolved into the tracing filter by
+    // `init_pproxy_logging`; runtime receives only typed hooks.
+    let hooks = eggress_runtime::CompatibilityRuntimeHooks::from_facade(
+        pproxy_args.effective_auth_timeout(),
+        pproxy_args.system_proxy,
+        eggress_runtime::ssh_insecure_acknowledged(),
+    );
+    match eggress_runtime::ServiceSupervisor::start_from_config_with_compatibility(
+        rt_config, None, hooks,
     ) {
         Ok(mut supervisor) => {
             if let Err(e) = supervisor.run() {

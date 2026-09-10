@@ -36,7 +36,7 @@ Validation chain (single shared boundary `parse_validate_compile`): `toml::from_
 | `from_toml_file(path)` | :143 | Convenience: file parse + new |
 | `start()` async | `src/lib.rs` | In-memory `start_from_config` (no temp file) inside caller's Tokio runtime |
 | `start_blocking()` | `src/lib.rs` | In-memory `start_from_config` (no temp file); single `eggress-embed-run` thread |
-| `start_blocking_with_compatibility_options()` | `src/lib.rs` | Same `startup_in_memory` core with explicit `CompatibilityOptions`; only options differ |
+| `start_blocking_with_compatibility_options(hooks)` | `src/lib.rs` | Same `startup_in_memory` core with explicit `CompatibilityRuntimeHooks`; only hooks differ (`None` native vs `Some` compat) |
 
 ### EggressHandle (`src/lib.rs:419`)
 
@@ -102,8 +102,8 @@ or unsupported roles fail closed with redacted errors. Execution reuses
 
 1. Consumes `EggressConfig::into_compiled()` (validated once, no filesystem).
 2. Spawns `tokio::task::spawn_blocking` which calls shared
-   `startup_in_memory(rt_config, CompatibilityOptions::default())` →
-   `ServiceSupervisor::start_from_config_with_options(rt_config, None, _)`.
+   `startup_in_memory(rt_config, None)` →
+   `ServiceSupervisor::start_from_config(rt_config, None)`.
 3. Inside, spawns a single OS thread `"eggress-embed-run"` that owns
    `sup.run()`.
 4. Polls `state.readiness` every 5ms for up to 30 seconds; on timeout cancels
@@ -122,7 +122,8 @@ or unsupported roles fail closed with redacted errors. Execution reuses
    `_config_path=None`.
 
 Native and compatibility startup share `startup_in_memory`; only
-`CompatibilityOptions` differ.
+compatibility hooks differ (`None` native vs `Some(CompatibilityRuntimeHooks)`
+for `--auth` reuse / `--sys`). `-d`/`-v` never enter the supervisor.
 
 ### Reload semantics
 
