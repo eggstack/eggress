@@ -2,7 +2,15 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Closure
+
+Implemented in `f011b66`. Verification: runtime/embed/compat focused tests
+and the workspace gate green on the corrective head (`6171f73` plus this
+closure record). The public source-compatibility regression noted in the
+corrective review is repaired by the closure shim, not by reverting the
+Phase 3 ownership model.
 
 ## Parent roadmap
 

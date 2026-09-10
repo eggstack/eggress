@@ -2,7 +2,18 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Closure
+
+Implemented as committed: Phase 1 -> `8c10331`, Phase 2 -> `5962d47`,
+Phase 3 -> `f011b66`, final corrective closure -> `6171f73`.
+Verification on the corrective head: `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --locked`, `cargo check --manifest-path fuzz/Cargo.toml --bins`,
+bounded optional-compat compile gate, and Python smoke
+(`python/tests` + `tests/compat`) all green. The line of work is closed;
+remaining pproxy differences are documented compatibility boundaries.
 
 ## Baseline
 

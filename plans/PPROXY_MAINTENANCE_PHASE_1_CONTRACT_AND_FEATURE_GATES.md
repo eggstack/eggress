@@ -2,7 +2,13 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Closure
+
+Implemented in `8c10331`. Verification: contract/manifest truth checks,
+bounded optional-compat compile gate, and the workspace gate green on the
+corrective head (`6171f73` plus this closure record).
 
 ## Parent roadmap
 

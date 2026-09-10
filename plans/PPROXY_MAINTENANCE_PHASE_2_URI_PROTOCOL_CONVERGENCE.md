@@ -2,7 +2,13 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Closure
+
+Implemented in `5962d47`. Verification: URI/protocol convergence tests and
+the workspace gate green on the corrective head (`6171f73` plus this closure
+record).
 
 ## Parent roadmap
 

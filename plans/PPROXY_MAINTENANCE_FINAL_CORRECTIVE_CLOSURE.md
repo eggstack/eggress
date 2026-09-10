@@ -2,7 +2,21 @@
 
 ## Status
 
-**PLANNED**
+**IMPLEMENTED**
+
+## Closure
+
+Implemented in `6171f73` (corrective implementation; this record closed in the
+immediate documentation-only closure commit). All acceptance criteria met:
+legacy `CompatibilityOptions` / `start_from_config_with_options` /
+`start_blocking_with_compatibility_options` restored as adapters over
+`CompatibilityRuntimeHooks::from_legacy_options`; `-d`/`-v` contract fixed and
+process-level tested with `RUST_LOG` precedence; README/migration prose
+corrected; architecture/embed docs updated. Verification: `cargo fmt --all --
+--check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --locked`, fuzz-target compilation, bounded
+optional-compat compile gate, and Python smoke (`python/tests` +
+`tests/compat`) green.
 
 ## Baseline
 
