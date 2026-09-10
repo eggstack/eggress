@@ -31,7 +31,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
-`cargo check` is not a separate required gate because Clippy and the test build already compile the workspace. It remains useful interactively when a faster compile-only pass is desired.
+`cargo check` is not a separate required gate because Clippy and the test build already compile the workspace. It remains useful interactively when a faster compile-only pass is desired. The one exception is product-relevant optional compatibility features: the default workspace build does not enable `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, or `pproxy-daemon`, so a source break behind one of those features would not surface in the ordinary suite. The bounded compile-only gate below covers exactly that hole (no `--all-features`, no `insecure-quic`):
+
+```bash
+cargo check -p eggress-cli --locked --no-default-features \
+  --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon \
+  --bins
+```
+
+This is the same command the Ubuntu Rust CI job runs. It is compile
+verification, not a second full test suite.
 
 ## Python binding and compatibility package
 

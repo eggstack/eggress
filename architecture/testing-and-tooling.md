@@ -130,7 +130,7 @@ cannot shadow the installed wheel's compiled `_eggress` extension.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked` |
+| `ci.yml` | push/PR to main | Ubuntu Rust smoke: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`, bounded optional-compat compile check (`full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon --bins`, no `insecure-quic`), fuzz-target compilation |
 | `python-test.yml` | PR/push (path-scoped: `crates/eggress-embed/**`, `crates/eggress-python/**`, `python/**`, `tests/compat/**`, `Cargo.toml`, `Cargo.lock`) | Ubuntu Python 3.12 smoke: build wheel with maturin, install `eggress-pproxy-compat`, run pytest |
 | `publish-python.yml` | `v*` tag push or manual dispatch | Validate tag/version coherence, build 5-platform wheels + sdist, smoke test, publish to PyPI via protected `pypi` environment |
 
@@ -154,6 +154,12 @@ cargo test -p eggress-cli --test cli_exit_codes
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
+
+# Bounded optional-compat compile gate (same command CI runs; default
+# workspace tests do not enable these features)
+cargo check -p eggress-cli --locked --no-default-features \
+  --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon \
+  --bins
 
 # Python tests
 python3 -m venv .venv

@@ -4,6 +4,9 @@
 > state. It must not be used to infer current support. Current support lives in
 > the canonical manifest (`docs/parity/pproxy_capability_manifest.toml`) and
 > practical matrix (`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`).
+> Current tier vocabulary and classification rules live in
+> `docs/parity/README.md` and `crates/eggress-pproxy-compat/src/tier.rs`.
+> Detailed per-feature tables below are retained for provenance only.
 
 Phase 7 of the pproxy parity roadmap. This document formally specifies Python
 pproxy's behavior, what Eggress matches, what remains unimplemented, and what

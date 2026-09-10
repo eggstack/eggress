@@ -221,12 +221,25 @@ See the [Python bindings reference](https://github.com/eggstack/eggress/blob/mai
 
 ## pproxy compatibility
 
-eggress maintains a behavior-oriented compatibility contract against `pproxy==2.7.9`. The bundled `eggress.pproxy` module provides URI-mode translation, CLI flag translation, compatibility routing, structured diagnostics, and differential tests. The optional `eggress-pproxy-compat` distribution provides the bounded top-level `pproxy` package backed by Eggress adapters.
+eggress maintains a behavior-oriented compatibility contract against the pinned
+`pproxy==2.7.9` oracle (`09d4752f17ed6787e1a073c93980eec019887ee3`). Per-feature
+truth lives in the [compatibility matrix](https://github.com/eggstack/eggress/blob/main/docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+and [capability manifest](https://github.com/eggstack/eggress/blob/main/docs/parity/pproxy_capability_manifest.toml);
+this section is a high-level summary only. Native Eggress capability does not
+automatically imply exact pproxy compatibility — the manifest/matrix tier
+(`matched`, `supported_difference`, `platform_limited`,
+`intentional_non_parity`) is authoritative.
+
+The bundled `eggress.pproxy` module provides URI-mode translation, CLI flag translation, compatibility routing, structured diagnostics, and differential tests. The optional `eggress-pproxy-compat` distribution provides the bounded top-level `pproxy` package backed by Eggress adapters.
 
 ### Key boundaries
 
+- **Trojan** — client and server roles implemented natively; see the matrix for the tier
+- **`--daemon`** — Linux opt-in behind the `pproxy-daemon` feature; fails closed otherwise
+- **`--sys`** — supported with warning; applies the bound local listener and restores prior settings
 - **SSH listeners** — upstream-only; requires opt-in `ssh` feature
 - **QUIC/HTTP/3** — optional behind `quic` feature
+- **SSR** — bounded TCP framing plus six built-in plugins behind opt-in `pproxy-legacy`
 - **Legacy ciphers** — `cast5-cfb`, `idea-cfb`, `rc2-cfb`, `seed-cfb` are excluded; other legacy ciphers require `legacy-crypto`
 - **SOCKS4/SOCKS5 BIND** — refused (pproxy 2.7.9 also requires CONNECT)
 - **TLS interception** — HTTPS uses CONNECT tunneling, not MITM
@@ -264,7 +277,7 @@ eggress/
 | Embed API | [docs/EMBED_API.md](https://github.com/eggstack/eggress/blob/main/docs/EMBED_API.md) |
 | Python bindings | [docs/PYTHON_BINDINGS.md](https://github.com/eggstack/eggress/blob/main/docs/PYTHON_BINDINGS.md) |
 | pproxy migration | [docs/PPROXY_MIGRATION.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_MIGRATION.md) |
-| pproxy parity spec | [docs/PPROXY_PARITY_SPEC.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_PARITY_SPEC.md) |
+| pproxy parity spec (historical) | [docs/PPROXY_PARITY_SPEC.md](https://github.com/eggstack/eggress/blob/main/docs/PPROXY_PARITY_SPEC.md) |
 | Config reference | [docs/CONFIG_REFERENCE.md](https://github.com/eggstack/eggress/blob/main/docs/CONFIG_REFERENCE.md) |
 | URI grammar | [docs/URI_GRAMMAR.md](https://github.com/eggstack/eggress/blob/main/docs/URI_GRAMMAR.md) |
 | Testing | [docs/TESTING.md](https://github.com/eggstack/eggress/blob/main/docs/TESTING.md) |

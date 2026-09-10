@@ -751,7 +751,7 @@ pub async fn legacy_accept(
     if !iv.is_empty() {
         stream.read_exact(&mut iv).await?;
     }
-    let mut adapter = LegacyStream::server(stream, method, key, iv.clone())?;
+    let mut adapter = LegacyStream::server(stream, method, key.clone(), iv.clone())?;
     let mut first = [0u8; 1];
     adapter.read_exact(&mut first).await?;
     let mut header = first.to_vec();
@@ -1098,7 +1098,13 @@ impl AsyncWrite for LegacyStream {
         }
         while self.pending_write_pos < self.pending_write.len() {
             let pos = self.pending_write_pos;
-            match Pin::new(&mut self.inner).poll_write(cx, &self.pending_write[pos..]) {
+            let poll = {
+                let this = self.as_mut().get_mut();
+                let pending = &this.pending_write;
+                let buf: &[u8] = &pending[pos..];
+                Pin::new(&mut this.inner).poll_write(cx, buf)
+            };
+            match poll {
                 Poll::Ready(Ok(0)) => {
                     return Poll::Ready(Err(std::io::Error::new(
                         std::io::ErrorKind::WriteZero,

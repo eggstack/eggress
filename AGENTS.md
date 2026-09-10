@@ -18,7 +18,8 @@ Use these current documents before relying on historical phase or completion rec
 - `docs/DIFFERENTIAL_TESTING.md`: pproxy oracle and differential harness.
 - `docs/parity/pproxy_capability_manifest.toml`: canonical capability contract.
 - `docs/parity/pproxy_2_7_9_strict_manifest.toml`: strict behavioral contract (historical provenance for the active manifest).
-- `docs/PPROXY_PARITY_SPEC.md`: compatibility vocabulary and tier definitions.
+- `docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`: maintained human-readable companion to the canonical manifest.
+- `docs/parity/README.md`: tier vocabulary and classification rules for the active contract.
 
 Files under `plans/` and phase-completion documents are historical implementation records. They may explain why code exists, but they do not override current policy or current source behavior.
 
@@ -83,7 +84,7 @@ Ordinary changes do not require generated evidence bundles, uploaded artifacts, 
 
 There are three hosted workflows, and one of them is a real release path:
 
-- `.github/workflows/ci.yml`: Ubuntu Rust smoke (fmt check, clippy `-D warnings`, `cargo test --workspace --locked`).
+- `.github/workflows/ci.yml`: Ubuntu Rust smoke (fmt check, clippy `-D warnings`, `cargo test --workspace --locked`, one bounded optional-compat compile check for `full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon`, fuzz-target compilation).
 - `.github/workflows/python-test.yml`: path-scoped Ubuntu/Python 3.12 smoke for the Python packages.
 - `.github/workflows/publish-python.yml`: **fires on every `v*` tag push.** It validates the tag against the workspace version, builds the five-platform wheels plus sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch). Pushing a version tag is a release action, not bookkeeping.
 

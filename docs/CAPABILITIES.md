@@ -2,6 +2,14 @@
 
 A capability is checked only when implementation, tests, documentation, and applicable interoperability tests are complete.
 
+This checklist tracks **native Eggress capability**. Native support does not
+automatically imply exact `pproxy==2.7.9` compatibility: the authoritative
+compatibility tiers live in the canonical manifest
+(`docs/parity/pproxy_capability_manifest.toml`, oracle
+`09d4752f17ed6787e1a073c93980eec019887ee3`) and the maintained human matrix
+(`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`). See
+`docs/PPROXY_MIGRATION.md` for the migration-oriented boundary summary.
+
 Legend: `[x]` complete, `[ ]` not complete.
 
 ## Core
@@ -198,7 +206,7 @@ Legend: `[x]` complete, `[ ]` not complete.
 - [x] Connection semaphore
 - [x] DNS rebinding-aware routing
 - [x] Unsafe-code audit (`deny` level)
-- [x] Dependency audit in CI (bans openssl-sys, native-tls, aws-lc-sys, cmake)
+- [x] Dependency policy enforced via `cargo deny` / `cargo audit` on dependency changes and release preparation (not a routine CI job; see `docs/CI_STATUS.md`)
 - [x] Property tests, fuzz harness smoke, security invariant tests
 - [x] Soak tests, resource-exhaustion tests
 - [x] Security disclosure process

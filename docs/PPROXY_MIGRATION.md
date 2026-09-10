@@ -2,6 +2,16 @@
 
 Eggress provides a pproxy compatibility layer that translates common pproxy invocations and URI shapes into native Eggress configuration. It is a migration surface, not strict full drop-in parity.
 
+The compatibility oracle is pinned to `pproxy==2.7.9` at commit
+`09d4752f17ed6787e1a073c93980eec019887ee3`. Per-feature compatibility truth
+lives in the canonical manifest
+(`docs/parity/pproxy_capability_manifest.toml`) and the maintained human
+matrix (`docs/parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md`). This guide
+describes migration mechanics and important boundaries only; it does not
+maintain a second exhaustive supported/unsupported inventory. Where a feature
+example is needed below, consult the matrix/manifest for the authoritative
+status.
+
 Install the `eggress` distribution. `from eggress import pproxy` is the explicit
 migration-helper path. For a bounded top-level `pproxy` import, additionally
 install the optional `eggress-pproxy-compat` distribution from a repository
@@ -29,29 +39,21 @@ eggress pproxy check -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 eggress pproxy run -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 ```
 
-## Supported URI Forms
+## URI and chain mechanics
 
-| Scheme | As Local Listener | As Upstream |
-|--------|------------------|-------------|
-| `http://` | Yes | Yes |
-| `https://` | Yes (TLS) | Yes (HTTP+TLS) |
-| `socks4://` | Yes | Yes |
-| `socks4a://` | Yes | Yes |
-| `socks5://` | Yes | Yes |
-| `trojan://` | No (upstream-only) | Yes |
-| `shadowsocks://` | Yes (AEAD methods only) | Yes (AEAD methods only) |
-| `direct://` | No | Yes (direct connection) |
-| `h2://` | No | Yes, upstream only; TLS/ALPN is implied |
-| `ws://` | No | Yes, upstream only |
-| `wss://` | No | Yes, upstream only; lowered to `ws+tls://` |
-| `raw://` | No | Yes, upstream only; endpoint is the fixed target |
-| `tunnel://` | No | Yes, upstream-only alias for raw |
+pproxy URIs follow `scheme://[user:pass@]host:port[+tls][?rule=regex]`, and
+multi-hop chains join hops with `__` (double underscore, left-to-right with
+the first hop nearest). Semicolon and comma are rejected with a structured
+diagnostic suggesting `__`.
 
-### URI Format
-
-```
-scheme://[user:pass@]host:port[+tls][?rule=regex]
-```
+The translator accepts the common listener/upstream URI shapes (HTTP,
+SOCKS4/4a, SOCKS5, Shadowsocks, Trojan, direct, H2/WS/raw fixed-target forms,
+and reverse `bind`/`listen`/`backward`/`rebind` with `+in`) and lowers them to
+native `[[listeners]]` / `[[upstreams]]` TOML. Role support (listener vs
+upstream), TLS modifiers, and optional transports differ per scheme; see the
+[compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md) and
+the [capability manifest](parity/pproxy_capability_manifest.toml) for the
+authoritative per-scheme status rather than a duplicated table here.
 
 ### Examples
 
@@ -115,58 +117,50 @@ any = true
 upstream_group = "chain"
 ```
 
-## Supported Features
+## Compatibility boundaries (summary)
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| HTTP CONNECT | Compatible | Byte-exact payload match with differential tests |
-| HTTP forward proxy | Compatible | Persistent session model with HTTP/1.1 keep-alive (Phase 19) |
-| SOCKS4/4a | Compatible | Differential tests with pproxy 2.7.9 added (Phase 19) |
-| SOCKS5 CONNECT | Compatible | Expanded differential evidence: auth, IPv6, domain, refused targets (Phase 19) |
-| SOCKS5 UDP ASSOCIATE | Supported | Framing differs; relay success matches |
-| Standalone UDP (`-ul`/`-ur`) | Compatible | pproxy-compatible standalone UDP relay mode (Phase 20) |
-| Shadowsocks upstream | Supported | Standard AEAD framing; interoperable with standard Shadowsocks |
-| Trojan upstream | Partial | Client-only; no Trojan server |
-| HTTP/2 CONNECT | Supported | Synthetic tests; H2 CONNECT server and client implemented (Phase 26) |
-| WebSocket tunnel | Supported | Synthetic tests; WS/WSS tunnel server and client implemented (Phase 26) |
-| Raw fixed-target tunnel | Supported | Synthetic tests; raw TCP tunnel with no protocol negotiation (Phase 26) |
-| HTTP-only upstream (`httponly://`) | Supported | Existing HTTP forward path rewrites origin-form requests to absolute-form |
-| Unix-domain TCP upstream | Supported on Unix | Tokio UnixStream; UDP and Windows are rejected |
-| Echo endpoint | Supported | Explicit TCP/UDP loopback utility |
-| Fixed-target UDP tunnel | Supported | One configured target with bounded packet relay; composed UDP upstreams are limited to proven SOCKS5/Shadowsocks hops |
-| TLS ALPN | Supported | Configurable ALPN values for H2 and HTTP/1.1 (Phase 26) |
-| Hot reload | Partial | Routing/upstreams only; listener topology requires restart |
+Native Eggress capability does not automatically imply exact pproxy
+compatibility. The matrix/manifest record the authoritative per-feature tier;
+the notes below call out the boundaries users most often misread:
 
-## Unsupported Features
+- **Trojan** — client (upstream) and server (listener) roles are both
+  implemented; see `uri.scheme_trojan` in the manifest.
+- **`--daemon`** — supported with a warning behind the opt-in Linux
+  `pproxy-daemon` feature (safe re-exec after validation); feature-off or
+  non-Linux builds fail closed with a structured diagnostic. It is distinct
+  from `-d`/debug.
+- **`--sys`** — supported with a warning in compatibility mode: after
+  listeners bind, the runtime applies the selected local SOCKS5 (or HTTP
+  fallback) listener through the existing system-proxy backend and restores
+  prior settings on shutdown or failed startup.
+- **`-d`, `-v`, `--ssl`, `-b`, `--reuse`, `--pac`, `--get`, `--auth`,
+  `--test`** — parsed with compatibility or native-equivalent semantics
+  (tracing defaults, TLS config, reject rules, `SO_REUSEPORT`, admin
+  PAC/static content, bounded auth reuse, in-process upstream test). See
+  `cli.*` entries in the manifest for the exact tier.
+- **SSH** — upstream-only behind the opt-in `ssh` feature; listeners are
+  refused. Host-key acceptance is warning-bearing to match pproxy's
+  permissive behavior.
+- **H3/QUIC** — behind the opt-in `quic` feature; `h3://` is HTTP/3 CONNECT
+  and `quic+http://` is raw QUIC streams. Listeners require certificate/key
+  material; UDP association mode is an explicit unsupported composition.
+- **Shadowsocks legacy/SSR** — modern AEAD is the default path. Legacy
+  stream ciphers and OTA are behind the explicit `legacy-crypto` feature;
+  SSR TCP framing plus the six built-in plugins are behind the opt-in
+  `pproxy-legacy` feature (not in the default CLI `full`). UDP SSR and
+  external/SIP003 plugins remain unsupported; `cast5-cfb`, `idea-cfb`,
+  `rc2-cfb`, and `seed-cfb` are intentional non-parity.
+- **Platform boundaries** — Linux `redir://` and Unix `unix://` apply where
+  the OS facility exists; macOS PF transparent recovery is intentional
+  non-parity. Listener topology is not hot-reloaded; routing/upstreams may
+  be replaced atomically.
 
-The following pproxy features are explicitly unsupported:
+The default CLI `full` feature group intentionally does not enable every
+optional legacy/transport feature above. Build with the documented opt-in
+features when the migrated deployment needs them.
 
-- **Trojan listeners** -- Trojan is supported for both inbound and upstream
-- **`--daemon` mode** -- Use systemd or a process manager instead
-- **`-d` debug** -- Enables a debug-level default tracing filter via the shared `default_log_level` helper and reports the Python traceback difference; independent of `-v` and `--daemon`. Explicit `RUST_LOG` remains authoritative.
-- **`--ssl` TLS listeners** -- Configure TLS in eggress TOML directly
-- **`-b` block regex rules** -- Use eggress TOML routing rules
-- **`--rulefile`** -- simple reject/block entries are translated; use Eggress TOML routing rules for complete semantics
-- **`--reuse`** -- SO_REUSEPORT on listener sockets (not connection pooling)
-- **`--log`** -- Use `RUST_LOG=debug` environment variable
-- **`--sys`** -- Unsupported in pproxy compatibility mode; fails before startup. Use the native `eggress system-proxy inspect` subcommand for read-only inspection. Crate-level apply/rollback primitives are not exposed as CLI subcommands.
-- **UDP over non-UDP chains** -- Not supported; composed UDP chains are limited to SOCKS5 and standard Shadowsocks hops
-- **macOS PF transparent destination recovery** -- Intentional non-parity; requires privileged `/dev/pf` ioctl access
-- **Backward TLS/mixed reverse chains** -- Intentional partial compatibility; reverse framing is not a normal chain stream
-- **SSH listeners** -- Not supported; SSH upstreams are available only with
-  the opt-in `ssh` feature and intentionally match pproxy's permissive
-  `known_hosts=None` behavior
-- **H3/QUIC transport** -- Available behind the optional `quic` feature.
-  `h3://` provides HTTP/3 CONNECT and `quic+http://` provides raw QUIC
-  streams; listeners require certificate/key material and UDP association mode
-  remains unsupported.
-- **Shadowsocks stream ciphers** -- Available only behind the explicit
-  `legacy-crypto` feature, with an insecure compatibility warning; feature-off
-  builds produce `LegacyMethodUnsupported`. See
-  `docs/protocols/SHADOWSOCKS_LEGACY.md`.
-- **ShadowsocksR extensions outside the bounded Phase 3 surface** -- Raw `ssr://` TCP framing and pproxy's six built-in plugins (`plain`, `origin`, `http_simple`, `tls1.2_ticket_auth`, `verify_simple`, `verify_deflate`) are available behind the opt-in `pproxy-legacy` feature (no longer pulled in by the default CLI `full`). UDP SSR and SIP003/external plugins remain unsupported; legacy stream ciphers are a separate `legacy-crypto` feature.
-
-Unsupported features produce structured diagnostics when encountered in pproxy compat mode.
+Unsupported transports or roles fail with structured, actionable diagnostics
+rather than silent fallback.
 
 ## Exit Codes
 
@@ -201,7 +195,10 @@ eggress pproxy check --json -- -l socks5://127.0.0.1:1080 -r http://proxy:8080
 
 The JSON output includes:
 
-- `tier` — overall compatibility tier (`compatible`, `supported`, `unsupported`)
+- `tier` — overall compatibility tier using the canonical five-level
+  vocabulary (`drop_in`, `compatible_with_warning`, `native_equivalent`,
+  `intentional_non_parity`, `unsupported`; see
+  `docs/parity/README.md`)
 - `diagnostics` — array of structured diagnostic objects (see below)
 - `features` — per-feature info with name, tier, and diagnostic code
 - `raw_args` — the original pproxy-style arguments
@@ -217,18 +214,18 @@ actionable suggestions. Each diagnostic carries:
 
 - `code` — stable `DiagnosticCode` (e.g. `unsupported_protocol`, `invalid_cipher_method`)
 - `feature_id` — the pproxy feature name, if applicable
-- `tier` — compatibility tier (`unsupported`, `partial`, `intentional_non_parity`)
+- `tier` — compatibility tier from the canonical five-level vocabulary
 - `message` — human-readable description
 - `suggestion` — eggress-native alternative, if one exists
 
-Example diagnostic codes:
+Example diagnostic codes (non-exhaustive; the manifest is authoritative):
 
 | Code | Example trigger |
 |------|----------------|
-| `unsupported_protocol` | `ssh://` or unrecognized scheme |
-| `unsupported_flag` | `--daemon`, `--reuse`, unknown flags |
-| `unsupported_security_sensitive_legacy_feature` | SSR URIs (`ssr://`) |
-| `invalid_cipher_method` | Legacy stream cipher (e.g. `aes-128-ctr`) |
+| `unsupported_protocol` | `ssh://` as listener, or unrecognized scheme |
+| `unsupported_flag` | `--daemon` without the opt-in feature, unknown flags |
+| `unsupported_security_sensitive_legacy_feature` | SSR URIs (`ssr://`) without `pproxy-legacy` |
+| `invalid_cipher_method` | Legacy stream cipher without `legacy-crypto` |
 | `invalid_uri_syntax` | Malformed URI or argument list |
 | `invalid_chainComposition` | Conflicting protocol chain |
 | `missing_target` | No `-l` argument provided |
@@ -249,11 +246,12 @@ unreadable values fail closed.
 
 ## Parity Tiers
 
-When you run `eggress pproxy check`, it reports a parity tier:
-
-- **Compatible** -- Full behavioral match with pproxy
-- **Supported** -- Works correctly with minor warnings
-- **Partial** -- Some features unsupported; service may not behave as expected
+When you run `eggress pproxy check`, it reports a tier from the canonical
+five-level vocabulary (`drop_in`, `compatible_with_warning`,
+`native_equivalent`, `intentional_non_parity`, `unsupported`). Tier
+semantics are defined in `docs/parity/README.md` and enforced by
+`eggress-pproxy-compat::tier`; this guide does not maintain a separate tier
+table.
 
 ## Credential Handling
 
@@ -265,7 +263,10 @@ When you run `eggress pproxy check`, it reports a parity tier:
 
 ### "unsupported protocol" error
 
-Check that your URI scheme is one of: `http`, `socks4`, `socks5`, `trojan`.
+Check the [compatibility matrix](parity/PPROXY_PRACTICAL_COMPATIBILITY_MATRIX.md)
+for the scheme/role inventory; common listener/upstream schemes include
+`http`, `socks4`, `socks5`, `trojan`, Shadowsocks AEAD, direct, and the
+opt-in H2/WS/raw/SSH/SSR forms.
 
 ### "no local listener specified"
 

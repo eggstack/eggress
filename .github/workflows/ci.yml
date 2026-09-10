@@ -33,5 +33,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+      - name: Check optional compat features
+        run: >-
+          cargo check -p eggress-cli --locked --no-default-features
+          --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon
+          --bins
       - name: Check fuzz targets
         run: cargo check --manifest-path fuzz/Cargo.toml --bins

@@ -8,7 +8,7 @@ Egress uses deliberately small hosted CI. GitHub Actions is a smoke signal for o
 
 The repository has three hosted workflows:
 
-- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, and the workspace test suite.
+- `.github/workflows/ci.yml`: one Ubuntu Rust job running format, Clippy, the default workspace test suite, one bounded optional-compat compile check, and fuzz-target compilation.
 - `.github/workflows/python-test.yml`: one path-scoped Ubuntu/Python 3.12 smoke job for the Python binding and compatibility packages.
 - `.github/workflows/publish-python.yml`: a real release path, not a smoke job. It fires on every `v*` tag push, validates the tag against the workspace version, builds five-platform abi3 wheels plus an sdist, smoke-tests them, and publishes to PyPI through the protected `pypi` GitHub environment (TestPyPI only via manual dispatch).
 
@@ -42,6 +42,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
+The Ubuntu Rust job additionally runs one bounded compile-only gate for
+product-relevant optional compatibility features that the default `full`
+group intentionally leaves off. It is compile verification, not a second
+full test suite, and it deliberately excludes the insecure/test-only
+`insecure-quic` combination:
+
+```bash
+cargo check -p eggress-cli --locked --no-default-features \
+  --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon \
+  --bins
+```
+
 For a Python-facing change, also build the extension and run the relevant Python tests:
 
 ```bash
@@ -62,6 +74,7 @@ Run these only when their trigger condition applies:
 |---|---|
 | `cargo deny check` | Dependency, feature, or license-policy changes; release preparation |
 | `cargo audit --ignore RUSTSEC-2025-0134 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0009` | Dependency changes; release preparation |
+| optional-compat compile gate above | SSH, QUIC/H3, SSR/`pproxy-legacy`, legacy-crypto, or daemon code paths |
 | pproxy differential/oracle suites | Compatibility behavior, manifests, URI translation, or pproxy namespace changes |
 | Shadowsocks external interoperability | Shadowsocks wire-format, cipher, or relay changes |
 | strict closure audit | Explicit compatibility-certification work |

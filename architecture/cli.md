@@ -123,11 +123,22 @@ exits with code 0. Guard: if env var is already set, returns immediately.
 | `reverse` | `eggress-runtime/reverse` | Reverse proxy control channel |
 | `ssh` | `eggress-runtime/ssh`, `eggress-pproxy-compat/ssh` | SSH transport |
 | `quic` | `eggress-config/quic`, `eggress-runtime/quic`, `eggress-pproxy-compat/quic`, `dep:eggress-transport-quic`, `dep:eggress-protocol-h3` | QUIC + H3 |
-| `insecure-quic` | `eggress-runtime/insecure-quic`, `eggress-transport-quic/insecure-quic` | Test-only cert bypass |
+| `insecure-quic` | `eggress-runtime/insecure-quic`, `eggress-transport-quic/insecure-quic` | Test-only cert bypass (never part of the routine product gate) |
+| `pproxy-legacy` | `eggress-runtime/pproxy-legacy` | Bounded SSR TCP framing + six built-in plugins (opt-in; not in default `full`) |
 | `legacy-crypto` | `eggress-runtime/legacy-crypto`, `eggress-pproxy-compat/legacy-crypto` | Legacy Shadowsocks ciphers |
 | `pproxy-daemon` | `pproxy-compat`, `eggress-pproxy-compat/daemon` | Linux `--daemon` re-exec |
 
 Lean build: `cargo build -p eggress-cli --release --no-default-features --features common`
+
+Routine CI adds one bounded compile-only gate for the product-relevant
+optional compatibility bundle (same job, no new workflow or OS matrix;
+`insecure-quic` excluded):
+
+```bash
+cargo check -p eggress-cli --locked --no-default-features \
+  --features full,ssh,quic,pproxy-legacy,legacy-crypto,pproxy-daemon \
+  --bins
+```
 
 ## Test suite (17 integration files)
 

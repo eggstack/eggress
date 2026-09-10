@@ -80,7 +80,7 @@ These rules govern how capabilities are classified:
 - [`pproxy_capability_manifest.toml`](pproxy_capability_manifest.toml) — detailed machine-readable implementation inventory.
 - [`composition_matrix.toml`](composition_matrix.toml) — protocol, role, and traffic-kind composition constraints.
 - [`../PYTHON_BINDINGS.md`](../PYTHON_BINDINGS.md) — native and pproxy-compatible Python workflows.
-- [`../PPROXY_PARITY_SPEC.md`](../PPROXY_PARITY_SPEC.md) — compatibility vocabulary and boundaries.
+- [`../PPROXY_PARITY_SPEC.md`](../PPROXY_PARITY_SPEC.md) — historical implementation/audit provenance; not current vocabulary.
 
 The older strict manifest, evidence inventories, and phase completion records
 are historical or diagnostic inputs. They are not a release claim and must not

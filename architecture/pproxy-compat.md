@@ -93,7 +93,7 @@ delegate to it). Key mappings:
 |---|---|---|
 | `ssh-listener`, `ssh-upstream` | `unsupported_protocol` | `intentional_non_parity` |
 | `ssr-listener`, `ssr-upstream`, `ssr-udp` | `unsupported_security_sensitive_legacy_feature` | `intentional_non_parity` |
-| `daemon` | `unsupported_flag` | `unsupported` |
+| `daemon` without `pproxy-daemon` | `unsupported_flag` | `unsupported` (fail-closed); with the Linux `pproxy-daemon` feature it is `compatible_with_warning` per `cli.daemon` |
 | `legacy-cipher` | `invalid_cipher_method` | `unsupported` |
 | `socks4-bind`, `socks5-bind` | `unsupported_protocol` | `unsupported` |
 | `system-proxy`, `auth-timeout` | `unsupported_flag` | `compatible_with_warning` |
@@ -199,6 +199,6 @@ EGRESS_REQUIRE_EXTERNAL_INTEROP=1 \
 - [python-bindings.md](python-bindings.md) — Python bindings architecture
 - [testing-and-tooling.md](testing-and-tooling.md) — test infrastructure
 - `docs/parity/pproxy_capability_manifest.toml` — canonical tier contract
-- `docs/parity/pproxy_2_7_9_strict_manifest.toml` — strict behavioral contract
-- `docs/PPROXY_PARITY_SPEC.md` — compatibility vocabulary and tier definitions
+- `docs/parity/pproxy_2_7_9_strict_manifest.toml` — strict behavioral contract (historical provenance)
+- `docs/parity/README.md` — tier vocabulary and classification rules (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only)
 - `python-pproxy-compat/pyproject.toml` — distribution configuration

@@ -153,7 +153,7 @@ drain/cancel → admin last. Details: [runtime.md](runtime.md).
 ## Build profiles
 
 Default features = `full` (common+extended+operations+reverse+pproxy-compat).
-Optional: `ssh`, `quic`, `legacy-crypto`, `pproxy-daemon`. Lean build:
+Optional: `ssh`, `quic`, `pproxy-legacy`, `legacy-crypto`, `pproxy-daemon`. Lean build:
 `cargo build -p eggress-cli --release --no-default-features --features common`.
 MSRV 1.85; release profiles use thin-LTO/symbol-stripping.
 
@@ -179,7 +179,7 @@ eggress/
 - `docs/ARCHITECTURE.md` — long-form canonical architecture narrative
 - `docs/parity/pproxy_capability_manifest.toml`,
   `docs/parity/pproxy_2_7_9_strict_manifest.toml` — compatibility contracts
-- `docs/PPROXY_PARITY_SPEC.md` — tier vocabulary used throughout
+- `docs/parity/README.md` + `crates/eggress-pproxy-compat/src/tier.rs` — tier vocabulary and classification rules (`docs/PPROXY_PARITY_SPEC.md` is historical provenance only)
 - `.skills/` — task-specific agent guides (rust-proxy-dev, python-bindings,
   testing, security-dev, …); mirrored into `.agents/skills/` and
   `.opencode/skills/` via relative symlinks
